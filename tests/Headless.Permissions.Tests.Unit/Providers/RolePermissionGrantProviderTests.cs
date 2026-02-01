@@ -26,8 +26,8 @@ public sealed class RolePermissionGrantProviderTests : TestBase
     public async Task should_return_undefined_when_user_has_no_roles()
     {
         // given
-        var permission = CreatePermission("Users.Create");
-        var currentUser = CreateCurrentUser();
+        var permission = _CreatePermission("Users.Create");
+        var currentUser = _CreateCurrentUser();
 
         // when
         var result = await _sut.CheckAsync([permission], currentUser, AbortToken);
@@ -41,8 +41,8 @@ public sealed class RolePermissionGrantProviderTests : TestBase
     public async Task should_check_all_roles_for_permission()
     {
         // given
-        var permission = CreatePermission("Users.Create");
-        var currentUser = CreateCurrentUser(["Admin", "Manager", "User"]);
+        var permission = _CreatePermission("Users.Create");
+        var currentUser = _CreateCurrentUser(["Admin", "Manager", "User"]);
 
         _grantStore
             .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Admin", AbortToken)
@@ -74,8 +74,8 @@ public sealed class RolePermissionGrantProviderTests : TestBase
     public async Task should_return_granted_from_first_matching_role()
     {
         // given
-        var permission = CreatePermission("Users.Create");
-        var currentUser = CreateCurrentUser(["Admin", "Manager"]);
+        var permission = _CreatePermission("Users.Create");
+        var currentUser = _CreateCurrentUser(["Admin", "Manager"]);
 
         _grantStore
             .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Admin", AbortToken)
@@ -98,8 +98,8 @@ public sealed class RolePermissionGrantProviderTests : TestBase
     public async Task should_return_prohibited_when_permission_denied()
     {
         // given
-        var permission = CreatePermission("Users.Delete");
-        var currentUser = CreateCurrentUser(["User"]);
+        var permission = _CreatePermission("Users.Delete");
+        var currentUser = _CreateCurrentUser(["User"]);
 
         _grantStore
             .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "User", AbortToken)
@@ -122,9 +122,9 @@ public sealed class RolePermissionGrantProviderTests : TestBase
     public async Task should_stop_checking_roles_when_all_permissions_resolved()
     {
         // given
-        var permission1 = CreatePermission("Users.Create");
-        var permission2 = CreatePermission("Users.Read");
-        var currentUser = CreateCurrentUser(["Admin", "Manager", "User"]);
+        var permission1 = _CreatePermission("Users.Create");
+        var permission2 = _CreatePermission("Users.Read");
+        var currentUser = _CreateCurrentUser(["Admin", "Manager", "User"]);
 
         _grantStore
             .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Admin", AbortToken)
@@ -153,9 +153,9 @@ public sealed class RolePermissionGrantProviderTests : TestBase
     public async Task should_track_which_role_granted_each_permission()
     {
         // given
-        var permission1 = CreatePermission("Users.Create");
-        var permission2 = CreatePermission("Users.Delete");
-        var currentUser = CreateCurrentUser(["Admin", "Manager"]);
+        var permission1 = _CreatePermission("Users.Create");
+        var permission2 = _CreatePermission("Users.Delete");
+        var currentUser = _CreateCurrentUser(["Admin", "Manager"]);
 
         _grantStore
             .IsGrantedAsync(Arg.Any<IReadOnlyList<string>>(), PermissionGrantProviderNames.Role, "Admin", AbortToken)
@@ -188,7 +188,7 @@ public sealed class RolePermissionGrantProviderTests : TestBase
     public async Task should_throw_when_permissions_collection_is_empty()
     {
         // given
-        var currentUser = CreateCurrentUser(["Admin"]);
+        var currentUser = _CreateCurrentUser(["Admin"]);
 
         // when
         var act = () => _sut.CheckAsync([], currentUser, AbortToken);
@@ -197,9 +197,13 @@ public sealed class RolePermissionGrantProviderTests : TestBase
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
-    private static PermissionDefinition CreatePermission(string name) => new(name);
+    private static PermissionDefinition _CreatePermission(string name)
+    {
+        var group = new PermissionGroupDefinition("TestGroup");
+        return group.AddChild(name);
+    }
 
-    private static ICurrentUser CreateCurrentUser(HashSet<string>? roles = null)
+    private static ICurrentUser _CreateCurrentUser(HashSet<string>? roles = null)
     {
         var user = Substitute.For<ICurrentUser>();
         user.Roles.Returns(roles ?? []);

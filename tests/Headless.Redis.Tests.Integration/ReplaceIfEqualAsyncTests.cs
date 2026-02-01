@@ -11,13 +11,13 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     private IDatabase Db => fixture.ConnectionMultiplexer.GetDatabase();
     private HeadlessRedisScriptsLoader Loader => fixture.ScriptsLoader;
 
-    private async Task FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
+    private async Task _FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
 
     [Fact]
     public async Task should_replace_when_expected_value_matches()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "test-key";
         await Db.StringSetAsync(key, "old-value");
 
@@ -34,7 +34,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     public async Task should_replace_when_key_not_exists()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "non-existent-key";
 
         // when
@@ -50,7 +50,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     public async Task should_not_replace_when_expected_value_differs()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "test-key";
         await Db.StringSetAsync(key, "old-value");
 
@@ -67,7 +67,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     public async Task should_set_ttl_when_provided()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "test-key-with-ttl";
         await Db.StringSetAsync(key, "old-value");
         var ttl = TimeSpan.FromMinutes(5);
@@ -92,7 +92,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     public async Task should_not_set_ttl_when_null()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "test-key-no-ttl";
         await Db.StringSetAsync(key, "old-value");
 

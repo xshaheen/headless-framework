@@ -96,7 +96,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         }
     }
 
-    private static ServiceProviderLocalMessagePublisher CreatePublisher(IServiceCollection services)
+    private static ServiceProviderLocalMessagePublisher _CreatePublisher(IServiceCollection services)
     {
         var serviceProvider = services.BuildServiceProvider();
         return new ServiceProviderLocalMessagePublisher(serviceProvider);
@@ -115,7 +115,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(handler1);
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(handler2);
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
         var message = new TestLocalMessage("test-value");
 
         // when
@@ -136,7 +136,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when
         publisher.Publish(new TestLocalMessage("test"));
@@ -154,7 +154,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         // Two handlers with default order (0) - should maintain registration order
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when
         publisher.Publish(new TestLocalMessage("test"));
@@ -170,7 +170,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var handler = new TrackingHandler();
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(handler);
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
         var message = new TestLocalMessage("expected-value");
 
         // when
@@ -187,7 +187,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var failingHandler = new FailingHandler("Single failure");
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler);
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when
         var act = () => publisher.Publish(new TestLocalMessage("test"));
@@ -205,7 +205,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler1);
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler2);
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when
         var act = () => publisher.Publish(new TestLocalMessage("test"));
@@ -226,7 +226,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler);
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(trackingHandler);
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when
         var act = () => publisher.Publish(new TestLocalMessage("test"));
@@ -243,7 +243,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         // given
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new TargetInvocationExceptionHandler());
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when
         var act = () => publisher.Publish(new TestLocalMessage("test"));
@@ -257,7 +257,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
     {
         // given
         var services = new ServiceCollection();
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when
         var act = () => publisher.Publish(new TestLocalMessage("test"));
@@ -279,7 +279,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(handler1);
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(handler2);
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
         var message = new TestLocalMessage("test-value");
 
         // when
@@ -299,7 +299,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when
         await publisher.PublishAsync(new TestLocalMessage("test"), TestContext.Current.CancellationToken);
@@ -315,7 +315,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var handler = new TrackingHandler();
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(handler);
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
         using var cts = new CancellationTokenSource();
         var token = cts.Token;
 
@@ -333,7 +333,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var failingHandler = new FailingHandler("Async failure");
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler);
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when
         var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"));
@@ -351,7 +351,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler1);
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler2);
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when
         var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"));
@@ -371,7 +371,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler);
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(trackingHandler);
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when
         var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"));
@@ -387,7 +387,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
     {
         // given
         var services = new ServiceCollection();
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when
         var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"));
@@ -408,7 +408,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when - publish multiple times
         publisher.Publish(new TestLocalMessage("test1"));
@@ -427,7 +427,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var services = new ServiceCollection();
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
         services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
-        var publisher = CreatePublisher(services);
+        var publisher = _CreatePublisher(services);
 
         // when - mix sync and async calls
         // ReSharper disable once MethodHasAsyncOverload

@@ -26,9 +26,9 @@ public sealed class StorePermissionGrantProviderTests : TestBase
     public async Task should_delegate_single_permission_check_to_multiple_check()
     {
         // given
-        var permission = CreatePermission("Users.Create");
+        var permission = _CreatePermission("Users.Create");
         var currentUser = Substitute.For<ICurrentUser>();
-        currentUser.Roles.Returns(new HashSet<string>());
+        currentUser.Roles.Returns(new HashSet<string>(StringComparer.Ordinal));
 
         // when
         var result = await _sut.CheckAsync(permission, currentUser, AbortToken);
@@ -42,7 +42,7 @@ public sealed class StorePermissionGrantProviderTests : TestBase
     public async Task should_grant_permission_with_tenant_context()
     {
         // given
-        var permission = CreatePermission("Users.Create");
+        var permission = _CreatePermission("Users.Create");
         const string providerKey = "admin-role";
         const string tenantId = "tenant-1";
         _currentTenant.Id.Returns(tenantId);
@@ -58,7 +58,7 @@ public sealed class StorePermissionGrantProviderTests : TestBase
     public async Task should_revoke_permission_via_store()
     {
         // given
-        var permission = CreatePermission("Users.Create");
+        var permission = _CreatePermission("Users.Create");
         const string providerKey = "admin-role";
 
         // when
@@ -68,7 +68,11 @@ public sealed class StorePermissionGrantProviderTests : TestBase
         await _grantStore.Received(1).RevokeAsync("Users.Create", "TestProvider", providerKey, AbortToken);
     }
 
-    private static PermissionDefinition CreatePermission(string name) => new(name);
+    private static PermissionDefinition _CreatePermission(string name)
+    {
+        var group = new PermissionGroupDefinition("TestGroup");
+        return group.AddChild(name);
+    }
 
     /// <summary>Test implementation to verify base class behavior.</summary>
     private sealed class TestStorePermissionGrantProvider(

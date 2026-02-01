@@ -11,7 +11,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     private IDatabase Db => fixture.ConnectionMultiplexer.GetDatabase();
     private HeadlessRedisScriptsLoader Loader => fixture.ScriptsLoader;
 
-    private async Task FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
+    private async Task _FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
 
     #region Long overload tests
 
@@ -19,7 +19,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     public async Task should_set_when_value_is_higher_long()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "max-value";
         await Db.StringSetAsync(key, "10");
 
@@ -36,7 +36,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     public async Task should_not_set_when_value_is_lower_long()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "max-value";
         await Db.StringSetAsync(key, "10");
 
@@ -53,7 +53,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     public async Task should_set_when_key_not_exists_long()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "nonexistent-key";
 
         // when
@@ -69,7 +69,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     public async Task should_return_difference_when_set_long()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "max-value";
         await Db.StringSetAsync(key, "7");
 
@@ -86,7 +86,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     public async Task should_set_ttl_when_provided_long()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "max-value-with-ttl";
         var ttl = TimeSpan.FromSeconds(60);
 
@@ -108,7 +108,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     public async Task should_set_when_value_is_higher_double()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "max-value-double";
         await Db.StringSetAsync(key, "10.5");
 
@@ -125,7 +125,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     public async Task should_not_set_when_value_is_lower_double()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "max-value-double";
         await Db.StringSetAsync(key, "10.5");
 
@@ -142,7 +142,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     public async Task should_set_when_key_not_exists_double()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "nonexistent-key-double";
 
         // when
@@ -158,7 +158,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     public async Task should_return_difference_when_set_double()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "max-value-double";
         await Db.StringSetAsync(key, "7.5");
 

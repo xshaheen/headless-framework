@@ -24,14 +24,14 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
         MessagingOptions parent,
         ConsumerRegistry registry,
         Type messageType,
-        string? _topic = null,
+        string? topic = null,
         bool autoRegistered = false
     )
     {
         _parent = parent;
         _registry = registry;
         _messageType = messageType;
-        this._topic = _topic;
+        this._topic = topic;
         _autoRegistered = autoRegistered;
     }
 

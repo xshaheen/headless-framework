@@ -8,12 +8,12 @@ using k8s.Models;
 
 namespace Tests;
 
-public sealed class K8sNodeDiscoveryProviderTests : TestBase
+public sealed class K8SNodeDiscoveryProviderTests : TestBase
 {
     private readonly K8sNodeDiscoveryProvider _provider;
     private readonly K8sDiscoveryOptions _options;
 
-    public K8sNodeDiscoveryProviderTests()
+    public K8SNodeDiscoveryProviderTests()
     {
         _options = new K8sDiscoveryOptions();
         _provider = new K8sNodeDiscoveryProvider(LoggerFactory, _options);

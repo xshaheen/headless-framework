@@ -19,25 +19,25 @@ namespace Tests.Fixtures;
 public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestFixture<TContext>, IAsyncLifetime
     where TContext : DbContext
 {
-    private static readonly Faker _faker = new();
-    private static readonly string _userId = Guid.NewGuid().ToString();
-    private static readonly DateTimeOffset _now = _faker.Date.RecentOffset().ToUniversalTime();
+    private static readonly Faker _Faker = new();
+    private static readonly string _UserId = Guid.NewGuid().ToString();
+    private static readonly DateTimeOffset _Now = _Faker.Date.RecentOffset().ToUniversalTime();
 
     private readonly PostgreSqlContainer _postgreSqlContainer = _CreatePostgreSqlContainer();
 
-    public string UserId => _userId;
+    public string UserId => _UserId;
 
-    public DateTimeOffset Now => _now;
+    public DateTimeOffset Now => _Now;
 
     public string SqlConnectionString => _postgreSqlContainer.GetConnectionString();
 
     public ServiceProvider ServiceProvider { get; private set; } = null!;
 
-    public TestClock Clock { get; } = new() { TimeProvider = new FakeTimeProvider(_now) };
+    public TestClock Clock { get; } = new() { TimeProvider = new FakeTimeProvider(_Now) };
 
     public TestCurrentTenant CurrentTenant { get; } = new() { Id = null };
 
-    public TestCurrentUser CurrentUser { get; } = new() { UserId = _userId };
+    public TestCurrentUser CurrentUser { get; } = new() { UserId = _UserId };
 
     public virtual async ValueTask InitializeAsync()
     {
@@ -52,6 +52,7 @@ public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestF
         await _postgreSqlContainer.StopAsync();
         await _postgreSqlContainer.DisposeAsync();
         await ServiceProvider.DisposeAsync();
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>

@@ -13,8 +13,8 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task concat_async_should_combine_two_sequences()
     {
         // given
-        var first = CreateAsyncEnumerable([1, 2, 3], AbortToken);
-        var second = CreateAsyncEnumerable([4, 5, 6], AbortToken);
+        var first = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
+        var second = _CreateAsyncEnumerable([4, 5, 6], AbortToken);
 
         // when
         var result = await first.ConcatAsync(second, AbortToken).ToListAsync(AbortToken);
@@ -27,8 +27,8 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task concat_async_should_handle_empty_first_sequence()
     {
         // given
-        var first = CreateAsyncEnumerable(Array.Empty<int>(), AbortToken);
-        var second = CreateAsyncEnumerable([1, 2, 3], AbortToken);
+        var first = _CreateAsyncEnumerable(Array.Empty<int>(), AbortToken);
+        var second = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
 
         // when
         var result = await first.ConcatAsync(second, AbortToken).ToListAsync(AbortToken);
@@ -41,8 +41,8 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task concat_async_should_handle_empty_second_sequence()
     {
         // given
-        var first = CreateAsyncEnumerable([1, 2, 3], AbortToken);
-        var second = CreateAsyncEnumerable(Array.Empty<int>(), AbortToken);
+        var first = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
+        var second = _CreateAsyncEnumerable(Array.Empty<int>(), AbortToken);
 
         // when
         var result = await first.ConcatAsync(second, AbortToken).ToListAsync(AbortToken);
@@ -57,7 +57,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task distinct_async_should_remove_duplicates()
     {
         // given
-        var source = CreateAsyncEnumerable([1, 2, 2, 3, 3, 3, 4], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 2, 3, 3, 3, 4], AbortToken);
 
         // when
         var result = await source.DistinctAsync(cancellationToken: AbortToken).ToListAsync(AbortToken);
@@ -70,7 +70,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task distinct_async_should_use_custom_comparer()
     {
         // given
-        var source = CreateAsyncEnumerable(["a", "A", "b", "B"], AbortToken);
+        var source = _CreateAsyncEnumerable(["a", "A", "b", "B"], AbortToken);
 
         // when
         var result = await source.DistinctAsync(StringComparer.OrdinalIgnoreCase, AbortToken).ToListAsync(AbortToken);
@@ -87,7 +87,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task distinct_by_async_should_use_key_selector()
     {
         // given
-        var source = CreateAsyncEnumerable(
+        var source = _CreateAsyncEnumerable(
             [new TestRecord("a", 1), new TestRecord("a", 2), new TestRecord("b", 3)],
             AbortToken
         );
@@ -105,7 +105,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task distinct_by_async_should_use_custom_comparer()
     {
         // given
-        var source = CreateAsyncEnumerable(
+        var source = _CreateAsyncEnumerable(
             [new TestRecord("a", 1), new TestRecord("A", 2), new TestRecord("b", 3)],
             AbortToken
         );
@@ -125,7 +125,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task of_type_async_should_filter_by_type()
     {
         // given
-        var source = CreateAsyncEnumerable<object>([1, "a", 2, "b", 3], AbortToken);
+        var source = _CreateAsyncEnumerable<object>([1, "a", 2, "b", 3], AbortToken);
 
         // when
         var result = await source.OfTypeAsync<object, int>(AbortToken).ToListAsync(AbortToken);
@@ -138,7 +138,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task of_type_async_should_return_empty_for_no_matches()
     {
         // given
-        var source = CreateAsyncEnumerable<object>(["a", "b", "c"], AbortToken);
+        var source = _CreateAsyncEnumerable<object>(["a", "b", "c"], AbortToken);
 
         // when
         var result = await source.OfTypeAsync<object, int>(AbortToken).ToListAsync(AbortToken);
@@ -153,7 +153,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task select_async_should_project_elements()
     {
         // given
-        var source = CreateAsyncEnumerable([1, 2, 3], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
 
         // when
         var result = await source.SelectAsync(x => x * 2, AbortToken).ToListAsync(AbortToken);
@@ -166,7 +166,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task select_async_should_handle_empty_sequence()
     {
         // given
-        var source = CreateAsyncEnumerable(Array.Empty<int>(), AbortToken);
+        var source = _CreateAsyncEnumerable(Array.Empty<int>(), AbortToken);
 
         // when
         var result = await source.SelectAsync(x => x * 2, AbortToken).ToListAsync(AbortToken);
@@ -181,7 +181,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task take_async_should_return_first_n_elements()
     {
         // given
-        var source = CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
 
         // when
         var result = await source.TakeAsync(3, AbortToken).ToListAsync(AbortToken);
@@ -194,7 +194,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task take_async_should_return_all_when_count_exceeds_length()
     {
         // given
-        var source = CreateAsyncEnumerable([1, 2, 3], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
 
         // when
         var result = await source.TakeAsync(10, AbortToken).ToListAsync(AbortToken);
@@ -207,7 +207,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task take_async_should_return_empty_for_zero_count()
     {
         // given
-        var source = CreateAsyncEnumerable([1, 2, 3], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
 
         // when
         var result = await source.TakeAsync(0, AbortToken).ToListAsync(AbortToken);
@@ -220,7 +220,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task take_async_should_return_empty_for_negative_count()
     {
         // given
-        var source = CreateAsyncEnumerable([1, 2, 3], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
 
         // when
         var result = await source.TakeAsync(-1, AbortToken).ToListAsync(AbortToken);
@@ -235,7 +235,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task take_while_async_should_take_while_predicate_is_true()
     {
         // given
-        var source = CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
 
         // when
         var result = await source.TakeWhileAsync(x => x < 4, AbortToken).ToListAsync(AbortToken);
@@ -248,7 +248,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task take_while_async_should_return_empty_when_first_fails()
     {
         // given
-        var source = CreateAsyncEnumerable([5, 4, 3, 2, 1], AbortToken);
+        var source = _CreateAsyncEnumerable([5, 4, 3, 2, 1], AbortToken);
 
         // when
         var result = await source.TakeWhileAsync(x => x < 4, AbortToken).ToListAsync(AbortToken);
@@ -263,7 +263,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task skip_async_should_skip_first_n_elements()
     {
         // given
-        var source = CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
 
         // when
         var result = await source.SkipAsync(2, AbortToken).ToListAsync(AbortToken);
@@ -276,7 +276,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task skip_async_should_return_empty_when_skip_exceeds_length()
     {
         // given
-        var source = CreateAsyncEnumerable([1, 2, 3], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
 
         // when
         var result = await source.SkipAsync(10, AbortToken).ToListAsync(AbortToken);
@@ -290,7 +290,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     {
         // given
         // Note: Implementation returns empty when count <= 0 (differs from standard Skip behavior)
-        var source = CreateAsyncEnumerable([1, 2, 3], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 3], AbortToken);
 
         // when
         var result = await source.SkipAsync(0, AbortToken).ToListAsync(AbortToken);
@@ -307,7 +307,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task skip_while_async_should_filter_all_matching_items()
     {
         // given
-        var source = CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
 
         // when - skips all items where x < 3 (1 and 2)
         var result = await source.SkipWhileAsync(x => x < 3, AbortToken).ToListAsync(AbortToken);
@@ -320,7 +320,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task skip_while_async_should_filter_matching_items_throughout_sequence()
     {
         // given
-        var source = CreateAsyncEnumerable([5, 4, 3, 2, 1], AbortToken);
+        var source = _CreateAsyncEnumerable([5, 4, 3, 2, 1], AbortToken);
 
         // when - skips all items where x < 3 (2 and 1), keeps 5, 4, 3
         var result = await source.SkipWhileAsync(x => x < 3, AbortToken).ToListAsync(AbortToken);
@@ -335,7 +335,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task where_async_should_filter_elements()
     {
         // given
-        var source = CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 2, 3, 4, 5], AbortToken);
 
         // when
         var result = await source.WhereAsync(x => x % 2 == 0, AbortToken).ToListAsync(AbortToken);
@@ -348,7 +348,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task where_async_should_return_empty_when_no_matches()
     {
         // given
-        var source = CreateAsyncEnumerable([1, 3, 5], AbortToken);
+        var source = _CreateAsyncEnumerable([1, 3, 5], AbortToken);
 
         // when
         var result = await source.WhereAsync(x => x % 2 == 0, AbortToken).ToListAsync(AbortToken);
@@ -363,7 +363,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task where_not_null_should_filter_null_elements()
     {
         // given
-        var source = CreateAsyncEnumerable(new string?[] { "a", null, "b", null, "c" }, AbortToken);
+        var source = _CreateAsyncEnumerable(new string?[] { "a", null, "b", null, "c" }, AbortToken);
 
         // when
         var result = await source.WhereNotNull(AbortToken).ToListAsync(AbortToken);
@@ -376,7 +376,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task where_not_null_should_return_empty_for_all_nulls()
     {
         // given
-        var source = CreateAsyncEnumerable(new string?[] { null, null, null }, AbortToken);
+        var source = _CreateAsyncEnumerable(new string?[] { null, null, null }, AbortToken);
 
         // when
         var result = await source.WhereNotNull(AbortToken).ToListAsync(AbortToken);
@@ -391,7 +391,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task where_not_null_or_empty_should_filter_null_and_empty_strings()
     {
         // given
-        var source = CreateAsyncEnumerable(new string?[] { "a", null, "", "b", "  ", "c" }, AbortToken);
+        var source = _CreateAsyncEnumerable(new string?[] { "a", null, "", "b", "  ", "c" }, AbortToken);
 
         // when
         var result = await source.WhereNotNullOrEmpty(AbortToken).ToListAsync(AbortToken);
@@ -406,7 +406,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task where_not_null_or_whitespace_should_filter_null_empty_and_whitespace()
     {
         // given
-        var source = CreateAsyncEnumerable(new string?[] { "a", null, "", "b", "  ", "c" }, AbortToken);
+        var source = _CreateAsyncEnumerable(new string?[] { "a", null, "", "b", "  ", "c" }, AbortToken);
 
         // when
         var result = await source.WhereNotNullOrWhiteSpace(AbortToken).ToListAsync(AbortToken);
@@ -422,8 +422,8 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     {
         // given - intentionally using separate CTS to test mid-iteration cancellation
         using var cts = new CancellationTokenSource();
-        var first = CreateSlowAsyncEnumerable([1, 2, 3], TimeSpan.FromMilliseconds(50), AbortToken);
-        var second = CreateAsyncEnumerable([4, 5, 6], AbortToken);
+        var first = _CreateSlowAsyncEnumerable([1, 2, 3], TimeSpan.FromMilliseconds(50), AbortToken);
+        var second = _CreateAsyncEnumerable([4, 5, 6], AbortToken);
 
         // when
         var items = new List<int>();
@@ -446,7 +446,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
 
     // Helper methods
 
-    private static async IAsyncEnumerable<T> CreateAsyncEnumerable<T>(
+    private static async IAsyncEnumerable<T> _CreateAsyncEnumerable<T>(
         T[] items,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
@@ -459,7 +459,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
         }
     }
 
-    private static async IAsyncEnumerable<T> CreateSlowAsyncEnumerable<T>(
+    private static async IAsyncEnumerable<T> _CreateSlowAsyncEnumerable<T>(
         T[] items,
         TimeSpan delay,
         [EnumeratorCancellation] CancellationToken cancellationToken = default

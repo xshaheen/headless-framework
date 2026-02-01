@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Tests.Fixture;
+using Tests.Tests;
 using Xunit;
 
 namespace Tests;
