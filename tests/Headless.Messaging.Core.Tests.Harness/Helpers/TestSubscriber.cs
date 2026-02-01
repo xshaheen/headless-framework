@@ -10,22 +10,22 @@ namespace Tests.Helpers;
 [PublicAPI]
 public sealed class TestSubscriber : IConsume<TestMessage>
 {
-    private readonly ConcurrentBag<ConsumeContext<TestMessage>> _receivedContexts = [];
-    private readonly TaskCompletionSource<bool> _messageReceivedTcs = new();
+    private readonly ConcurrentQueue<ConsumeContext<TestMessage>> _receivedContexts = new();
+    private readonly object _lock = new();
+    private TaskCompletionSource<bool> _messageReceivedTcs = new();
 
     /// <summary>Gets the received message contexts.</summary>
     public IReadOnlyCollection<ConsumeContext<TestMessage>> ReceivedContexts => _receivedContexts;
 
     /// <summary>Gets the received messages.</summary>
-    public IReadOnlyCollection<TestMessage> ReceivedMessages =>
-        _receivedContexts.Select(c => c.Message).ToList();
+    public IReadOnlyCollection<TestMessage> ReceivedMessages => _receivedContexts.Select(c => c.Message).ToList();
 
     /// <summary>Gets a task that completes when at least one message is received.</summary>
     public Task MessageReceivedTask => _messageReceivedTcs.Task;
 
     public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
     {
-        _receivedContexts.Add(context);
+        _receivedContexts.Enqueue(context);
         _messageReceivedTcs.TrySetResult(true);
         return ValueTask.CompletedTask;
     }
@@ -41,7 +41,7 @@ public sealed class TestSubscriber : IConsume<TestMessage>
 
         try
         {
-            await _messageReceivedTcs.Task.WaitAsync(cts.Token).ConfigureAwait(false);
+            await _messageReceivedTcs.Task.WaitAsync(cts.Token).AnyContext();
             return true;
         }
         catch (OperationCanceledException)
@@ -50,9 +50,13 @@ public sealed class TestSubscriber : IConsume<TestMessage>
         }
     }
 
-    /// <summary>Clears all received messages.</summary>
+    /// <summary>Clears all received messages and resets the wait state.</summary>
     public void Clear()
     {
-        _receivedContexts.Clear();
+        lock (_lock)
+        {
+            _receivedContexts.Clear();
+            _messageReceivedTcs = new TaskCompletionSource<bool>();
+        }
     }
 }

@@ -30,14 +30,14 @@ namespace Tests;
 /// <code>
 /// public class RabbitMqIntegrationTests : MessagingIntegrationTestsBase
 /// {
-///     protected override void ConfigureTransport(IMessagingBuilder builder)
+///     protected override void ConfigureTransport(MessagingOptions options)
 ///     {
-///         builder.UseRabbitMQ(r => r.HostName = "localhost");
+///         options.UseRabbitMQ(r => r.HostName = "localhost");
 ///     }
 ///
-///     protected override void ConfigureStorage(IMessagingBuilder builder)
+///     protected override void ConfigureStorage(MessagingOptions options)
 ///     {
-///         builder.UsePostgreSql("connection-string");
+///         options.UsePostgreSql("connection-string");
 ///     }
 /// }
 /// </code>
@@ -51,7 +51,10 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
     /// <summary>Gets the configured service provider.</summary>
     protected ServiceProvider ServiceProvider =>
-        _serviceProvider ?? throw new InvalidOperationException("ServiceProvider not initialized. Ensure InitializeAsync has completed.");
+        _serviceProvider
+        ?? throw new InvalidOperationException(
+            "ServiceProvider not initialized. Ensure InitializeAsync has completed."
+        );
 
     /// <summary>Gets the bootstrapper for starting the messaging system.</summary>
     protected IBootstrapper Bootstrapper => ServiceProvider.GetRequiredService<IBootstrapper>();
@@ -102,14 +105,10 @@ public abstract class MessagingIntegrationTestsBase : TestBase
             ConfigureStorage(options);
 
             // Register test consumer
-            options.Consumer<TestSubscriber>("test-message")
-                .Group("test-group")
-                .WithConcurrency(1);
+            options.Consumer<TestSubscriber>("test-message").Group("test-group").WithConcurrency(1);
 
             // Register failing consumer for exception tests
-            options.Consumer<FailingTestSubscriber>("failing-message")
-                .Group("test-group")
-                .WithConcurrency(1);
+            options.Consumer<FailingTestSubscriber>("failing-message").Group("test-group").WithConcurrency(1);
 
             ConfigureMessaging(options);
         });
@@ -183,11 +182,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
         subscriber.Clear();
 
-        var message = new TestMessage
-        {
-            Id = Guid.NewGuid().ToString(),
-            Name = "HandlerInvocationTest",
-        };
+        var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "HandlerInvocationTest" };
 
         // when
         await Publisher.PublishAsync("test-message", message, cancellationToken: AbortToken);
@@ -205,11 +200,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     public virtual async Task should_store_received_message_in_storage()
     {
         // given
-        var message = new TestMessage
-        {
-            Id = Guid.NewGuid().ToString(),
-            Name = "StorageTest",
-        };
+        var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "StorageTest" };
 
         // when
         await Publisher.PublishAsync("test-message", message, cancellationToken: AbortToken);
@@ -228,11 +219,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     {
         // given
         var failingSubscriber = ServiceProvider.GetRequiredService<FailingTestSubscriber>();
-        var message = new TestMessage
-        {
-            Id = Guid.NewGuid().ToString(),
-            Name = "FailingTest",
-        };
+        var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "FailingTest" };
 
         // when
         await Publisher.PublishAsync("failing-message", message, cancellationToken: AbortToken);
@@ -251,36 +238,34 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         subscriber.Clear();
 
         const int messageCount = 10;
-        var messages = Enumerable.Range(0, messageCount)
-            .Select(i => new TestMessage
-            {
-                Id = $"concurrent-{i}",
-                Name = $"ConcurrentTest-{i}",
-            })
+        var messages = Enumerable
+            .Range(0, messageCount)
+            .Select(i => new TestMessage { Id = $"concurrent-{i}", Name = $"ConcurrentTest-{i}" })
             .ToList();
 
         // when
         var publishTasks = messages.Select(m =>
-            Publisher.PublishAsync("test-message", m, cancellationToken: AbortToken));
+            Publisher.PublishAsync("test-message", m, cancellationToken: AbortToken)
+        );
         await Task.WhenAll(publishTasks);
 
         // Allow time for all messages to be processed
         await Task.Delay(TimeSpan.FromSeconds(15), AbortToken);
 
         // then
-        subscriber.ReceivedMessages.Should().HaveCountGreaterThanOrEqualTo(messageCount / 2,
-            "at least half of the messages should be received (may vary due to timing)");
+        subscriber
+            .ReceivedMessages.Should()
+            .HaveCountGreaterThanOrEqualTo(
+                messageCount / 2,
+                "at least half of the messages should be received (may vary due to timing)"
+            );
     }
 
     public virtual async Task should_retry_failed_message()
     {
         // given
         var failingSubscriber = ServiceProvider.GetRequiredService<FailingTestSubscriber>();
-        var message = new TestMessage
-        {
-            Id = Guid.NewGuid().ToString(),
-            Name = "RetryTest",
-        };
+        var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "RetryTest" };
 
         // when
         await Publisher.PublishAsync("failing-message", message, cancellationToken: AbortToken);
@@ -298,11 +283,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
         subscriber.Clear();
 
-        var message = new TestMessage
-        {
-            Id = Guid.NewGuid().ToString(),
-            Name = "LifecycleTest",
-        };
+        var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "LifecycleTest" };
 
         // when - publish -> consume -> store -> ack
         await Publisher.PublishAsync("test-message", message, cancellationToken: AbortToken);
@@ -328,11 +309,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
         subscriber.Clear();
 
-        var message = new TestMessage
-        {
-            Id = Guid.NewGuid().ToString(),
-            Name = "HeadersTest",
-        };
+        var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "HeadersTest" };
 
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -357,16 +334,17 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
         subscriber.Clear();
 
-        var message = new TestMessage
-        {
-            Id = Guid.NewGuid().ToString(),
-            Name = "DelayedTest",
-        };
+        var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "DelayedTest" };
 
         var startTime = DateTimeOffset.UtcNow;
 
         // when
-        await Publisher.PublishDelayAsync(TimeSpan.FromSeconds(2), "test-message", message, cancellationToken: AbortToken);
+        await Publisher.PublishDelayAsync(
+            TimeSpan.FromSeconds(2),
+            "test-message",
+            message,
+            cancellationToken: AbortToken
+        );
 
         // Message should not be received immediately
         var immediateCheck = await subscriber.WaitForMessageAsync(TimeSpan.FromMilliseconds(500), AbortToken);
