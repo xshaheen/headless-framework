@@ -1,7 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure;
+using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using Azure.Storage.Blobs.Specialized;
 using Headless.Checks;
 using Headless.Tus.Models;
 using Microsoft.Extensions.Logging;
@@ -90,10 +92,14 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             // Parse TUS metadata
             var blobMetadata = TusAzureMetadata.FromTus(metadata);
 
-            // Calculate total size by concatenating all partial files
+            // Concatenate all partial files
             long totalSize = 0;
             var blockIds = new List<string>();
             var blockNumber = 0;
+
+            // Try server-side copy first (most performant - data stays in Azure)
+            // Falls back to streaming if not supported (e.g., Azurite emulator)
+            var useServerSideCopy = true;
 
             foreach (var partialFileId in partialFiles)
             {
@@ -103,27 +109,58 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                 // Get the partial file's committed blocks
                 var partialBlocks = await _GetCommittedBlocksAsync(partialBlockBlobClient, cancellationToken);
 
+                // Track offset within this partial file (not across all files)
+                long partialOffset = 0;
+
                 foreach (var block in partialBlocks)
                 {
-                    // Copy each block from partial file to final file
                     var newBlockId = _GenerateBlockId(blockNumber++);
+                    var blockRange = new HttpRange(partialOffset, block.SizeLong);
 
-                    // Download block data from partial file
-                    var blockRange = new HttpRange(totalSize, block.SizeLong);
+                    if (useServerSideCopy)
+                    {
+                        try
+                        {
+                            // Server-side copy: data stays in Azure, no download/upload
+                            var options = new StageBlockFromUriOptions { SourceRange = blockRange };
+                            await blockBlobClient.StageBlockFromUriAsync(
+                                partialBlobClient.Uri,
+                                newBlockId,
+                                options,
+                                cancellationToken
+                            );
+                        }
+                        catch (RequestFailedException ex) when (ex.Status == 501)
+                        {
+                            // API not supported (e.g., Azurite) - fall back to streaming
+                            useServerSideCopy = false;
+                            _logger.LogDebug("StageBlockFromUri not supported, falling back to streaming copy");
 
-                    var blockContent = await partialBlobClient.DownloadStreamingAsync(
-                        new BlobDownloadOptions { Range = blockRange },
-                        cancellationToken: cancellationToken
-                    );
-
-                    // Stage the block in the final file
-                    await blockBlobClient.StageBlockAsync(
-                        newBlockId,
-                        blockContent.Value.Content,
-                        cancellationToken: cancellationToken
-                    );
+                            await _StageBlockViaStreamingAsync(
+                                blockBlobClient,
+                                partialBlobClient,
+                                newBlockId,
+                                blockRange,
+                                block.SizeLong,
+                                cancellationToken
+                            );
+                        }
+                    }
+                    else
+                    {
+                        // Streaming fallback: download and re-upload
+                        await _StageBlockViaStreamingAsync(
+                            blockBlobClient,
+                            partialBlobClient,
+                            newBlockId,
+                            blockRange,
+                            block.SizeLong,
+                            cancellationToken
+                        );
+                    }
 
                     blockIds.Add(newBlockId);
+                    partialOffset += block.SizeLong;
                     totalSize += block.SizeLong;
                 }
             }
@@ -160,6 +197,32 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
 
             throw;
         }
+    }
+
+    /// <summary>
+    /// Stages a block by downloading from source and uploading to destination.
+    /// Used as fallback when server-side copy is not available.
+    /// </summary>
+    private static async Task _StageBlockViaStreamingAsync(
+        BlockBlobClient destinationClient,
+        BlobClient sourceClient,
+        string blockId,
+        HttpRange sourceRange,
+        long blockSize,
+        CancellationToken cancellationToken
+    )
+    {
+        var downloadResponse = await sourceClient.DownloadStreamingAsync(
+            new BlobDownloadOptions { Range = sourceRange },
+            cancellationToken
+        );
+
+        // Copy to MemoryStream since StageBlockAsync requires seekable stream with Length
+        await using var buffer = new MemoryStream((int)blockSize);
+        await downloadResponse.Value.Content.CopyToAsync(buffer, cancellationToken);
+        buffer.Position = 0;
+
+        await destinationClient.StageBlockAsync(blockId, buffer, cancellationToken: cancellationToken);
     }
 
     private async Task _ValidatePartialFilesAsync(string[] partialFiles, CancellationToken cancellationToken)
