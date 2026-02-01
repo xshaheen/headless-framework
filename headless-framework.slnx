@@ -179,6 +179,7 @@
         <Project Path="tests/Headless.Messaging.PostgreSql.Tests.Unit/Headless.Messaging.PostgreSql.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Pulsar.Tests.Unit/Headless.Messaging.Pulsar.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.RabbitMq.Tests.Unit/Headless.Messaging.RabbitMq.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.RabbitMq.Tests.Integration/Headless.Messaging.RabbitMq.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.SqlServer.Tests.Unit/Headless.Messaging.SqlServer.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.AzureServiceBus.Tests.Unit/Headless.Messaging.AzureServiceBus.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Core.Tests.Harness/Headless.Messaging.Core.Tests.Harness.csproj" />

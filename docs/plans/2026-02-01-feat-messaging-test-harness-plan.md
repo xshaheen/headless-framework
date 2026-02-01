@@ -102,13 +102,13 @@ Different transports support different features. Use capability flags to skip in
 | 2.2 | ✅ Add consumer discovery tests | S | Included in MessagingIntegrationTestsBase |
 | 2.3 | ✅ Add concurrent consumer tests | M | Included in MessagingIntegrationTestsBase |
 
-### Phase 3: Provider Migration (Example: RabbitMQ)
+### Phase 3: Provider Migration (Example: RabbitMQ) ✅
 
 | # | Story | Size | Notes |
 |---|-------|------|-------|
-| 3.1 | Create `RabbitMqTransportTests` inheriting from harness | S | Override `GetTransport()`, expose base tests |
-| 3.2 | Create `RabbitMqConsumerClientTests` inheriting from harness | S | Same pattern |
-| 3.3 | Document pattern in harness README | S | Guide for other transport migrations |
+| 3.1 | ✅ Create `RabbitMqTransportTests` inheriting from harness | S | 14 tests, Testcontainers fixture |
+| 3.2 | Create `RabbitMqConsumerClientTests` inheriting from harness | S | Deferred - transport tests prove pattern |
+| 3.3 | ✅ Document pattern in harness README | S | Full guide with code examples |
 
 ### Phase 4: Remaining Provider Migrations
 
@@ -142,8 +142,8 @@ Different transports support different features. Use capability flags to skip in
 
 ### Quality Gates
 
-- [ ] [S] At least one provider (RabbitMQ) migrated as proof of pattern
-- [ ] [XS] Harness README documents how to add new provider tests
+- [x] [S] At least one provider (RabbitMQ) migrated as proof of pattern
+- [x] [XS] Harness README documents how to add new provider tests
 - [ ] [S] All migrated tests pass in CI
 
 ## Sizing Summary
