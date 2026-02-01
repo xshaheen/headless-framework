@@ -24,7 +24,7 @@ public sealed class SqlServerStorageTest(SqlServerTestFixture fixture) : IAsyncL
     [Fact]
     public void should_create_database()
     {
-        using var connection = new SqlConnection(fixture.Container.GetConnectionString());
+        using var connection = new SqlConnection(fixture.ConnectionString);
         connection.Open();
 
         const string databaseName = "master";
@@ -39,7 +39,7 @@ public sealed class SqlServerStorageTest(SqlServerTestFixture fixture) : IAsyncL
     [InlineData("messaging.received")]
     public void should_create_table(string tableName)
     {
-        using var connection = new SqlConnection(fixture.Container.GetConnectionString());
+        using var connection = new SqlConnection(fixture.ConnectionString);
         connection.Open();
 
         var parts = tableName.Split('.');
@@ -61,7 +61,7 @@ public sealed class SqlServerStorageTest(SqlServerTestFixture fixture) : IAsyncL
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
-        services.Configure<SqlServerOptions>(x => x.ConnectionString = fixture.Container.GetConnectionString());
+        services.Configure<SqlServerOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
 

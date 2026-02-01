@@ -34,7 +34,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         services.AddLogging();
         services.Configure<SqlServerOptions>(x =>
         {
-            x.ConnectionString = fixture.Container.GetConnectionString();
+            x.ConnectionString = fixture.ConnectionString;
             x.Schema = "messaging";
         });
         services.Configure<MessagingOptions>(x =>
@@ -66,7 +66,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
 
     protected override async ValueTask DisposeAsyncCore()
     {
-        await using var connection = new SqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
         await connection.ExecuteAsync(
             "TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received; DELETE FROM messaging.Lock;"

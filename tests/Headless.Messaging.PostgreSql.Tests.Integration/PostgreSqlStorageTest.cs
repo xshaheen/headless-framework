@@ -24,7 +24,7 @@ public sealed class PostgreSqlStorageTest(PostgreSqlTestFixture fixture) : IAsyn
     [Fact]
     public void should_create_database()
     {
-        using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        using var connection = new NpgsqlConnection(fixture.ConnectionString);
         connection.Open();
 
         var databaseName = "messages_test";
@@ -39,7 +39,7 @@ public sealed class PostgreSqlStorageTest(PostgreSqlTestFixture fixture) : IAsyn
     [InlineData("messaging.received")]
     public void should_create_table(string tableName)
     {
-        using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        using var connection = new NpgsqlConnection(fixture.ConnectionString);
         connection.Open();
 
         var parts = tableName.Split('.');
@@ -61,7 +61,7 @@ public sealed class PostgreSqlStorageTest(PostgreSqlTestFixture fixture) : IAsyn
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
-        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.Container.GetConnectionString());
+        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
 
