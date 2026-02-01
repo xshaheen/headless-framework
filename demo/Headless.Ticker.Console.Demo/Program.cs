@@ -22,7 +22,7 @@ var host = Host.CreateDefaultBuilder(args)
                     {
                         dbOptions.UseSqlite(
                             "Data Source=tickerq-console.db",
-                            b => b.MigrationsAssembly("Headless.Ticker.Sample.Console")
+                            b => b.MigrationsAssembly("Headless.Ticker.Console.Demo")
                         );
                     });
                 });

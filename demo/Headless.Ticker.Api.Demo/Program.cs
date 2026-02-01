@@ -14,10 +14,7 @@ builder.Services.AddTickerQ(options =>
     {
         efOptions.UseTickerQDbContext<TickerQDbContext>(dbOptions =>
         {
-            dbOptions.UseSqlite(
-                "Data Source=tickerq-webapi.db",
-                b => b.MigrationsAssembly("Headless.Ticker.Sample.WebApi")
-            );
+            dbOptions.UseSqlite("Data Source=tickerq-webapi.db", b => b.MigrationsAssembly("Headless.Ticker.Api.Demo"));
         });
     });
 });
