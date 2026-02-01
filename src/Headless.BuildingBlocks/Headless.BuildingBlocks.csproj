@@ -6,6 +6,7 @@
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="MimeTypes" />
     <PackageReference Include="Snappier" />
   </ItemGroup>
   <ItemGroup>

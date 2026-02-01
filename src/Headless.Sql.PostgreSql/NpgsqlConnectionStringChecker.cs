@@ -13,13 +13,13 @@ public sealed class NpgsqlConnectionStringChecker(ILogger<NpgsqlConnectionString
     {
         var result = (Connected: false, DatabaseExists: false);
 
-        var connectionBuilder = new NpgsqlConnectionStringBuilder(connectionString) { Timeout = 1 };
-
-        var oldDatabaseName = connectionBuilder.Database;
-        connectionBuilder.Database = "postgres";
-
         try
         {
+            var connectionBuilder = new NpgsqlConnectionStringBuilder(connectionString) { Timeout = 1 };
+
+            var oldDatabaseName = connectionBuilder.Database;
+            connectionBuilder.Database = "postgres";
+
             await using var conn = new NpgsqlConnection(connectionBuilder.ConnectionString);
 
             await conn.OpenAsync();

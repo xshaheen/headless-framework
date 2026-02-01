@@ -11,7 +11,7 @@ namespace Tests.Helpers;
 public sealed class TestSubscriber : IConsume<TestMessage>
 {
     private readonly ConcurrentQueue<ConsumeContext<TestMessage>> _receivedContexts = new();
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private TaskCompletionSource<bool> _messageReceivedTcs = new();
 
     /// <summary>Gets the received message contexts.</summary>
