@@ -12,7 +12,8 @@ namespace Tests.Fixtures;
 /// </summary>
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class HarnessDbContextTestFixture
-    : PostgreSqlDbContextTestFixture<HarnessDbContext>, ICollectionFixture<HarnessDbContextTestFixture>
+    : PostgreSqlDbContextTestFixture<HarnessDbContext>,
+        ICollectionFixture<HarnessDbContextTestFixture>
 {
     protected override void ConfigureDbContext(IServiceCollection services)
     {

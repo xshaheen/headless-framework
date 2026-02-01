@@ -11,7 +11,8 @@ namespace Tests.Fixtures;
 /// Test HeadlessDbContext implementation that captures emitted messages for verification.
 /// </summary>
 public sealed class HarnessDbContext(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
-    : HeadlessDbContext(entityProcessor, options), IHarnessDbContext
+    : HeadlessDbContext(entityProcessor, options),
+        IHarnessDbContext
 {
     public DbSet<HarnessTestEntity> TestEntities { get; set; } = null!;
 

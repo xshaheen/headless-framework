@@ -118,10 +118,7 @@ public abstract class HeadlessDbContextGlobalFiltersTestBase<TFixture, TContext>
         // when/then - ignoring multi-tenancy should show all non-deleted/non-suspended entities
         using (Fixture.CurrentTenant.Change("TENANT-1"))
         {
-            var items = await db.TestEntities
-                .IgnoreMultiTenancyFilter()
-                .Select(x => x.Name)
-                .ToListAsync(AbortToken);
+            var items = await db.TestEntities.IgnoreMultiTenancyFilter().Select(x => x.Name).ToListAsync(AbortToken);
 
             items.Should().BeEquivalentTo("tenant-1", "tenant-2", "no-tenant");
         }
@@ -146,10 +143,7 @@ public abstract class HeadlessDbContextGlobalFiltersTestBase<TFixture, TContext>
         // when/then - ignoring deleted filter should show both active and deleted
         using (Fixture.CurrentTenant.Change("TENANT-1"))
         {
-            var items = await db.TestEntities
-                .IgnoreNotDeletedFilter()
-                .Select(x => x.Name)
-                .ToListAsync(AbortToken);
+            var items = await db.TestEntities.IgnoreNotDeletedFilter().Select(x => x.Name).ToListAsync(AbortToken);
 
             items.Should().BeEquivalentTo("active", "deleted");
         }
@@ -174,10 +168,7 @@ public abstract class HeadlessDbContextGlobalFiltersTestBase<TFixture, TContext>
         // when/then - ignoring suspended filter should show both active and suspended
         using (Fixture.CurrentTenant.Change("TENANT-1"))
         {
-            var items = await db.TestEntities
-                .IgnoreNotSuspendedFilter()
-                .Select(x => x.Name)
-                .ToListAsync(AbortToken);
+            var items = await db.TestEntities.IgnoreNotSuspendedFilter().Select(x => x.Name).ToListAsync(AbortToken);
 
             items.Should().BeEquivalentTo("active", "suspended");
         }
@@ -204,8 +195,8 @@ public abstract class HeadlessDbContextGlobalFiltersTestBase<TFixture, TContext>
         await db.SaveChangesAsync(AbortToken);
 
         // when/then - disabling all filters should show all entities
-        var items = await db.TestEntities
-            .IgnoreMultiTenancyFilter()
+        var items = await db
+            .TestEntities.IgnoreMultiTenancyFilter()
             .IgnoreNotDeletedFilter()
             .IgnoreNotSuspendedFilter()
             .Select(x => x.Name)

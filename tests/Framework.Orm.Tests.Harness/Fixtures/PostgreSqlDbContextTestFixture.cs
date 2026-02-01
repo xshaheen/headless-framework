@@ -17,8 +17,7 @@ namespace Tests.Fixtures;
 /// Provides PostgreSQL container setup and shared test infrastructure.
 /// </summary>
 /// <typeparam name="TContext">The DbContext type.</typeparam>
-public abstract class PostgreSqlDbContextTestFixture<TContext>
-    : IDbContextTestFixture<TContext>, IAsyncLifetime
+public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestFixture<TContext>, IAsyncLifetime
     where TContext : DbContext
 {
     private static readonly Faker _faker = new();
