@@ -97,6 +97,7 @@
     </Folder>
     <Folder Name="/Identities/">
         <Project Path="src\Headless.Identity.Storage.EntityFramework\Headless.Identity.Storage.EntityFramework.csproj" />
+        <Project Path="tests/Headless.Identity.Storage.EntityFramework.Tests.Integration/Headless.Identity.Storage.EntityFramework.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Imaging/">
         <Project Path="src\Headless.Imaging.Abstractions\Headless.Imaging.Abstractions.csproj" />
@@ -197,6 +198,7 @@
         <Project Path="src\Headless.Orm.Couchbase\Headless.Orm.Couchbase.csproj" />
         <Project Path="src\Headless.Orm.EntityFramework\Headless.Orm.EntityFramework.csproj" />
         <Project Path="tests\Headless.Orm.EntityFramework.Tests.Integration\Headless.Orm.EntityFramework.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Orm.Tests.Harness\Headless.Orm.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Payments/">
         <Project Path="src\Headless.Payments.Paymob.CashIn\Headless.Payments.Paymob.CashIn.csproj" />
@@ -234,6 +236,7 @@
         <Project Path="src\Headless.Settings.Core\Headless.Settings.Core.csproj" />
         <Project Path="src\Headless.Settings.Storage.EntityFramework\Headless.Settings.Storage.EntityFramework.csproj" />
         <Project Path="tests\Headless.Settings.Tests.Integration\Headless.Settings.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Settings.Tests.Unit\Headless.Settings.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Sms/">
         <Project Path="src\Headless.Sms.Abstractions\Headless.Sms.Abstractions.csproj" />
