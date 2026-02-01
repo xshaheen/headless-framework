@@ -85,6 +85,7 @@
     </Folder>
     <Folder Name="/Identities/">
         <Project Path="src/Framework.Identity.Storage.EntityFramework/Framework.Identity.Storage.EntityFramework.csproj" />
+        <Project Path="tests/Framework.Identity.Storage.EntityFramework.Tests.Integration/Framework.Identity.Storage.EntityFramework.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Imaging/">
         <Project Path="src/Framework.Imaging.Core/Framework.Imaging.Core.csproj" />
@@ -139,6 +140,7 @@
         <Project Path="src/Framework.Orm.Couchbase/Framework.Orm.Couchbase.csproj" />
         <Project Path="src/Framework.Orm.EntityFramework/Framework.Orm.EntityFramework.csproj" />
         <Project Path="tests/Framework.Orm.EntityFramework.Tests.Integration/Framework.Orm.EntityFramework.Tests.Integration.csproj" />
+        <Project Path="tests/Framework.Orm.Tests.Harness/Framework.Orm.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Payments/">
         <Project Path="src/Framework.Payments.Paymob.CashIn/Framework.Payments.Paymob.CashIn.csproj" />
@@ -202,13 +204,10 @@
         <File Path="nuget.config" />
         <File Path="README.md" />
     </Folder>
-    <Folder Name="/src/" />
     <Folder Name="/tests/">
         <Project Path="tests/Framework.Redis.Tests.Integration/Framework.Redis.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Redis.Tests.Unit/Framework.Redis.Tests.Unit.csproj" />
     </Folder>
-    <Folder Name="/src/" />
-    <Folder Name="/tests/" />
     <Folder Name="/Validations/">
         <Project Path="src/Framework.FluentValidation/Framework.FluentValidation.csproj" />
         <Project Path="tests/Framework.FluentValidation.Tests.Unit/Framework.FluentValidation.Tests.Unit.csproj" />
