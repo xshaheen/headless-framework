@@ -19,7 +19,7 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
-        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.Container.GetConnectionString());
+        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();

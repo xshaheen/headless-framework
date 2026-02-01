@@ -26,7 +26,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
-        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.Container.GetConnectionString());
+        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x =>
         {
             x.Version = "v1";
@@ -57,7 +57,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
     protected override async ValueTask DisposeAsyncCore()
     {
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
         await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
         await base.DisposeAsyncCore();
@@ -79,7 +79,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         // then
         deleted.Should().Be(1);
 
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var count = await connection.QueryFirstAsync<int>(
             "SELECT COUNT(*) FROM messaging.published WHERE \"Id\"=@Id",
@@ -108,7 +108,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         // then
         deleted.Should().Be(1);
 
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var count = await connection.QueryFirstAsync<int>(
             "SELECT COUNT(*) FROM messaging.received WHERE \"Id\"=@Id",
@@ -147,7 +147,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_delete_expired_messages()
     {
         // given - create expired message
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
         var expiredTime = DateTime.UtcNow.AddDays(-1);
@@ -169,7 +169,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var initializer = new PostgreSqlStorageInitializer(
             NSubstitute.Substitute.For<Microsoft.Extensions.Logging.ILogger<PostgreSqlStorageInitializer>>(),
             Microsoft.Extensions.Options.Options.Create(
-                new PostgreSqlOptions { ConnectionString = fixture.Container.GetConnectionString() }
+                new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }
             ),
             Microsoft.Extensions.Options.Options.Create(new MessagingOptions { Version = "v1" })
         );
@@ -197,7 +197,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var initializer = new PostgreSqlStorageInitializer(
             NSubstitute.Substitute.For<Microsoft.Extensions.Logging.ILogger<PostgreSqlStorageInitializer>>(),
             Microsoft.Extensions.Options.Options.Create(
-                new PostgreSqlOptions { ConnectionString = fixture.Container.GetConnectionString() }
+                new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }
             ),
             Microsoft.Extensions.Options.Options.Create(new MessagingOptions { Version = "v1" })
         );
@@ -212,7 +212,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_get_published_messages_needing_retry()
     {
         // given - create a failed message that needs retry
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
@@ -243,7 +243,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_get_received_messages_needing_retry()
     {
         // given - create a failed received message that needs retry
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
@@ -276,7 +276,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_not_get_messages_with_max_retries()
     {
         // given - create a failed message with max retries
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
@@ -313,7 +313,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await _storage.StoreReceivedExceptionMessageAsync("test.topic", "test.group", content, AbortToken);
 
         // then
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstOrDefaultAsync<string>(
             "SELECT \"StatusName\" FROM messaging.received WHERE \"MessageId\"=@MessageId",

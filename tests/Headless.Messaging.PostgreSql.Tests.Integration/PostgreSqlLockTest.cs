@@ -24,7 +24,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
-        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.Container.GetConnectionString());
+        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x =>
         {
             x.Version = "v1";
@@ -54,7 +54,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
 
     protected override async ValueTask DisposeAsyncCore()
     {
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
         // Reset lock table
         await connection.ExecuteAsync(
@@ -210,7 +210,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
         var instances = Enumerable.Range(0, 10).Select(_ => Guid.NewGuid().ToString()).ToArray();
 
         // Reset lock first
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await connection.ExecuteAsync(
             "UPDATE messaging.lock SET \"Instance\"='', \"LastLockTime\"='0001-01-01 00:00:00'"

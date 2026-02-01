@@ -114,13 +114,13 @@ Different transports support different features. Use capability flags to skip in
 
 | # | Story | Size | Notes |
 |---|-------|------|-------|
-| 4.1 | Migrate AWS SQS tests to harness | S | Already has integration tests |
+| 4.1 | ✅ Migrate AWS SQS tests to harness | S | 14 transport tests + 2 SQS-specific |
 | 4.2 | Migrate Azure Service Bus tests to harness | S | |
 | 4.3 | Migrate Kafka tests to harness | S | |
 | 4.4 | Migrate NATS tests to harness | S | |
 | 4.5 | Migrate Pulsar tests to harness | S | |
 | 4.6 | Migrate Redis Streams tests to harness | S | |
-| 4.7 | Migrate PostgreSQL storage tests to harness | S | |
+| 4.7 | ✅ Migrate PostgreSQL storage tests to harness | S | 22 storage tests + 3 PostgreSQL-specific |
 | 4.8 | Migrate SQL Server storage tests to harness | S | |
 
 ## Acceptance Criteria
