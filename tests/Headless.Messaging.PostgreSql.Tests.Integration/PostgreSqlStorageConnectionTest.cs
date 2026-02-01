@@ -24,7 +24,7 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
-        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.Container.GetConnectionString());
+        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
@@ -49,7 +49,7 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
 
     protected override async ValueTask DisposeAsyncCore()
     {
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
         await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
 

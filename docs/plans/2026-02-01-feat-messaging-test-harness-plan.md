@@ -84,66 +84,66 @@ Different transports support different features. Use capability flags to skip in
 
 ## Stories
 
-### Phase 1: Core Harness Infrastructure
+### Phase 1: Core Harness Infrastructure ✅
 
 | # | Story | Size | Notes |
 |---|-------|------|-------|
-| 1.1 | Create `TransportCapabilities` flags class | S | Feature detection for transport-specific tests |
-| 1.2 | Create `TransportTestsBase` with 10-12 core test methods | M | Send, headers, error handling, batch, dispose |
-| 1.3 | Create `ConsumerClientTestsBase` with 8-10 test methods | M | Subscribe, listen, commit, reject, fetch topics |
-| 1.4 | Create `DataStorageTestsBase` with 12-15 test methods | M | CRUD, state transitions, locks, monitoring API |
-| 1.5 | Create shared test fixtures (`TestMessage`, `TestSubscriber`) | S | Reusable across all test classes |
+| 1.1 | ✅ Create `TransportCapabilities` flags class | S | Feature detection for transport-specific tests |
+| 1.2 | ✅ Create `TransportTestsBase` with 10-12 core test methods | M | 16 test methods implemented |
+| 1.3 | ✅ Create `ConsumerClientTestsBase` with 8-10 test methods | M | 12 test methods implemented |
+| 1.4 | ✅ Create `DataStorageTestsBase` with 12-15 test methods | M | 23 test methods implemented |
+| 1.5 | ✅ Create shared test fixtures (`TestMessage`, `TestSubscriber`) | S | Plus capability classes |
 
-### Phase 2: Integration Test Base
-
-| # | Story | Size | Notes |
-|---|-------|------|-------|
-| 2.1 | Create `MessagingIntegrationTestsBase` | M | Full pub-sub cycle with DI setup |
-| 2.2 | Add consumer discovery tests | S | Verify `IConsumerRegistry` integration |
-| 2.3 | Add concurrent consumer tests | M | Multiple consumers competing for messages |
-
-### Phase 3: Provider Migration (Example: RabbitMQ)
+### Phase 2: Integration Test Base ✅
 
 | # | Story | Size | Notes |
 |---|-------|------|-------|
-| 3.1 | Create `RabbitMqTransportTests` inheriting from harness | S | Override `GetTransport()`, expose base tests |
-| 3.2 | Create `RabbitMqConsumerClientTests` inheriting from harness | S | Same pattern |
-| 3.3 | Document pattern in harness README | S | Guide for other transport migrations |
+| 2.1 | ✅ Create `MessagingIntegrationTestsBase` | M | 11 test methods, full DI setup |
+| 2.2 | ✅ Add consumer discovery tests | S | Included in MessagingIntegrationTestsBase |
+| 2.3 | ✅ Add concurrent consumer tests | M | Included in MessagingIntegrationTestsBase |
+
+### Phase 3: Provider Migration (Example: RabbitMQ) ✅
+
+| # | Story | Size | Notes |
+|---|-------|------|-------|
+| 3.1 | ✅ Create `RabbitMqTransportTests` inheriting from harness | S | 14 tests, Testcontainers fixture |
+| 3.2 | Create `RabbitMqConsumerClientTests` inheriting from harness | S | Deferred - transport tests prove pattern |
+| 3.3 | ✅ Document pattern in harness README | S | Full guide with code examples |
 
 ### Phase 4: Remaining Provider Migrations
 
 | # | Story | Size | Notes |
 |---|-------|------|-------|
-| 4.1 | Migrate AWS SQS tests to harness | S | Already has integration tests |
+| 4.1 | ✅ Migrate AWS SQS tests to harness | S | 14 transport tests + 2 SQS-specific |
 | 4.2 | Migrate Azure Service Bus tests to harness | S | |
 | 4.3 | Migrate Kafka tests to harness | S | |
 | 4.4 | Migrate NATS tests to harness | S | |
 | 4.5 | Migrate Pulsar tests to harness | S | |
 | 4.6 | Migrate Redis Streams tests to harness | S | |
-| 4.7 | Migrate PostgreSQL storage tests to harness | S | |
-| 4.8 | Migrate SQL Server storage tests to harness | S | |
+| 4.7 | ✅ Migrate PostgreSQL storage tests to harness | S | 22 storage tests + 3 PostgreSQL-specific |
+| 4.8 | ✅ Migrate SQL Server storage tests to harness | S | 22 storage tests + 3 SqlServer-specific |
 
 ## Acceptance Criteria
 
 ### Functional Requirements
 
-- [ ] [M] `TransportTestsBase` contains at least 10 virtual test methods covering: send, send with headers, send batch, error propagation, dispose cleanup, cancellation support
-- [ ] [M] `ConsumerClientTestsBase` contains at least 8 virtual test methods covering: subscribe, listen callback, commit, reject, fetch topics, graceful shutdown
-- [ ] [M] `DataStorageTestsBase` contains at least 12 virtual test methods covering: store published, store received, change state, get messages, lock/unlock, initialize schema
-- [ ] [S] `TransportCapabilities` allows tests to skip based on: `SupportsOrdering`, `SupportsDeadLetter`, `SupportsPriority`, `SupportsDelayedDelivery`
-- [ ] [S] All base test methods use `AbortToken` from `TestBase`
-- [ ] [S] All base test methods properly dispose resources with `await using`
+- [x] [M] `TransportTestsBase` contains at least 10 virtual test methods covering: send, send with headers, send batch, error propagation, dispose cleanup, cancellation support
+- [x] [M] `ConsumerClientTestsBase` contains at least 8 virtual test methods covering: subscribe, listen callback, commit, reject, fetch topics, graceful shutdown
+- [x] [M] `DataStorageTestsBase` contains at least 12 virtual test methods covering: store published, store received, change state, get messages, lock/unlock, initialize schema
+- [x] [S] `TransportCapabilities` allows tests to skip based on: `SupportsOrdering`, `SupportsDeadLetter`, `SupportsPriority`, `SupportsDelayedDelivery`
+- [x] [S] All base test methods use `AbortToken` from `TestBase`
+- [x] [S] All base test methods properly dispose resources with `await using`
 
 ### Non-Functional Requirements
 
-- [ ] [S] Harness project compiles with `<IsTestProject>false</IsTestProject>` (not runnable directly)
-- [ ] [XS] Harness references only abstractions, not concrete implementations
-- [ ] [S] Provider tests can run in parallel (no shared mutable state in harness)
+- [x] [S] Harness project compiles with `<IsTestProject>false</IsTestProject>` (not runnable directly)
+- [x] [XS] Harness references only abstractions, not concrete implementations
+- [x] [S] Provider tests can run in parallel (no shared mutable state in harness)
 
 ### Quality Gates
 
-- [ ] [S] At least one provider (RabbitMQ) migrated as proof of pattern
-- [ ] [XS] Harness README documents how to add new provider tests
+- [x] [S] At least one provider (RabbitMQ) migrated as proof of pattern
+- [x] [XS] Harness README documents how to add new provider tests
 - [ ] [S] All migrated tests pass in CI
 
 ## Sizing Summary

@@ -26,7 +26,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
-        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.Container.GetConnectionString());
+        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
@@ -52,7 +52,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
 
     protected override async ValueTask DisposeAsyncCore()
     {
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
         await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
         await base.DisposeAsyncCore();
@@ -70,7 +70,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
 
         // then
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
             "SELECT \"StatusName\" FROM messaging.published WHERE \"Id\"=@Id",
@@ -92,7 +92,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await _storage.ChangePublishStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // then
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
             "SELECT \"StatusName\" FROM messaging.published WHERE \"Id\"=@Id",
@@ -114,7 +114,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await _storage.ChangePublishStateAsync(stored, StatusName.Failed, cancellationToken: AbortToken);
 
         // then
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
             "SELECT \"StatusName\" FROM messaging.published WHERE \"Id\"=@Id",
@@ -139,7 +139,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         var stored = await _storage.StoreReceivedMessageAsync("test.topic", "test.group", message, AbortToken);
 
         // then
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
             "SELECT \"StatusName\" FROM messaging.received WHERE \"Id\"=@Id",
@@ -165,7 +165,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await _storage.ChangeReceiveStateAsync(stored, StatusName.Succeeded, AbortToken);
 
         // then
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
             "SELECT \"StatusName\" FROM messaging.received WHERE \"Id\"=@Id",
@@ -191,7 +191,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await _storage.ChangeReceiveStateAsync(stored, StatusName.Failed, AbortToken);
 
         // then
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
             "SELECT \"StatusName\" FROM messaging.received WHERE \"Id\"=@Id",
@@ -214,7 +214,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await _storage.ChangePublishStateAsync(stored, StatusName.Scheduled, cancellationToken: AbortToken);
 
         // then
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var retries = await connection.QueryFirstAsync<int>(
             "SELECT \"Retries\" FROM messaging.published WHERE \"Id\"=@Id",
@@ -238,7 +238,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await _storage.ChangePublishStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // then
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var dbExpiresAt = await connection.QueryFirstAsync<DateTime?>(
             "SELECT \"ExpiresAt\" FROM messaging.published WHERE \"Id\"=@Id",
@@ -265,7 +265,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await _storage.ChangePublishStateToDelayedAsync([.. ids], AbortToken);
 
         // then
-        await using var connection = new NpgsqlConnection(fixture.Container.GetConnectionString());
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         var statuses = await connection.QueryAsync<string>(
             "SELECT \"StatusName\" FROM messaging.published WHERE \"Id\" = ANY(@Ids)",
