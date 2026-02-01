@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Orm.EntityFramework.Contexts;
-using Framework.Testing.Tests;
+using Headless.Orm.EntityFramework.Contexts;
+using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Entities;

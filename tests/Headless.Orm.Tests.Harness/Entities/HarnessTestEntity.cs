@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Framework.Domain;
-using Framework.Primitives;
+using Headless.Domain;
+using Headless.Primitives;
 
 namespace Tests.Entities;
 
