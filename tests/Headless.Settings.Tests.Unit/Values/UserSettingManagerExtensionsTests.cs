@@ -23,8 +23,8 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_user_provider_and_user_id()
     {
         // given
-        var userId = "user-123";
-        var settingName = "TestSetting";
+        const string userId = "user-123";
+        const string settingName = "TestSetting";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken)
@@ -44,8 +44,8 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_pass_fallback_for_is_true_user()
     {
         // given
-        var userId = "user-123";
-        var settingName = "TestSetting";
+        const string userId = "user-123";
+        const string settingName = "TestSetting";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.User, userId, false, AbortToken)
@@ -71,7 +71,7 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_user_provider_and_null_key_for_current()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
 
         _settingManager.FindAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken).Returns("true");
 
@@ -93,8 +93,8 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_user_provider_for_is_false()
     {
         // given
-        var userId = "user-456";
-        var settingName = "TestSetting";
+        const string userId = "user-456";
+        const string settingName = "TestSetting";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken)
@@ -115,7 +115,7 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_user_provider_and_null_key_for_is_false_current()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
 
         _settingManager.FindAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken).Returns("false");
 
@@ -134,8 +134,8 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_find_typed_from_user_provider()
     {
         // given
-        var userId = "user-123";
-        var settingName = "TestSetting";
+        const string userId = "user-123";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "user-test" };
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -161,7 +161,7 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_find_typed_from_current_user()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "current-user-test" };
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -186,9 +186,9 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_find_string_from_user_provider()
     {
         // given
-        var userId = "user-789";
-        var settingName = "TestSetting";
-        var expectedValue = "user-value";
+        const string userId = "user-789";
+        const string settingName = "TestSetting";
+        const string expectedValue = "user-value";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.User, userId, true, AbortToken)
@@ -209,8 +209,8 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_find_string_from_current_user()
     {
         // given
-        var settingName = "TestSetting";
-        var expectedValue = "current-user-value";
+        const string settingName = "TestSetting";
+        const string expectedValue = "current-user-value";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.User, null, true, AbortToken)
@@ -231,7 +231,7 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_get_all_from_user_provider()
     {
         // given
-        var userId = "user-123";
+        const string userId = "user-123";
         List<SettingValue> expectedValues = [new("Setting1", "value1"), new("Setting2", "value2")];
 
         _settingManager.GetAllAsync(SettingValueProviderNames.User, userId, true, AbortToken).Returns(expectedValues);
@@ -270,9 +270,9 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_set_value_for_user_provider()
     {
         // given
-        var userId = "user-123";
-        var settingName = "TestSetting";
-        var value = "new-user-value";
+        const string userId = "user-123";
+        const string settingName = "TestSetting";
+        const string value = "new-user-value";
 
         // when
         await _settingManager.SetForUserAsync(userId, settingName, value, cancellationToken: AbortToken);
@@ -287,9 +287,9 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_pass_force_to_set_for_user()
     {
         // given
-        var userId = "user-123";
-        var settingName = "TestSetting";
-        var value = "forced-value";
+        const string userId = "user-123";
+        const string settingName = "TestSetting";
+        const string value = "forced-value";
 
         // when
         await _settingManager.SetForUserAsync(
@@ -314,8 +314,8 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_set_value_for_current_user()
     {
         // given
-        var settingName = "TestSetting";
-        var value = "current-user-value";
+        const string settingName = "TestSetting";
+        const string value = "current-user-value";
 
         // when
         await _settingManager.SetForCurrentUserAsync(settingName, value, cancellationToken: AbortToken);
@@ -334,8 +334,8 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_set_typed_value_for_user()
     {
         // given
-        var userId = "user-123";
-        var settingName = "TestSetting";
+        const string userId = "user-123";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "typed-user-value" };
         var expectedJson = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -356,7 +356,7 @@ public sealed class UserSettingManagerExtensionsTests : TestBase
     public async Task should_set_typed_value_for_current_user()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "typed-current-user-value" };
         var expectedJson = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 

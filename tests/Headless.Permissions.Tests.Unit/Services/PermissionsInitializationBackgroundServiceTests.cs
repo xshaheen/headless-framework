@@ -21,7 +21,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
 
     public PermissionsInitializationBackgroundServiceTests()
     {
-        _serviceScopeFactory.CreateAsyncScope().Returns(new AsyncServiceScope(_serviceScope));
+        _serviceScopeFactory.CreateScope().Returns(_serviceScope);
         _serviceScope.ServiceProvider.Returns(_serviceProvider);
         _serviceProvider.GetService(typeof(IDynamicPermissionDefinitionStore)).Returns(_store);
     }
@@ -66,11 +66,13 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
         };
 
         var saveCalled = new TaskCompletionSource();
-        _store.SaveAsync(Arg.Any<CancellationToken>()).Returns(callInfo =>
-        {
-            saveCalled.TrySetResult();
-            return Task.CompletedTask;
-        });
+        _store
+            .SaveAsync(Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                saveCalled.TrySetResult();
+                return Task.CompletedTask;
+            });
 
         var sut = _CreateSut(options);
 
@@ -97,11 +99,13 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
         };
 
         var preCacheCalled = new TaskCompletionSource();
-        _store.GetGroupsAsync(Arg.Any<CancellationToken>()).Returns(callInfo =>
-        {
-            preCacheCalled.TrySetResult();
-            return Task.FromResult<IReadOnlyList<PermissionGroupDefinition>>([]);
-        });
+        _store
+            .GetGroupsAsync(Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                preCacheCalled.TrySetResult();
+                return Task.FromResult<IReadOnlyList<PermissionGroupDefinition>>([]);
+            });
 
         var sut = _CreateSut(options);
 

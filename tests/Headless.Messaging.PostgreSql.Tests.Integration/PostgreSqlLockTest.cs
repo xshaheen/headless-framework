@@ -67,7 +67,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_acquire_lock_when_not_held()
     {
         // given
-        var key = "publish_retry_v1";
+        const string key = "publish_retry_v1";
         var instance = Guid.NewGuid().ToString();
         var ttl = TimeSpan.FromMinutes(5);
 
@@ -82,7 +82,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_not_acquire_lock_when_held_by_another_instance()
     {
         // given
-        var key = "publish_retry_v1";
+        const string key = "publish_retry_v1";
         var instance1 = Guid.NewGuid().ToString();
         var instance2 = Guid.NewGuid().ToString();
         var ttl = TimeSpan.FromMinutes(5);
@@ -101,7 +101,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_acquire_lock_after_ttl_expires()
     {
         // given
-        var key = "publish_retry_v1";
+        const string key = "publish_retry_v1";
         var instance1 = Guid.NewGuid().ToString();
         var instance2 = Guid.NewGuid().ToString();
 
@@ -123,7 +123,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_release_lock()
     {
         // given
-        var key = "publish_retry_v1";
+        const string key = "publish_retry_v1";
         var instance = Guid.NewGuid().ToString();
         var ttl = TimeSpan.FromMinutes(5);
 
@@ -142,7 +142,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_not_release_lock_held_by_different_instance()
     {
         // given
-        var key = "publish_retry_v1";
+        const string key = "publish_retry_v1";
         var instance1 = Guid.NewGuid().ToString();
         var instance2 = Guid.NewGuid().ToString();
         var ttl = TimeSpan.FromMinutes(5);
@@ -162,7 +162,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_renew_lock()
     {
         // given
-        var key = "publish_retry_v1";
+        const string key = "publish_retry_v1";
         var instance = Guid.NewGuid().ToString();
         var ttl = TimeSpan.FromMinutes(5);
 
@@ -181,7 +181,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_not_renew_lock_held_by_different_instance()
     {
         // given
-        var key = "publish_retry_v1";
+        const string key = "publish_retry_v1";
         var instance1 = Guid.NewGuid().ToString();
         var instance2 = Guid.NewGuid().ToString();
 
@@ -205,7 +205,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_handle_concurrent_lock_acquisition()
     {
         // given
-        var key = "publish_retry_v1";
+        const string key = "publish_retry_v1";
         var ttl = TimeSpan.FromMinutes(5);
         var instances = Enumerable.Range(0, 10).Select(_ => Guid.NewGuid().ToString()).ToArray();
 

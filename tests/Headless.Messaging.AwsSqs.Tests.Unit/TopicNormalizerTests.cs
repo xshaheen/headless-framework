@@ -23,7 +23,7 @@ public sealed class TopicNormalizerTests
     public void should_replace_colons_with_underscores()
     {
         // given
-        var input = "my:topic:name";
+        const string input = "my:topic:name";
 
         // when
         var result = input.NormalizeForAws();
@@ -36,7 +36,7 @@ public sealed class TopicNormalizerTests
     public void should_replace_both_dots_and_colons()
     {
         // given
-        var input = "my.topic:name.test";
+        const string input = "my.topic:name.test";
 
         // when
         var result = input.NormalizeForAws();
@@ -62,7 +62,7 @@ public sealed class TopicNormalizerTests
     public void should_accept_valid_length_topic_name()
     {
         // given
-        var input = "short-string";
+        const string input = "short-string";
 
         // when
         var result = input.NormalizeForAws();
@@ -117,7 +117,7 @@ public sealed class TopicNormalizerTests
     public void should_throw_on_null_string()
     {
         // given
-        string input = null!;
+        const string input = null!;
 
         // when
         var testCode = () => input.NormalizeForAws();

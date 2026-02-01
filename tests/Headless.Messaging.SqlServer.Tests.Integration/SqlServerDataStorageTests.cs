@@ -78,7 +78,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     {
         // given
         var key = "test_lock_" + Guid.NewGuid().ToString("N");
-        var instance = "instance1";
+        const string instance = "instance1";
         var ttl = TimeSpan.FromMinutes(5);
 
         // Insert the lock key first
@@ -96,8 +96,8 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     {
         // given
         var key = "test_lock_" + Guid.NewGuid().ToString("N");
-        var instance1 = "instance1";
-        var instance2 = "instance2";
+        const string instance1 = "instance1";
+        const string instance2 = "instance2";
         var ttl = TimeSpan.FromMinutes(5);
 
         await _InsertLockKey(key);
@@ -117,8 +117,8 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     {
         // given
         var key = "test_lock_" + Guid.NewGuid().ToString("N");
-        var instance1 = "instance1";
-        var instance2 = "instance2";
+        const string instance1 = "instance1";
+        const string instance2 = "instance2";
         var ttl = TimeSpan.FromSeconds(1);
 
         await _InsertLockKey(key);
@@ -141,7 +141,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     {
         // given
         var key = "test_lock_" + Guid.NewGuid().ToString("N");
-        var instance = "instance1";
+        const string instance = "instance1";
         var ttl = TimeSpan.FromMinutes(5);
 
         await _InsertLockKey(key);
@@ -160,8 +160,8 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     {
         // given
         var key = "test_lock_" + Guid.NewGuid().ToString("N");
-        var instance1 = "instance1";
-        var instance2 = "instance2";
+        const string instance1 = "instance1";
+        const string instance2 = "instance2";
         var ttl = TimeSpan.FromMinutes(5);
 
         await _InsertLockKey(key);
@@ -180,7 +180,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     {
         // given
         var key = "test_lock_" + Guid.NewGuid().ToString("N");
-        var instance = "instance1";
+        const string instance = "instance1";
         var ttl = TimeSpan.FromSeconds(5);
 
         await _InsertLockKey(key);

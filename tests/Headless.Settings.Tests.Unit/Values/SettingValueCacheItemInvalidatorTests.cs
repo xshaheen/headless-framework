@@ -23,9 +23,9 @@ public sealed class SettingValueCacheItemInvalidatorTests : TestBase
     public async Task should_invalidate_cache_on_event()
     {
         // given
-        var name = "TestSetting";
-        var providerName = "TestProvider";
-        var providerKey = "tenant-123";
+        const string name = "TestSetting";
+        const string providerName = "TestProvider";
+        const string providerKey = "tenant-123";
         var record = new SettingValueRecord(Guid.NewGuid(), name, "value", providerName, providerKey);
         var eventData = new EntityChangedEventData<SettingValueRecord>(record);
         var expectedCacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
@@ -41,9 +41,9 @@ public sealed class SettingValueCacheItemInvalidatorTests : TestBase
     public async Task should_build_correct_cache_key()
     {
         // given
-        var name = "MySetting";
-        var providerName = "GlobalProvider";
-        string? providerKey = null;
+        const string name = "MySetting";
+        const string providerName = "GlobalProvider";
+        const string? providerKey = null;
         var record = new SettingValueRecord(Guid.NewGuid(), name, "value", providerName, providerKey);
         var eventData = new EntityChangedEventData<SettingValueRecord>(record);
         var expectedCacheKey = $"settings:provider:{providerName}:{providerKey},name:{name}";

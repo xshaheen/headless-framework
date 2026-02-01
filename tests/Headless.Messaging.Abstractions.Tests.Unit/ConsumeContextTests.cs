@@ -16,7 +16,7 @@ public sealed class ConsumeContextTests : TestBase
         var messageId = Faker.Random.Guid().ToString();
         var correlationId = Faker.Random.Guid().ToString();
         var timestamp = DateTimeOffset.UtcNow;
-        var topic = "test.topic";
+        const string topic = "test.topic";
         var headers = new MessageHeader(
             new Dictionary<string, string?>(StringComparer.Ordinal) { ["custom-header"] = "custom-value" }
         );
@@ -243,7 +243,7 @@ public sealed class ConsumeContextTests : TestBase
     public void should_expose_topic()
     {
         // given
-        var topic = "orders.placed.v2";
+        const string topic = "orders.placed.v2";
 
         // when
         var context = new ConsumeContext<TestMessage>

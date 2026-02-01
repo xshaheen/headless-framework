@@ -65,7 +65,7 @@ public sealed class EnsureTests
     public void not_disposed_should_not_throw_when_not_disposed()
     {
         // given
-        bool disposed = false;
+        const bool disposed = false;
         object obj = new();
 
         // when & then
@@ -76,7 +76,7 @@ public sealed class EnsureTests
     public void not_disposed_should_throw_when_disposed_with_null_value()
     {
         // given
-        bool disposed = true;
+        const bool disposed = true;
         object? obj = null;
 
         // when
@@ -90,7 +90,7 @@ public sealed class EnsureTests
     public void not_disposed_should_throw_when_disposed_with_object()
     {
         // given
-        bool disposed = true;
+        const bool disposed = true;
         object obj = "test string";
 
         // when
@@ -107,9 +107,9 @@ public sealed class EnsureTests
     public void not_disposed_should_throw_with_custom_message()
     {
         // given
-        bool disposed = true;
+        const bool disposed = true;
         object obj = new();
-        string customMessage = "Custom disposal message";
+        const string customMessage = "Custom disposal message";
 
         // when
         Action action = () => Ensure.NotDisposed(disposed, obj, customMessage);
@@ -122,7 +122,7 @@ public sealed class EnsureTests
     public void not_disposed_should_include_type_name_in_exception()
     {
         // given
-        bool disposed = true;
+        const bool disposed = true;
         var obj = new TestDisposableObject();
 
         // when

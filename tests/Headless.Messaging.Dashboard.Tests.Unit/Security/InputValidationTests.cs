@@ -155,7 +155,7 @@ public sealed class InputValidationTests : TestBase
         // The 'content' query parameter is used for searching message content
         // It should be sanitized to prevent SQL injection
 
-        var maliciousContent = "'; DROP TABLE messages; --";
+        const string maliciousContent = "'; DROP TABLE messages; --";
 
         // Document that the search parameter should be sanitized
         // Actual protection depends on the storage implementation
@@ -170,7 +170,7 @@ public sealed class InputValidationTests : TestBase
         // The 'name' query parameter is used for filtering
         // It should be sanitized to prevent injection attacks
 
-        var maliciousName = "<script>alert('xss')</script>";
+        const string maliciousName = "<script>alert('xss')</script>";
 
         // The search term should be escaped/sanitized before use
         maliciousName.Should().Contain("<script>");

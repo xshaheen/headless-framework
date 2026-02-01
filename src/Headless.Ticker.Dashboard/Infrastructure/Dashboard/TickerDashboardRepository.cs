@@ -501,7 +501,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
         CancellationToken cancellationToken = default
     )
     {
-        var maxTotalDays = 14;
+        const int maxTotalDays = 14;
         var today = DateTime.UtcNow.Date;
 
         var cronTickerOccurrencesPast = await _persistenceProvider.GetAllCronTickerOccurrences(

@@ -20,8 +20,8 @@ public sealed class CronScheduleCacheTests
         CronScheduleCache.TimeZoneInfo = TimeZoneInfo.Utc;
         var now = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
 
-        var expr1 = "*/5 * * * * *";
-        var expr2 = "*/5    *   *   *   *   *";
+        const string expr1 = "*/5 * * * * *";
+        const string expr2 = "*/5    *   *   *   *   *";
 
         var next1 = CronScheduleCache.GetNextOccurrenceOrDefault(expr1, now);
         var next2 = CronScheduleCache.GetNextOccurrenceOrDefault(expr2, now);

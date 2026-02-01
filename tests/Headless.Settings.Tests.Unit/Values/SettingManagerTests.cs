@@ -46,8 +46,8 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_find_value_from_providers()
     {
         // given
-        var settingName = "TestSetting";
-        var expectedValue = "test-value";
+        const string settingName = "TestSetting";
+        const string expectedValue = "test-value";
         var definition = new SettingDefinition(settingName);
         var provider = new FakeSettingValueProvider { Name = "Provider1" };
         provider.SetValue(settingName, expectedValue);
@@ -66,7 +66,7 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_throw_when_setting_not_defined()
     {
         // given
-        var settingName = "UndefinedSetting";
+        const string settingName = "UndefinedSetting";
         _definitionManager.FindAsync(settingName, AbortToken).Returns((SettingDefinition?)null);
 
         // when
@@ -80,7 +80,7 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_skip_to_specified_provider()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var provider1 = new FakeSettingValueProvider { Name = "Provider1" };
         var provider2 = new FakeSettingValueProvider { Name = "Provider2" };
         var provider3 = new FakeSettingValueProvider { Name = "Provider3" };
@@ -104,8 +104,8 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_use_provider_key_when_specified()
     {
         // given
-        var settingName = "TestSetting";
-        var providerKey = "tenant-123";
+        const string settingName = "TestSetting";
+        const string providerKey = "tenant-123";
         var provider = new FakeSettingValueProvider { Name = "Provider1" };
         provider.SetValue(settingName, "keyed-value", providerKey);
 
@@ -129,7 +129,7 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_fallback_through_providers()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var provider1 = new FakeSettingValueProvider { Name = "Provider1" };
         var provider2 = new FakeSettingValueProvider { Name = "Provider2" };
         var provider3 = new FakeSettingValueProvider { Name = "Provider3" };
@@ -152,7 +152,7 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_not_fallback_when_disabled()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var provider1 = new FakeSettingValueProvider { Name = "Provider1" };
         var provider2 = new FakeSettingValueProvider { Name = "Provider2" };
 
@@ -179,14 +179,14 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_decrypt_encrypted_settings()
     {
         // given
-        var settingName = "EncryptedSetting";
-        var encryptedValue = "encrypted-data";
-        var decryptedValue = "decrypted-data";
+        const string settingName = "EncryptedSetting";
+        const string encryptedValue = "encrypted-data";
+        const string decryptedValue = "decrypted-data";
 
         var definition = new SettingDefinition(settingName, isEncrypted: true);
-        var provider = Substitute.For<StoreSettingValueProvider>(Substitute.For<ISettingValueStore>());
-        provider.Name.Returns("Store");
-        provider.GetOrDefaultAsync(definition, null, AbortToken).Returns(encryptedValue);
+        var store = Substitute.For<ISettingValueStore>();
+        store.GetOrDefaultAsync(settingName, "Store", null, AbortToken).Returns(encryptedValue);
+        var provider = new FakeStoreSettingValueProvider(store);
 
         _definitionManager.FindAsync(settingName, AbortToken).Returns(definition);
         _valueProviderManager.Providers.Returns([provider]);
@@ -249,7 +249,7 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_get_all_for_provider()
     {
         // given
-        var providerName = "Provider1";
+        const string providerName = "Provider1";
         List<SettingDefinition> definitions = [new("Setting1", isInherited: true), new("Setting2", isInherited: true)];
 
         var provider = new FakeSettingValueProvider { Name = providerName };
@@ -286,9 +286,9 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_set_value_for_provider()
     {
         // given
-        var settingName = "TestSetting";
-        var providerName = "Provider1";
-        var newValue = "new-value";
+        const string settingName = "TestSetting";
+        const string providerName = "Provider1";
+        const string newValue = "new-value";
 
         var definition = new SettingDefinition(settingName);
         var provider = new FakeSettingValueProvider { Name = providerName };
@@ -308,10 +308,10 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_encrypt_before_storing()
     {
         // given
-        var settingName = "EncryptedSetting";
-        var providerName = "Provider1";
-        var plainValue = "plain-value";
-        var encryptedValue = "encrypted-value";
+        const string settingName = "EncryptedSetting";
+        const string providerName = "Provider1";
+        const string plainValue = "plain-value";
+        const string encryptedValue = "encrypted-value";
 
         var definition = new SettingDefinition(settingName, isEncrypted: true);
         var provider = new FakeSettingValueProvider { Name = providerName };
@@ -333,10 +333,10 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_clear_if_same_as_fallback()
     {
         // given
-        var settingName = "TestSetting";
-        var providerName = "Provider1";
-        var fallbackProviderName = "Provider2";
-        var fallbackValue = "fallback-value";
+        const string settingName = "TestSetting";
+        const string providerName = "Provider1";
+        const string fallbackProviderName = "Provider2";
+        const string fallbackValue = "fallback-value";
 
         var definition = new SettingDefinition(settingName, isInherited: true);
         var provider1 = new FakeSettingValueProvider { Name = providerName };
@@ -362,8 +362,8 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_throw_when_provider_readonly()
     {
         // given
-        var settingName = "TestSetting";
-        var providerName = "ReadOnlyProvider";
+        const string settingName = "TestSetting";
+        const string providerName = "ReadOnlyProvider";
 
         var definition = new SettingDefinition(settingName);
 
@@ -390,8 +390,8 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_delete_all_provider_values()
     {
         // given
-        var providerName = "Provider1";
-        var providerKey = "tenant-123";
+        const string providerName = "Provider1";
+        const string providerKey = "tenant-123";
         List<SettingValue> settingValues = [new("Setting1", "value1"), new("Setting2", "value2")];
 
         _valueStore.GetAllProviderValuesAsync(providerName, providerKey, AbortToken).Returns(settingValues);

@@ -355,7 +355,7 @@ public sealed class NullableOverloadTests
     {
         // given
         int? argument = null;
-        string customMessage = "Custom error";
+        const string customMessage = "Custom error";
 
         // when & then
         Argument.IsPositive(argument, customMessage).Should().BeNull();
@@ -366,7 +366,7 @@ public sealed class NullableOverloadTests
     {
         // given
         int? argument = -5;
-        string customMessage = "Value must be positive";
+        const string customMessage = "Value must be positive";
 
         // when
         Action action = () => Argument.IsPositive(argument, customMessage);
@@ -380,7 +380,7 @@ public sealed class NullableOverloadTests
     {
         // given
         int? argument = 5;
-        string customMessage = "Value must be negative";
+        const string customMessage = "Value must be negative";
 
         // when
         Action action = () => Argument.IsNegative(argument, customMessage);
@@ -394,7 +394,7 @@ public sealed class NullableOverloadTests
     {
         // given
         int? argument = -5;
-        string customMessage = "Value must be positive or zero";
+        const string customMessage = "Value must be positive or zero";
 
         // when
         Action action = () => Argument.IsPositiveOrZero(argument, customMessage);
@@ -408,7 +408,7 @@ public sealed class NullableOverloadTests
     {
         // given
         int? argument = 5;
-        string customMessage = "Value must be negative or zero";
+        const string customMessage = "Value must be negative or zero";
 
         // when
         Action action = () => Argument.IsNegativeOrZero(argument, customMessage);

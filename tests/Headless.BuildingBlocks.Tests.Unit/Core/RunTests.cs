@@ -166,7 +166,7 @@ public sealed class RunTests : TestBase
     {
         // given
         var attempts = 0;
-        var maxAttempts = 3;
+        const int maxAttempts = 3;
 
         async Task<int> callback(CancellationToken _)
         {

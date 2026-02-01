@@ -35,7 +35,7 @@ public sealed class UrlUtilityMethodTests
     [Fact]
     public void should_encode_and_decode_very_long_value()
     {
-        var len = 500000;
+        const int len = 500000;
 
         // every 10th char needs to be encoded
         var s = string.Concat(Enumerable.Repeat("xxxxxxxxx ", len / 10));

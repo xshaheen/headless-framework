@@ -79,9 +79,9 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
     {
         var cancellationToken = AbortToken;
         var messageId = Guid.NewGuid().ToString();
-        var group1 = "consumer-group-1";
-        var group2 = "consumer-group-2";
-        var name = "test.topic";
+        const string group1 = "consumer-group-1";
+        const string group2 = "consumer-group-2";
+        const string name = "test.topic";
 
         var message1 = new Message(
             new Dictionary<string, string?>(StringComparer.Ordinal)

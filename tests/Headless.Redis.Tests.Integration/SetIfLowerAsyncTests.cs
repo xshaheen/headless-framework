@@ -20,7 +20,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "min-value";
+        const string key = "min-value";
         await Db.StringSetAsync(key, "10");
 
         // when
@@ -37,7 +37,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "min-value";
+        const string key = "min-value";
         await Db.StringSetAsync(key, "10");
 
         // when
@@ -54,7 +54,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "min-value-nonexistent";
+        const string key = "min-value-nonexistent";
 
         // when
         var result = await Loader.SetIfLowerAsync(Db, key, 10L);
@@ -70,7 +70,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "min-value";
+        const string key = "min-value";
         await Db.StringSetAsync(key, "12");
 
         // when
@@ -87,7 +87,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "min-value-with-ttl";
+        const string key = "min-value-with-ttl";
         var ttl = TimeSpan.FromSeconds(60);
 
         // when
@@ -110,7 +110,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "min-value-double";
+        const string key = "min-value-double";
         await Db.StringSetAsync(key, "10.5");
 
         // when
@@ -127,7 +127,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "min-value-double";
+        const string key = "min-value-double";
         await Db.StringSetAsync(key, "10.5");
 
         // when
@@ -144,7 +144,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "min-value-double-nonexistent";
+        const string key = "min-value-double-nonexistent";
 
         // when
         var result = await Loader.SetIfLowerAsync(Db, key, 10.5);
@@ -160,7 +160,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "min-value-double";
+        const string key = "min-value-double";
         await Db.StringSetAsync(key, "12.5");
 
         // when

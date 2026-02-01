@@ -23,7 +23,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_return_true_when_value_is_true()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager.FindAsync(settingName, null, null, true, AbortToken).Returns("true");
 
         // when
@@ -37,7 +37,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_return_true_when_value_is_TRUE_case_insensitive()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager.FindAsync(settingName, null, null, true, AbortToken).Returns("TRUE");
 
         // when
@@ -51,7 +51,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_return_false_when_value_is_not_true()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager.FindAsync(settingName, null, null, true, AbortToken).Returns("false");
 
         // when
@@ -65,9 +65,9 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_pass_provider_name_and_key_to_IsTrue()
     {
         // given
-        var settingName = "TestSetting";
-        var providerName = "TestProvider";
-        var providerKey = "test-key";
+        const string settingName = "TestSetting";
+        const string providerName = "TestProvider";
+        const string providerKey = "test-key";
 
         _settingManager.FindAsync(settingName, providerName, providerKey, false, AbortToken).Returns("true");
 
@@ -93,7 +93,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_return_true_when_value_is_false()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager.FindAsync(settingName, null, null, true, AbortToken).Returns("false");
 
         // when
@@ -107,7 +107,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_return_true_when_value_is_FALSE_case_insensitive()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager.FindAsync(settingName, null, null, true, AbortToken).Returns("FALSE");
 
         // when
@@ -121,7 +121,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_return_false_when_value_is_not_false()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager.FindAsync(settingName, null, null, true, AbortToken).Returns("true");
 
         // when
@@ -139,7 +139,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_deserialize_typed_value()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Name = "Test", Count = 42 };
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -158,7 +158,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_return_default_when_value_is_null()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager.FindAsync(settingName, null, null, true, AbortToken).Returns((string?)null);
 
         // when
@@ -172,7 +172,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_return_default_when_value_is_empty()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager.FindAsync(settingName, null, null, true, AbortToken).Returns(string.Empty);
 
         // when
@@ -186,7 +186,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_deserialize_int_value()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager.FindAsync(settingName, null, null, true, AbortToken).Returns("42");
 
         // when
@@ -200,7 +200,7 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_deserialize_bool_value()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager.FindAsync(settingName, null, null, true, AbortToken).Returns("true");
 
         // when
@@ -218,8 +218,8 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_serialize_and_set_typed_value()
     {
         // given
-        var settingName = "TestSetting";
-        var providerName = "TestProvider";
+        const string settingName = "TestSetting";
+        const string providerName = "TestProvider";
         var testObj = new TestSettings { Name = "Test", Count = 42 };
         var expectedJson = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -240,8 +240,8 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_serialize_null_value()
     {
         // given
-        var settingName = "TestSetting";
-        var providerName = "TestProvider";
+        const string settingName = "TestSetting";
+        const string providerName = "TestProvider";
 
         // when
         await _settingManager.SetAsync<TestSettings>(
@@ -260,9 +260,9 @@ public sealed class SettingManagerExtensionsTests : TestBase
     public async Task should_pass_force_to_set_flag()
     {
         // given
-        var settingName = "TestSetting";
-        var providerName = "TestProvider";
-        var providerKey = "key-123";
+        const string settingName = "TestSetting";
+        const string providerName = "TestProvider";
+        const string providerKey = "key-123";
 
         // when
         await _settingManager.SetAsync(

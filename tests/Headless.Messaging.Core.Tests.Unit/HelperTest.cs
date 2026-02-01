@@ -195,7 +195,7 @@ public sealed class HelperTest
     public void should_escape_regex_special_characters()
     {
         // given
-        var wildcardWithSpecialChars = "user.order[123].items";
+        const string wildcardWithSpecialChars = "user.order[123].items";
 
         // when
         var pattern = Helper.WildcardToRegex(wildcardWithSpecialChars);

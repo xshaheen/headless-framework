@@ -20,7 +20,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "max-value";
+        const string key = "max-value";
         await Db.StringSetAsync(key, "10");
 
         // when
@@ -37,7 +37,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "max-value";
+        const string key = "max-value";
         await Db.StringSetAsync(key, "10");
 
         // when
@@ -54,7 +54,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "nonexistent-key";
+        const string key = "nonexistent-key";
 
         // when
         var result = await Loader.SetIfHigherAsync(Db, key, 10L);
@@ -70,7 +70,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "max-value";
+        const string key = "max-value";
         await Db.StringSetAsync(key, "7");
 
         // when
@@ -87,7 +87,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "max-value-with-ttl";
+        const string key = "max-value-with-ttl";
         var ttl = TimeSpan.FromSeconds(60);
 
         // when
@@ -109,7 +109,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "max-value-double";
+        const string key = "max-value-double";
         await Db.StringSetAsync(key, "10.5");
 
         // when
@@ -126,7 +126,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "max-value-double";
+        const string key = "max-value-double";
         await Db.StringSetAsync(key, "10.5");
 
         // when
@@ -143,7 +143,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "nonexistent-key-double";
+        const string key = "nonexistent-key-double";
 
         // when
         var result = await Loader.SetIfHigherAsync(Db, key, 10.5);
@@ -159,7 +159,7 @@ public sealed class SetIfHigherAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "max-value-double";
+        const string key = "max-value-double";
         await Db.StringSetAsync(key, "7.5");
 
         // when

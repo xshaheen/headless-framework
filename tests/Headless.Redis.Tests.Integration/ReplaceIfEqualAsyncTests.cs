@@ -18,7 +18,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "test-key";
+        const string key = "test-key";
         await Db.StringSetAsync(key, "old-value");
 
         // when
@@ -35,7 +35,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "non-existent-key";
+        const string key = "non-existent-key";
 
         // when
         var result = await Loader.ReplaceIfEqualAsync(Db, key, expectedValue: null, newValue: "new-value");
@@ -51,7 +51,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "test-key";
+        const string key = "test-key";
         await Db.StringSetAsync(key, "old-value");
 
         // when
@@ -68,7 +68,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "test-key-with-ttl";
+        const string key = "test-key-with-ttl";
         await Db.StringSetAsync(key, "old-value");
         var ttl = TimeSpan.FromMinutes(5);
 
@@ -93,7 +93,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "test-key-no-ttl";
+        const string key = "test-key-no-ttl";
         await Db.StringSetAsync(key, "old-value");
 
         // when

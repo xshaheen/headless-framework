@@ -65,7 +65,7 @@ public sealed class TusAzureFileTests : TestBase
     {
         // given
         var fileId = Faker.Random.Guid().ToString();
-        var blobName = "uploads/2024/01/document.pdf";
+        const string blobName = "uploads/2024/01/document.pdf";
         var properties = BlobsModelFactory.BlobProperties(
             contentLength: 100,
             eTag: new ETag("test"),
@@ -83,7 +83,7 @@ public sealed class TusAzureFileTests : TestBase
     public void should_expose_current_content_length_from_properties()
     {
         // given
-        var contentLength = 1024L * 1024L * 5; // 5MB
+        const long contentLength = 1024L * 1024L * 5; // 5MB
         var properties = BlobsModelFactory.BlobProperties(
             contentLength: contentLength,
             eTag: new ETag("test"),

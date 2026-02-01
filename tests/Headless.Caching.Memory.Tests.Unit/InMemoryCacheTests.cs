@@ -691,7 +691,7 @@ public sealed class InMemoryCacheTests : TestBase
         // given
         using var cache = _CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
-        var value = "test-value";
+        const string value = "test-value";
 
         // when
         var result = await cache.SetAddAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
@@ -1402,7 +1402,7 @@ public sealed class InMemoryCacheTests : TestBase
     public async Task should_prefix_keys_when_key_prefix_is_set()
     {
         // given
-        var prefix = "myapp:";
+        const string prefix = "myapp:";
         var options = new InMemoryCacheOptions { KeyPrefix = prefix };
         using var cache = _CreateCache(options);
         var key = Faker.Random.AlphaNumeric(10);
@@ -1419,7 +1419,7 @@ public sealed class InMemoryCacheTests : TestBase
     public async Task should_use_prefix_for_all_operations()
     {
         // given
-        var prefix = "myapp:";
+        const string prefix = "myapp:";
         var options = new InMemoryCacheOptions { KeyPrefix = prefix };
         using var cache = _CreateCache(options);
         var key = Faker.Random.AlphaNumeric(10);

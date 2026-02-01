@@ -27,7 +27,7 @@ public sealed class PostgreSqlStorageTest(PostgreSqlTestFixture fixture) : IAsyn
         using var connection = new NpgsqlConnection(fixture.ConnectionString);
         connection.Open();
 
-        var databaseName = "messages_test";
+        const string databaseName = "messages_test";
         var sql = $@"SELECT datname FROM pg_database WHERE datname = '{databaseName}'";
         var result = connection.QueryFirstOrDefault<string>(sql);
         result.Should().NotBeNull();

@@ -13,9 +13,9 @@ public sealed class ConsumerMetadataTests : TestBase
         // given
         var messageType = typeof(MetadataTestMessage);
         var consumerType = typeof(MetadataTestConsumer);
-        var topic = "test.topic";
-        var group = "test-group";
-        byte concurrency = 5;
+        const string topic = "test.topic";
+        const string group = "test-group";
+        const byte concurrency = 5;
 
         // when
         var metadata = new ConsumerMetadata(messageType, consumerType, topic, group, concurrency);

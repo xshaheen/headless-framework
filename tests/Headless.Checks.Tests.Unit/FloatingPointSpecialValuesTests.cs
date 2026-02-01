@@ -12,7 +12,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_positive_with_positive_infinity_throws()
     {
         // given
-        double argument = double.PositiveInfinity;
+        const double argument = double.PositiveInfinity;
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -25,7 +25,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_positive_with_negative_infinity_throws()
     {
         // given
-        double argument = double.NegativeInfinity;
+        const double argument = double.NegativeInfinity;
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -38,7 +38,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_positive_with_nan_throws()
     {
         // given
-        double argument = double.NaN;
+        const double argument = double.NaN;
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -51,7 +51,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_positive_with_epsilon_returns_value()
     {
         // given
-        double value = double.Epsilon;
+        const double value = double.Epsilon;
 
         // when & then
         Argument.IsPositive(value).Should().Be(value);
@@ -61,7 +61,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_positive_float_with_positive_infinity_throws()
     {
         // given
-        float argument = float.PositiveInfinity;
+        const float argument = float.PositiveInfinity;
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -74,7 +74,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_positive_float_with_negative_infinity_throws()
     {
         // given
-        float argument = float.NegativeInfinity;
+        const float argument = float.NegativeInfinity;
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -87,7 +87,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_positive_float_with_nan_throws()
     {
         // given
-        float argument = float.NaN;
+        const float argument = float.NaN;
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -102,7 +102,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_negative_with_positive_infinity_throws()
     {
         // given
-        double argument = double.PositiveInfinity;
+        const double argument = double.PositiveInfinity;
 
         // when
         Action action = () => Argument.IsNegative(argument);
@@ -115,7 +115,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_negative_with_negative_infinity_throws()
     {
         // given
-        double argument = double.NegativeInfinity;
+        const double argument = double.NegativeInfinity;
 
         // when
         Action action = () => Argument.IsNegative(argument);
@@ -128,7 +128,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_negative_with_nan_throws()
     {
         // given
-        double argument = double.NaN;
+        const double argument = double.NaN;
 
         // when
         Action action = () => Argument.IsNegative(argument);
@@ -143,7 +143,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_not_nan_with_nan_throws()
     {
         // given
-        double argument = double.NaN;
+        const double argument = double.NaN;
 
         // when
         Action action = () => Argument.IsNotNaN(argument);
@@ -156,7 +156,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_not_nan_with_normal_value_returns_value()
     {
         // given
-        double value = 42.5;
+        const double value = 42.5;
 
         // when & then
         Argument.IsNotNaN(value).Should().Be(value);
@@ -166,8 +166,8 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_not_nan_with_infinity_returns_value()
     {
         // given
-        double positiveInfinity = double.PositiveInfinity;
-        double negativeInfinity = double.NegativeInfinity;
+        const double positiveInfinity = double.PositiveInfinity;
+        const double negativeInfinity = double.NegativeInfinity;
 
         // when & then
         Argument.IsNotNaN(positiveInfinity).Should().Be(positiveInfinity);
@@ -178,7 +178,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_not_nan_float_with_nan_throws()
     {
         // given
-        float argument = float.NaN;
+        const float argument = float.NaN;
 
         // when
         Action action = () => Argument.IsNotNaN(argument);
@@ -193,7 +193,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_positive_with_double_max_value_returns_value()
     {
         // given
-        double value = double.MaxValue;
+        const double value = double.MaxValue;
 
         // when & then
         Argument.IsPositive(value).Should().Be(value);
@@ -203,7 +203,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_negative_with_double_min_value_returns_value()
     {
         // given
-        double value = double.MinValue;
+        const double value = double.MinValue;
 
         // when & then
         Argument.IsNegative(value).Should().Be(value);
@@ -213,7 +213,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_positive_with_int_max_value_returns_value()
     {
         // given
-        int value = int.MaxValue;
+        const int value = int.MaxValue;
 
         // when & then
         Argument.IsPositive(value).Should().Be(value);
@@ -223,7 +223,7 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_negative_with_int_min_value_returns_value()
     {
         // given
-        int value = int.MinValue;
+        const int value = int.MinValue;
 
         // when & then
         Argument.IsNegative(value).Should().Be(value);
@@ -233,9 +233,9 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_positive_with_zero_throws()
     {
         // given
-        int argument = 0;
-        double doubleArg = 0.0;
-        float floatArg = 0.0f;
+        const int argument = 0;
+        const double doubleArg = 0.0;
+        const float floatArg = 0.0f;
 
         // when
         Action actionInt = () => Argument.IsPositive(argument);
@@ -252,9 +252,9 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_negative_with_zero_throws()
     {
         // given
-        int argument = 0;
-        double doubleArg = 0.0;
-        float floatArg = 0.0f;
+        const int argument = 0;
+        const double doubleArg = 0.0;
+        const float floatArg = 0.0f;
 
         // when
         Action actionInt = () => Argument.IsNegative(argument);
@@ -271,9 +271,9 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_positive_or_zero_with_zero_returns_value()
     {
         // given
-        int intValue = 0;
-        double doubleValue = 0.0;
-        float floatValue = 0.0f;
+        const int intValue = 0;
+        const double doubleValue = 0.0;
+        const float floatValue = 0.0f;
 
         // when & then
         Argument.IsPositiveOrZero(intValue).Should().Be(intValue);
@@ -285,9 +285,9 @@ public sealed class FloatingPointSpecialValuesTests
     public void is_negative_or_zero_with_zero_returns_value()
     {
         // given
-        int intValue = 0;
-        double doubleValue = 0.0;
-        float floatValue = 0.0f;
+        const int intValue = 0;
+        const double doubleValue = 0.0;
+        const float floatValue = 0.0f;
 
         // when & then
         Argument.IsNegativeOrZero(intValue).Should().Be(intValue);
