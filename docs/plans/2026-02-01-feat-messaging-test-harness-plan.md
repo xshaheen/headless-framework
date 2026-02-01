@@ -84,15 +84,15 @@ Different transports support different features. Use capability flags to skip in
 
 ## Stories
 
-### Phase 1: Core Harness Infrastructure
+### Phase 1: Core Harness Infrastructure ✅
 
 | # | Story | Size | Notes |
 |---|-------|------|-------|
-| 1.1 | Create `TransportCapabilities` flags class | S | Feature detection for transport-specific tests |
-| 1.2 | Create `TransportTestsBase` with 10-12 core test methods | M | Send, headers, error handling, batch, dispose |
-| 1.3 | Create `ConsumerClientTestsBase` with 8-10 test methods | M | Subscribe, listen, commit, reject, fetch topics |
-| 1.4 | Create `DataStorageTestsBase` with 12-15 test methods | M | CRUD, state transitions, locks, monitoring API |
-| 1.5 | Create shared test fixtures (`TestMessage`, `TestSubscriber`) | S | Reusable across all test classes |
+| 1.1 | ✅ Create `TransportCapabilities` flags class | S | Feature detection for transport-specific tests |
+| 1.2 | ✅ Create `TransportTestsBase` with 10-12 core test methods | M | 16 test methods implemented |
+| 1.3 | ✅ Create `ConsumerClientTestsBase` with 8-10 test methods | M | 12 test methods implemented |
+| 1.4 | ✅ Create `DataStorageTestsBase` with 12-15 test methods | M | 23 test methods implemented |
+| 1.5 | ✅ Create shared test fixtures (`TestMessage`, `TestSubscriber`) | S | Plus capability classes |
 
 ### Phase 2: Integration Test Base
 
@@ -127,18 +127,18 @@ Different transports support different features. Use capability flags to skip in
 
 ### Functional Requirements
 
-- [ ] [M] `TransportTestsBase` contains at least 10 virtual test methods covering: send, send with headers, send batch, error propagation, dispose cleanup, cancellation support
-- [ ] [M] `ConsumerClientTestsBase` contains at least 8 virtual test methods covering: subscribe, listen callback, commit, reject, fetch topics, graceful shutdown
-- [ ] [M] `DataStorageTestsBase` contains at least 12 virtual test methods covering: store published, store received, change state, get messages, lock/unlock, initialize schema
-- [ ] [S] `TransportCapabilities` allows tests to skip based on: `SupportsOrdering`, `SupportsDeadLetter`, `SupportsPriority`, `SupportsDelayedDelivery`
-- [ ] [S] All base test methods use `AbortToken` from `TestBase`
-- [ ] [S] All base test methods properly dispose resources with `await using`
+- [x] [M] `TransportTestsBase` contains at least 10 virtual test methods covering: send, send with headers, send batch, error propagation, dispose cleanup, cancellation support
+- [x] [M] `ConsumerClientTestsBase` contains at least 8 virtual test methods covering: subscribe, listen callback, commit, reject, fetch topics, graceful shutdown
+- [x] [M] `DataStorageTestsBase` contains at least 12 virtual test methods covering: store published, store received, change state, get messages, lock/unlock, initialize schema
+- [x] [S] `TransportCapabilities` allows tests to skip based on: `SupportsOrdering`, `SupportsDeadLetter`, `SupportsPriority`, `SupportsDelayedDelivery`
+- [x] [S] All base test methods use `AbortToken` from `TestBase`
+- [x] [S] All base test methods properly dispose resources with `await using`
 
 ### Non-Functional Requirements
 
-- [ ] [S] Harness project compiles with `<IsTestProject>false</IsTestProject>` (not runnable directly)
-- [ ] [XS] Harness references only abstractions, not concrete implementations
-- [ ] [S] Provider tests can run in parallel (no shared mutable state in harness)
+- [x] [S] Harness project compiles with `<IsTestProject>false</IsTestProject>` (not runnable directly)
+- [x] [XS] Harness references only abstractions, not concrete implementations
+- [x] [S] Provider tests can run in parallel (no shared mutable state in harness)
 
 ### Quality Gates
 
