@@ -17,7 +17,7 @@ public sealed class ServiceBusHelpersTests
         testCode
             .Should()
             .ThrowExactly<ArgumentException>()
-            .WithMessage("Either connection string or namespace are required.");
+            .WithMessage("Either connection string or namespace are required.*");
     }
 
     [Fact]

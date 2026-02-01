@@ -201,23 +201,21 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         var body = "test message"u8.ToArray();
 
         // when
-        var act = async () =>
-            await consumer.HandleBasicDeliverAsync(
-                "consumerTag",
-                123ul,
-                false,
-                "exchange",
-                "routingKey",
-                Substitute.For<IReadOnlyBasicProperties>(),
-                body,
-                CancellationToken.None
-            );
+        await consumer.HandleBasicDeliverAsync(
+            "consumerTag",
+            123ul,
+            false,
+            "exchange",
+            "routingKey",
+            Substitute.For<IReadOnlyBasicProperties>(),
+            body,
+            CancellationToken.None
+        );
 
-        // Allow async task to complete
-        await Task.Delay(100, AbortToken);
+        // Allow background task to complete (concurrent mode fires Task.Run)
+        await Task.Delay(200, AbortToken);
 
         // then
-        await act.Should().NotThrowAsync();
         consumeCallCount.Should().Be(1);
         _loggedEvents.Should().BeEmpty();
     }

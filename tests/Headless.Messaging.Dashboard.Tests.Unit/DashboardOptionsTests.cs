@@ -8,15 +8,13 @@ namespace Tests;
 public sealed class DashboardOptionsTests : TestBase
 {
     [Fact]
-    public void AllowAnonymousExplicit_should_default_to_true()
+    public void AllowAnonymousExplicit_should_default_to_false()
     {
         // given & when
         var options = new DashboardOptions();
 
-        // then
-        // NOTE: This is a security concern - defaults to true (anonymous access allowed)
-        // Test documents current behavior which should be reviewed
-        options.AllowAnonymousExplicit.Should().BeTrue();
+        // then - defaults to false for security (requires explicit opt-in for anonymous access)
+        options.AllowAnonymousExplicit.Should().BeFalse();
     }
 
     [Fact]
