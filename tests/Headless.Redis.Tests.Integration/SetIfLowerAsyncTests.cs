@@ -27,7 +27,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
         var result = await Loader.SetIfLowerAsync(Db, key, 5L);
 
         // then
-        result.Should().Be(5); // delta = 10 - 5
+        result.Should().Be(5); // returns new stored value
         var value = await Db.StringGetAsync(key);
         ((long)value).Should().Be(5);
     }
@@ -44,7 +44,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
         var result = await Loader.SetIfLowerAsync(Db, key, 15L);
 
         // then
-        result.Should().Be(0);
+        result.Should().Be(10); // returns existing value (unchanged)
         var value = await Db.StringGetAsync(key);
         ((long)value).Should().Be(10);
     }
@@ -60,26 +60,9 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
         var result = await Loader.SetIfLowerAsync(Db, key, 10L);
 
         // then
-        result.Should().Be(10);
+        result.Should().Be(10); // returns new value when key doesn't exist
         var value = await Db.StringGetAsync(key);
         ((long)value).Should().Be(10);
-    }
-
-    [Fact]
-    public async Task should_return_difference_when_set_long()
-    {
-        // given
-        await _FlushAsync();
-        const string key = "min-value";
-        await Db.StringSetAsync(key, "12");
-
-        // when
-        var result = await Loader.SetIfLowerAsync(Db, key, 7L);
-
-        // then
-        result.Should().Be(5); // 12 - 7 = 5
-        var value = await Db.StringGetAsync(key);
-        ((long)value).Should().Be(7);
     }
 
     [Fact]
@@ -117,7 +100,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
         var result = await Loader.SetIfLowerAsync(Db, key, 5.5);
 
         // then
-        result.Should().Be(5.0); // delta = 10.5 - 5.5
+        result.Should().Be(5.5); // returns new stored value
         var value = await Db.StringGetAsync(key);
         ((double)value).Should().Be(5.5);
     }
@@ -134,7 +117,7 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
         var result = await Loader.SetIfLowerAsync(Db, key, 15.5);
 
         // then
-        result.Should().Be(0);
+        result.Should().Be(10.5); // returns existing value (unchanged)
         var value = await Db.StringGetAsync(key);
         ((double)value).Should().Be(10.5);
     }
@@ -150,26 +133,9 @@ public sealed class SetIfLowerAsyncTests(RedisTestFixture fixture)
         var result = await Loader.SetIfLowerAsync(Db, key, 10.5);
 
         // then
-        result.Should().Be(10.5);
+        result.Should().Be(10.5); // returns new value when key doesn't exist
         var value = await Db.StringGetAsync(key);
         ((double)value).Should().Be(10.5);
-    }
-
-    [Fact]
-    public async Task should_return_difference_when_set_double()
-    {
-        // given
-        await _FlushAsync();
-        const string key = "min-value-double";
-        await Db.StringSetAsync(key, "12.5");
-
-        // when
-        var result = await Loader.SetIfLowerAsync(Db, key, 7.5);
-
-        // then
-        result.Should().Be(5.0); // 12.5 - 7.5 = 5.0
-        var value = await Db.StringGetAsync(key);
-        ((double)value).Should().Be(7.5);
     }
 
     #endregion

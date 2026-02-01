@@ -1,12 +1,15 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 using StackExchange.Redis;
 
 namespace Headless.Redis;
 
+// ReSharper disable InconsistentNaming
+#pragma warning disable IDE1006
 public sealed class HeadlessRedisScriptsLoader(
     IConnectionMultiplexer multiplexer,
     TimeProvider? timeProvider = null,
@@ -218,61 +221,67 @@ public sealed class HeadlessRedisScriptsLoader(
 
     #region Helpers
 
-    private static object _GetReplaceIfEqualParameters(RedisKey key, string? value, string? expected, TimeSpan? expires)
+    private static ReplaceIfEqualParams _GetReplaceIfEqualParameters(
+        RedisKey key,
+        string? value,
+        string? expected,
+        TimeSpan? expires
+    )
     {
-        if (expires.HasValue)
-        {
-            return new
-            {
-                key,
-                value,
-                expected,
-                expires = (int)expires.Value.TotalMilliseconds,
-            };
-        }
+        // Use empty string as sentinel for null expected (key should not exist)
+        var expectedValue = expected ?? string.Empty;
+        var expiresValue = expires.HasValue ? (int)expires.Value.TotalMilliseconds : RedisValue.EmptyString;
 
-        return new
-        {
-            key,
-            value,
-            expected,
-            expires = RedisValue.EmptyString,
-        };
+        return new ReplaceIfEqualParams(key, value, expectedValue, expiresValue);
     }
 
-    private static object _GetRemoveIfEqualParameters(RedisKey key, string? expected)
+    private static RemoveIfEqualParams _GetRemoveIfEqualParameters(RedisKey key, string? expected)
     {
-        return new { key, expected };
+        return new RemoveIfEqualParams(key, expected);
     }
 
-    private static object _GetIncrementParameters<T>(string resource, T value, TimeSpan ttl)
+    private static IncrementParams _GetIncrementParameters<T>(string resource, T value, TimeSpan ttl)
         where T : INumber<T>
     {
-        return new
-        {
-            key = (RedisKey)resource,
-            value,
-            expires = (int)ttl.TotalMilliseconds,
-        };
+        // Convert to string to preserve precision and let Redis handle the type
+        var valueStr = value.ToString(null, CultureInfo.InvariantCulture);
+        return new IncrementParams((RedisKey)resource, valueStr, (int)ttl.TotalMilliseconds);
     }
 
-    private static object _GetIfParameters<T>(string key, T value, TimeSpan? ttl)
+    private static SetIfParams _GetIfParameters<T>(string key, T value, TimeSpan? ttl)
         where T : INumber<T>
     {
-        return ttl.HasValue
-            ? new
-            {
-                key = (RedisKey)key,
-                value,
-                expires = (int)ttl.Value.TotalMilliseconds,
-            }
-            : new
-            {
-                key = (RedisKey)key,
-                value,
-                expires = RedisValue.EmptyString,
-            };
+        // Convert value to string to preserve precision for floating-point numbers
+        var valueStr = value.ToString(null, CultureInfo.InvariantCulture);
+        var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
+
+        return new SetIfParams((RedisKey)key, valueStr, expiresValue);
     }
+
+    #endregion
+
+    #region Parameter Types
+
+    /// <summary>Parameters for the ReplaceIfEqual Lua script.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct ReplaceIfEqualParams(
+        RedisKey key,
+        string? value,
+        string expected,
+        RedisValue expires
+    );
+
+    /// <summary>Parameters for the RemoveIfEqual Lua script.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct RemoveIfEqualParams(RedisKey key, string? expected);
+
+    /// <summary>Parameters for the IncrementWithExpire Lua script.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct IncrementParams(RedisKey key, RedisValue value, int expires);
+
+    /// <summary>Parameters for the SetIfHigher/SetIfLower Lua scripts.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct SetIfParams(RedisKey key, string value, RedisValue expires);
 
     #endregion
 }
