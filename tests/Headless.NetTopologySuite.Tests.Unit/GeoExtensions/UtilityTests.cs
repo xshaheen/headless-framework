@@ -9,7 +9,7 @@ public sealed class UtilityTests
 {
     private static GeometryFactory Factory => GeoConstants.GeometryFactory;
 
-    private static Polygon CreateSquare()
+    private static Polygon _CreateSquare()
     {
         var coords = new[]
         {
@@ -90,7 +90,7 @@ public sealed class UtilityTests
     [Fact]
     public void ContainEmpties_should_return_false_for_valid_polygon()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
 
         var result = polygon.ContainEmpties();
 
@@ -150,7 +150,7 @@ public sealed class UtilityTests
     [Fact]
     public void Flat_should_return_single_geometry_as_array()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
 
         var result = polygon.Flat();
 
@@ -165,7 +165,7 @@ public sealed class UtilityTests
     [Fact]
     public void GetPolygonsOrEmpty_should_return_polygon()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
 
         var result = polygon.GetPolygonsOrEmpty();
 
@@ -176,8 +176,8 @@ public sealed class UtilityTests
     [Fact]
     public void GetPolygonsOrEmpty_should_extract_from_collection()
     {
-        var polygon1 = CreateSquare();
-        var polygon2 = CreateSquare();
+        var polygon1 = _CreateSquare();
+        var polygon2 = _CreateSquare();
         var point = Factory.CreatePoint(new Coordinate(0, 0));
         var innerCollection = Factory.CreateGeometryCollection([polygon1, point]);
         var outerCollection = Factory.CreateGeometryCollection([innerCollection, polygon2]);
@@ -230,7 +230,7 @@ public sealed class UtilityTests
     {
         var point = Factory.CreatePoint(new Coordinate(0, 0));
         var lineString = Factory.CreateLineString([new Coordinate(0, 0), new Coordinate(1, 1)]);
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
         var innerCollection = Factory.CreateGeometryCollection([point, polygon]);
         var outerCollection = Factory.CreateGeometryCollection([innerCollection, lineString]);
 
@@ -244,7 +244,7 @@ public sealed class UtilityTests
     [Fact]
     public void GetSimpleGeometryOrEmpty_should_return_empty_for_polygon()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
 
         var result = polygon.GetSimpleGeometryOrEmpty();
 
@@ -258,7 +258,7 @@ public sealed class UtilityTests
     [Fact]
     public void IsPolygonLikeGeometry_should_return_true_for_polygon()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
 
         var result = polygon.IsPolygonLikeGeometry();
 
@@ -268,7 +268,7 @@ public sealed class UtilityTests
     [Fact]
     public void IsPolygonLikeGeometry_should_return_true_for_multipolygon()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
         var multiPolygon = Factory.CreateMultiPolygon([polygon]);
 
         var result = multiPolygon.IsPolygonLikeGeometry();
@@ -337,7 +337,7 @@ public sealed class UtilityTests
     [Fact]
     public void IsSimpleGeometry_should_return_false_for_polygon()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
 
         var result = polygon.IsSimpleGeometry();
 

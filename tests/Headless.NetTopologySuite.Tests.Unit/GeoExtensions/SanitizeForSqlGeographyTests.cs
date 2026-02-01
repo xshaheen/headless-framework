@@ -41,7 +41,7 @@ public sealed class SanitizeForSqlGeographyTests
     public void should_throw_for_wrong_srid()
     {
         // given
-        var polygon = CreatePolygonWithWrongSrid();
+        var polygon = _CreatePolygonWithWrongSrid();
 
         // when
         var act = () => polygon.SanitizeForSqlGeography();
@@ -164,7 +164,7 @@ public sealed class SanitizeForSqlGeographyTests
     public void should_orient_polygon_ccw()
     {
         // given - clockwise polygon (incorrect for SQL Server)
-        var cwPolygon = CreateClockwiseSquare();
+        var cwPolygon = _CreateClockwiseSquare();
         Orientation.IsCCW(cwPolygon.Shell.CoordinateSequence).Should().BeFalse();
 
         // when
@@ -179,7 +179,7 @@ public sealed class SanitizeForSqlGeographyTests
     public void should_fix_invalid_geometry()
     {
         // given - self-intersecting polygon (figure-8 shape)
-        var selfIntersecting = CreateSelfIntersecting();
+        var selfIntersecting = _CreateSelfIntersecting();
         selfIntersecting.IsValid.Should().BeFalse();
 
         // when
@@ -231,7 +231,7 @@ public sealed class SanitizeForSqlGeographyTests
     public void should_accept_valid_polygon()
     {
         // given
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
 
         // when
         var result = polygon.SanitizeForSqlGeography();
@@ -264,7 +264,7 @@ public sealed class SanitizeForSqlGeographyTests
 
     #region Helpers
 
-    private static Polygon CreateSquare(double size = 1.0, double originX = 0, double originY = 0)
+    private static Polygon _CreateSquare(double size = 1.0, double originX = 0, double originY = 0)
     {
         var coords = new[]
         {
@@ -277,7 +277,7 @@ public sealed class SanitizeForSqlGeographyTests
         return Factory.CreatePolygon(coords);
     }
 
-    private static Polygon CreateClockwiseSquare()
+    private static Polygon _CreateClockwiseSquare()
     {
         // CW orientation (shell should be CCW for SQL Server)
         var coords = new[]
@@ -291,7 +291,7 @@ public sealed class SanitizeForSqlGeographyTests
         return Factory.CreatePolygon(coords);
     }
 
-    private static Polygon CreateSelfIntersecting()
+    private static Polygon _CreateSelfIntersecting()
     {
         // Figure-8 shape (self-intersecting)
         var coords = new[]
@@ -305,7 +305,7 @@ public sealed class SanitizeForSqlGeographyTests
         return Factory.CreatePolygon(coords);
     }
 
-    private static Polygon CreatePolygonWithWrongSrid()
+    private static Polygon _CreatePolygonWithWrongSrid()
     {
         var factory = new GeometryFactory(new PrecisionModel(), 0);
         return factory.CreatePolygon([

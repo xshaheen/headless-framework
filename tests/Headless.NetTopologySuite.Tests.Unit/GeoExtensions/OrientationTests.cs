@@ -16,7 +16,7 @@ public sealed class OrientationTests
     public void EnsureIsOrientedCounterClockwise_polygon_should_reverse_cw_shell()
     {
         // given - CW polygon (incorrect for SQL Server)
-        var cwPolygon = CreateCwSquare();
+        var cwPolygon = _CreateCwSquare();
         Orientation.IsCCW(cwPolygon.Shell.CoordinateSequence).Should().BeFalse();
 
         // when
@@ -30,7 +30,7 @@ public sealed class OrientationTests
     public void EnsureIsOrientedCounterClockwise_polygon_should_keep_ccw_shell()
     {
         // given - already CCW polygon
-        var ccwPolygon = CreateCcwSquare();
+        var ccwPolygon = _CreateCcwSquare();
         Orientation.IsCCW(ccwPolygon.Shell.CoordinateSequence).Should().BeTrue();
 
         // when
@@ -44,7 +44,7 @@ public sealed class OrientationTests
     public void EnsureIsOrientedCounterClockwise_polygon_should_reverse_ccw_holes()
     {
         // given - CCW shell with CCW hole (hole should be CW)
-        var polygon = CreatePolygonWithHole(shellCcw: true, holeCw: false);
+        var polygon = _CreatePolygonWithHole(shellCcw: true, holeCw: false);
         Orientation.IsCCW(polygon.Holes[0].CoordinateSequence).Should().BeTrue();
 
         // when
@@ -58,7 +58,7 @@ public sealed class OrientationTests
     public void EnsureIsOrientedCounterClockwise_polygon_should_keep_cw_holes()
     {
         // given - CCW shell with CW hole (already correct)
-        var polygon = CreatePolygonWithHole(shellCcw: true, holeCw: true);
+        var polygon = _CreatePolygonWithHole(shellCcw: true, holeCw: true);
         Orientation.IsCCW(polygon.Holes[0].CoordinateSequence).Should().BeFalse();
 
         // when
@@ -76,8 +76,8 @@ public sealed class OrientationTests
     public void EnsureIsOrientedCounterClockwise_multipolygon_should_orient_all()
     {
         // given - multipolygon with mixed orientations
-        var cw1 = CreateCwSquare();
-        var cw2 = CreateCwSquareAt(5, 5);
+        var cw1 = _CreateCwSquare();
+        var cw2 = __CreateCwSquareAt(5, 5);
         var multi = Factory.CreateMultiPolygon([cw1, cw2]);
 
         // when
@@ -111,7 +111,7 @@ public sealed class OrientationTests
     public void EnsureIsOrientedCounterClockwise_geometry_should_handle_polygon()
     {
         // given
-        Geometry cwPolygon = CreateCwSquare();
+        Geometry cwPolygon = _CreateCwSquare();
 
         // when
         var result = cwPolygon.EnsureIsOrientedCounterClockwise();
@@ -125,7 +125,7 @@ public sealed class OrientationTests
     public void EnsureIsOrientedCounterClockwise_geometry_should_handle_multipolygon()
     {
         // given
-        Geometry multi = Factory.CreateMultiPolygon([CreateCwSquare()]);
+        Geometry multi = Factory.CreateMultiPolygon([_CreateCwSquare()]);
 
         // when
         var result = multi.EnsureIsOrientedCounterClockwise();
@@ -140,8 +140,8 @@ public sealed class OrientationTests
     public void EnsureIsOrientedCounterClockwise_geometry_should_handle_collection()
     {
         // given - geometry collection with polygon and multipolygon
-        var polygon = CreateCwSquare();
-        var multiPolygon = Factory.CreateMultiPolygon([CreateCwSquareAt(5, 5)]);
+        var polygon = _CreateCwSquare();
+        var multiPolygon = Factory.CreateMultiPolygon([__CreateCwSquareAt(5, 5)]);
         Geometry collection = Factory.CreateGeometryCollection([polygon, multiPolygon]);
 
         // when
@@ -178,7 +178,7 @@ public sealed class OrientationTests
     public void IsOrientedCounterClockwise_should_return_true_for_ccw_shell_cw_holes()
     {
         // given - correct orientation: CCW shell, CW hole
-        var polygon = CreatePolygonWithHole(shellCcw: true, holeCw: true);
+        var polygon = _CreatePolygonWithHole(shellCcw: true, holeCw: true);
 
         // when
         var result = polygon.IsOrientedCounterClockwise();
@@ -191,7 +191,7 @@ public sealed class OrientationTests
     public void IsOrientedCounterClockwise_should_return_false_for_cw_shell()
     {
         // given - incorrect: CW shell
-        var polygon = CreateCwSquare();
+        var polygon = _CreateCwSquare();
 
         // when
         var result = polygon.IsOrientedCounterClockwise();
@@ -204,7 +204,7 @@ public sealed class OrientationTests
     public void IsOrientedCounterClockwise_should_return_false_for_ccw_hole()
     {
         // given - incorrect: CCW hole (should be CW)
-        var polygon = CreatePolygonWithHole(shellCcw: true, holeCw: false);
+        var polygon = _CreatePolygonWithHole(shellCcw: true, holeCw: false);
 
         // when
         var result = polygon.IsOrientedCounterClockwise();
@@ -218,7 +218,7 @@ public sealed class OrientationTests
     #region Helpers
 
     // CCW square (correct for SQL Server shell)
-    private static Polygon CreateCcwSquare()
+    private static Polygon _CreateCcwSquare()
     {
         var coords = new[]
         {
@@ -232,7 +232,7 @@ public sealed class OrientationTests
     }
 
     // CW square (needs reversal for shell)
-    private static Polygon CreateCwSquare()
+    private static Polygon _CreateCwSquare()
     {
         var coords = new[]
         {
@@ -246,7 +246,7 @@ public sealed class OrientationTests
     }
 
     // CW square at specific origin
-    private static Polygon CreateCwSquareAt(double x, double y)
+    private static Polygon __CreateCwSquareAt(double x, double y)
     {
         var coords = new[]
         {
@@ -260,7 +260,7 @@ public sealed class OrientationTests
     }
 
     // Create polygon with hole
-    private static Polygon CreatePolygonWithHole(bool shellCcw, bool holeCw)
+    private static Polygon _CreatePolygonWithHole(bool shellCcw, bool holeCw)
     {
         // Shell coords
         Coordinate[] shell = shellCcw

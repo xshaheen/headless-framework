@@ -9,7 +9,7 @@ public sealed class ConversionTests
 {
     private static GeometryFactory Factory => GeoConstants.GeometryFactory;
 
-    private static Polygon CreateSquare()
+    private static Polygon _CreateSquare()
     {
         var coords = new[]
         {
@@ -25,8 +25,8 @@ public sealed class ConversionTests
     [Fact]
     public void ToFeatureCollection_should_create_collection_with_features()
     {
-        var polygon1 = CreateSquare();
-        var polygon2 = CreateSquare();
+        var polygon1 = _CreateSquare();
+        var polygon2 = _CreateSquare();
         var geometries = new List<Geometry> { polygon1, polygon2 };
 
         var collection = geometries.ToFeatureCollection();
@@ -39,7 +39,7 @@ public sealed class ConversionTests
     [Fact]
     public void ToFeatureCollection_should_create_empty_attributes()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
         var geometries = new List<Geometry> { polygon };
 
         var collection = geometries.ToFeatureCollection();
@@ -61,7 +61,7 @@ public sealed class ConversionTests
     [Fact]
     public void AsMultiPolygon_should_wrap_polygon()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
 
         var multi = polygon.AsMultiPolygon();
 
@@ -73,7 +73,7 @@ public sealed class ConversionTests
     [Fact]
     public void AsMultiPolygon_should_return_multipolygon_unchanged()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
         var multi = Factory.CreateMultiPolygon([polygon]);
 
         var result = multi.AsMultiPolygon();
@@ -84,7 +84,7 @@ public sealed class ConversionTests
     [Fact]
     public void AsMultiPolygon_extension_should_use_geometry_factory()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
 
         var multi = polygon.AsMultiPolygon();
 
@@ -94,7 +94,7 @@ public sealed class ConversionTests
     [Fact]
     public void EnsurePolygonOrMulti_should_return_polygon()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
 
         var result = polygon.EnsurePolygonOrMulti();
 
@@ -104,7 +104,7 @@ public sealed class ConversionTests
     [Fact]
     public void EnsurePolygonOrMulti_should_return_multipolygon()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
         var multi = Factory.CreateMultiPolygon([polygon]);
 
         var result = multi.EnsurePolygonOrMulti();
@@ -115,7 +115,7 @@ public sealed class ConversionTests
     [Fact]
     public void EnsurePolygonOrMulti_should_extract_single_polygon_from_collection()
     {
-        var polygon = CreateSquare();
+        var polygon = _CreateSquare();
         var collection = Factory.CreateGeometryCollection([polygon]);
 
         var result = collection.EnsurePolygonOrMulti();
@@ -126,8 +126,8 @@ public sealed class ConversionTests
     [Fact]
     public void EnsurePolygonOrMulti_should_create_multipolygon_from_collection()
     {
-        var polygon1 = CreateSquare();
-        var polygon2 = CreateSquare();
+        var polygon1 = _CreateSquare();
+        var polygon2 = _CreateSquare();
         var collection = Factory.CreateGeometryCollection([polygon1, polygon2]);
 
         var result = collection.EnsurePolygonOrMulti();

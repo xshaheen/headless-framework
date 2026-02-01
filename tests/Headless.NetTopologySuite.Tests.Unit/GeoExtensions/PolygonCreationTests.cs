@@ -11,13 +11,13 @@ public sealed class PolygonCreationTests
     private static GeometryFactory Factory => GeoConstants.GeometryFactory;
 
     // CCW coordinates (counterclockwise - going: right, up, left, down)
-    private static Coordinate[] CcwCoords =>
+    private static Coordinate[] _CcwCoords =>
     [
         new(0, 0), new(1, 0), new(1, 1), new(0, 1), new(0, 0),
     ];
 
     // CW coordinates (clockwise - going: up, right, down, left - opposite of CCW)
-    private static Coordinate[] CwCoords =>
+    private static Coordinate[] _CwCoords =>
     [
         new(0, 0), new(0, 1), new(1, 1), new(1, 0), new(0, 0),
     ];
@@ -25,7 +25,7 @@ public sealed class PolygonCreationTests
     [Fact]
     public void CreatePolygon_from_points_should_create_valid_polygon()
     {
-        var points = CcwCoords.Select(c => Factory.CreatePoint(c)).ToArray();
+        var points = _CcwCoords.Select(c => Factory.CreatePoint(c)).ToArray();
 
         var polygon = Factory.CreatePolygon(points);
 
@@ -36,7 +36,7 @@ public sealed class PolygonCreationTests
     [Fact]
     public void CreatePolygon_from_points_should_ensure_ccw()
     {
-        var points = CwCoords.Select(c => Factory.CreatePoint(c)).ToArray();
+        var points = _CwCoords.Select(c => Factory.CreatePoint(c)).ToArray();
 
         var polygon = Factory.CreatePolygon(points);
 
@@ -46,7 +46,7 @@ public sealed class PolygonCreationTests
     [Fact]
     public void CreatePolygon_from_coordinates_should_create_valid_polygon()
     {
-        var polygon = Factory.CreatePolygon((IEnumerable<Coordinate>)CcwCoords);
+        var polygon = Factory.CreatePolygon((IEnumerable<Coordinate>)_CcwCoords);
 
         polygon.IsValid.Should().BeTrue();
         polygon.Shell.NumPoints.Should().Be(5);
@@ -55,7 +55,7 @@ public sealed class PolygonCreationTests
     [Fact]
     public void CreatePolygon_from_coordinates_should_ensure_ccw()
     {
-        var polygon = Factory.CreatePolygon((IEnumerable<Coordinate>)CwCoords);
+        var polygon = Factory.CreatePolygon((IEnumerable<Coordinate>)_CwCoords);
 
         Orientation.IsCCW(polygon.Shell.CoordinateSequence).Should().BeTrue();
     }
@@ -65,7 +65,7 @@ public sealed class PolygonCreationTests
     {
         Coordinate[][] coordArrays =
         [
-            CcwCoords,
+            _CcwCoords,
             [new(2, 2), new(3, 2), new(3, 3), new(2, 3), new(2, 2)],
         ];
 
@@ -80,7 +80,7 @@ public sealed class PolygonCreationTests
     {
         Coordinate[][] coordArrays =
         [
-            CwCoords, // clockwise - should be reversed
+            _CwCoords, // clockwise - should be reversed
             [new(2, 2), new(2, 3), new(3, 3), new(3, 2), new(2, 2)], // clockwise
         ];
 

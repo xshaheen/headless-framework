@@ -9,7 +9,7 @@ public sealed class PermissiveOperationsTests
 {
     private static GeometryFactory Factory => GeoConstants.GeometryFactory;
 
-    private static Polygon CreateSquare(double size = 1.0, double originX = 0, double originY = 0)
+    private static Polygon _CreateSquare(double size = 1.0, double originX = 0, double originY = 0)
     {
         var coords = new[]
         {
@@ -28,8 +28,8 @@ public sealed class PermissiveOperationsTests
     public void PermissiveOverlaps_should_return_true_for_overlapping_polygons()
     {
         // given - two squares that partially overlap
-        var square1 = CreateSquare(originX: 0, originY: 0);
-        var square2 = CreateSquare(originX: 0.5, originY: 0.5);
+        var square1 = _CreateSquare(originX: 0, originY: 0);
+        var square2 = _CreateSquare(originX: 0.5, originY: 0.5);
 
         // when
         var result = square1.PermissiveOverlaps(square2);
@@ -42,8 +42,8 @@ public sealed class PermissiveOperationsTests
     public void PermissiveOverlaps_should_return_false_for_non_overlapping()
     {
         // given - two non-overlapping squares
-        var square1 = CreateSquare(originX: 0, originY: 0);
-        var square2 = CreateSquare(originX: 10, originY: 10);
+        var square1 = _CreateSquare(originX: 0, originY: 0);
+        var square2 = _CreateSquare(originX: 10, originY: 10);
 
         // when
         var result = square1.PermissiveOverlaps(square2);
@@ -56,8 +56,8 @@ public sealed class PermissiveOperationsTests
     public void PermissiveOverlaps_should_unwrap_single_geometry_collection()
     {
         // given - two squares wrapped in single-geometry collections
-        var square1 = CreateSquare(originX: 0, originY: 0);
-        var square2 = CreateSquare(originX: 0.5, originY: 0.5);
+        var square1 = _CreateSquare(originX: 0, originY: 0);
+        var square2 = _CreateSquare(originX: 0.5, originY: 0.5);
         var collection1 = Factory.CreateGeometryCollection([square1]);
         var collection2 = Factory.CreateGeometryCollection([square2]);
 
@@ -107,8 +107,8 @@ public sealed class PermissiveOperationsTests
     public void PermissiveIntersection_should_return_intersection()
     {
         // given - two overlapping squares
-        var square1 = CreateSquare(originX: 0, originY: 0);
-        var square2 = CreateSquare(originX: 0.5, originY: 0.5);
+        var square1 = _CreateSquare(originX: 0, originY: 0);
+        var square2 = _CreateSquare(originX: 0.5, originY: 0.5);
 
         // when
         var result = square1.PermissiveIntersection(square2);
@@ -123,8 +123,8 @@ public sealed class PermissiveOperationsTests
     public void PermissiveIntersection_should_unwrap_single_geometry_collection()
     {
         // given - two squares wrapped in single-geometry collections
-        var square1 = CreateSquare(originX: 0, originY: 0);
-        var square2 = CreateSquare(originX: 0.5, originY: 0.5);
+        var square1 = _CreateSquare(originX: 0, originY: 0);
+        var square2 = _CreateSquare(originX: 0.5, originY: 0.5);
         var collection1 = Factory.CreateGeometryCollection([square1]);
         var collection2 = Factory.CreateGeometryCollection([square2]);
 
@@ -174,8 +174,8 @@ public sealed class PermissiveOperationsTests
     public void PermissiveUnion_should_return_union()
     {
         // given - two overlapping squares
-        var square1 = CreateSquare(originX: 0, originY: 0);
-        var square2 = CreateSquare(originX: 0.5, originY: 0.5);
+        var square1 = _CreateSquare(originX: 0, originY: 0);
+        var square2 = _CreateSquare(originX: 0.5, originY: 0.5);
 
         // when
         var result = square1.PermissiveUnion(square2);
@@ -191,8 +191,8 @@ public sealed class PermissiveOperationsTests
     public void PermissiveUnion_should_unwrap_single_geometry_collection()
     {
         // given - two squares wrapped in single-geometry collections
-        var square1 = CreateSquare(originX: 0, originY: 0);
-        var square2 = CreateSquare(originX: 0.5, originY: 0.5);
+        var square1 = _CreateSquare(originX: 0, originY: 0);
+        var square2 = _CreateSquare(originX: 0.5, originY: 0.5);
         var collection1 = Factory.CreateGeometryCollection([square1]);
         var collection2 = Factory.CreateGeometryCollection([square2]);
 
@@ -242,8 +242,8 @@ public sealed class PermissiveOperationsTests
     public void PermissiveDifference_should_return_difference()
     {
         // given - two overlapping squares
-        var square1 = CreateSquare(originX: 0, originY: 0);
-        var square2 = CreateSquare(originX: 0.5, originY: 0.5);
+        var square1 = _CreateSquare(originX: 0, originY: 0);
+        var square2 = _CreateSquare(originX: 0.5, originY: 0.5);
 
         // when
         var result = square1.PermissiveDifference(square2);
@@ -259,8 +259,8 @@ public sealed class PermissiveOperationsTests
     public void PermissiveDifference_should_unwrap_single_geometry_collection()
     {
         // given - two squares wrapped in single-geometry collections
-        var square1 = CreateSquare(originX: 0, originY: 0);
-        var square2 = CreateSquare(originX: 0.5, originY: 0.5);
+        var square1 = _CreateSquare(originX: 0, originY: 0);
+        var square2 = _CreateSquare(originX: 0.5, originY: 0.5);
         var collection1 = Factory.CreateGeometryCollection([square1]);
         var collection2 = Factory.CreateGeometryCollection([square2]);
 
@@ -310,8 +310,8 @@ public sealed class PermissiveOperationsTests
     public void ComputeOverlap_should_return_intersection_when_overlapping()
     {
         // given - two overlapping squares
-        var square1 = CreateSquare(originX: 0, originY: 0);
-        var square2 = CreateSquare(originX: 0.5, originY: 0.5);
+        var square1 = _CreateSquare(originX: 0, originY: 0);
+        var square2 = _CreateSquare(originX: 0.5, originY: 0.5);
 
         // when
         var result = square1.ComputeOverlap(square2);
@@ -326,8 +326,8 @@ public sealed class PermissiveOperationsTests
     public void ComputeOverlap_should_return_null_when_not_overlapping()
     {
         // given - two non-overlapping squares
-        var square1 = CreateSquare(originX: 0, originY: 0);
-        var square2 = CreateSquare(originX: 10, originY: 10);
+        var square1 = _CreateSquare(originX: 0, originY: 0);
+        var square2 = _CreateSquare(originX: 10, originY: 10);
 
         // when
         var result = square1.ComputeOverlap(square2);
