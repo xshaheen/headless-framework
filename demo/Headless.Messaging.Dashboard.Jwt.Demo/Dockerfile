@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/aspnet:6.0
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY . ./
-ENTRYPOINT ["dotnet", "Sample.Dashboard.Jwt.dll"]
+ENTRYPOINT ["dotnet", "Headless.Messaging.Dashboard.Jwt.Demo.dll"]

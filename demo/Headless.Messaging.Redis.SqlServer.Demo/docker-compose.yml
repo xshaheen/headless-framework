@@ -69,9 +69,9 @@ services:
   redis-sample:
     build:
      context: ../..
-     dockerfile: samples/Samples.Redis.SqlServer/Dockerfile
+     dockerfile: demo/Headless.Messaging.Redis.SqlServer.Demo/Dockerfile
     environment:
-     - ASPNETCORE_URLS:http://*:8080
+     - ASPNETCORE_URLS=http://*:8080
      - ASPNETCORE_ENVIRONMENT=Development
     ports:
       - 8080:8080

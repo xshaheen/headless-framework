@@ -6,18 +6,20 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorPages();
 
+var recaptchaV3 = builder.Configuration.GetSection("ReCaptcha:V3");
 builder.Services.AddReCaptchaV3(x =>
 {
-    x.VerifyBaseUrl = "https://recaptcha.google.cn/";
-    x.SiteKey = "6LccrsMUAAAAANSAh_MCplqdS9AJVPihyzmbPqWa";
-    x.SiteSecret = "6LccrsMUAAAAAL91ysT6Nbhk4MnxpHjyJ_pdVLon";
+    x.VerifyBaseUrl = recaptchaV3["VerifyBaseUrl"] ?? "https://recaptcha.google.cn/";
+    x.SiteKey = recaptchaV3["SiteKey"] ?? "YOUR_RECAPTCHA_V3_SITE_KEY";
+    x.SiteSecret = recaptchaV3["SiteSecret"] ?? "YOUR_RECAPTCHA_V3_SITE_SECRET";
 });
 
+var recaptchaV2 = builder.Configuration.GetSection("ReCaptcha:V2");
 builder.Services.AddReCaptchaV2(x =>
 {
-    x.VerifyBaseUrl = "https://recaptcha.google.cn/";
-    x.SiteKey = "6LcArsMUAAAAAKCjwCTktI3GRHTj98LdMEI9f9eQ";
-    x.SiteSecret = "6LcArsMUAAAAAO_FBbZghC9aUa1F1rjvcdiOESKd";
+    x.VerifyBaseUrl = recaptchaV2["VerifyBaseUrl"] ?? "https://recaptcha.google.cn/";
+    x.SiteKey = recaptchaV2["SiteKey"] ?? "YOUR_RECAPTCHA_V2_SITE_KEY";
+    x.SiteSecret = recaptchaV2["SiteSecret"] ?? "YOUR_RECAPTCHA_V2_SITE_SECRET";
 });
 
 var app = builder.Build();
