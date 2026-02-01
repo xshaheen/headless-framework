@@ -94,13 +94,13 @@ Different transports support different features. Use capability flags to skip in
 | 1.4 | ✅ Create `DataStorageTestsBase` with 12-15 test methods | M | 23 test methods implemented |
 | 1.5 | ✅ Create shared test fixtures (`TestMessage`, `TestSubscriber`) | S | Plus capability classes |
 
-### Phase 2: Integration Test Base
+### Phase 2: Integration Test Base ✅
 
 | # | Story | Size | Notes |
 |---|-------|------|-------|
-| 2.1 | Create `MessagingIntegrationTestsBase` | M | Full pub-sub cycle with DI setup |
-| 2.2 | Add consumer discovery tests | S | Verify `IConsumerRegistry` integration |
-| 2.3 | Add concurrent consumer tests | M | Multiple consumers competing for messages |
+| 2.1 | ✅ Create `MessagingIntegrationTestsBase` | M | 11 test methods, full DI setup |
+| 2.2 | ✅ Add consumer discovery tests | S | Included in MessagingIntegrationTestsBase |
+| 2.3 | ✅ Add concurrent consumer tests | M | Included in MessagingIntegrationTestsBase |
 
 ### Phase 3: Provider Migration (Example: RabbitMQ)
 
