@@ -207,7 +207,7 @@ public sealed class UrlParsingTests
     [Fact]
     public void should_interpret_encoded_plus_as_plus()
     {
-        var urlStr = "http://google.com/search?q=param_with_%2B";
+        const string urlStr = "http://google.com/search?q=param_with_%2B";
         var url = new Url(urlStr);
         var paramValue = url.QueryParams.FirstOrDefault("q");
         paramValue.Should().Be("param_with_+");
@@ -216,7 +216,7 @@ public sealed class UrlParsingTests
     [Fact]
     public void should_not_alter_url_passed_to_constructor()
     {
-        var expected = "http://www.mysite.com/hi%20there/more?x=%CD%EE%E2%FB%E9%20%E3%EE%E4";
+        const string expected = "http://www.mysite.com/hi%20there/more?x=%CD%EE%E2%FB%E9%20%E3%EE%E4";
         var url = new Url(expected);
         url.ToString().Should().Be(expected);
     }

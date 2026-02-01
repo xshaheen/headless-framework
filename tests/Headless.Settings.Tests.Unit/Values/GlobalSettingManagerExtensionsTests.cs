@@ -23,7 +23,7 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_global_provider_for_is_true()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken)
             .Returns("true");
@@ -42,7 +42,7 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
     public async Task should_pass_fallback_for_is_true_global()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Global, null, false, AbortToken)
             .Returns("true");
@@ -69,7 +69,7 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_global_provider_for_is_false()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken)
             .Returns("false");
@@ -92,7 +92,7 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
     public async Task should_find_typed_from_global_provider()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "global-test" };
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -114,8 +114,8 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
     public async Task should_find_string_from_global_provider()
     {
         // given
-        var settingName = "TestSetting";
-        var expectedValue = "global-value";
+        const string settingName = "TestSetting";
+        const string expectedValue = "global-value";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Global, null, true, AbortToken)
@@ -135,7 +135,7 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
     public async Task should_pass_fallback_for_find_global()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Global, null, false, AbortToken)
@@ -191,8 +191,8 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
     public async Task should_set_string_value_for_global_provider()
     {
         // given
-        var settingName = "TestSetting";
-        var value = "new-global-value";
+        const string settingName = "TestSetting";
+        const string value = "new-global-value";
 
         // when
         await _settingManager.SetGlobalAsync(settingName, value, cancellationToken: AbortToken);
@@ -207,7 +207,7 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
     public async Task should_set_null_string_value_for_global_provider()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
 
         // when
         await _settingManager.SetGlobalAsync(settingName, (string?)null, cancellationToken: AbortToken);
@@ -226,7 +226,7 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
     public async Task should_set_typed_value_for_global_provider()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "typed-value" };
         var expectedJson = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -243,7 +243,7 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
     public async Task should_set_null_typed_value_for_global_provider()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
 
         // when
         await _settingManager.SetGlobalAsync<TestSettings>(settingName, null, cancellationToken: AbortToken);

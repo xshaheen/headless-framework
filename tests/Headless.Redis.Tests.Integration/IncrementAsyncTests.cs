@@ -20,7 +20,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "counter-long";
+        const string key = "counter-long";
         await Db.StringSetAsync(key, "10");
 
         // when
@@ -35,7 +35,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "new-counter-long";
+        const string key = "new-counter-long";
 
         // when
         var result = await Loader.IncrementAsync(Db, key, 10L, TimeSpan.FromMinutes(5));
@@ -51,7 +51,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "counter-with-ttl-long";
+        const string key = "counter-with-ttl-long";
         var ttl = TimeSpan.FromMinutes(5);
 
         // when
@@ -69,7 +69,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "counter-negative-long";
+        const string key = "counter-negative-long";
         await Db.StringSetAsync(key, "10");
 
         // when
@@ -88,7 +88,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "counter-double";
+        const string key = "counter-double";
         await Db.StringSetAsync(key, "10.5");
 
         // when
@@ -103,7 +103,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "new-counter-double";
+        const string key = "new-counter-double";
 
         // when
         var result = await Loader.IncrementAsync(Db, key, 5.5, TimeSpan.FromMinutes(5));
@@ -119,7 +119,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "counter-with-ttl-double";
+        const string key = "counter-with-ttl-double";
         var ttl = TimeSpan.FromMinutes(5);
 
         // when
@@ -137,7 +137,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "counter-negative-double";
+        const string key = "counter-negative-double";
         await Db.StringSetAsync(key, "10.0");
 
         // when

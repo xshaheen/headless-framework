@@ -122,7 +122,7 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
         // given
         await FlushAsync();
         var cache = CreateCache();
-        var prefix = "removeprefix:";
+        const string prefix = "removeprefix:";
         await cache.UpsertAsync($"{prefix}key1", "value1", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync($"{prefix}key2", "value2", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync("other:key3", "value3", TimeSpan.FromMinutes(5), AbortToken);

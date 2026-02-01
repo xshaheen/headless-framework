@@ -246,7 +246,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // given
         var logger = Substitute.For<ILogger<MemoryQueue>>();
         var queue = new MemoryQueue(logger);
-        var concurrency = (byte)4;
+        const byte concurrency = (byte)4;
         var client = new InMemoryConsumerClient(queue, "concurrent-group", concurrency);
         await client.SubscribeAsync(["concurrent-topic"]);
 

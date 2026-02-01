@@ -84,7 +84,7 @@ public sealed class PaginationTests
     public void index_page_should_identify_has_next_page()
     {
         // given
-        var totalPages = 10; // 100 items / 10 per page
+        const int totalPages = 10; // 100 items / 10 per page
 
         // when
         var firstPage = new IndexPage<int>([1], index: 0, size: 10, totalItems: 100);

@@ -183,7 +183,7 @@ public sealed class TypeSafePublishApiTests
         // This test documents the expected error message format when topic mapping is missing
         // The actual error is thrown by OutboxPublisher._GetTopicNameFromMapping<T>()
 
-        var expectedErrorPattern =
+        const string expectedErrorPattern =
             "No topic mapping found for message type 'OrderCreated'*WithTopicMapping<OrderCreated>*";
 
         // This serves as documentation of the error message developers will see

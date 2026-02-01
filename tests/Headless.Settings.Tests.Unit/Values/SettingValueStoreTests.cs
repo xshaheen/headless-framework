@@ -33,10 +33,10 @@ public sealed class SettingValueStoreTests : TestBase
     public async Task should_get_value_from_cache()
     {
         // given
-        var name = "TestSetting";
-        var providerName = "TestProvider";
-        string? providerKey = null;
-        var expectedValue = "cached-value";
+        const string name = "TestSetting";
+        const string providerName = "TestProvider";
+        const string? providerKey = null;
+        const string expectedValue = "cached-value";
         var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
 
         _cache
@@ -57,10 +57,10 @@ public sealed class SettingValueStoreTests : TestBase
     public async Task should_get_value_from_repository()
     {
         // given
-        var name = "TestSetting";
-        var providerName = "TestProvider";
-        string? providerKey = null;
-        var expectedValue = "repo-value";
+        const string name = "TestSetting";
+        const string providerName = "TestProvider";
+        const string? providerKey = null;
+        const string expectedValue = "repo-value";
         var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
 
         _cache.GetAsync(cacheKey, AbortToken).Returns(CacheValue<SettingValueCacheItem>.NoValue);
@@ -82,10 +82,10 @@ public sealed class SettingValueStoreTests : TestBase
     public async Task should_cache_value_after_retrieval()
     {
         // given
-        var name = "TestSetting";
-        var providerName = "TestProvider";
-        string? providerKey = null;
-        var expectedValue = "repo-value";
+        const string name = "TestSetting";
+        const string providerName = "TestProvider";
+        const string? providerKey = null;
+        const string expectedValue = "repo-value";
         var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
 
         _cache.GetAsync(cacheKey, AbortToken).Returns(CacheValue<SettingValueCacheItem>.NoValue);
@@ -119,9 +119,9 @@ public sealed class SettingValueStoreTests : TestBase
     public async Task should_delete_value()
     {
         // given
-        var name = "TestSetting";
-        var providerName = "TestProvider";
-        string? providerKey = null;
+        const string name = "TestSetting";
+        const string providerName = "TestProvider";
+        const string? providerKey = null;
         var recordId = Guid.NewGuid();
         List<SettingValueRecord> records = [new(recordId, name, "value", providerName, providerKey)];
 
@@ -138,9 +138,9 @@ public sealed class SettingValueStoreTests : TestBase
     public async Task should_invalidate_cache_on_delete()
     {
         // given
-        var name = "TestSetting";
-        var providerName = "TestProvider";
-        string? providerKey = null;
+        const string name = "TestSetting";
+        const string providerName = "TestProvider";
+        const string? providerKey = null;
         var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
         List<SettingValueRecord> records = [new(Guid.NewGuid(), name, "value", providerName, providerKey)];
 
@@ -157,9 +157,9 @@ public sealed class SettingValueStoreTests : TestBase
     public async Task should_not_delete_when_no_records_found()
     {
         // given
-        var name = "TestSetting";
-        var providerName = "TestProvider";
-        string? providerKey = null;
+        const string name = "TestSetting";
+        const string providerName = "TestProvider";
+        const string? providerKey = null;
 
         _repository.FindAllAsync(name, providerName, providerKey, AbortToken).Returns(new List<SettingValueRecord>());
 
@@ -181,8 +181,8 @@ public sealed class SettingValueStoreTests : TestBase
     public async Task should_get_all_provider_values()
     {
         // given
-        var providerName = "TestProvider";
-        string? providerKey = "tenant-123";
+        const string providerName = "TestProvider";
+        const string? providerKey = "tenant-123";
         List<SettingValueRecord> records =
         [
             new(Guid.NewGuid(), "Setting1", "value1", providerName, providerKey),

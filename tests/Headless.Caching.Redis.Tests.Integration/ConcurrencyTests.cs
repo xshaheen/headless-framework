@@ -11,7 +11,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
         await FlushAsync();
         var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
-        var incrementCount = 100;
+        const int incrementCount = 100;
 
         // when
         var tasks = Enumerable
@@ -30,8 +30,8 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
         // given
         await FlushAsync();
         var cache = CreateCache();
-        var baseKey = "concurrent-upsert:";
-        var count = 50;
+        const string baseKey = "concurrent-upsert:";
+        const int count = 50;
 
         // when
         var tasks = Enumerable
@@ -54,7 +54,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
         var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.UpsertAsync(key, "initial", TimeSpan.FromMinutes(5), AbortToken);
-        var iterations = 50;
+        const int iterations = 50;
 
         // when - concurrent reads and writes
         var readTasks = Enumerable
@@ -78,7 +78,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
         await FlushAsync();
         var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
-        var concurrency = 10;
+        const int concurrency = 10;
 
         // when - multiple attempts to insert same key
         var tasks = Enumerable
@@ -138,7 +138,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
         // given
         await FlushAsync();
         var cache = CreateCache();
-        var prefix = "concurrent-remove:";
+        const string prefix = "concurrent-remove:";
         for (var i = 0; i < 50; i++)
         {
             await cache.UpsertAsync($"{prefix}{i}", $"value-{i}", TimeSpan.FromMinutes(5), AbortToken);

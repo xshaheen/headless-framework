@@ -23,7 +23,7 @@ public sealed class ConfigurationValueSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_configuration_provider_for_is_true()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Configuration, null, true, AbortToken)
             .Returns("true");
@@ -42,7 +42,7 @@ public sealed class ConfigurationValueSettingManagerExtensionsTests : TestBase
     public async Task should_pass_fallback_for_is_true_configuration()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Configuration, null, false, AbortToken)
             .Returns("true");
@@ -69,7 +69,7 @@ public sealed class ConfigurationValueSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_configuration_provider_for_is_false()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Configuration, null, true, AbortToken)
             .Returns("false");
@@ -88,7 +88,7 @@ public sealed class ConfigurationValueSettingManagerExtensionsTests : TestBase
     public async Task should_pass_fallback_for_is_false_configuration()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Configuration, null, false, AbortToken)
             .Returns("false");
@@ -112,7 +112,7 @@ public sealed class ConfigurationValueSettingManagerExtensionsTests : TestBase
     public async Task should_find_typed_from_configuration_provider()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "config-test" };
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -135,8 +135,8 @@ public sealed class ConfigurationValueSettingManagerExtensionsTests : TestBase
     public async Task should_pass_fallback_for_find_typed_configuration()
     {
         // given
-        var settingName = "TestSetting";
-        var json = "{}";
+        const string settingName = "TestSetting";
+        const string json = "{}";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Configuration, null, false, AbortToken)
@@ -163,8 +163,8 @@ public sealed class ConfigurationValueSettingManagerExtensionsTests : TestBase
     public async Task should_find_string_from_configuration_provider()
     {
         // given
-        var settingName = "TestSetting";
-        var expectedValue = "config-value";
+        const string settingName = "TestSetting";
+        const string expectedValue = "config-value";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Configuration, null, true, AbortToken)
@@ -184,7 +184,7 @@ public sealed class ConfigurationValueSettingManagerExtensionsTests : TestBase
     public async Task should_pass_fallback_for_find_string_configuration()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Configuration, null, false, AbortToken)

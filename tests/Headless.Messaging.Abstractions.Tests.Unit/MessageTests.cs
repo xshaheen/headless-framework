@@ -84,7 +84,7 @@ public sealed class MessageTests : TestBase
     public void should_get_name_from_headers()
     {
         // given
-        var messageName = "orders.placed";
+        const string messageName = "orders.placed";
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = messageName };
         var message = new Message(headers, null);
 
@@ -99,7 +99,7 @@ public sealed class MessageTests : TestBase
     public void should_get_group_from_headers()
     {
         // given
-        var group = "order-service";
+        const string group = "order-service";
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.Group] = group };
         var message = new Message(headers, null);
 
@@ -128,7 +128,7 @@ public sealed class MessageTests : TestBase
     public void should_get_callback_name_from_headers()
     {
         // given
-        var callbackName = "response-handler";
+        const string callbackName = "response-handler";
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.CallbackName] = callbackName };
         var message = new Message(headers, null);
 

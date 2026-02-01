@@ -13,7 +13,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_byte_with_positive_value_does_not_throw()
     {
         // given
-        byte value = 5;
+        const byte value = 5;
 
         // when & then
         Argument.IsPositive(value).Should().Be(value);
@@ -23,7 +23,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_byte_with_zero_throws()
     {
         // given
-        byte argument = 0;
+        const byte argument = 0;
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -36,7 +36,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_sbyte_with_positive_value_does_not_throw()
     {
         // given
-        sbyte value = 5;
+        const sbyte value = 5;
 
         // when & then
         Argument.IsPositive(value).Should().Be(value);
@@ -46,7 +46,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_sbyte_with_negative_value_throws()
     {
         // given
-        sbyte argument = -5;
+        const sbyte argument = -5;
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -59,7 +59,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_ushort_with_positive_value_does_not_throw()
     {
         // given
-        ushort value = 5;
+        const ushort value = 5;
 
         // when & then
         Argument.IsPositive(value).Should().Be(value);
@@ -69,7 +69,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_ushort_with_zero_throws()
     {
         // given
-        ushort argument = 0;
+        const ushort argument = 0;
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -82,7 +82,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_uint_with_positive_value_does_not_throw()
     {
         // given
-        uint value = 5u;
+        const uint value = 5u;
 
         // when & then
         Argument.IsPositive(value).Should().Be(value);
@@ -92,7 +92,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_uint_with_zero_throws()
     {
         // given
-        uint argument = 0u;
+        const uint argument = 0u;
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -105,7 +105,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_ulong_with_positive_value_does_not_throw()
     {
         // given
-        ulong value = 5ul;
+        const ulong value = 5ul;
 
         // when & then
         Argument.IsPositive(value).Should().Be(value);
@@ -115,7 +115,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_ulong_with_zero_throws()
     {
         // given
-        ulong argument = 0ul;
+        const ulong argument = 0ul;
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -268,7 +268,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_negative_sbyte_with_negative_value_does_not_throw()
     {
         // given
-        sbyte value = -5;
+        const sbyte value = -5;
 
         // when & then
         Argument.IsNegative(value).Should().Be(value);
@@ -278,7 +278,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_negative_sbyte_with_positive_value_throws()
     {
         // given
-        sbyte argument = 5;
+        const sbyte argument = 5;
 
         // when
         Action action = () => Argument.IsNegative(argument);
@@ -385,7 +385,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_or_zero_byte_with_zero_does_not_throw()
     {
         // given
-        byte value = 0;
+        const byte value = 0;
 
         // when & then
         Argument.IsPositiveOrZero(value).Should().Be(value);
@@ -395,7 +395,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_or_zero_uint_with_positive_value_does_not_throw()
     {
         // given
-        uint value = 5u;
+        const uint value = 5u;
 
         // when & then
         Argument.IsPositiveOrZero(value).Should().Be(value);
@@ -430,7 +430,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_negative_or_zero_sbyte_with_zero_does_not_throw()
     {
         // given
-        sbyte value = 0;
+        const sbyte value = 0;
 
         // when & then
         Argument.IsNegativeOrZero(value).Should().Be(value);

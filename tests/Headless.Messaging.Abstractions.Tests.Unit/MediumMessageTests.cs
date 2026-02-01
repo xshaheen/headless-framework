@@ -19,7 +19,7 @@ public sealed class MediumMessageTests : TestBase
             },
             new { Value = "test" }
         );
-        var content = """{"Value":"test"}""";
+        const string content = """{"Value":"test"}""";
 
         // when
         var mediumMessage = new MediumMessage

@@ -14,7 +14,7 @@ public sealed class TusAzureMetadataTests : TestBase
     public void should_parse_tus_metadata_string()
     {
         // given - base64 encoded values: "test.txt" -> "dGVzdC50eHQ=", "value1" -> "dmFsdWUx"
-        var tusString = "filename dGVzdC50eHQ=,custom dmFsdWUx";
+        const string tusString = "filename dGVzdC50eHQ=,custom dmFsdWUx";
 
         // when
         var metadata = TusAzureMetadata.FromTus(tusString);
@@ -29,7 +29,7 @@ public sealed class TusAzureMetadataTests : TestBase
     public void should_handle_base64_encoded_values()
     {
         // given - "Hello World!" base64 = "SGVsbG8gV29ybGQh"
-        var tusString = "message SGVsbG8gV29ybGQh";
+        const string tusString = "message SGVsbG8gV29ybGQh";
 
         // when
         var metadata = TusAzureMetadata.FromTus(tusString);
@@ -63,7 +63,7 @@ public sealed class TusAzureMetadataTests : TestBase
     public void should_sanitize_azure_metadata_keys_to_lowercase()
     {
         // given - Azure metadata keys must be lowercase alphanumeric
-        var tusString = "FileName dGVzdC50eHQ=";
+        const string tusString = "FileName dGVzdC50eHQ=";
 
         // when
         var metadata = TusAzureMetadata.FromTus(tusString);
@@ -78,7 +78,7 @@ public sealed class TusAzureMetadataTests : TestBase
     public void should_sanitize_special_characters_in_keys()
     {
         // given - "key-with-dashes" should become "key_with_dashes" (lowercase)
-        var tusString = "key-with-dashes dmFsdWU=";
+        const string tusString = "key-with-dashes dmFsdWU=";
 
         // when
         var metadata = TusAzureMetadata.FromTus(tusString);
@@ -92,7 +92,7 @@ public sealed class TusAzureMetadataTests : TestBase
     public void should_prefix_underscore_when_key_starts_with_number()
     {
         // given - keys starting with numbers need underscore prefix
-        var tusString = "123key dmFsdWU=";
+        const string tusString = "123key dmFsdWU=";
 
         // when
         var metadata = TusAzureMetadata.FromTus(tusString);
@@ -285,7 +285,7 @@ public sealed class TusAzureMetadataTests : TestBase
     public void should_round_trip_from_tus_to_tus_string_to_tus()
     {
         // given
-        var originalTusString = "filename dGVzdC50eHQ=,custom dmFsdWUx";
+        const string originalTusString = "filename dGVzdC50eHQ=,custom dmFsdWUx";
 
         // when
         var metadata = TusAzureMetadata.FromTus(originalTusString);

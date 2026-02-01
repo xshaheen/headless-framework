@@ -23,7 +23,7 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_default_provider_for_is_true()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken)
             .Returns("true");
@@ -42,7 +42,7 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
     public async Task should_pass_fallback_for_is_true_default()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, false, AbortToken)
             .Returns("true");
@@ -69,7 +69,7 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_default_provider_for_is_false()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken)
             .Returns("false");
@@ -92,7 +92,7 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
     public async Task should_find_typed_from_default_provider()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "test" };
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -116,8 +116,8 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
     public async Task should_find_string_from_default_provider()
     {
         // given
-        var settingName = "TestSetting";
-        var expectedValue = "test-value";
+        const string settingName = "TestSetting";
+        const string expectedValue = "test-value";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, true, AbortToken)
@@ -134,7 +134,7 @@ public sealed class DefaultSettingManagerExtensionsTests : TestBase
     public async Task should_pass_fallback_for_find_default()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.DefaultValue, null, false, AbortToken)

@@ -149,7 +149,7 @@ public sealed class TusConcatenationTests : TestBase
     public async Task should_throw_when_create_final_file_with_nonexistent_partial()
     {
         // given
-        var nonExistentPartialId = "nonexistent-partial-id";
+        const string nonExistentPartialId = "nonexistent-partial-id";
 
         // when
         var act = async () => await _store.CreateFinalFileAsync([nonExistentPartialId], metadata: null, AbortToken);
@@ -180,7 +180,7 @@ public sealed class TusConcatenationTests : TestBase
     public async Task should_throw_when_create_final_file_with_incomplete_partial()
     {
         // given - create partial file but don't upload all data
-        var uploadLength = 1000;
+        const int uploadLength = 1000;
         var partialData = Faker.Random.Bytes(500); // Only half the data
         var partialId = await _store.CreatePartialFileAsync(uploadLength, metadata: null, AbortToken);
 

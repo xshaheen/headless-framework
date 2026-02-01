@@ -18,7 +18,7 @@ public sealed class RemoveIfEqualAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "test-key";
+        const string key = "test-key";
         await Db.StringSetAsync(key, "value");
 
         // when
@@ -35,7 +35,7 @@ public sealed class RemoveIfEqualAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "test-key";
+        const string key = "test-key";
         await Db.StringSetAsync(key, "value");
 
         // when
@@ -54,7 +54,7 @@ public sealed class RemoveIfEqualAsyncTests(RedisTestFixture fixture)
     {
         // given
         await _FlushAsync();
-        var key = "nonexistent-key";
+        const string key = "nonexistent-key";
 
         // when
         var result = await Loader.RemoveIfEqualAsync(Db, key, expectedValue: "any-value");

@@ -155,7 +155,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
     public void should_deserialize_message_from_string()
     {
         // given
-        var json = """
+        const string json = """
             {
                 "Headers": { "headless-msg-id": "from-string" },
                 "Value": { "Name": "FromString", "Value": 123 }
@@ -175,7 +175,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
     public void should_deserialize_json_element()
     {
         // given
-        var json = """{"Name":"FromElement","Value":456}""";
+        const string json = """{"Name":"FromElement","Value":456}""";
         var doc = JsonDocument.Parse(json);
         var element = doc.RootElement.Clone();
 
@@ -206,7 +206,7 @@ public sealed class JsonUtf8SerializerTests : TestBase
     public void should_identify_json_type()
     {
         // given
-        var json = """{"Name":"Test"}""";
+        const string json = """{"Name":"Test"}""";
         var doc = JsonDocument.Parse(json);
         var element = doc.RootElement.Clone();
 

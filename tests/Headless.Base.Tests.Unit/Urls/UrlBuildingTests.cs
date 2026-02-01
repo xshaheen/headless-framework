@@ -10,7 +10,7 @@ public sealed class UrlBuildingTests
     [Fact]
     public void should_construct_from_uri()
     {
-        var s = "http://www.mysite.com/with/path?x=1&y=2#foo";
+        const string s = "http://www.mysite.com/with/path?x=1&y=2#foo";
         var uri = new Uri(s);
         var url = new Url(uri);
         url.ToString().Should().Be(s);
@@ -352,7 +352,7 @@ public sealed class UrlBuildingTests
     [Fact]
     public void should_have_fragment_after_setqueryparam()
     {
-        var expected = "http://www.mysite.com/more?x=1#first";
+        const string expected = "http://www.mysite.com/more?x=1#first";
         var url = new Url(expected).SetQueryParam("x", 3).SetQueryParam("y", 4);
         url.ToString().Should().Be("http://www.mysite.com/more?x=3&y=4#first");
     }
@@ -446,7 +446,7 @@ public sealed class UrlBuildingTests
     [Fact]
     public void should_parse_uri_with_default_port_correctly()
     {
-        var originalString = "https://someurl.net:443/api/somepath";
+        const string originalString = "https://someurl.net:443/api/somepath";
         var uri = new Uri(originalString);
         var url = new Url(uri);
         url.Port.Should().Be(443);

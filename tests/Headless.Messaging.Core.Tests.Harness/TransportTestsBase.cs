@@ -25,7 +25,8 @@ public abstract class TransportTestsBase : TestBase
         string? messageId = null,
         string? messageName = null,
         ReadOnlyMemory<byte>? body = null,
-        IDictionary<string, string?>? additionalHeaders = null)
+        IDictionary<string, string?>? additionalHeaders = null
+    )
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -102,9 +103,7 @@ public abstract class TransportTestsBase : TestBase
 
         // given
         await using var transport = GetTransport();
-        var messages = Enumerable.Range(0, 10)
-            .Select(i => CreateMessage(messageId: $"batch-msg-{i}"))
-            .ToList();
+        var messages = Enumerable.Range(0, 10).Select(i => CreateMessage(messageId: $"batch-msg-{i}")).ToList();
 
         // when
         var results = new List<OperateResult>();
@@ -229,7 +228,8 @@ public abstract class TransportTestsBase : TestBase
         // given
         await using var transport = GetTransport();
         var results = new ConcurrentBag<OperateResult>();
-        var tasks = Enumerable.Range(0, 50)
+        var tasks = Enumerable
+            .Range(0, 50)
             .Select(async i =>
             {
                 var message = CreateMessage(messageId: $"concurrent-msg-{i}");
@@ -279,7 +279,7 @@ public abstract class TransportTestsBase : TestBase
     {
         // given
         await using var transport = GetTransport();
-        var specialContent = "{\"text\": \"Hello \\\"World\\\" with émojis 🎉 and unicode: 日本語\"}";
+        const string specialContent = "{\"text\": \"Hello \\\"World\\\" with émojis 🎉 and unicode: 日本語\"}";
         var message = CreateMessage(body: System.Text.Encoding.UTF8.GetBytes(specialContent));
 
         // when
@@ -293,10 +293,7 @@ public abstract class TransportTestsBase : TestBase
     {
         // given
         await using var transport = GetTransport();
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            { "NullableHeader", null },
-        };
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { { "NullableHeader", null } };
         var message = CreateMessage(additionalHeaders: headers);
 
         // when

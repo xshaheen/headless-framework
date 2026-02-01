@@ -118,7 +118,7 @@ public sealed class UtilityTests
     public void CreateExpandBy_should_expand_all_directions()
     {
         var envelope = new Envelope(5, 10, 5, 10);
-        var factor = 2.0;
+        const double factor = 2.0;
 
         var result = envelope.CreateExpandBy(factor);
 

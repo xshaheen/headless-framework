@@ -121,7 +121,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_return_zero_when_deleting_nonexistent_published_message()
     {
         // given
-        var nonExistentId = 999999999L;
+        const long nonExistentId = 999999999L;
 
         // when
         var deleted = await _storage.DeletePublishedMessageAsync(nonExistentId, AbortToken);
@@ -134,7 +134,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_return_zero_when_deleting_nonexistent_received_message()
     {
         // given
-        var nonExistentId = 999999999L;
+        const long nonExistentId = 999999999L;
 
         // when
         var deleted = await _storage.DeleteReceivedMessageAsync(nonExistentId, AbortToken);

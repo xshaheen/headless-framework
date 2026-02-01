@@ -23,8 +23,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_tenant_provider_and_tenant_id()
     {
         // given
-        var tenantId = "tenant-123";
-        var settingName = "TestSetting";
+        const string tenantId = "tenant-123";
+        const string settingName = "TestSetting";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken)
@@ -44,8 +44,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_pass_fallback_for_is_true_tenant()
     {
         // given
-        var tenantId = "tenant-123";
-        var settingName = "TestSetting";
+        const string tenantId = "tenant-123";
+        const string settingName = "TestSetting";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Tenant, tenantId, false, AbortToken)
@@ -71,7 +71,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_tenant_provider_and_null_key_for_current()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken)
@@ -95,8 +95,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_tenant_provider_for_is_false()
     {
         // given
-        var tenantId = "tenant-456";
-        var settingName = "TestSetting";
+        const string tenantId = "tenant-456";
+        const string settingName = "TestSetting";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken)
@@ -117,7 +117,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_call_with_tenant_provider_and_null_key_for_is_false_current()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken)
@@ -138,8 +138,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_find_typed_from_tenant_provider()
     {
         // given
-        var tenantId = "tenant-123";
-        var settingName = "TestSetting";
+        const string tenantId = "tenant-123";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "tenant-test" };
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -167,7 +167,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_find_typed_from_current_tenant()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "current-tenant-test" };
         var json = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -192,9 +192,9 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_find_string_from_tenant_provider()
     {
         // given
-        var tenantId = "tenant-789";
-        var settingName = "TestSetting";
-        var expectedValue = "tenant-value";
+        const string tenantId = "tenant-789";
+        const string settingName = "TestSetting";
+        const string expectedValue = "tenant-value";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Tenant, tenantId, true, AbortToken)
@@ -215,8 +215,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_find_string_from_current_tenant()
     {
         // given
-        var settingName = "TestSetting";
-        var expectedValue = "current-tenant-value";
+        const string settingName = "TestSetting";
+        const string expectedValue = "current-tenant-value";
 
         _settingManager
             .FindAsync(settingName, SettingValueProviderNames.Tenant, null, true, AbortToken)
@@ -237,7 +237,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_get_all_from_tenant_provider()
     {
         // given
-        var tenantId = "tenant-123";
+        const string tenantId = "tenant-123";
         List<SettingValue> expectedValues = [new("Setting1", "value1"), new("Setting2", "value2")];
 
         _settingManager
@@ -278,9 +278,9 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_set_value_for_tenant_provider()
     {
         // given
-        var tenantId = "tenant-123";
-        var settingName = "TestSetting";
-        var value = "new-tenant-value";
+        const string tenantId = "tenant-123";
+        const string settingName = "TestSetting";
+        const string value = "new-tenant-value";
 
         // when
         await _settingManager.SetForTenantAsync(tenantId, settingName, value, cancellationToken: AbortToken);
@@ -295,9 +295,9 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_pass_force_to_set_for_tenant()
     {
         // given
-        var tenantId = "tenant-123";
-        var settingName = "TestSetting";
-        var value = "forced-value";
+        const string tenantId = "tenant-123";
+        const string settingName = "TestSetting";
+        const string value = "forced-value";
 
         // when
         await _settingManager.SetForTenantAsync(
@@ -322,8 +322,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_set_value_for_current_tenant()
     {
         // given
-        var settingName = "TestSetting";
-        var value = "current-tenant-value";
+        const string settingName = "TestSetting";
+        const string value = "current-tenant-value";
 
         // when
         await _settingManager.SetForCurrentTenantAsync(settingName, value, cancellationToken: AbortToken);
@@ -342,9 +342,9 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_set_for_tenant_when_tenant_id_provided()
     {
         // given
-        var tenantId = "tenant-123";
-        var settingName = "TestSetting";
-        var value = "tenant-or-global-value";
+        const string tenantId = "tenant-123";
+        const string settingName = "TestSetting";
+        const string value = "tenant-or-global-value";
 
         // when
         await _settingManager.SetForTenantOrGlobalAsync(tenantId, settingName, value, cancellationToken: AbortToken);
@@ -359,8 +359,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_set_for_global_when_tenant_id_is_null()
     {
         // given
-        var settingName = "TestSetting";
-        var value = "global-fallback-value";
+        const string settingName = "TestSetting";
+        const string value = "global-fallback-value";
 
         // when
         await _settingManager.SetForTenantOrGlobalAsync(null, settingName, value, cancellationToken: AbortToken);
@@ -379,8 +379,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_set_typed_value_for_tenant()
     {
         // given
-        var tenantId = "tenant-123";
-        var settingName = "TestSetting";
+        const string tenantId = "tenant-123";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "typed-tenant-value" };
         var expectedJson = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -401,7 +401,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_set_typed_value_for_current_tenant()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "typed-current-tenant-value" };
         var expectedJson = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -422,8 +422,8 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_set_typed_for_tenant_when_tenant_id_provided()
     {
         // given
-        var tenantId = "tenant-456";
-        var settingName = "TestSetting";
+        const string tenantId = "tenant-456";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "typed-tenant-or-global" };
         var expectedJson = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
@@ -440,7 +440,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
     public async Task should_set_typed_for_global_when_tenant_id_is_null()
     {
         // given
-        var settingName = "TestSetting";
+        const string settingName = "TestSetting";
         var testObj = new TestSettings { Value = "typed-global-fallback" };
         var expectedJson = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 

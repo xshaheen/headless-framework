@@ -12,8 +12,8 @@ public sealed class IgnoreCaseStringComparerTests
     public void compare_should_return_zero_when_both_null()
     {
         // given
-        string? x = null;
-        string? y = null;
+        const string? x = null;
+        const string? y = null;
 
         // when
         var result = IgnoreCaseStringComparer.Instance.Compare(x, y);
@@ -26,7 +26,7 @@ public sealed class IgnoreCaseStringComparerTests
     public void compare_should_return_negative_when_x_is_null()
     {
         // given
-        string? x = null;
+        const string? x = null;
         const string y = "test";
 
         // when
@@ -41,7 +41,7 @@ public sealed class IgnoreCaseStringComparerTests
     {
         // given
         const string x = "test";
-        string? y = null;
+        const string? y = null;
 
         // when
         var result = IgnoreCaseStringComparer.Instance.Compare(x, y);
@@ -99,7 +99,7 @@ public sealed class IgnoreCaseStringComparerTests
     public void equals_should_return_false_when_x_is_null()
     {
         // given
-        string? x = null;
+        const string? x = null;
         const string y = "test";
 
         // when
@@ -114,7 +114,7 @@ public sealed class IgnoreCaseStringComparerTests
     {
         // given
         const string x = "test";
-        string? y = null;
+        const string? y = null;
 
         // when
         var result = IgnoreCaseStringComparer.Instance.Equals(x, y);
@@ -127,8 +127,8 @@ public sealed class IgnoreCaseStringComparerTests
     public void equals_should_return_false_when_both_null()
     {
         // given
-        string? x = null;
-        string? y = null;
+        const string? x = null;
+        const string? y = null;
 
         // when
         var result = IgnoreCaseStringComparer.Instance.Equals(x, y);

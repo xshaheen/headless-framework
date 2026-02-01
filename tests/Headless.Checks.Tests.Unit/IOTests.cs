@@ -113,7 +113,7 @@ public sealed class IoTests
     public void file_exists_should_throw_for_null_path()
     {
         // given
-        string? path = null;
+        const string? path = null;
 
         // when
         var action = () => Argument.FileExists(path);
@@ -126,7 +126,7 @@ public sealed class IoTests
     public void file_exists_should_throw_for_empty_path()
     {
         // given
-        var path = "";
+        const string path = "";
 
         // when
         var action = () => Argument.FileExists(path);
@@ -139,7 +139,7 @@ public sealed class IoTests
     public void file_exists_should_use_custom_message()
     {
         // given
-        var path = "/nonexistent/file.txt";
+        const string path = "/nonexistent/file.txt";
         const string customMessage = "Custom file not found message";
 
         // when
@@ -184,7 +184,7 @@ public sealed class IoTests
     public void directory_exists_should_throw_for_null_path()
     {
         // given
-        string? path = null;
+        const string? path = null;
 
         // when
         var action = () => Argument.DirectoryExists(path);
@@ -197,7 +197,7 @@ public sealed class IoTests
     public void directory_exists_should_throw_for_empty_path()
     {
         // given
-        var path = "";
+        const string path = "";
 
         // when
         var action = () => Argument.DirectoryExists(path);
@@ -210,7 +210,7 @@ public sealed class IoTests
     public void directory_exists_should_use_custom_message()
     {
         // given
-        var path = "/nonexistent/directory";
+        const string path = "/nonexistent/directory";
         const string customMessage = "Custom directory not found message";
 
         // when
