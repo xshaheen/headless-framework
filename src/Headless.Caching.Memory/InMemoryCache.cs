@@ -1419,12 +1419,12 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
-        await _StartMaintenanceAsync(_ShouldCompact).AnyContext();
+        await _StartMaintenanceAsync(ShouldCompact).AnyContext();
 
         return wasUpdated;
     }
 
-    private bool _ShouldCompact =>
+    private bool ShouldCompact =>
         !_disposedCts.IsCancellationRequested
         && (
             (_maxItems.HasValue && _memory.Count > _maxItems)
@@ -1462,7 +1462,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     private async Task _CompactAsync()
     {
-        if (!_ShouldCompact)
+        if (!ShouldCompact)
         {
             return;
         }
@@ -1471,7 +1471,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         {
             var removalCount = 0;
 
-            while (_ShouldCompact && removalCount < _MaxEvictionsPerCompaction)
+            while (ShouldCompact && removalCount < _MaxEvictionsPerCompaction)
             {
                 var keyToRemove = _FindLeastRecentlyUsedOrLargest();
 
@@ -1620,7 +1620,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             _logger.LogWarning(ex, "Cache maintenance task failed");
         }
 
-        if (_ShouldCompact)
+        if (ShouldCompact)
         {
             await _CompactAsync().AnyContext();
         }
@@ -1673,7 +1673,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     private sealed class CacheEntry
     {
-        private static long _InstanceCount;
+        private static long _instanceCount;
         private readonly bool _shouldClone;
         private readonly bool _shouldThrowOnSerializationError;
         private readonly TimeProvider _timeProvider;
@@ -1699,7 +1699,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             _lastAccessTicks = utcNow.Ticks;
             ExpiresAt = expiresAt;
             _size = size;
-            InstanceNumber = Interlocked.Increment(ref _InstanceCount);
+            InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }
 
         internal long InstanceNumber { get; }

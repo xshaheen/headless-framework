@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Sql;
 using Headless.Sql.PostgreSql;
 
@@ -66,10 +67,18 @@ public sealed class NpgsqlConnectionFactoryTests
 
         // The explicit ISqlConnectionFactory.CreateNewConnectionAsync delegates to the public method
         // Both methods should be available (can't test actual connection without real DB)
-        var publicMethod = sut.GetType().GetMethod("CreateNewConnectionAsync", [typeof(CancellationToken)]);
+        var publicMethod = typeof(NpgsqlConnectionFactory).GetMethod(
+            "CreateNewConnectionAsync",
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            [typeof(CancellationToken)]
+        );
         publicMethod.Should().NotBeNull("public CreateNewConnectionAsync should exist");
 
-        var interfaceMethod = typeof(ISqlConnectionFactory).GetMethod("CreateNewConnectionAsync");
+        var interfaceMethod = typeof(ISqlConnectionFactory).GetMethod(
+            "CreateNewConnectionAsync",
+            BindingFlags.Public | BindingFlags.Instance,
+            [typeof(CancellationToken)]
+        );
         interfaceMethod.Should().NotBeNull("interface method should exist");
     }
 }

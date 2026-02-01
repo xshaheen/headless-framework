@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Tests.Entities;
 using Tests.Fixtures;
 
-namespace Tests;
+namespace Tests.Tests;
 
 /// <summary>
 /// Abstract base class for testing HeadlessDbContext global query filter behavior.
@@ -19,7 +19,7 @@ public abstract class HeadlessDbContextGlobalFiltersTestBase<TFixture, TContext>
     where TFixture : class, IDbContextTestFixture<TContext>
     where TContext : DbContext, IHarnessDbContext
 {
-    protected readonly TFixture Fixture;
+    protected TFixture Fixture { get; }
 
     protected HeadlessDbContextGlobalFiltersTestBase(TFixture fixture)
     {

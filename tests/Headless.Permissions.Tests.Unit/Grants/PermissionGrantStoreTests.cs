@@ -184,7 +184,7 @@ public sealed class PermissionGrantStoreTests : TestBase
         var cacheKey1 = PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, _ProviderKey);
         var cacheKey2 = PermissionGrantCacheItem.CalculateCacheKey("Users.Update", _ProviderName, _ProviderKey);
 
-        var cacheResults = new Dictionary<string, CacheValue<PermissionGrantCacheItem>>
+        var cacheResults = new Dictionary<string, CacheValue<PermissionGrantCacheItem>>(StringComparer.Ordinal)
         {
             [cacheKey1] = new(new PermissionGrantCacheItem(true), true),
             [cacheKey2] = new(new PermissionGrantCacheItem(false), true),
@@ -209,7 +209,7 @@ public sealed class PermissionGrantStoreTests : TestBase
         var cacheKey1 = PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, _ProviderKey);
         var cacheKey2 = PermissionGrantCacheItem.CalculateCacheKey("Users.Update", _ProviderName, _ProviderKey);
 
-        var cacheResults = new Dictionary<string, CacheValue<PermissionGrantCacheItem>>
+        var cacheResults = new Dictionary<string, CacheValue<PermissionGrantCacheItem>>(StringComparer.Ordinal)
         {
             [cacheKey1] = new(new PermissionGrantCacheItem(true), true),
             [cacheKey2] = CacheValue<PermissionGrantCacheItem>.NoValue,

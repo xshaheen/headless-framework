@@ -60,30 +60,30 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         switch (statusCode)
         {
             case OpenApiStatusCodes.BadRequest:
-                _SetDefaultAndExample(context, response, _status400ProblemDetails, nameof(BadRequestProblemDetails));
+                _SetDefaultAndExample(context, response, _Status400ProblemDetails, nameof(BadRequestProblemDetails));
                 break;
             case OpenApiStatusCodes.Unauthorized:
-                _SetDefaultAndExample(context, response, _status401ProblemDetails, nameof(UnauthorizedProblemDetails));
+                _SetDefaultAndExample(context, response, _Status401ProblemDetails, nameof(UnauthorizedProblemDetails));
                 break;
             case OpenApiStatusCodes.Forbidden:
-                _SetDefaultAndExample(context, response, _status403ProblemDetails, nameof(ForbiddenProblemDetails));
+                _SetDefaultAndExample(context, response, _Status403ProblemDetails, nameof(ForbiddenProblemDetails));
                 break;
             case OpenApiStatusCodes.NotFound:
                 _SetDefaultAndExample(
                     context,
                     response,
-                    _status404ProblemDetails,
+                    _Status404ProblemDetails,
                     nameof(EntityNotFoundProblemDetails)
                 );
                 break;
             case OpenApiStatusCodes.Conflict:
-                _SetDefaultAndExample(context, response, _status409ProblemDetails, nameof(ConflictProblemDetails));
+                _SetDefaultAndExample(context, response, _Status409ProblemDetails, nameof(ConflictProblemDetails));
                 break;
             case OpenApiStatusCodes.UnprocessableEntity:
                 _SetDefaultAndExample(
                     context,
                     response,
-                    _status422ProblemDetails,
+                    _Status422ProblemDetails,
                     nameof(UnprocessableEntityProblemDetails)
                 );
                 break;
@@ -91,7 +91,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
                 _SetDefaultAndExample(
                     context,
                     response,
-                    _status429ProblemDetails,
+                    _Status429ProblemDetails,
                     nameof(TooManyRequestsProblemDetails)
                 );
                 break;
@@ -131,7 +131,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 
     private static readonly DateTimeOffset _ExampleTimestamp = new(2024, 1, 1, 12, 0, 0, TimeSpan.Zero);
 
-    private static readonly BadRequestProblemDetails _status400ProblemDetails = new()
+    private static readonly BadRequestProblemDetails _Status400ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.BadRequest,
         Title = HeadlessProblemDetailsConstants.Titles.BadRequest,
@@ -144,7 +144,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Timestamp = _ExampleTimestamp,
     };
 
-    private static readonly UnauthorizedProblemDetails _status401ProblemDetails = new()
+    private static readonly UnauthorizedProblemDetails _Status401ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.Unauthorized,
         Title = HeadlessProblemDetailsConstants.Titles.Unauthorized,
@@ -157,7 +157,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Timestamp = _ExampleTimestamp,
     };
 
-    private static readonly ForbiddenProblemDetails _status403ProblemDetails = new()
+    private static readonly ForbiddenProblemDetails _Status403ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.Forbidden,
         Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
@@ -170,7 +170,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Timestamp = _ExampleTimestamp,
     };
 
-    private static readonly EntityNotFoundProblemDetails _status404ProblemDetails = new()
+    private static readonly EntityNotFoundProblemDetails _Status404ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.EntityNotFound,
         Title = HeadlessProblemDetailsConstants.Titles.EntityNotFound,
@@ -183,7 +183,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Timestamp = _ExampleTimestamp,
     };
 
-    private static readonly ConflictProblemDetails _status409ProblemDetails = new()
+    private static readonly ConflictProblemDetails _Status409ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.Conflict,
         Title = HeadlessProblemDetailsConstants.Titles.Conflict,
@@ -197,7 +197,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Errors = [new("business_error", @"Some business rule failed.")],
     };
 
-    private static readonly UnprocessableEntityProblemDetails _status422ProblemDetails = new()
+    private static readonly UnprocessableEntityProblemDetails _Status422ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.UnprocessableEntity,
         Title = HeadlessProblemDetailsConstants.Titles.UnprocessableEntity,
@@ -222,7 +222,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         },
     };
 
-    private static readonly TooManyRequestsProblemDetails _status429ProblemDetails = new()
+    private static readonly TooManyRequestsProblemDetails _Status429ProblemDetails = new()
     {
         Type = HeadlessProblemDetailsConstants.Types.TooManyRequests,
         Title = HeadlessProblemDetailsConstants.Titles.TooManyRequests,

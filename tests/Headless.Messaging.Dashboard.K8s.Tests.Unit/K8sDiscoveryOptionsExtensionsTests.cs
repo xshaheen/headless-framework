@@ -6,7 +6,7 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class K8sDiscoveryOptionsExtensionsTests : TestBase
+public sealed class K8SDiscoveryOptionsExtensionsTests : TestBase
 {
     [Fact]
     public void UseK8sDiscovery_should_return_same_MessagingOptions_instance()

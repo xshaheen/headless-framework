@@ -218,7 +218,7 @@ public sealed class SettingManagerTests : TestBase
     public async Task should_get_all_for_setting_names()
     {
         // given
-        var settings = new HashSet<string> { "Setting1", "Setting2" };
+        var settings = new HashSet<string>(StringComparer.Ordinal) { "Setting1", "Setting2" };
         List<SettingDefinition> definitions =
         [
             new("Setting1", defaultValue: "default1"),

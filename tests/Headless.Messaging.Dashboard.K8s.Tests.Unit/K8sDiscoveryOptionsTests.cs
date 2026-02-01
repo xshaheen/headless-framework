@@ -5,7 +5,7 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class K8sDiscoveryOptionsTests : TestBase
+public sealed class K8SDiscoveryOptionsTests : TestBase
 {
     [Fact]
     public void ShowOnlyExplicitVisibleNodes_should_default_to_true()

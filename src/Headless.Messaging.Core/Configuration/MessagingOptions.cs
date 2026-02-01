@@ -313,12 +313,12 @@ public class MessagingOptions : IMessagingBuilder
     /// </summary>
     private static void _ValidateTopicName(string topic)
     {
-        const int MaxTopicLength = 255;
+        const int maxTopicLength = 255;
 
-        if (topic.Length > MaxTopicLength)
+        if (topic.Length > maxTopicLength)
         {
             throw new ArgumentException(
-                $"Topic name '{topic}' exceeds maximum length of {MaxTopicLength} characters.",
+                $"Topic name '{topic}' exceeds maximum length of {maxTopicLength} characters.",
                 nameof(topic)
             );
         }

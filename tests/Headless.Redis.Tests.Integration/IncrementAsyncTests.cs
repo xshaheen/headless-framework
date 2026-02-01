@@ -11,7 +11,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     private IDatabase Db => fixture.ConnectionMultiplexer.GetDatabase();
     private HeadlessRedisScriptsLoader Loader => fixture.ScriptsLoader;
 
-    private async Task FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
+    private async Task _FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
 
     #region Long tests
 
@@ -19,7 +19,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     public async Task should_increment_existing_value_long()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "counter-long";
         await Db.StringSetAsync(key, "10");
 
@@ -34,7 +34,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     public async Task should_create_key_with_value_when_not_exists_long()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "new-counter-long";
 
         // when
@@ -50,7 +50,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     public async Task should_set_ttl_on_increment_long()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "counter-with-ttl-long";
         var ttl = TimeSpan.FromMinutes(5);
 
@@ -68,7 +68,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     public async Task should_handle_negative_increment_long()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "counter-negative-long";
         await Db.StringSetAsync(key, "10");
 
@@ -87,7 +87,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     public async Task should_increment_existing_value_double()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "counter-double";
         await Db.StringSetAsync(key, "10.5");
 
@@ -102,7 +102,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     public async Task should_create_key_with_value_when_not_exists_double()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "new-counter-double";
 
         // when
@@ -118,7 +118,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     public async Task should_set_ttl_on_increment_double()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "counter-with-ttl-double";
         var ttl = TimeSpan.FromMinutes(5);
 
@@ -136,7 +136,7 @@ public sealed class IncrementAsyncTests(RedisTestFixture fixture)
     public async Task should_handle_negative_increment_double()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "counter-negative-double";
         await Db.StringSetAsync(key, "10.0");
 

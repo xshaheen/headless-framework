@@ -11,13 +11,13 @@ public sealed class RemoveIfEqualAsyncTests(RedisTestFixture fixture)
     private IDatabase Db => fixture.ConnectionMultiplexer.GetDatabase();
     private HeadlessRedisScriptsLoader Loader => fixture.ScriptsLoader;
 
-    private async Task FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
+    private async Task _FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
 
     [Fact]
     public async Task should_remove_when_expected_value_matches()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "test-key";
         await Db.StringSetAsync(key, "value");
 
@@ -34,7 +34,7 @@ public sealed class RemoveIfEqualAsyncTests(RedisTestFixture fixture)
     public async Task should_not_remove_when_expected_value_differs()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "test-key";
         await Db.StringSetAsync(key, "value");
 
@@ -53,7 +53,7 @@ public sealed class RemoveIfEqualAsyncTests(RedisTestFixture fixture)
     public async Task should_not_remove_when_key_not_exists()
     {
         // given
-        await FlushAsync();
+        await _FlushAsync();
         var key = "nonexistent-key";
 
         // when

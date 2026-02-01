@@ -28,8 +28,8 @@ public sealed class UserPermissionGrantProviderTests : TestBase
     {
         // given
         var userId = new UserId("test-user-123");
-        var permission = CreatePermission("Users.Create");
-        var currentUser = CreateCurrentUser(userId);
+        var permission = _CreatePermission("Users.Create");
+        var currentUser = _CreateCurrentUser(userId);
 
         _grantStore
             .IsGrantedAsync(
@@ -57,8 +57,8 @@ public sealed class UserPermissionGrantProviderTests : TestBase
     public async Task should_return_undefined_for_unauthenticated_user()
     {
         // given
-        var permission = CreatePermission("Users.Create");
-        var currentUser = CreateCurrentUser(userId: null);
+        var permission = _CreatePermission("Users.Create");
+        var currentUser = _CreateCurrentUser(userId: null);
 
         // when
         var result = await _sut.CheckAsync([permission], currentUser, AbortToken);
@@ -72,9 +72,9 @@ public sealed class UserPermissionGrantProviderTests : TestBase
     {
         // given
         var userId = new UserId("test-user-123");
-        var permission1 = CreatePermission("Users.Create");
-        var permission2 = CreatePermission("Users.Delete");
-        var currentUser = CreateCurrentUser(userId);
+        var permission1 = _CreatePermission("Users.Create");
+        var permission2 = _CreatePermission("Users.Delete");
+        var currentUser = _CreateCurrentUser(userId);
 
         _grantStore
             .IsGrantedAsync(
@@ -104,8 +104,8 @@ public sealed class UserPermissionGrantProviderTests : TestBase
     {
         // given
         var userId = new UserId("test-user-123");
-        var permission = CreatePermission("Users.Create");
-        var currentUser = CreateCurrentUser(userId);
+        var permission = _CreatePermission("Users.Create");
+        var currentUser = _CreateCurrentUser(userId);
 
         _grantStore
             .IsGrantedAsync(
@@ -123,13 +123,17 @@ public sealed class UserPermissionGrantProviderTests : TestBase
         result["Users.Create"].Status.Should().Be(PermissionGrantStatus.Undefined);
     }
 
-    private static PermissionDefinition CreatePermission(string name) => new(name);
+    private static PermissionDefinition _CreatePermission(string name)
+    {
+        var group = new PermissionGroupDefinition("TestGroup");
+        return group.AddChild(name);
+    }
 
-    private static ICurrentUser CreateCurrentUser(UserId? userId)
+    private static ICurrentUser _CreateCurrentUser(UserId? userId)
     {
         var user = Substitute.For<ICurrentUser>();
         user.UserId.Returns(userId);
-        user.Roles.Returns(new HashSet<string>());
+        user.Roles.Returns(new HashSet<string>(StringComparer.Ordinal));
         return user;
     }
 }

@@ -195,7 +195,7 @@ public sealed class MessagingConventionsTests : TestBase
         var conventions = new MessagingConventions { TopicNaming = TopicNamingConvention.KebabCase };
 
         // when
-        var topicName = conventions.GetTopicName(typeof(XMLParser));
+        var topicName = conventions.GetTopicName(typeof(XmlParser));
 
         // then
         // Note: Due to regex bug with ExplicitCapture, the output contains literal "$1".
@@ -236,6 +236,6 @@ public sealed record OrderPlacedEvent(Guid OrderId);
 
 public sealed record Order(Guid Id);
 
-public sealed record XMLParser();
+public sealed record XmlParser();
 
 public sealed record Order123Event(Guid OrderId);

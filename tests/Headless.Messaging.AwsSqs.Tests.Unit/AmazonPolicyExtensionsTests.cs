@@ -7,9 +7,9 @@ namespace Tests;
 
 public sealed class AmazonPolicyExtensionsTests
 {
-    private const string QueueArn = "arn:aws:sqs:us-east-1:123456789012:MyQueue";
-    private const string TopicArn1 = "arn:aws:sns:us-east-1:123456789012:MyTopic1";
-    private const string TopicArn2 = "arn:aws:sns:us-east-1:123456789012:MyTopic2";
+    private const string _QueueArn = "arn:aws:sqs:us-east-1:123456789012:MyQueue";
+    private const string _TopicArn1 = "arn:aws:sns:us-east-1:123456789012:MyTopic1";
+    private const string _TopicArn2 = "arn:aws:sns:us-east-1:123456789012:MyTopic2";
 
     [Fact]
     public void should_detect_existing_permission_with_string_like()
@@ -17,19 +17,19 @@ public sealed class AmazonPolicyExtensionsTests
         // given
         var policy = new Policy();
         var statement = new Statement(Statement.StatementEffect.Allow);
-        statement.Resources.Add(new Resource(QueueArn));
+        statement.Resources.Add(new Resource(_QueueArn));
         statement.Conditions.Add(
             new Condition
             {
                 Type = nameof(ConditionFactory.StringComparisonType.StringLike),
                 ConditionKey = ConditionFactory.SOURCE_ARN_CONDITION_KEY,
-                Values = [TopicArn1],
+                Values = [_TopicArn1],
             }
         );
         policy.Statements.Add(statement);
 
         // when
-        var hasPermission = policy.HasSqsPermission(TopicArn1, QueueArn);
+        var hasPermission = policy.HasSqsPermission(_TopicArn1, _QueueArn);
 
         // then
         hasPermission.Should().BeTrue();
@@ -41,19 +41,19 @@ public sealed class AmazonPolicyExtensionsTests
         // given
         var policy = new Policy();
         var statement = new Statement(Statement.StatementEffect.Allow);
-        statement.Resources.Add(new Resource(QueueArn));
+        statement.Resources.Add(new Resource(_QueueArn));
         statement.Conditions.Add(
             new Condition
             {
                 Type = nameof(ConditionFactory.ArnComparisonType.ArnEquals),
                 ConditionKey = ConditionFactory.SOURCE_ARN_CONDITION_KEY,
-                Values = [TopicArn1],
+                Values = [_TopicArn1],
             }
         );
         policy.Statements.Add(statement);
 
         // when
-        var hasPermission = policy.HasSqsPermission(TopicArn1, QueueArn);
+        var hasPermission = policy.HasSqsPermission(_TopicArn1, _QueueArn);
 
         // then
         hasPermission.Should().BeTrue();
@@ -66,11 +66,11 @@ public sealed class AmazonPolicyExtensionsTests
         var policy = new Policy();
         var statement = new Statement(Statement.StatementEffect.Allow);
         statement.Resources.Add(new Resource("arn:aws:sqs:us-east-1:123456789012:OtherQueue"));
-        statement.Conditions.Add(ConditionFactory.NewSourceArnCondition(TopicArn1));
+        statement.Conditions.Add(ConditionFactory.NewSourceArnCondition(_TopicArn1));
         policy.Statements.Add(statement);
 
         // when
-        var hasPermission = policy.HasSqsPermission(TopicArn1, QueueArn);
+        var hasPermission = policy.HasSqsPermission(_TopicArn1, _QueueArn);
 
         // then
         hasPermission.Should().BeFalse();
@@ -82,12 +82,12 @@ public sealed class AmazonPolicyExtensionsTests
         // given
         var policy = new Policy();
         var statement = new Statement(Statement.StatementEffect.Allow);
-        statement.Resources.Add(new Resource(QueueArn));
-        statement.Conditions.Add(ConditionFactory.NewSourceArnCondition(TopicArn2));
+        statement.Resources.Add(new Resource(_QueueArn));
+        statement.Conditions.Add(ConditionFactory.NewSourceArnCondition(_TopicArn2));
         policy.Statements.Add(statement);
 
         // when
-        var hasPermission = policy.HasSqsPermission(TopicArn1, QueueArn);
+        var hasPermission = policy.HasSqsPermission(_TopicArn1, _QueueArn);
 
         // then
         hasPermission.Should().BeFalse();
@@ -98,10 +98,10 @@ public sealed class AmazonPolicyExtensionsTests
     {
         // given
         var policy = new Policy();
-        var topicArns = new[] { TopicArn1, TopicArn2 };
+        var topicArns = new[] { _TopicArn1, _TopicArn2 };
 
         // when
-        policy.AddSqsPermissions(topicArns, QueueArn);
+        policy.AddSqsPermissions(topicArns, _QueueArn);
 
         // then
         policy.Statements.Should().HaveCount(1);
@@ -110,7 +110,7 @@ public sealed class AmazonPolicyExtensionsTests
         statement.Actions.Should().HaveCount(1);
         statement.Actions[0].ActionName.Should().Be("sqs:SendMessage");
         statement.Resources.Should().HaveCount(1);
-        statement.Resources[0].Id.Should().Be(QueueArn);
+        statement.Resources[0].Id.Should().Be(_QueueArn);
         statement.Principals.Should().HaveCount(1);
         statement.Principals[0].Id.Should().Be("*");
         statement.Conditions.Should().HaveCount(2);
@@ -122,19 +122,19 @@ public sealed class AmazonPolicyExtensionsTests
         // given
         var policy = new Policy();
         var statement = new Statement(Statement.StatementEffect.Allow);
-        statement.Resources.Add(new Resource(QueueArn));
+        statement.Resources.Add(new Resource(_QueueArn));
         statement.Conditions.Add(
             new Condition
             {
                 Type = "stringlike", // lowercase
                 ConditionKey = ConditionFactory.SOURCE_ARN_CONDITION_KEY,
-                Values = [TopicArn1],
+                Values = [_TopicArn1],
             }
         );
         policy.Statements.Add(statement);
 
         // when
-        var hasPermission = policy.HasSqsPermission(TopicArn1, QueueArn);
+        var hasPermission = policy.HasSqsPermission(_TopicArn1, _QueueArn);
 
         // then
         hasPermission.Should().BeTrue();
