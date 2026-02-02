@@ -1,11 +1,15 @@
 # feat: Unify Headless.Ticker + Headless.Messaging into Single Messaging System
 
+> **Note:** This is a greenfield framework with no production users yet. No data migration is required - we are designing the unified schema from scratch.
+>
+> **Out of Scope:** `IDirectPublisher` (fire-and-forget publishing) is covered in a [separate plan](./2026-02-02-feat-publish-durability-parameter-plan.md).
+
 ## Overview
 
-Merge `Headless.Ticker` (background job scheduling with cron) and `Headless.Messaging` (distributed messaging with outbox) into a unified developer experience for **immediate messages**, **delayed messages**, **recurring scheduled jobs**, and **direct fire-and-forget publishing**.
+Merge `Headless.Ticker` (background job scheduling with cron) and `Headless.Messaging` (distributed messaging with outbox) into a unified developer experience for **immediate messages**, **delayed messages**, and **recurring scheduled jobs**.
 
 **Target Packages:**
-- `Headless.Messaging.Abstractions` → Core interfaces (`IConsume<T>`, `IPublisher`, `IDirectPublisher`)
+- `Headless.Messaging.Abstractions` → Core interfaces (`IConsume<T>`, `IPublisher`)
 - `Headless.Messaging.Core` → Unified runtime (dispatcher, scheduler, processors)
 - `Headless.Messaging.Scheduling` → Cron/scheduling extensions (source generator preserved)
 - `Headless.Messaging.Dashboard` → Consolidated dashboard (Ticker UI + Messaging data)
@@ -24,7 +28,6 @@ Merge `Headless.Ticker` (background job scheduling with cron) and `Headless.Mess
 | **Different handlers** | `[TickerFunction]` attribute | `IConsume<T>` interface | Inconsistent patterns |
 | **Separate storage** | `TimeTickerEntity`, `CronTickerEntity` | `Published`, `Received` tables | Duplicate persistence |
 | **Separate dashboards** | `/tickerq/dashboard` | `/messaging` | Operational fragmentation |
-| **No direct publish** | N/A | Everything goes through outbox | Overhead for fire-and-forget |
 | **Overlapping concerns** | Retry, locking, monitoring | Retry, locking, monitoring | Duplicated code |
 
 ### Why Merge?
@@ -70,9 +73,6 @@ services.AddMessaging(m =>
     // Global retry policy
     m.FailedRetryCount = 50;
     m.RetryBackoffStrategy = new ExponentialBackoffStrategy();
-
-    // Enable direct publish (bypasses outbox)
-    m.EnableDirectPublish();
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -116,9 +116,7 @@ public sealed class DailyReportJob : IConsume<ScheduledTrigger> { ... }
 // PUBLISHING APIs
 // ═══════════════════════════════════════════════════════════════════
 
-public class OrderController(
-    IOutboxPublisher outbox,      // Transactional (existing)
-    IDirectPublisher direct)      // Fire-and-forget (NEW)
+public class OrderController(IOutboxPublisher outbox)
 {
     // Outbox: Transactional publish (existing behavior)
     public async Task<IActionResult> CreateOrder(CreateOrderRequest req)
@@ -132,14 +130,6 @@ public class OrderController(
 
         await _db.SaveChangesAsync();
         await tx.CommitAsync();  // Message sent after commit
-        return Ok();
-    }
-
-    // Direct: Fire-and-forget (NEW - bypasses outbox)
-    public async Task<IActionResult> NotifyUser(NotifyRequest req)
-    {
-        // Single call - succeeds or throws immediately
-        await direct.PublishAsync(new UserNotification(req.UserId, req.Message));
         return Ok();
     }
 
@@ -187,43 +177,6 @@ public sealed record ScheduledTrigger
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// DIRECT PUBLISHER (NEW)
-// ═══════════════════════════════════════════════════════════════════
-
-/// <summary>
-/// Publishes messages directly to the transport, bypassing outbox storage.
-/// Use for fire-and-forget scenarios where message loss is acceptable.
-/// </summary>
-public interface IDirectPublisher
-{
-    /// <summary>
-    /// Publishes a message directly to the transport.
-    /// Throws on failure - no retry, no storage.
-    /// </summary>
-    Task PublishAsync<T>(string topic, T message, CancellationToken ct = default)
-        where T : class;
-
-    /// <summary>
-    /// Publishes using topic mapping.
-    /// </summary>
-    Task PublishAsync<T>(T message, CancellationToken ct = default)
-        where T : class;
-
-    /// <summary>
-    /// Try-pattern for explicit failure handling.
-    /// </summary>
-    Task<DirectPublishResult> TryPublishAsync<T>(
-        string topic,
-        T message,
-        CancellationToken ct = default) where T : class;
-}
-
-public readonly record struct DirectPublishResult(
-    bool Success,
-    Exception? Error = null,
-    TimeSpan? Duration = null);
-
-// ═══════════════════════════════════════════════════════════════════
 // SCHEDULING ATTRIBUTE
 // ═══════════════════════════════════════════════════════════════════
 
@@ -263,12 +216,12 @@ public sealed class RecurringAttribute : Attribute
 │                           Headless.Messaging.Core                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐          │
-│  │  IOutboxPublisher │  │  IDirectPublisher │  │  IScheduler       │          │
-│  │  (transactional)  │  │  (fire-and-forget)│  │  (cron/delayed)   │          │
-│  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘          │
-│           │                      │                      │                    │
-│           ▼                      ▼                      ▼                    │
+│  ┌────────────────────────────┐       ┌────────────────────────────┐       │
+│  │      IOutboxPublisher      │       │         IScheduler          │       │
+│  │      (transactional)       │       │       (cron/delayed)        │       │
+│  └─────────────┬──────────────┘       └─────────────┬──────────────┘       │
+│                │                                     │                      │
+│                ▼                                     ▼                      │
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
 │  │                        MessageDispatcher                                │ │
 │  │  - Routes to IConsume<T> handlers                                       │ │
@@ -383,23 +336,17 @@ CREATE TABLE distributed_locks (
 
 ## Implementation Phases
 
-### Phase 1: Core Abstractions & Direct Publisher
+### Phase 1: Core Scheduling Abstractions
 
 | # | Story | Size | Depends On |
 |---|-------|------|------------|
 | 1.1 | Create `ScheduledTrigger` message type in Abstractions | S | - |
-| 1.2 | Create `IDirectPublisher` interface in Abstractions | S | - |
-| 1.3 | Create `RecurringAttribute` in Abstractions | S | 1.1 |
-| 1.4 | Create `DirectPublishResult` and related types | XS | 1.2 |
-| 1.5 | Implement `DirectPublisher` in Core (RabbitMQ first) | M | 1.2 |
-| 1.6 | Add `EnableDirectPublish()` to `MessagingOptions` | S | 1.5 |
-| 1.7 | Add OpenTelemetry instrumentation for direct publish | S | 1.5 |
-| 1.8 | Write unit tests for `DirectPublisher` | M | 1.5 |
-| 1.9 | Write integration tests with RabbitMQ transport | M | 1.5 |
+| 1.2 | Create `RecurringAttribute` in Abstractions | S | 1.1 |
+| 1.3 | Write unit tests for scheduling types | S | 1.2 |
 
-**Success criteria:** `IDirectPublisher` works with RabbitMQ, bypasses outbox, throws on failure.
+**Success criteria:** `ScheduledTrigger` and `[Recurring]` attribute defined in Abstractions package.
 
-**Phase total:** ~16hr
+**Phase total:** ~4hr
 
 ---
 
@@ -414,7 +361,7 @@ CREATE TABLE distributed_locks (
 | 2.5 | Port `CronScheduleCache` from Ticker (cron parsing) | S | - |
 | 2.6 | Create `SchedulerBackgroundService` (polls for due jobs) | L | 2.3, 2.5 |
 | 2.7 | Create `IScheduledJobManager` for CRUD operations | M | 2.3 |
-| 2.8 | Integrate scheduler with `MessageDispatcher` | M | 2.6, 1.1 |
+| 2.8 | Integrate scheduler with `MessageDispatcher` | M | 2.6, Phase 1 |
 | 2.9 | Add distributed locking for job execution | M | 2.6 |
 | 2.10 | Write unit tests for scheduler | L | 2.6 |
 | 2.11 | Write integration tests with PostgreSQL | M | 2.4, 2.6 |
@@ -463,50 +410,31 @@ CREATE TABLE distributed_locks (
 
 ---
 
-### Phase 5: Direct Publisher for All Transports
+### Phase 5: Cleanup & Deprecation
 
 | # | Story | Size | Depends On |
 |---|-------|------|------------|
-| 5.1 | Implement `DirectPublisher` for Kafka | M | Phase 1 |
-| 5.2 | Implement `DirectPublisher` for AWS SQS | M | Phase 1 |
-| 5.3 | Implement `DirectPublisher` for Azure Service Bus | M | Phase 1 |
-| 5.4 | Implement `DirectPublisher` for NATS | S | Phase 1 |
-| 5.5 | Implement `DirectPublisher` for Redis Streams | S | Phase 1 |
-| 5.6 | Implement `DirectPublisher` for Pulsar | M | Phase 1 |
-| 5.7 | Integration tests for each transport | L | 5.1-5.6 |
+| 5.1 | Mark `Headless.Ticker.*` packages as deprecated | S | All phases |
+| 5.2 | Remove Ticker source code from main branch | S | 5.1 |
+| 5.3 | Update all sample projects | M | All phases |
+| 5.4 | Update README files for all affected packages | M | All phases |
 
-**Success criteria:** `IDirectPublisher` works with all supported transports.
+**Success criteria:** Ticker packages removed, unified system is default.
 
-**Phase total:** ~20hr
-
----
-
-### Phase 6: Cleanup & Migration
-
-| # | Story | Size | Depends On |
-|---|-------|------|------------|
-| 6.1 | Mark `Headless.Ticker.*` packages as deprecated | S | All phases |
-| 6.2 | Create migration guide documentation | M | All phases |
-| 6.3 | Create adapter for `[TickerFunction]` → `IConsume<ScheduledTrigger>` | M | Phase 2-3 |
-| 6.4 | Remove Ticker source code from main branch | S | 6.1, 6.3 |
-| 6.5 | Update all sample projects | M | All phases |
-| 6.6 | Update README files for all affected packages | M | All phases |
-
-**Success criteria:** Ticker packages deprecated, migration path clear, unified system is default.
-
-**Phase total:** ~12hr
+**Phase total:** ~8hr
 
 ---
 
 ## Sizing Summary
 
-| Size | Count | Est. Hours |
-|------|-------|------------|
-| XS | 2 | 1 |
-| S | 16 | 24 |
-| M | 22 | 66 |
-| L | 6 | 36 |
-| **Total** | **46 stories** | **~127hr** |
+| Phase | Stories | Est. Hours |
+|-------|---------|------------|
+| Phase 1: Core Scheduling Abstractions | 3 | 4 |
+| Phase 2: Scheduling Infrastructure | 11 | 32 |
+| Phase 3: Source Generator Enhancement | 7 | 18 |
+| Phase 4: Dashboard Consolidation | 9 | 24 |
+| Phase 5: Cleanup & Deprecation | 4 | 8 |
+| **Total** | **34 stories** | **~86hr** |
 
 ---
 
@@ -516,7 +444,6 @@ CREATE TABLE distributed_locks (
 
 - [ ] [M] `IConsume<ScheduledTrigger>` handles cron jobs via `[Recurring]` attribute
 - [ ] [M] `IConsume<T>` handles immediate messages (existing behavior preserved)
-- [ ] [M] `IDirectPublisher.PublishAsync()` sends to transport, throws on failure, no outbox
 - [ ] [M] `IOutboxPublisher.PublishDelayAsync()` schedules messages for future delivery
 - [ ] [S] Cron expressions support 6-field format with timezone configuration
 - [ ] [S] Distributed locking prevents concurrent job execution on same schedule
@@ -525,7 +452,6 @@ CREATE TABLE distributed_locks (
 
 ### Non-Functional Requirements
 
-- [ ] [M] Direct publish adds < 5ms latency vs direct transport call
 - [ ] [S] Scheduler polling interval configurable (default 1s)
 - [ ] [S] Job execution timeout configurable per-job
 - [ ] [XS] No breaking changes to existing `IConsume<T>` handlers
@@ -569,7 +495,6 @@ CREATE TABLE distributed_locks (
 
 | Risk | Impact | Probability | Mitigation |
 |------|--------|-------------|------------|
-| Breaking existing Messaging users | High | Low | Keep `IConsume<T>` signature unchanged |
 | Performance regression in scheduler | Medium | Medium | Benchmark against Ticker baseline |
 | Source generator complexity | Medium | Medium | Incremental extraction from existing Ticker generator |
 | Dashboard UI merge conflicts | Low | High | Design unified component library first |
@@ -658,10 +583,6 @@ CREATE TABLE distributed_locks (
 
 1. **Cron timezone handling in DST transitions** - Should we log warnings or silently handle?
 
-2. **Direct publish with multiple transports** - When multiple transports are configured, which one receives the direct publish? Default to first? Require explicit selection?
+2. **Job chaining** - Ticker supports `ParentId` for chained jobs. Should unified system support this, or defer to explicit message publishing between jobs?
 
-3. **Job chaining** - Ticker supports `ParentId` for chained jobs. Should unified system support this, or defer to explicit message publishing between jobs?
-
-4. **Rate limiting for direct publish** - Should `IDirectPublisher` have built-in rate limiting, or leave to user?
-
-5. **Payload size limits** - Should `ScheduledTrigger.Payload` have a max size, or rely on storage limits?
+3. **Payload size limits** - Should `ScheduledTrigger.Payload` have a max size, or rely on storage limits?
