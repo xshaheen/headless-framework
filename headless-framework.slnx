@@ -75,8 +75,10 @@
         <Project Path="src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
         <Project Path="src\Headless.DistributedLocks.Redis\Headless.DistributedLocks.Redis.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Cache.Tests.Integration\Headless.DistributedLocks.Cache.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.DistributedLocks.InMemory.Tests.Integration\Headless.DistributedLocks.InMemory.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Redis.Tests.Integration\Headless.DistributedLocks.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Tests.Harness\Headless.DistributedLocks.Tests.Harness.csproj" />
+        <Project Path="tests\Headless.DistributedLocks.Tests.Unit\Headless.DistributedLocks.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Emails/">
         <Project Path="src\Headless.Emails.Abstractions\Headless.Emails.Abstractions.csproj" />

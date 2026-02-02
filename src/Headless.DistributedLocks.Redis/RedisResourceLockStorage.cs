@@ -29,7 +29,7 @@ public sealed class RedisResourceLockStorage(
     {
         Argument.IsNotNullOrEmpty(key);
 
-        return await scriptsLoader.ReplaceIfEqualAsync(Db, key, newId, expectedId, newTtl);
+        return await scriptsLoader.ReplaceIfEqualAsync(Db, key, expectedId, newId, newTtl);
     }
 
     public async ValueTask<bool> RemoveIfEqualAsync(string key, string expectedId)
