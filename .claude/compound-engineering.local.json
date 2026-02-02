@@ -1,0 +1,30 @@
+{
+	"version": "1.0",
+	"projectType": "DotNet",
+	"reviewAgents": [
+		"strict-dotnet-reviewer",
+		"pragmatic-dotnet-reviewer",
+		"code-simplicity-reviewer",
+		"security-sentinel",
+		"performance-oracle"
+	],
+	"planReviewAgents": [
+		"strict-dotnet-reviewer",
+		"pragmatic-dotnet-reviewer",
+		"code-simplicity-reviewer"
+	],
+	"customAgents": {},
+	"conditionalAgents": {
+		"migrations": ["data-migration-expert", "deployment-verification-agent"],
+		"frontend": [],
+		"architecture": [
+			"architecture-strategist",
+			"pattern-recognition-specialist"
+		],
+		"data": ["data-integrity-guardian"]
+	},
+	"options": {
+		"agentNative": false,
+		"parallelReviews": true
+	}
+}
