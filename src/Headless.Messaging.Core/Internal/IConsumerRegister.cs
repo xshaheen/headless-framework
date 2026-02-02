@@ -235,8 +235,16 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                         throw ex;
                     }
 
-                    var type = executor!.Parameters.FirstOrDefault(x => !x.IsFromMessaging)?.ParameterType;
-                    message = await _serializer.DeserializeAsync(transportMessage, type);
+                    // Extract the actual message type for deserialization
+                    // For IConsume<T>.Consume(ConsumeContext<T>, CancellationToken), we need T, not ConsumeContext<T>
+                    var paramType = executor!.Parameters.FirstOrDefault(x => !x.IsFromMessaging)?.ParameterType;
+                    var messageValueType =
+                        paramType is { IsGenericType: true }
+                        && paramType.GetGenericTypeDefinition() == typeof(ConsumeContext<>)
+                            ? paramType.GetGenericArguments()[0]
+                            : paramType;
+
+                    message = await _serializer.DeserializeAsync(transportMessage, messageValueType);
                     message.RemoveException();
                 }
                 catch (Exception e)
