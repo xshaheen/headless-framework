@@ -125,12 +125,12 @@ internal sealed class DirectPublisher(
             if (!result.Succeeded)
             {
                 _TracingErrorSend(tracingTimestamp, transportMsg, result);
-                throw new PublisherSentFailedException(result.ToString(), result.Exception);
+                throw new Headless.Messaging.PublisherSentFailedException(result.ToString(), result.Exception);
             }
 
             _TracingAfterSend(tracingTimestamp, transportMsg);
         }
-        catch (Exception e) when (e is not PublisherSentFailedException)
+        catch (Exception e) when (e is not Headless.Messaging.PublisherSentFailedException)
         {
             try
             {
@@ -211,7 +211,7 @@ internal sealed class DirectPublisher(
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
         {
-            var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
+            var ex = new Headless.Messaging.PublisherSentFailedException(result.ToString(), result.Exception);
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             var eventData = new MessageEventDataPubSend

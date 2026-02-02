@@ -121,7 +121,7 @@ public sealed class DirectPublisherTests : TestBase
         var act = () => publisher.PublishAsync(new TestMessage("test"), AbortToken);
 
         // then
-        await act.Should().ThrowAsync<PublisherSentFailedException>();
+        await act.Should().ThrowAsync<Headless.Messaging.PublisherSentFailedException>();
     }
 
     [Fact]

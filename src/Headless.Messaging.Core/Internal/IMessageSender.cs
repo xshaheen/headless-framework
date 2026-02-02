@@ -194,7 +194,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
         {
-            var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
+            var ex = new Headless.Messaging.PublisherSentFailedException(result.ToString(), result.Exception);
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             var eventData = new MessageEventDataPubSend

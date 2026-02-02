@@ -97,10 +97,10 @@ public sealed class MetricsPublisher(IDirectPublisher publisher)
         // Sent immediately to transport, no persistence
         await publisher.PublishAsync(metric, ct);
 
-        // With custom headers
+        // With custom headers (using Headers constants)
         var headers = new Dictionary<string, string?>
         {
-            ["correlation-id"] = Guid.NewGuid().ToString(),
+            [Headers.CorrelationId] = Guid.NewGuid().ToString(),
         };
         await publisher.PublishAsync(metric, headers, ct);
     }
