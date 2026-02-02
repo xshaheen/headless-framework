@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Caching.Memory\Headless.Caching.Memory.csproj" />
+    <ProjectReference Include="..\..\src\Headless.DistributedLocks.Cache\Headless.DistributedLocks.Cache.csproj" />
+    <ProjectReference Include="..\Headless.DistributedLocks.Tests.Harness\Headless.DistributedLocks.Tests.Harness.csproj" />
+  </ItemGroup>
+</Project>
