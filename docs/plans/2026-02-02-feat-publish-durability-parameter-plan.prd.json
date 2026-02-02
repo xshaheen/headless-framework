@@ -16,7 +16,7 @@
 				"Exception documentation for ArgumentNullException, InvalidOperationException, and PublisherSentFailedException"
 			],
 			"priority": 1,
-			"passes": false,
+			"passes": true,
 			"notes": "Topic resolved from type mapping, no explicit topic parameter"
 		},
 		{
@@ -38,7 +38,7 @@
 				"Tracing failures do not mask original exception"
 			],
 			"priority": 2,
-			"passes": false,
+			"passes": true,
 			"notes": ""
 		},
 		{
@@ -52,7 +52,7 @@
 				"Registration happens in AddMessaging extension method"
 			],
 			"priority": 3,
-			"passes": false,
+			"passes": true,
 			"notes": ""
 		},
 		{
@@ -69,7 +69,7 @@
 				"Test: should_generate_standard_headers"
 			],
 			"priority": 4,
-			"passes": false,
+			"passes": true,
 			"notes": ""
 		},
 		{
@@ -83,7 +83,7 @@
 				"Verify topic resolved correctly from mapping"
 			],
 			"priority": 5,
-			"passes": false,
+			"passes": true,
 			"notes": ""
 		},
 		{
@@ -98,7 +98,7 @@
 				"README documents error handling differences"
 			],
 			"priority": 6,
-			"passes": false,
+			"passes": true,
 			"notes": ""
 		}
 	],
