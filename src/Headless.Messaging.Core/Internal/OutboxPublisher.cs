@@ -144,16 +144,23 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
     {
         var messageType = typeof(T);
 
-        if (!_messagingOptions.TopicMappings.TryGetValue(messageType, out var topicName))
+        // Check explicit topic mappings first
+        if (_messagingOptions.TopicMappings.TryGetValue(messageType, out var topicName))
         {
-            throw new InvalidOperationException(
-                $"No topic mapping found for message type '{messageType.Name}'. "
-                    + $"Register a topic mapping using WithTopicMapping<{messageType.Name}>(\"topic-name\") "
-                    + "or use the overload that accepts an explicit topic name."
-            );
+            return topicName;
         }
 
-        return topicName;
+        // Check conventions
+        if (_messagingOptions.Conventions?.GetTopicName(messageType) is { } conventionTopic)
+        {
+            return conventionTopic;
+        }
+
+        throw new InvalidOperationException(
+            $"No topic mapping found for message type '{messageType.Name}'. "
+                + $"Register a topic mapping using WithTopicMapping<{messageType.Name}>(\"topic-name\") "
+                + "or use the overload that accepts an explicit topic name."
+        );
     }
 
     private async Task _PublishInternalAsync<T>(

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless.Abstractions;
 using Headless.Checks;
@@ -24,6 +25,13 @@ internal sealed class DirectPublisher(
     private static readonly DiagnosticListener _DiagnosticListener = new(
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
+
+    /// <summary>
+    /// Cache for fully-resolved topic names (including prefix) keyed by message type.
+    /// Instance-level because prefix varies per MessagingOptions configuration.
+    /// Eliminates per-publish string allocations in high-throughput scenarios.
+    /// </summary>
+    private readonly ConcurrentDictionary<Type, string> _topicNameCache = new();
 
     private readonly ISerializer _serializer = serializer;
     private readonly ITransport _transport = transport;
@@ -58,17 +66,11 @@ internal sealed class DirectPublisher(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Create dictionary only when needed (avoids allocation when caller provides headers)
-        headers ??= new Dictionary<string, string?>(StringComparer.Ordinal);
+        // Pre-size for: MessageId, CorrelationId, CorrelationSequence, MessageName, SentTime (+ caller headers)
+        headers ??= new Dictionary<string, string?>(capacity: 6, StringComparer.Ordinal);
 
-        // Resolve topic from type mapping
+        // Resolve topic from type mapping (cached with prefix)
         var name = _GetTopicName<T>();
-
-        // Apply topic prefix
-        if (!string.IsNullOrEmpty(_options.TopicNamePrefix))
-        {
-            name = $"{_options.TopicNamePrefix}.{name}";
-        }
 
         // Generate standard headers
         _GenerateHeaders(headers, name);
@@ -83,6 +85,29 @@ internal sealed class DirectPublisher(
     {
         var messageType = typeof(T);
 
+        // Check cache first (includes prefix)
+        if (_topicNameCache.TryGetValue(messageType, out var cachedName))
+        {
+            return cachedName;
+        }
+
+        // Resolve and cache
+        var topicName = _ResolveTopicName(messageType);
+
+        // Apply prefix if configured
+        if (!string.IsNullOrEmpty(_options.TopicNamePrefix))
+        {
+            topicName = string.Concat(_options.TopicNamePrefix, ".", topicName);
+        }
+
+        // Cache includes prefix for zero-allocation on subsequent publishes
+        _topicNameCache.TryAdd(messageType, topicName);
+
+        return topicName;
+    }
+
+    private string _ResolveTopicName(Type messageType)
+    {
         // Check explicit topic mappings first
         if (_options.TopicMappings.TryGetValue(messageType, out var topicName))
         {
