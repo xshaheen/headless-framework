@@ -297,7 +297,7 @@ public sealed class AmazonSqsTransportTests : TestBase
         result.Succeeded.Should().BeTrue();
         await snsClient
             .Received(1)
-            .PublishAsync(Arg.Is<PublishRequest>(r => r.Message == null), Arg.Any<CancellationToken>());
+            .PublishAsync(Arg.Is<PublishRequest>(r => r.Message == string.Empty), Arg.Any<CancellationToken>());
     }
 
     [Fact]

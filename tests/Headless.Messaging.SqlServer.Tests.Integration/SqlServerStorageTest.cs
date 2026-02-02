@@ -13,7 +13,14 @@ public sealed class SqlServerStorageTest(SqlServerTestFixture fixture) : IAsyncL
     public async ValueTask InitializeAsync()
     {
         var storage = _GetStorageInitializer();
-        await storage.InitializeAsync();
+        try
+        {
+            await storage.InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Initialization failed: {ex.Message}", ex);
+        }
     }
 
     public ValueTask DisposeAsync()
@@ -34,9 +41,23 @@ public sealed class SqlServerStorageTest(SqlServerTestFixture fixture) : IAsyncL
         databaseName.Equals(result, StringComparison.OrdinalIgnoreCase).Should().BeTrue();
     }
 
+    [Fact]
+    public void should_list_all_tables()
+    {
+        using var connection = new SqlConnection(fixture.ConnectionString);
+        connection.Open();
+
+        var sql = "SELECT TABLE_SCHEMA + '.' + TABLE_NAME FROM INFORMATION_SCHEMA.TABLES";
+        var tables = connection.Query<string>(sql).ToList();
+
+        // Log what tables exist for debugging
+        var tableList = string.Join(", ", tables);
+        Assert.True(tables.Count > 0, $"No tables found. Available tables: {tableList}");
+    }
+
     [Theory]
-    [InlineData("messaging.published")]
-    [InlineData("messaging.received")]
+    [InlineData("messaging.Published")]
+    [InlineData("messaging.Received")]
     public void should_create_table(string tableName)
     {
         using var connection = new SqlConnection(fixture.ConnectionString);
@@ -52,7 +73,6 @@ public sealed class SqlServerStorageTest(SqlServerTestFixture fixture) : IAsyncL
             """;
 
         var result = connection.QueryFirstOrDefault<string>(sql);
-        result.Should().NotBeNull();
         result.Should().Be(table);
     }
 

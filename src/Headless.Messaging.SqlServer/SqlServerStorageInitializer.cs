@@ -44,15 +44,22 @@ public sealed class SqlServerStorageInitializer(
         var sql = _CreateDbTablesScript(options.Value.Schema);
         await using var connection = new SqlConnection(options.Value.ConnectionString);
 
-        object[] sqlParams =
-        [
-            new SqlParameter("@PubKey", $"publish_retry_{messagingOptions.Value.Version}"),
-            new SqlParameter("@RecKey", $"received_retry_{messagingOptions.Value.Version}"),
-            new SqlParameter("@LastLockTime", DateTime.MinValue) { SqlDbType = SqlDbType.DateTime2 },
-        ];
+        // Only include lock parameters if UseStorageLock is enabled
+        var sqlParams = new List<object>();
+        if (messagingOptions.Value.UseStorageLock)
+        {
+            sqlParams.Add(new SqlParameter("@PubKey", $"publish_retry_{messagingOptions.Value.Version}"));
+            sqlParams.Add(new SqlParameter("@RecKey", $"received_retry_{messagingOptions.Value.Version}"));
+            sqlParams.Add(
+                new SqlParameter("@LastLockTime", new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc))
+                {
+                    SqlDbType = SqlDbType.DateTime2,
+                }
+            );
+        }
 
         await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams.AsArray())
             .AnyContext();
 
         logger.LogDebug("Ensuring all create database tables script are applied.");
@@ -60,68 +67,57 @@ public sealed class SqlServerStorageInitializer(
 
     private string _CreateDbTablesScript(string schema)
     {
+        // Use underscore instead of period in constraint/index names for Azure SQL Edge compatibility
+        var receivedPrefix = $"{schema}_Received";
+        var publishedPrefix = $"{schema}_Published";
+        var lockPrefix = $"{schema}_Lock";
+
+        // Simplified SQL for Azure SQL Edge compatibility (no TEXTIMAGE_ON, simpler index options)
         var batchSql = $"""
             IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{schema}')
             BEGIN
-            	EXEC('CREATE SCHEMA [{schema}]')
+            	EXEC('CREATE SCHEMA [{schema}]');
             END;
 
             IF OBJECT_ID(N'{GetReceivedTableName()}',N'U') IS NULL
             BEGIN
-            CREATE TABLE {GetReceivedTableName()}(
-            	[Id] [bigint] NOT NULL,
-                [Version] [nvarchar](20) NOT NULL,
-            	[Name] [nvarchar](200) NOT NULL,
-            	[Group] [nvarchar](200) NULL,
-            	[Content] [nvarchar](max) NULL,
-            	[Retries] [int] NOT NULL,
-            	[Added] [datetime2](7) NOT NULL,
-                [ExpiresAt] [datetime2](7) NULL,
-            	[StatusName] [nvarchar](50) NOT NULL,
-                [MessageId] [nvarchar](200) NOT NULL,
-             CONSTRAINT [PK_{GetReceivedTableName()}] PRIMARY KEY CLUSTERED
-            (
-            	[Id] ASC
-            )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
-            ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+                CREATE TABLE {GetReceivedTableName()}(
+                    [Id] [bigint] NOT NULL,
+                    [Version] [nvarchar](20) NOT NULL,
+                    [Name] [nvarchar](200) NOT NULL,
+                    [Group] [nvarchar](200) NULL,
+                    [Content] [nvarchar](max) NULL,
+                    [Retries] [int] NOT NULL,
+                    [Added] [datetime2](7) NOT NULL,
+                    [ExpiresAt] [datetime2](7) NULL,
+                    [StatusName] [nvarchar](50) NOT NULL,
+                    [MessageId] [nvarchar](200) NOT NULL,
+                    CONSTRAINT [PK_{receivedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
+                );
 
-            CREATE UNIQUE NONCLUSTERED INDEX [IX_{GetReceivedTableName()}_MessageId_Group] ON {GetReceivedTableName()} ([MessageId] ASC, [Group] ASC)
-
-            CREATE NONCLUSTERED INDEX [IX_{GetReceivedTableName()}_Version_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC)
-            INCLUDE ([Id], [Content], [Retries], [Added])
-
-            CREATE NONCLUSTERED INDEX [IX_{GetReceivedTableName()}_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([ExpiresAt] ASC,[StatusName] ASC)
-
-            CREATE NONCLUSTERED INDEX [IX_{GetReceivedTableName()}_RetryQuery] ON {GetReceivedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC)
-            INCLUDE ([Id], [Content])
-
+                CREATE UNIQUE NONCLUSTERED INDEX [IX_{receivedPrefix}_MessageId_Group] ON {GetReceivedTableName()} ([MessageId] ASC, [Group] ASC);
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_RetryQuery] ON {GetReceivedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC);
             END;
 
             IF OBJECT_ID(N'{GetPublishedTableName()}',N'U') IS NULL
             BEGIN
-            CREATE TABLE {GetPublishedTableName()}(
-            	[Id] [bigint] NOT NULL,
-                [Version] [nvarchar](20) NOT NULL,
-            	[Name] [nvarchar](200) NOT NULL,
-            	[Content] [nvarchar](max) NULL,
-            	[Retries] [int] NOT NULL,
-            	[Added] [datetime2](7) NOT NULL,
-                [ExpiresAt] [datetime2](7) NULL,
-            	[StatusName] [nvarchar](50) NOT NULL,
-             CONSTRAINT [PK_{GetPublishedTableName()}] PRIMARY KEY CLUSTERED
-            (
-            	[Id] ASC
-            )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
-            ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+                CREATE TABLE {GetPublishedTableName()}(
+                    [Id] [bigint] NOT NULL,
+                    [Version] [nvarchar](20) NOT NULL,
+                    [Name] [nvarchar](200) NOT NULL,
+                    [Content] [nvarchar](max) NULL,
+                    [Retries] [int] NOT NULL,
+                    [Added] [datetime2](7) NOT NULL,
+                    [ExpiresAt] [datetime2](7) NULL,
+                    [StatusName] [nvarchar](50) NOT NULL,
+                    CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
+                );
 
-            CREATE NONCLUSTERED INDEX [IX_{GetPublishedTableName()}_Version_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC)
-            INCLUDE ([Id], [Content], [Retries], [Added])
-
-            CREATE NONCLUSTERED INDEX [IX_{GetPublishedTableName()}_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([ExpiresAt] ASC,[StatusName] ASC)
-
-            CREATE NONCLUSTERED INDEX [IX_{GetPublishedTableName()}_RetryQuery] ON {GetPublishedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC)
-            INCLUDE ([Id], [Content])
-
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_RetryQuery] ON {GetPublishedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC);
             END;
 
             """;
@@ -131,19 +127,18 @@ public sealed class SqlServerStorageInitializer(
             batchSql += $"""
                 IF OBJECT_ID(N'{GetLockTableName()}',N'U') IS NULL
                 BEGIN
-                CREATE TABLE {GetLockTableName()}(
-                	[Key] [nvarchar](128) NOT NULL,
-                    [Instance] [nvarchar](256) NOT NULL,
-                	[LastLockTime] [datetime2](7) NOT NULL,
-                 CONSTRAINT [PK_{GetLockTableName()}] PRIMARY KEY CLUSTERED
-                (
-                	[Key] ASC
-                )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = ON, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY]
-                ) ON [PRIMARY]
+                    CREATE TABLE {GetLockTableName()}(
+                        [Key] [nvarchar](128) NOT NULL,
+                        [Instance] [nvarchar](256) NOT NULL,
+                        [LastLockTime] [datetime2](7) NOT NULL,
+                        CONSTRAINT [PK_{lockPrefix}] PRIMARY KEY CLUSTERED ([Key] ASC)
+                    );
                 END;
 
-                INSERT INTO {GetLockTableName()} ([Key],[Instance],[LastLockTime]) VALUES(@PubKey,'',@LastLockTime);
-                INSERT INTO {GetLockTableName()} ([Key],[Instance],[LastLockTime]) VALUES(@RecKey,'',@LastLockTime);
+                IF NOT EXISTS (SELECT 1 FROM {GetLockTableName()} WHERE [Key] = @PubKey)
+                    INSERT INTO {GetLockTableName()} ([Key],[Instance],[LastLockTime]) VALUES(@PubKey,'',@LastLockTime);
+                IF NOT EXISTS (SELECT 1 FROM {GetLockTableName()} WHERE [Key] = @RecKey)
+                    INSERT INTO {GetLockTableName()} ([Key],[Instance],[LastLockTime]) VALUES(@RecKey,'',@LastLockTime);
                 """;
         }
 

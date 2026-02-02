@@ -173,7 +173,7 @@ public sealed class SqlServerDataStorage(
 
         object[] sqlParams =
         [
-            new SqlParameter("@Id", message.DbId),
+            new SqlParameter("@Id", long.Parse(message.DbId, CultureInfo.InvariantCulture)),
             new SqlParameter("@Name", name),
             new SqlParameter("@Content", message.Content),
             new SqlParameter("@Retries", message.Retries),
@@ -412,10 +412,10 @@ public sealed class SqlServerDataStorage(
 
         object[] sqlParams =
         [
-            new SqlParameter("@Id", message.DbId),
+            new SqlParameter("@Id", long.Parse(message.DbId, CultureInfo.InvariantCulture)),
             new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
-            new SqlParameter("@ExpiresAt", message.ExpiresAt),
+            new SqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new SqlParameter("@StatusName", state.ToString("G")),
         ];
 

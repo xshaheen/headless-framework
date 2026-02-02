@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Serialization;
 using Headless.Testing.Tests;
 using Tests.Capabilities;
 using Xunit;
@@ -21,18 +22,30 @@ public abstract class DataStorageTestsBase : TestBase
     /// <summary>Gets the storage initializer instance for testing.</summary>
     protected abstract IStorageInitializer GetInitializer();
 
+    /// <summary>Gets the serializer for creating message content.</summary>
+    protected abstract ISerializer GetSerializer();
+
     /// <summary>Gets the data storage capabilities for conditional test execution.</summary>
     protected virtual DataStorageCapabilities Capabilities => DataStorageCapabilities.Default;
 
+    /// <summary>
+    /// Thread-safe counter for generating unique numeric message IDs.
+    /// Uses a base timestamp combined with an incrementing counter to ensure uniqueness.
+    /// </summary>
+    private static long _messageIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() << 20;
+
     /// <summary>Creates a valid message for testing.</summary>
-    protected static Message CreateMessage(
-        string? messageId = null,
-        string? messageName = null,
-        object? value = null)
+    /// <remarks>
+    /// Generates numeric string IDs compatible with SQL Server/PostgreSQL bigint columns.
+    /// </remarks>
+    protected static Message CreateMessage(string? messageId = null, string? messageName = null, object? value = null)
     {
+        // Generate a unique numeric ID if none provided (compatible with bigint columns)
+        var id = messageId ?? Interlocked.Increment(ref _messageIdCounter).ToString(CultureInfo.InvariantCulture);
+
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            { MessagingHeaders.MessageId, messageId ?? Guid.NewGuid().ToString() },
+            { MessagingHeaders.MessageId, id },
             { MessagingHeaders.MessageName, messageName ?? "TestMessage" },
             { MessagingHeaders.SentTime, DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture) },
         };
@@ -106,9 +119,12 @@ public abstract class DataStorageTestsBase : TestBase
     {
         // given
         var storage = GetStorage();
+        var serializer = GetSerializer();
         const string messageName = "exception-message";
         const string group = "test-group";
-        const string content = "{\"error\": \"test exception\"}";
+        // StoreReceivedExceptionMessageAsync expects serialized Message content with headers
+        var message = CreateMessage();
+        var content = serializer.Serialize(message);
 
         // when
         var act = async () => await storage.StoreReceivedExceptionMessageAsync(messageName, group, content, AbortToken);
@@ -125,7 +141,8 @@ public abstract class DataStorageTestsBase : TestBase
         var storedMessage = await storage.StoreMessageAsync("state-test", message, cancellationToken: AbortToken);
 
         // when
-        var act = async () => await storage.ChangePublishStateAsync(storedMessage, StatusName.Succeeded, cancellationToken: AbortToken);
+        var act = async () =>
+            await storage.ChangePublishStateAsync(storedMessage, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // then
         await act.Should().NotThrowAsync();
@@ -201,7 +218,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         // given
         var storage = GetStorage();
-        var lockKey = $"test-lock-{Guid.NewGuid()}";
+        const string lockKey = "publish_retry_v1";
         var instanceId = Guid.NewGuid().ToString();
         var ttl = TimeSpan.FromSeconds(30);
 
@@ -225,7 +242,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         // given
         var storage = GetStorage();
-        var lockKey = $"test-lock-{Guid.NewGuid()}";
+        const string lockKey = "publish_retry_v1";
         var instanceId1 = Guid.NewGuid().ToString();
         var instanceId2 = Guid.NewGuid().ToString();
         var ttl = TimeSpan.FromSeconds(30);
@@ -252,7 +269,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         // given
         var storage = GetStorage();
-        var lockKey = $"test-lock-{Guid.NewGuid()}";
+        const string lockKey = "publish_retry_v1";
         var instanceId = Guid.NewGuid().ToString();
         var ttl = TimeSpan.FromSeconds(30);
 
@@ -282,7 +299,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         // given
         var storage = GetStorage();
-        var lockKey = $"test-lock-{Guid.NewGuid()}";
+        const string lockKey = "publish_retry_v1";
         var instanceId = Guid.NewGuid().ToString();
         var ttl = TimeSpan.FromSeconds(30);
 
@@ -381,12 +398,18 @@ public abstract class DataStorageTestsBase : TestBase
         var results = new ConcurrentBag<MediumMessage>();
 
         // when
-        var tasks = Enumerable.Range(0, 20).Select(async i =>
-        {
-            var message = CreateMessage(messageId: $"concurrent-{i}");
-            var result = await storage.StoreMessageAsync($"concurrent-topic-{i}", message, cancellationToken: AbortToken);
-            results.Add(result);
-        });
+        var tasks = Enumerable
+            .Range(0, 20)
+            .Select(async i =>
+            {
+                var message = CreateMessage();
+                var result = await storage.StoreMessageAsync(
+                    $"concurrent-topic-{i}",
+                    message,
+                    cancellationToken: AbortToken
+                );
+                results.Add(result);
+            });
 
         await Task.WhenAll(tasks);
 
@@ -414,7 +437,8 @@ public abstract class DataStorageTestsBase : TestBase
                 scheduledMessages.AddRange(messages);
                 return ValueTask.CompletedTask;
             },
-            AbortToken);
+            AbortToken
+        );
 
         // then - should complete without exception
         scheduledMessages.Should().NotBeNull();

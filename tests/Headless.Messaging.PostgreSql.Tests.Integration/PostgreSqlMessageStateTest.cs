@@ -52,9 +52,17 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
 
     protected override async ValueTask DisposeAsyncCore()
     {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync();
-        await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
+        try
+        {
+            await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+            await connection.OpenAsync();
+            await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
+        }
+        catch (PostgresException)
+        {
+            // Schema may not exist if test failed before initialization
+        }
+
         await base.DisposeAsyncCore();
     }
 

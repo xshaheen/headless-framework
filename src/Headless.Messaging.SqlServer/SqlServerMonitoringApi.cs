@@ -264,13 +264,14 @@ internal class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
+        // Use CONVERT instead of FORMAT to avoid CLR dependency (Azure SQL Edge doesn't support CLR)
         var sqlQuery = $"""
             WITH Aggr AS (
-            SELECT FORMAT(Added,'yyyy-MM-dd-HH') AS [Key],
+            SELECT CONVERT(CHAR(10), Added, 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, Added) AS VARCHAR(2)), 2) AS [Key],
                 COUNT(Id) [Count]
             FROM  {tableName}
             WHERE StatusName = @StatusName
-            GROUP BY FORMAT(Added,'yyyy-MM-dd-HH')
+            GROUP BY CONVERT(CHAR(10), Added, 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, Added) AS VARCHAR(2)), 2)
             )
             SELECT [Key], [Count] FROM Aggr WITH (NOLOCK) WHERE [Key] >= @MinKey AND [Key] <= @MaxKey;
             """;
@@ -337,13 +338,14 @@ internal class SqlServerMonitoringApi(
 
                     while (await reader.ReadAsync(ct).AnyContext())
                     {
+                        var expiresAtIsNull = await reader.IsDBNullAsync(3, ct).AnyContext();
                         message = new MediumMessage
                         {
                             DbId = reader.GetInt64(0).ToString(CultureInfo.InvariantCulture),
                             Origin = serializer.Deserialize(reader.GetString(1))!,
                             Content = reader.GetString(1),
                             Added = reader.GetDateTime(2),
-                            ExpiresAt = reader.GetDateTime(3),
+                            ExpiresAt = expiresAtIsNull ? null : reader.GetDateTime(3),
                             Retries = reader.GetInt32(4),
                         };
                     }

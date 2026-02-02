@@ -105,15 +105,15 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
         var instance1 = Guid.NewGuid().ToString();
         var instance2 = Guid.NewGuid().ToString();
 
-        // Acquire lock with very short TTL
-        var shortTtl = TimeSpan.FromMilliseconds(1);
+        // Acquire lock with short TTL
+        var shortTtl = TimeSpan.FromMilliseconds(10);
         await _storage.AcquireLockAsync(key, shortTtl, instance1, AbortToken);
 
         // Wait for TTL to expire
         await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
 
-        // when - try to acquire with second instance using longer TTL for comparison
-        var acquired = await _storage.AcquireLockAsync(key, TimeSpan.FromMinutes(5), instance2, AbortToken);
+        // when - try to acquire with second instance (TTL determines how old lock must be to be considered stale)
+        var acquired = await _storage.AcquireLockAsync(key, TimeSpan.FromMilliseconds(30), instance2, AbortToken);
 
         // then
         acquired.Should().BeTrue();
@@ -185,8 +185,8 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
         var instance1 = Guid.NewGuid().ToString();
         var instance2 = Guid.NewGuid().ToString();
 
-        // Acquire with very short TTL
-        var shortTtl = TimeSpan.FromMilliseconds(1);
+        // Acquire with short TTL
+        var shortTtl = TimeSpan.FromMilliseconds(10);
         await _storage.AcquireLockAsync(key, shortTtl, instance1, AbortToken);
 
         // when - try to renew with different instance (should not extend TTL)
@@ -195,9 +195,9 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
         // Wait for original TTL to expire
         await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
 
-        // then - instance3 should be able to acquire because renewal failed
+        // then - instance3 should be able to acquire because renewal failed (TTL determines staleness threshold)
         var instance3 = Guid.NewGuid().ToString();
-        var acquired = await _storage.AcquireLockAsync(key, TimeSpan.FromMinutes(5), instance3, AbortToken);
+        var acquired = await _storage.AcquireLockAsync(key, TimeSpan.FromMilliseconds(30), instance3, AbortToken);
         acquired.Should().BeTrue();
     }
 

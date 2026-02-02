@@ -34,11 +34,8 @@ internal sealed class AmazonSqsTransport(
 
             if (success)
             {
-                string? bodyJson = null;
-                if (message.Body.Length > 0)
-                {
-                    bodyJson = Encoding.UTF8.GetString(message.Body.Span);
-                }
+                // SNS requires a non-null message body; use empty string for empty bodies
+                var bodyJson = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
 
                 var attributes = message
                     .Headers.Where(x => x.Value != null)

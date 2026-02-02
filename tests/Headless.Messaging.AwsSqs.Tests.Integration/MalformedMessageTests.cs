@@ -212,6 +212,7 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
             {
                 Region = Amazon.RegionEndpoint.USEast1,
                 SqsServiceUrl = fixture.Container.GetConnectionString(),
+                Credentials = new Amazon.Runtime.BasicAWSCredentials("test", "test"),
             }
         );
 

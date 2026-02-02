@@ -34,6 +34,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         {
             x.ConnectionString = fixture.ConnectionString;
             x.Schema = "messaging";
+            x.Version = "v1"; // Must match MessagingOptions.Version for retry queries
         });
         services.Configure<MessagingOptions>(x =>
         {
@@ -451,7 +452,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         await connection.OpenAsync();
         await connection.ExecuteAsync(
             "INSERT INTO messaging.Lock ([Key], [Instance], [LastLockTime]) VALUES (@Key, '', @LastLockTime)",
-            new { Key = key, LastLockTime = DateTime.MinValue }
+            new { Key = key, LastLockTime = new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
         );
     }
 }
