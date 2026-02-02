@@ -13,34 +13,53 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
-internal sealed class DirectPublisher(IServiceProvider serviceProvider) : IDirectPublisher
+internal sealed class DirectPublisher(
+    ISerializer serializer,
+    ITransport transport,
+    ILongIdGenerator idGenerator,
+    TimeProvider timeProvider,
+    IOptions<MessagingOptions> options
+) : IDirectPublisher
 {
     private static readonly DiagnosticListener _DiagnosticListener = new(
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
-    private readonly ISerializer _serializer = serviceProvider.GetRequiredService<ISerializer>();
-    private readonly ITransport _transport = serviceProvider.GetRequiredService<ITransport>();
-    private readonly ILongIdGenerator _idGenerator = serviceProvider.GetRequiredService<ILongIdGenerator>();
-    private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
-    private readonly MessagingOptions _options = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+    private readonly ISerializer _serializer = serializer;
+    private readonly ITransport _transport = transport;
+    private readonly ILongIdGenerator _idGenerator = idGenerator;
+    private readonly TimeProvider _timeProvider = timeProvider;
+    private readonly MessagingOptions _options = options.Value;
 
     public Task PublishAsync<T>(T contentObj, CancellationToken cancellationToken = default)
         where T : class
     {
-        return PublishAsync(contentObj, new Dictionary<string, string?>(StringComparer.Ordinal), cancellationToken);
+        return _PublishCoreAsync(contentObj, headers: null, cancellationToken);
     }
 
-    public async Task PublishAsync<T>(
+    public Task PublishAsync<T>(
         T contentObj,
         IDictionary<string, string?> headers,
         CancellationToken cancellationToken = default
     )
         where T : class
     {
+        return _PublishCoreAsync(contentObj, headers, cancellationToken);
+    }
+
+    private async Task _PublishCoreAsync<T>(
+        T contentObj,
+        IDictionary<string, string?>? headers,
+        CancellationToken cancellationToken
+    )
+        where T : class
+    {
         Argument.IsNotNull(contentObj);
 
         cancellationToken.ThrowIfCancellationRequested();
+
+        // Create dictionary only when needed (avoids allocation when caller provides headers)
+        headers ??= new Dictionary<string, string?>(StringComparer.Ordinal);
 
         // Resolve topic from type mapping
         var name = _GetTopicName<T>();
