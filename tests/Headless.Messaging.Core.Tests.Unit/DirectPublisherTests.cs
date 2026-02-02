@@ -271,7 +271,7 @@ public sealed class DirectPublisherTests : TestBase
     }
 
     [Fact]
-    public void should_register_as_scoped_service()
+    public void should_register_as_singleton_service()
     {
         // given
         var services = new ServiceCollection();
@@ -288,7 +288,7 @@ public sealed class DirectPublisherTests : TestBase
         // then
         var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IDirectPublisher));
         descriptor.Should().NotBeNull();
-        descriptor!.Lifetime.Should().Be(ServiceLifetime.Scoped);
+        descriptor!.Lifetime.Should().Be(ServiceLifetime.Singleton);
     }
 
     [Fact]
@@ -305,10 +305,9 @@ public sealed class DirectPublisherTests : TestBase
 
         // when
         var provider = services.BuildServiceProvider();
-        using var scope = provider.CreateScope();
 
-        // then
-        var publisher = scope.ServiceProvider.GetService<IDirectPublisher>();
+        // then - singleton can be resolved directly without scope
+        var publisher = provider.GetService<IDirectPublisher>();
         publisher.Should().NotBeNull();
         publisher.Should().BeOfType<DirectPublisher>();
     }
@@ -322,7 +321,7 @@ public sealed class DirectPublisherTests : TestBase
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(Options.Create(options));
         services.AddSingleton(options.JsonSerializerOptions);
-        services.AddScoped<IDirectPublisher, DirectPublisher>();
+        services.AddSingleton<IDirectPublisher, DirectPublisher>();
 
         var provider = services.BuildServiceProvider();
         return provider.GetRequiredService<IDirectPublisher>();

@@ -90,7 +90,7 @@ public static class Setup
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IOutboxPublisher, OutboxPublisher>();
-        services.TryAddScoped<IDirectPublisher, DirectPublisher>();
+        services.TryAddSingleton<IDirectPublisher, DirectPublisher>();
 
         services.TryAddSingleton<IConsumerServiceSelector, ConsumerServiceSelector>();
         services.TryAddSingleton<ISubscribeInvoker, SubscribeInvoker>();

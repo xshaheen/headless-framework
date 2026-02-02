@@ -5,8 +5,13 @@ namespace Headless.Messaging;
 /// <summary>
 /// Exception thrown when a message fails to be sent to the transport.
 /// </summary>
-public class PublisherSentFailedException : Exception
+public sealed class PublisherSentFailedException : Exception
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PublisherSentFailedException"/> class.
+    /// </summary>
+    public PublisherSentFailedException() { }
+
     /// <summary>
     /// Initializes a new instance of the <see cref="PublisherSentFailedException"/> class.
     /// </summary>
