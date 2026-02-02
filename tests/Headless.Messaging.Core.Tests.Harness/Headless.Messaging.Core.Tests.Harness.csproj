@@ -5,6 +5,7 @@
     <IsTestProject>false</IsTestProject>
     <IsTestableProject>false</IsTestableProject>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <ExcludeFromCodeCoverage>true</ExcludeFromCodeCoverage>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
