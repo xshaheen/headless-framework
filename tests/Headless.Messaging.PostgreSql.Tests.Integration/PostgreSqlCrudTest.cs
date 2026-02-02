@@ -57,9 +57,17 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
     protected override async ValueTask DisposeAsyncCore()
     {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync();
-        await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
+        try
+        {
+            await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+            await connection.OpenAsync();
+            await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
+        }
+        catch (PostgresException)
+        {
+            // Schema may not exist if test failed before initialization
+        }
+
         await base.DisposeAsyncCore();
     }
 
@@ -217,7 +225,8 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
         var id = _longIdGenerator.Create();
-        var content = "{\"Headers\":{\"msg-id\":\"" + id.ToString(CultureInfo.InvariantCulture) + "\"},\"Value\":null}";
+        var content =
+            "{\"Headers\":{\"headless-msg-id\":\"" + id.ToString(CultureInfo.InvariantCulture) + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
             """
             INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","StatusName")
@@ -249,7 +258,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
         var id = _longIdGenerator.Create();
         var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
-        var content = "{\"Headers\":{\"msg-id\":\"" + msgId + "\"},\"Value\":null}";
+        var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
             """
             INSERT INTO messaging.received ("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","StatusName","MessageId")
@@ -281,7 +290,8 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
         var id = _longIdGenerator.Create();
-        var content = "{\"Headers\":{\"msg-id\":\"" + id.ToString(CultureInfo.InvariantCulture) + "\"},\"Value\":null}";
+        var content =
+            "{\"Headers\":{\"headless-msg-id\":\"" + id.ToString(CultureInfo.InvariantCulture) + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
             """
             INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","StatusName")
@@ -307,7 +317,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     {
         // given
         var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
-        var content = "{\"Headers\":{\"msg-id\":\"" + msgId + "\"},\"Value\":null}";
+        var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
 
         // when
         await _storage.StoreReceivedExceptionMessageAsync("test.topic", "test.group", content, AbortToken);

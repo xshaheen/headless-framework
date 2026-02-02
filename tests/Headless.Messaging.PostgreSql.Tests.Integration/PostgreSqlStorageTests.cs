@@ -24,16 +24,18 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     private IStorageInitializer? _initializer;
     private IDataStorage? _storage;
     private ILongIdGenerator? _longIdGenerator;
+    private ISerializer? _serializer;
 
     /// <inheritdoc />
-    protected override DataStorageCapabilities Capabilities => new()
-    {
-        SupportsLocking = true,
-        SupportsExpiration = true,
-        SupportsConcurrentOperations = true,
-        SupportsDelayedScheduling = true,
-        SupportsMonitoringApi = true,
-    };
+    protected override DataStorageCapabilities Capabilities =>
+        new()
+        {
+            SupportsLocking = true,
+            SupportsExpiration = true,
+            SupportsConcurrentOperations = true,
+            SupportsDelayedScheduling = true,
+            SupportsMonitoringApi = true,
+        };
 
     /// <inheritdoc />
     protected override IDataStorage GetStorage()
@@ -50,6 +52,13 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     /// <inheritdoc />
+    protected override ISerializer GetSerializer()
+    {
+        _EnsureInitialized();
+        return _serializer!;
+    }
+
+    /// <inheritdoc />
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
@@ -61,10 +70,23 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     /// <inheritdoc />
     protected override async ValueTask DisposeAsyncCore()
     {
-        // Clean up tables after tests
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync();
-        await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
+        // Clean up tables after tests (ignore errors if schema doesn't exist)
+        try
+        {
+            await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+            await connection.OpenAsync();
+            await connection.ExecuteAsync(
+                """
+                TRUNCATE TABLE messaging.published;
+                TRUNCATE TABLE messaging.received;
+                UPDATE messaging.lock SET "Instance"='', "LastLockTime"='0001-01-01 00:00:00';
+                """
+            );
+        }
+        catch (PostgresException)
+        {
+            // Schema may not exist if test failed before initialization
+        }
 
         await base.DisposeAsyncCore();
     }
@@ -97,6 +119,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         var messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
 
         _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
+        _serializer = provider.GetRequiredService<ISerializer>();
 
         _initializer = new PostgreSqlStorageInitializer(
             NullLogger<PostgreSqlStorageInitializer>.Instance,

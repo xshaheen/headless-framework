@@ -117,7 +117,9 @@ public sealed class TopicNormalizerTests
     public void should_throw_on_null_string()
     {
         // given
-        const string input = null!;
+#pragma warning disable RCS1118
+        string input = null!;
+#pragma warning restore RCS1118
 
         // when
         var testCode = () => input.NormalizeForAws();

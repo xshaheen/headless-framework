@@ -6,7 +6,7 @@ namespace Headless.Messaging.SqlServer;
 
 public partial class SqlServerEntityFrameworkMessagingOptions
 {
-    public const string DefaultSchema = "messages";
+    public const string DefaultSchema = "messaging";
 
     /// <summary>
     /// SQL Server maximum identifier length for schema names.

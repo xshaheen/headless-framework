@@ -23,17 +23,19 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
 {
     private IStorageInitializer? _initializer;
     private IDataStorage? _storage;
+    private ISerializer? _serializer;
     private ILongIdGenerator? _longIdGenerator;
 
     /// <inheritdoc />
-    protected override DataStorageCapabilities Capabilities => new()
-    {
-        SupportsLocking = true,
-        SupportsExpiration = true,
-        SupportsConcurrentOperations = true,
-        SupportsDelayedScheduling = true,
-        SupportsMonitoringApi = true,
-    };
+    protected override DataStorageCapabilities Capabilities =>
+        new()
+        {
+            SupportsLocking = true,
+            SupportsExpiration = true,
+            SupportsConcurrentOperations = true,
+            SupportsDelayedScheduling = true,
+            SupportsMonitoringApi = true,
+        };
 
     /// <inheritdoc />
     protected override IDataStorage GetStorage()
@@ -47,6 +49,13 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     {
         _EnsureInitialized();
         return _initializer!;
+    }
+
+    /// <inheritdoc />
+    protected override ISerializer GetSerializer()
+    {
+        _EnsureInitialized();
+        return _serializer!;
     }
 
     /// <inheritdoc />
@@ -65,7 +74,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
         await connection.ExecuteAsync(
-            "TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received; DELETE FROM messaging.Lock;"
+            "TRUNCATE TABLE messaging.Published; TRUNCATE TABLE messaging.Received; DELETE FROM messaging.Lock;"
         );
 
         await base.DisposeAsyncCore();
@@ -103,6 +112,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         var messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
 
         _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
+        _serializer = provider.GetRequiredService<ISerializer>();
 
         _initializer = new SqlServerStorageInitializer(
             NullLogger<SqlServerStorageInitializer>.Instance,

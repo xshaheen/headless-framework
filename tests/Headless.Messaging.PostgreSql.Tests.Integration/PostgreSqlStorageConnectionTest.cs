@@ -49,9 +49,16 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
 
     protected override async ValueTask DisposeAsyncCore()
     {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync();
-        await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
+        try
+        {
+            await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+            await connection.OpenAsync();
+            await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
+        }
+        catch (PostgresException)
+        {
+            // Schema may not exist if test failed before initialization
+        }
 
         await base.DisposeAsyncCore();
     }
@@ -81,7 +88,9 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
     [Fact]
     public async Task should_store_received_exception_message()
     {
-        await _storage.StoreReceivedExceptionMessageAsync("test.name", "test.group", "", AbortToken);
+        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
+        await _storage.StoreReceivedExceptionMessageAsync("test.name", "test.group", content, AbortToken);
     }
 
     [Fact]

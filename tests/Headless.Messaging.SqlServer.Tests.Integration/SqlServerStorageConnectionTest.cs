@@ -24,7 +24,11 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
-        services.Configure<SqlServerOptions>(x => x.ConnectionString = fixture.ConnectionString);
+        services.Configure<SqlServerOptions>(x =>
+        {
+            x.ConnectionString = fixture.ConnectionString;
+            x.Version = "v1"; // Must match MessagingOptions.Version
+        });
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
@@ -51,7 +55,7 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
-        await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
+        await connection.ExecuteAsync("TRUNCATE TABLE messaging.Published; TRUNCATE TABLE messaging.Received;");
         await base.DisposeAsyncCore();
     }
 
@@ -80,7 +84,9 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
     [Fact]
     public async Task should_store_received_exception_message()
     {
-        await _storage.StoreReceivedExceptionMessageAsync("test.name", "test.group", "", AbortToken);
+        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
+        await _storage.StoreReceivedExceptionMessageAsync("test.name", "test.group", content, AbortToken);
     }
 
     [Fact]

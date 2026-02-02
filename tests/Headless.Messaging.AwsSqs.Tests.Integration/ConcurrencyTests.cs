@@ -8,6 +8,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using MessagingHeaders = Headless.Messaging.Messages.Headers;
 using StringComparer = System.StringComparer;
 
 namespace Tests;
@@ -36,8 +37,8 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
                 var message = new TransportMessage(
                     new Dictionary<string, string?>(StringComparer.Ordinal)
                     {
-                        ["Name"] = topicName,
-                        ["MessageId"] = messageId.ToString(CultureInfo.InvariantCulture),
+                        [MessagingHeaders.MessageName] = topicName,
+                        [MessagingHeaders.MessageId] = messageId.ToString(CultureInfo.InvariantCulture),
                     },
                     Encoding.UTF8.GetBytes($"{{\"id\":{messageId}}}")
                 );
@@ -69,7 +70,10 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
             async (messageId, _) =>
             {
                 var message = new TransportMessage(
-                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        [MessagingHeaders.MessageName] = topicName,
+                    },
                     "{\"data\":\"init-test\"}"u8.ToArray()
                 );
 
@@ -105,7 +109,10 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
             {
                 var topicName = topicNames[messageId % topicNames.Length];
                 var message = new TransportMessage(
-                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        [MessagingHeaders.MessageName] = topicName,
+                    },
                     Encoding.UTF8.GetBytes($"{{\"topic\":\"{topicName}\",\"index\":{messageId}}}")
                 );
 
@@ -119,25 +126,26 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task should_handle_mixed_success_and_failure_scenarios()
+    public async Task should_auto_create_topics_for_all_messages()
     {
-        // given
+        // given - The transport auto-creates topics, so all messages should succeed
         await using var transport = await _CreateTransportAsync();
-        const string existingTopic = "existing-topic";
-        await _CreateTopicAsync(existingTopic);
 
         const int parallelCount = 50;
         var results = new OperateResult[parallelCount];
 
-        // when - Mix successful and failing requests
+        // when - Send messages to different topics (some pre-existing, some new)
         await Parallel.ForEachAsync(
             Enumerable.Range(0, parallelCount),
             AbortToken,
             async (messageId, _) =>
             {
-                var topicName = messageId % 2 == 0 ? existingTopic : $"non-existent-{messageId}";
+                var topicName = $"auto-topic-{messageId % 10}";
                 var message = new TransportMessage(
-                    new Dictionary<string, string?>(StringComparer.Ordinal) { ["Name"] = topicName },
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        [MessagingHeaders.MessageName] = topicName,
+                    },
                     Encoding.UTF8.GetBytes($"{{\"index\":{messageId}}}")
                 );
 
@@ -145,14 +153,9 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
             }
         );
 
-        // then
+        // then - All should succeed since topics are auto-created
         results.Should().HaveCount(parallelCount);
-        var successCount = results.Count(r => r.Succeeded);
-        var failureCount = results.Count(r => !r.Succeeded);
-
-        successCount.Should().BeGreaterThan(0);
-        failureCount.Should().BeGreaterThan(0);
-        (successCount + failureCount).Should().Be(parallelCount);
+        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
     }
 
     private async Task<ITransport> _CreateTransportAsync()
@@ -165,6 +168,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
                 Region = Amazon.RegionEndpoint.USEast1,
                 SnsServiceUrl = container.GetConnectionString(),
                 SqsServiceUrl = container.GetConnectionString(),
+                Credentials = new Amazon.Runtime.BasicAWSCredentials("test", "test"),
             }
         );
 

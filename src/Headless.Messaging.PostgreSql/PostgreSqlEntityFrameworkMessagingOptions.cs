@@ -6,7 +6,7 @@ namespace Headless.Messaging.PostgreSql;
 
 public partial class PostgreSqlEntityFrameworkMessagingOptions
 {
-    public const string DefaultSchema = "messages";
+    public const string DefaultSchema = "messaging";
 
     /// <summary>
     /// PostgreSQL maximum identifier length for schema names.
