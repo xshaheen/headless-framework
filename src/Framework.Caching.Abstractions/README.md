@@ -77,6 +77,7 @@ No configuration required. This is an abstractions-only package.
 
 ## Dependencies
 
+- `Framework.Base` - Threading utilities (KeyedLock)
 - `Framework.Checks` - Argument validation
 
 ## Side Effects

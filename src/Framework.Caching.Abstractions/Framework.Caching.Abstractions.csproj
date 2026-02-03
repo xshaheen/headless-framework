@@ -4,9 +4,7 @@
     <RootNamespace>Framework.Caching</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Framework.Caching.Abstractions.Tests.Unit" />
-  </ItemGroup>
-  <ItemGroup>
+    <ProjectReference Include="..\Framework.Base\Framework.Base.csproj" />
     <ProjectReference Include="..\Framework.Checks\Framework.Checks.csproj" />
   </ItemGroup>
 </Project>
