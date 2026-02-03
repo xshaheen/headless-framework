@@ -1,4 +1,4 @@
-# Headless.ResourceLocks.Redis
+# Headless.DistributedLocks.Redis
 
 Redis-based resource lock storage using StackExchange.Redis.
 
@@ -8,15 +8,15 @@ Provides high-performance distributed locking using Redis with atomic Lua script
 
 ## Key Features
 
-- `RedisResourceLockStorage` - Atomic lock operations via Redis
-- `RedisThrottlingResourceLockStorage` - Rate-limited locking
+- `RedisDistributedLockStorage` - Atomic lock operations via Redis
+- `RedisThrottlingDistributedLockStorage` - Rate-limited locking
 - Lua scripts for atomic acquire/release
 - High performance and reliability
 
 ## Installation
 
 ```bash
-dotnet add package Headless.ResourceLocks.Redis
+dotnet add package Headless.DistributedLocks.Redis
 ```
 
 ## Quick Start
@@ -28,8 +28,8 @@ var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
 builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
 
 // Add resource locks with Redis storage
-builder.Services.AddResourceLock();
-builder.Services.AddSingleton<IResourceLockStorage, RedisResourceLockStorage>();
+builder.Services.AddDistributedLock();
+builder.Services.AddSingleton<IDistributedLockStorage, RedisDistributedLockStorage>();
 ```
 
 ## Configuration
@@ -38,11 +38,11 @@ No additional configuration beyond Redis connection.
 
 ## Dependencies
 
-- `Headless.ResourceLocks.Core`
+- `Headless.DistributedLocks.Core`
 - `Headless.Redis`
 - `StackExchange.Redis`
 
 ## Side Effects
 
-- Registers `IResourceLockStorage` as singleton
-- Registers `IThrottlingResourceLockStorage` as singleton (optional)
+- Registers `IDistributedLockStorage` as singleton
+- Registers `IThrottlingDistributedLockStorage` as singleton (optional)

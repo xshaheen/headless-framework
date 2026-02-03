@@ -2,12 +2,12 @@
 
 using Headless.Abstractions;
 using Headless.Caching;
+using Headless.DistributedLocks;
 using Headless.Domain;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Models;
 using Headless.Permissions.Repositories;
-using Headless.DistributedLocks;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -21,7 +21,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
     private readonly IStaticPermissionDefinitionStore _staticStore;
     private readonly IPermissionDefinitionSerializer _serializer;
     private readonly ICache _cache;
-    private readonly IResourceLockProvider _resourceLockProvider;
+    private readonly IDistributedLockProvider _distributedLockProvider;
     private readonly IDistributedMessagePublisher _messagePublisher;
     private readonly IGuidGenerator _guidGenerator;
     private readonly IApplicationInformationAccessor _application;
@@ -36,7 +36,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
         _staticStore = Substitute.For<IStaticPermissionDefinitionStore>();
         _serializer = Substitute.For<IPermissionDefinitionSerializer>();
         _cache = Substitute.For<ICache>();
-        _resourceLockProvider = Substitute.For<IResourceLockProvider>();
+        _distributedLockProvider = Substitute.For<IDistributedLockProvider>();
         _messagePublisher = Substitute.For<IDistributedMessagePublisher>();
         _guidGenerator = Substitute.For<IGuidGenerator>();
         _application = Substitute.For<IApplicationInformationAccessor>();
@@ -58,7 +58,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
             _staticStore,
             _serializer,
             _cache,
-            _resourceLockProvider,
+            _distributedLockProvider,
             _messagePublisher,
             _guidGenerator,
             _application,
@@ -233,8 +233,8 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
             .GetAsync<string>(_options.CommonPermissionsUpdatedStampCacheKey, Arg.Any<CancellationToken>())
             .Returns(new CacheValue<string>(null, false), new CacheValue<string>(stamp, true));
 
-        var lockHandle = Substitute.For<IResourceLock>();
-        _resourceLockProvider
+        var lockHandle = Substitute.For<IDistributedLock>();
+        _distributedLockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),

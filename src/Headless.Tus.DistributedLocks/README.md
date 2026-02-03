@@ -1,6 +1,6 @@
-# Headless.Tus.ResourceLock
+# Headless.Tus.DistributedLock
 
-TUS file locking using Headless.ResourceLocks.
+TUS file locking using Headless.DistributedLocks.
 
 ## Problem Solved
 
@@ -8,14 +8,14 @@ Provides a TUS file lock provider implementation using the framework's distribut
 
 ## Key Features
 
-- `ResourceLockTusLockProvider` - ITusFileLockProvider implementation
-- `ResourceLockTusLock` - Distributed file lock wrapper
-- Works with any IResourceLockProvider (Redis, Cache)
+- `DistributedLockTusLockProvider` - ITusFileLockProvider implementation
+- `DistributedLockTusLock` - Distributed file lock wrapper
+- Works with any IDistributedLockProvider (Redis, Cache)
 
 ## Installation
 
 ```bash
-dotnet add package Headless.Tus.ResourceLock
+dotnet add package Headless.Tus.DistributedLock
 ```
 
 ## Quick Start
@@ -24,11 +24,11 @@ dotnet add package Headless.Tus.ResourceLock
 var builder = WebApplication.CreateBuilder(args);
 
 // Add resource lock provider first
-builder.Services.AddResourceLock();
-builder.Services.AddResourceLockRedisStorage();
+builder.Services.AddDistributedLock();
+builder.Services.AddDistributedLockRedisStorage();
 
 // Add TUS lock provider
-builder.Services.AddResourceLockTusLockProvider();
+builder.Services.AddDistributedLockTusLockProvider();
 
 var app = builder.Build();
 
@@ -52,7 +52,7 @@ No additional configuration required beyond resource lock setup.
 ## Dependencies
 
 - `Headless.Tus`
-- `Headless.ResourceLocks.Abstractions`
+- `Headless.DistributedLocks.Abstractions`
 - `tusdotnet`
 
 ## Side Effects

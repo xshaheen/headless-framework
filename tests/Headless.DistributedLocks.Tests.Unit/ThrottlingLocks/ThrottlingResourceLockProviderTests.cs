@@ -9,21 +9,25 @@ using Tests.Fakes;
 
 namespace Tests.ThrottlingLocks;
 
-public sealed class ThrottlingResourceLockProviderTests : TestBase
+public sealed class ThrottlingDistributedLockProviderTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
-    private readonly FakeThrottlingResourceLockStorage _storage = new();
-    private readonly ILogger<ThrottlingResourceLockProvider> _logger;
+    private readonly FakeThrottlingDistributedLockStorage _storage = new();
+    private readonly ILogger<ThrottlingDistributedLockProvider> _logger;
 
-    public ThrottlingResourceLockProviderTests()
+    public ThrottlingDistributedLockProviderTests()
     {
-        _logger = LoggerFactory.CreateLogger<ThrottlingResourceLockProvider>();
+        _logger = LoggerFactory.CreateLogger<ThrottlingDistributedLockProvider>();
     }
 
-    private ThrottlingResourceLockProvider _CreateProvider(ThrottlingResourceLockOptions? options = null)
+    private ThrottlingDistributedLockProvider _CreateProvider(ThrottlingDistributedLockOptions? options = null)
     {
-        options ??= new ThrottlingResourceLockOptions { MaxHitsPerPeriod = 3, ThrottlingPeriod = TimeSpan.FromMinutes(1) };
-        return new ThrottlingResourceLockProvider(_storage, options, _timeProvider, _logger);
+        options ??= new ThrottlingDistributedLockOptions
+        {
+            MaxHitsPerPeriod = 3,
+            ThrottlingPeriod = TimeSpan.FromMinutes(1),
+        };
+        return new ThrottlingDistributedLockProvider(_storage, options, _timeProvider, _logger);
     }
 
     #region TryAcquireAsync
@@ -48,7 +52,7 @@ public sealed class ThrottlingResourceLockProviderTests : TestBase
     public async Task should_return_null_when_at_limit()
     {
         // given
-        var options = new ThrottlingResourceLockOptions
+        var options = new ThrottlingDistributedLockOptions
         {
             MaxHitsPerPeriod = 2,
             ThrottlingPeriod = TimeSpan.FromMinutes(1),
@@ -71,7 +75,7 @@ public sealed class ThrottlingResourceLockProviderTests : TestBase
     public async Task should_wait_and_retry_when_at_limit()
     {
         // given
-        var options = new ThrottlingResourceLockOptions
+        var options = new ThrottlingDistributedLockOptions
         {
             MaxHitsPerPeriod = 1,
             ThrottlingPeriod = TimeSpan.FromMinutes(1),
@@ -105,7 +109,7 @@ public sealed class ThrottlingResourceLockProviderTests : TestBase
     public async Task should_release_decrements_count()
     {
         // given - throttling locks don't have explicit release; slots free when TTL expires
-        var options = new ThrottlingResourceLockOptions
+        var options = new ThrottlingDistributedLockOptions
         {
             MaxHitsPerPeriod = 1,
             ThrottlingPeriod = TimeSpan.FromSeconds(2),
@@ -134,7 +138,7 @@ public sealed class ThrottlingResourceLockProviderTests : TestBase
     public async Task should_expire_slots_after_ttl()
     {
         // given
-        var options = new ThrottlingResourceLockOptions
+        var options = new ThrottlingDistributedLockOptions
         {
             MaxHitsPerPeriod = 2,
             ThrottlingPeriod = TimeSpan.FromSeconds(1),
@@ -147,7 +151,9 @@ public sealed class ThrottlingResourceLockProviderTests : TestBase
         await provider.TryAcquireAsync(resource, TimeSpan.FromMilliseconds(100), AbortToken);
 
         // Verify locked
-        (await provider.IsLockedAsync(resource)).Should().BeTrue();
+        (await provider.IsLockedAsync(resource))
+            .Should()
+            .BeTrue();
 
         // when - advance time and clear storage to simulate expiration
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
@@ -166,7 +172,7 @@ public sealed class ThrottlingResourceLockProviderTests : TestBase
     public async Task should_get_available_slots()
     {
         // given - IsLockedAsync returns false when slots available, true when at limit
-        var options = new ThrottlingResourceLockOptions
+        var options = new ThrottlingDistributedLockOptions
         {
             MaxHitsPerPeriod = 3,
             ThrottlingPeriod = TimeSpan.FromMinutes(1),

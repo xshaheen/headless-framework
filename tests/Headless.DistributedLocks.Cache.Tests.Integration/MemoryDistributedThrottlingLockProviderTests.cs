@@ -4,7 +4,7 @@ using Headless.DistributedLocks.Cache;
 
 namespace Tests;
 
-public sealed class InMemoryDistributedThrottlingLockProviderTests : DistributedThrottlingLockProviderTestsBase
+public sealed class MemoryDistributedThrottlingLockProviderTests : DistributedThrottlingLockProviderTestsBase
 {
     private readonly InMemoryCache _cache = new(TimeProvider.System, new InMemoryCacheOptions());
 

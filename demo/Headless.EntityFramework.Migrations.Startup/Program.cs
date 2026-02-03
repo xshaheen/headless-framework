@@ -38,7 +38,7 @@ builder.AddHeadlessApi(encryption =>
     encryption.DefaultSalt = "DemoSalt"u8.ToArray();
 });
 
-addInMemoryResourceLock(builder.Services);
+addInMemoryDistributedLock(builder.Services);
 
 const string connectionString = "Host=localhost;Database=Headless;Username=postgres;Password=postgres";
 
@@ -74,7 +74,7 @@ await app.RunAsync();
 
 return;
 
-static void addInMemoryResourceLock(IServiceCollection services)
+static void addInMemoryDistributedLock(IServiceCollection services)
 {
     // Cache
     services.AddInMemoryCache();
@@ -87,5 +87,5 @@ static void addInMemoryResourceLock(IServiceCollection services)
     });
 
     // Resource Locks
-    services.AddResourceLock<CacheResourceLockStorage>();
+    services.AddDistributedLock<CacheDistributedLockStorage>();
 }

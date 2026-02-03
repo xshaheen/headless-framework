@@ -7,15 +7,15 @@ using tusdotnet.Interfaces;
 namespace Headless.Tus;
 
 [PublicAPI]
-public static class TusResourceLockSetup
+public static class TusDistributedLockSetup
 {
     /// <summary>
-    /// Extension method to add the <see cref="ResourceLockTusLockProvider"/> as the implementation
+    /// Extension method to add the <see cref="DistributedLockTusLockProvider"/> as the implementation
     /// of <see cref="ITusFileLockProvider"/> to the dependency injection container.
-    /// Note: this depends on <see cref="IResourceLockProvider"/> being registered.
+    /// Note: this depends on <see cref="IDistributedLockProvider"/> being registered.
     /// </summary>
-    public static IServiceCollection AddResourceLockTusLockProvider(this IServiceCollection services)
+    public static IServiceCollection AddDistributedLockTusLockProvider(this IServiceCollection services)
     {
-        return services.AddSingleton<ITusFileLockProvider, ResourceLockTusLockProvider>();
+        return services.AddSingleton<ITusFileLockProvider, DistributedLockTusLockProvider>();
     }
 }

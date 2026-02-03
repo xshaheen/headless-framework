@@ -23,7 +23,7 @@ public sealed class RedisConnectionFailureTests : TestBase
 
         var multiplexer = await ConnectionMultiplexer.ConnectAsync(options);
         var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
-        var storage = new RedisResourceLockStorage(multiplexer, scriptsLoader);
+        var storage = new RedisDistributedLockStorage(multiplexer, scriptsLoader);
 
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
         var lockId = Guid.NewGuid().ToString("N");
@@ -48,7 +48,7 @@ public sealed class RedisConnectionFailureTests : TestBase
 
         var multiplexer = await ConnectionMultiplexer.ConnectAsync(options);
         var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
-        var storage = new RedisResourceLockStorage(multiplexer, scriptsLoader);
+        var storage = new RedisDistributedLockStorage(multiplexer, scriptsLoader);
 
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
         var lockId = Guid.NewGuid().ToString("N");
@@ -73,7 +73,7 @@ public sealed class RedisConnectionFailureTests : TestBase
 
         var multiplexer = await ConnectionMultiplexer.ConnectAsync(options);
         var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
-        var storage = new RedisThrottlingResourceLockStorage(multiplexer, scriptsLoader);
+        var storage = new RedisThrottlingDistributedLockStorage(multiplexer, scriptsLoader);
 
         var resource = $"throttle:{Faker.Random.AlphaNumeric(10)}";
 

@@ -1,4 +1,4 @@
-# Headless.ResourceLocks.Abstractions
+# Headless.DistributedLocks.Abstractions
 
 Defines the unified interface for distributed resource locking.
 
@@ -8,22 +8,22 @@ Provides a provider-agnostic distributed locking API, enabling coordination acro
 
 ## Key Features
 
-- `IResourceLockProvider` - Regular locking with expiration
-- `IResourceLock` - Acquired lock handle with release
-- `IThrottlingResourceLockProvider` - Rate-limited locking
-- `IResourceThrottlingLock` - Throttling lock handle
+- `IDistributedLockProvider` - Regular locking with expiration
+- `IDistributedLock` - Acquired lock handle with release
+- `IThrottlingDistributedLockProvider` - Rate-limited locking
+- `IDistributedThrottlingLock` - Throttling lock handle
 - Configurable timeouts and expiration
 
 ## Installation
 
 ```bash
-dotnet add package Headless.ResourceLocks.Abstractions
+dotnet add package Headless.DistributedLocks.Abstractions
 ```
 
 ## Usage
 
 ```csharp
-public sealed class OrderService(IResourceLockProvider lockProvider)
+public sealed class OrderService(IDistributedLockProvider lockProvider)
 {
     public async Task ProcessOrderAsync(Guid orderId, CancellationToken ct)
     {

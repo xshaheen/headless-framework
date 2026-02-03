@@ -33,7 +33,7 @@ public sealed class DynamicPermissionDefinitionStore(
     IStaticPermissionDefinitionStore staticStore,
     IPermissionDefinitionSerializer serializer,
     ICache distributedCache,
-    IResourceLockProvider resourceLockProvider,
+    IDistributedLockProvider distributedLockProvider,
     IDistributedMessagePublisher messagePublisher,
     IGuidGenerator guidGenerator,
     IApplicationInformationAccessor application,
@@ -147,7 +147,7 @@ public sealed class DynamicPermissionDefinitionStore(
         }
 
         await using var commonLockHandle =
-            await resourceLockProvider.TryAcquireAsync(
+            await distributedLockProvider.TryAcquireAsync(
                 resource: _options.CrossApplicationsCommonLockKey,
                 timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
                 acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
@@ -258,14 +258,14 @@ public sealed class DynamicPermissionDefinitionStore(
 
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
-        await using var appResourceLock = await resourceLockProvider.TryAcquireAsync(
+        await using var appDistributedLock = await distributedLockProvider.TryAcquireAsync(
             _appSaveLockKey,
             timeUntilExpires: _options.ApplicationSaveLockExpiration,
             acquireTimeout: _options.ApplicationSaveLockAcquireTimeout,
             cancellationToken: cancellationToken
         );
 
-        if (appResourceLock is null)
+        if (appDistributedLock is null)
         {
             return; // Another application instance is already doing it
         }
@@ -294,7 +294,7 @@ public sealed class DynamicPermissionDefinitionStore(
         }
 
         await using var commonLockHandle =
-            await resourceLockProvider.TryAcquireAsync(
+            await distributedLockProvider.TryAcquireAsync(
                 resource: _options.CrossApplicationsCommonLockKey,
                 timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
                 acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,

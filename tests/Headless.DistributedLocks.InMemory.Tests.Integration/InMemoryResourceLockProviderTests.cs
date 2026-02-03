@@ -7,21 +7,21 @@ using NSubstitute;
 
 namespace Tests;
 
-public sealed class InMemoryResourceLockProviderTests : ResourceLockProviderTestsBase
+public sealed class InMemoryDistributedLockProviderTests : DistributedLockProviderTestsBase
 {
     private readonly InMemoryCache _cache = new(TimeProvider.System, new InMemoryCacheOptions());
 
-    protected override IResourceLockProvider GetLockProvider()
+    protected override IDistributedLockProvider GetLockProvider()
     {
-        var storage = new CacheResourceLockStorage(_cache);
+        var storage = new CacheDistributedLockStorage(_cache);
         var outboxPublisher = Substitute.For<IOutboxPublisher>();
-        return new ResourceLockProvider(
+        return new DistributedLockProvider(
             storage,
             outboxPublisher,
             Options,
             LongGenerator,
             TimeProvider,
-            LoggerFactory.CreateLogger<ResourceLockProvider>()
+            LoggerFactory.CreateLogger<DistributedLockProvider>()
         );
     }
 
@@ -63,7 +63,8 @@ public sealed class InMemoryResourceLockProviderTests : ResourceLockProviderTest
     public override Task should_lock_one_at_a_time_async() => base.should_lock_one_at_a_time_async();
 
     [Fact]
-    public override Task should_get_expiration_for_locked_resource() => base.should_get_expiration_for_locked_resource();
+    public override Task should_get_expiration_for_locked_resource() =>
+        base.should_get_expiration_for_locked_resource();
 
     [Fact]
     public override Task should_return_null_expiration_when_not_locked() =>

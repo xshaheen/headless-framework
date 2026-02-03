@@ -9,85 +9,87 @@ using Microsoft.Extensions.Logging;
 namespace Headless.DistributedLocks;
 
 [PublicAPI]
-public static class AddResourceLockExtensions
+public static class AddDistributedLockExtensions
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddResourceLock<TStorage>(
-            Action<ResourceLockOptions, IServiceProvider>? optionSetupAction = null
+        public IServiceCollection AddDistributedLock<TStorage>(
+            Action<DistributedLockOptions, IServiceProvider>? optionSetupAction = null
         )
-            where TStorage : class, IResourceLockStorage
+            where TStorage : class, IDistributedLockStorage
         {
-            services.AddSingleton<IResourceLockStorage, TStorage>();
+            services.AddSingleton<IDistributedLockStorage, TStorage>();
 
-            return services.AddResourceLock(
-                provider => provider.GetRequiredService<IResourceLockStorage>(),
+            return services.AddDistributedLock(
+                provider => provider.GetRequiredService<IDistributedLockStorage>(),
                 provider => provider.GetRequiredService<IOutboxPublisher>(),
                 optionSetupAction
             );
         }
 
-        public IServiceCollection AddResourceLock(
-            Func<IServiceProvider, IResourceLockStorage> storageSetupAction,
+        public IServiceCollection AddDistributedLock(
+            Func<IServiceProvider, IDistributedLockStorage> storageSetupAction,
             Func<IServiceProvider, IOutboxPublisher> publisherSetupAction,
-            Action<ResourceLockOptions, IServiceProvider>? optionSetupAction = null
+            Action<DistributedLockOptions, IServiceProvider>? optionSetupAction = null
         )
         {
-            services.Configure<ResourceLockOptions, ResourceLockOptionsValidator>(optionSetupAction);
-            services.AddSingletonOptionValue<ResourceLockOptions>();
+            services.Configure<DistributedLockOptions, DistributedLockOptionsValidator>(optionSetupAction);
+            services.AddSingletonOptionValue<DistributedLockOptions>();
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
 
-            services.AddSingleton<IResourceLockProvider>(provider => new ResourceLockProvider(
+            services.AddSingleton<IDistributedLockProvider>(provider => new DistributedLockProvider(
                 storageSetupAction(provider),
                 publisherSetupAction(provider),
-                provider.GetRequiredService<ResourceLockOptions>(),
+                provider.GetRequiredService<DistributedLockOptions>(),
                 provider.GetRequiredService<ILongIdGenerator>(),
                 provider.GetRequiredService<TimeProvider>(),
-                provider.GetRequiredService<ILogger<ResourceLockProvider>>()
+                provider.GetRequiredService<ILogger<DistributedLockProvider>>()
             ));
 
             services
-                .AddConsumer<ResourceLockProvider.LockReleasedConsumer, ResourceLockReleased>("headless.locks.released")
+                .AddConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
+                    "headless.locks.released"
+                )
                 .WithConcurrency(1);
 
             return services;
         }
 
-        public IServiceCollection AddThrottlingResourceLock(
-            ThrottlingResourceLockOptions options,
-            Func<IServiceProvider, IThrottlingResourceLockStorage> setupAction
+        public IServiceCollection AddThrottlingDistributedLock(
+            ThrottlingDistributedLockOptions options,
+            Func<IServiceProvider, IThrottlingDistributedLockStorage> setupAction
         )
         {
             services.AddLogging();
             services.TryAddSingleton(TimeProvider.System);
 
-            services.AddSingleton<IThrottlingResourceLockProvider>(provider => new ThrottlingResourceLockProvider(
+            services.AddSingleton<IThrottlingDistributedLockProvider>(provider => new ThrottlingDistributedLockProvider(
                 setupAction(provider),
                 options,
                 provider.GetRequiredService<TimeProvider>(),
-                provider.GetRequiredService<ILogger<ThrottlingResourceLockProvider>>()
+                provider.GetRequiredService<ILogger<ThrottlingDistributedLockProvider>>()
             ));
 
             return services;
         }
 
-        public IServiceCollection AddKeyedThrottlingResourceLock(
+        public IServiceCollection AddKeyedThrottlingDistributedLock(
             string key,
-            ThrottlingResourceLockOptions options,
-            Func<IServiceProvider, IThrottlingResourceLockStorage> setupAction
+            ThrottlingDistributedLockOptions options,
+            Func<IServiceProvider, IThrottlingDistributedLockStorage> setupAction
         )
         {
             services.AddLogging();
             services.TryAddSingleton(TimeProvider.System);
 
-            services.AddKeyedSingleton<IThrottlingResourceLockProvider>(
+            services.AddKeyedSingleton<IThrottlingDistributedLockProvider>(
                 key,
-                provider => new ThrottlingResourceLockProvider(
+                provider => new ThrottlingDistributedLockProvider(
                     setupAction(provider),
                     options,
                     provider.GetRequiredService<TimeProvider>(),
-                    provider.GetRequiredService<ILogger<ThrottlingResourceLockProvider>>()
+                    provider.GetRequiredService<ILogger<ThrottlingDistributedLockProvider>>()
                 )
             );
 
