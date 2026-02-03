@@ -155,6 +155,11 @@ internal sealed class DirectPublisher(
 
             _TracingAfterSend(tracingTimestamp, transportMsg);
         }
+        catch (OperationCanceledException)
+        {
+            // Cancellation is expected behavior, not an error - let it propagate without tracing
+            throw;
+        }
         catch (Exception e) when (e is not Headless.Messaging.PublisherSentFailedException)
         {
             try
