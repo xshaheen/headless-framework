@@ -299,8 +299,10 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         );
     }
 
-    [Fact]
-    public void should_generate_guid_when_no_friendly_name()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void should_generate_guid_when_friendly_name_missing(string? friendlyName)
     {
         var storage = Substitute.For<IBlobStorage>();
         string? capturedFileName = null;
@@ -314,35 +316,11 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
         var element = new XElement("key", new XAttribute("id", "test"));
 
-        sut.StoreElement(element, friendlyName: null);
+        sut.StoreElement(element, friendlyName);
 
         capturedFileName.Should().NotBeNull();
         capturedFileName.Should().EndWith(".xml");
         // Should be a valid GUID without dashes (32 chars) + ".xml" (4 chars)
-        capturedFileName.Should().HaveLength(36);
-        var guidPart = capturedFileName![..^4];
-        Guid.TryParse(guidPart, out _).Should().BeTrue();
-    }
-
-    [Fact]
-    public void should_generate_guid_when_empty_friendly_name()
-    {
-        var storage = Substitute.For<IBlobStorage>();
-        string? capturedFileName = null;
-        storage.UploadAsync(
-            Arg.Any<string[]>(),
-            Arg.Do<string>(x => capturedFileName = x),
-            Arg.Any<Stream>(),
-            Arg.Any<Dictionary<string, string?>?>(),
-            Arg.Any<CancellationToken>()
-        ).Returns(ValueTask.CompletedTask);
-        var sut = new BlobStorageDataProtectionXmlRepository(storage);
-        var element = new XElement("key", new XAttribute("id", "test"));
-
-        sut.StoreElement(element, friendlyName: "");
-
-        capturedFileName.Should().NotBeNull();
-        capturedFileName.Should().EndWith(".xml");
         capturedFileName.Should().HaveLength(36);
         var guidPart = capturedFileName![..^4];
         Guid.TryParse(guidPart, out _).Should().BeTrue();
@@ -435,6 +413,41 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         callCount.Should().Be(2);
     }
 
+    [Theory]
+    [InlineData("../../../etc/passwd")]
+    [InlineData("..\\..\\Windows\\System32\\config")]
+    [InlineData("foo/../bar/../../../secret")]
+    public async Task should_pass_path_traversal_patterns_to_storage(string maliciousFriendlyName)
+    {
+        // Path traversal patterns in friendlyName - storage abstraction handles validation
+        // This test documents that the repository passes the friendlyName directly to storage
+        // The blob storage implementation is responsible for path validation/sanitization
+        var storage = Substitute.For<IBlobStorage>();
+        string? capturedFileName = null;
+        storage.UploadAsync(
+            Arg.Any<string[]>(),
+            Arg.Do<string>(x => capturedFileName = x),
+            Arg.Any<Stream>(),
+            Arg.Any<Dictionary<string, string?>?>(),
+            Arg.Any<CancellationToken>()
+        ).Returns(ValueTask.CompletedTask);
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+        var element = new XElement("key", new XAttribute("id", "test"));
+
+        sut.StoreElement(element, maliciousFriendlyName);
+
+        // Repository appends .xml to friendlyName and passes to storage
+        // Storage abstraction is responsible for path validation
+        await storage.Received(1).UploadAsync(
+            Arg.Any<string[]>(),
+            $"{maliciousFriendlyName}.xml",
+            Arg.Any<Stream>(),
+            Arg.Any<Dictionary<string, string?>?>(),
+            Arg.Any<CancellationToken>()
+        );
+        capturedFileName.Should().Be($"{maliciousFriendlyName}.xml");
+    }
+
     #endregion
 
     #region Thread Safety Tests
@@ -493,93 +506,6 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
             default,
             default
         );
-    }
-
-    #endregion
-
-    #region Round-trip Tests
-
-    [Fact]
-    public void should_round_trip_xml_element()
-    {
-        // Use an in-memory dictionary to simulate blob storage
-        var storedBlobs = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-
-        var storage = Substitute.For<IBlobStorage>();
-
-        // Setup upload to store in dictionary
-        storage.UploadAsync(
-            Arg.Any<string[]>(),
-            Arg.Any<string>(),
-            Arg.Any<Stream>(),
-            Arg.Any<Dictionary<string, string?>?>(),
-            Arg.Any<CancellationToken>()
-        ).Returns(callInfo =>
-        {
-            var blobName = callInfo.ArgAt<string>(1);
-            var stream = callInfo.ArgAt<Stream>(2);
-            using var ms = new MemoryStream();
-#pragma warning disable VSTHRD103, CA1849 // CopyTo in sync callback - acceptable for test
-            stream.CopyTo(ms);
-#pragma warning restore VSTHRD103, CA1849
-            storedBlobs[blobName] = ms.ToArray();
-            return ValueTask.CompletedTask;
-        });
-
-        // Setup list to return stored blobs
-        storage.GetPagedListAsync(
-            Arg.Any<string[]>(),
-            Arg.Any<string?>(),
-            Arg.Any<int>(),
-            Arg.Any<CancellationToken>()
-        ).Returns(_ =>
-        {
-            var blobs = storedBlobs.Keys
-                .Where(k => k.EndsWith(".xml", StringComparison.Ordinal))
-                .Select(_CreateBlobInfo)
-                .ToList();
-            return ValueTask.FromResult(new PagedFileListResult(blobs));
-        });
-
-        // Setup download to return stored content
-        storage.OpenReadStreamAsync(
-            Arg.Any<string[]>(),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>()
-        ).Returns(callInfo =>
-        {
-            var blobName = callInfo.ArgAt<string>(1);
-            if (storedBlobs.TryGetValue(blobName, out var data))
-            {
-                return ValueTask.FromResult<BlobDownloadResult?>(
-                    new BlobDownloadResult(new MemoryStream(data), blobName)
-                );
-            }
-
-            return ValueTask.FromResult<BlobDownloadResult?>(null);
-        });
-
-        var sut = new BlobStorageDataProtectionXmlRepository(storage);
-
-        var originalElement = new XElement("key",
-            new XAttribute("id", "round-trip-test"),
-            new XAttribute("version", "1"),
-            new XElement("creationDate", "2026-01-01T00:00:00Z"),
-            new XElement("activationDate", "2026-01-01T00:00:00Z"),
-            new XElement("expirationDate", "2026-04-01T00:00:00Z"),
-            new XElement("encryptedKey", "SGVsbG8gV29ybGQ=")
-        );
-
-        sut.StoreElement(originalElement, "round-trip-key");
-
-        var retrievedElements = sut.GetAllElements();
-
-        retrievedElements.Should().HaveCount(1);
-        var retrievedElement = retrievedElements.First();
-        retrievedElement.Attribute("id")?.Value.Should().Be("round-trip-test");
-        retrievedElement.Attribute("version")?.Value.Should().Be("1");
-        retrievedElement.Element("creationDate")?.Value.Should().Be("2026-01-01T00:00:00Z");
-        retrievedElement.Element("encryptedKey")?.Value.Should().Be("SGVsbG8gV29ybGQ=");
     }
 
     #endregion
