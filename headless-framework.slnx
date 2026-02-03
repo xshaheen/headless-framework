@@ -14,6 +14,8 @@
         <Project Path="src\Headless.Api.MinimalApi\Headless.Api.MinimalApi.csproj" />
         <Project Path="src\Headless.Api.Mvc\Headless.Api.Mvc.csproj" />
         <Project Path="src\Headless.Api\Headless.Api.csproj" />
+        <Project Path="tests\Headless.Api.DataProtection.Tests.Integration\Headless.Api.DataProtection.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Api.DataProtection.Tests.Unit\Headless.Api.DataProtection.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.FluentValidation.Tests.Unit\Headless.Api.FluentValidation.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Tests.Integration\Headless.Api.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Api.Tests.Unit\Headless.Api.Tests.Unit.csproj" />
@@ -267,10 +269,6 @@
         <File Path="README.md" />
     </Folder>
     <Folder Name="/src/" />
-    <Folder Name="/tests/">
-        <Project Path="tests/Headless.Api.DataProtection.Tests.Integration/Headless.Api.DataProtection.Tests.Integration.csproj" />
-        <Project Path="tests/Headless.Api.DataProtection.Tests.Unit/Headless.Api.DataProtection.Tests.Unit.csproj" />
-    </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />
         <Project Path="tests/Headless.FluentValidation.Tests.Unit/Headless.FluentValidation.Tests.Unit.csproj" />
