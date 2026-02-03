@@ -60,7 +60,8 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
 
         var tracingTimestamp = _TracingBefore(transportMsg, _transport.BrokerAddress);
 
-        var result = await _transport.SendAsync(transportMsg).AnyContext();
+        // Note: Outbox sender doesn't propagate user cancellation; messages should be delivered
+        var result = await _transport.SendAsync(transportMsg, CancellationToken.None).AnyContext();
 
         if (result.Succeeded)
         {

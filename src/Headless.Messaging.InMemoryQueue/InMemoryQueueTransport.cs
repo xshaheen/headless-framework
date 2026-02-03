@@ -20,15 +20,22 @@ internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemory
     /// <summary>
     /// Sends a transport message asynchronously.
     /// </summary>
-    /// <param name="message">The transport message to send</param>
-    /// <returns>A task that returns the operation result</returns>
-    public Task<OperateResult> SendAsync(TransportMessage message)
+    /// <param name="message">The transport message to send.</param>
+    /// <param name="cancellationToken">Token to cancel the send operation.</param>
+    /// <returns>A task that returns the operation result.</returns>
+    public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             queue.Send(message);
             _logger.LogDebug("Event message [{MessageName}] has been published.", message.GetName());
             return Task.FromResult(OperateResult.Success);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {

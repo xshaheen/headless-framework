@@ -341,9 +341,11 @@ public sealed class DirectPublisherTests : TestBase
         public int SendCallCount => _sendCallCount;
         public IReadOnlyList<TransportMessage> SentMessages => [.. _sentMessages];
 
-        public Task<OperateResult> SendAsync(TransportMessage message)
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
         {
             Interlocked.Increment(ref _sendCallCount);
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (ExceptionToThrow is not null)
             {
