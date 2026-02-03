@@ -32,7 +32,7 @@ public sealed class DynamicSettingDefinitionStore(
     IStaticSettingDefinitionStore staticStore,
     ISettingDefinitionSerializer definitionSerializer,
     ICache distributedCache,
-    IResourceLockProvider resourceLockProvider,
+    IDistributedLockProvider distributedLockProvider,
     IGuidGenerator guidGenerator,
     IApplicationInformationAccessor application,
     IOptions<SettingManagementOptions> optionsAccessor,
@@ -127,8 +127,8 @@ public sealed class DynamicSettingDefinitionStore(
             return cachedStamp.Value;
         }
 
-        await using var resourceLock =
-            await resourceLockProvider
+        await using var distributedLock =
+            await distributedLockProvider
                 .TryAcquireAsync(
                     resource: _options.CrossApplicationsCommonLockKey,
                     timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
@@ -190,7 +190,7 @@ public sealed class DynamicSettingDefinitionStore(
 
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
-        await using var applicationResourceLock = await resourceLockProvider
+        await using var applicationDistributedLock = await distributedLockProvider
             .TryAcquireAsync(
                 _appSaveLockKey,
                 timeUntilExpires: _options.ApplicationSaveLockExpiration,
@@ -199,7 +199,7 @@ public sealed class DynamicSettingDefinitionStore(
             )
             .AnyContext();
 
-        if (applicationResourceLock is null)
+        if (applicationDistributedLock is null)
         {
             return; // Another application instance is already doing it
         }
@@ -216,8 +216,8 @@ public sealed class DynamicSettingDefinitionStore(
             return; // No changes
         }
 
-        await using var commonResourceLock =
-            await resourceLockProvider
+        await using var commonDistributedLock =
+            await distributedLockProvider
                 .TryAcquireAsync(
                     _options.CrossApplicationsCommonLockKey,
                     timeUntilExpires: 10.Minutes(),

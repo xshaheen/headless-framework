@@ -22,7 +22,7 @@ public static class CoreSettingsSetup
     {
         /// <summary>
         /// Adds core setting management services to the host builder and registers default setting value providers.
-        /// You should add TimeProvider, Cache, ResourceLock, GuidGenerator, IConfiguration, ICurrentUser,
+        /// You should add TimeProvider, Cache, DistributedLock, GuidGenerator, IConfiguration, ICurrentUser,
         /// and ICurrentTenant implementations to be able to use this feature.
         /// </summary>
         public IServiceCollection AddSettingsManagementCore(
@@ -37,7 +37,7 @@ public static class CoreSettingsSetup
 
         /// <summary>
         /// Adds core setting management services to the host builder and registers default setting value providers.
-        /// You should add TimeProvider, Cache, ResourceLock, GuidGenerator, IConfiguration, ICurrentUser,
+        /// You should add TimeProvider, Cache, DistributedLock, GuidGenerator, IConfiguration, ICurrentUser,
         /// and ICurrentTenant implementations to be able to use this feature.
         /// </summary>
         public IServiceCollection AddSettingsManagementCore(

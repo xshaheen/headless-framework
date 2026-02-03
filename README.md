@@ -170,12 +170,12 @@ dotnet add package Headless.Caching.Redis
 
 ### Resource Locking
 
-| Package | Description |
-|---------|-------------|
-| [Headless.ResourceLocks.Abstractions](src/Headless.ResourceLocks.Abstractions/README.md) | Distributed locking interfaces |
-| [Headless.ResourceLocks.Core](src/Headless.ResourceLocks.Core/README.md) | Distributed locking implementation |
-| [Headless.ResourceLocks.Cache](src/Headless.ResourceLocks.Cache/README.md) | Cache-based locking |
-| [Headless.ResourceLocks.Redis](src/Headless.ResourceLocks.Redis/README.md) | Redis-based locking |
+| Package                                                                                         | Description |
+|-------------------------------------------------------------------------------------------------|-------------|
+| [Headless.DistributedLocks.Abstractions](src/Headless.DistributedLockes.Abstractions/README.md) | Distributed locking interfaces |
+| [Headless.DistributedLocks.Core](src/Headless.DistributedLockes.Core/README.md)                 | Distributed locking implementation |
+| [Headless.DistributedLocks.Cache](src/Headless.DistributedLockes.Cache/README.md)               | Cache-based locking |
+| [Headless.DistributedLocks.Redis](src/Headless.DistributedLockes.Redis/README.md)               | Redis-based locking |
 
 ### Serialization
 
@@ -229,7 +229,7 @@ dotnet add package Headless.Caching.Redis
 |---------|-------------|
 | [Headless.Tus](src/Headless.Tus/README.md) | TUS protocol utilities |
 | [Headless.Tus.Azure](src/Headless.Tus.Azure/README.md) | Azure Blob TUS store |
-| [Headless.Tus.ResourceLock](src/Headless.Tus.ResourceLock/README.md) | TUS file locking |
+| [Headless.Tus.DistributedLock](src/Headless.Tus.DistributedLock/README.md) | TUS file locking |
 
 ### Utilities
 

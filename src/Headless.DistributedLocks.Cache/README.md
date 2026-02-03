@@ -1,4 +1,4 @@
-# Headless.ResourceLocks.Cache
+# Headless.DistributedLocks.Cache
 
 Cache-based resource lock storage using ICache.
 
@@ -8,14 +8,14 @@ Provides resource lock storage using the headless's `ICache` abstraction, suitab
 
 ## Key Features
 
-- `CacheResourceLockStorage` - Lock storage via `ICache`
-- `CacheThrottlingResourceLockStorage` - Throttling lock storage
+- `CacheDistributedLockStorage` - Lock storage via `ICache`
+- `CacheThrottlingDistributedLockStorage` - Throttling lock storage
 - Automatic expiration via cache TTL
 
 ## Installation
 
 ```bash
-dotnet add package Headless.ResourceLocks.Cache
+dotnet add package Headless.DistributedLocks.Cache
 ```
 
 ## Quick Start
@@ -27,8 +27,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRedisCache(options => { /* ... */ });
 
 // Add resource locks with cache storage
-builder.Services.AddResourceLock();
-builder.Services.AddSingleton<IResourceLockStorage, CacheResourceLockStorage>();
+builder.Services.AddDistributedLock();
+builder.Services.AddSingleton<IDistributedLockStorage, CacheDistributedLockStorage>();
 ```
 
 ## Configuration
@@ -37,10 +37,10 @@ No additional configuration required.
 
 ## Dependencies
 
-- `Headless.ResourceLocks.Core`
+- `Headless.DistributedLocks.Core`
 - `Headless.Caching.Abstractions`
 
 ## Side Effects
 
-- Registers `IResourceLockStorage` as singleton
-- Registers `IThrottlingResourceLockStorage` as singleton (optional)
+- Registers `IDistributedLockStorage` as singleton
+- Registers `IThrottlingDistributedLockStorage` as singleton (optional)

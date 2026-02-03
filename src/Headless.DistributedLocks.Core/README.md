@@ -1,4 +1,4 @@
-# Headless.ResourceLocks.Core
+# Headless.DistributedLocks.Core
 
 Core implementation of distributed resource locking with storage abstraction.
 
@@ -8,16 +8,16 @@ Provides the lock provider implementation with automatic renewal, expiration han
 
 ## Key Features
 
-- `ResourceLockProvider` - Full implementation of `IResourceLockProvider`
-- `ThrottlingResourceLockProvider` - Rate-limited lock provider
-- `DisposableResourceLock` - Auto-releasing lock handle
-- Storage interfaces: `IResourceLockStorage`, `IThrottlingResourceLockStorage`
+- `DistributedLockProvider` - Full implementation of `IDistributedLockProvider`
+- `ThrottlingDistributedLockProvider` - Rate-limited lock provider
+- `DisposableDistributedLock` - Auto-releasing lock handle
+- Storage interfaces: `IDistributedLockStorage`, `IThrottlingDistributedLockStorage`
 - Configurable options for timeouts and expiration
 
 ## Installation
 
 ```bash
-dotnet add package Headless.ResourceLocks.Core
+dotnet add package Headless.DistributedLocks.Core
 ```
 
 ## Quick Start
@@ -25,16 +25,16 @@ dotnet add package Headless.ResourceLocks.Core
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddResourceLock(options =>
+builder.Services.AddDistributedLock(options =>
 {
     options.DefaultTimeUntilExpires = TimeSpan.FromMinutes(20);
     options.DefaultAcquireTimeout = TimeSpan.FromSeconds(30);
 });
 
 // Add storage (cache or Redis)
-builder.Services.AddResourceLockCacheStorage();
+builder.Services.AddDistributedLockCacheStorage();
 // or
-builder.Services.AddResourceLockRedisStorage();
+builder.Services.AddDistributedLockRedisStorage();
 ```
 
 ## Configuration
@@ -42,7 +42,7 @@ builder.Services.AddResourceLockRedisStorage();
 ### Options
 
 ```csharp
-services.AddResourceLock(options =>
+services.AddDistributedLock(options =>
 {
     options.DefaultTimeUntilExpires = TimeSpan.FromMinutes(20);
     options.DefaultAcquireTimeout = TimeSpan.FromSeconds(30);
@@ -51,9 +51,9 @@ services.AddResourceLock(options =>
 
 ## Dependencies
 
-- `Headless.ResourceLocks.Abstractions`
+- `Headless.DistributedLocks.Abstractions`
 
 ## Side Effects
 
-- Registers `IResourceLockProvider` as singleton
-- Registers `IThrottlingResourceLockProvider` as singleton (if throttling storage is provided)
+- Registers `IDistributedLockProvider` as singleton
+- Registers `IThrottlingDistributedLockProvider` as singleton (if throttling storage is provided)

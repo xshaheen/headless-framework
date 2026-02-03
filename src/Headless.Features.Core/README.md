@@ -26,7 +26,7 @@ dotnet add package Headless.Features.Core
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Requires: TimeProvider, ICache, IResourceLock, IGuidGenerator
+// Requires: TimeProvider, ICache, IDistributedLock, IGuidGenerator
 builder.Services.AddFeaturesManagementCore(options =>
 {
     options.CacheKeyPrefix = "features:";
@@ -61,7 +61,7 @@ services.AddFeaturesManagementCore(options =>
 - `Headless.Features.Abstractions`
 - `Headless.Domain`
 - `Headless.Caching.Abstractions`
-- `Headless.ResourceLocks.Abstractions`
+- `Headless.DistributedLocks.Abstractions`
 
 ## Side Effects
 

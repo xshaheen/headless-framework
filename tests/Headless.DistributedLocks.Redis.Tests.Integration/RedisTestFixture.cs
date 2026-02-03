@@ -18,9 +18,9 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
 
     public ConnectionMultiplexer ConnectionMultiplexer { get; private set; } = null!;
 
-    public RedisResourceLockStorage LockStorage { get; private set; } = null!;
+    public RedisDistributedLockStorage LockStorage { get; private set; } = null!;
 
-    public RedisThrottlingResourceLockStorage ThrottlingLockStorage { get; private set; } = null!;
+    public RedisThrottlingDistributedLockStorage ThrottlingLockStorage { get; private set; } = null!;
 
     protected override RedisBuilder Configure()
     {

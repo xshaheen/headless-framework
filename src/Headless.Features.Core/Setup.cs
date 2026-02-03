@@ -21,7 +21,7 @@ public static class CoreSetup
     {
         /// <summary>
         /// Adds core feature management services to the host builder and registers default feature value providers.
-        /// You should add TimeProvider, Cache, ResourceLock, and GuidGenerator implementations
+        /// You should add TimeProvider, Cache, DistributedLock, and GuidGenerator implementations
         /// to be able to use this feature.
         /// </summary>
         public IServiceCollection AddFeaturesManagementCore(
@@ -35,7 +35,7 @@ public static class CoreSetup
 
         /// <summary>
         /// Adds core feature management services to the host builder and registers default feature value providers.
-        /// You should add TimeProvider, Cache, ResourceLock, and GuidGenerator implementations
+        /// You should add TimeProvider, Cache, DistributedLock, and GuidGenerator implementations
         /// to be able to use this feature.
         /// </summary>
         public IServiceCollection AddFeaturesManagementCore(Action<FeatureManagementOptions>? setupAction = null)

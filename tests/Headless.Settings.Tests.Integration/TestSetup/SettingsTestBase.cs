@@ -60,7 +60,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
         services.AddSingleton<HeadlessRedisScriptsLoader>();
         // Resource Lock
-        services.AddResourceLock<RedisResourceLockStorage>();
+        services.AddDistributedLock<RedisDistributedLockStorage>();
 
         services
             .AddSettingsManagementCore(encryption =>

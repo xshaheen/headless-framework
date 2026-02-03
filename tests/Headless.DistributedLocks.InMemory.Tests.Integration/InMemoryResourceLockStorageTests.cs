@@ -5,11 +5,11 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class InMemoryResourceLockStorageTests : TestBase
+public sealed class InMemoryDistributedLockStorageTests : TestBase
 {
     private readonly InMemoryCache _cache = new(TimeProvider.System, new InMemoryCacheOptions());
 
-    private IResourceLockStorage CreateStorage() => new CacheResourceLockStorage(_cache);
+    private IDistributedLockStorage CreateStorage() => new CacheDistributedLockStorage(_cache);
 
     protected override ValueTask DisposeAsyncCore()
     {

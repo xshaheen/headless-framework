@@ -33,7 +33,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add required dependencies
 builder.Services.AddCaching();
-builder.Services.AddResourceLock();
+builder.Services.AddDistributedLock();
 
 // Add settings management
 builder.Services.AddSettingsManagementCore(options =>
@@ -118,7 +118,7 @@ services.AddSettingsManagementCore(options =>
 
 - `Headless.Settings.Abstractions`
 - `Headless.Caching.Abstractions`
-- `Headless.ResourceLocks.Abstractions`
+- `Headless.DistributedLocks.Abstractions`
 - `Headless.Domain`
 
 ## Side Effects

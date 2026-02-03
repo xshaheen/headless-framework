@@ -4,10 +4,10 @@ using Headless.Redis;
 namespace Tests;
 
 [Collection<RedisTestFixture>]
-public sealed class RedisResourceThrottlingLockProviderTests(RedisTestFixture fixture)
-    : ResourceThrottlingLockProviderTestsBase
+public sealed class RedisDistributedThrottlingLockProviderTests(RedisTestFixture fixture)
+    : DistributedThrottlingLockProviderTestsBase
 {
-    protected override IThrottlingResourceLockStorage GetLockStorage()
+    protected override IThrottlingDistributedLockStorage GetLockStorage()
     {
         return fixture.ThrottlingLockStorage;
     }

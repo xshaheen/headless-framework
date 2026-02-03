@@ -16,7 +16,7 @@ namespace Headless.DistributedLocks.Redis;
 /// Requires a message bus (e.g., Redis pub/sub via Foundatio) to be registered for lock release notifications.
 /// </remarks>
 [PublicAPI]
-public static class RedisResourceLockSetup
+public static class RedisDistributedLockSetup
 {
     extension(IServiceCollection services)
     {
@@ -33,17 +33,17 @@ public static class RedisResourceLockSetup
         /// This registers:
         /// <list type="bullet">
         ///   <item><see cref="HeadlessRedisScriptsLoader"/> for atomic Redis operations</item>
-        ///   <item><see cref="Redis.RedisResourceLockStorage"/> for distributed lock storage</item>
+        ///   <item><see cref="RedisDistributedLockStorage"/> for distributed lock storage</item>
         ///   <item>Resource lock provider with configurable options</item>
         /// </list>
         /// </remarks>
-        public IServiceCollection AddRedisResourceLock(
-            Action<ResourceLockOptions, IServiceProvider>? optionSetupAction = null
+        public IServiceCollection AddRedisDistributedLock(
+            Action<DistributedLockOptions, IServiceProvider>? optionSetupAction = null
         )
         {
             services.TryAddSingleton<HeadlessRedisScriptsLoader>();
 
-            return services.AddResourceLock<RedisResourceLockStorage>(optionSetupAction);
+            return services.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction);
         }
 
         /// <summary>
@@ -56,13 +56,13 @@ public static class RedisResourceLockSetup
         ///   <item><see cref="IConnectionMultiplexer"/> must be registered</item>
         /// </list>
         /// </remarks>
-        public IServiceCollection AddRedisThrottlingResourceLock(ThrottlingResourceLockOptions options)
+        public IServiceCollection AddRedisThrottlingDistributedLock(ThrottlingDistributedLockOptions options)
         {
             services.TryAddSingleton<HeadlessRedisScriptsLoader>();
 
-            return services.AddThrottlingResourceLock(
+            return services.AddThrottlingDistributedLock(
                 options,
-                sp => new RedisThrottlingResourceLockStorage(
+                sp => new RedisThrottlingDistributedLockStorage(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
                     sp.GetRequiredService<HeadlessRedisScriptsLoader>()
                 )
@@ -73,14 +73,17 @@ public static class RedisResourceLockSetup
         /// Adds keyed Redis-backed throttling resource lock provider.
         /// Suitable for distributed rate limiting with multiple configurations.
         /// </summary>
-        public IServiceCollection AddKeyedRedisThrottlingResourceLock(string key, ThrottlingResourceLockOptions options)
+        public IServiceCollection AddKeyedRedisThrottlingDistributedLock(
+            string key,
+            ThrottlingDistributedLockOptions options
+        )
         {
             services.TryAddSingleton<HeadlessRedisScriptsLoader>();
 
-            return services.AddKeyedThrottlingResourceLock(
+            return services.AddKeyedThrottlingDistributedLock(
                 key,
                 options,
-                sp => new RedisThrottlingResourceLockStorage(
+                sp => new RedisThrottlingDistributedLockStorage(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
                     sp.GetRequiredService<HeadlessRedisScriptsLoader>()
                 )

@@ -31,7 +31,7 @@ public sealed class DynamicFeatureDefinitionStore(
     IStaticFeatureDefinitionStore staticStore,
     IFeatureDefinitionSerializer serializer,
     ICache distributedCache,
-    IResourceLockProvider resourceLockProvider,
+    IDistributedLockProvider distributedLockProvider,
     IGuidGenerator guidGenerator,
     IApplicationInformationAccessor application,
     IOptions<FeatureManagementOptions> optionsAccessor,
@@ -174,8 +174,8 @@ public sealed class DynamicFeatureDefinitionStore(
             return cachedStamp.Value;
         }
 
-        await using var resourceLock =
-            await resourceLockProvider.TryAcquireAsync(
+        await using var distributedLock =
+            await distributedLockProvider.TryAcquireAsync(
                 resource: _options.CrossApplicationsCommonLockKey,
                 timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
                 acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
@@ -301,14 +301,14 @@ public sealed class DynamicFeatureDefinitionStore(
 
     public async Task SaveAsync(CancellationToken cancellationToken = default)
     {
-        await using var appResourceLock = await resourceLockProvider.TryAcquireAsync(
+        await using var appDistributedLock = await distributedLockProvider.TryAcquireAsync(
             _appSaveLockKey,
             timeUntilExpires: _options.ApplicationSaveLockExpiration,
             acquireTimeout: _options.ApplicationSaveLockAcquireTimeout,
             cancellationToken: cancellationToken
         );
 
-        if (appResourceLock is null)
+        if (appDistributedLock is null)
         {
             return; // Another application instance is already doing it
         }
@@ -336,8 +336,8 @@ public sealed class DynamicFeatureDefinitionStore(
             return; // No changes
         }
 
-        await using var commonResourceLock =
-            await resourceLockProvider.TryAcquireAsync(
+        await using var commonDistributedLock =
+            await distributedLockProvider.TryAcquireAsync(
                 resource: _options.CrossApplicationsCommonLockKey,
                 timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
                 acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,

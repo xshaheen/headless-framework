@@ -27,7 +27,7 @@ dotnet add package Headless.Permissions.Core
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Requires: TimeProvider, ICache, IResourceLock, IGuidGenerator
+// Requires: TimeProvider, ICache, IDistributedLock, IGuidGenerator
 builder.Services.AddPermissionsManagementCore(options =>
 {
     options.CacheKeyPrefix = "permissions:";
@@ -99,7 +99,7 @@ services.AddPermissionsManagementCore(options =>
 - `Headless.Permissions.Abstractions`
 - `Headless.Domain`
 - `Headless.Caching.Abstractions`
-- `Headless.ResourceLocks.Abstractions`
+- `Headless.DistributedLocks.Abstractions`
 
 ## Side Effects
 

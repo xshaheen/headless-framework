@@ -63,7 +63,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
         services.AddSingleton<HeadlessRedisScriptsLoader>();
         // Resource Lock
-        services.AddResourceLock<RedisResourceLockStorage>();
+        services.AddDistributedLock<RedisDistributedLockStorage>();
 
         services
             .AddPermissionsManagementCore()
