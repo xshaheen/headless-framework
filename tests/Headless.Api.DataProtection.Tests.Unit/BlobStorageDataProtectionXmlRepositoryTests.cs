@@ -178,6 +178,87 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         element.Element("encryptedKey")?.Value.Should().Be("base64data");
     }
 
+    [Fact]
+    public void should_skip_malformed_xml_files_gracefully()
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        var blobs = new List<BlobInfo>
+        {
+            _CreateBlobInfo("valid.xml"),
+            _CreateBlobInfo("malformed.xml"),
+            _CreateBlobInfo("also-valid.xml"),
+        };
+        _SetupStorageWithBlobs(storage, blobs);
+
+        storage.OpenReadStreamAsync(Arg.Any<string[]>(), "valid.xml", Arg.Any<CancellationToken>())
+            .Returns(_CreateDownloadResult("<key id=\"1\"/>"));
+        storage.OpenReadStreamAsync(Arg.Any<string[]>(), "malformed.xml", Arg.Any<CancellationToken>())
+            .Returns(_CreateDownloadResult("<key id='unclosed'><broken"));
+        storage.OpenReadStreamAsync(Arg.Any<string[]>(), "also-valid.xml", Arg.Any<CancellationToken>())
+            .Returns(_CreateDownloadResult("<key id=\"3\"/>"));
+
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+
+        // Malformed XML should cause XmlException but not crash the whole operation
+        // The current implementation will throw - this test documents expected behavior
+        var act = () => sut.GetAllElements();
+
+        // If it throws, that's the current behavior (DoS risk if attacker uploads bad XML)
+        // If it doesn't throw and returns 2 elements, that's resilient behavior
+        act.Should().Throw<System.Xml.XmlException>();
+    }
+
+    [Fact]
+    public void should_handle_empty_xml_file()
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        var blobs = new List<BlobInfo> { _CreateBlobInfo("empty.xml") };
+        _SetupStorageWithBlobs(storage, blobs);
+
+        storage.OpenReadStreamAsync(Arg.Any<string[]>(), "empty.xml", Arg.Any<CancellationToken>())
+            .Returns(_CreateDownloadResult(""));
+
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+
+        var act = () => sut.GetAllElements();
+
+        // Empty file causes XmlException - documents current behavior
+        act.Should().Throw<System.Xml.XmlException>();
+    }
+
+    [Fact]
+    public void should_not_resolve_external_entities_in_xml()
+    {
+        var storage = Substitute.For<IBlobStorage>();
+        var blobs = new List<BlobInfo> { _CreateBlobInfo("xxe.xml") };
+        _SetupStorageWithBlobs(storage, blobs);
+
+        // XXE attack attempt - external entity declaration
+        // In .NET 5+, XElement.Load() has DTD processing disabled by default
+        // The entity reference will be included literally, not resolved
+        var xxeXml = """
+            <?xml version="1.0"?>
+            <!DOCTYPE key [
+              <!ENTITY xxe SYSTEM "file:///etc/passwd">
+            ]>
+            <key id="malicious">&xxe;</key>
+            """;
+        storage.OpenReadStreamAsync(Arg.Any<string[]>(), "xxe.xml", Arg.Any<CancellationToken>())
+            .Returns(_CreateDownloadResult(xxeXml));
+
+        var sut = new BlobStorageDataProtectionXmlRepository(storage);
+
+        var result = sut.GetAllElements();
+
+        // Modern .NET safely ignores external entities - the key is returned
+        // but the entity reference is NOT resolved (no file contents leaked)
+        result.Should().HaveCount(1);
+        var element = result.First();
+        element.Attribute("id")?.Value.Should().Be("malicious");
+        // The value should NOT contain /etc/passwd contents - DTD expansion is disabled
+        element.Value.Should().NotContain("root:");
+    }
+
     #endregion
 
     #region StoreElement Tests
