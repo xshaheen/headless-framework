@@ -205,6 +205,7 @@
         <File Path="README.md" />
     </Folder>
     <Folder Name="/tests/">
+        <Project Path="tests/Framework.Caching.Abstractions.Tests.Unit/Framework.Caching.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests/Framework.Redis.Tests.Integration/Framework.Redis.Tests.Integration.csproj" />
         <Project Path="tests/Framework.Redis.Tests.Unit/Framework.Redis.Tests.Unit.csproj" />
     </Folder>
