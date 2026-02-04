@@ -19,7 +19,6 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Headless.Base\Headless.Base.csproj" />
     <ProjectReference Include="..\..\src\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Generator.Primitives\Headless.Generator.Primitives.csproj" />
   </ItemGroup>

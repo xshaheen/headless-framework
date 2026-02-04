@@ -102,6 +102,7 @@
         <Project Path="src\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
         <Project Path="src\Headless.Generator.Primitives\Headless.Generator.Primitives.csproj" />
         <Project Path="tests/Headless.Generator.Primitives.Tests.Unit/Headless.Generator.Primitives.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Generator.Primitives.Abstractions.Tests.Unit/Headless.Generator.Primitives.Abstractions.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Identities/">
         <Project Path="src\Headless.Identity.Storage.EntityFramework\Headless.Identity.Storage.EntityFramework.csproj" />
