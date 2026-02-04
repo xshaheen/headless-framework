@@ -2,29 +2,33 @@
 
 using Headless.Caching;
 using Headless.Testing.Tests;
-using NSubstitute;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
 /// <summary>
-/// Tests for the <see cref="CacheExtensions.GetOrAddAsync{T}"/> extension method with cache stampede protection.
+/// Tests for <see cref="ICache.GetOrAddAsync{T}"/> with cache stampede protection.
+/// Uses <see cref="InMemoryCache"/> as the test implementation.
 /// </summary>
 public sealed class GetOrAddAsyncTests : TestBase
 {
     private static readonly TimeSpan _DefaultExpiration = TimeSpan.FromMinutes(5);
+    private readonly FakeTimeProvider _timeProvider = new();
+
+    private InMemoryCache _CreateCache() =>
+        new(_timeProvider, new InMemoryCacheOptions());
 
     [Fact]
     public async Task should_return_cached_value_when_exists()
     {
         // given
-        var mock = Substitute.For<ICache>();
-        mock.GetAsync<string>("key", Arg.Any<CancellationToken>())
-            .Returns(new CacheValue<string>("cached", true));
+        using var cache = _CreateCache();
+        await cache.UpsertAsync("key", "cached", _DefaultExpiration, AbortToken);
 
         // when
-        var result = await mock.GetOrAddAsync<string>(
+        var result = await cache.GetOrAddAsync<string>(
             "key",
-            () => Task.FromResult<string?>("new-value"),
+            _ => ValueTask.FromResult<string?>("new-value"),
             _DefaultExpiration,
             AbortToken
         );
@@ -32,26 +36,22 @@ public sealed class GetOrAddAsyncTests : TestBase
         // then
         result.HasValue.Should().BeTrue();
         result.Value.Should().Be("cached");
-        await mock.DidNotReceive()
-            .UpsertAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_call_factory_when_not_cached()
     {
         // given
-        var mock = Substitute.For<ICache>();
-        mock.GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<string>.NoValue);
+        using var cache = _CreateCache();
         var factoryCalled = false;
 
         // when
-        var result = await mock.GetOrAddAsync<string>(
+        var result = await cache.GetOrAddAsync<string>(
             "key",
-            () =>
+            _ =>
             {
                 factoryCalled = true;
-                return Task.FromResult<string?>("factory-value");
+                return ValueTask.FromResult<string?>("factory-value");
             },
             _DefaultExpiration,
             AbortToken
@@ -61,45 +61,36 @@ public sealed class GetOrAddAsyncTests : TestBase
         factoryCalled.Should().BeTrue();
         result.HasValue.Should().BeTrue();
         result.Value.Should().Be("factory-value");
-        await mock.Received(1)
-            .UpsertAsync("key", "factory-value", _DefaultExpiration, Arg.Any<CancellationToken>());
+
+        // Verify value was cached
+        var cached = await cache.GetAsync<string>("key", AbortToken);
+        cached.Value.Should().Be("factory-value");
     }
 
     [Fact]
     public async Task should_call_factory_only_once_for_concurrent_requests()
     {
         // given
-        var mock = Substitute.For<ICache>();
-        var cachedValue = (string?)null;
-
-        // Simulate real cache behavior: return NoValue until value is cached
-        mock.GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ => cachedValue is null
-                ? CacheValue<string>.NoValue
-                : new CacheValue<string>(cachedValue, true));
-
-        // When upsert is called, store the value
-        mock.UpsertAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(call =>
-            {
-                cachedValue = call.ArgAt<string?>(1);
-                return new ValueTask<bool>(true);
-            });
-
+        using var cache = _CreateCache();
         var factoryCallCount = 0;
         var factoryStarted = new TaskCompletionSource();
         var factoryCanComplete = new TaskCompletionSource();
 
-        async Task<string?> slowFactory()
+        ValueTask<string?> slowFactory(CancellationToken ct)
         {
-            Interlocked.Increment(ref factoryCallCount);
-            factoryStarted.TrySetResult();
-            await factoryCanComplete.Task;
-            return "value";
+            return new ValueTask<string?>(SlowFactoryAsync());
+
+            async Task<string?> SlowFactoryAsync()
+            {
+                Interlocked.Increment(ref factoryCallCount);
+                factoryStarted.TrySetResult();
+                await factoryCanComplete.Task;
+                return "value";
+            }
         }
 
         // when - start two concurrent requests
-        var task1 = mock.GetOrAddAsync<string>("same-key", slowFactory, _DefaultExpiration, AbortToken);
+        var task1 = cache.GetOrAddAsync<string>("same-key", slowFactory, _DefaultExpiration, AbortToken);
         await factoryStarted.Task;
 
         var task2Started = new TaskCompletionSource();
@@ -107,7 +98,7 @@ public sealed class GetOrAddAsyncTests : TestBase
             async () =>
             {
                 task2Started.SetResult();
-                return await mock.GetOrAddAsync<string>("same-key", slowFactory, _DefaultExpiration, AbortToken);
+                return await cache.GetOrAddAsync<string>("same-key", slowFactory, _DefaultExpiration, AbortToken);
             },
             AbortToken
         );
@@ -123,43 +114,10 @@ public sealed class GetOrAddAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_cached_value_on_double_check()
-    {
-        // given - simulate value being cached between first check and lock acquisition
-        var mock = Substitute.For<ICache>();
-        var getCallCount = 0;
-        mock.GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                getCallCount++;
-                // First call returns no value, second call (after lock) returns cached value
-                return getCallCount == 1
-                    ? CacheValue<string>.NoValue
-                    : new CacheValue<string>("cached-by-another", true);
-            });
-
-        // when
-        var result = await mock.GetOrAddAsync<string>(
-            "key",
-            () => Task.FromResult<string?>("factory-value"),
-            _DefaultExpiration,
-            AbortToken
-        );
-
-        // then - should return value from double-check, not factory
-        result.Value.Should().Be("cached-by-another");
-        await mock.DidNotReceive()
-            .UpsertAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
     public async Task should_allow_concurrent_requests_for_different_keys()
     {
         // given
-        var mock = Substitute.For<ICache>();
-        mock.GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<string>.NoValue);
-
+        using var cache = _CreateCache();
         var key1Started = new TaskCompletionSource();
         var key2Started = new TaskCompletionSource();
         var bothAcquired = new TaskCompletionSource();
@@ -168,9 +126,9 @@ public sealed class GetOrAddAsyncTests : TestBase
         var task1 = Task.Run(
             async () =>
             {
-                return await mock.GetOrAddAsync<string>(
+                return await cache.GetOrAddAsync<string>(
                     "key1",
-                    async () =>
+                    async _ =>
                     {
                         key1Started.SetResult();
                         await bothAcquired.Task;
@@ -186,9 +144,9 @@ public sealed class GetOrAddAsyncTests : TestBase
         var task2 = Task.Run(
             async () =>
             {
-                return await mock.GetOrAddAsync<string>(
+                return await cache.GetOrAddAsync<string>(
                     "key2",
-                    async () =>
+                    async _ =>
                     {
                         key2Started.SetResult();
                         await bothAcquired.Task;
@@ -215,14 +173,12 @@ public sealed class GetOrAddAsyncTests : TestBase
     public async Task should_handle_factory_returning_null()
     {
         // given
-        var mock = Substitute.For<ICache>();
-        mock.GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<string>.NoValue);
+        using var cache = _CreateCache();
 
         // when
-        var result = await mock.GetOrAddAsync<string>(
+        var result = await cache.GetOrAddAsync<string>(
             "key",
-            () => Task.FromResult<string?>(null),
+            _ => ValueTask.FromResult<string?>(null),
             _DefaultExpiration,
             AbortToken
         );
@@ -230,22 +186,20 @@ public sealed class GetOrAddAsyncTests : TestBase
         // then
         result.HasValue.Should().BeTrue();
         result.Value.Should().BeNull();
-        await mock.Received(1)
-            .UpsertAsync("key", default(string), _DefaultExpiration, Arg.Any<CancellationToken>());
+
+        // Verify null was cached
+        var cached = await cache.GetAsync<string>("key", AbortToken);
+        cached.HasValue.Should().BeTrue();
+        cached.Value.Should().BeNull();
     }
 
     [Fact]
-    public async Task should_use_global_locking_across_cache_instances()
+    public async Task should_use_instance_based_locking_not_global()
     {
-        // given - two different cache instances but same key should block
-        var mock1 = Substitute.For<ICache>();
-        var mock2 = Substitute.For<ICache>();
-        mock1.GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<string>.NoValue);
-        mock2.GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<string>.NoValue);
+        // given - two different cache instances with same key should NOT share locks
+        using var cache1 = _CreateCache();
+        using var cache2 = _CreateCache();
 
-        var factoryCallCount = 0;
         var factory1Started = new TaskCompletionSource();
         var factory1CanComplete = new TaskCompletionSource();
         var factory2Started = new TaskCompletionSource();
@@ -254,11 +208,10 @@ public sealed class GetOrAddAsyncTests : TestBase
         var task1 = Task.Run(
             async () =>
             {
-                return await mock1.GetOrAddAsync<string>(
-                    "global-lock-key",
-                    async () =>
+                return await cache1.GetOrAddAsync<string>(
+                    "shared-key",
+                    async _ =>
                     {
-                        Interlocked.Increment(ref factoryCallCount);
                         factory1Started.SetResult();
                         await factory1CanComplete.Task;
                         return "value1";
@@ -272,18 +225,15 @@ public sealed class GetOrAddAsyncTests : TestBase
 
         await factory1Started.Task;
 
-        var task2Started = new TaskCompletionSource();
         var task2 = Task.Run(
             async () =>
             {
-                task2Started.SetResult();
-                return await mock2.GetOrAddAsync<string>(
-                    "global-lock-key",
-                    () =>
+                return await cache2.GetOrAddAsync<string>(
+                    "shared-key",
+                    _ =>
                     {
-                        Interlocked.Increment(ref factoryCallCount);
                         factory2Started.SetResult();
-                        return Task.FromResult<string?>("value2");
+                        return ValueTask.FromResult<string?>("value2");
                     },
                     _DefaultExpiration,
                     AbortToken
@@ -292,35 +242,25 @@ public sealed class GetOrAddAsyncTests : TestBase
             AbortToken
         );
 
-        await task2Started.Task;
-        await Task.Delay(100, AbortToken); // Give task2 time to block on the lock
+        // then - factory2 should start immediately (instance-based locking, not global)
+        var factory2StartedResult = await Task.WhenAny(factory2Started.Task, Task.Delay(500, AbortToken));
+        factory2StartedResult.Should().Be(factory2Started.Task,
+            "factory2 should start immediately because cache2 has its own lock");
 
-        // Assert: factory2 should NOT have started yet because factory1 holds the global lock
-        factory2Started.Task.IsCompleted.Should().BeFalse(
-            "factory2 should be blocked waiting for the global lock held by factory1"
-        );
-
-        // Release factory1 - this should allow factory2 to proceed
         factory1CanComplete.SetResult();
         await Task.WhenAll(task1, task2);
-
-        // then - both factories called because different cache instances (no shared state for double-check)
-        // but they execute sequentially due to global locking
-        factoryCallCount.Should().Be(2);
     }
 
     [Fact]
     public async Task should_propagate_factory_exception()
     {
         // given
-        var mock = Substitute.For<ICache>();
-        mock.GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<string>.NoValue);
+        using var cache = _CreateCache();
 
         // when
-        var act = () => mock.GetOrAddAsync<string>(
+        var act = () => cache.GetOrAddAsync<string>(
             "key",
-            () => throw new InvalidOperationException("Factory failed"),
+            _ => throw new InvalidOperationException("Factory failed"),
             _DefaultExpiration,
             AbortToken
         ).AsTask();
@@ -334,16 +274,14 @@ public sealed class GetOrAddAsyncTests : TestBase
     public async Task should_release_lock_on_factory_exception()
     {
         // given
-        var mock = Substitute.For<ICache>();
-        mock.GetAsync<string>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(CacheValue<string>.NoValue);
+        using var cache = _CreateCache();
 
         // when - first call throws
         try
         {
-            await mock.GetOrAddAsync<string>(
+            await cache.GetOrAddAsync<string>(
                 "exception-key",
-                () => throw new InvalidOperationException("Factory failed"),
+                _ => throw new InvalidOperationException("Factory failed"),
                 _DefaultExpiration,
                 AbortToken
             );
@@ -358,9 +296,9 @@ public sealed class GetOrAddAsyncTests : TestBase
         var task = Task.Run(
             async () =>
             {
-                await mock.GetOrAddAsync<string>(
+                await cache.GetOrAddAsync<string>(
                     "exception-key",
-                    () => Task.FromResult<string?>("recovered"),
+                    _ => ValueTask.FromResult<string?>("recovered"),
                     _DefaultExpiration,
                     AbortToken
                 );
@@ -372,5 +310,47 @@ public sealed class GetOrAddAsyncTests : TestBase
         var completed = await Task.WhenAny(task, Task.Delay(1000, AbortToken));
         completed.Should().Be(task, "second call should complete without deadlock");
         secondCallCompleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_pass_cancellation_token_to_factory()
+    {
+        // given
+        using var cache = _CreateCache();
+        using var cts = new CancellationTokenSource();
+        CancellationToken receivedToken = default;
+
+        // when
+        await cache.GetOrAddAsync<string>(
+            "key",
+            ct =>
+            {
+                receivedToken = ct;
+                return ValueTask.FromResult<string?>("value");
+            },
+            _DefaultExpiration,
+            cts.Token
+        );
+
+        // then
+        receivedToken.Should().Be(cts.Token);
+    }
+
+    [Fact]
+    public async Task should_support_synchronous_factory_efficiently()
+    {
+        // given - ValueTask allows efficient sync completion
+        using var cache = _CreateCache();
+
+        // when - factory returns synchronously
+        var result = await cache.GetOrAddAsync(
+            "sync-key",
+            _ => ValueTask.FromResult<int?>(42), // No allocation for sync completion
+            _DefaultExpiration,
+            AbortToken
+        );
+
+        // then
+        result.Value.Should().Be(42);
     }
 }

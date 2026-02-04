@@ -73,6 +73,13 @@ public static class InMemoryCacheSetup
 
     private sealed class InMemoryCacheDistributedCacheAdapter(IInMemoryCache inMemoryCache) : IDistributedCache
     {
+        public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+            string key,
+            Func<CancellationToken, ValueTask<T?>> factory,
+            TimeSpan expiration,
+            CancellationToken cancellationToken = default
+        ) => inMemoryCache.GetOrAddAsync(key, factory, expiration, cancellationToken);
+
         public ValueTask<bool> UpsertAsync<T>(
             string key,
             T? value,

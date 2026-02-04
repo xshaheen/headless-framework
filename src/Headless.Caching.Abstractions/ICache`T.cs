@@ -4,6 +4,22 @@ namespace Headless.Caching;
 
 public interface ICache<T>
 {
+    /// <summary>
+    /// Gets a value from cache, or creates it using the factory if not found.
+    /// Uses keyed locking to prevent cache stampedes (multiple concurrent factory executions for the same key).
+    /// </summary>
+    /// <param name="key">The cache key.</param>
+    /// <param name="factory">The factory function to create the value if not found in cache. Receives the cancellation token.</param>
+    /// <param name="expiration">Expiration time for the cached value.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The cached or newly created value wrapped in <see cref="CacheValue{T}"/>.</returns>
+    ValueTask<CacheValue<T>> GetOrAddAsync(
+        string key,
+        Func<CancellationToken, ValueTask<T?>> factory,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    );
+
     #region Update
 
     ValueTask<bool> UpsertAsync(
@@ -88,6 +104,16 @@ public interface ICache<T>
 
 public class Cache<T>(ICache cache) : ICache<T>
 {
+    public ValueTask<CacheValue<T>> GetOrAddAsync(
+        string key,
+        Func<CancellationToken, ValueTask<T?>> factory,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.GetOrAddAsync(key, factory, expiration, cancellationToken);
+    }
+
     public ValueTask<bool> UpsertAsync(
         string cacheKey,
         T? cacheValue,

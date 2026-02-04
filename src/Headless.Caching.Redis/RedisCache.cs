@@ -45,6 +45,7 @@ public sealed class RedisCache(
 
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
+    private readonly KeyedAsyncLock _keyedLock = new();
 
     private volatile bool _supportsMsetEx;
     private volatile bool _supportsMsetExChecked;
@@ -66,6 +67,41 @@ public sealed class RedisCache(
         }
 
         return false;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CancellationToken, ValueTask<T?>> factory,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        Argument.IsNotNull(factory);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var cacheValue = await GetAsync<T>(key, cancellationToken).AnyContext();
+
+        if (cacheValue.HasValue)
+        {
+            return cacheValue;
+        }
+
+        using (await _keyedLock.LockAsync(key, cancellationToken).AnyContext())
+        {
+            // Double-check after acquiring lock
+            cacheValue = await GetAsync<T>(key, cancellationToken).AnyContext();
+            if (cacheValue.HasValue)
+            {
+                return cacheValue;
+            }
+
+            var value = await factory(cancellationToken).AnyContext();
+            await UpsertAsync(key, value, expiration, cancellationToken).AnyContext();
+
+            return new(value, hasValue: true);
+        }
     }
 
     #region Update
