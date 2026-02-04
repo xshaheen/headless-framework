@@ -10,7 +10,8 @@ public sealed class XmlReaderExtensionsTests
     {
         // given
         var xml = "<value>123</value>";
-        using var reader = XmlReader.Create(new StringReader(xml));
+        using var stringReader = new StringReader(xml);
+        using var reader = XmlReader.Create(stringReader);
         reader.Read(); // move to element
 
         // when
@@ -25,7 +26,8 @@ public sealed class XmlReaderExtensionsTests
     {
         // given
         var xml = "<value>123.45</value>";
-        using var reader = XmlReader.Create(new StringReader(xml));
+        using var stringReader = new StringReader(xml);
+        using var reader = XmlReader.Create(stringReader);
         reader.Read(); // move to element
 
         // when
@@ -41,7 +43,8 @@ public sealed class XmlReaderExtensionsTests
         // given
         var expected = Guid.Parse("550e8400-e29b-41d4-a716-446655440000");
         var xml = $"<value>{expected}</value>";
-        using var reader = XmlReader.Create(new StringReader(xml));
+        using var stringReader = new StringReader(xml);
+        using var reader = XmlReader.Create(stringReader);
         reader.Read(); // move to element
 
         // when
