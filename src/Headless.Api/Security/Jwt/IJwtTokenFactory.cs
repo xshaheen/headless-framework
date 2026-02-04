@@ -70,7 +70,7 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
         TimeSpan? notBefore = null
     )
     {
-        var issuedAt = clock.UtcNow.DateTime;
+        var issuedAt = clock.UtcNow.UtcDateTime;
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {
