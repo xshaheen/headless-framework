@@ -10,6 +10,7 @@ Provides standardized interfaces for building reliable distributed messaging sys
 
 - **Type-Safe Consumption**: `IConsume<TMessage>` interface with `ConsumeContext<TMessage>` for compile-time verification (5-8x faster than reflection)
 - **Outbox Publishing**: `IOutboxPublisher` for transactional message publishing with database consistency
+- **Direct Publishing**: `IDirectPublisher` for fire-and-forget, low-latency message delivery
 - **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
 - **Consumer Configuration**: `IMessagingBuilder` for assembly scanning and manual consumer registration
 - **Delayed Publishing**: Schedule messages for future delivery
@@ -49,7 +50,7 @@ builder.Services.AddMessages(options =>
     options.WithTopicMapping<OrderPlacedEvent>("orders.placed");
 });
 
-// Publish with outbox
+// Publish with outbox (reliable delivery)
 public sealed class OrderService(IOutboxPublisher publisher)
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
@@ -60,6 +61,16 @@ public sealed class OrderService(IOutboxPublisher publisher)
             OrderId = order.Id,
             Total = order.Total
         }, cancellationToken: ct);
+    }
+}
+
+// Publish directly (fire-and-forget)
+public sealed class MetricsService(IDirectPublisher publisher)
+{
+    public async Task TrackAsync(MetricEvent metric, CancellationToken ct)
+    {
+        // Topic resolved from WithTopicMapping<MetricEvent>()
+        await publisher.PublishAsync(metric, ct);
     }
 }
 ```
