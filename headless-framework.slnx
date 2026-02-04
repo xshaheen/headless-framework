@@ -272,7 +272,12 @@
         <File Path="nuget.config" />
         <File Path="README.md" />
     </Folder>
-    <Folder Name="/src/" />
+    <Folder Name="/src/">
+        <Project Path="src/Headless.Caching.Hybrid/Headless.Caching.Hybrid.csproj" />
+    </Folder>
+    <Folder Name="/tests/">
+        <Project Path="tests/Headless.Caching.Hybrid.Tests.Unit/Headless.Caching.Hybrid.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />
         <Project Path="tests/Headless.FluentValidation.Tests.Unit/Headless.FluentValidation.Tests.Unit.csproj" />
