@@ -55,3 +55,12 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 ```bash
 dotnet tool restore  # Install: csharpier, dotnet-ef, minver-cli, husky
 ```
+
+## Design Decisions
+
+### Input Validation Responsibility
+
+This framework delegates certain input validation to consuming applications:
+
+- **Cache key length limits**: Not enforced by `ICache` implementations. Consumers should validate key lengths at their application boundaries if DoS protection is needed.
+- **Message payload sizes**: `CacheInvalidationMessage` and similar DTOs don't enforce size limits. Consumers should configure their messaging infrastructure (RabbitMQ, Redis, etc.) with appropriate limits.
