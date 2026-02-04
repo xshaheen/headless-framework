@@ -41,6 +41,9 @@ jobs:
   build:
     name: Build & Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: "Checkout"
         uses: actions/checkout@v6
@@ -61,13 +64,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: "Remove Existing Nuget Source"
-        run: dotnet nuget remove source github.com
-        shell: pwsh
-
-      - name: "Add Nuget Source"
-        run: dotnet nuget add source https://nuget.pkg.github.com/xshaheen/index.json --name github.com --username xshaheen --password ${{ secrets.NUGET_API_KEY }} --store-password-in-clear-text
-        shell: pwsh
+      - name: "Authenticate GitHub Packages"
+        run: |
+          dotnet nuget remove source github.com 2>/dev/null || true
+          dotnet nuget add source https://nuget.pkg.github.com/xshaheen/index.json --name github.com --username xshaheen --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text
+        shell: bash
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: ".NET Nuke Build"
         run: ./build.ps1 Compile -Configuration ${{ env.CONFIGURATION }}
