@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Generator.Primitives;
 
 namespace Tests.Extensions;
