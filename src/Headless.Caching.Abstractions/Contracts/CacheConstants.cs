@@ -8,4 +8,5 @@ public static class CacheConstants
 {
     public const string DistributedCacheProvider = "distributed";
     public const string MemoryCacheProvider = "memory";
+    public const string HybridCacheProvider = "hybrid";
 }
