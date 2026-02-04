@@ -22,7 +22,7 @@ namespace Headless.Threading;
 ///     if (_cache.TryGetValue(key, out T cached))
 ///         return cached;
 ///
-///     using (await AsyncDuplicateLock.LockAsync(key, ct))
+///     using (await KeyedLock.LockAsync(key, ct))
 ///     {
 ///         // Double-check after acquiring lock
 ///         if (_cache.TryGetValue(key, out cached))
@@ -37,7 +37,7 @@ namespace Headless.Threading;
 /// </remarks>
 /// <seealso href="https://stackoverflow.com/questions/31138179/asynchronous-locking-based-on-a-key"/>
 [PublicAPI]
-public static class AsyncDuplicateLock
+public static class KeyedLock
 {
     private static readonly Dictionary<string, RefCountedSemaphore> _SemaphoreSlims = new(StringComparer.Ordinal);
 

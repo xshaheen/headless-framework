@@ -271,6 +271,9 @@
         <File Path="README.md" />
     </Folder>
     <Folder Name="/src/" />
+    <Folder Name="/tests/">
+        <Project Path="tests/Headless.Caching.Abstractions.Tests.Unit/Headless.Caching.Abstractions.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />
         <Project Path="tests/Headless.FluentValidation.Tests.Unit/Headless.FluentValidation.Tests.Unit.csproj" />
