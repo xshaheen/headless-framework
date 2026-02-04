@@ -15,12 +15,14 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
 
     public BrokerAddress BrokerAddress => new("Kafka", connectionPool.ServersAddress);
 
-    public async Task<OperateResult> SendAsync(TransportMessage message)
+    public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
         var producer = connectionPool.RentProducer();
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var headers = new Headers();
 
             foreach (var header in message.Headers)
@@ -44,7 +46,8 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
                                 ? kafkaMessageKey
                                 : message.GetId(),
                         Value = message.Body.ToArray(),
-                    }
+                    },
+                    cancellationToken
                 )
                 .AnyContext();
 

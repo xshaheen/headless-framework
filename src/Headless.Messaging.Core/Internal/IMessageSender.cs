@@ -60,7 +60,8 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
 
         var tracingTimestamp = _TracingBefore(transportMsg, _transport.BrokerAddress);
 
-        var result = await _transport.SendAsync(transportMsg).AnyContext();
+        // Note: Outbox sender doesn't propagate user cancellation; messages should be delivered
+        var result = await _transport.SendAsync(transportMsg, CancellationToken.None).AnyContext();
 
         if (result.Succeeded)
         {
@@ -194,7 +195,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
         {
-            var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
+            var ex = new Headless.Messaging.PublisherSentFailedException(result.ToString(), result.Exception);
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             var eventData = new MessageEventDataPubSend

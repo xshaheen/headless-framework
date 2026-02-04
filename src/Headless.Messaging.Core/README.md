@@ -45,7 +45,7 @@ builder.Services.AddMessages(options =>
     options.ScanConsumers(typeof(Program).Assembly);
 });
 
-// Publish messages with outbox
+// Publish messages with outbox (reliable delivery)
 public sealed class OrderService(IOutboxPublisher publisher, IOutboxTransaction transaction)
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
@@ -58,7 +58,63 @@ public sealed class OrderService(IOutboxPublisher publisher, IOutboxTransaction 
         }
     }
 }
+
+// Publish messages directly (fire-and-forget)
+public sealed class MetricsService(IDirectPublisher publisher)
+{
+    public async Task TrackEventAsync(MetricEvent metric, CancellationToken ct)
+    {
+        // Bypasses outbox - sent directly to transport
+        await publisher.PublishAsync(metric, ct);
+    }
+}
 ```
+
+## Publisher Options
+
+### IOutboxPublisher (Reliable Delivery)
+
+Use `IOutboxPublisher` for messages that must not be lost:
+
+- **Transactional**: Messages are stored in database before sending
+- **At-least-once**: Automatic retries with configurable backoff
+- **Delayed delivery**: Schedule messages for future delivery
+- **Ordering**: Preserves publish order within transactions
+
+### IDirectPublisher (Fire-and-Forget)
+
+Use `IDirectPublisher` for high-throughput, low-latency scenarios where occasional message loss is acceptable:
+
+```csharp
+// Configure topic mapping
+options.WithTopicMapping<MetricEvent>("metrics.events");
+
+// Inject and publish
+public sealed class MetricsPublisher(IDirectPublisher publisher)
+{
+    public async Task PublishMetric(MetricEvent metric, CancellationToken ct)
+    {
+        // Sent immediately to transport, no persistence
+        await publisher.PublishAsync(metric, ct);
+
+        // With custom headers (using Headers constants)
+        var headers = new Dictionary<string, string?>
+        {
+            [Headers.CorrelationId] = Guid.NewGuid().ToString(),
+        };
+        await publisher.PublishAsync(metric, headers, ct);
+    }
+}
+```
+
+**Characteristics:**
+
+- **No persistence**: Messages bypass outbox storage
+- **Lower latency**: Direct transport send without database round-trip
+- **No retries**: Transport failures throw immediately
+- **Topic from type**: Topic resolved from `WithTopicMapping<T>()` or conventions
+
+**Use cases:** Metrics, telemetry, cache invalidation, real-time notifications
 
 ## Configuration
 

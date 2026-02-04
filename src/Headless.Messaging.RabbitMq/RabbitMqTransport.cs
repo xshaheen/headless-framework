@@ -24,13 +24,15 @@ internal sealed class RabbitMqTransport : ITransport
 
     public BrokerAddress BrokerAddress => new("RabbitMQ", _connectionChannelPool.HostAddress);
 
-    public async Task<OperateResult> SendAsync(TransportMessage message)
+    public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
         RabbitMqValidation.ValidateTopicName(message.GetName());
 
         IChannel? channel = null;
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             channel = await _connectionChannelPool.Rent().AnyContext();
 
             var props = new BasicProperties
@@ -40,7 +42,9 @@ internal sealed class RabbitMqTransport : ITransport
                 Headers = message.Headers.ToDictionary(x => x.Key, object? (x) => x.Value, StringComparer.Ordinal),
             };
 
-            await channel.BasicPublishAsync(_exchange, message.GetName(), false, props, message.Body).AnyContext();
+            await channel
+                .BasicPublishAsync(_exchange, message.GetName(), false, props, message.Body, cancellationToken)
+                .AnyContext();
 
             _logger.LogInformation(
                 "Headless message '{Name}' published, internal id '{Id}'",

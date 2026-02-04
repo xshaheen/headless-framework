@@ -19,12 +19,14 @@ internal class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool 
 
     public BrokerAddress BrokerAddress => new("NATS", connectionPool.ServersAddress);
 
-    public async Task<OperateResult> SendAsync(TransportMessage message)
+    public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
         var connection = connectionPool.RentConnection();
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var msg = new Msg(message.GetName(), message.Body.ToArray());
             foreach (var header in message.Headers)
             {
@@ -35,6 +37,7 @@ internal class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool 
 
             var builder = PublishOptions.Builder().WithMessageId(message.GetId());
 
+            // Note: NATS .NET client doesn't support CancellationToken in PublishAsync yet
             var resp = await js.PublishAsync(msg, builder.Build()).AnyContext();
 
             if (resp.Seq > 0)
