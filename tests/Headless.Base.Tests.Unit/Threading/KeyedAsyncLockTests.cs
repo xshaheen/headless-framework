@@ -3,23 +3,16 @@ using Headless.Threading;
 
 namespace Tests.Threading;
 
-public sealed class AsyncDuplicateLockTests : TestBase
+public sealed class KeyedAsyncLockTests : TestBase
 {
     [Fact]
-    public void should_acquire_lock_for_new_key()
+    public async Task should_acquire_lock_for_new_key()
     {
-        // when
-        using var releaser = AsyncDuplicateLock.Lock("key1");
+        // given
+        using var keyedLock = new KeyedAsyncLock();
 
-        // then
-        releaser.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task should_acquire_lock_async_for_new_key()
-    {
         // when
-        using var releaser = await AsyncDuplicateLock.LockAsync("key1", AbortToken);
+        using var releaser = await keyedLock.LockAsync("key1", AbortToken);
 
         // then
         releaser.Should().NotBeNull();
@@ -29,6 +22,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
     public async Task should_block_concurrent_access_to_same_key()
     {
         // given
+        using var keyedLock = new KeyedAsyncLock();
         var executionOrder = new List<int>();
         var lock1Acquired = new TaskCompletionSource();
         var lock1Released = new TaskCompletionSource();
@@ -37,7 +31,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
         var task1 = Task.Run(
             async () =>
             {
-                using (await AsyncDuplicateLock.LockAsync("shared-key"))
+                using (await keyedLock.LockAsync("shared-key"))
                 {
                     executionOrder.Add(1);
                     lock1Acquired.SetResult();
@@ -52,7 +46,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
         var task2 = Task.Run(
             async () =>
             {
-                using (await AsyncDuplicateLock.LockAsync("shared-key"))
+                using (await keyedLock.LockAsync("shared-key"))
                 {
                     executionOrder.Add(2);
                 }
@@ -75,6 +69,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
     public async Task should_allow_concurrent_access_to_different_keys()
     {
         // given
+        using var keyedLock = new KeyedAsyncLock();
         var key1Acquired = new TaskCompletionSource();
         var key2Acquired = new TaskCompletionSource();
         var bothAcquired = new TaskCompletionSource();
@@ -83,7 +78,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
         var task1 = Task.Run(
             async () =>
             {
-                using (await AsyncDuplicateLock.LockAsync("key-a"))
+                using (await keyedLock.LockAsync("key-a"))
                 {
                     key1Acquired.SetResult();
                     await bothAcquired.Task;
@@ -95,7 +90,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
         var task2 = Task.Run(
             async () =>
             {
-                using (await AsyncDuplicateLock.LockAsync("key-b"))
+                using (await keyedLock.LockAsync("key-b"))
                 {
                     key2Acquired.SetResult();
                     await bothAcquired.Task;
@@ -117,14 +112,17 @@ public sealed class AsyncDuplicateLockTests : TestBase
     [Fact]
     public async Task should_allow_reacquisition_after_release()
     {
-        // given & when
-        using (await AsyncDuplicateLock.LockAsync("reuse-key", AbortToken))
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+
+        // when
+        using (await keyedLock.LockAsync("reuse-key", AbortToken))
         {
             // First acquisition
         }
 
         // Second acquisition should work
-        using (await AsyncDuplicateLock.LockAsync("reuse-key", AbortToken))
+        using (await keyedLock.LockAsync("reuse-key", AbortToken))
         {
             // Should not deadlock
         }
@@ -137,6 +135,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
     public async Task should_handle_many_concurrent_locks_on_same_key()
     {
         // given
+        using var keyedLock = new KeyedAsyncLock();
         const int taskCount = 10;
         var counter = 0;
         var tasks = new List<Task>();
@@ -148,7 +147,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
                 Task.Run(
                     async () =>
                     {
-                        using (await AsyncDuplicateLock.LockAsync("counter-key", AbortToken))
+                        using (await keyedLock.LockAsync("counter-key", AbortToken))
                         {
                             var current = counter;
                             await Task.Yield(); // Simulate some work
@@ -170,6 +169,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
     public async Task should_handle_many_different_keys_concurrently()
     {
         // given
+        using var keyedLock = new KeyedAsyncLock();
         const int keyCount = 100;
         var tasks = new List<Task>();
 
@@ -181,7 +181,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
                 Task.Run(
                     async () =>
                     {
-                        using (await AsyncDuplicateLock.LockAsync(key, AbortToken))
+                        using (await keyedLock.LockAsync(key, AbortToken))
                         {
                             await Task.Yield();
                         }
@@ -198,50 +198,18 @@ public sealed class AsyncDuplicateLockTests : TestBase
     }
 
     [Fact]
-    public void should_work_with_sync_lock()
-    {
-        // given
-        var counter = 0;
-        var threads = new List<Thread>();
-
-        // when
-        for (var i = 0; i < 5; i++)
-        {
-            var thread = new Thread(() =>
-            {
-                using (AsyncDuplicateLock.Lock("sync-key"))
-                {
-                    var current = counter;
-                    Thread.Sleep(10);
-                    counter = current + 1;
-                }
-            });
-            threads.Add(thread);
-            thread.Start();
-        }
-
-        foreach (var thread in threads)
-        {
-            thread.Join();
-        }
-
-        // then
-        counter.Should().Be(5);
-    }
-
-    [Fact]
     public async Task should_cleanup_semaphore_after_all_releasers_disposed()
     {
-        // This test verifies that the semaphore is properly cleaned up after all releasers are disposed
-        // and that a new lock can be acquired on the same key
+        // given
+        using var keyedLock = new KeyedAsyncLock();
 
-        // given & when - sequential locks, not overlapping
-        using (await AsyncDuplicateLock.LockAsync("cleanup-key-test", AbortToken))
+        // when - sequential locks, not overlapping
+        using (await keyedLock.LockAsync("cleanup-key-test", AbortToken))
         {
             // First lock
         }
 
-        using (await AsyncDuplicateLock.LockAsync("cleanup-key-test", AbortToken))
+        using (await keyedLock.LockAsync("cleanup-key-test", AbortToken))
         {
             // Second lock - should work because first was released and cleaned up
         }
@@ -253,7 +221,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
             .Select(_ =>
                 Task.Run(async () =>
                 {
-                    using (await AsyncDuplicateLock.LockAsync("cleanup-key-concurrent"))
+                    using (await keyedLock.LockAsync("cleanup-key-concurrent"))
                     {
                         Interlocked.Increment(ref counter);
                     }
@@ -263,7 +231,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
         await Task.WhenAll(tasks);
 
         // After all concurrent locks are released, should be able to acquire again
-        using (await AsyncDuplicateLock.LockAsync("cleanup-key-concurrent", AbortToken))
+        using (await keyedLock.LockAsync("cleanup-key-concurrent", AbortToken))
         {
             // Should succeed - semaphore was cleaned up after all releasers disposed
         }
@@ -276,12 +244,13 @@ public sealed class AsyncDuplicateLockTests : TestBase
     public async Task should_handle_exception_in_critical_section()
     {
         // given
+        using var keyedLock = new KeyedAsyncLock();
         bool lockReleased;
 
         // when
         try
         {
-            using (await AsyncDuplicateLock.LockAsync("exception-key", AbortToken))
+            using (await keyedLock.LockAsync("exception-key", AbortToken))
             {
                 throw new InvalidOperationException("Test exception");
             }
@@ -292,7 +261,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
         }
 
         // Try to acquire the same lock - should work if properly released
-        using (await AsyncDuplicateLock.LockAsync("exception-key", AbortToken))
+        using (await keyedLock.LockAsync("exception-key", AbortToken))
         {
             lockReleased = true;
         }
@@ -305,6 +274,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
     public async Task should_use_ordinal_string_comparison()
     {
         // given - keys that differ only in case should be different locks
+        using var keyedLock = new KeyedAsyncLock();
         var key1Acquired = new TaskCompletionSource();
         var key2Acquired = new TaskCompletionSource();
         var bothAcquired = new TaskCompletionSource();
@@ -313,7 +283,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
         var task1 = Task.Run(
             async () =>
             {
-                using (await AsyncDuplicateLock.LockAsync("CaseSensitive"))
+                using (await keyedLock.LockAsync("CaseSensitive"))
                 {
                     key1Acquired.SetResult();
                     await bothAcquired.Task;
@@ -325,7 +295,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
         var task2 = Task.Run(
             async () =>
             {
-                using (await AsyncDuplicateLock.LockAsync("casesensitive"))
+                using (await keyedLock.LockAsync("casesensitive"))
                 {
                     key2Acquired.SetResult();
                     await bothAcquired.Task;
@@ -348,6 +318,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
     public async Task should_support_cancellation()
     {
         // given
+        using var keyedLock = new KeyedAsyncLock();
         var lockAcquired = new TaskCompletionSource();
         using var cts = new CancellationTokenSource();
 
@@ -355,7 +326,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
         _ = Task.Run(
             async () =>
             {
-                using (await AsyncDuplicateLock.LockAsync("cancel-key", AbortToken))
+                using (await keyedLock.LockAsync("cancel-key", AbortToken))
                 {
                     lockAcquired.SetResult();
                     await Task.Delay(5000, AbortToken); // Hold lock for a while
@@ -371,7 +342,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
 
         // then
         // ReSharper disable once AccessToDisposedClosure
-        var act = async () => await AsyncDuplicateLock.LockAsync("cancel-key", cts.Token);
+        var act = async () => await keyedLock.LockAsync("cancel-key", cts.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
@@ -379,6 +350,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
     public async Task should_cleanup_ref_count_on_cancellation()
     {
         // given
+        using var keyedLock = new KeyedAsyncLock();
         var lockAcquired = new TaskCompletionSource();
         var canRelease = new TaskCompletionSource();
         using var cts = new CancellationTokenSource();
@@ -387,7 +359,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
         var holdingTask = Task.Run(
             async () =>
             {
-                using (await AsyncDuplicateLock.LockAsync("cancel-cleanup-key"))
+                using (await keyedLock.LockAsync("cancel-cleanup-key"))
                 {
                     lockAcquired.SetResult();
                     await canRelease.Task;
@@ -402,7 +374,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
         cts.CancelAfter(50);
         try
         {
-            using var _ = await AsyncDuplicateLock.LockAsync("cancel-cleanup-key", cts.Token);
+            using var _ = await keyedLock.LockAsync("cancel-cleanup-key", cts.Token);
         }
         catch (OperationCanceledException)
         {
@@ -414,7 +386,7 @@ public sealed class AsyncDuplicateLockTests : TestBase
         await holdingTask;
 
         // Should be able to acquire again (ref count properly cleaned up after cancellation)
-        using (await AsyncDuplicateLock.LockAsync("cancel-cleanup-key", AbortToken))
+        using (await keyedLock.LockAsync("cancel-cleanup-key", AbortToken))
         {
             // Success - ref count was properly decremented on cancellation
         }
@@ -424,40 +396,26 @@ public sealed class AsyncDuplicateLockTests : TestBase
     }
 
     [Fact]
-    public void should_throw_on_null_key_sync()
+    public async Task should_throw_on_null_key()
     {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+
         // when
-        var act = () => AsyncDuplicateLock.Lock(null!);
-
-        // then
-        act.Should().Throw<ArgumentException>();
-    }
-
-    [Fact]
-    public void should_throw_on_empty_key_sync()
-    {
-        // when
-        var act = () => AsyncDuplicateLock.Lock("");
-
-        // then
-        act.Should().Throw<ArgumentException>();
-    }
-
-    [Fact]
-    public async Task should_throw_on_null_key_async()
-    {
-        // when
-        var act = async () => await AsyncDuplicateLock.LockAsync(null!);
+        var act = async () => await keyedLock.LockAsync(null!);
 
         // then
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
     [Fact]
-    public async Task should_throw_on_empty_key_async()
+    public async Task should_throw_on_empty_key()
     {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+
         // when
-        var act = async () => await AsyncDuplicateLock.LockAsync("");
+        var act = async () => await keyedLock.LockAsync("");
 
         // then
         await act.Should().ThrowAsync<ArgumentException>();
@@ -467,7 +425,8 @@ public sealed class AsyncDuplicateLockTests : TestBase
     public async Task should_handle_double_dispose_gracefully()
     {
         // given
-        var releaser = await AsyncDuplicateLock.LockAsync("double-dispose-key", AbortToken);
+        using var keyedLock = new KeyedAsyncLock();
+        var releaser = await keyedLock.LockAsync("double-dispose-key", AbortToken);
 
         // when - dispose twice
         releaser.Dispose();
@@ -481,14 +440,15 @@ public sealed class AsyncDuplicateLockTests : TestBase
     public async Task should_handle_double_dispose_without_corrupting_state()
     {
         // given
-        var releaser = await AsyncDuplicateLock.LockAsync("double-dispose-state-key", AbortToken);
+        using var keyedLock = new KeyedAsyncLock();
+        var releaser = await keyedLock.LockAsync("double-dispose-state-key", AbortToken);
 
         // when - dispose twice
         releaser.Dispose();
         releaser.Dispose();
 
         // Should be able to acquire again
-        using (await AsyncDuplicateLock.LockAsync("double-dispose-state-key", AbortToken))
+        using (await keyedLock.LockAsync("double-dispose-state-key", AbortToken))
         {
             // Success
         }
@@ -498,168 +458,76 @@ public sealed class AsyncDuplicateLockTests : TestBase
     }
 
     [Fact]
-    public async Task try_lock_should_acquire_lock_when_available()
+    public async Task should_use_instance_based_locking_not_global()
     {
+        // given - two different instances with same key should NOT share locks
+        using var lock1 = new KeyedAsyncLock();
+        using var lock2 = new KeyedAsyncLock();
+
+        var lock1Acquired = new TaskCompletionSource();
+        var lock1CanRelease = new TaskCompletionSource();
+        var lock2Acquired = new TaskCompletionSource();
+
         // when
-        using var releaser = await AsyncDuplicateLock.TryLockAsync("try-lock-key", TimeSpan.FromSeconds(1), AbortToken);
-
-        // then
-        releaser.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task try_lock_should_return_null_when_timeout_expires()
-    {
-        // given
-        var lockAcquired = new TaskCompletionSource();
-
-        _ = Task.Run(
+        var task1 = Task.Run(
             async () =>
             {
-                using (await AsyncDuplicateLock.LockAsync("try-lock-timeout-key"))
+                using (await lock1.LockAsync("shared-key"))
                 {
-                    lockAcquired.SetResult();
-                    await Task.Delay(5000); // Hold lock
+                    lock1Acquired.SetResult();
+                    await lock1CanRelease.Task;
                 }
             },
             AbortToken
         );
 
-        await lockAcquired.Task;
+        await lock1Acquired.Task;
 
-        // when - try to acquire with short timeout
-        using var releaser = await AsyncDuplicateLock.TryLockAsync(
-            "try-lock-timeout-key",
-            TimeSpan.FromMilliseconds(50),
-            AbortToken
-        );
-
-        // then
-        releaser.Should().BeNull();
-    }
-
-    [Fact]
-    public async Task try_lock_should_acquire_lock_when_released_before_timeout()
-    {
-        // given
-        var lockAcquired = new TaskCompletionSource();
-        var canRelease = new TaskCompletionSource();
-
-        var holdingTask = Task.Run(
+        var task2 = Task.Run(
             async () =>
             {
-                using (await AsyncDuplicateLock.LockAsync("try-lock-wait-key", AbortToken))
+                using (await lock2.LockAsync("shared-key"))
                 {
-                    lockAcquired.SetResult();
-                    await canRelease.Task;
+                    lock2Acquired.SetResult();
                 }
             },
             AbortToken
         );
 
-        await lockAcquired.Task;
+        // then - lock2 should acquire immediately (instance-based locking, not global)
+        var lock2AcquiredResult = await Task.WhenAny(lock2Acquired.Task, Task.Delay(500, AbortToken));
+        lock2AcquiredResult.Should().Be(lock2Acquired.Task,
+            "lock2 should acquire immediately because lock2 has its own lock dictionary");
 
-        // when - start trying to acquire, then release the first lock
-        var tryLockTask = AsyncDuplicateLock.TryLockAsync("try-lock-wait-key", TimeSpan.FromSeconds(5), AbortToken);
-
-        await Task.Delay(50, AbortToken);
-        canRelease.SetResult();
-        await holdingTask;
-
-        var releaser = await tryLockTask;
-
-        // then
-        releaser.Should().NotBeNull();
-        releaser.Dispose();
+        lock1CanRelease.SetResult();
+        await Task.WhenAll(task1, task2);
     }
 
     [Fact]
-    public async Task try_lock_should_cleanup_ref_count_on_timeout()
+    public void should_dispose_all_semaphores_on_dispose()
     {
         // given
-        var lockAcquired = new TaskCompletionSource();
-        var canRelease = new TaskCompletionSource();
+        var keyedLock = new KeyedAsyncLock();
 
-        var holdingTask = Task.Run(
-            async () =>
-            {
-                using (await AsyncDuplicateLock.LockAsync("try-lock-cleanup-key"))
-                {
-                    lockAcquired.SetResult();
-                    await canRelease.Task;
-                }
-            },
-            AbortToken
-        );
+        // Acquire some locks and release them (semaphores should be cleaned up)
+        // But also keep a reference to verify disposal behavior
+        var releaser1 = keyedLock.LockAsync("key1").GetAwaiter().GetResult();
+        var releaser2 = keyedLock.LockAsync("key2").GetAwaiter().GetResult();
 
-        await lockAcquired.Task;
+        releaser1.Dispose();
+        releaser2.Dispose();
 
-        // when - timeout on try lock
-        using var releaser = await AsyncDuplicateLock.TryLockAsync(
-            "try-lock-cleanup-key",
-            TimeSpan.FromMilliseconds(50),
-            AbortToken
-        );
+        // Acquire more and don't release - these will be cleaned up by Dispose
+        var releaser3 = keyedLock.LockAsync("key3").GetAwaiter().GetResult();
 
-        releaser.Should().BeNull();
-
-        // Release the holding lock
-        canRelease.SetResult();
-        await holdingTask;
-
-        // then - should be able to acquire again (ref count properly cleaned up)
-        using (await AsyncDuplicateLock.LockAsync("try-lock-cleanup-key", AbortToken))
-        {
-            // Success
-        }
-    }
-
-    [Fact]
-    public async Task try_lock_should_support_cancellation()
-    {
-        // given
-        var lockAcquired = new TaskCompletionSource();
-        using var cts = new CancellationTokenSource();
-
-        var holdingTask = Task.Run(
-            async () =>
-            {
-                using (await AsyncDuplicateLock.LockAsync("try-lock-cancel-key", AbortToken))
-                {
-                    lockAcquired.SetResult();
-                    await Task.Delay(5000, AbortToken);
-                }
-            },
-            AbortToken
-        );
-
-        await lockAcquired.Task;
-        cts.CancelAfter(50);
-
-        // when/then
-        var act = async () =>
-            await AsyncDuplicateLock.TryLockAsync("try-lock-cancel-key", TimeSpan.FromSeconds(10), cts.Token);
-
-        await act.Should().ThrowAsync<OperationCanceledException>();
-    }
-
-    [Fact]
-    public async Task try_lock_should_throw_on_null_key()
-    {
         // when
-        var act = async () => await AsyncDuplicateLock.TryLockAsync(null!, TimeSpan.FromSeconds(1));
+        var act = () => keyedLock.Dispose();
 
-        // then
-        await act.Should().ThrowAsync<ArgumentException>();
-    }
+        // then - should not throw
+        act.Should().NotThrow();
 
-    [Fact]
-    public async Task try_lock_should_throw_on_empty_key()
-    {
-        // when
-        var act = async () => await AsyncDuplicateLock.TryLockAsync("", TimeSpan.FromSeconds(1));
-
-        // then
-        await act.Should().ThrowAsync<ArgumentException>();
+        // Clean up the releaser (should be safe even after parent disposed)
+        var act2 = () => releaser3.Dispose();
+        act2.Should().NotThrow();
     }
 }

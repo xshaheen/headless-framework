@@ -1,12 +1,27 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Caching;
-
 namespace Headless.Caching;
 
 [PublicAPI]
 public interface ICache
 {
+    /// <summary>
+    /// Gets a value from cache, or creates it using the factory if not found.
+    /// Uses keyed locking to prevent cache stampedes (multiple concurrent factory executions for the same key).
+    /// </summary>
+    /// <typeparam name="T">The type of the cached value.</typeparam>
+    /// <param name="key">The cache key.</param>
+    /// <param name="factory">The factory function to create the value if not found in cache. Receives the cancellation token.</param>
+    /// <param name="expiration">Expiration time for the cached value.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The cached or newly created value wrapped in <see cref="CacheValue{T}"/>.</returns>
+    ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CancellationToken, ValueTask<T?>> factory,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    );
+
     #region Update
 
     /// <summary>Sets the specified cacheKey, cacheValue and expiration.</summary>

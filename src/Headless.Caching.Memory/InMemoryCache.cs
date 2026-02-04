@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Checks;
+using Headless.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nito.AsyncEx;
@@ -26,6 +27,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new(StringComparer.Ordinal);
     private readonly AsyncLock _lock = new();
+    private readonly KeyedAsyncLock _keyedLock = new();
     private readonly CancellationTokenSource _disposedCts = new();
     private readonly ILogger _logger;
     private readonly TimeProvider _timeProvider;
@@ -63,6 +65,43 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 "SizeCalculator is required when MaxMemorySize or MaxEntrySize is set.",
                 nameof(options)
             );
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CancellationToken, ValueTask<T?>> factory,
+        TimeSpan expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        Argument.IsNotNull(factory);
+        Argument.IsPositive(expiration);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var cacheValue = await GetAsync<T>(key, cancellationToken).AnyContext();
+
+        if (cacheValue.HasValue)
+        {
+            return cacheValue;
+        }
+
+        using (await _keyedLock.LockAsync(key, cancellationToken).AnyContext())
+        {
+            // Double-check after acquiring lock
+            cacheValue = await GetAsync<T>(key, cancellationToken).AnyContext();
+            if (cacheValue.HasValue)
+            {
+                return cacheValue;
+            }
+
+            var value = await factory(cancellationToken).AnyContext();
+            await UpsertAsync(key, value, expiration, cancellationToken).AnyContext();
+
+            return new(value, hasValue: true);
         }
     }
 
@@ -1328,6 +1367,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         _memory.Clear();
         Interlocked.Exchange(ref _currentMemorySize, 0);
+        _keyedLock.Dispose();
         _disposedCts.Cancel();
         _disposedCts.Dispose();
     }
