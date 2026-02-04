@@ -99,4 +99,26 @@ public sealed class PrimitiveValidationResultTests
         result1.Equals((object?)null).Should().BeFalse();
         result1.Equals("not a result").Should().BeFalse();
     }
+
+    [Fact]
+    public void should_create_error_result_with_empty_message()
+    {
+        // given/when
+        var result = PrimitiveValidationResult.Error(string.Empty);
+
+        // then - empty string is still an error, not valid
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_create_error_result_with_null_message()
+    {
+        // given/when - documents current behavior: null is accepted
+        var result = PrimitiveValidationResult.Error(null!);
+
+        // then - still invalid even with null message
+        result.IsValid.Should().BeFalse();
+        result.ErrorMessage.Should().BeNull();
+    }
 }
