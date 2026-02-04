@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Immutable;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using Headless.Generator.Primitives;
@@ -12,25 +13,27 @@ namespace Tests.Helpers;
 
 internal static class TestHelpers
 {
+    // Cache assembly references to avoid repeated enumeration across tests
+    private static readonly Lazy<ImmutableArray<MetadataReference>> _cachedReferences = new(() =>
+        AppDomain.CurrentDomain.GetAssemblies()
+            .Where(x => !x.IsDynamic && !string.IsNullOrWhiteSpace(x.Location))
+            .Select(x => (MetadataReference)MetadataReference.CreateFromFile(x.Location))
+            .Concat([
+                (MetadataReference)MetadataReference.CreateFromFile(typeof(PrimitiveGenerator).Assembly.Location),
+                (MetadataReference)MetadataReference.CreateFromFile(typeof(IPrimitive<>).Assembly.Location),
+                (MetadataReference)MetadataReference.CreateFromFile(typeof(DisplayAttribute).Assembly.Location),
+            ])
+            .ToImmutableArray());
+
     internal static GeneratedOutput GetGeneratedOutput<T>(string source, PrimitiveGlobalOptions? globalOptions = null)
         where T : IIncrementalGenerator, new()
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
 
-        var references = AppDomain
-            .CurrentDomain.GetAssemblies()
-            .Where(x => !x.IsDynamic && !string.IsNullOrWhiteSpace(x.Location))
-            .Select(x => MetadataReference.CreateFromFile(x.Location))
-            .Concat([
-                MetadataReference.CreateFromFile(typeof(T).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(IPrimitive<>).Assembly.Location),
-                MetadataReference.CreateFromFile(typeof(DisplayAttribute).Assembly.Location),
-            ]);
-
         var compilation = CSharpCompilation.Create(
             "generator_Test",
             [syntaxTree],
-            references,
+            _cachedReferences.Value,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
         );
 

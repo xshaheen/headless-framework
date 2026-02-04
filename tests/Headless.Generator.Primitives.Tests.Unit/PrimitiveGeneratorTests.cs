@@ -649,6 +649,78 @@ public sealed class PrimitiveGeneratorTests
         );
     }
 
+    [Fact]
+    public Task should_skip_generation_for_invalid_base_type()
+    {
+        // Generator silently skips types with unsupported underlying types
+        const string source = """
+            using System;
+            using Headless.Generator.Primitives;
+
+            namespace Test;
+
+            public class CustomType : IEquatable<CustomType>, IComparable, IComparable<CustomType>
+            {
+                public bool Equals(CustomType? other) => true;
+                public int CompareTo(object? obj) => 0;
+                public int CompareTo(CustomType? other) => 0;
+            }
+
+            public readonly partial struct InvalidPrimitive : IPrimitive<CustomType>
+            {
+                public static PrimitiveValidationResult Validate(CustomType value) => PrimitiveValidationResult.Ok;
+            }
+            """;
+
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().BeEmpty()
+        );
+    }
+
+    [Fact]
+    public Task should_report_diagnostic_for_non_partial_class()
+    {
+        const string source = """
+            using System;
+            using Headless.Generator.Primitives;
+
+            namespace Test;
+
+            public struct NonPartialPrimitive : IPrimitive<int>
+            {
+                public static PrimitiveValidationResult Validate(int value) => PrimitiveValidationResult.Ok;
+            }
+            """;
+
+        return TestHelper.VerifyDiagnostic(source, "AL1002");
+    }
+
+    [Fact]
+    public Task should_skip_generation_for_nullable_underlying_type()
+    {
+        // Generator does not support nullable value types as the underlying type
+        const string source = """
+            using System;
+            using Headless.Generator.Primitives;
+
+            namespace Test;
+
+            public readonly partial struct NullableIntPrimitive : IPrimitive<int?>
+            {
+                public static PrimitiveValidationResult Validate(int? value)
+                {
+                    return value is null or < 0 ? "Invalid Value" : PrimitiveValidationResult.Ok;
+                }
+            }
+            """;
+
+        return TestHelper.Verify(
+            source,
+            generated => generated.Files.Should().BeEmpty()
+        );
+    }
+
     private static class TestHelper
     {
         internal static Task Verify(
@@ -661,6 +733,19 @@ public sealed class PrimitiveGeneratorTests
 
             generatedOutput.Diagnostics.Where(x => x.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
             additionalChecks?.Invoke(generatedOutput);
+
+            return Verifier.Verify(generatedOutput.Driver).UseDirectory("Snapshots");
+        }
+
+        internal static Task VerifyDiagnostic(
+            string source,
+            string expectedDiagnosticId,
+            PrimitiveGlobalOptions? options = null
+        )
+        {
+            var generatedOutput = TestHelpers.GetGeneratedOutput<PrimitiveGenerator>(source, options);
+
+            generatedOutput.Diagnostics.Should().Contain(d => d.Id == expectedDiagnosticId);
 
             return Verifier.Verify(generatedOutput.Driver).UseDirectory("Snapshots");
         }
