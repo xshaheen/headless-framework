@@ -8,7 +8,6 @@ namespace Tests;
 
 /// <summary>
 /// Tests for the <see cref="CacheExtensions.GetOrAddAsync{T}"/> extension method with cache stampede protection.
-/// Uses a wrapper class since NSubstitute mocks don't include extension methods.
 /// </summary>
 public sealed class GetOrAddAsyncTests : TestBase
 {
@@ -249,6 +248,7 @@ public sealed class GetOrAddAsyncTests : TestBase
         var factoryCallCount = 0;
         var factory1Started = new TaskCompletionSource();
         var factory1CanComplete = new TaskCompletionSource();
+        var factory2Started = new TaskCompletionSource();
 
         // when
         var task1 = Task.Run(
@@ -282,6 +282,7 @@ public sealed class GetOrAddAsyncTests : TestBase
                     () =>
                     {
                         Interlocked.Increment(ref factoryCallCount);
+                        factory2Started.SetResult();
                         return Task.FromResult<string?>("value2");
                     },
                     _DefaultExpiration,
@@ -292,9 +293,14 @@ public sealed class GetOrAddAsyncTests : TestBase
         );
 
         await task2Started.Task;
-        await Task.Delay(50, AbortToken); // Give task2 time to block
+        await Task.Delay(100, AbortToken); // Give task2 time to block on the lock
 
-        // At this point, task2 should be blocked because same key is locked globally
+        // Assert: factory2 should NOT have started yet because factory1 holds the global lock
+        factory2Started.Task.IsCompleted.Should().BeFalse(
+            "factory2 should be blocked waiting for the global lock held by factory1"
+        );
+
+        // Release factory1 - this should allow factory2 to proceed
         factory1CanComplete.SetResult();
         await Task.WhenAll(task1, task2);
 
