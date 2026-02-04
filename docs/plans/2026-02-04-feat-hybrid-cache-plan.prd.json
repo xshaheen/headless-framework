@@ -1,0 +1,206 @@
+{
+	"project": "headless-framework",
+	"baseBranch": "dev",
+	"branchName": "xshaheen/feat-hybrid-cache",
+	"description": "Add Hybrid Cache with Cross-Instance Invalidation",
+	"userStories": [
+		{
+			"id": "US-001",
+			"title": "Create Headless.Caching.Hybrid project structure",
+			"description": "Create the new project with proper csproj, README, namespace, and package references to Headless.Caching.Abstractions, Headless.Messaging.Abstractions, and Headless.Base",
+			"size": "S",
+			"acceptanceCriteria": [
+				"Project compiles and references required dependencies",
+				"Follows Headless.* naming convention",
+				"README.md exists with package description"
+			],
+			"priority": 1,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-002",
+			"title": "Define HybridCacheOptions, CacheInvalidationMessage",
+			"description": "Create options class with DefaultLocalExpiration, InvalidationTopic, InstanceId and the message record for cross-instance invalidation",
+			"size": "S",
+			"acceptanceCriteria": [
+				"HybridCacheOptions extends CacheOptions with DefaultLocalExpiration, InvalidationTopic, InstanceId",
+				"CacheInvalidationMessage is a record with InstanceId, Key, Prefix, FlushAll",
+				"XML documentation on all public members"
+			],
+			"priority": 2,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-003",
+			"title": "Implement HybridCache read path with fast path + complete double-check",
+			"description": "Implement GetAsync, GetAllAsync, GetOrAddAsync with sync fast path for L1 hits and complete double-check of both L1 and L2 after acquiring lock",
+			"size": "M",
+			"acceptanceCriteria": [
+				"GetOrAddAsync uses sync fast path for L1 hits (no state machine allocation)",
+				"GetOrAddAsync double-checks BOTH L1 AND L2 after acquiring KeyedAsyncLock",
+				"L2 hit populates L1 with configurable local TTL",
+				"Factory only called on complete cache miss"
+			],
+			"priority": 3,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-004",
+			"title": "Implement HybridCache write path with exception handling",
+			"description": "Implement UpsertAsync, UpsertAllAsync, TryInsertAsync, TryReplaceAsync with dual-write to L1 and L2, L2 failure tolerance",
+			"size": "M",
+			"acceptanceCriteria": [
+				"Writes go to both L1 and L2",
+				"L1 uses shorter TTL if configured",
+				"L2 write failure logs warning and still populates L1",
+				"OperationCanceledException always propagates"
+			],
+			"priority": 4,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-005",
+			"title": "Implement HybridCache remove operations with race-safe invalidation",
+			"description": "Implement RemoveAsync, RemoveAllAsync, RemoveByPrefixAsync, FlushAsync with publish-first pattern to minimize race window",
+			"size": "M",
+			"acceptanceCriteria": [
+				"RemoveAsync publishes invalidation BEFORE/concurrent with L2 removal",
+				"Publish failure logs warning but doesn't fail the remove operation",
+				"RemoveByPrefixAsync broadcasts prefix-based invalidation",
+				"FlushAsync broadcasts flush-all message",
+				"Self-originated messages are ignored"
+			],
+			"priority": 5,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-006",
+			"title": "Implement HybridCacheInvalidationSubscriber with proper cancellation",
+			"description": "Create IHostedService that manages HybridCache message subscription lifecycle with proper cancellation handling",
+			"size": "S",
+			"acceptanceCriteria": [
+				"StartAsync subscribes to invalidation messages",
+				"StopAsync respects cancellation token",
+				"OperationCanceledException during shutdown not logged as error"
+			],
+			"priority": 6,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-007",
+			"title": "Implement IAsyncDisposable on HybridCache",
+			"description": "Add proper disposal pattern to clean up subscriptions and CancellationTokenSource",
+			"size": "S",
+			"acceptanceCriteria": [
+				"HybridCache implements IAsyncDisposable",
+				"DisposeAsync cancels pending operations via CTS",
+				"Subscription is properly cleaned up",
+				"Double-disposal is handled safely"
+			],
+			"priority": 7,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-008",
+			"title": "Add DI registration in Setup.cs",
+			"description": "Create AddHybridCache extension method following framework conventions",
+			"size": "S",
+			"acceptanceCriteria": [
+				"Extension method on IServiceCollection",
+				"Supports Action<HybridCacheOptions> overload",
+				"isDefault parameter for ICache registration",
+				"Registers hosted service for invalidation subscriber"
+			],
+			"priority": 8,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-009",
+			"title": "Add options validation with FluentValidation",
+			"description": "Create HybridCacheOptionsValidator with rules for required fields",
+			"size": "XS",
+			"acceptanceCriteria": [
+				"Validates KeyPrefix is not null",
+				"Validates InvalidationTopic is not empty",
+				"Validates DefaultLocalExpiration is positive if set"
+			],
+			"priority": 9,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-010",
+			"title": "Write unit tests for HybridCache read path including fast path",
+			"description": "Test L1 hit fast path, L2 hit with L1 population, factory invocation, complete double-check, and stampede protection",
+			"size": "M",
+			"acceptanceCriteria": [
+				"Tests L1 cache hit uses sync fast path",
+				"Tests L2 cache hit populates L1",
+				"Tests factory called only on complete miss",
+				"Tests concurrent requests use single factory call",
+				"Tests double-check includes both L1 and L2"
+			],
+			"priority": 10,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-011",
+			"title": "Write unit tests for invalidation flow + exception scenarios",
+			"description": "Test publish-first pattern, exception handling for L2/publish failures, self-message filtering",
+			"size": "M",
+			"acceptanceCriteria": [
+				"Tests RemoveAsync publishes before L2 removal",
+				"Tests L2 write failure still populates L1",
+				"Tests publish failure logs but doesn't throw",
+				"Tests self-originated messages are skipped",
+				"Tests prefix and flush-all invalidation"
+			],
+			"priority": 11,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-012",
+			"title": "Write integration tests with Redis and message bus",
+			"description": "End-to-end tests with Testcontainers verifying cross-instance invalidation and exception scenarios",
+			"size": "L",
+			"acceptanceCriteria": [
+				"Tests use Testcontainers for Redis",
+				"Tests verify L1->L2 flow with real Redis",
+				"Tests verify invalidation propagates between simulated instances",
+				"Tests verify eventual consistency after invalidation",
+				"Tests verify graceful degradation when message bus unavailable"
+			],
+			"priority": 12,
+			"passes": false,
+			"notes": ""
+		},
+		{
+			"id": "US-013",
+			"title": "Add README documentation",
+			"description": "Document usage, configuration, exception handling contract, and examples in package README",
+			"size": "S",
+			"acceptanceCriteria": [
+				"Installation instructions",
+				"Basic usage example with GetOrAddAsync",
+				"Configuration options explained",
+				"Exception handling contract documented",
+				"Architecture diagram"
+			],
+			"priority": 13,
+			"passes": false,
+			"notes": ""
+		}
+	],
+	"passes": false,
+	"validation_errors": []
+}
