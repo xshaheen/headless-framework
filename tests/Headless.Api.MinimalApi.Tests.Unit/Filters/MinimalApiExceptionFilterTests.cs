@@ -402,7 +402,7 @@ public sealed class MinimalApiExceptionFilterTests : TestBase
 /// Test exception class named to match EF Core's DbUpdateConcurrencyException
 /// for duck-typing detection in MinimalApiExceptionFilter.
 /// </summary>
-public class DbUpdateConcurrencyException : Exception
+public sealed class DbUpdateConcurrencyException : Exception
 {
     public DbUpdateConcurrencyException() { }
 

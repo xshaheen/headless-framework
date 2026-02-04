@@ -17,6 +17,8 @@
         <Project Path="tests\Headless.Api.FluentValidation.Tests.Unit\Headless.Api.FluentValidation.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Tests.Integration\Headless.Api.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Api.Tests.Unit\Headless.Api.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Api.MinimalApi.Tests.Unit/Headless.Api.MinimalApi.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Api.Mvc.Tests.Unit/Headless.Api.Mvc.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Blobs/">
         <Project Path="demo\Headless.Tus.Demo\Headless.Tus.Demo.csproj" />
@@ -265,11 +267,6 @@
         <File Path="global.json" />
         <File Path="nuget.config" />
         <File Path="README.md" />
-    </Folder>
-    <Folder Name="/src/" />
-    <Folder Name="/tests/">
-        <Project Path="tests/Headless.Api.MinimalApi.Tests.Unit/Headless.Api.MinimalApi.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.Api.Mvc.Tests.Unit/Headless.Api.Mvc.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />

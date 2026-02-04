@@ -293,7 +293,7 @@ public sealed class ApiKeyAuthenticationHandlerTests : TestBase
     #endregion
 }
 
-public class TestUser : IdentityUser<string>
+public sealed class TestUser : IdentityUser<string>
 {
     public TestUser(string id, string userName, string email)
     {
