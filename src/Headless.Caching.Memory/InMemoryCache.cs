@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Checks;
+using Headless.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nito.AsyncEx;
@@ -78,6 +79,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(factory);
+        Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
         var cacheValue = await GetAsync<T>(key, cancellationToken).AnyContext();
@@ -1365,6 +1367,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         _memory.Clear();
         Interlocked.Exchange(ref _currentMemorySize, 0);
+        _keyedLock.Dispose();
         _disposedCts.Cancel();
         _disposedCts.Dispose();
     }
