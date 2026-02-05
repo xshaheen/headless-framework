@@ -6,9 +6,11 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging.AmazonSQS" />
     <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus" />
+    <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Cronos" />
     <PackageReference Include="FastExpressionCompiler" />
   </ItemGroup>
   <ItemGroup>
