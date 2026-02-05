@@ -7,7 +7,7 @@ namespace Headless.Caching;
 
 /// <summary>
 /// Message consumer that handles cache invalidation messages from other instances.
-/// Registered automatically by <see cref="HybridCacheSetup.AddHybridCache"/>.
+/// Registered automatically by <see cref="HybridCacheSetup.AddHybridCache(Action{HybridCacheOptions}?, bool)"/>.
 /// </summary>
 [PublicAPI]
 public sealed class HybridCacheInvalidationConsumer(HybridCache cache, ILogger<HybridCacheInvalidationConsumer> logger)
