@@ -75,7 +75,7 @@ public sealed class PostgreSqlDataStorage(
 
         var opResult = await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return opResult > 0;
     }
@@ -96,7 +96,7 @@ public sealed class PostgreSqlDataStorage(
 
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async ValueTask RenewLockAsync(
@@ -115,7 +115,7 @@ public sealed class PostgreSqlDataStorage(
 
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async ValueTask ChangePublishStateToDelayedAsync(string[] ids, CancellationToken cancellationToken = default)
@@ -142,7 +142,7 @@ public sealed class PostgreSqlDataStorage(
 
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: parameters)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public ValueTask ChangePublishStateAsync(
@@ -201,7 +201,7 @@ public sealed class PostgreSqlDataStorage(
             await using var connection = postgreSqlOptions.Value.CreateConnection();
             await connection
                 .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-                .AnyContext();
+                .ConfigureAwait(false);
         }
         else
         {
@@ -212,7 +212,7 @@ public sealed class PostgreSqlDataStorage(
             }
 
             var conn = dbTrans?.Connection!;
-            await conn.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).AnyContext();
+            await conn.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).ConfigureAwait(false);
         }
 
         return message;
@@ -241,7 +241,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@MessageId", serializer.Deserialize(content)!.GetId()),
         ];
 
-        await _StoreReceivedMessage(sqlParams, cancellationToken).AnyContext();
+        await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<MediumMessage> StoreReceivedMessageAsync(
@@ -277,7 +277,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@MessageId", message.GetId()),
         ];
 
-        await _StoreReceivedMessage(sqlParams, cancellationToken).AnyContext();
+        await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
 
         return mediumMessage;
     }
@@ -309,7 +309,7 @@ public sealed class PostgreSqlDataStorage(
                 cancellationToken,
                 sqlParams
             )
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
@@ -317,7 +317,7 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessagesOfNeedRetryAsync(_pubName, lookbackSeconds, cancellationToken).AnyContext();
+        return await _GetMessagesOfNeedRetryAsync(_pubName, lookbackSeconds, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(
@@ -325,7 +325,7 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessagesOfNeedRetryAsync(_recName, lookbackSeconds, cancellationToken).AnyContext();
+        return await _GetMessagesOfNeedRetryAsync(_recName, lookbackSeconds, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
@@ -335,7 +335,7 @@ public sealed class PostgreSqlDataStorage(
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var result = await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new NpgsqlParameter("@Id", id))
-            .AnyContext();
+            .ConfigureAwait(false);
         return result;
     }
 
@@ -346,7 +346,7 @@ public sealed class PostgreSqlDataStorage(
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var result = await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new NpgsqlParameter("@Id", id))
-            .AnyContext();
+            .ConfigureAwait(false);
         return result;
     }
 
@@ -380,7 +380,7 @@ public sealed class PostgreSqlDataStorage(
                 async (reader, token) =>
                 {
                     var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(token).AnyContext())
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
                         var content = reader.GetString(1);
 
@@ -403,7 +403,7 @@ public sealed class PostgreSqlDataStorage(
                 cancellationToken,
                 sqlParams
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         await scheduleTask(transaction, messageList);
 
@@ -433,7 +433,9 @@ public sealed class PostgreSqlDataStorage(
         if (transaction is DbTransaction dbTransaction)
         {
             var connection = (NpgsqlConnection)dbTransaction.Connection!;
-            await connection.ExecuteNonQueryAsync(sql, dbTransaction, cancellationToken, sqlParams).AnyContext();
+            await connection
+                .ExecuteNonQueryAsync(sql, dbTransaction, cancellationToken, sqlParams)
+                .ConfigureAwait(false);
         }
         else
         {
@@ -441,7 +443,7 @@ public sealed class PostgreSqlDataStorage(
 
             await connection
                 .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-                .AnyContext();
+                .ConfigureAwait(false);
         }
     }
 
@@ -461,7 +463,7 @@ public sealed class PostgreSqlDataStorage(
 
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
@@ -490,7 +492,7 @@ public sealed class PostgreSqlDataStorage(
                 async (reader, token) =>
                 {
                     var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(token).AnyContext())
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
                         var content = reader.GetString(1);
 
@@ -511,7 +513,7 @@ public sealed class PostgreSqlDataStorage(
                 cancellationToken: cancellationToken,
                 sqlParams: sqlParams
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return result;
     }

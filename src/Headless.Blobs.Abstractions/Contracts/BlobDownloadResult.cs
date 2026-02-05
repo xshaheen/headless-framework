@@ -17,7 +17,7 @@ public sealed record BlobDownloadResult(Stream Stream, string FileName, Dictiona
 {
     public async ValueTask DisposeAsync()
     {
-        await Stream.DisposeAsync().AnyContext();
+        await Stream.DisposeAsync().ConfigureAwait(false);
     }
 
     public void Dispose()

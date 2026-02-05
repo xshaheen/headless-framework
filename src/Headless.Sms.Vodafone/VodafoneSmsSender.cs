@@ -31,8 +31,8 @@ public sealed class VodafoneSmsSender(
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _uri);
         requestMessage.Content = new StringContent(_BuildPayload(request), Encoding.UTF8, "application/xml");
 
-        var response = await httpClient.SendAsync(requestMessage, cancellationToken).AnyContext();
-        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
+        var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {

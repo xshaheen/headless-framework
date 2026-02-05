@@ -60,13 +60,13 @@ public sealed class SqlServerOutboxTransaction(IDispatcher dispatcher, Diagnosti
         switch (DbTransaction)
         {
             case NoopTransaction:
-                await FlushAsync(cancellationToken).AnyContext();
+                await FlushAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case DbTransaction dbTransaction:
-                await dbTransaction.CommitAsync(cancellationToken).AnyContext();
+                await dbTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case IDbContextTransaction dbContextTransaction:
-                await dbContextTransaction.CommitAsync(cancellationToken).AnyContext();
+                await dbContextTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 break;
         }
     }
@@ -89,10 +89,10 @@ public sealed class SqlServerOutboxTransaction(IDispatcher dispatcher, Diagnosti
         switch (DbTransaction)
         {
             case DbTransaction dbTransaction:
-                await dbTransaction.RollbackAsync(cancellationToken).AnyContext();
+                await dbTransaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case IDbContextTransaction dbContextTransaction:
-                await dbContextTransaction.RollbackAsync(cancellationToken).AnyContext();
+                await dbContextTransaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 break;
         }
     }

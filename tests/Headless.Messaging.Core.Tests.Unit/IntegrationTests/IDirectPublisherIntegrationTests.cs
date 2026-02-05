@@ -275,7 +275,7 @@ public sealed class DirectTestConsumer : IConsume<DirectTestMessage>
 
         try
         {
-            await _messageReceivedTcs.Task.WaitAsync(cts.Token).AnyContext();
+            await _messageReceivedTcs.Task.WaitAsync(cts.Token).ConfigureAwait(false);
             return true;
         }
         catch (OperationCanceledException)
@@ -306,7 +306,7 @@ public sealed class DirectTestConsumer : IConsume<DirectTestMessage>
 
         try
         {
-            await _messageReceivedTcs.Task.WaitAsync(cts.Token).AnyContext();
+            await _messageReceivedTcs.Task.WaitAsync(cts.Token).ConfigureAwait(false);
             return true;
         }
         catch (OperationCanceledException)
@@ -348,7 +348,7 @@ public sealed class DirectTestConsumerWithHeaders : IConsume<DirectTestMessage>
 
         try
         {
-            await _contextReceivedTcs.Task.WaitAsync(cts.Token).AnyContext();
+            await _contextReceivedTcs.Task.WaitAsync(cts.Token).ConfigureAwait(false);
             return true;
         }
         catch (OperationCanceledException)

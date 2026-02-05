@@ -131,13 +131,13 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
         // Call OnStartingAsync if consumer implements IConsumerLifecycle
         if (consumer is IConsumerLifecycle lifecycle)
         {
-            await lifecycle.OnStartingAsync(cancellationToken).AnyContext();
+            await lifecycle.OnStartingAsync(cancellationToken).ConfigureAwait(false);
         }
 
         try
         {
             // Invoke the compiled delegate
-            await invoker(consumer, context, cancellationToken).AnyContext();
+            await invoker(consumer, context, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -146,7 +146,7 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
             {
                 try
                 {
-                    await lifecycleCleanup.OnStoppingAsync(cancellationToken).AnyContext();
+                    await lifecycleCleanup.OnStoppingAsync(cancellationToken).ConfigureAwait(false);
                 }
 #pragma warning disable ERP022
                 catch

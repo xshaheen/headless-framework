@@ -30,6 +30,6 @@ public sealed class TransportCheckProcessor(ILogger<TransportCheckProcessor> log
             logger.LogDebug("Transport connection healthy!");
         }
 
-        await context.WaitAsync(_waitingInterval).AnyContext();
+        await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
     }
 }

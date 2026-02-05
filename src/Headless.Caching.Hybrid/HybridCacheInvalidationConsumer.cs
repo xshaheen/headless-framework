@@ -21,7 +21,7 @@ public sealed class HybridCacheInvalidationConsumer(HybridCache cache, ILogger<H
     {
         try
         {
-            await cache.HandleInvalidationAsync(context.Message, cancellationToken).AnyContext();
+            await cache.HandleInvalidationAsync(context.Message, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

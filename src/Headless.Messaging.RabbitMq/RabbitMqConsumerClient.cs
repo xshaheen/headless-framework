@@ -105,7 +105,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            await Task.Delay(timeout, cancellationToken).AnyContext();
+            await Task.Delay(timeout, cancellationToken).ConfigureAwait(false);
         }
         // ReSharper disable once FunctionNeverReturns
     }
@@ -132,7 +132,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public async Task ConnectAsync()
     {
-        var connection = await _connectionChannelPool.GetConnectionAsync().AnyContext();
+        var connection = await _connectionChannelPool.GetConnectionAsync().ConfigureAwait(false);
 
         await _semaphore.WaitAsync();
 

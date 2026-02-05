@@ -27,12 +27,12 @@ public static class Run
             {
                 if (delay.Ticks > 0)
                 {
-                    await timeProvider.Delay(delay, cancellationToken).AnyContext();
+                    await timeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
                 }
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                await action(cancellationToken).AnyContext();
+                await action(cancellationToken).ConfigureAwait(false);
             },
             cancellationToken
         );
@@ -75,7 +75,7 @@ public static class Run
 
             try
             {
-                return await action(state, cancellationToken).AnyContext();
+                return await action(state, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (attempts < maxAttempts)
             {
@@ -86,7 +86,7 @@ public static class Run
 
                 await timeProvider
                     .DelayUntilElapsedOrCancel(currentBackoffTime.Milliseconds(), cancellationToken)
-                    .AnyContext();
+                    .ConfigureAwait(false);
             }
 
             if (retryInterval == null)
@@ -179,7 +179,7 @@ public static class Run
             (action, state),
             static async (tuple, token) =>
             {
-                await tuple.action(tuple.state, token).AnyContext();
+                await tuple.action(tuple.state, token).ConfigureAwait(false);
 
                 return (object?)null;
             },
@@ -204,7 +204,7 @@ public static class Run
             action,
             static async (action, token) =>
             {
-                await action(token).AnyContext();
+                await action(token).ConfigureAwait(false);
 
                 return (object?)null;
             },
@@ -230,7 +230,7 @@ public static class Run
             (action, state),
             static async (tuple, _) =>
             {
-                await tuple.action(tuple.state).AnyContext();
+                await tuple.action(tuple.state).ConfigureAwait(false);
 
                 return (object?)null;
             },
@@ -255,7 +255,7 @@ public static class Run
             action,
             static async (action, _) =>
             {
-                await action().AnyContext();
+                await action().ConfigureAwait(false);
 
                 return (object?)null;
             },

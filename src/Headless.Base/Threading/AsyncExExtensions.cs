@@ -13,7 +13,7 @@ public static class AsyncExExtensions
     public static async Task WaitAsync(this AsyncAutoResetEvent resetEvent, TimeSpan timeout)
     {
         using var timeoutCancellationTokenSource = timeout.ToCancellationTokenSource();
-        await resetEvent.WaitAsync(timeoutCancellationTokenSource.Token).AnyContext();
+        await resetEvent.WaitAsync(timeoutCancellationTokenSource.Token).ConfigureAwait(false);
     }
 
     [DebuggerStepThrough]
@@ -40,7 +40,7 @@ public static class AsyncExExtensions
     public static async Task WaitAsync(this AsyncManualResetEvent resetEvent, TimeSpan timeout)
     {
         using var cts = timeout.ToCancellationTokenSource();
-        await resetEvent.WaitAsync(cts.Token).AnyContext();
+        await resetEvent.WaitAsync(cts.Token).ConfigureAwait(false);
     }
 
     [DebuggerStepThrough]
@@ -66,7 +66,7 @@ public static class AsyncExExtensions
     [DebuggerStepThrough]
     public static async Task WaitAsync(this AsyncCountdownEvent countdownEvent, TimeSpan timeout)
     {
-        _ = await Task.WhenAny(countdownEvent.WaitAsync(), Task.Delay(timeout)).AnyContext();
+        _ = await Task.WhenAny(countdownEvent.WaitAsync(), Task.Delay(timeout)).ConfigureAwait(false);
     }
 
     [DebuggerStepThrough]

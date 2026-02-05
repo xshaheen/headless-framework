@@ -38,7 +38,7 @@ internal class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool 
             var builder = PublishOptions.Builder().WithMessageId(message.GetId());
 
             // Note: NATS .NET client doesn't support CancellationToken in PublishAsync yet
-            var resp = await js.PublishAsync(msg, builder.Build()).AnyContext();
+            var resp = await js.PublishAsync(msg, builder.Build()).ConfigureAwait(false);
 
             if (resp.Seq > 0)
             {

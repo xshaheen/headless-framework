@@ -37,7 +37,7 @@ internal static class EntityFrameworkTransactionExtensions
         CancellationToken cancellationToken
     )
     {
-        var transaction = await database.BeginTransactionAsync(isolationLevel, cancellationToken).AnyContext();
+        var transaction = await database.BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
 
         publisher.Transaction = ActivatorUtilities.CreateInstance<PostgreSqlOutboxTransaction>(
             publisher.ServiceProvider

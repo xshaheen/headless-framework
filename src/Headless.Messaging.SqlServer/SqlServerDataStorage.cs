@@ -69,7 +69,7 @@ public sealed class SqlServerDataStorage(
         ];
         var opResult = await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-            .AnyContext();
+            .ConfigureAwait(false);
         return opResult > 0;
     }
 
@@ -86,7 +86,7 @@ public sealed class SqlServerDataStorage(
         ];
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async ValueTask RenewLockAsync(
@@ -102,7 +102,7 @@ public sealed class SqlServerDataStorage(
         object[] sqlParams = [new SqlParameter("@Key", key), new SqlParameter("@Instance", instance)];
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async ValueTask ChangePublishStateToDelayedAsync(string[] ids, CancellationToken cancellationToken = default)
@@ -128,7 +128,7 @@ public sealed class SqlServerDataStorage(
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: parameters)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public ValueTask ChangePublishStateAsync(
@@ -187,7 +187,7 @@ public sealed class SqlServerDataStorage(
             await using var connection = new SqlConnection(options.Value.ConnectionString);
             await connection
                 .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-                .AnyContext();
+                .ConfigureAwait(false);
         }
         else
         {
@@ -198,7 +198,7 @@ public sealed class SqlServerDataStorage(
             }
 
             var conn = dbTrans?.Connection;
-            await conn!.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).AnyContext();
+            await conn!.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).ConfigureAwait(false);
         }
 
         return message;
@@ -228,7 +228,7 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Version", messagingOptions.Value.Version),
         ];
 
-        await _StoreReceivedMessage(sqlParams, cancellationToken).AnyContext();
+        await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<MediumMessage> StoreReceivedMessageAsync(
@@ -265,7 +265,7 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Version", messagingOptions.Value.Version),
         ];
 
-        await _StoreReceivedMessage(sqlParams, cancellationToken).AnyContext();
+        await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
 
         return mediumMessage;
     }
@@ -293,7 +293,7 @@ public sealed class SqlServerDataStorage(
                 new SqlParameter("@timeout", timeout),
                 new SqlParameter("@batchCount", batchCount)
             )
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
@@ -319,7 +319,7 @@ public sealed class SqlServerDataStorage(
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         var affectedRowCount = await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new SqlParameter("@Id", id))
-            .AnyContext();
+            .ConfigureAwait(false);
         return affectedRowCount;
     }
 
@@ -330,7 +330,7 @@ public sealed class SqlServerDataStorage(
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         var affectedRowCount = await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new SqlParameter("@Id", id))
-            .AnyContext();
+            .ConfigureAwait(false);
         return affectedRowCount;
     }
 
@@ -364,7 +364,7 @@ public sealed class SqlServerDataStorage(
                 async (reader, ct) =>
                 {
                     var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(ct).AnyContext())
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
                         var content = reader.GetString(1);
 
@@ -387,7 +387,7 @@ public sealed class SqlServerDataStorage(
                 cancellationToken,
                 sqlParams
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         await scheduleTask(transaction, messageList);
 
@@ -422,14 +422,16 @@ public sealed class SqlServerDataStorage(
         if (transaction is DbTransaction dbTransaction)
         {
             var connection = (SqlConnection)dbTransaction.Connection!;
-            await connection.ExecuteNonQueryAsync(sql, dbTransaction, cancellationToken, sqlParams).AnyContext();
+            await connection
+                .ExecuteNonQueryAsync(sql, dbTransaction, cancellationToken, sqlParams)
+                .ConfigureAwait(false);
         }
         else
         {
             await using var connection = new SqlConnection(options.Value.ConnectionString);
             await connection
                 .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-                .AnyContext();
+                .ConfigureAwait(false);
         }
     }
 
@@ -449,7 +451,7 @@ public sealed class SqlServerDataStorage(
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
@@ -478,7 +480,7 @@ public sealed class SqlServerDataStorage(
                 async (reader, ct) =>
                 {
                     var messages = new List<MediumMessage>();
-                    while (await reader.ReadAsync(ct).AnyContext())
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
                         var content = reader.GetString(1);
 
@@ -499,7 +501,7 @@ public sealed class SqlServerDataStorage(
                 cancellationToken: cancellationToken,
                 sqlParams: sqlParams
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return result;
     }

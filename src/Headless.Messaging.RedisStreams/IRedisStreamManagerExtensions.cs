@@ -19,7 +19,9 @@ internal static class RedisStreamManagerExtensions
             var created = false;
             try
             {
-                await database.TryGetOrCreateStreamConsumerGroupAsync(position.Key, consumerGroup).AnyContext();
+                await database
+                    .TryGetOrCreateStreamConsumerGroupAsync(position.Key, consumerGroup)
+                    .ConfigureAwait(false);
 
                 created = true;
             }
@@ -49,10 +51,10 @@ internal static class RedisStreamManagerExtensions
         RedisValue consumerGroup
     )
     {
-        var streamExist = await database.KeyExistsAsync(stream).AnyContext();
+        var streamExist = await database.KeyExistsAsync(stream).ConfigureAwait(false);
         if (streamExist)
         {
-            await database._TryGetOrCreateStreamGroupAsync(stream, consumerGroup).AnyContext();
+            await database._TryGetOrCreateStreamGroupAsync(stream, consumerGroup).ConfigureAwait(false);
             return;
         }
 
@@ -60,7 +62,7 @@ internal static class RedisStreamManagerExtensions
         {
             await database
                 .StreamCreateConsumerGroupAsync(stream, consumerGroup, StreamPosition.NewMessages)
-                .AnyContext();
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -88,13 +90,13 @@ internal static class RedisStreamManagerExtensions
 
             await database
                 .StreamCreateConsumerGroupAsync(stream, consumerGroup, StreamPosition.NewMessages)
-                .AnyContext();
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             if (ex.GetRedisErrorType() is RedisErrorTypes.NoGroupInfoExists)
             {
-                await database.TryGetOrCreateStreamConsumerGroupAsync(stream, consumerGroup).AnyContext();
+                await database.TryGetOrCreateStreamConsumerGroupAsync(stream, consumerGroup).ConfigureAwait(false);
                 return;
             }
 

@@ -14,16 +14,17 @@ internal sealed class PulsarTransport(ILogger<PulsarTransport> logger, IConnecti
 
     public BrokerAddress BrokerAddress => new("Pulsar", connectionFactory.ServersAddress);
 
-    public async Task<OperateResult> SendAsync(TransportMessage message)
+    public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
-        var producer = await connectionFactory.CreateProducerAsync(message.GetName()).AnyContext();
+        cancellationToken.ThrowIfCancellationRequested();
+        var producer = await connectionFactory.CreateProducerAsync(message.GetName()).ConfigureAwait(false);
 
         try
         {
             var headerDic = new Dictionary<string, string?>(message.Headers, StringComparer.Ordinal);
             headerDic.TryGetValue(PulsarHeaders.PulsarKey, out var key);
             var pulsarMessage = producer.NewMessage(message.Body.ToArray(), key, headerDic);
-            var messageId = await producer.SendAsync(pulsarMessage).AnyContext();
+            var messageId = await producer.SendAsync(pulsarMessage).ConfigureAwait(false);
 
             if (messageId != null)
             {

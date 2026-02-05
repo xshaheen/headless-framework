@@ -27,7 +27,7 @@ public static class Async
 
         try
         {
-            result = await body(resource).AnyContext();
+            result = await body(resource).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -74,7 +74,7 @@ public static class Async
             resource,
             async _ =>
             {
-                await body(resource).AnyContext();
+                await body(resource).ConfigureAwait(false);
 
                 return 0;
             }

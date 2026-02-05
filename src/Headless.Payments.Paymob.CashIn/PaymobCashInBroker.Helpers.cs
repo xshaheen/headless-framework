@@ -16,16 +16,16 @@ public partial class PaymobCashInBroker
     {
         using var response = await httpClient
             .PostAsJsonAsync(url, request, CashInJsonOptions.JsonOptions, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashInException.ThrowAsync(response, cancellationToken).AnyContext();
+            await PaymobCashInException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         var result = await response
             .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (result is null)
         {
@@ -41,22 +41,22 @@ public partial class PaymobCashInBroker
         CancellationToken cancellationToken = default
     )
     {
-        var authToken = await authenticator.GetAuthenticationTokenAsync().AnyContext();
+        var authToken = await authenticator.GetAuthenticationTokenAsync().ConfigureAwait(false);
 
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
         httpRequest.Headers.Add("Authorization", $"Bearer {authToken}");
         httpRequest.Content = JsonContent.Create(request, options: CashInJsonOptions.JsonOptions);
 
-        using var response = await httpClient.SendAsync(httpRequest, cancellationToken).AnyContext();
+        using var response = await httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashInException.ThrowAsync(response, cancellationToken).AnyContext();
+            await PaymobCashInException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         var result = await response
             .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (result is null)
         {
@@ -76,16 +76,16 @@ public partial class PaymobCashInBroker
         httpRequest.Headers.Add("Authorization", $"Token {Options.SecretKey}");
         httpRequest.Content = JsonContent.Create(request, options: CashInJsonOptions.JsonOptions);
 
-        using var response = await httpClient.SendAsync(httpRequest, cancellationToken).AnyContext();
+        using var response = await httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashInException.ThrowAsync(response, cancellationToken).AnyContext();
+            await PaymobCashInException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         return await response
             .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     private async Task<TResponse?> _GetWithBearerAuthAsync<TResponse>(
@@ -93,20 +93,20 @@ public partial class PaymobCashInBroker
         CancellationToken cancellationToken = default
     )
     {
-        var authToken = await authenticator.GetAuthenticationTokenAsync(cancellationToken).AnyContext();
+        var authToken = await authenticator.GetAuthenticationTokenAsync(cancellationToken).ConfigureAwait(false);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Add("Authorization", $"Bearer {authToken}");
 
-        using var response = await httpClient.SendAsync(request, cancellationToken).AnyContext();
+        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashInException.ThrowAsync(response, cancellationToken).AnyContext();
+            await PaymobCashInException.ThrowAsync(response, cancellationToken).ConfigureAwait(false);
         }
 
         return await response
             .Content.ReadFromJsonAsync<TResponse>(CashInJsonOptions.JsonOptions, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 }

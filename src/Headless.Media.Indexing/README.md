@@ -37,7 +37,7 @@ public class SearchIndexer(PdfMediaFileTextProvider pdfProvider)
 {
     public async Task IndexPdfAsync(Stream pdfStream)
     {
-        var text = await pdfProvider.GetTextAsync(pdfStream).AnyContext();
+        var text = await pdfProvider.GetTextAsync(pdfStream).ConfigureAwait(false);
         // Index extracted text...
     }
 }

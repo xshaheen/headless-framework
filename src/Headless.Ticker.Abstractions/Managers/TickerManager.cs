@@ -135,13 +135,13 @@ internal class TickerManager<TTimeTicker, TCronTicker>
                 // Acquire and mark InProgress in one provider call
                 var acquired = await _persistenceProvider
                     .AcquireImmediateTimeTickersAsync([entity.Id], cancellationToken)
-                    .AnyContext();
+                    .ConfigureAwait(false);
 
                 if (acquired.Length > 0)
                 {
                     var contexts = _BuildImmediateContextsFromNonGeneric(acquired);
                     _CacheFunctionReferences(contexts.AsSpan());
-                    await _dispatcher.DispatchAsync(contexts, cancellationToken).AnyContext();
+                    await _dispatcher.DispatchAsync(contexts, cancellationToken).ConfigureAwait(false);
                 }
             }
             else
@@ -149,7 +149,7 @@ internal class TickerManager<TTimeTicker, TCronTicker>
                 _tickerQHostScheduler.RestartIfNeeded(executionTime);
             }
 
-            await _notificationHubSender.AddTimeTickerNotifyAsync(entity.Id).AnyContext();
+            await _notificationHubSender.AddTimeTickerNotifyAsync(entity.Id).ConfigureAwait(false);
 
             return new TickerResult<TTimeTicker>(entity);
         }
@@ -226,7 +226,7 @@ internal class TickerManager<TTimeTicker, TCronTicker>
         {
             var affectedRows = await _persistenceProvider
                 .UpdateTimeTickers([timeTicker], cancellationToken: cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             if (_executionContext.Functions.Any(x => x.TickerId == timeTicker.Id))
             {
@@ -288,7 +288,7 @@ internal class TickerManager<TTimeTicker, TCronTicker>
 
                 await _persistenceProvider
                     .UpdateCronTickerOccurrence(internalFunction, cancellationToken: cancellationToken)
-                    .AnyContext();
+                    .ConfigureAwait(false);
 
                 _tickerQHostScheduler.Restart();
             }
@@ -440,20 +440,20 @@ internal class TickerManager<TTimeTicker, TCronTicker>
         {
             await _persistenceProvider.AddTimeTickers(entities.ToArray(), cancellationToken: cancellationToken);
 
-            await _notificationHubSender.AddTimeTickersBatchNotifyAsync().AnyContext();
+            await _notificationHubSender.AddTimeTickersBatchNotifyAsync().ConfigureAwait(false);
 
             // Only try to dispatch immediately if dispatcher is enabled (background services running)
             if (_dispatcher.IsEnabled && immediateTickers.Count > 0)
             {
                 var acquired = await _persistenceProvider
                     .AcquireImmediateTimeTickersAsync(immediateTickers.ToArray(), cancellationToken)
-                    .AnyContext();
+                    .ConfigureAwait(false);
 
                 if (acquired.Length > 0)
                 {
                     var contexts = _BuildImmediateContextsFromNonGeneric(acquired);
                     _CacheFunctionReferences(contexts.AsSpan());
-                    await _dispatcher.DispatchAsync(contexts, cancellationToken).AnyContext();
+                    await _dispatcher.DispatchAsync(contexts, cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -580,7 +580,7 @@ internal class TickerManager<TTimeTicker, TCronTicker>
         {
             var affectedRows = await _persistenceProvider
                 .UpdateTimeTickers(validTickers.ToArray(), cancellationToken: cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             if (needsRestart)
             {
@@ -664,7 +664,7 @@ internal class TickerManager<TTimeTicker, TCronTicker>
             {
                 await _persistenceProvider
                     .UpdateCronTickerOccurrence(internalFunction, cancellationToken: cancellationToken)
-                    .AnyContext();
+                    .ConfigureAwait(false);
             }
 
             if (needsRestart)

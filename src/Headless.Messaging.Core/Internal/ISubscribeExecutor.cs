@@ -106,7 +106,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         do
         {
             var (shouldRetry, operateResult) = await _ExecuteWithoutRetryAsync(message, descriptor, cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
             result = operateResult;
             if (result.Equals(OperateResult.Success))
             {
@@ -135,11 +135,11 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
 
             var sp = Stopwatch.StartNew();
 
-            await _InvokeConsumerMethodAsync(message, descriptor, cancellationToken).AnyContext();
+            await _InvokeConsumerMethodAsync(message, descriptor, cancellationToken).ConfigureAwait(false);
 
             sp.Stop();
 
-            await _SetSuccessfulState(message).AnyContext();
+            await _SetSuccessfulState(message).ConfigureAwait(false);
 
             MessageEventCounterSource.Log.WriteInvokeTimeMetrics(sp.Elapsed.TotalMilliseconds);
             _logger.ConsumerExecuted(
@@ -161,7 +161,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
                 ex
             );
 
-            return (await _SetFailedState(message, ex).AnyContext(), OperateResult.Failed(ex));
+            return (await _SetFailedState(message, ex).ConfigureAwait(false), OperateResult.Failed(ex));
         }
     }
 
@@ -184,7 +184,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         message.Origin.AddOrUpdateException(ex);
         message.ExpiresAt = message.Added.AddSeconds(_options.FailedMessageExpiredAfter);
 
-        await _dataStorage.ChangeReceiveStateAsync(message, StatusName.Failed).AnyContext();
+        await _dataStorage.ChangeReceiveStateAsync(message, StatusName.Failed).ConfigureAwait(false);
 
         return needRetry;
     }
@@ -247,7 +247,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         var tracingTimestamp = _TracingBefore(message.Origin, descriptor.MethodInfo);
         try
         {
-            var ret = await _invoker.InvokeAsync(consumerContext, cancellationToken).AnyContext();
+            var ret = await _invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
 
             _TracingAfter(tracingTimestamp, message.Origin, descriptor.MethodInfo);
 
@@ -267,7 +267,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
                 await _provider
                     .GetRequiredService<IOutboxPublisher>()
                     .PublishAsync(ret.CallbackName, ret.Result, ret.CallbackHeader, cancellationToken)
-                    .AnyContext();
+                    .ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)

@@ -27,7 +27,7 @@ public sealed class PaymobCashInException(string? message, HttpStatusCode status
 
         try
         {
-            body = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
+            body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

@@ -18,7 +18,7 @@ internal static class DbConnectionExtensions
     {
         if (connection.State == ConnectionState.Closed)
         {
-            await connection.OpenAsync(cancellationToken).AnyContext();
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         }
 
         await using var command = connection.CreateCommand();
@@ -31,7 +31,7 @@ internal static class DbConnectionExtensions
             command.Transaction = transaction;
         }
 
-        return await command.ExecuteNonQueryAsync(cancellationToken).AnyContext();
+        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public static async Task<T> ExecuteReaderAsync<T>(
@@ -45,7 +45,7 @@ internal static class DbConnectionExtensions
     {
         if (connection.State == ConnectionState.Closed)
         {
-            await connection.OpenAsync(cancellationToken).AnyContext();
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         }
 
         await using var command = connection.CreateCommand();
@@ -58,12 +58,12 @@ internal static class DbConnectionExtensions
             command.Transaction = transaction;
         }
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).AnyContext();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         T result = default!;
         if (readerFunc != null)
         {
-            result = await readerFunc(reader, cancellationToken).AnyContext();
+            result = await readerFunc(reader, cancellationToken).ConfigureAwait(false);
         }
 
         return result;
@@ -78,7 +78,7 @@ internal static class DbConnectionExtensions
     {
         if (connection.State == ConnectionState.Closed)
         {
-            await connection.OpenAsync(cancellationToken).AnyContext();
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         }
 
         await using var command = connection.CreateCommand();
@@ -86,7 +86,7 @@ internal static class DbConnectionExtensions
         command.CommandText = sql;
         command.Parameters.AddRange(sqlParams);
 
-        var objValue = await command.ExecuteScalarAsync(cancellationToken).AnyContext();
+        var objValue = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
         return Convert.ToInt32(objValue, CultureInfo.InvariantCulture);
     }

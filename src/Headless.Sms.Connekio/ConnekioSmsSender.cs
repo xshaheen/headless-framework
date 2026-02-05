@@ -45,8 +45,8 @@ public sealed class ConnekioSmsSender(
         );
 
         using var httpClient = _httpClientFactory.CreateClient(ConnekioSetup.HttpClientName);
-        var response = await httpClient.SendAsync(requestMessage, cancellationToken).AnyContext();
-        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
+        var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {

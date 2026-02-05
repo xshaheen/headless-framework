@@ -44,7 +44,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
         OperateResult result;
         do
         {
-            (retry, result) = await _SendWithoutRetryAsync(message).AnyContext();
+            (retry, result) = await _SendWithoutRetryAsync(message).ConfigureAwait(false);
             if (result.Equals(OperateResult.Success))
             {
                 return result;
@@ -56,16 +56,16 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
 
     private async Task<(bool, OperateResult)> _SendWithoutRetryAsync(MediumMessage message)
     {
-        var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).AnyContext();
+        var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).ConfigureAwait(false);
 
         var tracingTimestamp = _TracingBefore(transportMsg, _transport.BrokerAddress);
 
         // Note: Outbox sender doesn't propagate user cancellation; messages should be delivered
-        var result = await _transport.SendAsync(transportMsg, CancellationToken.None).AnyContext();
+        var result = await _transport.SendAsync(transportMsg, CancellationToken.None).ConfigureAwait(false);
 
         if (result.Succeeded)
         {
-            await _SetSuccessfulState(message).AnyContext();
+            await _SetSuccessfulState(message).ConfigureAwait(false);
 
             _TracingAfter(tracingTimestamp, transportMsg, _transport.BrokerAddress);
 
@@ -74,7 +74,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
 
         _TracingError(tracingTimestamp, transportMsg, _transport.BrokerAddress, result);
 
-        var needRetry = await _SetFailedState(message, result.Exception!).AnyContext();
+        var needRetry = await _SetFailedState(message, result.Exception!).ConfigureAwait(false);
 
         return (needRetry, OperateResult.Failed(result.Exception!));
     }
@@ -82,7 +82,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
     private async Task _SetSuccessfulState(MediumMessage message)
     {
         message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.Value.SucceedMessageExpiredAfter);
-        await _dataStorage.ChangePublishStateAsync(message, StatusName.Succeeded).AnyContext();
+        await _dataStorage.ChangePublishStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
     }
 
     private async Task<bool> _SetFailedState(MediumMessage message, Exception ex)
@@ -92,7 +92,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
         message.Origin.AddOrUpdateException(ex);
         message.ExpiresAt = message.Added.AddSeconds(_options.Value.FailedMessageExpiredAfter);
 
-        await _dataStorage.ChangePublishStateAsync(message, StatusName.Failed).AnyContext();
+        await _dataStorage.ChangePublishStateAsync(message, StatusName.Failed).ConfigureAwait(false);
 
         return needRetry;
     }

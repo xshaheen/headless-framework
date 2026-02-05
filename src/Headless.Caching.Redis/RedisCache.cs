@@ -83,24 +83,24 @@ public sealed class RedisCache(
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var cacheValue = await GetAsync<T>(key, cancellationToken).AnyContext();
+        var cacheValue = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
 
         if (cacheValue.HasValue)
         {
             return cacheValue;
         }
 
-        using (await _keyedLock.LockAsync(key, cancellationToken).AnyContext())
+        using (await _keyedLock.LockAsync(key, cancellationToken).ConfigureAwait(false))
         {
             // Double-check after acquiring lock
-            cacheValue = await GetAsync<T>(key, cancellationToken).AnyContext();
+            cacheValue = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
             if (cacheValue.HasValue)
             {
                 return cacheValue;
             }
 
-            var value = await factory(cancellationToken).AnyContext();
-            await UpsertAsync(key, value, expiration, cancellationToken).AnyContext();
+            var value = await factory(cancellationToken).ConfigureAwait(false);
+            await UpsertAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
 
             return new(value, hasValue: true);
         }
@@ -139,7 +139,7 @@ public sealed class RedisCache(
 
         if (expiration is { Ticks: <= 0 })
         {
-            await RemoveAllAsync(value.Keys, cancellationToken).AnyContext();
+            await RemoveAllAsync(value.Keys, cancellationToken).ConfigureAwait(false);
             return 0;
         }
 
@@ -161,14 +161,14 @@ public sealed class RedisCache(
 
             foreach (var slotGroup in pairs.GroupBy(p => options.ConnectionMultiplexer.HashSlot(p.Key)))
             {
-                var count = await _SetAllInternalAsync(slotGroup.ToArray(), expiration).AnyContext();
+                var count = await _SetAllInternalAsync(slotGroup.ToArray(), expiration).ConfigureAwait(false);
                 successCount += count;
             }
 
             return successCount;
         }
 
-        return await _SetAllInternalAsync(pairs, expiration).AnyContext();
+        return await _SetAllInternalAsync(pairs, expiration).ConfigureAwait(false);
     }
 
     public async ValueTask<bool> TryInsertAsync<T>(
@@ -213,11 +213,11 @@ public sealed class RedisCache(
 
         if (expiration is { Ticks: <= 0 })
         {
-            await RemoveAsync(key, cancellationToken).AnyContext();
+            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return false;
         }
 
-        await scriptsLoader.LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
 
         var redisValue = _ToRedisValue(value);
         var expectedValue = _ToRedisValue(expected);
@@ -236,7 +236,7 @@ public sealed class RedisCache(
                     expires = expiresArg,
                 }
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return (int)redisResult > 0;
     }
@@ -254,11 +254,11 @@ public sealed class RedisCache(
 
         if (expiration is { Ticks: <= 0 })
         {
-            await RemoveAsync(key, cancellationToken).AnyContext();
+            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
@@ -273,7 +273,7 @@ public sealed class RedisCache(
                     expires = expiresArg,
                 }
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return double.Parse(result.ToString(), CultureInfo.InvariantCulture);
     }
@@ -291,11 +291,11 @@ public sealed class RedisCache(
 
         if (expiration is { Ticks: <= 0 })
         {
-            await RemoveAsync(key, cancellationToken).AnyContext();
+            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
@@ -310,7 +310,7 @@ public sealed class RedisCache(
                     expires = expiresArg,
                 }
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return long.Parse(result.ToString(), CultureInfo.InvariantCulture);
     }
@@ -328,11 +328,11 @@ public sealed class RedisCache(
 
         if (expiration is { Ticks: <= 0 })
         {
-            await RemoveAsync(key, cancellationToken).AnyContext();
+            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
@@ -347,7 +347,7 @@ public sealed class RedisCache(
                     expires = expiresArg,
                 }
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return double.Parse(result.ToString()!, CultureInfo.InvariantCulture);
     }
@@ -365,11 +365,11 @@ public sealed class RedisCache(
 
         if (expiration is { Ticks: <= 0 })
         {
-            await RemoveAsync(key, cancellationToken).AnyContext();
+            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
@@ -384,7 +384,7 @@ public sealed class RedisCache(
                     expires = expiresArg,
                 }
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return long.Parse(result.ToString()!, CultureInfo.InvariantCulture);
     }
@@ -402,11 +402,11 @@ public sealed class RedisCache(
 
         if (expiration is { Ticks: <= 0 })
         {
-            await RemoveAsync(key, cancellationToken).AnyContext();
+            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
@@ -421,7 +421,7 @@ public sealed class RedisCache(
                     expires = expiresArg,
                 }
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return double.Parse(result.ToString(), CultureInfo.InvariantCulture);
     }
@@ -439,11 +439,11 @@ public sealed class RedisCache(
 
         if (expiration is { Ticks: <= 0 })
         {
-            await RemoveAsync(key, cancellationToken).AnyContext();
+            await RemoveAsync(key, cancellationToken).ConfigureAwait(false);
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
@@ -458,7 +458,7 @@ public sealed class RedisCache(
                     expires = expiresArg,
                 }
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return long.Parse(result.ToString(), CultureInfo.InvariantCulture);
     }
@@ -479,7 +479,7 @@ public sealed class RedisCache(
 
         if (expiration is { Ticks: <= 0 })
         {
-            await SetRemoveAsync(key, value, expiration, cancellationToken).AnyContext();
+            await SetRemoveAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
             return 0;
         }
 
@@ -501,18 +501,18 @@ public sealed class RedisCache(
             );
         }
 
-        await _RemoveExpiredListValuesAsync(key).AnyContext();
+        await _RemoveExpiredListValuesAsync(key).ConfigureAwait(false);
 
         if (redisValues.Count is 0)
         {
             return 0;
         }
 
-        var added = await _database.SortedSetAddAsync(key, [.. redisValues]).AnyContext();
+        var added = await _database.SortedSetAddAsync(key, [.. redisValues]).ConfigureAwait(false);
 
         if (added > 0)
         {
-            await _SetListExpirationAsync(key).AnyContext();
+            await _SetListExpirationAsync(key).ConfigureAwait(false);
         }
 
         return added;
@@ -527,7 +527,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).AnyContext();
+        var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
         return _RedisValueToCacheValue<T>(redisValue);
     }
 
@@ -559,7 +559,7 @@ public sealed class RedisCache(
             foreach (var hashSlotGroup in redisKeys.GroupBy(k => options.ConnectionMultiplexer.HashSlot(k)))
             {
                 var hashSlotKeys = hashSlotGroup.ToArray();
-                var values = await _database.StringGetAsync(hashSlotKeys, options.ReadMode).AnyContext();
+                var values = await _database.StringGetAsync(hashSlotKeys, options.ReadMode).ConfigureAwait(false);
 
                 for (var i = 0; i < hashSlotKeys.Length; i++)
                 {
@@ -572,7 +572,7 @@ public sealed class RedisCache(
         else
         {
             var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count, StringComparer.Ordinal);
-            var values = await _database.StringGetAsync([.. redisKeys], options.ReadMode).AnyContext();
+            var values = await _database.StringGetAsync([.. redisKeys], options.ReadMode).ConfigureAwait(false);
 
             for (var i = 0; i < redisKeys.Count; i++)
             {
@@ -588,8 +588,8 @@ public sealed class RedisCache(
         CancellationToken cancellationToken = default
     )
     {
-        var keys = await GetAllKeysByPrefixAsync(prefix, cancellationToken).AnyContext();
-        return await GetAllAsync<T>(keys, cancellationToken).AnyContext();
+        var keys = await GetAllKeysByPrefixAsync(prefix, cancellationToken).ConfigureAwait(false);
+        return await GetAllAsync<T>(keys, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
@@ -637,7 +637,7 @@ public sealed class RedisCache(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var keys = await GetAllKeysByPrefixAsync(prefix, cancellationToken).AnyContext();
+        var keys = await GetAllKeysByPrefixAsync(prefix, cancellationToken).ConfigureAwait(false);
         return keys.Count;
     }
 
@@ -673,7 +673,7 @@ public sealed class RedisCache(
                     Exclude.Start,
                     flags: options.ReadMode
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
 
             return _RedisValuesToCacheValue<T>(set);
         }
@@ -690,7 +690,7 @@ public sealed class RedisCache(
                     take: pageSize,
                     flags: options.ReadMode
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
 
             return _RedisValuesToCacheValue<T>(set);
         }
@@ -717,7 +717,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await scriptsLoader.LoadScriptsAsync().AnyContext();
+        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
 
         var expectedValue = _ToRedisValue(expected);
         var redisResult = await _database
@@ -725,7 +725,7 @@ public sealed class RedisCache(
                 scriptsLoader.RemoveIfEqualScript!,
                 new { key = (RedisKey)_GetKey(key), expected = expectedValue }
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return (int)redisResult > 0;
     }
@@ -763,7 +763,7 @@ public sealed class RedisCache(
 
                     try
                     {
-                        var count = await _database.KeyDeleteAsync(hashSlotKeys).AnyContext();
+                        var count = await _database.KeyDeleteAsync(hashSlotKeys).ConfigureAwait(false);
                         deleted += count;
                     }
                     catch (Exception ex)
@@ -784,7 +784,7 @@ public sealed class RedisCache(
             {
                 try
                 {
-                    var count = await _database.KeyDeleteAsync(batch).AnyContext();
+                    var count = await _database.KeyDeleteAsync(batch).ConfigureAwait(false);
                     deleted += count;
                 }
                 catch (Exception ex)
@@ -833,14 +833,14 @@ public sealed class RedisCache(
 
                 if (keys.Count >= _BatchSize)
                 {
-                    deleted += await _DeleteKeysAsync([.. keys], isCluster).AnyContext();
+                    deleted += await _DeleteKeysAsync([.. keys], isCluster).ConfigureAwait(false);
                     keys.Clear();
                 }
             }
 
             if (keys.Count > 0)
             {
-                deleted += await _DeleteKeysAsync([.. keys], isCluster).AnyContext();
+                deleted += await _DeleteKeysAsync([.. keys], isCluster).ConfigureAwait(false);
             }
         }
 
@@ -871,18 +871,18 @@ public sealed class RedisCache(
             redisValues.AddRange(value.Where(v => v is not null).Select(_ToRedisValue));
         }
 
-        await _RemoveExpiredListValuesAsync(key).AnyContext();
+        await _RemoveExpiredListValuesAsync(key).ConfigureAwait(false);
 
         if (redisValues.Count is 0)
         {
             return 0;
         }
 
-        var removed = await _database.SortedSetRemoveAsync(key, [.. redisValues]).AnyContext();
+        var removed = await _database.SortedSetRemoveAsync(key, [.. redisValues]).ConfigureAwait(false);
 
         if (removed > 0)
         {
-            await _SetListExpirationAsync(key).AnyContext();
+            await _SetListExpirationAsync(key).ConfigureAwait(false);
         }
 
         return removed;
@@ -1007,14 +1007,14 @@ public sealed class RedisCache(
     {
         if (expiresIn is { Ticks: <= 0 })
         {
-            await _database.KeyDeleteAsync(key).AnyContext();
+            await _database.KeyDeleteAsync(key).ConfigureAwait(false);
             return false;
         }
 
         expiresIn = _NormalizeExpiration(expiresIn);
         var redisValue = _ToRedisValue(value);
 
-        return await _database.StringSetAsync(key, redisValue, expiresIn, when).AnyContext();
+        return await _database.StringSetAsync(key, redisValue, expiresIn, when).ConfigureAwait(false);
     }
 
     private async Task<int> _SetAllInternalAsync(KeyValuePair<RedisKey, RedisValue>[] pairs, TimeSpan? expiresIn)
@@ -1025,7 +1025,7 @@ public sealed class RedisCache(
             {
                 var success = await _database
                     .StringSetAsync(pairs, When.Always, new Expiration(expiresIn.Value))
-                    .AnyContext();
+                    .ConfigureAwait(false);
                 return success ? pairs.Length : 0;
             }
 
@@ -1037,11 +1037,11 @@ public sealed class RedisCache(
                 tasks.Add(_database.StringSetAsync(pair.Key, pair.Value, expiresIn, When.Always));
             }
 
-            var results = await Task.WhenAll(tasks).AnyContext();
+            var results = await Task.WhenAll(tasks).ConfigureAwait(false);
             return results.Count(r => r);
         }
 
-        var msetSuccess = await _database.StringSetAsync(pairs).AnyContext();
+        var msetSuccess = await _database.StringSetAsync(pairs).ConfigureAwait(false);
         return msetSuccess ? pairs.Length : 0;
     }
 
@@ -1124,7 +1124,7 @@ public sealed class RedisCache(
     {
         var items = await _database
             .SortedSetRangeByRankWithScoresAsync(key, 0, 0, order: Order.Descending)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (items.Length is 0)
         {
@@ -1135,21 +1135,21 @@ public sealed class RedisCache(
 
         if (highestExpirationInMs >= _MaxUnixEpochMilliseconds)
         {
-            await _database.KeyPersistAsync(key).AnyContext();
+            await _database.KeyPersistAsync(key).ConfigureAwait(false);
             return;
         }
 
         var furthestExpirationUtc = DateTimeOffset.FromUnixTimeMilliseconds(highestExpirationInMs);
         var expiresIn = furthestExpirationUtc - timeProvider.GetUtcNow();
 
-        await _database.KeyExpireAsync(key, expiresIn).AnyContext();
+        await _database.KeyExpireAsync(key, expiresIn).ConfigureAwait(false);
     }
 
     private async Task _RemoveExpiredListValuesAsync(string key)
     {
         var expiredValues = await _database
             .SortedSetRemoveRangeByScoreAsync(key, 0, timeProvider.GetUtcNow().ToUnixTimeMilliseconds())
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (expiredValues > 0)
         {
@@ -1179,8 +1179,8 @@ public sealed class RedisCache(
 
             try
             {
-                var dbSize = await server.DatabaseSizeAsync().AnyContext();
-                await server.FlushDatabaseAsync().AnyContext();
+                var dbSize = await server.DatabaseSizeAsync().ConfigureAwait(false);
+                await server.FlushDatabaseAsync().ConfigureAwait(false);
                 deleted += dbSize;
             }
             catch (Exception ex)
@@ -1200,13 +1200,13 @@ public sealed class RedisCache(
         {
             foreach (var slotGroup in keys.GroupBy(k => options.ConnectionMultiplexer.HashSlot(k)))
             {
-                var count = await _database.KeyDeleteAsync(slotGroup.ToArray()).AnyContext();
+                var count = await _database.KeyDeleteAsync(slotGroup.ToArray()).ConfigureAwait(false);
                 deleted += count;
             }
         }
         else
         {
-            deleted = await _database.KeyDeleteAsync(keys).AnyContext();
+            deleted = await _database.KeyDeleteAsync(keys).ConfigureAwait(false);
         }
 
         return deleted;

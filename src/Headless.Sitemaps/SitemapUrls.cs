@@ -30,7 +30,7 @@ public static class SitemapUrls
         foreach (var sitemap in sitemaps)
         {
             var stream = new MemoryStream();
-            await sitemap.WriteToAsync(stream, cancellationToken).AnyContext();
+            await sitemap.WriteToAsync(stream, cancellationToken).ConfigureAwait(false);
             streams.Add(stream);
         }
 
@@ -55,7 +55,7 @@ public static class SitemapUrls
          */
 
         await using var writer = XmlWriter.Create(output, SitemapConstants.WriterSettings);
-        await writer.WriteStartDocumentAsync().AnyContext();
+        await writer.WriteStartDocumentAsync().ConfigureAwait(false);
 
         await writer
             .WriteStartElementAsync(
@@ -63,7 +63,7 @@ public static class SitemapUrls
                 localName: "urlset",
                 ns: "http://www.sitemaps.org/schemas/sitemap/0.9"
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         // Add xmlns:xhtml attribute if there are alternate URLs
         var hasAlternateUrls = sitemapUrls.Any(predicate: sitemapUrl => sitemapUrl.AlternateLocations is not null);
@@ -77,7 +77,7 @@ public static class SitemapUrls
                     ns: null,
                     value: "http://www.w3.org/1999/xhtml"
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
         }
 
         // Add xmlns:image attribute if there are images
@@ -92,17 +92,17 @@ public static class SitemapUrls
                     ns: null,
                     value: "http://www.google.com/schemas/sitemap-image/1.1"
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
         }
 
         // write URLs to the sitemap
         foreach (var sitemapUrl in sitemapUrls)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await _WriteUrlNodeAsync(writer, sitemapUrl, cancellationToken).AnyContext();
+            await _WriteUrlNodeAsync(writer, sitemapUrl, cancellationToken).ConfigureAwait(false);
         }
 
-        await writer.WriteEndElementAsync().AnyContext();
+        await writer.WriteEndElementAsync().ConfigureAwait(false);
     }
 
     #region Helpers
@@ -117,7 +117,7 @@ public static class SitemapUrls
 
         if (!hasAlternates)
         {
-            await writer.WriteStartElementAsync(prefix: null, localName: "url", ns: null).AnyContext();
+            await writer.WriteStartElementAsync(prefix: null, localName: "url", ns: null).ConfigureAwait(false);
 
             await writer
                 .WriteElementStringAsync(
@@ -126,15 +126,15 @@ public static class SitemapUrls
                     ns: null,
                     value: sitemapUrl.Location!.AbsoluteUri
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
 
             if (sitemapUrl.Images is not null)
             {
-                await _WriteImagesAsync(writer, sitemapUrl.Images, cancellationToken).AnyContext();
+                await _WriteImagesAsync(writer, sitemapUrl.Images, cancellationToken).ConfigureAwait(false);
             }
 
             _WriteOtherNodes(writer, sitemapUrl);
-            await writer.WriteEndElementAsync().AnyContext();
+            await writer.WriteEndElementAsync().ConfigureAwait(false);
 
             return;
         }
@@ -152,26 +152,26 @@ public static class SitemapUrls
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            await writer.WriteStartElementAsync(prefix: null, localName: "url", ns: null).AnyContext();
+            await writer.WriteStartElementAsync(prefix: null, localName: "url", ns: null).ConfigureAwait(false);
 
             await writer
                 .WriteElementStringAsync(prefix: null, localName: "loc", ns: null, value: url.Location.AbsoluteUri)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             // Write images in each alternate URL
             if (sitemapUrl.Images is not null)
             {
-                await _WriteImagesAsync(writer, sitemapUrl.Images, cancellationToken).AnyContext();
+                await _WriteImagesAsync(writer, sitemapUrl.Images, cancellationToken).ConfigureAwait(false);
             }
 
             // Write alternate URLs
             await _WriteAlternateUrlsReferenceAsync(writer, sitemapUrl.AlternateLocations, cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             // Write properties
             _WriteOtherNodes(writer, sitemapUrl);
 
-            await writer.WriteEndElementAsync().AnyContext();
+            await writer.WriteEndElementAsync().ConfigureAwait(false);
         }
     }
 
@@ -185,14 +185,14 @@ public static class SitemapUrls
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            await writer.WriteStartElementAsync(prefix: "xhtml", localName: "link", ns: null).AnyContext();
+            await writer.WriteStartElementAsync(prefix: "xhtml", localName: "link", ns: null).ConfigureAwait(false);
             await writer
                 .WriteAttributeStringAsync(prefix: null, localName: "rel", ns: null, value: "alternate")
-                .AnyContext();
+                .ConfigureAwait(false);
 
             await writer
                 .WriteAttributeStringAsync(prefix: null, localName: "hreflang", ns: null, value: alternate.LanguageCode)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             await writer
                 .WriteAttributeStringAsync(
@@ -201,9 +201,9 @@ public static class SitemapUrls
                     ns: null,
                     value: alternate.Location.AbsoluteUri
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
 
-            await writer.WriteEndElementAsync().AnyContext();
+            await writer.WriteEndElementAsync().ConfigureAwait(false);
         }
     }
 
@@ -223,13 +223,13 @@ public static class SitemapUrls
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            await writer.WriteStartElementAsync(prefix: "image", localName: "image", ns: null).AnyContext();
+            await writer.WriteStartElementAsync(prefix: "image", localName: "image", ns: null).ConfigureAwait(false);
 
             await writer
                 .WriteElementStringAsync(prefix: "image", localName: "loc", ns: null, value: image.Location.AbsoluteUri)
-                .AnyContext();
+                .ConfigureAwait(false);
 
-            await writer.WriteEndElementAsync().AnyContext();
+            await writer.WriteEndElementAsync().ConfigureAwait(false);
         }
     }
 

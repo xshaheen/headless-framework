@@ -51,7 +51,7 @@ public sealed class RabbitMqBasicConsumer(
                                     properties,
                                     safeBody
                                 )
-                                .AnyContext();
+                                .ConfigureAwait(false);
                         }
                         catch (Exception ex)
                         {
@@ -84,11 +84,12 @@ public sealed class RabbitMqBasicConsumer(
                     },
                     cancellationToken
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
         }
         else
         {
-            await _Consume(consumerTag, deliveryTag, redelivered, exchange, routingKey, properties, body).AnyContext();
+            await _Consume(consumerTag, deliveryTag, redelivered, exchange, routingKey, properties, body)
+                .ConfigureAwait(false);
         }
     }
 

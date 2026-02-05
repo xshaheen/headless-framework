@@ -20,8 +20,8 @@ public class TotpTokenProvider<TUser>(
     {
         Argument.IsNotNull(manager);
 
-        var securityToken = await manager.CreateSecurityTokenAsync(user).AnyContext();
-        var modifier = await _GetUserModifierAsync(purpose, manager, user).AnyContext();
+        var securityToken = await manager.CreateSecurityTokenAsync(user).ConfigureAwait(false);
+        var modifier = await _GetUserModifierAsync(purpose, manager, user).ConfigureAwait(false);
         var code = generator
             .GenerateCode(securityToken, _options.Timestep, modifier)
             .ToString("D6", CultureInfo.InvariantCulture);
@@ -38,8 +38,8 @@ public class TotpTokenProvider<TUser>(
             return false;
         }
 
-        var securityToken = await manager.CreateSecurityTokenAsync(user).AnyContext();
-        var modifier = await _GetUserModifierAsync(purpose, manager, user).AnyContext();
+        var securityToken = await manager.CreateSecurityTokenAsync(user).ConfigureAwait(false);
+        var modifier = await _GetUserModifierAsync(purpose, manager, user).ConfigureAwait(false);
 
         return generator.ValidateCode(securityToken, code, _options.Timestep, _options.Variance, modifier);
     }
@@ -50,7 +50,7 @@ public class TotpTokenProvider<TUser>(
         Argument.IsNotNull(manager);
         Argument.IsNotNull(user);
 
-        var userId = await manager.GetUserIdAsync(user).AnyContext();
+        var userId = await manager.GetUserIdAsync(user).ConfigureAwait(false);
 
         return $"{_options.Name}:{purpose}:{userId}";
     }

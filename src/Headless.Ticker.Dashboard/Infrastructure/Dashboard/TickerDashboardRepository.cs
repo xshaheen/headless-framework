@@ -432,7 +432,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
         // Acquire and run immediately
         var acquired = await _persistenceProvider
             .AcquireImmediateCronOccurrencesAsync([onDemandOccurrence.Id], cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         CronTickerOccurrenceEntity<TCronTicker>? acquiredOccurrence = null;
 
@@ -458,7 +458,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
                 context.CachedPriority = tickerItem.Priority;
             }
 
-            await _dispatcher.DispatchAsync([context], cancellationToken).AnyContext();
+            await _dispatcher.DispatchAsync([context], cancellationToken).ConfigureAwait(false);
         }
 
         // Notify dashboard about the new occurrence (prefer the acquired version if available)

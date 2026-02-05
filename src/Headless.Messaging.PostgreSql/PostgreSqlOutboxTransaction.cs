@@ -36,14 +36,14 @@ public class PostgreSqlOutboxTransaction(IDispatcher dispatcher) : OutboxTransac
         switch (DbTransaction)
         {
             case DbTransaction dbTransaction:
-                await dbTransaction.CommitAsync(cancellationToken).AnyContext();
+                await dbTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case IDbContextTransaction dbContextTransaction:
-                await dbContextTransaction.CommitAsync(cancellationToken).AnyContext();
+                await dbContextTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 break;
         }
 
-        await FlushAsync(cancellationToken).AnyContext();
+        await FlushAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public override void Rollback()
@@ -68,10 +68,10 @@ public class PostgreSqlOutboxTransaction(IDispatcher dispatcher) : OutboxTransac
         switch (DbTransaction)
         {
             case DbTransaction dbTransaction:
-                await dbTransaction.RollbackAsync(cancellationToken).AnyContext();
+                await dbTransaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 break;
             case IDbContextTransaction dbContextTransaction:
-                await dbContextTransaction.RollbackAsync(cancellationToken).AnyContext();
+                await dbContextTransaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 break;
         }
     }

@@ -13,7 +13,7 @@ public partial class PaymobCashInBroker
         CancellationToken cancellationToken = default
     )
     {
-        var authToken = await authenticator.GetAuthenticationTokenAsync(cancellationToken).AnyContext();
+        var authToken = await authenticator.GetAuthenticationTokenAsync(cancellationToken).ConfigureAwait(false);
         var requestUrl = Url.Combine(Options.ApiBaseUrl, "ecommerce/orders");
         var internalRequest = new CashInCreateOrderInternalRequest(authToken, request);
 
@@ -22,6 +22,6 @@ public partial class PaymobCashInBroker
                 internalRequest,
                 cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 }

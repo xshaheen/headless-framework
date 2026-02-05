@@ -83,13 +83,13 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
             {
                 await _semaphore.WaitAsync(cancellationToken);
                 _ = Task.Run(() => OnMessageCallback?.Invoke(message, null) ?? Task.CompletedTask, cancellationToken)
-                    .AnyContext();
+                    .ConfigureAwait(false);
             }
             else
             {
                 if (OnMessageCallback is not null)
                 {
-                    await OnMessageCallback.Invoke(message, null).AnyContext();
+                    await OnMessageCallback.Invoke(message, null).ConfigureAwait(false);
                 }
             }
         }

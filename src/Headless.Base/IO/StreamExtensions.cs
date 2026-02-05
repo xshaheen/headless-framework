@@ -154,7 +154,7 @@ public static class StreamExtensions
 
         cancellationToken.ThrowIfCancellationRequested();
         await using var writer = new StreamWriter(stream, encoding, leaveOpen: true);
-        await writer.WriteAsync(text).AnyContext();
+        await writer.WriteAsync(text).ConfigureAwait(false);
     }
 
     public static ValueTask WriteTextAsync(

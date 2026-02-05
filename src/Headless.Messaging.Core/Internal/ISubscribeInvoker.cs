@@ -103,7 +103,7 @@ public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer seri
             {
                 var executeParams = new object?[] { consumeContext, cancellationToken };
                 var etContext = new ExecutingContext(context, executeParams);
-                await filter.OnSubscribeExecutingAsync(etContext).AnyContext();
+                await filter.OnSubscribeExecutingAsync(etContext).ConfigureAwait(false);
             }
 
             // Dispatch via compiled dispatcher (5-8x faster than reflection)
@@ -112,7 +112,7 @@ public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer seri
             if (filter != null)
             {
                 var edContext = new ExecutedContext(context, resultObj);
-                await filter.OnSubscribeExecutedAsync(edContext).AnyContext();
+                await filter.OnSubscribeExecutedAsync(edContext).ConfigureAwait(false);
                 resultObj = edContext.Result;
             }
         }
@@ -121,7 +121,7 @@ public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer seri
             if (filter != null)
             {
                 var exContext = new ExceptionContext(context, e);
-                await filter.OnSubscribeExceptionAsync(exContext).AnyContext();
+                await filter.OnSubscribeExceptionAsync(exContext).ConfigureAwait(false);
                 if (!exContext.ExceptionHandled)
                 {
                     exContext.Exception.ReThrow();
@@ -312,6 +312,6 @@ public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer seri
             .MakeGenericMethod(messageType);
 
         var task = (Task)dispatchMethod.Invoke(dispatcher, [consumeContext, cancellationToken])!;
-        await task.AnyContext();
+        await task.ConfigureAwait(false);
     }
 }

@@ -18,7 +18,7 @@ public partial class PaymobCashInBroker
                 request,
                 cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async Task<CashInCallbackTransaction?> RefundTransactionAsync(
@@ -31,7 +31,7 @@ public partial class PaymobCashInBroker
                 request,
                 cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async Task<CashInCallbackTransaction?> VoidTransactionAsync(
@@ -44,6 +44,6 @@ public partial class PaymobCashInBroker
                 request,
                 cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 }

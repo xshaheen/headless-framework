@@ -22,6 +22,6 @@ public sealed class SerilogEnrichersMiddleware(IRequestContext requestContext) :
             ? LogContext.PushProperty(_CorrelationId, correlationId)
             : null;
 
-        await next(context).AnyContext();
+        await next(context).ConfigureAwait(false);
     }
 }

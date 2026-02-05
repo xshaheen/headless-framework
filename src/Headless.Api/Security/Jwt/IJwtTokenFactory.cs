@@ -122,7 +122,7 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
 
         var result = await JwtTokenHelper
             .TokenHandler.ValidateTokenAsync(token, tokenValidationParameters)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return result.IsValid ? new(result.ClaimsIdentity) : null;
     }

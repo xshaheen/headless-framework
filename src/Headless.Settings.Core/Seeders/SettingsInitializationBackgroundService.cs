@@ -38,13 +38,13 @@ public sealed class SettingsInitializationBackgroundService(
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        await _cancellationTokenSource.CancelAsync().AnyContext();
+        await _cancellationTokenSource.CancelAsync().ConfigureAwait(false);
 
         if (_initializeDynamicSettingsTask is not null)
         {
             try
             {
-                await _initializeDynamicSettingsTask.WaitAsync(cancellationToken).AnyContext();
+                await _initializeDynamicSettingsTask.WaitAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { }
         }
@@ -65,14 +65,14 @@ public sealed class SettingsInitializationBackgroundService(
 
         await using var scope = serviceScopeFactory.CreateAsyncScope();
 
-        await _SaveStaticSettingsToDatabaseAsync(scope, cancellationToken).AnyContext();
+        await _SaveStaticSettingsToDatabaseAsync(scope, cancellationToken).ConfigureAwait(false);
 
         if (cancellationToken.IsCancellationRequested)
         {
             return;
         }
 
-        await _PreCacheDynamicSettingsAsync(scope, cancellationToken).AnyContext();
+        await _PreCacheDynamicSettingsAsync(scope, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task _SaveStaticSettingsToDatabaseAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
@@ -104,7 +104,7 @@ public sealed class SettingsInitializationBackgroundService(
 
                 try
                 {
-                    await store.SaveAsync(cancellationToken).AnyContext();
+                    await store.SaveAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception e)
                 {
@@ -129,7 +129,7 @@ public sealed class SettingsInitializationBackgroundService(
 
         try
         {
-            await store.GetAllAsync(cancellationToken).AnyContext(); // Pre-cache settings, so the first request doesn't wait
+            await store.GetAllAsync(cancellationToken).ConfigureAwait(false); // Pre-cache settings, so the first request doesn't wait
         }
         catch (Exception e)
         {

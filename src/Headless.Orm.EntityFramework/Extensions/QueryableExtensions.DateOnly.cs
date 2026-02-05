@@ -63,7 +63,7 @@ public static partial class QueryableExtensions
             .Select(propSelector)
             .Select(date => new { At = date, Month = new DateOnly(date.Year, date.Month, 1) });
 
-        var lookup = await query.ToLookupAsync(x => x.Month, x => x.At, cancellationToken: token).AnyContext();
+        var lookup = await query.ToLookupAsync(x => x.Month, x => x.At, cancellationToken: token).ConfigureAwait(false);
 
         return from n in Enumerable.Range(1, months)
             let month = first.AddMonths(n)

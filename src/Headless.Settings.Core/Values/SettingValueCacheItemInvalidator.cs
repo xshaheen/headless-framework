@@ -20,6 +20,6 @@ public sealed class SettingValueCacheItemInvalidator(ICache<SettingValueCacheIte
             message.Entity.ProviderKey
         );
 
-        await cache.RemoveAsync(cacheKey, cancellationToken).AnyContext();
+        await cache.RemoveAsync(cacheKey, cancellationToken).ConfigureAwait(false);
     }
 }

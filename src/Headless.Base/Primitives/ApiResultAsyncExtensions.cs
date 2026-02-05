@@ -12,12 +12,16 @@ public static class OpResultAsyncExtensions
     {
         public async Task<ApiResult<TOut>> MapAsync<TOut>(Func<T, Task<TOut>> mapper)
         {
-            return result.IsSuccess ? await mapper(result.Value).AnyContext() : ApiResult<TOut>.Fail(result.Error);
+            return result.IsSuccess
+                ? await mapper(result.Value).ConfigureAwait(false)
+                : ApiResult<TOut>.Fail(result.Error);
         }
 
         public async Task<ApiResult<TOut>> BindAsync<TOut>(Func<T, Task<ApiResult<TOut>>> binder)
         {
-            return result.IsSuccess ? await binder(result.Value).AnyContext() : ApiResult<TOut>.Fail(result.Error);
+            return result.IsSuccess
+                ? await binder(result.Value).ConfigureAwait(false)
+                : ApiResult<TOut>.Fail(result.Error);
         }
     }
 
@@ -25,32 +29,32 @@ public static class OpResultAsyncExtensions
     {
         public async Task<TResult> MatchAsync<TResult>(Func<T, TResult> success, Func<ResultError, TResult> failure)
         {
-            var result = await resultTask.AnyContext();
+            var result = await resultTask.ConfigureAwait(false);
             return result.Match(success, failure);
         }
 
         public async Task<ApiResult<TOut>> MapAsync<TOut>(Func<T, TOut> mapper)
         {
-            var result = await resultTask.AnyContext();
+            var result = await resultTask.ConfigureAwait(false);
             return result.Map(mapper);
         }
 
         public async Task<ApiResult<TOut>> MapAsync<TOut>(Func<T, Task<TOut>> mapper)
         {
-            var result = await resultTask.AnyContext();
-            return await result.MapAsync(mapper).AnyContext();
+            var result = await resultTask.ConfigureAwait(false);
+            return await result.MapAsync(mapper).ConfigureAwait(false);
         }
 
         public async Task<ApiResult<TOut>> BindAsync<TOut>(Func<T, ApiResult<TOut>> binder)
         {
-            var result = await resultTask.AnyContext();
+            var result = await resultTask.ConfigureAwait(false);
             return result.Bind(binder);
         }
 
         public async Task<ApiResult<TOut>> BindAsync<TOut>(Func<T, Task<ApiResult<TOut>>> binder)
         {
-            var result = await resultTask.AnyContext();
-            return await result.BindAsync(binder).AnyContext();
+            var result = await resultTask.ConfigureAwait(false);
+            return await result.BindAsync(binder).ConfigureAwait(false);
         }
     }
 }

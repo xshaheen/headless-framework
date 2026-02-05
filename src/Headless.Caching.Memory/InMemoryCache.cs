@@ -82,24 +82,24 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var cacheValue = await GetAsync<T>(key, cancellationToken).AnyContext();
+        var cacheValue = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
 
         if (cacheValue.HasValue)
         {
             return cacheValue;
         }
 
-        using (await _keyedLock.LockAsync(key, cancellationToken).AnyContext())
+        using (await _keyedLock.LockAsync(key, cancellationToken).ConfigureAwait(false))
         {
             // Double-check after acquiring lock
-            cacheValue = await GetAsync<T>(key, cancellationToken).AnyContext();
+            cacheValue = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
             if (cacheValue.HasValue)
             {
                 return cacheValue;
             }
 
-            var value = await factory(cancellationToken).AnyContext();
-            await UpsertAsync(key, value, expiration, cancellationToken).AnyContext();
+            var value = await factory(cancellationToken).ConfigureAwait(false);
+            await UpsertAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
 
             return new(value, hasValue: true);
         }
@@ -181,7 +181,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (await UpsertAsync(k, v, expiration, cancellationToken).AnyContext())
+            if (await UpsertAsync(k, v, expiration, cancellationToken).ConfigureAwait(false))
             {
                 count++;
             }
@@ -292,7 +292,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
-        await _StartMaintenanceAsync().AnyContext();
+        await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return wasReplaced;
     }
@@ -356,7 +356,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
-        await _StartMaintenanceAsync().AnyContext();
+        await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return wasExpectedValue;
     }
@@ -421,7 +421,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             }
         );
 
-        await _StartMaintenanceAsync().AnyContext();
+        await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return result.GetValue<double>();
     }
@@ -486,7 +486,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             }
         );
 
-        await _StartMaintenanceAsync().AnyContext();
+        await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return result.GetValue<long>();
     }
@@ -561,7 +561,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             }
         );
 
-        await _StartMaintenanceAsync().AnyContext();
+        await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return difference;
     }
@@ -636,7 +636,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             }
         );
 
-        await _StartMaintenanceAsync().AnyContext();
+        await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return difference;
     }
@@ -711,7 +711,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             }
         );
 
-        await _StartMaintenanceAsync().AnyContext();
+        await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return difference;
     }
@@ -786,7 +786,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             }
         );
 
-        await _StartMaintenanceAsync().AnyContext();
+        await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return difference;
     }
@@ -808,7 +808,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         if (expiration is { Ticks: <= 0 })
         {
-            await SetRemoveAsync(key, value, expiration, cancellationToken).AnyContext();
+            await SetRemoveAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
             return 0;
         }
 
@@ -868,7 +868,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
             }
 
-            await _StartMaintenanceAsync().AnyContext();
+            await _StartMaintenanceAsync().ConfigureAwait(false);
 
             return items.Count;
         }
@@ -938,7 +938,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
             }
 
-            await _StartMaintenanceAsync().AnyContext();
+            await _StartMaintenanceAsync().ConfigureAwait(false);
 
             return items.Count;
         }
@@ -995,7 +995,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         foreach (var key in cacheKeys)
         {
-            map[key] = await GetAsync<T>(key, cancellationToken).AnyContext();
+            map[key] = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
         }
 
         return map;
@@ -1094,7 +1094,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         key = _GetKey(key);
 
-        var dictionaryCacheValue = await GetAsync<IDictionary<T, DateTime?>>(key, cancellationToken).AnyContext();
+        var dictionaryCacheValue = await GetAsync<IDictionary<T, DateTime?>>(key, cancellationToken)
+            .ConfigureAwait(false);
 
         if (!dictionaryCacheValue.HasValue)
         {
@@ -1174,7 +1175,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         );
 
         var success = wasExpectedValue;
-        await _StartMaintenanceAsync().AnyContext();
+        await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return success;
     }
@@ -1459,7 +1460,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
-        await _StartMaintenanceAsync(ShouldCompact).AnyContext();
+        await _StartMaintenanceAsync(ShouldCompact).ConfigureAwait(false);
 
         return wasUpdated;
     }
@@ -1482,7 +1483,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         if (compactImmediately)
         {
-            await _CompactAsync().AnyContext();
+            await _CompactAsync().ConfigureAwait(false);
         }
 
         // Use Interlocked.CompareExchange to ensure only one thread spawns maintenance
@@ -1507,7 +1508,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             return;
         }
 
-        using (await _lock.LockAsync(_disposedCts.Token).AnyContext())
+        using (await _lock.LockAsync(_disposedCts.Token).ConfigureAwait(false))
         {
             var removalCount = 0;
 
@@ -1662,7 +1663,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         if (ShouldCompact)
         {
-            await _CompactAsync().AnyContext();
+            await _CompactAsync().ConfigureAwait(false);
         }
     }
 

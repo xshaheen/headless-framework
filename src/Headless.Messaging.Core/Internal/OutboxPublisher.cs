@@ -49,7 +49,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
         CancellationToken cancellationToken = default
     )
     {
-        await _PublishInternalAsync(name, value, headers, null, cancellationToken).AnyContext();
+        await _PublishInternalAsync(name, value, headers, null, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task PublishAsync<T>(
@@ -64,7 +64,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
             { Headers.CallbackName, callbackName },
         };
 
-        await PublishAsync(name, value, headers, cancellationToken).AnyContext();
+        await PublishAsync(name, value, headers, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task PublishDelayAsync<T>(
@@ -77,7 +77,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
     {
         Argument.IsPositive(delayTime);
 
-        await _PublishInternalAsync(name, value, headers, delayTime, cancellationToken).AnyContext();
+        await _PublishInternalAsync(name, value, headers, delayTime, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task PublishDelayAsync<T>(
@@ -90,7 +90,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
     {
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { { Headers.CallbackName, callbackName } };
 
-        await PublishDelayAsync(delayTime, name, value, header, cancellationToken).AnyContext();
+        await PublishDelayAsync(delayTime, name, value, header, cancellationToken).ConfigureAwait(false);
     }
 
     public Task PublishAsync<T>(
@@ -218,7 +218,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
 
             if (Transaction?.DbTransaction == null)
             {
-                var mediumMessage = await _storage.StoreMessageAsync(name, message).AnyContext();
+                var mediumMessage = await _storage.StoreMessageAsync(name, message).ConfigureAwait(false);
 
                 _TracingAfter(tracingTimestamp, message);
 
@@ -226,11 +226,11 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
                 {
                     await _dispatcher
                         .EnqueueToScheduler(mediumMessage, publishTime, null, cancellationToken)
-                        .AnyContext();
+                        .ConfigureAwait(false);
                 }
                 else
                 {
-                    await _dispatcher.EnqueueToPublish(mediumMessage, cancellationToken).AnyContext();
+                    await _dispatcher.EnqueueToPublish(mediumMessage, cancellationToken).ConfigureAwait(false);
                 }
             }
             else
@@ -239,7 +239,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
 
                 var mediumMessage = await _storage
                     .StoreMessageAsync(name, message, transaction.DbTransaction)
-                    .AnyContext();
+                    .ConfigureAwait(false);
 
                 _TracingAfter(tracingTimestamp, message);
 
@@ -247,7 +247,7 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
 
                 if (transaction.AutoCommit)
                 {
-                    await transaction.CommitAsync(cancellationToken).AnyContext();
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 }
             }
         }

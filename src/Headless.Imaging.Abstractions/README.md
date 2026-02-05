@@ -33,7 +33,7 @@ public sealed class ImageService(IImageResizer resizer, IImageCompressor compres
             Width = 800,
             Height = 600,
             Mode = ImageResizeMode.Max
-        }, ct).AnyContext();
+        }, ct).ConfigureAwait(false);
 
         return resized.Stream;
     }

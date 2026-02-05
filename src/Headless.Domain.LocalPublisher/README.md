@@ -39,9 +39,9 @@ public sealed class OrderService(ILocalMessagePublisher publisher)
 {
     public async Task CreateOrderAsync(Order order, CancellationToken ct)
     {
-        await _repository.AddAsync(order, ct).AnyContext();
+        await _repository.AddAsync(order, ct).ConfigureAwait(false);
 
-        await publisher.PublishAsync(new OrderCreatedEvent(order.Id), ct).AnyContext();
+        await publisher.PublishAsync(new OrderCreatedEvent(order.Id), ct).ConfigureAwait(false);
     }
 }
 ```

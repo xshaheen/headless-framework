@@ -18,11 +18,12 @@ internal sealed class RedisTransport(
 
     public BrokerAddress BrokerAddress => new("redis", _options.Endpoint);
 
-    public async Task<OperateResult> SendAsync(TransportMessage message)
+    public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            await redis.PublishAsync(message.GetName(), message.AsStreamEntries()).AnyContext();
+            await redis.PublishAsync(message.GetName(), message.AsStreamEntries()).ConfigureAwait(false);
 
             logger.LogDebug("Redis message [{Message}] has been published.", message.GetName());
 

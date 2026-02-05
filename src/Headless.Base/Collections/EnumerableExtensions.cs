@@ -279,7 +279,7 @@ public static partial class EnumerableExtensions
     public static async Task<List<T>> ToListAsync<T>(this Task<IEnumerable<T>> task)
     {
 #pragma warning disable VSTHRD003
-        var result = await Argument.IsNotNull(task).AnyContext();
+        var result = await Argument.IsNotNull(task).ConfigureAwait(false);
 #pragma warning restore VSTHRD003
 
         return result.ToList();
@@ -288,7 +288,7 @@ public static partial class EnumerableExtensions
     public static async Task<T[]> ToArrayAsync<T>(this Task<IEnumerable<T>> task)
     {
 #pragma warning disable VSTHRD003
-        var result = await Argument.IsNotNull(task).AnyContext();
+        var result = await Argument.IsNotNull(task).ConfigureAwait(false);
 #pragma warning restore VSTHRD003
 
         return result.ToArray();

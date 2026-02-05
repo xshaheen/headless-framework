@@ -91,7 +91,7 @@ public sealed partial class TusAzureStore
             // Pre-allocate capacity if stream length is known to avoid resizing
             var capacity = stream is { CanSeek: true, Length: > 0 } ? (int)stream.Length : 0;
             await using var memoryStream = new MemoryStream(capacity);
-            await stream.CopyToAsync(memoryStream, cancellationToken).AnyContext();
+            await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
 
             memoryStream.Position = 0; // Reset position for hashing
             hasher.TransformFinalBlock(memoryStream.GetBuffer(), 0, (int)memoryStream.Length);
@@ -99,7 +99,7 @@ public sealed partial class TusAzureStore
             memoryStream.Position = 0; // Reuse MemoryStream for upload
             await blockBlobClient
                 .StageBlockAsync(blockId, memoryStream, cancellationToken: cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
             return ([blockId], memoryStream.Length);
         }
 
@@ -113,7 +113,7 @@ public sealed partial class TusAzureStore
         var chunkBlockIds = new List<string>(estimatedChunkCount);
         var bytesWritten = 0L;
 
-        await foreach (var chunk in _SplitStreamAsync(stream, maxChunkSize, cancellationToken).AnyContext())
+        await foreach (var chunk in _SplitStreamAsync(stream, maxChunkSize, cancellationToken).ConfigureAwait(false))
         {
             var blockId = _GenerateBlockId(nextBlockNumber++);
 
@@ -127,7 +127,7 @@ public sealed partial class TusAzureStore
             await using var chunkStream = new MemoryStream(chunk.Array!, chunk.Offset, chunk.Count, writable: false);
             await blockBlobClient
                 .StageBlockAsync(blockId, chunkStream, cancellationToken: cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             chunkBlockIds.Add(blockId);
             bytesWritten += chunk.Count;
@@ -202,7 +202,7 @@ public sealed partial class TusAzureStore
                 {
                     var bytesRead = await sourceStream
                         .ReadAsync(buffer.AsMemory(0, chunkSize), cancellationToken)
-                        .AnyContext();
+                        .ConfigureAwait(false);
 
                     if (bytesRead == 0)
                     {

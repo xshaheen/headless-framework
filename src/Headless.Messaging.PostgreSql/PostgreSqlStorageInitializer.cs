@@ -52,7 +52,7 @@ public sealed class PostgreSqlStorageInitializer(
 
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         logger.LogDebug("Ensuring all create database tables script are applied.");
     }

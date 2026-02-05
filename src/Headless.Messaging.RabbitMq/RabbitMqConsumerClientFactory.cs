@@ -18,7 +18,7 @@ internal sealed class RabbitMqConsumerClientFactory(
         {
             var client = new RabbitMqConsumerClient(groupId, concurrent, channelPool, rabbitMqOptions, serviceProvider);
 
-            await client.ConnectAsync().AnyContext();
+            await client.ConnectAsync().ConfigureAwait(false);
 
             return client;
         }

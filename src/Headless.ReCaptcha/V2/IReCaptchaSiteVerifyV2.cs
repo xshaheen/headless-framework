@@ -57,7 +57,7 @@ public sealed class ReCaptchaSiteVerifyV2(
         using var content = new FormUrlEncodedContent(formData);
         using var httpResponseMessage = await _client
             .PostAsync(_siteVerifyUri, content, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (!httpResponseMessage.IsSuccessStatusCode)
         {
@@ -66,7 +66,7 @@ public sealed class ReCaptchaSiteVerifyV2(
                 logger.LogInformation(
                     "Recaptcha verification failed with status code {StatusCode} and response {Response}",
                     httpResponseMessage.StatusCode,
-                    await httpResponseMessage.Content.ReadAsStringAsync(cancellationToken).AnyContext()
+                    await httpResponseMessage.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
                 );
             }
 
@@ -75,7 +75,7 @@ public sealed class ReCaptchaSiteVerifyV2(
 
         await using var responseStream = await httpResponseMessage
             .Content.ReadAsStreamAsync(cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         var response = await JsonSerializer
             .DeserializeAsync<ReCaptchaSiteVerifyV2Response>(
@@ -83,7 +83,7 @@ public sealed class ReCaptchaSiteVerifyV2(
                 options: ReCaptchaJsonOptions.JsonOptions,
                 cancellationToken: cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (response?.Success is not true)
         {

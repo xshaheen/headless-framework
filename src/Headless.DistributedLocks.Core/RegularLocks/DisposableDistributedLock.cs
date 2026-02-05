@@ -37,7 +37,9 @@ public sealed class DisposableDistributedLock(
             logger.LogTrace("Renewing lock {Resource} ({LockId})", Resource, LockId);
         }
 
-        var result = await lockProvider.RenewAsync(Resource, LockId, timeUntilExpires, cancellationToken).AnyContext();
+        var result = await lockProvider
+            .RenewAsync(Resource, LockId, timeUntilExpires, cancellationToken)
+            .ConfigureAwait(false);
 
         if (!result)
         {
@@ -63,7 +65,7 @@ public sealed class DisposableDistributedLock(
             return;
         }
 
-        using (await _lock.LockAsync(CancellationToken.None).AnyContext())
+        using (await _lock.LockAsync(CancellationToken.None).ConfigureAwait(false))
         {
             if (_isReleased)
             {
@@ -84,7 +86,7 @@ public sealed class DisposableDistributedLock(
                 );
             }
 
-            await lockProvider.ReleaseAsync(Resource, LockId, CancellationToken.None).AnyContext();
+            await lockProvider.ReleaseAsync(Resource, LockId, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
@@ -99,7 +101,7 @@ public sealed class DisposableDistributedLock(
 
         try
         {
-            await ReleaseAsync().AnyContext();
+            await ReleaseAsync().ConfigureAwait(false);
         }
         catch (Exception e)
         {

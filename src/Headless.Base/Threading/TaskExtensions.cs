@@ -33,7 +33,7 @@ public static class TaskExtensions
             {
 #pragma warning disable VSTHRD003 // Justification: Its intended to be used.
                 // No need to resume on the original SynchronizationContext
-                await task.AnyContext();
+                await task.ConfigureAwait(false);
 #pragma warning restore VSTHRD003
             }
             catch
@@ -95,70 +95,6 @@ public static class TaskExtensions
                 scheduler: TaskScheduler.Default
             )
             .Unwrap();
-    }
-
-    #endregion
-
-    #region AnyContext
-
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this Task<TResult> task)
-    {
-#pragma warning disable VSTHRD003 // Justification: Its intended to be used.
-        return task.ConfigureAwait(continueOnCapturedContext: false);
-#pragma warning restore VSTHRD003
-    }
-
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ConfiguredTaskAwaitable AnyContext(this Task task)
-    {
-#pragma warning disable VSTHRD003 // Justification: Its intended to be used.
-        return task.ConfigureAwait(continueOnCapturedContext: false);
-#pragma warning restore VSTHRD003
-    }
-
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ConfiguredCancelableAsyncEnumerable<T> AnyContext<T>(this ConfiguredCancelableAsyncEnumerable<T> task)
-    {
-#pragma warning disable VSTHRD003 // Justification: Its intended to be used.
-        return task.ConfigureAwait(continueOnCapturedContext: false);
-#pragma warning restore VSTHRD003
-    }
-
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ConfiguredValueTaskAwaitable<TResult> AnyContext<TResult>(this ValueTask<TResult> task)
-    {
-#pragma warning disable VSTHRD003 // Justification: Its intended to be used.
-        return task.ConfigureAwait(continueOnCapturedContext: false);
-#pragma warning restore VSTHRD003
-    }
-
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ConfiguredValueTaskAwaitable AnyContext(this ValueTask task)
-    {
-#pragma warning disable VSTHRD003 // Justification: Its intended to be used.
-        return task.ConfigureAwait(continueOnCapturedContext: false);
-#pragma warning restore VSTHRD003
-    }
-
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this AwaitableDisposable<TResult> task)
-        where TResult : IDisposable
-    {
-        return task.ConfigureAwait(continueOnCapturedContext: false);
-    }
-
-    [DebuggerStepThrough]
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ConfiguredCancelableAsyncEnumerable<TResult> AnyContext<TResult>(this IAsyncEnumerable<TResult> task)
-    {
-        return task.ConfigureAwait(continueOnCapturedContext: false);
     }
 
     #endregion
@@ -277,7 +213,7 @@ public static class TaskExtensions
             return Task.FromCanceled(cancellationToken);
         }
 
-        return _WithCancellationSlow(task, continueOnCapturedContext: false, cancellationToken: cancellationToken);
+        return task._WithCancellationSlow(continueOnCapturedContext: false, cancellationToken: cancellationToken);
     }
 
     private static async Task<T> _WithCancellationSlow<T>(Task<T> task, CancellationToken cancellationToken)
@@ -286,7 +222,7 @@ public static class TaskExtensions
 
         await using (cancellationToken.Register(s => ((TaskCompletionSource<bool>)s!).TrySetResult(true), tcs))
         {
-            if (task != await Task.WhenAny(task, tcs.Task).AnyContext())
+            if (task != await Task.WhenAny(task, tcs.Task).ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
             }
@@ -295,7 +231,7 @@ public static class TaskExtensions
         // Rethrow any fault/cancellation exception, even if we awaited above.
         // But if we skipped the above if branched, this will actually yield
         // on an incompleted task.
-        return await task.AnyContext();
+        return await task.ConfigureAwait(false);
     }
 
     /// <summary>

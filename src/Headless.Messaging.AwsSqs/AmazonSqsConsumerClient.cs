@@ -39,19 +39,19 @@ internal sealed class AmazonSqsConsumerClient(
     {
         Argument.IsNotNull(topicNames);
 
-        await _ConnectAsync(true, false).AnyContext();
+        await _ConnectAsync(true, false).ConfigureAwait(false);
 
         var topicArns = new List<string>();
         foreach (var topic in topicNames)
         {
             var createTopicRequest = new CreateTopicRequest(topic.NormalizeForAws());
 
-            var createTopicResponse = await _snsClient!.CreateTopicAsync(createTopicRequest).AnyContext();
+            var createTopicResponse = await _snsClient!.CreateTopicAsync(createTopicRequest).ConfigureAwait(false);
 
             topicArns.Add(createTopicResponse.TopicArn);
         }
 
-        await _GenerateSqsAccessPolicyAsync(topicArns).AnyContext();
+        await _GenerateSqsAccessPolicyAsync(topicArns).ConfigureAwait(false);
 
         return topicArns;
     }
@@ -60,20 +60,20 @@ internal sealed class AmazonSqsConsumerClient(
     {
         Argument.IsNotNull(topics);
 
-        await _ConnectAsync().AnyContext();
+        await _ConnectAsync().ConfigureAwait(false);
 
-        await _SubscribeToTopics(topics).AnyContext();
+        await _SubscribeToTopics(topics).ConfigureAwait(false);
     }
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        await _ConnectAsync().AnyContext();
+        await _ConnectAsync().ConfigureAwait(false);
 
         var request = new ReceiveMessageRequest(_queueUrl) { WaitTimeSeconds = 5, MaxNumberOfMessages = 10 };
 
         while (true)
         {
-            var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).AnyContext();
+            var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
 
             if (response.Messages.Count > 0)
             {
@@ -81,13 +81,13 @@ internal sealed class AmazonSqsConsumerClient(
                 {
                     if (groupConcurrent > 0)
                     {
-                        await _semaphore.WaitAsync(cancellationToken).AnyContext();
+                        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
                         _ = Task.Run(
                                 async () =>
                                 {
                                     try
                                     {
-                                        await consumeAsync(sqsMessage).AnyContext();
+                                        await consumeAsync(sqsMessage).ConfigureAwait(false);
                                     }
                                     catch (Exception ex)
                                     {
@@ -96,11 +96,11 @@ internal sealed class AmazonSqsConsumerClient(
                                 },
                                 cancellationToken
                             )
-                            .AnyContext();
+                            .ConfigureAwait(false);
                     }
                     else
                     {
-                        await consumeAsync(sqsMessage).AnyContext();
+                        await consumeAsync(sqsMessage).ConfigureAwait(false);
                     }
                 }
             }
@@ -124,7 +124,7 @@ internal sealed class AmazonSqsConsumerClient(
                     _logger.LogError(
                         "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Moving to DLQ."
                     );
-                    await RejectAsync(receiptHandle).AnyContext();
+                    await RejectAsync(receiptHandle).ConfigureAwait(false);
                     return;
                 }
 
@@ -140,12 +140,12 @@ internal sealed class AmazonSqsConsumerClient(
                     Headers = { [Headers.Group] = groupId },
                 };
 
-                await OnMessageCallback!(message, receiptHandle).AnyContext();
+                await OnMessageCallback!(message, receiptHandle).ConfigureAwait(false);
             }
             catch (JsonException ex)
             {
                 _logger.LogError(ex, "Failed to deserialize SQS message. Moving to DLQ.");
-                await RejectAsync(receiptHandle).AnyContext();
+                await RejectAsync(receiptHandle).ConfigureAwait(false);
             }
         }
     }
@@ -154,7 +154,7 @@ internal sealed class AmazonSqsConsumerClient(
     {
         try
         {
-            await _sqsClient!.DeleteMessageAsync(_queueUrl, (string)sender!).AnyContext();
+            await _sqsClient!.DeleteMessageAsync(_queueUrl, (string)sender!).ConfigureAwait(false);
         }
         catch (ReceiptHandleIsInvalidException ex)
         {
@@ -170,7 +170,7 @@ internal sealed class AmazonSqsConsumerClient(
     {
         try
         {
-            await _sqsClient!.ChangeMessageVisibilityAsync(_queueUrl, (string)sender!, 3).AnyContext();
+            await _sqsClient!.ChangeMessageVisibilityAsync(_queueUrl, (string)sender!, 3).ConfigureAwait(false);
         }
         catch (MessageNotInflightException ex)
         {
@@ -221,7 +221,9 @@ internal sealed class AmazonSqsConsumerClient(
                 if (string.IsNullOrWhiteSpace(_queueUrl))
                 {
                     // Create or get existing queue URL asynchronously
-                    var queueResponse = await _sqsClient!.CreateQueueAsync(groupId.NormalizeForAws()).AnyContext();
+                    var queueResponse = await _sqsClient!
+                        .CreateQueueAsync(groupId.NormalizeForAws())
+                        .ConfigureAwait(false);
                     _queueUrl = queueResponse.QueueUrl;
                 }
             }
@@ -246,9 +248,9 @@ internal sealed class AmazonSqsConsumerClient(
 
     private async Task _GenerateSqsAccessPolicyAsync(IEnumerable<string> topicArns)
     {
-        await _ConnectAsync(false, true).AnyContext();
+        await _ConnectAsync(false, true).ConfigureAwait(false);
 
-        var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).AnyContext();
+        var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).ConfigureAwait(false);
 
         var sqsQueueArn = queueAttributes["QueueArn"];
 
@@ -267,12 +269,12 @@ internal sealed class AmazonSqsConsumerClient(
         policy.AddSqsPermissions(topicArnsToAllow, sqsQueueArn);
 
         var setAttributes = new Dictionary<string, string>(StringComparer.Ordinal) { { "Policy", policy.ToJson() } };
-        await _sqsClient.SetAttributesAsync(_queueUrl, setAttributes).AnyContext();
+        await _sqsClient.SetAttributesAsync(_queueUrl, setAttributes).ConfigureAwait(false);
     }
 
     private async Task _SubscribeToTopics(IEnumerable<string> topics)
     {
-        var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).AnyContext();
+        var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).ConfigureAwait(false);
 
         var sqsQueueArn = queueAttributes["QueueArn"];
         foreach (var topicArn in topics)
@@ -286,7 +288,7 @@ internal sealed class AmazonSqsConsumerClient(
                         Endpoint = sqsQueueArn,
                     }
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
         }
     }
 

@@ -133,7 +133,7 @@ public sealed class RedisBlobStorage : IBlobStorage
             }
 
             await using var memory = new MemoryStream();
-            await _CopyWithSizeLimitAsync(stream, memory, cancellationToken).AnyContext();
+            await _CopyWithSizeLimitAsync(stream, memory, cancellationToken).ConfigureAwait(false);
             var fileSize = memory.Length;
 
             // Zero-copy: TryGetBuffer avoids ToArray() allocation
@@ -179,7 +179,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                     logger: _logger,
                     cancellationToken: cancellationToken
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
         }
         catch (Exception e)
         {
@@ -221,7 +221,8 @@ public sealed class RedisBlobStorage : IBlobStorage
 
                     try
                     {
-                        await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct).AnyContext();
+                        await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct)
+                            .ConfigureAwait(false);
                         results[i] = Result<Exception>.Ok();
                     }
                     catch (Exception e)
@@ -230,7 +231,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                     }
                 }
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return results;
     }
@@ -269,7 +270,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                 logger: _logger,
                 cancellationToken: cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return (int)result == 1;
     }
@@ -310,7 +311,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
                     try
                     {
-                        results[i] = await DeleteAsync(container, fileName, ct).AnyContext();
+                        results[i] = await DeleteAsync(container, fileName, ct).ConfigureAwait(false);
                     }
                     catch (Exception e)
                     {
@@ -318,7 +319,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                     }
                 }
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return results;
     }
@@ -330,7 +331,7 @@ public sealed class RedisBlobStorage : IBlobStorage
     )
     {
         var blobs = await _GetFileListAsync(container, blobSearchPattern, cancellationToken: cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", blobs.Count, blobSearchPattern);
 
@@ -352,7 +353,8 @@ public sealed class RedisBlobStorage : IBlobStorage
                 {
                     try
                     {
-                        var deleted = await _DeleteAsync(blob.BlobKey, infoContainer, blobsContainer, ct).AnyContext();
+                        var deleted = await _DeleteAsync(blob.BlobKey, infoContainer, blobsContainer, ct)
+                            .ConfigureAwait(false);
 
                         if (deleted)
                         {
@@ -367,7 +369,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 #pragma warning restore ERP022
                 }
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, blobSearchPattern);
 
@@ -410,7 +412,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                     logger: _logger,
                     cancellationToken: cancellationToken
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
 
             return (int)result == 1;
         }
@@ -458,7 +460,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                     logger: _logger,
                     cancellationToken: cancellationToken
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
 
             return (int)result == 1;
         }
@@ -518,7 +520,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                 logger: _logger,
                 cancellationToken: cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (fileContent.IsNull)
         {
@@ -626,7 +628,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         var result = new PagedFileListResult(
             (_, token) => _GetFilesPageAsync(infoContainer, criteria, 1, pageSize, token)
         );
-        await result.NextPageAsync(cancellationToken).AnyContext();
+        await result.NextPageAsync(cancellationToken).ConfigureAwait(false);
 
         return result;
     }
@@ -826,7 +828,7 @@ public sealed class RedisBlobStorage : IBlobStorage
     {
         if (_options.MaxBlobSizeBytes <= 0)
         {
-            await source.CopyToAsync(destination, 0x14000, ct).AnyContext();
+            await source.CopyToAsync(destination, 0x14000, ct).ConfigureAwait(false);
             return;
         }
 
@@ -834,7 +836,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         long totalBytes = 0;
         int bytesRead;
 
-        while ((bytesRead = await source.ReadAsync(buffer, ct).AnyContext()) > 0)
+        while ((bytesRead = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
         {
             totalBytes += bytesRead;
 
@@ -846,7 +848,7 @@ public sealed class RedisBlobStorage : IBlobStorage
                 );
             }
 
-            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct).AnyContext();
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
         }
     }
 

@@ -28,7 +28,7 @@ public sealed class IdempotencyMiddleware(
             || string.IsNullOrEmpty(value[^1])
         )
         {
-            await next(context).AnyContext();
+            await next(context).ConfigureAwait(false);
             return;
         }
 
@@ -42,16 +42,16 @@ public sealed class IdempotencyMiddleware(
                 expiration: optionsAccessor.Value.IdempotencyKeyExpiration,
                 cancellationToken: cancellationTokenProvider.Token
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (inserted)
         {
-            await next(context).AnyContext();
+            await next(context).ConfigureAwait(false);
             return;
         }
 
         logger.LogWarning("Idempotency key {IdempotencyKey} already exists, returning 409 Conflict.", idempotencyKey);
         var problemDetails = problemDetailsCreator.Conflict(GeneralMessageDescriber.DuplicatedRequest());
-        await Results.Problem(problemDetails).ExecuteAsync(context).AnyContext();
+        await Results.Problem(problemDetails).ExecuteAsync(context).ConfigureAwait(false);
     }
 }

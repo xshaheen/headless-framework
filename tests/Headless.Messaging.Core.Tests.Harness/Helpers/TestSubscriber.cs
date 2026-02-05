@@ -41,7 +41,7 @@ public sealed class TestSubscriber : IConsume<TestMessage>
 
         try
         {
-            await _messageReceivedTcs.Task.WaitAsync(cts.Token).AnyContext();
+            await _messageReceivedTcs.Task.WaitAsync(cts.Token).ConfigureAwait(false);
             return true;
         }
         catch (OperationCanceledException)

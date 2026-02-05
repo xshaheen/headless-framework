@@ -8,6 +8,7 @@ using NSubstitute;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class HybridCacheTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
@@ -495,10 +496,10 @@ public sealed class HybridCacheTests : TestBase
     {
         // given
         var l1Options = new InMemoryCacheOptions { CloneValues = true };
-        var l1 = new InMemoryCache(_timeProvider, l1Options);
+        using var l1 = new InMemoryCache(_timeProvider, l1Options);
 
         // Use a test double that throws on write but returns values on read
-        var l2 = new FailingWriteDistributedCache(_timeProvider);
+        using var l2 = new FailingWriteDistributedCache(_timeProvider);
 
         var publisher = Substitute.For<IDirectPublisher>();
         publisher
@@ -530,7 +531,7 @@ public sealed class HybridCacheTests : TestBase
     }
 
     /// <summary>A distributed cache that throws on write operations but works normally for reads.</summary>
-    private sealed class FailingWriteDistributedCache(TimeProvider timeProvider) : IDistributedCache
+    private sealed class FailingWriteDistributedCache(TimeProvider timeProvider) : IDistributedCache, IDisposable
     {
         private readonly InMemoryCache _cache = new(timeProvider, new InMemoryCacheOptions());
 
@@ -678,6 +679,11 @@ public sealed class HybridCacheTests : TestBase
         ) => throw new InvalidOperationException("L2 write failed");
 
         public ValueTask FlushAsync(CancellationToken ct = default) => _cache.FlushAsync(ct);
+
+        public void Dispose()
+        {
+            _cache.Dispose();
+        }
     }
 
     [Fact]
@@ -692,7 +698,7 @@ public sealed class HybridCacheTests : TestBase
         var publisher = Substitute.For<IDirectPublisher>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<CancellationToken>())
-            .Returns<Task>(_ => throw new InvalidOperationException("Publish failed"));
+            .Returns(_ => throw new InvalidOperationException("Publish failed"));
 
         var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions());
         await using var _ = cache;
@@ -791,7 +797,7 @@ public sealed class HybridCacheTests : TestBase
         await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
-        CancellationToken receivedToken = default;
+        var receivedToken = CancellationToken.None;
 
         // when
         await cache.GetOrAddAsync(

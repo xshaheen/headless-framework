@@ -37,7 +37,9 @@ internal static class EntityFrameworkTransactionExtensions
         CancellationToken cancellationToken
     )
     {
-        var dbTransaction = await database.BeginTransactionAsync(isolationLevel, cancellationToken).AnyContext();
+        var dbTransaction = await database
+            .BeginTransactionAsync(isolationLevel, cancellationToken)
+            .ConfigureAwait(false);
 
         publisher.Transaction = ActivatorUtilities.CreateInstance<SqlServerOutboxTransaction>(
             publisher.ServiceProvider

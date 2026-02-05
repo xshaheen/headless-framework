@@ -65,7 +65,7 @@ internal class SqlServerMonitoringApi(
                 },
                 cancellationToken: cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return statistics;
     }
@@ -76,7 +76,8 @@ internal class SqlServerMonitoringApi(
     )
     {
         var tableName = type == MessageType.Publish ? _pubName : _recName;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed), cancellationToken).AnyContext();
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
@@ -85,7 +86,8 @@ internal class SqlServerMonitoringApi(
     )
     {
         var tableName = type == MessageType.Publish ? _pubName : _recName;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded), cancellationToken).AnyContext();
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<IndexPage<MessageView>> GetMessagesAsync(
@@ -142,7 +144,7 @@ internal class SqlServerMonitoringApi(
                     new SqlParameter("@Content", $"%{query.Content}%"),
                 ]
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         var items = await connection
             .ExecuteReaderAsync(
@@ -151,7 +153,7 @@ internal class SqlServerMonitoringApi(
                 {
                     var messages = new List<MessageView>();
 
-                    while (await reader.ReadAsync(ct).AnyContext())
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
                         var index = 0;
                         messages.Add(
@@ -175,7 +177,7 @@ internal class SqlServerMonitoringApi(
                 cancellationToken: cancellationToken,
                 sqlParams: sqlParams
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return new(items, query.CurrentPage, query.PageSize, count);
     }
@@ -205,7 +207,7 @@ internal class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessageAsync(_pubName, id, cancellationToken).AnyContext();
+        return await _GetMessageAsync(_pubName, id, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<MediumMessage?> GetReceivedMessageAsync(
@@ -213,7 +215,7 @@ internal class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessageAsync(_recName, id, cancellationToken).AnyContext();
+        return await _GetMessageAsync(_recName, id, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<int> _GetNumberOfMessage(
@@ -231,7 +233,7 @@ internal class SqlServerMonitoringApi(
                 cancellationToken: cancellationToken,
                 sqlParams: new SqlParameter("@StatusName", statusName)
             )
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(
@@ -296,7 +298,7 @@ internal class SqlServerMonitoringApi(
                     {
                         var dictionary = new Dictionary<string, int>(StringComparer.Ordinal);
 
-                        while (await reader.ReadAsync(ct).AnyContext())
+                        while (await reader.ReadAsync(ct).ConfigureAwait(false))
                         {
                             dictionary.Add(reader.GetString(0), reader.GetInt32(1));
                         }
@@ -306,7 +308,7 @@ internal class SqlServerMonitoringApi(
                     cancellationToken: cancellationToken,
                     sqlParams: sqlParams
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
         }
 
         var result = new Dictionary<DateTime, int>(keyMaps.Count);
@@ -336,9 +338,9 @@ internal class SqlServerMonitoringApi(
                 {
                     MediumMessage? message = null;
 
-                    while (await reader.ReadAsync(ct).AnyContext())
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
-                        var expiresAtIsNull = await reader.IsDBNullAsync(3, ct).AnyContext();
+                        var expiresAtIsNull = await reader.IsDBNullAsync(3, ct).ConfigureAwait(false);
                         message = new MediumMessage
                         {
                             DbId = reader.GetInt64(0).ToString(CultureInfo.InvariantCulture),
@@ -354,7 +356,7 @@ internal class SqlServerMonitoringApi(
                 },
                 cancellationToken: cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return mediumMessage;
     }

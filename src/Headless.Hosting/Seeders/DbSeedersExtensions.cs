@@ -63,7 +63,7 @@ public static class DbSeedersExtensions
                 {
                     await using var innerScope = services.CreateAsyncScope();
                     var seeder = (IPreSeeder)innerScope.ServiceProvider.GetRequiredService(type);
-                    await seeder.SeedAsync(ct).AnyContext();
+                    await seeder.SeedAsync(ct).ConfigureAwait(false);
                 }
             );
         }
@@ -73,7 +73,7 @@ public static class DbSeedersExtensions
             {
                 logger.LogInformation(">>> Pre-Seeding using {TypeName}", type.GetFriendlyTypeName());
                 var seeder = (IPreSeeder)scope.ServiceProvider.GetRequiredService(type);
-                await seeder.SeedAsync(cancellationToken).AnyContext();
+                await seeder.SeedAsync(cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -109,7 +109,7 @@ public static class DbSeedersExtensions
                 {
                     await using var innerScope = services.CreateAsyncScope();
                     var seeder = (ISeeder)innerScope.ServiceProvider.GetRequiredService(type);
-                    await seeder.SeedAsync(ct).AnyContext();
+                    await seeder.SeedAsync(ct).ConfigureAwait(false);
                 }
             );
         }
@@ -119,7 +119,7 @@ public static class DbSeedersExtensions
             {
                 logger.LogInformation(">>> Seeding using {TypeName}", type.GetFriendlyTypeName());
                 var seeder = (ISeeder)scope.ServiceProvider.GetRequiredService(type);
-                await seeder.SeedAsync(cancellationToken).AnyContext();
+                await seeder.SeedAsync(cancellationToken).ConfigureAwait(false);
             }
         }
 

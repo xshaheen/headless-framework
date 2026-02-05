@@ -71,7 +71,7 @@ public sealed class SettingValueStore(
     )
     {
         var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
-        var existValueCacheItem = await cache.GetAsync(cacheKey, cancellationToken).AnyContext();
+        var existValueCacheItem = await cache.GetAsync(cacheKey, cancellationToken).ConfigureAwait(false);
 
         if (existValueCacheItem.HasValue)
         {
@@ -84,7 +84,7 @@ public sealed class SettingValueStore(
                 nameToFind: name,
                 cancellationToken: cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return valueCacheItem;
     }
@@ -95,7 +95,9 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var settings = await valueRepository.GetListAsync(providerName, providerKey, cancellationToken).AnyContext();
+        var settings = await valueRepository
+            .GetListAsync(providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
 
         return settings.ConvertAll(x => new SettingValue(x.Name, x.Value));
     }
@@ -112,12 +114,14 @@ public sealed class SettingValueStore(
         if (names.Count == 1)
         {
             var name = names.First();
-            var value = await GetOrDefaultAsync(name, providerName, providerKey, cancellationToken).AnyContext();
+            var value = await GetOrDefaultAsync(name, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
 
             return [new SettingValue(name, value)];
         }
 
-        var cacheItems = await _GetCachedItemsAsync(names, providerName, providerKey, cancellationToken).AnyContext();
+        var cacheItems = await _GetCachedItemsAsync(names, providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
 
         return cacheItems;
     }
@@ -132,17 +136,17 @@ public sealed class SettingValueStore(
     {
         var settingValue = await valueRepository
             .FindAsync(name, providerName, providerKey, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (settingValue is null)
         {
             settingValue = new SettingValueRecord(guidGenerator.Create(), name, value, providerName, providerKey);
-            await valueRepository.InsertAsync(settingValue, cancellationToken).AnyContext();
+            await valueRepository.InsertAsync(settingValue, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             settingValue.Value = value;
-            await valueRepository.UpdateAsync(settingValue, cancellationToken).AnyContext();
+            await valueRepository.UpdateAsync(settingValue, cancellationToken).ConfigureAwait(false);
         }
 
         var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
@@ -154,7 +158,7 @@ public sealed class SettingValueStore(
                 expiration: _cacheExpiration,
                 cancellationToken: cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async Task DeleteAsync(
@@ -166,19 +170,19 @@ public sealed class SettingValueStore(
     {
         var settings = await valueRepository
             .FindAllAsync(name, providerName, providerKey, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (settings.Count == 0)
         {
             return;
         }
 
-        await valueRepository.DeleteAsync(settings, cancellationToken).AnyContext();
+        await valueRepository.DeleteAsync(settings, cancellationToken).ConfigureAwait(false);
 
         foreach (var setting in settings)
         {
             var cacheKey = SettingValueCacheItem.CalculateCacheKey(name, providerName, setting.ProviderKey);
-            await cache.RemoveAsync(cacheKey, cancellationToken).AnyContext();
+            await cache.RemoveAsync(cacheKey, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -195,7 +199,7 @@ public sealed class SettingValueStore(
             .Select(x => SettingValueCacheItem.CalculateCacheKey(x, providerName, providerKey))
             .ToList();
 
-        var existCacheItemsMap = await cache.GetAllAsync(cacheKeys, cancellationToken).AnyContext();
+        var existCacheItemsMap = await cache.GetAllAsync(cacheKeys, cancellationToken).ConfigureAwait(false);
         var existCacheItems = existCacheItemsMap.ToList();
 
         if (existCacheItems.TrueForAll(x => x.Value.HasValue))
@@ -213,7 +217,7 @@ public sealed class SettingValueStore(
             .ToHashSet(StringComparer.Ordinal);
 
         var newCacheItemsMap = await _CacheSomeAsync(notCacheNames, providerName, providerKey, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         var result = new List<SettingValue>(cacheKeys.Count);
 
@@ -248,9 +252,9 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken = default
     )
     {
-        var definitions = await _GetDbSettingDefinitionsAsync(names, cancellationToken).AnyContext();
+        var definitions = await _GetDbSettingDefinitionsAsync(names, cancellationToken).ConfigureAwait(false);
         var dbValuesMap = await _GetProviderValuesMapAsync(names, providerName, providerKey, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         var cacheItems = new Dictionary<string, SettingValueCacheItem>(StringComparer.Ordinal);
 
@@ -261,7 +265,7 @@ public sealed class SettingValueStore(
             cacheItems[cacheKey] = new SettingValueCacheItem(settingValue);
         }
 
-        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).AnyContext();
+        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
 
         return cacheItems;
     }
@@ -273,8 +277,9 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken
     )
     {
-        var definitions = await definitionManager.GetAllAsync(cancellationToken).AnyContext();
-        var dbValuesMap = await _GetProviderValuesMapAsync(providerName, providerKey, cancellationToken).AnyContext();
+        var definitions = await definitionManager.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var dbValuesMap = await _GetProviderValuesMapAsync(providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
 
         Dictionary<string, SettingValueCacheItem> cacheItems = new(StringComparer.Ordinal);
         string? settingValueToFind = null;
@@ -292,7 +297,7 @@ public sealed class SettingValueStore(
             }
         }
 
-        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).AnyContext();
+        await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken).ConfigureAwait(false);
 
         return settingValueToFind;
     }
@@ -307,7 +312,7 @@ public sealed class SettingValueStore(
             return [];
         }
 
-        var definitions = await definitionManager.GetAllAsync(cancellationToken).AnyContext();
+        var definitions = await definitionManager.GetAllAsync(cancellationToken).ConfigureAwait(false);
 
         return definitions.Where(definition => names.Contains(definition.Name));
     }
@@ -326,7 +331,9 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken
     )
     {
-        var dbValues = await valueRepository.GetListAsync(providerName, providerKey, cancellationToken).AnyContext();
+        var dbValues = await valueRepository
+            .GetListAsync(providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
         return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
     }
 
@@ -339,7 +346,7 @@ public sealed class SettingValueStore(
     {
         var dbValues = await valueRepository
             .GetListAsync(names, providerName, providerKey, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
         return dbValues.ToDictionary(s => s.Name, s => s.Value, StringComparer.Ordinal);
     }
 

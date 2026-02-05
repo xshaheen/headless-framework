@@ -28,7 +28,7 @@ public sealed class BillingService(IFeatureManager features)
 {
     public async Task ProcessAsync(CancellationToken ct)
     {
-        var maxUsers = await features.GetAsync("MaxUsers", cancellationToken: ct).AnyContext();
+        var maxUsers = await features.GetAsync("MaxUsers", cancellationToken: ct).ConfigureAwait(false);
 
         if (int.Parse(maxUsers.Value ?? "10") > 100)
         {

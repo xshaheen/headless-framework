@@ -18,20 +18,20 @@ internal class RedisStreamManager(
 
     public async Task CreateStreamWithConsumerGroupAsync(string stream, string consumerGroup)
     {
-        await _ConnectAsync().AnyContext();
+        await _ConnectAsync().ConfigureAwait(false);
 
         //The object returned from GetDatabase is a cheap pass - thru object, and does not need to be stored
         var database = _redis!.GetDatabase();
 
-        await database.TryGetOrCreateStreamConsumerGroupAsync(stream, consumerGroup).AnyContext();
+        await database.TryGetOrCreateStreamConsumerGroupAsync(stream, consumerGroup).ConfigureAwait(false);
     }
 
     public async Task PublishAsync(string stream, NameValueEntry[] message)
     {
-        await _ConnectAsync().AnyContext();
+        await _ConnectAsync().ConfigureAwait(false);
 
         //The object returned from GetDatabase is a cheap pass - thru object, and does not need to be stored
-        await _redis!.GetDatabase().StreamAddAsync(stream, message).AnyContext();
+        await _redis!.GetDatabase().StreamAddAsync(stream, message).ConfigureAwait(false);
     }
 
     public async IAsyncEnumerable<IEnumerable<RedisStream>> PollStreamsLatestMessagesAsync(
@@ -45,7 +45,8 @@ internal class RedisStreamManager(
 
         while (true)
         {
-            var result = await _TryReadConsumerGroupAsync(consumerGroup, positions.ToArray(), token).AnyContext();
+            var result = await _TryReadConsumerGroupAsync(consumerGroup, positions.ToArray(), token)
+                .ConfigureAwait(false);
 
             yield return result;
 
@@ -66,7 +67,8 @@ internal class RedisStreamManager(
         {
             token.ThrowIfCancellationRequested();
 
-            var result = await _TryReadConsumerGroupAsync(consumerGroup, positions.ToArray(), token).AnyContext();
+            var result = await _TryReadConsumerGroupAsync(consumerGroup, positions.ToArray(), token)
+                .ConfigureAwait(false);
 
             yield return result;
 
@@ -82,9 +84,9 @@ internal class RedisStreamManager(
 
     public async Task Ack(string stream, string consumerGroup, string messageId)
     {
-        await _ConnectAsync().AnyContext();
+        await _ConnectAsync().ConfigureAwait(false);
 
-        await _redis!.GetDatabase().StreamAcknowledgeAsync(stream, consumerGroup, messageId).AnyContext();
+        await _redis!.GetDatabase().StreamAcknowledgeAsync(stream, consumerGroup, messageId).ConfigureAwait(false);
     }
 
     private async Task<IEnumerable<RedisStream>> _TryReadConsumerGroupAsync(
@@ -99,14 +101,14 @@ internal class RedisStreamManager(
 
             List<StreamPosition> createdPositions = [];
 
-            await _ConnectAsync().AnyContext();
+            await _ConnectAsync().ConfigureAwait(false);
 
             var database = _redis!.GetDatabase();
 
             await foreach (
                 var position in database
                     .TryGetOrCreateConsumerGroupPositionsAsync(positions, consumerGroup, logger)
-                    .AnyContext()
+                    .ConfigureAwait(false)
                     .WithCancellation(token)
             )
             {
@@ -130,7 +132,7 @@ internal class RedisStreamManager(
                     )
                 );
 
-            var readSet = await Task.WhenAll(groupedPositions).AnyContext();
+            var readSet = await Task.WhenAll(groupedPositions).ConfigureAwait(false);
 
             return readSet.SelectMany(set => set);
         }
@@ -148,6 +150,6 @@ internal class RedisStreamManager(
 
     private async Task _ConnectAsync()
     {
-        _redis = await connectionsPool.ConnectAsync().AnyContext();
+        _redis = await connectionsPool.ConnectAsync().ConfigureAwait(false);
     }
 }
