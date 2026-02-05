@@ -75,12 +75,12 @@ public sealed class FcmPushNotificationService(
                         static async (ctx, state) =>
                         {
                             var (msg, ct) = state;
-                            return await FirebaseMessaging.DefaultInstance.SendAsync(msg, ct).AnyContext();
+                            return await FirebaseMessaging.DefaultInstance.SendAsync(msg, ct).ConfigureAwait(false);
                         },
                         context,
                         (message, cancellationToken)
                     )
-                    .AnyContext();
+                    .ConfigureAwait(false);
 
                 return PushNotificationResponse.Succeeded(clientToken, messageId);
             }
@@ -159,12 +159,12 @@ public sealed class FcmPushNotificationService(
                                 var (msg, ct) = state;
                                 return await FirebaseMessaging
                                     .DefaultInstance.SendEachForMulticastAsync(msg, ct)
-                                    .AnyContext();
+                                    .ConfigureAwait(false);
                             },
                             context,
                             (message, cancellationToken)
                         )
-                        .AnyContext();
+                        .ConfigureAwait(false);
 
                     if (batchResponse.Responses.Count != batchList.Count)
                     {

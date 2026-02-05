@@ -40,7 +40,7 @@ public sealed class TwilioSmsSender(ITwilioRestClient client, IOptions<TwilioSms
                 maxPrice: _options.MaxPrice,
                 client: client
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return respond.ErrorCode.HasValue
             ? SendSingleSmsResponse.Failed(respond.ErrorMessage)

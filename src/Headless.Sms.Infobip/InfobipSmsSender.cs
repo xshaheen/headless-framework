@@ -64,7 +64,7 @@ public sealed class InfobipSmsSender(
 
         try
         {
-            var smsResponse = await smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken).AnyContext();
+            var smsResponse = await smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken).ConfigureAwait(false);
             logger.LogTrace(
                 "Infobip SMS sent successfully to {DestinationCount} recipients",
                 request.Destinations.Count

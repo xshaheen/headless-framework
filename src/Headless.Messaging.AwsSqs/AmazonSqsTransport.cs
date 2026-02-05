@@ -23,14 +23,14 @@ internal sealed class AmazonSqsTransport(
 
     public BrokerAddress BrokerAddress => new("AmazonSQS", string.Empty);
 
-    public async Task<OperateResult> SendAsync(TransportMessage message)
+    public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
         try
         {
-            await _FetchExistingTopicArns();
+            await _FetchExistingTopicArns(cancellationToken);
 
             var normalizeForAws = message.GetName().NormalizeForAws();
-            var (success, arn) = await _TryGetOrCreateTopicArnAsync(normalizeForAws);
+            var (success, arn) = await _TryGetOrCreateTopicArnAsync(normalizeForAws, cancellationToken);
 
             if (success)
             {
@@ -47,7 +47,7 @@ internal sealed class AmazonSqsTransport(
 
                 var request = new PublishRequest(arn, bodyJson) { MessageAttributes = attributes };
 
-                await _snsClient!.PublishAsync(request);
+                await _snsClient!.PublishAsync(request, cancellationToken);
 
                 _logger.LogDebug("SNS topic message [{NormalizeForAws}] has been published.", normalizeForAws);
 
@@ -60,6 +60,10 @@ internal sealed class AmazonSqsTransport(
                 new PublisherSentFailedException($"Can't be found SNS topics for [{normalizeForAws}]"),
                 new OperateError { Code = "SNS", Description = $"Can't be found SNS topics for [{normalizeForAws}]" }
             );
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -75,14 +79,14 @@ internal sealed class AmazonSqsTransport(
         }
     }
 
-    private async Task _FetchExistingTopicArns()
+    private async Task _FetchExistingTopicArns(CancellationToken cancellationToken = default)
     {
         if (_topicArnMaps != null)
         {
             return;
         }
 
-        await _semaphore.WaitAsync();
+        await _semaphore.WaitAsync(cancellationToken);
 
         try
         {
@@ -99,8 +103,8 @@ internal sealed class AmazonSqsTransport(
                 {
                     var topics =
                         nextToken == null
-                            ? await _snsClient.ListTopicsAsync()
-                            : await _snsClient.ListTopicsAsync(nextToken);
+                            ? await _snsClient.ListTopicsAsync(cancellationToken)
+                            : await _snsClient.ListTopicsAsync(nextToken, cancellationToken);
                     topics.Topics.ForEach(x =>
                     {
                         var name = x.TopicArn.Split(':')[^1];
@@ -109,6 +113,10 @@ internal sealed class AmazonSqsTransport(
                     nextToken = topics.NextToken;
                 } while (!string.IsNullOrEmpty(nextToken));
             }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {
@@ -120,14 +128,17 @@ internal sealed class AmazonSqsTransport(
         }
     }
 
-    private async Task<(bool success, string? topicArn)> _TryGetOrCreateTopicArnAsync(string topicName)
+    private async Task<(bool success, string? topicArn)> _TryGetOrCreateTopicArnAsync(
+        string topicName,
+        CancellationToken cancellationToken = default
+    )
     {
         if (_topicArnMaps!.TryGetValue(topicName, out var topicArn))
         {
             return (true, topicArn);
         }
 
-        var response = await _snsClient!.CreateTopicAsync(topicName).AnyContext();
+        var response = await _snsClient!.CreateTopicAsync(topicName, cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrEmpty(response.TopicArn))
         {

@@ -60,7 +60,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
             return _cachedToken;
         }
 
-        await _tokenLock.WaitAsync(cancellationToken).AnyContext();
+        await _tokenLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // Double-check after acquiring lock
@@ -69,7 +69,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
                 return _cachedToken;
             }
 
-            var response = await _GenerateTokenAsync(cancellationToken).AnyContext();
+            var response = await _GenerateTokenAsync(cancellationToken).ConfigureAwait(false);
             return response.AccessToken;
         }
         finally
@@ -94,11 +94,11 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
         ]);
         request.Headers.Authorization = AuthenticationHeaderFactory.CreateBasic(options.ClientId, options.ClientSecret);
 
-        var response = await httpClient.SendAsync(request, cancellationToken).AnyContext();
+        var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).AnyContext();
+            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
         }
 
         var content = (
@@ -107,7 +107,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
                     CashOutJsonOptions.JsonOptions,
                     cancellationToken
                 )
-                .AnyContext()
+                .ConfigureAwait(false)
         )!;
 
         _cachedToken = content.AccessToken;
@@ -135,11 +135,11 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
             new("refresh_token", refreshToken),
         ]);
 
-        var response = await httpClient.SendAsync(request, cancellationToken).AnyContext();
+        var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).AnyContext();
+            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
         }
 
         var content = (
@@ -148,7 +148,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
                     CashOutJsonOptions.JsonOptions,
                     cancellationToken
                 )
-                .AnyContext()
+                .ConfigureAwait(false)
         )!;
 
         // Update cache with refreshed token

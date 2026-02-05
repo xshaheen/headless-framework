@@ -87,7 +87,7 @@ public sealed class HeadlessRedisScriptsLoader(
                         loadSetIfLowerScriptTask
                     )
                     .WithAggregatedExceptions()
-                    .AnyContext();
+                    .ConfigureAwait(false);
 
                 IncrementWithExpireScript = results[0];
                 RemoveIfEqualScript = results[1];
@@ -142,13 +142,13 @@ public sealed class HeadlessRedisScriptsLoader(
         TimeSpan? newTtl = null
     )
     {
-        await LoadScriptsAsync().AnyContext();
+        await LoadScriptsAsync().ConfigureAwait(false);
 
         var redisResult = await db.ScriptEvaluateAsync(
                 ReplaceIfEqualScript!,
                 _GetReplaceIfEqualParameters(key, newValue, expectedValue, newTtl)
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         var result = (int)redisResult;
 
@@ -157,9 +157,9 @@ public sealed class HeadlessRedisScriptsLoader(
 
     public async Task<bool> RemoveIfEqualAsync(IDatabase db, RedisKey key, string? expectedValue)
     {
-        await LoadScriptsAsync().AnyContext();
+        await LoadScriptsAsync().ConfigureAwait(false);
         var parameters = _GetRemoveIfEqualParameters(key, expectedValue);
-        var redisResult = await db.ScriptEvaluateAsync(RemoveIfEqualScript!, parameters).AnyContext();
+        var redisResult = await db.ScriptEvaluateAsync(RemoveIfEqualScript!, parameters).ConfigureAwait(false);
         var result = (int)redisResult;
 
         return result > 0;
@@ -167,54 +167,54 @@ public sealed class HeadlessRedisScriptsLoader(
 
     public async Task<long> IncrementAsync(IDatabase db, string resource, long value, TimeSpan ttl)
     {
-        await LoadScriptsAsync().AnyContext();
+        await LoadScriptsAsync().ConfigureAwait(false);
         var parameters = _GetIncrementParameters(resource, value, ttl);
-        var result = await db.ScriptEvaluateAsync(IncrementWithExpireScript!, parameters).AnyContext();
+        var result = await db.ScriptEvaluateAsync(IncrementWithExpireScript!, parameters).ConfigureAwait(false);
 
         return (long)result;
     }
 
     public async Task<double> IncrementAsync(IDatabase db, string resource, double value, TimeSpan ttl)
     {
-        await LoadScriptsAsync().AnyContext();
+        await LoadScriptsAsync().ConfigureAwait(false);
         var parameters = _GetIncrementParameters(resource, value, ttl);
-        var result = await db.ScriptEvaluateAsync(IncrementWithExpireScript!, parameters).AnyContext();
+        var result = await db.ScriptEvaluateAsync(IncrementWithExpireScript!, parameters).ConfigureAwait(false);
 
         return (double)result;
     }
 
     public async Task<long> SetIfLowerAsync(IDatabase db, string key, long value, TimeSpan? ttl = null)
     {
-        await LoadScriptsAsync().AnyContext();
+        await LoadScriptsAsync().ConfigureAwait(false);
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await db.ScriptEvaluateAsync(SetIfLowerScript!, parameters).AnyContext();
+        var result = await db.ScriptEvaluateAsync(SetIfLowerScript!, parameters).ConfigureAwait(false);
 
         return (long)result;
     }
 
     public async Task<double> SetIfLowerAsync(IDatabase db, string key, double value, TimeSpan? ttl = null)
     {
-        await LoadScriptsAsync().AnyContext();
+        await LoadScriptsAsync().ConfigureAwait(false);
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await db.ScriptEvaluateAsync(SetIfLowerScript!, parameters).AnyContext();
+        var result = await db.ScriptEvaluateAsync(SetIfLowerScript!, parameters).ConfigureAwait(false);
 
         return (double)result;
     }
 
     public async Task<long> SetIfHigherAsync(IDatabase db, string key, long value, TimeSpan? ttl = null)
     {
-        await LoadScriptsAsync().AnyContext();
+        await LoadScriptsAsync().ConfigureAwait(false);
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await db.ScriptEvaluateAsync(SetIfHigherScript!, parameters).AnyContext();
+        var result = await db.ScriptEvaluateAsync(SetIfHigherScript!, parameters).ConfigureAwait(false);
 
         return (long)result;
     }
 
     public async Task<double> SetIfHigherAsync(IDatabase db, string key, double value, TimeSpan? ttl = null)
     {
-        await LoadScriptsAsync().AnyContext();
+        await LoadScriptsAsync().ConfigureAwait(false);
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await db.ScriptEvaluateAsync(SetIfHigherScript!, parameters).AnyContext();
+        var result = await db.ScriptEvaluateAsync(SetIfHigherScript!, parameters).ConfigureAwait(false);
 
         return (double)result;
     }

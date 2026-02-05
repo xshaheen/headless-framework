@@ -31,7 +31,7 @@ public class AsyncLazyRedisConnection(MessagingRedisOptions redisOptions, ILogge
         {
             connection = await ConnectionMultiplexer
                 .ConnectAsync(redisOptions.Configuration!, redisLogger)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             connection.LogEvents(logger);
 
@@ -42,7 +42,7 @@ public class AsyncLazyRedisConnection(MessagingRedisOptions redisOptions, ILogge
                     attempt
                 );
 
-                await Task.Delay(TimeSpan.FromSeconds(2)).AnyContext();
+                await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
 
                 ++attempt;
             }

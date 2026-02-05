@@ -19,7 +19,7 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
     {
         return await Store
             .GetOrDefaultAsync(setting.Name, Name, NormalizeProviderKey(providerKey), cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async Task<List<SettingValue>> GetAllAsync(
@@ -35,7 +35,7 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
                 NormalizeProviderKey(providerKey),
                 cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async Task SetAsync(
@@ -47,7 +47,7 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
     {
         await Store
             .SetAsync(setting.Name, value, Name, NormalizeProviderKey(providerKey), cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async Task ClearAsync(
@@ -56,7 +56,9 @@ public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISet
         CancellationToken cancellationToken = default
     )
     {
-        await Store.DeleteAsync(setting.Name, Name, NormalizeProviderKey(providerKey), cancellationToken).AnyContext();
+        await Store
+            .DeleteAsync(setting.Name, Name, NormalizeProviderKey(providerKey), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     protected virtual string? NormalizeProviderKey(string? providerKey) => providerKey;

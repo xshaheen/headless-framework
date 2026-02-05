@@ -31,7 +31,7 @@ public sealed class NotificationService(IEmailSender emailSender)
             Subject = "Welcome!",
             HtmlBody = $"<h1>Hello {name}!</h1>",
             TextBody = $"Hello {name}!"
-        }, ct).AnyContext();
+        }, ct).ConfigureAwait(false);
 
         if (!response.IsSuccess)
             _logger.LogError("Failed to send email: {Error}", response.Error);

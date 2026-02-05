@@ -24,7 +24,7 @@ public partial class PaymobCashInBroker
 
         var request = new CashInPayRequest { Source = CashInSource.Wallet(phoneNumber), PaymentToken = paymentKey };
 
-        return await _PayAsync<CashInWalletPayResponse>(request, cancellationToken).AnyContext();
+        return await _PayAsync<CashInWalletPayResponse>(request, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<CashInKioskPayResponse> CreateKioskPayAsync(
@@ -36,7 +36,7 @@ public partial class PaymobCashInBroker
 
         var request = new CashInPayRequest { Source = CashInSource.Kiosk, PaymentToken = paymentKey };
 
-        return await _PayAsync<CashInKioskPayResponse>(request, cancellationToken).AnyContext();
+        return await _PayAsync<CashInKioskPayResponse>(request, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<CashInCashCollectionPayResponse> CreateCashCollectionPayAsync(
@@ -48,7 +48,7 @@ public partial class PaymobCashInBroker
 
         var request = new CashInPayRequest { Source = CashInSource.Cash, PaymentToken = paymentKey };
 
-        return await _PayAsync<CashInCashCollectionPayResponse>(request, cancellationToken).AnyContext();
+        return await _PayAsync<CashInCashCollectionPayResponse>(request, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<CashInSavedTokenPayResponse> CreateSavedTokenPayAsync(
@@ -62,13 +62,14 @@ public partial class PaymobCashInBroker
 
         var request = new CashInPayRequest { Source = CashInSource.SavedToken(savedToken), PaymentToken = paymentKey };
 
-        return await _PayAsync<CashInSavedTokenPayResponse>(request, cancellationToken).AnyContext();
+        return await _PayAsync<CashInSavedTokenPayResponse>(request, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<TResponse> _PayAsync<TResponse>(CashInPayRequest request, CancellationToken cancellationToken)
     {
         var requestUrl = Url.Combine(Options.ApiBaseUrl, "acceptance/payments/pay");
 
-        return await _PostAsync<CashInPayRequest, TResponse>(requestUrl, request, cancellationToken).AnyContext();
+        return await _PostAsync<CashInPayRequest, TResponse>(requestUrl, request, cancellationToken)
+            .ConfigureAwait(false);
     }
 }

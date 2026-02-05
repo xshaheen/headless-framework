@@ -26,13 +26,13 @@ public sealed class MailkitEmailSender(
         }
 
         var settings = options.CurrentValue;
-        using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken).AnyContext();
+        using var mimeMessage = await request.ConvertToMimeMessageAsync(cancellationToken).ConfigureAwait(false);
 
         var client = pool.Get();
         try
         {
-            await _EnsureConnectedAsync(client, settings, cancellationToken).AnyContext();
-            await client.SendAsync(mimeMessage, cancellationToken).AnyContext();
+            await _EnsureConnectedAsync(client, settings, cancellationToken).ConfigureAwait(false);
+            await client.SendAsync(mimeMessage, cancellationToken).ConfigureAwait(false);
         }
         catch (MailKit.Net.Smtp.SmtpCommandException ex)
         {
@@ -75,11 +75,11 @@ public sealed class MailkitEmailSender(
                 options: options.SocketOptions,
                 cancellationToken: cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (options.HasCredentials)
         {
-            await client.AuthenticateAsync(options.User, options.Password, cancellationToken).AnyContext();
+            await client.AuthenticateAsync(options.User, options.Password, cancellationToken).ConfigureAwait(false);
         }
     }
 }

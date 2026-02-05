@@ -134,7 +134,7 @@ public class TickerOptionsBuilder<TTimeTicker, TCronTicker> : ITickerOptionsSeed
         TimeSeederAction = async sp =>
         {
             var manager = sp.GetRequiredService<ITimeTickerManager<TTimeTicker>>();
-            await timeSeeder(manager).AnyContext();
+            await timeSeeder(manager).ConfigureAwait(false);
         };
 
         return this;
@@ -155,7 +155,7 @@ public class TickerOptionsBuilder<TTimeTicker, TCronTicker> : ITickerOptionsSeed
         CronSeederAction = async sp =>
         {
             var manager = sp.GetRequiredService<ICronTickerManager<TCronTicker>>();
-            await cronSeeder(manager).AnyContext();
+            await cronSeeder(manager).ConfigureAwait(false);
         };
 
         return this;

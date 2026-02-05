@@ -50,7 +50,7 @@ public sealed class CollectorProcessor : IProcessor
                     deletedCount = await _serviceProvider
                         .GetRequiredService<IDataStorage>()
                         .DeleteExpiresAsync(table, time, _ItemBatch, context.CancellationToken)
-                        .AnyContext();
+                        .ConfigureAwait(false);
 
                     if (deletedCount != 0)
                     {
@@ -60,7 +60,7 @@ public sealed class CollectorProcessor : IProcessor
                             table
                         );
 
-                        await context.WaitAsync(_delay).AnyContext();
+                        await context.WaitAsync(_delay).ConfigureAwait(false);
                         context.ThrowIfStopping();
                     }
                 }
@@ -77,6 +77,6 @@ public sealed class CollectorProcessor : IProcessor
             } while (deletedCount != 0);
         }
 
-        await context.WaitAsync(_waitingInterval).AnyContext();
+        await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
     }
 }

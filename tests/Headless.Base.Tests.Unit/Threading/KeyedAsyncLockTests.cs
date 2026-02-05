@@ -3,6 +3,7 @@ using Headless.Threading;
 
 namespace Tests.Threading;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class KeyedAsyncLockTests : TestBase
 {
     [Fact]
@@ -496,29 +497,30 @@ public sealed class KeyedAsyncLockTests : TestBase
 
         // then - lock2 should acquire immediately (instance-based locking, not global)
         var lock2AcquiredResult = await Task.WhenAny(lock2Acquired.Task, Task.Delay(500, AbortToken));
-        lock2AcquiredResult.Should().Be(lock2Acquired.Task,
-            "lock2 should acquire immediately because lock2 has its own lock dictionary");
+        lock2AcquiredResult
+            .Should()
+            .Be(lock2Acquired.Task, "lock2 should acquire immediately because lock2 has its own lock dictionary");
 
         lock1CanRelease.SetResult();
         await Task.WhenAll(task1, task2);
     }
 
     [Fact]
-    public void should_dispose_all_semaphores_on_dispose()
+    public async Task should_dispose_all_semaphores_on_dispose()
     {
         // given
         var keyedLock = new KeyedAsyncLock();
 
         // Acquire some locks and release them (semaphores should be cleaned up)
         // But also keep a reference to verify disposal behavior
-        var releaser1 = keyedLock.LockAsync("key1").GetAwaiter().GetResult();
-        var releaser2 = keyedLock.LockAsync("key2").GetAwaiter().GetResult();
+        var releaser1 = await keyedLock.LockAsync("key1", AbortToken);
+        var releaser2 = await keyedLock.LockAsync("key2", AbortToken);
 
         releaser1.Dispose();
         releaser2.Dispose();
 
         // Acquire more and don't release - these will be cleaned up by Dispose
-        var releaser3 = keyedLock.LockAsync("key3").GetAwaiter().GetResult();
+        var releaser3 = await keyedLock.LockAsync("key3", AbortToken);
 
         // when
         var act = () => keyedLock.Dispose();

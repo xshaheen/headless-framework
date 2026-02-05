@@ -59,7 +59,7 @@ public sealed class KeyedAsyncLock : IDisposable
 
         try
         {
-            await semaphore.WaitAsync(cancellationToken).AnyContext();
+            await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
         {

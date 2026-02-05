@@ -73,15 +73,15 @@ public sealed class Dispatcher : IDispatcher
         _tasksCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, CancellationToken.None);
 
         _InitializePublishedChannel();
-        await _StartSendingTaskAsync().AnyContext();
+        await _StartSendingTaskAsync().ConfigureAwait(false);
 
         if (_enableParallelExecute)
         {
             _InitializeReceivedChannel();
-            await _StartProcessingTasksAsync().AnyContext();
+            await _StartProcessingTasksAsync().ConfigureAwait(false);
         }
 
-        _ = _StartSchedulerTaskAsync().AnyContext();
+        _ = _StartSchedulerTaskAsync().ConfigureAwait(false);
     }
 
     public async Task EnqueueToScheduler(
@@ -98,7 +98,7 @@ public sealed class Dispatcher : IDispatcher
         var timeSpan = publishTime - _timeProvider.GetUtcNow().UtcDateTime;
         var statusName = timeSpan <= TimeSpan.FromMinutes(1) ? StatusName.Queued : StatusName.Delayed;
 
-        await _storage.ChangePublishStateAsync(message, statusName, transaction).AnyContext();
+        await _storage.ChangePublishStateAsync(message, statusName, transaction).ConfigureAwait(false);
 
         if (statusName == StatusName.Queued)
         {
@@ -122,11 +122,11 @@ public sealed class Dispatcher : IDispatcher
 
             if (_ShouldUseParallelSend(message))
             {
-                await _WriteToChannelAsync(PublishedChannel, message, cancellationToken).AnyContext();
+                await _WriteToChannelAsync(PublishedChannel, message, cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                await _SendMessageDirectlyAsync(message).AnyContext();
+                await _SendMessageDirectlyAsync(message).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -152,11 +152,12 @@ public sealed class Dispatcher : IDispatcher
 
             if (_ShouldUseParallelExecute(message))
             {
-                await _WriteToChannelAsync(ReceivedChannel, (message, descriptor), cancellationToken).AnyContext();
+                await _WriteToChannelAsync(ReceivedChannel, (message, descriptor), cancellationToken)
+                    .ConfigureAwait(false);
             }
             else
             {
-                await _executor.ExecuteAsync(message, descriptor, TasksCts.Token).AnyContext();
+                await _executor.ExecuteAsync(message, descriptor, TasksCts.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -249,7 +250,7 @@ public sealed class Dispatcher : IDispatcher
 
     private async Task _StartSendingTaskAsync()
     {
-        await Task.Run(_SendingAsync, TasksCts.Token).AnyContext();
+        await Task.Run(_SendingAsync, TasksCts.Token).ConfigureAwait(false);
     }
 
     private async Task _StartProcessingTasksAsync()
@@ -259,7 +260,7 @@ public sealed class Dispatcher : IDispatcher
             .Select(_ => Task.Run(_ProcessingAsync, TasksCts.Token))
             .ToArray();
 
-        await Task.WhenAll(processingTasks).AnyContext();
+        await Task.WhenAll(processingTasks).ConfigureAwait(false);
     }
 
     private Task _StartSchedulerTaskAsync()
@@ -273,7 +274,7 @@ public sealed class Dispatcher : IDispatcher
                 {
                     try
                     {
-                        await _ProcessScheduledMessagesAsync().AnyContext();
+                        await _ProcessScheduledMessagesAsync().ConfigureAwait(false);
                         TasksCts.Token.WaitHandle.WaitOne(100);
                     }
                     catch (OperationCanceledException)
@@ -313,7 +314,12 @@ public sealed class Dispatcher : IDispatcher
                 }
 
                 var messageIds = _schedulerQueue.UnorderedItems.Select(x => x.DbId).ToArray();
-                _storage.ChangePublishStateToDelayedAsync(messageIds).AnyContext().GetAwaiter().GetResult();
+                _storage
+                    .ChangePublishStateToDelayedAsync(messageIds)
+                    .AsTask()
+                    .ConfigureAwait(false)
+                    .GetAwaiter()
+                    .GetResult();
                 _logger.LogDebug("Update storage to delayed success of delayed message in memory queue!");
             }
             catch (Exception e)
@@ -331,11 +337,11 @@ public sealed class Dispatcher : IDispatcher
 
             if (_ShouldUseParallelSend(nextMessage))
             {
-                await _WriteToChannelAsync(PublishedChannel, nextMessage).AnyContext();
+                await _WriteToChannelAsync(PublishedChannel, nextMessage).ConfigureAwait(false);
             }
             else
             {
-                await _SendScheduledMessageDirectlyAsync(nextMessage).AnyContext();
+                await _SendScheduledMessageDirectlyAsync(nextMessage).ConfigureAwait(false);
             }
         }
     }
@@ -344,7 +350,7 @@ public sealed class Dispatcher : IDispatcher
     {
         try
         {
-            var result = await _sender.SendAsync(message).AnyContext();
+            var result = await _sender.SendAsync(message).ConfigureAwait(false);
             if (!result.Succeeded)
             {
                 _logger.LogError("Delay message sending failed. MessageId: {MessageId} ", message.DbId);
@@ -364,15 +370,15 @@ public sealed class Dispatcher : IDispatcher
     {
         try
         {
-            while (await PublishedChannel.Reader.WaitToReadAsync(TasksCts.Token).AnyContext())
+            while (await PublishedChannel.Reader.WaitToReadAsync(TasksCts.Token).ConfigureAwait(false))
             {
                 if (_enableParallelSend)
                 {
-                    await _SendBatchParallelAsync().AnyContext();
+                    await _SendBatchParallelAsync().ConfigureAwait(false);
                 }
                 else
                 {
-                    await _SendBatchSequentialAsync().AnyContext();
+                    await _SendBatchSequentialAsync().ConfigureAwait(false);
                 }
             }
         }
@@ -394,7 +400,7 @@ public sealed class Dispatcher : IDispatcher
 
         if (tasks.Count > 0)
         {
-            await Task.WhenAll(tasks).AnyContext();
+            await Task.WhenAll(tasks).ConfigureAwait(false);
         }
     }
 
@@ -402,7 +408,7 @@ public sealed class Dispatcher : IDispatcher
     {
         while (PublishedChannel.Reader.TryRead(out var message))
         {
-            await _SendMessageAsync(message).AnyContext();
+            await _SendMessageAsync(message).ConfigureAwait(false);
         }
     }
 
@@ -410,7 +416,7 @@ public sealed class Dispatcher : IDispatcher
     {
         try
         {
-            var result = await _sender.SendAsync(message).AnyContext();
+            var result = await _sender.SendAsync(message).ConfigureAwait(false);
             if (!result.Succeeded)
             {
                 _logger.MessagePublishException(message.Origin.GetId(), result.ToString(), result.Exception);
@@ -428,7 +434,7 @@ public sealed class Dispatcher : IDispatcher
 
     private async Task _SendMessageDirectlyAsync(MediumMessage message)
     {
-        var result = await _sender.SendAsync(message).AnyContext();
+        var result = await _sender.SendAsync(message).ConfigureAwait(false);
         if (!result.Succeeded)
         {
             _logger.MessagePublishException(message.Origin.GetId(), result.ToString(), result.Exception);
@@ -443,11 +449,11 @@ public sealed class Dispatcher : IDispatcher
     {
         try
         {
-            while (await ReceivedChannel.Reader.WaitToReadAsync(TasksCts.Token).AnyContext())
+            while (await ReceivedChannel.Reader.WaitToReadAsync(TasksCts.Token).ConfigureAwait(false))
             {
                 while (ReceivedChannel.Reader.TryRead(out var messageData))
                 {
-                    await _ProcessReceivedMessageAsync(messageData).AnyContext();
+                    await _ProcessReceivedMessageAsync(messageData).ConfigureAwait(false);
                 }
             }
         }
@@ -462,7 +468,7 @@ public sealed class Dispatcher : IDispatcher
         try
         {
             var (message, descriptor) = messageData;
-            await _executor.ExecuteAsync(message, descriptor, TasksCts.Token).AnyContext();
+            await _executor.ExecuteAsync(message, descriptor, TasksCts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -521,7 +527,7 @@ public sealed class Dispatcher : IDispatcher
         if (!channel.Writer.TryWrite(item))
         {
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(TasksCts.Token, cancellationToken);
-            while (await channel.Writer.WaitToWriteAsync(linkedCts.Token).AnyContext())
+            while (await channel.Writer.WaitToWriteAsync(linkedCts.Token).ConfigureAwait(false))
             {
                 if (channel.Writer.TryWrite(item))
                 {

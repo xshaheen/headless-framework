@@ -49,7 +49,7 @@ internal class PostgreSqlEntityFrameworkDbTransaction : IDbContextTransaction, I
     {
         if (_transaction is IAsyncDisposable asyncDisposable)
         {
-            await asyncDisposable.DisposeAsync().AnyContext();
+            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
         }
         else
         {

@@ -33,14 +33,14 @@ public sealed class ProductService(ICache cache)
     public async Task<Product?> GetProductAsync(int id, CancellationToken ct)
     {
         var key = $"product:{id}";
-        var cached = await cache.GetAsync<Product>(key, ct).AnyContext();
+        var cached = await cache.GetAsync<Product>(key, ct).ConfigureAwait(false);
 
         if (cached.HasValue)
             return cached.Value;
 
-        var product = await _repository.GetAsync(id, ct).AnyContext();
+        var product = await _repository.GetAsync(id, ct).ConfigureAwait(false);
         if (product is not null)
-            await cache.UpsertAsync(key, product, TimeSpan.FromMinutes(10), ct).AnyContext();
+            await cache.UpsertAsync(key, product, TimeSpan.FromMinutes(10), ct).ConfigureAwait(false);
 
         return product;
     }

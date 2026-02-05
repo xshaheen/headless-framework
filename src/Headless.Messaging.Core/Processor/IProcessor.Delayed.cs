@@ -21,9 +21,9 @@ public sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> log
 
         var storage = context.Provider.GetRequiredService<IDataStorage>();
 
-        await _ProcessDelayedAsync(storage, context).AnyContext();
+        await _ProcessDelayedAsync(storage, context).ConfigureAwait(false);
 
-        await context.WaitAsync(_waitingInterval).AnyContext();
+        await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
     }
 
     private async Task _ProcessDelayedAsync(IDataStorage connection, ProcessingContext context)
@@ -36,11 +36,13 @@ public sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> log
                 {
                     await dispatcher
                         .EnqueueToScheduler(message, message.ExpiresAt!.Value, transaction, context.CancellationToken)
-                        .AnyContext();
+                        .ConfigureAwait(false);
                 }
             }
 
-            await connection.ScheduleMessagesOfDelayedAsync(scheduleTask, context.CancellationToken).AnyContext();
+            await connection
+                .ScheduleMessagesOfDelayedAsync(scheduleTask, context.CancellationToken)
+                .ConfigureAwait(false);
         }
         catch (DbException ex)
         {

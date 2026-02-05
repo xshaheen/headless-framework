@@ -28,7 +28,7 @@ public sealed class DocumentIndexer(IEnumerable<IMediaFileTextProvider> provider
         var provider = providers.FirstOrDefault(p => p.SupportsMimeType(mimeType));
         if (provider is null) return string.Empty;
 
-        return await provider.GetTextAsync(fileStream).AnyContext();
+        return await provider.GetTextAsync(fileStream).ConfigureAwait(false);
     }
 }
 ```

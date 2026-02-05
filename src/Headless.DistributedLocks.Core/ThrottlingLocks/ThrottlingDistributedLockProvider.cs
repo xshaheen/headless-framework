@@ -50,7 +50,7 @@ public sealed class ThrottlingDistributedLockProvider(
             {
                 logger.LogThrottlingInfo(_Now(), _DatePeriodStarted(), cacheKey);
 
-                var hitCount = await storage.GetHitCountsAsync(cacheKey).AnyContext();
+                var hitCount = await storage.GetHitCountsAsync(cacheKey).ConfigureAwait(false);
 
                 logger.LogThrottlingHitCount(resource, hitCount, options.MaxHitsPerPeriod);
 
@@ -58,7 +58,7 @@ public sealed class ThrottlingDistributedLockProvider(
                 {
                     var ttl = _DatePeriodEnded().Subtract(_Now());
 
-                    hitCount = await storage.IncrementAsync(cacheKey, ttl).AnyContext();
+                    hitCount = await storage.IncrementAsync(cacheKey, ttl).ConfigureAwait(false);
 
                     // Make sure someone didn't beat us to it.
                     if (hitCount <= options.MaxHitsPerPeriod)
@@ -86,12 +86,12 @@ public sealed class ThrottlingDistributedLockProvider(
                 if (sleepUntil > _Now())
                 {
                     logger.LogThrottlingSleepUntil(resource, sleepUntil - _Now());
-                    await timeProvider.DelayUntilElapsedOrCancel(sleepUntil - _Now(), cts.Token).AnyContext();
+                    await timeProvider.DelayUntilElapsedOrCancel(sleepUntil - _Now(), cts.Token).ConfigureAwait(false);
                 }
                 else
                 {
                     logger.LogThrottlingDefaultSleep(resource);
-                    await timeProvider.DelayUntilElapsedOrCancel(50.Milliseconds(), cts.Token).AnyContext();
+                    await timeProvider.DelayUntilElapsedOrCancel(50.Milliseconds(), cts.Token).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException)
@@ -108,7 +108,7 @@ public sealed class ThrottlingDistributedLockProvider(
                     break;
                 }
 
-                await timeProvider.DelayUntilElapsedOrCancel(50.Milliseconds(), cts.Token).AnyContext();
+                await timeProvider.DelayUntilElapsedOrCancel(50.Milliseconds(), cts.Token).ConfigureAwait(false);
             }
         } while (!cts.IsCancellationRequested);
 
@@ -142,7 +142,7 @@ public sealed class ThrottlingDistributedLockProvider(
         Argument.IsNotNull(resource);
 
         var cacheKey = _GetCacheKey(resource);
-        var hitCount = await storage.GetHitCountsAsync(cacheKey).AnyContext();
+        var hitCount = await storage.GetHitCountsAsync(cacheKey).ConfigureAwait(false);
 
         return hitCount >= options.MaxHitsPerPeriod;
     }

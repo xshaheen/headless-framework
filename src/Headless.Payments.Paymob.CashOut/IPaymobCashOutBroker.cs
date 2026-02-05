@@ -33,7 +33,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
         CancellationToken cancellationToken = default
     )
     {
-        var accessToken = await authenticator.GetAccessTokenAsync(cancellationToken).AnyContext();
+        var accessToken = await authenticator.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
         var requestUrl = Url.Combine(httpClient.BaseAddress?.ToString()!, "disburse");
 
         using var requestMessage = new HttpRequestMessage();
@@ -43,17 +43,17 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
         requestMessage.Content = JsonContent.Create(request, options: CashOutJsonOptions.JsonOptions);
         requestMessage.Headers.Add("Authorization", $"Bearer {accessToken}");
 
-        using var response = await httpClient.SendAsync(requestMessage, cancellationToken).AnyContext();
+        using var response = await httpClient.SendAsync(requestMessage, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).AnyContext();
+            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
         }
 
         return (
             await response
                 .Content.ReadFromJsonAsync<CashOutTransaction>(CashOutJsonOptions.JsonOptions, cancellationToken)
-                .AnyContext()
+                .ConfigureAwait(false)
         )!;
     }
 
@@ -61,7 +61,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
     /// <remarks>API limit is 5 requests per minute.</remarks>
     public async Task<string> GetBudgetAsync(CancellationToken cancellationToken = default)
     {
-        var accessToken = await authenticator.GetAccessTokenAsync(cancellationToken).AnyContext();
+        var accessToken = await authenticator.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
         using var request = new HttpRequestMessage();
 
@@ -69,14 +69,14 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
         request.RequestUri = new Uri("budget/inquire/", UriKind.Relative);
         request.Headers.Add("Authorization", $"Bearer {accessToken}");
 
-        using var response = await httpClient.SendAsync(request, cancellationToken).AnyContext();
+        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).AnyContext();
+            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
         }
 
-        return await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
+        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Get transactions by their Ids.</summary>
@@ -91,7 +91,7 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
         Argument.IsNotNullOrEmpty(transactionsIds);
         Argument.IsPositive(page);
 
-        var accessToken = await authenticator.GetAccessTokenAsync(cancellationToken).AnyContext();
+        var accessToken = await authenticator.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
 
         using var request = new HttpRequestMessage();
 
@@ -111,13 +111,13 @@ public sealed class PaymobCashOutBroker(HttpClient httpClient, IPaymobCashOutAut
             options: CashOutJsonOptions.JsonOptions
         );
 
-        using var response = await httpClient.SendAsync(request, cancellationToken).AnyContext();
+        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashOutException.ThrowAsync(response).AnyContext();
+            await PaymobCashOutException.ThrowAsync(response).ConfigureAwait(false);
         }
 
-        return await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
+        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
     }
 }

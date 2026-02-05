@@ -131,7 +131,7 @@ public sealed class DistributedLockProvider(
                 // or delayAmount has elapsed
                 // or acquire timeout cancellation has been requested
                 using var linkedCancellationTokenSource = delayAmount.ToCancellationTokenSource(cts.Token);
-                await autoResetEvent.Target.SafeWaitAsync(linkedCancellationTokenSource.Token).AnyContext();
+                await autoResetEvent.Target.SafeWaitAsync(linkedCancellationTokenSource.Token).ConfigureAwait(false);
             } while (!cts.IsCancellationRequested);
         }
         finally
@@ -269,7 +269,7 @@ public sealed class DistributedLockProvider(
                 timeProvider: timeProvider,
                 cancellationToken: cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         // Only publish if we actually removed the lock.
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
@@ -278,7 +278,7 @@ public sealed class DistributedLockProvider(
             var distributedLockReleased = new DistributedLockReleased(resource, lockId);
             await outboxPublisher
                 .PublishAsync(distributedLockReleased, cancellationToken: cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
         }
 
         logger.LogReleaseReleased(resource, lockId);
@@ -357,14 +357,14 @@ public sealed class DistributedLockProvider(
                 timeProvider: timeProvider,
                 cancellationToken: cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (lockId is null)
         {
             return null;
         }
 
-        var ttl = await _storage.GetExpirationAsync(resource).AnyContext();
+        var ttl = await _storage.GetExpirationAsync(resource).ConfigureAwait(false);
 
         return new LockInfo
         {
@@ -382,13 +382,13 @@ public sealed class DistributedLockProvider(
                 timeProvider: timeProvider,
                 cancellationToken: cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         var result = new List<LockInfo>(locks.Count);
 
         foreach (var (resource, lockId) in locks)
         {
-            var ttl = await _storage.GetExpirationAsync(resource).AnyContext();
+            var ttl = await _storage.GetExpirationAsync(resource).ConfigureAwait(false);
             result.Add(
                 new LockInfo
                 {

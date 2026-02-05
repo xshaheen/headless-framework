@@ -37,7 +37,10 @@ internal class AzureServiceBusTransport(
     public BrokerAddress BrokerAddress =>
         ServiceBusHelpers.GetBrokerAddress(busOptions.Value.ConnectionString, busOptions.Value.Namespace);
 
-    public async Task<OperateResult> SendAsync(TransportMessage transportMessage)
+    public async Task<OperateResult> SendAsync(
+        TransportMessage transportMessage,
+        CancellationToken cancellationToken = default
+    )
     {
         try
         {
@@ -77,11 +80,15 @@ internal class AzureServiceBusTransport(
                 message.ApplicationProperties.Add(header.Key, header.Value);
             }
 
-            await sender.SendMessageAsync(message).AnyContext();
+            await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
 
             _logger.LogDebug("Azure Service Bus message [{GetName}] has been published.", transportMessage.GetName());
 
             return OperateResult.Success;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

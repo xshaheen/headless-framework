@@ -45,7 +45,7 @@ public sealed class OrdersController : ApiControllerBase
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetAsync(int id, CancellationToken ct)
     {
-        var order = await _service.GetAsync(id, ct).AnyContext();
+        var order = await _service.GetAsync(id, ct).ConfigureAwait(false);
         return order is null ? NotFound() : Ok(order);
     }
 }

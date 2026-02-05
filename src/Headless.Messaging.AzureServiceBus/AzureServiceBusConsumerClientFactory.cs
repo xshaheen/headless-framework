@@ -25,7 +25,7 @@ internal sealed class AzureServiceBusConsumerClientFactory(
                 serviceProvider
             );
 
-            await client.ConnectAsync().AnyContext();
+            await client.ConnectAsync().ConfigureAwait(false);
 
             return client;
         }

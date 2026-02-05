@@ -41,7 +41,8 @@ public abstract class HeadlessDbContext : DbContext
         // No need to be in transaction if there are no emitters
         if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
         {
-            var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken).AnyContext();
+            var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken)
+                .ConfigureAwait(false);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
             return result;
@@ -51,10 +52,11 @@ public abstract class HeadlessDbContext : DbContext
         if (Database.CurrentTransaction is not null)
         {
             await PublishMessagesAsync(report.LocalEmitters, Database.CurrentTransaction, cancellationToken)
-                .AnyContext();
-            var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken).AnyContext();
+                .ConfigureAwait(false);
+            var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken)
+                .ConfigureAwait(false);
             await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
             report.ClearEmitterMessages();
 
@@ -76,15 +78,15 @@ public abstract class HeadlessDbContext : DbContext
 
                     await context
                         .PublishMessagesAsync(report.LocalEmitters, transaction, cancellationToken)
-                        .AnyContext();
+                        .ConfigureAwait(false);
                     var result = await context
                         ._BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken)
-                        .AnyContext();
+                        .ConfigureAwait(false);
                     await context
                         .PublishMessagesAsync(report.DistributedEmitters, transaction, cancellationToken)
-                        .AnyContext();
+                        .ConfigureAwait(false);
 
-                    await transaction.CommitAsync(cancellationToken).AnyContext();
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
                     context._navigationModifiedTracker.RemoveModifiedEntityEntries();
                     report.ClearEmitterMessages();
@@ -241,23 +243,23 @@ public abstract class HeadlessDbContext : DbContext
 
                         if (commit)
                         {
-                            await state.Context.SaveChangesAsync(ct).AnyContext();
+                            await state.Context.SaveChangesAsync(ct).ConfigureAwait(false);
                         }
                     }
                     catch
                     {
-                        await transaction.RollbackAsync(ct).AnyContext();
+                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
 
                         throw;
                     }
 
                     if (commit)
                     {
-                        await transaction.CommitAsync(ct).AnyContext();
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
                     }
                     else
                     {
-                        await transaction.RollbackAsync(ct).AnyContext();
+                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
                     }
                 },
                 cancellationToken
@@ -292,23 +294,23 @@ public abstract class HeadlessDbContext : DbContext
 
                         if (commit)
                         {
-                            await state.Context.SaveChangesAsync(ct).AnyContext();
+                            await state.Context.SaveChangesAsync(ct).ConfigureAwait(false);
                         }
                     }
                     catch
                     {
-                        await transaction.RollbackAsync(ct).AnyContext();
+                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
 
                         throw;
                     }
 
                     if (commit)
                     {
-                        await transaction.CommitAsync(ct).AnyContext();
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
                     }
                     else
                     {
-                        await transaction.RollbackAsync(ct).AnyContext();
+                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
                     }
                 },
                 cancellationToken
@@ -343,23 +345,23 @@ public abstract class HeadlessDbContext : DbContext
 
                         if (commit)
                         {
-                            await state.Context.SaveChangesAsync(ct).AnyContext();
+                            await state.Context.SaveChangesAsync(ct).ConfigureAwait(false);
                         }
                     }
                     catch
                     {
-                        await transaction.RollbackAsync(ct).AnyContext();
+                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
 
                         throw;
                     }
 
                     if (commit)
                     {
-                        await transaction.CommitAsync(ct).AnyContext();
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
                     }
                     else
                     {
-                        await transaction.RollbackAsync(ct).AnyContext();
+                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
                     }
 
                     return result;
@@ -397,23 +399,23 @@ public abstract class HeadlessDbContext : DbContext
 
                         if (commit)
                         {
-                            await state.Context.SaveChangesAsync(ct).AnyContext();
+                            await state.Context.SaveChangesAsync(ct).ConfigureAwait(false);
                         }
                     }
                     catch
                     {
-                        await transaction.RollbackAsync(ct).AnyContext();
+                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
 
                         throw;
                     }
 
                     if (commit)
                     {
-                        await transaction.CommitAsync(ct).AnyContext();
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
                     }
                     else
                     {
-                        await transaction.RollbackAsync(ct).AnyContext();
+                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
                     }
 
                     return result;

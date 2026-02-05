@@ -62,7 +62,7 @@ public sealed class AwsSnsSmsSender(
 
         try
         {
-            var publishResponse = await client.PublishAsync(publishRequest, cancellationToken).AnyContext();
+            var publishResponse = await client.PublishAsync(publishRequest, cancellationToken).ConfigureAwait(false);
 
             if (publishResponse.HttpStatusCode.IsSuccessStatusCode())
             {

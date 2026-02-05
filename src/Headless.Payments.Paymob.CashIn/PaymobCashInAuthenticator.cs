@@ -57,11 +57,11 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
 
         using var response = await httpClient
             .PostAsJsonAsync(requestUrl, request, CashInJsonOptions.JsonOptions, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
-            await PaymobCashInException.ThrowAsync(response, CancellationToken.None).AnyContext();
+            await PaymobCashInException.ThrowAsync(response, CancellationToken.None).ConfigureAwait(false);
         }
 
         var content = await response
@@ -69,7 +69,7 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
                 CashInJsonOptions.JsonOptions,
                 cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (content is null)
         {
@@ -90,7 +90,7 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
             return _cachedToken;
         }
 
-        await _tokenLock.WaitAsync(cancellationToken).AnyContext();
+        await _tokenLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // Double-check after acquiring lock
@@ -99,7 +99,7 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
                 return _cachedToken;
             }
 
-            var response = await _RequestAuthenticationTokenAsync(cancellationToken).AnyContext();
+            var response = await _RequestAuthenticationTokenAsync(cancellationToken).ConfigureAwait(false);
             return response.Token;
         }
         finally

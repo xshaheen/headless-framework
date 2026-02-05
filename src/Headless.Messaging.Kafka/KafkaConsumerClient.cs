@@ -129,7 +129,7 @@ public sealed class KafkaConsumerClient(
             if (groupConcurrent > 0)
             {
                 await _semaphore.WaitAsync(cancellationToken);
-                _ = Task.Run(() => _ConsumeAsync(consumerResult), cancellationToken).AnyContext();
+                _ = Task.Run(() => _ConsumeAsync(consumerResult), cancellationToken).ConfigureAwait(false);
             }
             else
             {

@@ -72,11 +72,11 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
 
     async Task<IChannel> IConnectionChannelPool.Rent()
     {
-        await _poolSemaphore.WaitAsync().AnyContext();
+        await _poolSemaphore.WaitAsync().ConfigureAwait(false);
 
         try
         {
-            return await Rent().AnyContext();
+            return await Rent().ConfigureAwait(false);
         }
         catch
         {
@@ -108,7 +108,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
             return _connection;
         }
 
-        await _connectionLock.WaitAsync().AnyContext();
+        await _connectionLock.WaitAsync().ConfigureAwait(false);
         try
         {
             if (_connection is { IsOpen: true })
@@ -117,7 +117,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
             }
 
             _connection?.Dispose();
-            _connection = await _connectionActivator().AnyContext();
+            _connection = await _connectionActivator().ConfigureAwait(false);
             return _connection;
         }
         finally
@@ -146,12 +146,12 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
 
         while (_pool.TryDequeue(out var channel))
         {
-            await channel.DisposeAsync().AnyContext();
+            await channel.DisposeAsync().ConfigureAwait(false);
         }
 
         if (_connection != null)
         {
-            await _connection.DisposeAsync().AnyContext();
+            await _connection.DisposeAsync().ConfigureAwait(false);
         }
 
         _poolSemaphore.Dispose();
@@ -198,7 +198,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
 
         try
         {
-            var connection = await GetConnectionAsync().AnyContext();
+            var connection = await GetConnectionAsync().ConfigureAwait(false);
             model = await connection.CreateChannelAsync(new CreateChannelOptions(_isPublishConfirms, false));
             await model.ExchangeDeclareAsync(Exchange, RabbitMqOptions.ExchangeType, true);
         }

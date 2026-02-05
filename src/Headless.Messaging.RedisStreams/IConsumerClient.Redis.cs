@@ -76,7 +76,7 @@ internal class RedisConsumerClient(
         //first time, we want to read our pending messages, in case we crashed and are recovering.
         var pendingMsgs = redis.PollStreamsPendingMessagesAsync(_topics, groupId, timeout, cancellationToken);
 
-        await _ConsumeMessages(pendingMsgs, StreamPosition.Beginning, cancellationToken).AnyContext();
+        await _ConsumeMessages(pendingMsgs, StreamPosition.Beginning, cancellationToken).ConfigureAwait(false);
 
         //Once we consumed our history, we can start getting new messages.
         var newMsgs = redis.PollStreamsLatestMessagesAsync(_topics, groupId, timeout, cancellationToken);
@@ -104,7 +104,8 @@ internal class RedisConsumerClient(
                     if (groupConcurrent > 0)
                     {
                         await _semaphore.WaitAsync(cancellationToken);
-                        _ = Task.Run(() => consumeAsync(position, stream, entry), cancellationToken).AnyContext();
+                        _ = Task.Run(() => consumeAsync(position, stream, entry), cancellationToken)
+                            .ConfigureAwait(false);
                     }
                     else
                     {
@@ -140,7 +141,7 @@ internal class RedisConsumerClient(
                         new MessagingRedisOptions.ConsumeErrorContext(ex, entry)
                     );
 
-                    await (onError ?? Task.CompletedTask).AnyContext();
+                    await (onError ?? Task.CompletedTask).ConfigureAwait(false);
                 }
                 catch (Exception onError)
                 {

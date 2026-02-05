@@ -57,7 +57,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             while (!_PipeReadingIsDone(result, cancellationToken))
             {
                 // Read at least optimalChunkSize bytes, or whatever remains
-                result = await pipeReader.ReadAtLeastAsync(optimalChunkSize, cancellationToken).AnyContext();
+                result = await pipeReader.ReadAtLeastAsync(optimalChunkSize, cancellationToken).ConfigureAwait(false);
 
                 if (result.Buffer.IsEmpty)
                 {
@@ -88,7 +88,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                     await using var chunkStream = new ReadOnlySequenceStream(chunk);
                     await blockBlobClient
                         .StageBlockAsync(blockId, chunkStream, cancellationToken: cancellationToken)
-                        .AnyContext();
+                        .ConfigureAwait(false);
 
                     chunkBlockIds.Add(blockId);
                     bytesWrittenThisRequest += chunkLength;
@@ -110,7 +110,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                 );
             }
 
-            await pipeReader.CompleteAsync().AnyContext();
+            await pipeReader.CompleteAsync().ConfigureAwait(false);
 
             // Finalize hash if checksum verification is needed
             hasher?.TransformFinalBlock([], 0, 0);
@@ -121,14 +121,16 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                 // No checksum - commit immediately
                 List<string> allBlockIds = [.. committedBlocks.Select(b => b.Name), .. chunkBlockIds];
                 var options = new CommitBlockListOptions { Metadata = azureFile.Metadata.ToAzure() };
-                await blockBlobClient.CommitBlockListAsync(allBlockIds, options, cancellationToken).AnyContext();
+                await blockBlobClient
+                    .CommitBlockListAsync(allBlockIds, options, cancellationToken)
+                    .ConfigureAwait(false);
             }
             else
             {
                 // With checksum - store chunk info for later verification
                 azureFile.Metadata.LastChunkBlocks = chunkBlockIds.ToArray();
                 azureFile.Metadata.LastChunkChecksum = Convert.ToBase64String(hasher.Hash ?? []);
-                await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).AnyContext();
+                await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
                 _logger.LogDebug(
                     "Stored chunk metadata for file '{FileId}': {BlockCount} blocks staged for checksum verification",
@@ -144,7 +146,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             try
             {
                 pipeReader.AdvanceTo(result.Buffer.End);
-                await pipeReader.CompleteAsync().AnyContext();
+                await pipeReader.CompleteAsync().ConfigureAwait(false);
             }
 #pragma warning disable ERP022
             catch

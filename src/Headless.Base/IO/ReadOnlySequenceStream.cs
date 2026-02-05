@@ -148,7 +148,7 @@ internal sealed class ReadOnlySequenceStream : Stream
     {
         foreach (var segment in _readOnlySequence)
         {
-            await destination.WriteAsync(segment, cancellationToken).AnyContext();
+            await destination.WriteAsync(segment, cancellationToken).ConfigureAwait(false);
         }
     }
 

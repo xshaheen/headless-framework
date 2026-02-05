@@ -77,7 +77,7 @@ internal sealed class DirectPublisher(
 
         var message = new Message(headers, contentObj);
 
-        await _SendAsync(message, cancellationToken).AnyContext();
+        await _SendAsync(message, cancellationToken).ConfigureAwait(false);
     }
 
     private string _GetTopicName<T>()
@@ -132,7 +132,7 @@ internal sealed class DirectPublisher(
         TransportMessage transportMsg;
         try
         {
-            transportMsg = await _serializer.SerializeToTransportMessageAsync(message).AnyContext();
+            transportMsg = await _serializer.SerializeToTransportMessageAsync(message).ConfigureAwait(false);
         }
         catch (Exception e)
         {
@@ -145,7 +145,7 @@ internal sealed class DirectPublisher(
         {
             tracingTimestamp = _TracingBeforeSend(transportMsg);
 
-            var result = await _transport.SendAsync(transportMsg, cancellationToken).AnyContext();
+            var result = await _transport.SendAsync(transportMsg, cancellationToken).ConfigureAwait(false);
 
             if (!result.Succeeded)
             {

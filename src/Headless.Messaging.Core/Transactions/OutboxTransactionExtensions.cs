@@ -107,12 +107,12 @@ public static class OutboxTransactionExtensions
     {
         if (dbConnection.State == ConnectionState.Closed)
         {
-            await ((DbConnection)dbConnection).OpenAsync(cancellationToken).AnyContext();
+            await ((DbConnection)dbConnection).OpenAsync(cancellationToken).ConfigureAwait(false);
         }
 
         var dbTransaction = await ((DbConnection)dbConnection)
             .BeginTransactionAsync(isolationLevel, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         publisher.Transaction = ActivatorUtilities.CreateInstance<TTransaction>(publisher.ServiceProvider);
         publisher.Transaction.DbTransaction = dbTransaction;

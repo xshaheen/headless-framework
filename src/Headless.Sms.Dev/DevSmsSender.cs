@@ -43,7 +43,7 @@ public sealed class DevSmsSender(string filePath) : ISmsSender
 
         sb.AppendLine(_Separator);
 
-        await File.AppendAllTextAsync(_filePath, sb.ToString(), cancellationToken).AnyContext();
+        await File.AppendAllTextAsync(_filePath, sb.ToString(), cancellationToken).ConfigureAwait(false);
 
         return SendSingleSmsResponse.Succeeded();
     }

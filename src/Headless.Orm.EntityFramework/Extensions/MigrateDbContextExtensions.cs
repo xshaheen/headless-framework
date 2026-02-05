@@ -24,7 +24,7 @@ public static class MigrateDbContextExtensions
         {
             await using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
-            await context.Database.MigrateAsync(token).AnyContext();
+            await context.Database.MigrateAsync(token).ConfigureAwait(false);
         }
 
         public void MigrateDbContextByFactory<TContext>()
@@ -41,8 +41,8 @@ public static class MigrateDbContextExtensions
         {
             await using var scope = services.CreateAsyncScope();
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
-            await using var context = await factory.CreateDbContextAsync(token).AnyContext();
-            await context.Database.MigrateAsync(token).AnyContext();
+            await using var context = await factory.CreateDbContextAsync(token).ConfigureAwait(false);
+            await context.Database.MigrateAsync(token).ConfigureAwait(false);
         }
 
         public void EnsureDbCreated<TContext>()
@@ -58,7 +58,7 @@ public static class MigrateDbContextExtensions
         {
             await using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
-            await context.Database.EnsureCreatedAsync(token).AnyContext();
+            await context.Database.EnsureCreatedAsync(token).ConfigureAwait(false);
         }
 
         public void EnsureDbCreatedByFactory<TContext>()
@@ -75,8 +75,8 @@ public static class MigrateDbContextExtensions
         {
             await using var scope = services.CreateAsyncScope();
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
-            await using var context = await factory.CreateDbContextAsync(token).AnyContext();
-            await context.Database.EnsureCreatedAsync(token).AnyContext();
+            await using var context = await factory.CreateDbContextAsync(token).ConfigureAwait(false);
+            await context.Database.EnsureCreatedAsync(token).ConfigureAwait(false);
         }
 
         public void EnsureDbDeleted<TContext>()
@@ -92,7 +92,7 @@ public static class MigrateDbContextExtensions
         {
             await using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
-            await context.Database.EnsureDeletedAsync(token).AnyContext();
+            await context.Database.EnsureDeletedAsync(token).ConfigureAwait(false);
         }
 
         public void EnsureDbDeletedByFactory<TContext>()
@@ -109,8 +109,8 @@ public static class MigrateDbContextExtensions
         {
             await using var scope = services.CreateAsyncScope();
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
-            await using var context = await factory.CreateDbContextAsync(token).AnyContext();
-            await context.Database.EnsureDeletedAsync(token).AnyContext();
+            await using var context = await factory.CreateDbContextAsync(token).ConfigureAwait(false);
+            await context.Database.EnsureDeletedAsync(token).ConfigureAwait(false);
         }
 
         public void EnsureDbRecreated<TContext>()
@@ -127,8 +127,8 @@ public static class MigrateDbContextExtensions
         {
             await using var scope = services.CreateAsyncScope();
             var context = scope.ServiceProvider.GetRequiredService<TContext>();
-            await context.Database.EnsureDeletedAsync(token).AnyContext();
-            await context.Database.EnsureCreatedAsync(token).AnyContext();
+            await context.Database.EnsureDeletedAsync(token).ConfigureAwait(false);
+            await context.Database.EnsureCreatedAsync(token).ConfigureAwait(false);
         }
 
         public void EnsureDbRecreatedByFactory<TContext>()
@@ -146,9 +146,9 @@ public static class MigrateDbContextExtensions
         {
             await using var scope = services.CreateAsyncScope();
             var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TContext>>();
-            await using var context = await factory.CreateDbContextAsync(token).AnyContext();
-            await context.Database.EnsureDeletedAsync(token).AnyContext();
-            await context.Database.EnsureCreatedAsync(token).AnyContext();
+            await using var context = await factory.CreateDbContextAsync(token).ConfigureAwait(false);
+            await context.Database.EnsureDeletedAsync(token).ConfigureAwait(false);
+            await context.Database.EnsureCreatedAsync(token).ConfigureAwait(false);
         }
     }
 }

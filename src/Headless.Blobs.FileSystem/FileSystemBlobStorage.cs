@@ -59,7 +59,7 @@ public sealed class FileSystemBlobStorage(
 
         var directoryPath = _GetDirectoryPath(container);
 
-        await stream.SaveToLocalFileAsync(blobName, directoryPath, cancellationToken).AnyContext();
+        await stream.SaveToLocalFileAsync(blobName, directoryPath, cancellationToken).ConfigureAwait(false);
     }
 
     #endregion
@@ -80,7 +80,7 @@ public sealed class FileSystemBlobStorage(
         var result = await blobs
             .Select(blob => (blob.Stream, blob.FileName))
             .SaveToLocalFileAsync(directoryPath, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return result;
     }
@@ -470,7 +470,7 @@ public sealed class FileSystemBlobStorage(
                 )
         );
 
-        await result.NextPageAsync(cancellationToken).AnyContext();
+        await result.NextPageAsync(cancellationToken).ConfigureAwait(false);
 
         return result;
     }

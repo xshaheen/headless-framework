@@ -34,14 +34,14 @@ public sealed class FeaturesInitializationBackgroundService(
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        await _cancellationTokenSource.CancelAsync().AnyContext();
+        await _cancellationTokenSource.CancelAsync().ConfigureAwait(false);
 
         if (_initializeDynamicFeaturesTask is not null)
         {
             try
             {
 #pragma warning disable VSTHRD003 // IHostedService pattern: task started in StartAsync, awaited in StopAsync
-                await _initializeDynamicFeaturesTask.AnyContext();
+                await _initializeDynamicFeaturesTask.ConfigureAwait(false);
 #pragma warning restore VSTHRD003
             }
             catch (OperationCanceledException)
@@ -76,7 +76,7 @@ public sealed class FeaturesInitializationBackgroundService(
             return;
         }
 
-        await _PreCacheDynamicFeaturesAsync(scope, cancellationToken).AnyContext();
+        await _PreCacheDynamicFeaturesAsync(scope, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task _SaveStaticFeaturesToDatabaseAsync(AsyncServiceScope scope, CancellationToken cancellationToken)
@@ -108,7 +108,7 @@ public sealed class FeaturesInitializationBackgroundService(
 
                 try
                 {
-                    await store.SaveAsync(cancellationToken).AnyContext();
+                    await store.SaveAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception e)
                 {
@@ -134,7 +134,7 @@ public sealed class FeaturesInitializationBackgroundService(
         try
         {
             // Pre-cache features, so the first request doesn't wait
-            await store.GetGroupsAsync(cancellationToken).AnyContext();
+            await store.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception e)
         {

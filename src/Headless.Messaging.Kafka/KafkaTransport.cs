@@ -49,7 +49,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
                     },
                     cancellationToken
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
 
             if (result.Status is PersistenceStatus.Persisted or PersistenceStatus.PossiblyPersisted)
             {

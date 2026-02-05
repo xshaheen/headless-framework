@@ -112,13 +112,13 @@ public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEven
         {
             await Task.WhenAll(tmpInvocationList.Select(callback => callback(sender, eventArgs)))
                 .WithAggregatedExceptions()
-                .AnyContext();
+                .ConfigureAwait(false);
         }
         else
         {
             foreach (var callback in tmpInvocationList)
             {
-                await callback(sender, eventArgs).AnyContext();
+                await callback(sender, eventArgs).ConfigureAwait(false);
             }
         }
     }

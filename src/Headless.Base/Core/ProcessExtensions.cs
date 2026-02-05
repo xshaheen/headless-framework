@@ -97,11 +97,11 @@ public static class ProcessExtensions
                     registration = cancellationToken.Register(process.TryToKill);
                 }
 
-                await process.WaitForExitAsync(cancellationToken).AnyContext();
+                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
             }
             finally
             {
-                await registration.DisposeAsync().AnyContext();
+                await registration.DisposeAsync().ConfigureAwait(false);
             }
 
             exitCode = process.ExitCode;
@@ -188,11 +188,11 @@ public static class ProcessExtensions
                         registration = cancellationToken.Register(() => process.TryToKill());
                     }
 
-                    await process.WaitForExitAsync(cancellationToken).AnyContext();
+                    await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
                 }
                 finally
                 {
-                    await registration.DisposeAsync().AnyContext();
+                    await registration.DisposeAsync().ConfigureAwait(false);
                 }
 
                 observer.OnNext(

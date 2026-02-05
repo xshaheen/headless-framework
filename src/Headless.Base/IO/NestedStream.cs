@@ -136,7 +136,7 @@ internal sealed class NestedStream : Stream, IHasIsDisposed
             return 0;
         }
 
-        var bytesRead = await _underlyingStream.ReadAsync(buffer, cancellationToken).AnyContext();
+        var bytesRead = await _underlyingStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
         _remainingBytes -= bytesRead;
 
         return bytesRead;

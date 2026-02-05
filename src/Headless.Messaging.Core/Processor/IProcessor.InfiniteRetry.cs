@@ -14,7 +14,7 @@ public sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory logg
         {
             try
             {
-                await inner.ProcessAsync(context).AnyContext();
+                await inner.ProcessAsync(context).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -23,7 +23,7 @@ public sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory logg
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Processor '{ProcessorName}' failed. Retrying...", inner.ToString());
-                await context.WaitAsync(TimeSpan.FromSeconds(2)).AnyContext();
+                await context.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
             }
         }
     }

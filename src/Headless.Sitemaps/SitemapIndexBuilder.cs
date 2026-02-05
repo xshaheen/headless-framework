@@ -30,7 +30,7 @@ public static class SitemapIndexBuilder
          */
 
         await using var writer = XmlWriter.Create(output, SitemapConstants.WriterSettings);
-        await writer.WriteStartDocumentAsync().AnyContext();
+        await writer.WriteStartDocumentAsync().ConfigureAwait(false);
 
         await writer
             .WriteStartElementAsync(
@@ -38,25 +38,25 @@ public static class SitemapIndexBuilder
                 localName: "sitemapindex",
                 ns: "http://www.sitemaps.org/schemas/sitemap/0.9"
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         // Write sitemaps URL.
         foreach (var sitemapReference in sitemapReferences)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await _WriteSitemapRefNodeAsync(writer, sitemapReference).AnyContext();
+            await _WriteSitemapRefNodeAsync(writer, sitemapReference).ConfigureAwait(false);
         }
 
-        await writer.WriteEndElementAsync().AnyContext();
+        await writer.WriteEndElementAsync().ConfigureAwait(false);
     }
 
     private static async Task _WriteSitemapRefNodeAsync(XmlWriter writer, SitemapReference sitemapRef)
     {
-        await writer.WriteStartElementAsync(prefix: null, localName: "sitemap", ns: null).AnyContext();
+        await writer.WriteStartElementAsync(prefix: null, localName: "sitemap", ns: null).ConfigureAwait(false);
 
         await writer
             .WriteElementStringAsync(prefix: null, localName: "loc", ns: null, value: sitemapRef.Location.AbsoluteUri)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (sitemapRef.LastModified.HasValue)
         {
@@ -65,9 +65,11 @@ public static class SitemapIndexBuilder
                 CultureInfo.InvariantCulture
             );
 
-            await writer.WriteElementStringAsync(prefix: null, localName: "lastmod", ns: null, value).AnyContext();
+            await writer
+                .WriteElementStringAsync(prefix: null, localName: "lastmod", ns: null, value)
+                .ConfigureAwait(false);
         }
 
-        await writer.WriteEndElementAsync().AnyContext();
+        await writer.WriteEndElementAsync().ConfigureAwait(false);
     }
 }

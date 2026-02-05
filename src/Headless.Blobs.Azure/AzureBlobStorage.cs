@@ -38,7 +38,7 @@ public sealed class AzureBlobStorage(
 
         await containerClient
             .CreateIfNotExistsAsync(_option.ContainerPublicAccessType, cancellationToken: cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     #endregion
@@ -58,7 +58,7 @@ public sealed class AzureBlobStorage(
 
         if (_option.CreateContainerIfNotExists)
         {
-            await CreateContainerAsync(container, cancellationToken).AnyContext();
+            await CreateContainerAsync(container, cancellationToken).ConfigureAwait(false);
         }
 
         var blobClient = _GetBlobClient(container, blobName);
@@ -83,7 +83,9 @@ public sealed class AzureBlobStorage(
             stream.Seek(0, SeekOrigin.Begin);
         }
 
-        await blobClient.UploadAsync(stream, httpHeader, metadata, cancellationToken: cancellationToken).AnyContext();
+        await blobClient
+            .UploadAsync(stream, httpHeader, metadata, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
     }
 
     #endregion
@@ -118,7 +120,8 @@ public sealed class AzureBlobStorage(
 
                     try
                     {
-                        await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct).AnyContext();
+                        await UploadAsync(container, blob.FileName, blob.Stream, blob.Metadata, ct)
+                            .ConfigureAwait(false);
                         results[i] = Result<Exception>.Ok();
                     }
                     catch (Exception e)
@@ -127,7 +130,7 @@ public sealed class AzureBlobStorage(
                     }
                 }
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return results;
     }
@@ -146,7 +149,7 @@ public sealed class AzureBlobStorage(
 
         var response = await blobClient
             .DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, cancellationToken: cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return response.Value;
     }
@@ -176,7 +179,7 @@ public sealed class AzureBlobStorage(
         {
             var results = await batch
                 .DeleteBlobsAsync(blobUrls, DeleteSnapshotsOption.IncludeSnapshots, cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             return results.ConvertAll(result => Result<bool, Exception>.Ok(!result.IsError));
         }
@@ -195,15 +198,15 @@ public sealed class AzureBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var files = await GetPagedListAsync(container, blobSearchPattern, 500, cancellationToken).AnyContext();
+        var files = await GetPagedListAsync(container, blobSearchPattern, 500, cancellationToken).ConfigureAwait(false);
         var count = 0;
 
         do
         {
             var names = files.Blobs.Select(file => file.BlobKey).ToArray();
-            var results = await BulkDeleteAsync(container, names, cancellationToken).AnyContext();
+            var results = await BulkDeleteAsync(container, names, cancellationToken).ConfigureAwait(false);
             count += results.Count(x => x.IsSuccess);
-            await files.NextPageAsync(cancellationToken).AnyContext();
+            await files.NextPageAsync(cancellationToken).ConfigureAwait(false);
         } while (files.HasMore);
 
         logger.LogTrace(
@@ -235,7 +238,7 @@ public sealed class AzureBlobStorage(
 
         if (_option.CreateContainerIfNotExists)
         {
-            await CreateContainerAsync(newBlobContainer, cancellationToken).AnyContext();
+            await CreateContainerAsync(newBlobContainer, cancellationToken).ConfigureAwait(false);
         }
 
         var oldBlobClient = _GetBlobClient(blobContainer, blobName);
@@ -245,9 +248,9 @@ public sealed class AzureBlobStorage(
         {
             var copyResult = await newBlobClient
                 .StartCopyFromUriAsync(oldBlobClient.Uri, cancellationToken: cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
 
-            await copyResult.WaitForCompletionAsync(cancellationToken).AnyContext();
+            await copyResult.WaitForCompletionAsync(cancellationToken).ConfigureAwait(false);
 
             return copyResult.HasCompleted;
         }
@@ -275,7 +278,7 @@ public sealed class AzureBlobStorage(
         Argument.IsNotNullOrEmpty(newBlobContainer);
 
         var copyResult = await CopyAsync(blobContainer, blobName, newBlobContainer, newBlobName, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (!copyResult)
         {
@@ -284,12 +287,12 @@ public sealed class AzureBlobStorage(
             return false;
         }
 
-        var deleteResult = await DeleteAsync(blobContainer, blobName, cancellationToken).AnyContext();
+        var deleteResult = await DeleteAsync(blobContainer, blobName, cancellationToken).ConfigureAwait(false);
 
         if (!deleteResult)
         {
             // Rollback: delete the copy to avoid data duplication
-            await DeleteAsync(newBlobContainer, newBlobName, cancellationToken).AnyContext();
+            await DeleteAsync(newBlobContainer, newBlobName, cancellationToken).ConfigureAwait(false);
             logger.LogWarning("Rename failed for {BlobName}, rolled back copy", blobName);
 
             return false;
@@ -309,7 +312,7 @@ public sealed class AzureBlobStorage(
     )
     {
         var blobClient = _GetBlobClient(container, blobName);
-        var response = await blobClient.ExistsAsync(cancellationToken).AnyContext();
+        var response = await blobClient.ExistsAsync(cancellationToken).ConfigureAwait(false);
 
         return response.Value;
     }
@@ -331,7 +334,7 @@ public sealed class AzureBlobStorage(
         try
         {
             memoryStream = new MemoryStream();
-            await blobClient.DownloadToAsync(memoryStream, cancellationToken).AnyContext();
+            await blobClient.DownloadToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
             memoryStream.Seek(0, SeekOrigin.Begin);
 
             return new(memoryStream, blobName);
@@ -371,7 +374,9 @@ public sealed class AzureBlobStorage(
 
         try
         {
-            blobProperties = await blobClient.GetPropertiesAsync(cancellationToken: cancellationToken).AnyContext();
+            blobProperties = await blobClient
+                .GetPropertiesAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (RequestFailedException e) when (e.Status == 404)
         {
@@ -456,10 +461,10 @@ public sealed class AzureBlobStorage(
 
         var result = new PagedFileListResult(
             async (_, token) =>
-                await _GetFilesAsync(containerClient, criteria, pageSize, previous: null, token).AnyContext()
+                await _GetFilesAsync(containerClient, criteria, pageSize, previous: null, token).ConfigureAwait(false)
         );
 
-        await result.NextPageAsync(cancellationToken).AnyContext();
+        await result.NextPageAsync(cancellationToken).ConfigureAwait(false);
 
         return result;
     }

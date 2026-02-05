@@ -53,7 +53,7 @@ internal sealed class PulsarConsumerClient(
                 if (groupConcurrent > 0)
                 {
                     await _semaphore.WaitAsync(cancellationToken);
-                    _ = Task.Run(consumeAsync, cancellationToken).AnyContext();
+                    _ = Task.Run(consumeAsync, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {

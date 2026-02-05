@@ -13,13 +13,11 @@ using Microsoft.Extensions.Options;
 namespace Tests;
 
 [Collection<AzuriteFixture>]
-public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fixture) : TestBase, IAsyncLifetime
+public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fixture) : TestBase
 {
     private BlobServiceClient? _blobServiceClient;
 
-    public Task InitializeAsync() => Task.CompletedTask;
-
-    public async Task DisposeAsync()
+    protected override async ValueTask DisposeAsyncCore()
     {
         // Clean up DataProtection container after tests to prevent blob accumulation
         if (_blobServiceClient is not null)
@@ -30,6 +28,8 @@ public sealed class BlobStorageDataProtectionIntegrationTests(AzuriteFixture fix
                 await containerClient.DeleteAsync(cancellationToken: AbortToken);
             }
         }
+
+        await base.DisposeAsyncCore();
     }
 
     private AzureBlobStorage _CreateStorage()

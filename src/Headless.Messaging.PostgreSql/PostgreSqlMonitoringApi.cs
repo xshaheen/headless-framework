@@ -32,7 +32,7 @@ public sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessageAsync(_pubName, id, cancellationToken).AnyContext();
+        return await _GetMessageAsync(_pubName, id, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<MediumMessage?> GetReceivedMessageAsync(
@@ -40,7 +40,7 @@ public sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessageAsync(_recName, id, cancellationToken).AnyContext();
+        return await _GetMessageAsync(_recName, id, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
@@ -73,7 +73,7 @@ public sealed class PostgreSqlMonitoringApi(
                 {
                     var statisticsDto = new StatisticsView();
 
-                    while (await reader.ReadAsync(cancellationToken).AnyContext())
+                    while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                     {
                         statisticsDto.PublishedSucceeded = reader.GetInt32(0);
                         statisticsDto.ReceivedSucceeded = reader.GetInt32(1);
@@ -86,7 +86,7 @@ public sealed class PostgreSqlMonitoringApi(
                 },
                 cancellationToken: cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return statistics;
     }
@@ -138,7 +138,7 @@ public sealed class PostgreSqlMonitoringApi(
                 cancellationToken: cancellationToken,
                 sqlParams: countParams
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         object[] sqlParams =
         [
@@ -157,7 +157,7 @@ public sealed class PostgreSqlMonitoringApi(
                 {
                     var messages = new List<MessageView>();
 
-                    while (await reader.ReadAsync(token).AnyContext())
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
                         var index = 0;
                         messages.Add(
@@ -180,7 +180,7 @@ public sealed class PostgreSqlMonitoringApi(
                 cancellationToken: cancellationToken,
                 sqlParams: sqlParams
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return new(items, query.CurrentPage, query.PageSize, count);
     }
@@ -211,7 +211,7 @@ public sealed class PostgreSqlMonitoringApi(
     )
     {
         var tableName = type == MessageType.Publish ? _pubName : _recName;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded)).AnyContext();
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded)).ConfigureAwait(false);
     }
 
     public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
@@ -220,7 +220,7 @@ public sealed class PostgreSqlMonitoringApi(
     )
     {
         var tableName = type == MessageType.Publish ? _pubName : _recName;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed)).AnyContext();
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed)).ConfigureAwait(false);
     }
 
     private async ValueTask<int> _GetNumberOfMessage(
@@ -235,7 +235,7 @@ public sealed class PostgreSqlMonitoringApi(
 
         object[] sqlParams = [new NpgsqlParameter("@State", statusName)];
 
-        return await connection.ExecuteScalarAsync(sqlQuery, cancellationToken, sqlParams).AnyContext();
+        return await connection.ExecuteScalarAsync(sqlQuery, cancellationToken, sqlParams).ConfigureAwait(false);
     }
 
     private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(
@@ -295,7 +295,7 @@ public sealed class PostgreSqlMonitoringApi(
                 {
                     var dictionary = new Dictionary<string, int>(StringComparer.Ordinal);
 
-                    while (await reader.ReadAsync(token).AnyContext())
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
                         dictionary.Add(reader.GetString(0), reader.GetInt32(1));
                     }
@@ -305,7 +305,7 @@ public sealed class PostgreSqlMonitoringApi(
                 cancellationToken: cancellationToken,
                 sqlParams: sqlParams
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         var result = new Dictionary<DateTime, int>();
 
@@ -336,7 +336,7 @@ public sealed class PostgreSqlMonitoringApi(
                 {
                     MediumMessage? message = null;
 
-                    while (await reader.ReadAsync(token).AnyContext())
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
                         message = new MediumMessage
                         {
@@ -354,7 +354,7 @@ public sealed class PostgreSqlMonitoringApi(
                 cancellationToken: cancellationToken,
                 sqlParams: new NpgsqlParameter("@Id", id)
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         return mediumMessage;
     }

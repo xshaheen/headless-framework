@@ -40,7 +40,8 @@ public sealed class CequensSmsSender(
 
         using var httpClient = httpClientFactory.CreateClient(CequensSetup.HttpClientName);
 
-        var jwtToken = await _GetTokenRequestAsync(httpClient, cancellationToken).AnyContext() ?? _options.Token;
+        var jwtToken =
+            await _GetTokenRequestAsync(httpClient, cancellationToken).ConfigureAwait(false) ?? _options.Token;
 
         if (string.IsNullOrEmpty(jwtToken))
         {
@@ -65,8 +66,8 @@ public sealed class CequensSmsSender(
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", jwtToken);
         httpRequest.Content = JsonContent.Create(apiRequest, options: _JsonOptions);
 
-        var response = await httpClient.SendAsync(httpRequest, cancellationToken).AnyContext();
-        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
+        var response = await httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
         if (response.IsSuccessStatusCode)
         {
@@ -105,7 +106,7 @@ public sealed class CequensSmsSender(
             return _cachedToken;
         }
 
-        await _tokenLock.WaitAsync(cancellationToken).AnyContext();
+        await _tokenLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // Double-check after acquiring lock
@@ -119,8 +120,8 @@ public sealed class CequensSmsSender(
             using var signInContent = JsonContent.Create(signInRequest, options: _JsonOptions);
             var response = await httpClient
                 .PostAsync(_options.TokenEndpoint, signInContent, cancellationToken)
-                .AnyContext();
-            var content = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
+                .ConfigureAwait(false);
+            var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {

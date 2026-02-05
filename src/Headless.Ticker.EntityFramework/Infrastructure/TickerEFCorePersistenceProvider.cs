@@ -28,14 +28,16 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
 
     public async Task<TTimeTicker?> GetTimeTickerById(Guid id, CancellationToken cancellationToken = default)
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         return await dbContext
             .Set<TTimeTicker>()
             .AsNoTracking()
             .Include(x => x.Children)
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async Task<TTimeTicker[]> GetTimeTickers(
@@ -43,7 +45,9 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         var baseQuery = dbContext
             .Set<TTimeTicker>()
@@ -60,7 +64,7 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
             .Where(x => x.ParentId == null)
             .OrderByDescending(x => x.ExecutionTime)
             .ToArrayAsync(cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async Task<PaginationResult<TTimeTicker>> GetTimeTickersPaginated(
@@ -70,7 +74,9 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         var baseQuery = dbContext
             .Set<TTimeTicker>()
@@ -85,30 +91,36 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
 
         baseQuery = baseQuery.Where(x => x.ParentId == null).OrderByDescending(x => x.ExecutionTime);
 
-        return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).AnyContext();
+        return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> AddTimeTickers(TTimeTicker[] tickers, CancellationToken cancellationToken = default)
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         await dbContext.Set<TTimeTicker>().AddRangeAsync(tickers, cancellationToken);
 
-        return await dbContext.SaveChangesAsync(cancellationToken).AnyContext();
+        return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> UpdateTimeTickers(TTimeTicker[] timeTickers, CancellationToken cancellationToken = default)
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         dbContext.Set<TTimeTicker>().UpdateRange(timeTickers);
 
-        return await dbContext.SaveChangesAsync(cancellationToken).AnyContext();
+        return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> RemoveTimeTickers(Guid[] timeTickerIds, CancellationToken cancellationToken = default)
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         // Load the entities to be deleted (including children for cascade delete)
         var tickersToDelete = await dbContext
@@ -117,12 +129,12 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
                 .ThenInclude(x => x.Children) // Include grandchildren if needed
             .Where(x => timeTickerIds.Contains(x.Id))
             .ToListAsync(cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         // Remove using Entity Framework (respects cascade delete configuration)
         dbContext.Set<TTimeTicker>().RemoveRange(tickersToDelete);
 
-        return await dbContext.SaveChangesAsync(cancellationToken).AnyContext();
+        return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
     #endregion
 
@@ -130,13 +142,15 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
 
     public async Task<TCronTicker?> GetCronTickerById(Guid id, CancellationToken cancellationToken)
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         return await dbContext
             .Set<TCronTicker>()
             .AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async Task<TCronTicker[]> GetCronTickers(
@@ -144,7 +158,9 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         CancellationToken cancellationToken
     )
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         var baseQuery = dbContext.Set<TCronTicker>().AsNoTracking();
 
@@ -153,7 +169,10 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
             baseQuery = baseQuery.Where(predicate);
         }
 
-        return await baseQuery.OrderByDescending(x => x.CreatedAt).ToArrayAsync(cancellationToken).AnyContext();
+        return await baseQuery
+            .OrderByDescending(x => x.CreatedAt)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task<PaginationResult<TCronTicker>> GetCronTickersPaginated(
@@ -163,7 +182,9 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         var baseQuery = dbContext.Set<TCronTicker>().AsNoTracking();
 
@@ -174,20 +195,24 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
 
         baseQuery = baseQuery.OrderByDescending(x => x.CreatedAt);
 
-        return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).AnyContext();
+        return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> InsertCronTickers(TCronTicker[] tickers, CancellationToken cancellationToken)
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
-        await dbContext.Set<TCronTicker>().AddRangeAsync(tickers, cancellationToken).AnyContext();
+        await dbContext.Set<TCronTicker>().AddRangeAsync(tickers, cancellationToken).ConfigureAwait(false);
 
-        var result = await dbContext.SaveChangesAsync(cancellationToken).AnyContext();
+        var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         if (RedisContext.HasRedisConnection)
         {
-            await RedisContext.DistributedCache.RemoveAsync("cron:expressions", cancellationToken).AnyContext();
+            await RedisContext
+                .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return result;
@@ -195,15 +220,19 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
 
     public async Task<int> UpdateCronTickers(TCronTicker[] cronTickers, CancellationToken cancellationToken)
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         dbContext.Set<TCronTicker>().UpdateRange(cronTickers);
 
-        var result = await dbContext.SaveChangesAsync(cancellationToken).AnyContext();
+        var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         if (RedisContext.HasRedisConnection)
         {
-            await RedisContext.DistributedCache.RemoveAsync("cron:expressions", cancellationToken).AnyContext();
+            await RedisContext
+                .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return result;
@@ -211,16 +240,20 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
 
     public async Task<int> RemoveCronTickers(Guid[] cronTickerIds, CancellationToken cancellationToken)
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
         var result = await dbContext
             .Set<TCronTicker>()
             .Where(x => cronTickerIds.Contains(x.Id))
             .ExecuteDeleteAsync(cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (RedisContext.HasRedisConnection)
         {
-            await RedisContext.DistributedCache.RemoveAsync("cron:expressions", cancellationToken).AnyContext();
+            await RedisContext
+                .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return result;
@@ -234,7 +267,9 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
         var cronTickerOccurrenceContext = dbContext.Set<CronTickerOccurrenceEntity<TCronTicker>>().AsNoTracking();
 
         var query =
@@ -242,7 +277,10 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
                 ? cronTickerOccurrenceContext.Include(x => x.CronTicker)
                 : cronTickerOccurrenceContext.Include(x => x.CronTicker).Where(predicate);
 
-        return await query.OrderByDescending(x => x.ExecutionTime).ToArrayAsync(cancellationToken).AnyContext();
+        return await query
+            .OrderByDescending(x => x.ExecutionTime)
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async Task<PaginationResult<CronTickerOccurrenceEntity<TCronTicker>>> GetAllCronTickerOccurrencesPaginated(
@@ -252,7 +290,9 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         var baseQuery = dbContext
             .Set<CronTickerOccurrenceEntity<TCronTicker>>()
@@ -266,7 +306,7 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
 
         baseQuery = baseQuery.OrderByDescending(x => x.ExecutionTime);
 
-        return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).AnyContext();
+        return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> InsertCronTickerOccurrences(
@@ -274,14 +314,16 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         CancellationToken cancellationToken
     )
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         await dbContext
             .Set<CronTickerOccurrenceEntity<TCronTicker>>()
             .AddRangeAsync(cronTickerOccurrences, cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
 
-        return await dbContext.SaveChangesAsync(cancellationToken).AnyContext();
+        return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<int> RemoveCronTickerOccurrences(
@@ -289,12 +331,14 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
         CancellationToken cancellationToken
     )
     {
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
         return await dbContext
             .Set<CronTickerOccurrenceEntity<TCronTicker>>()
             .Where(x => cronTickerOccurrences.Contains(x.Id))
             .ExecuteDeleteAsync(cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     public async Task<CronTickerOccurrenceEntity<TCronTicker>[]> AcquireImmediateCronOccurrencesAsync(
@@ -307,7 +351,9 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
             return Array.Empty<CronTickerOccurrenceEntity<TCronTicker>>();
         }
 
-        await using var dbContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).AnyContext();
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
         var now = Clock.UtcNow;
 
         // Only acquire occurrences that are acquirable (Idle/Queued and not locked by another node)
@@ -327,7 +373,7 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
                         .SetProperty(x => x.UpdatedAt, now),
                 cancellationToken
             )
-            .AnyContext();
+            .ConfigureAwait(false);
 
         if (affected == 0)
         {
@@ -343,7 +389,7 @@ internal class TickerEfCorePersistenceProvider<TDbContext, TTimeTicker, TCronTic
             )
             .Include(x => x.CronTicker)
             .ToArrayAsync(cancellationToken)
-            .AnyContext();
+            .ConfigureAwait(false);
     }
 
     #endregion

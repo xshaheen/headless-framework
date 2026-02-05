@@ -22,13 +22,13 @@ public sealed class RequireEnvironmentAttribute(string environment) : Attribute,
 
         if (env.IsEnvironment(Environment))
         {
-            await next().AnyContext();
+            await next().ConfigureAwait(false);
 
             return;
         }
 
         var factory = services.GetRequiredService<IProblemDetailsCreator>();
         var problemDetails = factory.EndpointNotFound();
-        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext).AnyContext();
+        await Results.Problem(problemDetails).ExecuteAsync(context.HttpContext).ConfigureAwait(false);
     }
 }

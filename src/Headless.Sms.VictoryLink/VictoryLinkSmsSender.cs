@@ -49,8 +49,8 @@ public sealed class VictoryLinkSmsSender(
         using var httpClient = httpClientFactory.CreateClient(VictoryLinkSetup.HttpClientName);
         var response = await httpClient
             .PostAsJsonAsync(_uri, victoryLinkRequest, _JsonOptions, cancellationToken)
-            .AnyContext();
-        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).AnyContext();
+            .ConfigureAwait(false);
+        var rawContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {

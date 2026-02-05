@@ -58,7 +58,7 @@ public sealed class SftpClientPool : IDisposable
         }
 
         // No valid pooled connection - wait for available slot and create new
-        await _maxConnections.WaitAsync(ct).AnyContext();
+        await _maxConnections.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             // Double-check pool after acquiring semaphore (someone may have returned a client)
@@ -78,7 +78,7 @@ public sealed class SftpClientPool : IDisposable
                 _maxConnections.Release();
             }
 
-            return await _CreateAndConnectAsync(ct).AnyContext();
+            return await _CreateAndConnectAsync(ct).ConfigureAwait(false);
         }
         catch
         {
@@ -123,7 +123,7 @@ public sealed class SftpClientPool : IDisposable
 
         _logger.LogTrace("Creating new SFTP connection to {Host}:{Port}", connectionInfo.Host, connectionInfo.Port);
 
-        await client.ConnectAsync(ct).AnyContext();
+        await client.ConnectAsync(ct).ConfigureAwait(false);
 
         _logger.LogTrace(
             "Connected to {Host}:{Port}, working directory: {WorkingDirectory}",

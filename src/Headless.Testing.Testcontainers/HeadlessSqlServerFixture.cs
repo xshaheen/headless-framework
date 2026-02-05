@@ -56,6 +56,7 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     {
         await _container.StopAsync();
         await _container.DisposeAsync();
+        GC.SuppressFinalize(this);
     }
 
     private async Task _WaitForSqlServerAsync()
@@ -69,10 +70,12 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
                 await connection.OpenAsync();
                 return;
             }
+#pragma warning disable ERP022
             catch
             {
                 await Task.Delay(1000);
             }
+#pragma warning restore ERP022
         }
 
         throw new TimeoutException("SQL Server did not become ready in time.");

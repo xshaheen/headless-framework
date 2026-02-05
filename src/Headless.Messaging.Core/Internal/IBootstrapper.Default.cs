@@ -37,7 +37,7 @@ internal sealed class Bootstrapper(
 
         try
         {
-            await storageInitializer.InitializeAsync(_cts.Token).AnyContext();
+            await storageInitializer.InitializeAsync(_cts.Token).ConfigureAwait(false);
         }
         catch (Exception e) when (e is not InvalidOperationException)
         {
@@ -61,7 +61,7 @@ internal sealed class Bootstrapper(
             }
         });
 
-        await _BootstrapCoreAsync().AnyContext();
+        await _BootstrapCoreAsync().ConfigureAwait(false);
 
         _disposed = false;
         logger.LogInformation("### Messaging system started!");
@@ -90,7 +90,7 @@ internal sealed class Bootstrapper(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await BootstrapAsync(stoppingToken).AnyContext();
+        await BootstrapAsync(stoppingToken).ConfigureAwait(false);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
@@ -100,7 +100,7 @@ internal sealed class Bootstrapper(
             await _cts.CancelAsync();
         }
 
-        await base.StopAsync(cancellationToken).AnyContext();
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private void _CheckRequirement()

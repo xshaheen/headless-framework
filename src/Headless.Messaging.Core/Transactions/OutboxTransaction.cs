@@ -92,7 +92,7 @@ public abstract class OutboxTransaction(IDispatcher dispatcher) : IOutboxTransac
     /// </summary>
     protected virtual void Flush()
     {
-        FlushAsync().AnyContext().GetAwaiter().GetResult();
+        FlushAsync().ConfigureAwait(false).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -117,11 +117,11 @@ public abstract class OutboxTransaction(IDispatcher dispatcher) : IOutboxTransac
                             transaction: null,
                             cancellationToken
                         )
-                        .AnyContext();
+                        .ConfigureAwait(false);
                 }
                 else
                 {
-                    await dispatcher.EnqueueToPublish(message, cancellationToken).AnyContext();
+                    await dispatcher.EnqueueToPublish(message, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -142,7 +142,7 @@ public abstract class OutboxTransaction(IDispatcher dispatcher) : IOutboxTransac
     /// <returns>A ValueTask representing the asynchronous dispose operation.</returns>
     public async ValueTask DisposeAsync()
     {
-        await DisposeAsyncCore().AnyContext();
+        await DisposeAsyncCore().ConfigureAwait(false);
         Dispose(false);
         GC.SuppressFinalize(this);
     }
@@ -151,7 +151,7 @@ public abstract class OutboxTransaction(IDispatcher dispatcher) : IOutboxTransac
     {
         if (DbTransaction is IAsyncDisposable asyncDisposable)
         {
-            await asyncDisposable.DisposeAsync().AnyContext();
+            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
         }
         else if (DbTransaction is IDisposable disposable)
         {

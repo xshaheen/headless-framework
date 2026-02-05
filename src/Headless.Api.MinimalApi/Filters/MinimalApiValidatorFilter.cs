@@ -18,7 +18,7 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
 
         if (validators is null || !validators.Any())
         {
-            return await next(context).AnyContext();
+            return await next(context).ConfigureAwait(false);
         }
 
         // Lazy materialization - only allocate list when needed
@@ -41,7 +41,7 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
             // Fast path for single validator - avoids Task.WhenAll overhead
             var result = await validatorList[0]
                 .ValidateAsync(validationContext, context.HttpContext.RequestAborted)
-                .AnyContext();
+                .ConfigureAwait(false);
             validationResults = [result];
         }
         else
@@ -50,13 +50,13 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
             validationResults = await Task.WhenAll(
                     validatorList.Select(v => v.ValidateAsync(validationContext, context.HttpContext.RequestAborted))
                 )
-                .AnyContext();
+                .ConfigureAwait(false);
         }
 
         // Early exit if all valid - avoid LINQ chain and dictionary allocation
         if (validationResults.All(x => x.IsValid))
         {
-            return await next(context).AnyContext();
+            return await next(context).ConfigureAwait(false);
         }
 
         var failures = validationResults

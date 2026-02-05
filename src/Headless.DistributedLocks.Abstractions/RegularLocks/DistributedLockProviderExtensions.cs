@@ -63,7 +63,7 @@ public static class DistributedLockProviderExtensions
         {
             var distributedLock = await provider
                 .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             if (distributedLock is null)
             {
@@ -72,7 +72,7 @@ public static class DistributedLockProviderExtensions
 
             try
             {
-                await work().AnyContext();
+                await work().ConfigureAwait(false);
 
                 return true;
             }
@@ -94,7 +94,7 @@ public static class DistributedLockProviderExtensions
         {
             var distributedLock = await provider
                 .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             if (distributedLock is null)
             {
@@ -103,7 +103,7 @@ public static class DistributedLockProviderExtensions
 
             try
             {
-                await work(state).AnyContext();
+                await work(state).ConfigureAwait(false);
 
                 return true;
             }
@@ -124,7 +124,7 @@ public static class DistributedLockProviderExtensions
         {
             var distributedLock = await provider
                 .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             if (distributedLock is null)
             {
@@ -133,7 +133,7 @@ public static class DistributedLockProviderExtensions
 
             try
             {
-                await work(cancellationToken).AnyContext();
+                await work(cancellationToken).ConfigureAwait(false);
 
                 return true;
             }
@@ -155,7 +155,7 @@ public static class DistributedLockProviderExtensions
         {
             var distributedLock = await provider
                 .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             if (distributedLock is null)
             {
@@ -164,7 +164,7 @@ public static class DistributedLockProviderExtensions
 
             try
             {
-                await work(state, cancellationToken).AnyContext();
+                await work(state, cancellationToken).ConfigureAwait(false);
 
                 return true;
             }
@@ -185,7 +185,7 @@ public static class DistributedLockProviderExtensions
         {
             var distributedLock = await provider
                 .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             if (distributedLock is null)
             {
@@ -216,7 +216,7 @@ public static class DistributedLockProviderExtensions
         {
             var distributedLock = await provider
                 .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
-                .AnyContext();
+                .ConfigureAwait(false);
 
             if (distributedLock is null)
             {

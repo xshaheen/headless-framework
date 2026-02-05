@@ -38,7 +38,7 @@ public sealed class OrderService(IRequestContext context)
             UserId = userId,
             TenantId = tenantId,
             CreatedAt = context.DateStarted
-        }, ct).AnyContext();
+        }, ct).ConfigureAwait(false);
     }
 }
 ```
