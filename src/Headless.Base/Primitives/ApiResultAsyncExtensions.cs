@@ -6,6 +6,7 @@ namespace Headless.Primitives;
 /// Async variants for OpResult operations.
 /// </summary>
 [PublicAPI]
+#pragma warning disable VSTHRD003 // These extension methods intentionally await externally-provided tasks with ConfigureAwait(false).
 public static class OpResultAsyncExtensions
 {
     extension<T>(ApiResult<T> result)
