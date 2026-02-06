@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -15,10 +17,14 @@ internal sealed class SchedulerBackgroundService(
     CronScheduleCache cronCache,
     TimeProvider timeProvider,
     ILogger<SchedulerBackgroundService> logger,
-    IOptions<SchedulerOptions> options
+    IOptions<SchedulerOptions> options,
+    IServiceProvider serviceProvider
 ) : BackgroundService
 {
     private readonly SchedulerOptions _options = options.Value;
+
+    // Null when no distributed lock provider is registered (optional dependency).
+    private readonly IDistributedLockProvider? _lockProvider = serviceProvider.GetService<IDistributedLockProvider>();
 
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -52,6 +58,48 @@ internal sealed class SchedulerBackgroundService(
     }
 
     private async Task _ProcessJobAsync(ScheduledJob job, CancellationToken cancellationToken)
+    {
+        // When a distributed lock provider is available and the job skips overlapping runs,
+        // acquire a cross-instance lock before dispatching. If the lock cannot be obtained
+        // (another instance is already running this job), skip this occurrence.
+        if (_lockProvider is not null && job.SkipIfRunning)
+        {
+            var distributedLock = await _lockProvider
+                .TryAcquireAsync(
+                    $"messaging:job:{job.Name}",
+                    _options.LockTimeout,
+                    TimeSpan.Zero, // don't wait — skip immediately if locked
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (distributedLock is null)
+            {
+                logger.LogDebug("Job {JobName} skipped — already running on another instance", job.Name);
+
+                job.Status = ScheduledJobStatus.Pending;
+                job.LockHolder = null;
+                job.LockedAt = null;
+                await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            try
+            {
+                await _ExecuteJobAsync(job, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                await distributedLock.ReleaseAsync().ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            await _ExecuteJobAsync(job, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task _ExecuteJobAsync(ScheduledJob job, CancellationToken cancellationToken)
     {
         var execution = new JobExecution
         {
