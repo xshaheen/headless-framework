@@ -128,6 +128,46 @@ public interface IConsumerBuilder<TConsumer>
     IConsumerBuilder<TConsumer> WithConcurrency(byte maxConcurrent);
 
     /// <summary>
+    /// Configures this consumer as a recurring scheduled job with the given cron expression.
+    /// </summary>
+    /// <param name="cronExpression">
+    /// A 6-field cron expression (second, minute, hour, day-of-month, month, day-of-week).
+    /// </param>
+    /// <returns>
+    /// The current <see cref="IConsumerBuilder{TConsumer}"/> instance for method chaining.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// When set, the consumer is registered as a scheduled job handler instead of a transport subscriber.
+    /// The consumer must implement <see cref="IConsume{TMessage}"/> where TMessage is <see cref="ScheduledTrigger"/>.
+    /// </para>
+    /// <para>
+    /// <strong>Example:</strong>
+    /// <code>
+    /// options.Consumer&lt;DailyReportJob&gt;()
+    ///     .WithSchedule("0 0 0 * * *") // midnight daily
+    ///     .WithTimeZone("America/New_York")
+    ///     .Build();
+    /// </code>
+    /// </para>
+    /// </remarks>
+    IConsumerBuilder<TConsumer> WithSchedule(string cronExpression);
+
+    /// <summary>
+    /// Sets the IANA time zone used to evaluate the cron expression.
+    /// </summary>
+    /// <param name="ianaTimeZone">
+    /// An IANA time-zone identifier (e.g. <c>America/New_York</c>). When not set, UTC is used.
+    /// </param>
+    /// <returns>
+    /// The current <see cref="IConsumerBuilder{TConsumer}"/> instance for method chaining.
+    /// </returns>
+    /// <remarks>
+    /// This method only has effect when combined with <see cref="WithSchedule"/>.
+    /// </remarks>
+    IConsumerBuilder<TConsumer> WithTimeZone(string ianaTimeZone);
+
+    /// <summary>
     /// Completes the consumer configuration and returns to the messaging builder.
     /// </summary>
     /// <returns>
