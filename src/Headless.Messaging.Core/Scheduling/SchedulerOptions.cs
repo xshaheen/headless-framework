@@ -1,0 +1,25 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+namespace Headless.Messaging.Scheduling;
+
+/// <summary>
+/// Configuration options for the scheduler background service.
+/// </summary>
+public sealed class SchedulerOptions
+{
+    /// <summary>
+    /// Gets or sets the polling interval between scheduler runs. Default: 1 second.
+    /// </summary>
+    public TimeSpan PollingInterval { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Gets or sets the maximum number of jobs to acquire per poll cycle. Default: 10.
+    /// </summary>
+    public int BatchSize { get; set; } = 10;
+
+    /// <summary>
+    /// Gets or sets the lock holder identifier used when acquiring jobs.
+    /// Default: <see cref="Environment.MachineName"/>.
+    /// </summary>
+    public string LockHolder { get; set; } = Environment.MachineName;
+}

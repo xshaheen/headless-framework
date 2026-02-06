@@ -18,51 +18,54 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
         CancellationToken cancellationToken = default
     )
     {
-        await using var scope = scopeFactory.CreateAsyncScope().ConfigureAwait(false);
+        var scope = scopeFactory.CreateAsyncScope();
 
-        var handler = scope.ServiceProvider.GetRequiredKeyedService<IConsume<ScheduledTrigger>>(job.Name);
-
-        var context = new ConsumeContext<ScheduledTrigger>
+        await using (scope.ConfigureAwait(false))
         {
-            MessageId = execution.Id.ToString(),
-            Topic = job.Name,
-            Timestamp = execution.ScheduledTime,
-            CorrelationId = null,
-            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
-            Message = new ScheduledTrigger
+            var handler = scope.ServiceProvider.GetRequiredKeyedService<IConsume<ScheduledTrigger>>(job.Name);
+
+            var context = new ConsumeContext<ScheduledTrigger>
             {
-                JobName = job.Name,
-                ScheduledTime = execution.ScheduledTime,
-                Attempt = execution.RetryAttempt + 1,
-                CronExpression = job.CronExpression,
-                ParentJobId = null,
-                Payload = job.Payload,
-            },
-        };
-
-        if (handler is IConsumerLifecycle lifecycle)
-        {
-            await lifecycle.OnStartingAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        try
-        {
-            await handler.Consume(context, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            if (handler is IConsumerLifecycle lifecycleCleanup)
-            {
-                try
+                MessageId = execution.Id.ToString(),
+                Topic = job.Name,
+                Timestamp = execution.ScheduledTime,
+                CorrelationId = null,
+                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+                Message = new ScheduledTrigger
                 {
-                    await lifecycleCleanup.OnStoppingAsync(cancellationToken).ConfigureAwait(false);
-                }
+                    JobName = job.Name,
+                    ScheduledTime = execution.ScheduledTime,
+                    Attempt = execution.RetryAttempt + 1,
+                    CronExpression = job.CronExpression,
+                    ParentJobId = null,
+                    Payload = job.Payload,
+                },
+            };
+
+            if (handler is IConsumerLifecycle lifecycle)
+            {
+                await lifecycle.OnStartingAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                await handler.Consume(context, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (handler is IConsumerLifecycle lifecycleCleanup)
+                {
+                    try
+                    {
+                        await lifecycleCleanup.OnStoppingAsync(cancellationToken).ConfigureAwait(false);
+                    }
 #pragma warning disable ERP022
-                catch
-                {
-                    // Suppress cleanup exceptions to avoid masking original exceptions
-                }
+                    catch
+                    {
+                        // Suppress cleanup exceptions to avoid masking original exceptions
+                    }
 #pragma warning restore ERP022
+                }
             }
         }
     }
