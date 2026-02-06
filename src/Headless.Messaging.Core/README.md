@@ -14,6 +14,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
+- **Job Scheduling**: Cron-based recurring jobs with retry, distributed locking, and execution tracking
 
 ## Installation
 
@@ -130,6 +131,74 @@ builder.Services.AddMessages(options =>
 });
 ```
 
+## Job Scheduling
+
+Built-in cron-based job scheduling routed through the messaging consumer infrastructure.
+
+### Defining Scheduled Jobs
+
+Use the `[Recurring]` attribute on an `IConsume<ScheduledTrigger>` consumer:
+
+```csharp
+[Recurring("0 */5 * * * *", Name = "CleanupExpiredTokens")]
+public sealed class TokenCleanupJob : IConsume<ScheduledTrigger>
+{
+    public async ValueTask Consume(
+        ConsumeContext<ScheduledTrigger> context,
+        CancellationToken cancellationToken)
+    {
+        // cleanup logic
+    }
+}
+```
+
+Jobs are automatically discovered when using `ScanConsumers()`.
+
+### Fluent API
+
+Register jobs programmatically via the consumer builder:
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.Consumer<TokenCleanupJob>()
+        .WithSchedule("0 */5 * * * *")
+        .WithTimeZone("America/New_York")
+        .Build();
+});
+```
+
+### SchedulerOptions
+
+Configure scheduler behavior:
+
+```csharp
+builder.Services.Configure<SchedulerOptions>(options =>
+{
+    options.PollingInterval = TimeSpan.FromSeconds(1);  // default
+    options.BatchSize = 10;                              // default
+    options.LockHolder = Environment.MachineName;        // default
+    options.LockTimeout = TimeSpan.FromMinutes(5);       // default
+});
+```
+
+- `PollingInterval` -- how often the scheduler polls for due jobs
+- `BatchSize` -- max jobs acquired per poll cycle
+- `LockHolder` -- instance identifier for atomic job acquisition
+- `LockTimeout` -- distributed lock timeout for `SkipIfRunning` jobs
+
+### Retry Behavior
+
+Set `RetryIntervals` on `[Recurring]` to define retry delays (in seconds) after failures. The last interval is reused for subsequent retries. Without `RetryIntervals`, recurring jobs skip to the next cron occurrence on failure.
+
+### Job Reconciliation
+
+On startup, the scheduler reconciles `[Recurring]`-annotated consumers with persisted `ScheduledJob` records via upsert, ensuring new jobs are registered and existing jobs have updated cron expressions.
+
+### Distributed Locking
+
+When `IDistributedLockProvider` is registered and a job has `SkipIfRunning = true`, the scheduler acquires a cross-instance lock before dispatching. If the lock is held by another node, the occurrence is skipped.
+
 ## Message Ordering Guarantees
 
 Message ordering guarantees depend on the transport provider and configuration:
@@ -168,5 +237,6 @@ Message ordering guarantees depend on the transport provider and configuration:
 ## Side Effects
 
 - Starts background hosted service for message processing
-- Creates database tables for outbox storage (via storage provider)
+- Starts scheduler background service for job polling and dispatch
+- Creates database tables for outbox and scheduling storage (via storage provider)
 - Establishes transport connections (via transport provider)
