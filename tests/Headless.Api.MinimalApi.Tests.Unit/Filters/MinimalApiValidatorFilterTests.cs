@@ -4,11 +4,11 @@ using System.Text.Json;
 using FluentValidation;
 using FluentValidation.Results;
 using Headless.Testing.Tests;
-using ValidationResult = FluentValidation.Results.ValidationResult;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using ValidationResult = FluentValidation.Results.ValidationResult;
 
 namespace Tests.Filters;
 
@@ -33,7 +33,9 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     {
         // given
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
-        var context = _CreateContext<ValidatorFilterTestRequest>(new ValidatorFilterTestRequest("Name", "test@example.com"));
+        var context = _CreateContext<ValidatorFilterTestRequest>(
+            new ValidatorFilterTestRequest("Name", "test@example.com")
+        );
         var expectedResult = new object();
         var next = _CreateNext(expectedResult);
 
@@ -99,7 +101,9 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
 
         // then
         result.Should().BeSameAs(expectedResult);
-        await validator.Received(1).ValidateAsync(Arg.Any<ValidationContext<ValidatorFilterTestRequest>>(), Arg.Any<CancellationToken>());
+        await validator
+            .Received(1)
+            .ValidateAsync(Arg.Any<ValidationContext<ValidatorFilterTestRequest>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -109,7 +113,10 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var validator1 = _CreateMockValidator(new ValidationResult());
         var validator2 = _CreateMockValidator(new ValidationResult());
-        var context = _CreateContext(new ValidatorFilterTestRequest("Name", "test@example.com"), [validator1, validator2]);
+        var context = _CreateContext(
+            new ValidatorFilterTestRequest("Name", "test@example.com"),
+            [validator1, validator2]
+        );
         var expectedResult = new object();
         var next = _CreateNext(expectedResult);
 
@@ -118,8 +125,12 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
 
         // then
         result.Should().BeSameAs(expectedResult);
-        await validator1.Received(1).ValidateAsync(Arg.Any<ValidationContext<ValidatorFilterTestRequest>>(), Arg.Any<CancellationToken>());
-        await validator2.Received(1).ValidateAsync(Arg.Any<ValidationContext<ValidatorFilterTestRequest>>(), Arg.Any<CancellationToken>());
+        await validator1
+            .Received(1)
+            .ValidateAsync(Arg.Any<ValidationContext<ValidatorFilterTestRequest>>(), Arg.Any<CancellationToken>());
+        await validator2
+            .Received(1)
+            .ValidateAsync(Arg.Any<ValidationContext<ValidatorFilterTestRequest>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -127,8 +138,12 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     {
         // given
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
-        var validator1 = _CreateMockValidator(new ValidationResult([new ValidationFailure("Name", "Name error from validator 1")]));
-        var validator2 = _CreateMockValidator(new ValidationResult([new ValidationFailure("Email", "Email error from validator 2")]));
+        var validator1 = _CreateMockValidator(
+            new ValidationResult([new ValidationFailure("Name", "Name error from validator 1")])
+        );
+        var validator2 = _CreateMockValidator(
+            new ValidationResult([new ValidationFailure("Email", "Email error from validator 2")])
+        );
         var context = _CreateContext(new ValidatorFilterTestRequest("", "invalid"), [validator1, validator2]);
         var next = _CreateNext();
 
@@ -148,8 +163,12 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     {
         // given
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
-        var validator1 = _CreateMockValidator(new ValidationResult([new ValidationFailure("Name", "Name must not be empty")]));
-        var validator2 = _CreateMockValidator(new ValidationResult([new ValidationFailure("Name", "Name must be at least 3 characters")]));
+        var validator1 = _CreateMockValidator(
+            new ValidationResult([new ValidationFailure("Name", "Name must not be empty")])
+        );
+        var validator2 = _CreateMockValidator(
+            new ValidationResult([new ValidationFailure("Name", "Name must be at least 3 characters")])
+        );
         var context = _CreateContext(new ValidatorFilterTestRequest("", "test@example.com"), [validator1, validator2]);
         var next = _CreateNext();
 
@@ -207,7 +226,11 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         using var cts = new CancellationTokenSource();
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var validator = _CreateMockValidator(new ValidationResult());
-        var context = _CreateContext(new ValidatorFilterTestRequest("Name", "test@example.com"), [validator], cts.Token);
+        var context = _CreateContext(
+            new ValidatorFilterTestRequest("Name", "test@example.com"),
+            [validator],
+            cts.Token
+        );
         var next = _CreateNext(new object());
 
         // when
@@ -241,8 +264,12 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     {
         // given - test case sensitivity with ordinal comparison
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
-        var validator1 = _CreateMockValidator(new ValidationResult([new ValidationFailure("name", "lowercase name error")]));
-        var validator2 = _CreateMockValidator(new ValidationResult([new ValidationFailure("Name", "uppercase Name error")]));
+        var validator1 = _CreateMockValidator(
+            new ValidationResult([new ValidationFailure("name", "lowercase name error")])
+        );
+        var validator2 = _CreateMockValidator(
+            new ValidationResult([new ValidationFailure("Name", "uppercase Name error")])
+        );
         var context = _CreateContext(new ValidatorFilterTestRequest("", "test@example.com"), [validator1, validator2]);
         var next = _CreateNext();
 
@@ -282,7 +309,8 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         result.Should().BeSameAs(expectedResult);
         foreach (var v in validatorList)
         {
-            await v.Received(1).ValidateAsync(Arg.Any<ValidationContext<ValidatorFilterTestRequest>>(), Arg.Any<CancellationToken>());
+            await v.Received(1)
+                .ValidateAsync(Arg.Any<ValidationContext<ValidatorFilterTestRequest>>(), Arg.Any<CancellationToken>());
         }
     }
 
@@ -318,12 +346,15 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     private static IValidator<ValidatorFilterTestRequest> _CreateMockValidator(ValidationResult result)
     {
         var validator = Substitute.For<IValidator<ValidatorFilterTestRequest>>();
-        validator.ValidateAsync(Arg.Any<ValidationContext<ValidatorFilterTestRequest>>(), Arg.Any<CancellationToken>())
+        validator
+            .ValidateAsync(Arg.Any<ValidationContext<ValidatorFilterTestRequest>>(), Arg.Any<CancellationToken>())
             .Returns(result);
         return validator;
     }
 
-    private static async Task<(int StatusCode, Dictionary<string, string[]> Errors)> _ExecuteAndGetValidationErrors(object? result)
+    private static async Task<(int StatusCode, Dictionary<string, string[]> Errors)> _ExecuteAndGetValidationErrors(
+        object? result
+    )
     {
         result.Should().NotBeNull();
         var httpResult = result as IResult;
@@ -333,10 +364,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         services.AddLogging();
         var sp = services.BuildServiceProvider();
 
-        var httpContext = new DefaultHttpContext
-        {
-            RequestServices = sp,
-        };
+        var httpContext = new DefaultHttpContext { RequestServices = sp };
         httpContext.Response.Body = new MemoryStream();
 
         await httpResult!.ExecuteAsync(httpContext);
@@ -352,9 +380,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         {
             foreach (var prop in errorsElement.EnumerateObject())
             {
-                var values = prop.Value.EnumerateArray()
-                    .Select(v => v.GetString()!)
-                    .ToArray();
+                var values = prop.Value.EnumerateArray().Select(v => v.GetString()!).ToArray();
                 errors[prop.Name] = values;
             }
         }
@@ -365,7 +391,8 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     private static EndpointFilterInvocationContext _CreateContext<TRequest>(
         TRequest? request,
         IEnumerable<IValidator<TRequest>>? validators = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var httpContext = new DefaultHttpContext();
 
@@ -391,7 +418,8 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     }
 
     private static EndpointFilterInvocationContext _CreateContextWithMismatchedRequest<TRequest>(
-        IValidator<TRequest> validator)
+        IValidator<TRequest> validator
+    )
     {
         var httpContext = new DefaultHttpContext();
 

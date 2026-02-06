@@ -124,7 +124,9 @@ public sealed class SimplifyTests
         var result = empty.Simplify();
 
         // then
-        ((object)result).Should().BeSameAs(empty);
+        ((object)result)
+            .Should()
+            .BeSameAs(empty);
     }
 
     private static Polygon _CreateComplexPolygon()

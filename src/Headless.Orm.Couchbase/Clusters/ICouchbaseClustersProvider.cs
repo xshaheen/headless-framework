@@ -53,7 +53,7 @@ public sealed class CouchbaseClustersProvider(
             }
             catch (Exception e)
             {
-                logger.LogError(e, "Failed to connect to the cluster {ClusterKey}", clusterKey);
+                logger.LogFailedToConnectToCluster(e, clusterKey);
             }
 
             return (cluster, transactions);
@@ -77,4 +77,15 @@ public sealed class CouchbaseClustersProvider(
 
         _Clusters.Clear();
     }
+}
+
+internal static partial class CouchbaseClustersProviderLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToConnectToCluster",
+        Level = LogLevel.Error,
+        Message = "Failed to connect to the cluster {ClusterKey}"
+    )]
+    public static partial void LogFailedToConnectToCluster(this ILogger logger, Exception exception, string clusterKey);
 }

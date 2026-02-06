@@ -74,8 +74,7 @@ public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, I
                 config
             );
 
-            logger.LogInformation(
-                "[{TransactionId}] Transaction completed with UnstagingCompleted: {UnstagingCompleted} and logs {@Logs}",
+            logger.LogTransactionCompleted(
                 transactionResult.TransactionId,
                 transactionResult.UnstagingComplete,
                 transactionResult.Logs
@@ -83,11 +82,35 @@ public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, I
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Transaction failed");
+            logger.LogTransactionFailed(e);
 
             throw;
         }
     }
 
     #endregion
+}
+
+internal static partial class CouchbaseBucketContextLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "TransactionCompleted",
+        Level = LogLevel.Information,
+        Message = "[{TransactionId}] Transaction completed with UnstagingCompleted: {UnstagingCompleted} and logs {Logs}"
+    )]
+    public static partial void LogTransactionCompleted(
+        this ILogger logger,
+        string? transactionId,
+        bool unstagingCompleted,
+        IEnumerable<string> logs
+    );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "TransactionFailed",
+        Level = LogLevel.Error,
+        Message = "Transaction failed"
+    )]
+    public static partial void LogTransactionFailed(this ILogger logger, Exception exception);
 }

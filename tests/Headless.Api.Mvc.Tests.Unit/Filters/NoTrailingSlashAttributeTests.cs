@@ -26,11 +26,14 @@ public sealed class NoTrailingSlashAttributeTests : TestBase
         var nextCalled = false;
 
         // when
-        await attribute.OnResourceExecutionAsync(context, () =>
-        {
-            nextCalled = true;
-            return Task.FromResult<ResourceExecutedContext>(null!);
-        });
+        await attribute.OnResourceExecutionAsync(
+            context,
+            () =>
+            {
+                nextCalled = true;
+                return Task.FromResult<ResourceExecutedContext>(null!);
+            }
+        );
 
         // then
         nextCalled.Should().BeTrue();
@@ -45,11 +48,14 @@ public sealed class NoTrailingSlashAttributeTests : TestBase
         var nextCalled = false;
 
         // when
-        await attribute.OnResourceExecutionAsync(context, () =>
-        {
-            nextCalled = true;
-            return Task.FromResult<ResourceExecutedContext>(null!);
-        });
+        await attribute.OnResourceExecutionAsync(
+            context,
+            () =>
+            {
+                nextCalled = true;
+                return Task.FromResult<ResourceExecutedContext>(null!);
+            }
+        );
 
         // then
         nextCalled.Should().BeFalse();
@@ -65,11 +71,14 @@ public sealed class NoTrailingSlashAttributeTests : TestBase
         var nextCalled = false;
 
         // when
-        await attribute.OnResourceExecutionAsync(context, () =>
-        {
-            nextCalled = true;
-            return Task.FromResult<ResourceExecutedContext>(null!);
-        });
+        await attribute.OnResourceExecutionAsync(
+            context,
+            () =>
+            {
+                nextCalled = true;
+                return Task.FromResult<ResourceExecutedContext>(null!);
+            }
+        );
 
         // then - root path ends with slash but should be allowed
         // Note: actual behavior - root "/" is blocked because it ends with slash
@@ -87,11 +96,14 @@ public sealed class NoTrailingSlashAttributeTests : TestBase
         var nextCalled = false;
 
         // when
-        await attribute.OnResourceExecutionAsync(context, () =>
-        {
-            nextCalled = true;
-            return Task.FromResult<ResourceExecutedContext>(null!);
-        });
+        await attribute.OnResourceExecutionAsync(
+            context,
+            () =>
+            {
+                nextCalled = true;
+                return Task.FromResult<ResourceExecutedContext>(null!);
+            }
+        );
 
         // then
         nextCalled.Should().BeTrue();
@@ -104,7 +116,8 @@ public sealed class NoTrailingSlashAttributeTests : TestBase
         var attribute = new NoTrailingSlashAttribute();
 
         // when
-        var act = () => attribute.OnResourceExecutionAsync(null!, () => Task.FromResult<ResourceExecutedContext>(null!));
+        var act = () =>
+            attribute.OnResourceExecutionAsync(null!, () => Task.FromResult<ResourceExecutedContext>(null!));
 
         // then
         await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("context");

@@ -102,7 +102,7 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
         {
             if (logger.IsEnabled(LogLevel.Trace))
             {
-                logger.LogError(e, "Failed to decode credentials.");
+                logger.LogFailedToDecodeCredentials(e);
             }
         }
 
@@ -110,4 +110,15 @@ public sealed class BasicAuthenticationHandler<TUser, TUserId>(
     }
 
     #endregion
+}
+
+internal static partial class BasicAuthenticationHandlerLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToDecodeCredentials",
+        Level = LogLevel.Error,
+        Message = "Failed to decode credentials."
+    )]
+    public static partial void LogFailedToDecodeCredentials(this ILogger logger, Exception exception);
 }

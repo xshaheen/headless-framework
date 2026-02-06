@@ -144,8 +144,7 @@ public sealed class ConversionTests
 
         var act = () => point.EnsurePolygonOrMulti();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Point*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Point*");
     }
 
     [Fact]
@@ -155,7 +154,6 @@ public sealed class ConversionTests
 
         var act = () => line.EnsurePolygonOrMulti();
 
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*LineString*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*LineString*");
     }
 }

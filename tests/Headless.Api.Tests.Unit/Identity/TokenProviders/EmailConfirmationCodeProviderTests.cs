@@ -57,8 +57,7 @@ public sealed class EmailConfirmationCodeProviderTests : TestBase
         var act = () => _sut.GetUserModifierAsync("purpose", _userManager, user);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("The user does not have an email.");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("The user does not have an email.");
     }
 
     [Fact]

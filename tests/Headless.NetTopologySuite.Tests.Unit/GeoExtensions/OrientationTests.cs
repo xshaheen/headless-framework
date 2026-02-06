@@ -100,7 +100,9 @@ public sealed class OrientationTests
         var result = empty.EnsureIsOrientedCounterClockwise();
 
         // then
-        ((object)result).Should().BeSameAs(empty);
+        ((object)result)
+            .Should()
+            .BeSameAs(empty);
     }
 
     #endregion
@@ -272,10 +274,7 @@ public sealed class OrientationTests
             ? [new(2, 2), new(2, 8), new(8, 8), new(8, 2), new(2, 2)] // CW
             : [new(2, 2), new(8, 2), new(8, 8), new(2, 8), new(2, 2)]; // CCW
 
-        return Factory.CreatePolygon(
-            Factory.CreateLinearRing(shell),
-            [Factory.CreateLinearRing(hole)]
-        );
+        return Factory.CreatePolygon(Factory.CreateLinearRing(shell), [Factory.CreateLinearRing(hole)]);
     }
 
     #endregion

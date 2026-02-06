@@ -21,9 +21,6 @@ public sealed class PostgreSqlTestFixture(IMessageSink messageSink)
 
     protected override PostgreSqlBuilder Configure()
     {
-        return base.Configure()
-            .WithDatabase("messages_test")
-            .WithUsername("postgres")
-            .WithPassword("postgres");
+        return base.Configure().WithDatabase("messages_test").WithUsername("postgres").WithPassword("postgres");
     }
 }
