@@ -18,54 +18,51 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
         CancellationToken cancellationToken = default
     )
     {
-        var scope = scopeFactory.CreateAsyncScope();
+        await using var scope = scopeFactory.CreateAsyncScope().ConfigureAwait(false);
 
-        await using (scope.ConfigureAwait(false))
+        var handler = scope.ServiceProvider.GetRequiredKeyedService<IConsume<ScheduledTrigger>>(job.Name);
+
+        var context = new ConsumeContext<ScheduledTrigger>
         {
-            var handler = scope.ServiceProvider.GetRequiredKeyedService<IConsume<ScheduledTrigger>>(job.Name);
-
-            var context = new ConsumeContext<ScheduledTrigger>
+            MessageId = execution.Id.ToString(),
+            Topic = job.Name,
+            Timestamp = execution.ScheduledTime,
+            CorrelationId = null,
+            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+            Message = new ScheduledTrigger
             {
-                MessageId = execution.Id.ToString(),
-                Topic = job.Name,
-                Timestamp = execution.ScheduledTime,
-                CorrelationId = null,
-                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
-                Message = new ScheduledTrigger
+                JobName = job.Name,
+                ScheduledTime = execution.ScheduledTime,
+                Attempt = execution.RetryAttempt + 1,
+                CronExpression = job.CronExpression,
+                ParentJobId = null,
+                Payload = job.Payload,
+            },
+        };
+
+        if (handler is IConsumerLifecycle lifecycle)
+        {
+            await lifecycle.OnStartingAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await handler.Consume(context, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (handler is IConsumerLifecycle lifecycleCleanup)
+            {
+                try
                 {
-                    JobName = job.Name,
-                    ScheduledTime = execution.ScheduledTime,
-                    Attempt = execution.RetryAttempt + 1,
-                    CronExpression = job.CronExpression,
-                    ParentJobId = null,
-                    Payload = job.Payload,
-                },
-            };
-
-            if (handler is IConsumerLifecycle lifecycle)
-            {
-                await lifecycle.OnStartingAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            try
-            {
-                await handler.Consume(context, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                if (handler is IConsumerLifecycle lifecycleCleanup)
-                {
-                    try
-                    {
-                        await lifecycleCleanup.OnStoppingAsync(cancellationToken).ConfigureAwait(false);
-                    }
-#pragma warning disable ERP022
-                    catch
-                    {
-                        // Suppress cleanup exceptions to avoid masking original exceptions
-                    }
-#pragma warning restore ERP022
+                    await lifecycleCleanup.OnStoppingAsync(cancellationToken).ConfigureAwait(false);
                 }
+#pragma warning disable ERP022
+                catch
+                {
+                    // Suppress cleanup exceptions to avoid masking original exceptions
+                }
+#pragma warning restore ERP022
             }
         }
     }
