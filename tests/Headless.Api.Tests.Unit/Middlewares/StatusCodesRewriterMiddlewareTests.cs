@@ -25,26 +25,38 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
     {
         var creator = Substitute.For<IProblemDetailsCreator>();
 
-        creator.Unauthorized().Returns(new ProblemDetails
-        {
-            Status = StatusCodes.Status401Unauthorized,
-            Title = HeadlessProblemDetailsConstants.Titles.Unauthorized,
-            Detail = HeadlessProblemDetailsConstants.Details.Unauthorized,
-        });
+        creator
+            .Unauthorized()
+            .Returns(
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status401Unauthorized,
+                    Title = HeadlessProblemDetailsConstants.Titles.Unauthorized,
+                    Detail = HeadlessProblemDetailsConstants.Details.Unauthorized,
+                }
+            );
 
-        creator.Forbidden().Returns(new ProblemDetails
-        {
-            Status = StatusCodes.Status403Forbidden,
-            Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
-            Detail = HeadlessProblemDetailsConstants.Details.Forbidden,
-        });
+        creator
+            .Forbidden()
+            .Returns(
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status403Forbidden,
+                    Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
+                    Detail = HeadlessProblemDetailsConstants.Details.Forbidden,
+                }
+            );
 
-        creator.EndpointNotFound().Returns(new ProblemDetails
-        {
-            Status = StatusCodes.Status404NotFound,
-            Title = HeadlessProblemDetailsConstants.Titles.EndpointNotFound,
-            Detail = HeadlessProblemDetailsConstants.Details.EndpointNotFound("/test"),
-        });
+        creator
+            .EndpointNotFound()
+            .Returns(
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status404NotFound,
+                    Title = HeadlessProblemDetailsConstants.Titles.EndpointNotFound,
+                    Detail = HeadlessProblemDetailsConstants.Details.EndpointNotFound("/test"),
+                }
+            );
 
         return creator;
     }

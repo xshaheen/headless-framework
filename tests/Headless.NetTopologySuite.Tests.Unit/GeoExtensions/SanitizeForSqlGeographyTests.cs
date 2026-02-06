@@ -33,8 +33,7 @@ public sealed class SanitizeForSqlGeographyTests
         var act = () => polygon.SanitizeForSqlGeography();
 
         // then
-        act.Should().ThrowExactly<InvalidOperationException>()
-            .WithMessage("*empty*");
+        act.Should().ThrowExactly<InvalidOperationException>().WithMessage("*empty*");
     }
 
     [Fact]
@@ -47,8 +46,7 @@ public sealed class SanitizeForSqlGeographyTests
         var act = () => polygon.SanitizeForSqlGeography();
 
         // then
-        act.Should().ThrowExactly<InvalidOperationException>()
-            .WithMessage("*SRID must be 4326*");
+        act.Should().ThrowExactly<InvalidOperationException>().WithMessage("*SRID must be 4326*");
     }
 
     [Fact]
@@ -69,8 +67,7 @@ public sealed class SanitizeForSqlGeographyTests
         var act = () => polygon.SanitizeForSqlGeography();
 
         // then
-        act.Should().ThrowExactly<InvalidOperationException>()
-            .WithMessage("Invalid coordinate*");
+        act.Should().ThrowExactly<InvalidOperationException>().WithMessage("Invalid coordinate*");
     }
 
     [Fact]
@@ -91,8 +88,7 @@ public sealed class SanitizeForSqlGeographyTests
         var act = () => polygon.SanitizeForSqlGeography();
 
         // then
-        act.Should().ThrowExactly<InvalidOperationException>()
-            .WithMessage("Invalid coordinate*");
+        act.Should().ThrowExactly<InvalidOperationException>().WithMessage("Invalid coordinate*");
     }
 
     [Fact]
@@ -113,8 +109,7 @@ public sealed class SanitizeForSqlGeographyTests
         var act = () => polygon.SanitizeForSqlGeography();
 
         // then
-        act.Should().ThrowExactly<InvalidOperationException>()
-            .WithMessage("Invalid coordinate*");
+        act.Should().ThrowExactly<InvalidOperationException>().WithMessage("Invalid coordinate*");
     }
 
     [Fact]
@@ -135,8 +130,7 @@ public sealed class SanitizeForSqlGeographyTests
         var act = () => polygon.SanitizeForSqlGeography();
 
         // then
-        act.Should().ThrowExactly<InvalidOperationException>()
-            .WithMessage("Invalid coordinate*");
+        act.Should().ThrowExactly<InvalidOperationException>().WithMessage("Invalid coordinate*");
     }
 
     [Fact]
@@ -201,7 +195,7 @@ public sealed class SanitizeForSqlGeographyTests
         {
             new Coordinate(0, 0),
             new Coordinate(1, 0),
-            new Coordinate(2, 0),  // All on same line
+            new Coordinate(2, 0), // All on same line
             new Coordinate(1, 0),
             new Coordinate(0, 0),
         };

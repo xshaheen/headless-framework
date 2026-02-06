@@ -185,11 +185,7 @@ public sealed class SystemJsonSerializerTests
         {
             Items = ["one", "two", "three"],
             Numbers = [1, 2, 3],
-            Children =
-            [
-                new TestClass { Name = "Child1", Age = 10 },
-                new TestClass { Name = "Child2", Age = 20 },
-            ],
+            Children = [new TestClass { Name = "Child1", Age = 10 }, new TestClass { Name = "Child2", Age = 20 }],
         };
         using var stream = new MemoryStream();
 

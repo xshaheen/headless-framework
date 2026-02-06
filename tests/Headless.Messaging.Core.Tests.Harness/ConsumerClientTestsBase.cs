@@ -25,7 +25,8 @@ public abstract class ConsumerClientTestsBase : TestBase
         string? messageId = null,
         string? messageName = null,
         ReadOnlyMemory<byte>? body = null,
-        IDictionary<string, string?>? additionalHeaders = null)
+        IDictionary<string, string?>? additionalHeaders = null
+    )
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -205,18 +206,22 @@ public abstract class ConsumerClientTestsBase : TestBase
         await consumer.SubscribeAsync(["concurrent-topic"]);
 
         // when
-        var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(async () =>
-        {
-            try
-            {
-                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
-                await consumer.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected
-            }
-        }));
+        var tasks = Enumerable
+            .Range(0, 10)
+            .Select(_ =>
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+                        await consumer.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Expected
+                    }
+                })
+            );
 
         await Task.WhenAll(tasks);
 

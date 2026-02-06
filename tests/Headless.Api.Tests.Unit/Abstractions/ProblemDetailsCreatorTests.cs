@@ -18,7 +18,8 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     private static ProblemDetailsCreator _CreateCreator(
         TimeProvider? timeProvider = null,
         IBuildInformationAccessor? buildInfo = null,
-        IHttpContextAccessor? httpContextAccessor = null)
+        IHttpContextAccessor? httpContextAccessor = null
+    )
     {
         timeProvider ??= new FakeTimeProvider(DateTimeOffset.UtcNow);
 
@@ -413,11 +414,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     {
         // given
         var creator = _CreateCreator();
-        var problemDetails = new ProblemDetails
-        {
-            Status = 400,
-            Extensions = { ["traceId"] = "existing-trace-id" },
-        };
+        var problemDetails = new ProblemDetails { Status = 400, Extensions = { ["traceId"] = "existing-trace-id" } };
 
         // when
         creator.Normalize(problemDetails);

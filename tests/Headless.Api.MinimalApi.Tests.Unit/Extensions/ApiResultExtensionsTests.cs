@@ -158,11 +158,7 @@ public sealed class ApiResultExtensionsTests : TestBase
         var creator = _CreateProblemDetailsCreator();
         var error = new AggregateError
         {
-            Errors =
-            [
-                new ConflictError("error1", "First error"),
-                new ConflictError("error2", "Second error"),
-            ],
+            Errors = [new ConflictError("error1", "First error"), new ConflictError("error2", "Second error")],
         };
 
         // when
@@ -239,10 +235,13 @@ public sealed class ApiResultExtensionsTests : TestBase
         _ = error.ToHttpResult(creator);
 
         // then
-        creator.Received(1).UnprocessableEntity(Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
-            d.ContainsKey("Email") && d["Email"].Count == 2 &&
-            d.ContainsKey("Name") && d["Name"].Count == 1
-        ));
+        creator
+            .Received(1)
+            .UnprocessableEntity(
+                Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
+                    d.ContainsKey("Email") && d["Email"].Count == 2 && d.ContainsKey("Name") && d["Name"].Count == 1
+                )
+            );
     }
 
     [Fact]
@@ -264,12 +263,16 @@ public sealed class ApiResultExtensionsTests : TestBase
         _ = error.ToHttpResult(creator);
 
         // then
-        creator.Received(1).Conflict(Arg.Is<IEnumerable<ErrorDescriptor>>(errors =>
-            errors.Count() == 3 &&
-            errors.Any(e => e.Code == "error1" && e.Description == "First error") &&
-            errors.Any(e => e.Code == "error2" && e.Description == "Second error") &&
-            errors.Any(e => e.Code == "error3" && e.Description == "Third error")
-        ));
+        creator
+            .Received(1)
+            .Conflict(
+                Arg.Is<IEnumerable<ErrorDescriptor>>(errors =>
+                    errors.Count() == 3
+                    && errors.Any(e => e.Code == "error1" && e.Description == "First error")
+                    && errors.Any(e => e.Code == "error2" && e.Description == "Second error")
+                    && errors.Any(e => e.Code == "error3" && e.Description == "Third error")
+                )
+            );
     }
 
     #endregion
@@ -280,35 +283,29 @@ public sealed class ApiResultExtensionsTests : TestBase
     {
         var creator = Substitute.For<IProblemDetailsCreator>();
 
-        creator.EntityNotFound(Arg.Any<string>(), Arg.Any<string>()).Returns(ci => new ProblemDetails
-        {
-            Status = StatusCodes.Status404NotFound,
-            Title = "Entity Not Found",
-        });
+        creator
+            .EntityNotFound(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(ci => new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = "Entity Not Found" });
 
-        creator.UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>()).Returns(ci => new ProblemDetails
-        {
-            Status = StatusCodes.Status422UnprocessableEntity,
-            Title = "Unprocessable Entity",
-        });
+        creator
+            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .Returns(ci => new ProblemDetails
+            {
+                Status = StatusCodes.Status422UnprocessableEntity,
+                Title = "Unprocessable Entity",
+            });
 
-        creator.Forbidden(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>()).Returns(ci => new ProblemDetails
-        {
-            Status = StatusCodes.Status403Forbidden,
-            Title = "Forbidden",
-        });
+        creator
+            .Forbidden(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>())
+            .Returns(ci => new ProblemDetails { Status = StatusCodes.Status403Forbidden, Title = "Forbidden" });
 
-        creator.Unauthorized().Returns(new ProblemDetails
-        {
-            Status = StatusCodes.Status401Unauthorized,
-            Title = "Unauthorized",
-        });
+        creator
+            .Unauthorized()
+            .Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" });
 
-        creator.Conflict(Arg.Any<IEnumerable<ErrorDescriptor>>()).Returns(ci => new ProblemDetails
-        {
-            Status = StatusCodes.Status409Conflict,
-            Title = "Conflict",
-        });
+        creator
+            .Conflict(Arg.Any<IEnumerable<ErrorDescriptor>>())
+            .Returns(ci => new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Conflict" });
 
         return creator;
     }

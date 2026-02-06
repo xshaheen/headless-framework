@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Results;
-using ValidationException = FluentValidation.ValidationException;
 using Headless.Api.Abstractions;
 using Headless.Exceptions;
 using Headless.Primitives;
@@ -12,6 +11,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using ValidationException = FluentValidation.ValidationException;
 
 namespace Tests.Filters;
 
@@ -86,7 +86,9 @@ public sealed class MinimalApiExceptionFilterTests : TestBase
         var exception = new ValidationException(failures);
         var expectedProblemDetails = new ProblemDetails { Status = StatusCodes.Status422UnprocessableEntity };
         var problemDetailsCreator = _CreateProblemDetailsCreator();
-        problemDetailsCreator.UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>()).Returns(expectedProblemDetails);
+        problemDetailsCreator
+            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .Returns(expectedProblemDetails);
         var filter = _CreateFilter(problemDetailsCreator);
         var context = _CreateContext();
         var next = _CreateThrowingNext(exception);
@@ -236,13 +238,15 @@ public sealed class MinimalApiExceptionFilterTests : TestBase
         _ = await filter.InvokeAsync(context, next);
 
         // then
-        logger.Received(1).Log(
-            LogLevel.Warning,
-            Arg.Is<EventId>(e => e.Id == 5003 && e.Name == "DbConcurrencyException"),
-            Arg.Any<object>(),
-            exception,
-            Arg.Any<Func<object, Exception?, string>>()
-        );
+        logger
+            .Received(1)
+            .Log(
+                LogLevel.Warning,
+                Arg.Is<EventId>(e => e.Id == 5003 && e.Name == "DbConcurrencyException"),
+                Arg.Any<object>(),
+                exception,
+                Arg.Any<Func<object, Exception?, string>>()
+            );
     }
 
     [Fact]
@@ -259,13 +263,15 @@ public sealed class MinimalApiExceptionFilterTests : TestBase
         _ = await filter.InvokeAsync(context, next);
 
         // then
-        logger.Received(1).Log(
-            LogLevel.Debug,
-            Arg.Is<EventId>(e => e.Id == 5004 && e.Name == "RequestTimeoutException"),
-            Arg.Any<object>(),
-            exception,
-            Arg.Any<Func<object, Exception?, string>>()
-        );
+        logger
+            .Received(1)
+            .Log(
+                LogLevel.Debug,
+                Arg.Is<EventId>(e => e.Id == 5004 && e.Name == "RequestTimeoutException"),
+                Arg.Any<object>(),
+                exception,
+                Arg.Any<Func<object, Exception?, string>>()
+            );
     }
 
     #endregion
@@ -348,7 +354,8 @@ public sealed class MinimalApiExceptionFilterTests : TestBase
 
     private static MinimalApiExceptionFilter _CreateFilter(
         IProblemDetailsCreator? problemDetailsCreator = null,
-        ILogger<MinimalApiExceptionFilter>? logger = null)
+        ILogger<MinimalApiExceptionFilter>? logger = null
+    )
     {
         problemDetailsCreator ??= _CreateProblemDetailsCreator();
         logger ??= Substitute.For<ILogger<MinimalApiExceptionFilter>>();
@@ -358,9 +365,15 @@ public sealed class MinimalApiExceptionFilterTests : TestBase
     private static IProblemDetailsCreator _CreateProblemDetailsCreator()
     {
         var creator = Substitute.For<IProblemDetailsCreator>();
-        creator.Conflict(Arg.Any<IEnumerable<ErrorDescriptor>>()).Returns(new ProblemDetails { Status = StatusCodes.Status409Conflict });
-        creator.UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>()).Returns(new ProblemDetails { Status = StatusCodes.Status422UnprocessableEntity });
-        creator.EntityNotFound(Arg.Any<string>(), Arg.Any<string>()).Returns(new ProblemDetails { Status = StatusCodes.Status404NotFound });
+        creator
+            .Conflict(Arg.Any<IEnumerable<ErrorDescriptor>>())
+            .Returns(new ProblemDetails { Status = StatusCodes.Status409Conflict });
+        creator
+            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .Returns(new ProblemDetails { Status = StatusCodes.Status422UnprocessableEntity });
+        creator
+            .EntityNotFound(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(new ProblemDetails { Status = StatusCodes.Status404NotFound });
         return creator;
     }
 
@@ -406,7 +419,9 @@ public sealed class DbUpdateConcurrencyException : Exception
 {
     public DbUpdateConcurrencyException() { }
 
-    public DbUpdateConcurrencyException(string message) : base(message) { }
+    public DbUpdateConcurrencyException(string message)
+        : base(message) { }
 
-    public DbUpdateConcurrencyException(string message, Exception inner) : base(message, inner) { }
+    public DbUpdateConcurrencyException(string message, Exception inner)
+        : base(message, inner) { }
 }

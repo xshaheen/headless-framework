@@ -185,16 +185,16 @@ public sealed class DynamicAuthenticationSchemeProviderTests : TestBase
         // when
         var result = methodName switch
         {
-            nameof(DynamicAuthenticationSchemeProvider.GetDefaultAuthenticateSchemeAsync)
-                => await provider.GetDefaultAuthenticateSchemeAsync(),
-            nameof(DynamicAuthenticationSchemeProvider.GetDefaultChallengeSchemeAsync)
-                => await provider.GetDefaultChallengeSchemeAsync(),
-            nameof(DynamicAuthenticationSchemeProvider.GetDefaultForbidSchemeAsync)
-                => await provider.GetDefaultForbidSchemeAsync(),
-            nameof(DynamicAuthenticationSchemeProvider.GetDefaultSignInSchemeAsync)
-                => await provider.GetDefaultSignInSchemeAsync(),
-            nameof(DynamicAuthenticationSchemeProvider.GetDefaultSignOutSchemeAsync)
-                => await provider.GetDefaultSignOutSchemeAsync(),
+            nameof(DynamicAuthenticationSchemeProvider.GetDefaultAuthenticateSchemeAsync) =>
+                await provider.GetDefaultAuthenticateSchemeAsync(),
+            nameof(DynamicAuthenticationSchemeProvider.GetDefaultChallengeSchemeAsync) =>
+                await provider.GetDefaultChallengeSchemeAsync(),
+            nameof(DynamicAuthenticationSchemeProvider.GetDefaultForbidSchemeAsync) =>
+                await provider.GetDefaultForbidSchemeAsync(),
+            nameof(DynamicAuthenticationSchemeProvider.GetDefaultSignInSchemeAsync) =>
+                await provider.GetDefaultSignInSchemeAsync(),
+            nameof(DynamicAuthenticationSchemeProvider.GetDefaultSignOutSchemeAsync) =>
+                await provider.GetDefaultSignOutSchemeAsync(),
             _ => throw new ArgumentOutOfRangeException(nameof(methodName)),
         };
 
@@ -207,11 +207,7 @@ public sealed class DynamicAuthenticationSchemeProviderTests : TestBase
 
     private DynamicAuthenticationSchemeProvider _CreateProvider()
     {
-        return new DynamicAuthenticationSchemeProvider(
-            _httpContextAccessor,
-            _authOptions,
-            _apiKeyOptions
-        );
+        return new DynamicAuthenticationSchemeProvider(_httpContextAccessor, _authOptions, _apiKeyOptions);
     }
 
     private static DefaultHttpContext _CreateContext()

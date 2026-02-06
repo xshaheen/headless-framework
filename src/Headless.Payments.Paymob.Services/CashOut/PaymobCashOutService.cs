@@ -103,7 +103,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
 
         if (result.Data.AmanCashingDetails?.BillingReference is null)
         {
-            logger.LogCritical("Unexpected response to Accept CashOut {Response}", result.Data);
+            logger.LogUnexpectedAcceptCashOutResponse(result.Data);
 
             return CashOutResult.Failure<KioskCashOutResponse>(
                 PaymobMessageDescriptor.CashOut.ProviderConnectionFailed(),
@@ -132,7 +132,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
         }
         catch (PaymobCashOutException e)
         {
-            logger.LogCritical(e, "Failed to start cash out {Response}", e.Body);
+            logger.LogFailedToStartCashOut(e, e.Body);
             return CashOutResult.Failure<CashOutTransaction>(
                 PaymobMessageDescriptor.CashOut.ProviderConnectionFailed(),
                 response: null
@@ -183,7 +183,7 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
                 )
             )
             {
-                logger.LogCritical("Cash out budget exceeded {Response}", result);
+                logger.LogCashOutBudgetExceeded(result);
                 return PaymobMessageDescriptor.CashOut.ProviderConnectionFailed();
             }
 
@@ -219,4 +219,31 @@ public sealed class PaymobCashOutService(IPaymobCashOutBroker broker, ILogger<Pa
     }
 
     #endregion
+}
+
+internal static partial class PaymobCashOutLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "UnexpectedAcceptCashOutResponse",
+        Level = LogLevel.Critical,
+        Message = "Unexpected response to Accept CashOut {Response}"
+    )]
+    public static partial void LogUnexpectedAcceptCashOutResponse(this ILogger logger, CashOutTransaction? response);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "FailedToStartCashOut",
+        Level = LogLevel.Critical,
+        Message = "Failed to start cash out {Response}"
+    )]
+    public static partial void LogFailedToStartCashOut(this ILogger logger, Exception exception, string? response);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "CashOutBudgetExceeded",
+        Level = LogLevel.Critical,
+        Message = "Cash out budget exceeded {Response}"
+    )]
+    public static partial void LogCashOutBudgetExceeded(this ILogger logger, CashOutTransaction response);
 }

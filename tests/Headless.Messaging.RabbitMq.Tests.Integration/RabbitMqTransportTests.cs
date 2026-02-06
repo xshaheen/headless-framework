@@ -20,15 +20,16 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
     private IConnectionChannelPool? _connectionChannelPool;
 
     /// <inheritdoc />
-    protected override TransportCapabilities Capabilities => new()
-    {
-        SupportsOrdering = true,
-        SupportsDeadLetter = true,
-        SupportsPriority = false,
-        SupportsDelayedDelivery = false,
-        SupportsBatchSend = true,
-        SupportsHeaders = true,
-    };
+    protected override TransportCapabilities Capabilities =>
+        new()
+        {
+            SupportsOrdering = true,
+            SupportsDeadLetter = true,
+            SupportsPriority = false,
+            SupportsDelayedDelivery = false,
+            SupportsBatchSend = true,
+            SupportsHeaders = true,
+        };
 
     /// <inheritdoc />
     protected override ITransport GetTransport()
@@ -57,14 +58,16 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
     private IConnectionChannelPool _CreateConnectionChannelPool()
     {
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
-        var rabbitOptions = Options.Create(new RabbitMqOptions
-        {
-            HostName = fixture.HostName,
-            Port = fixture.Port,
-            UserName = fixture.UserName,
-            Password = fixture.Password,
-            ExchangeName = $"test-exchange-{Guid.NewGuid():N}",
-        });
+        var rabbitOptions = Options.Create(
+            new RabbitMqOptions
+            {
+                HostName = fixture.HostName,
+                Port = fixture.Port,
+                UserName = fixture.UserName,
+                Password = fixture.Password,
+                ExchangeName = $"test-exchange-{Guid.NewGuid():N}",
+            }
+        );
 
         var logger = NullLogger<ConnectionChannelPool>.Instance;
 
@@ -107,7 +110,8 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
     public override Task should_include_message_name_in_headers() => base.should_include_message_name_in_headers();
 
     [Fact]
-    public override Task should_handle_special_characters_in_message_body() => base.should_handle_special_characters_in_message_body();
+    public override Task should_handle_special_characters_in_message_body() =>
+        base.should_handle_special_characters_in_message_body();
 
     [Fact]
     public override Task should_handle_null_header_values() => base.should_handle_null_header_values();

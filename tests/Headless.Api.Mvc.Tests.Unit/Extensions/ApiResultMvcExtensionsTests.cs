@@ -179,11 +179,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         var creator = _CreateProblemDetailsCreator();
         var error = new AggregateError
         {
-            Errors =
-            [
-                new ConflictError("error1", "First error"),
-                new ConflictError("error2", "Second error"),
-            ],
+            Errors = [new ConflictError("error1", "First error"), new ConflictError("error2", "Second error")],
         };
 
         // when
@@ -244,35 +240,29 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
     {
         var creator = Substitute.For<IProblemDetailsCreator>();
 
-        creator.EntityNotFound(Arg.Any<string>(), Arg.Any<string>()).Returns(ci => new ProblemDetails
-        {
-            Status = StatusCodes.Status404NotFound,
-            Title = "Entity Not Found",
-        });
+        creator
+            .EntityNotFound(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(ci => new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = "Entity Not Found" });
 
-        creator.UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>()).Returns(ci => new ProblemDetails
-        {
-            Status = StatusCodes.Status422UnprocessableEntity,
-            Title = "Unprocessable Entity",
-        });
+        creator
+            .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .Returns(ci => new ProblemDetails
+            {
+                Status = StatusCodes.Status422UnprocessableEntity,
+                Title = "Unprocessable Entity",
+            });
 
-        creator.Forbidden(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>()).Returns(ci => new ProblemDetails
-        {
-            Status = StatusCodes.Status403Forbidden,
-            Title = "Forbidden",
-        });
+        creator
+            .Forbidden(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>())
+            .Returns(ci => new ProblemDetails { Status = StatusCodes.Status403Forbidden, Title = "Forbidden" });
 
-        creator.Unauthorized().Returns(new ProblemDetails
-        {
-            Status = StatusCodes.Status401Unauthorized,
-            Title = "Unauthorized",
-        });
+        creator
+            .Unauthorized()
+            .Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" });
 
-        creator.Conflict(Arg.Any<IEnumerable<ErrorDescriptor>>()).Returns(ci => new ProblemDetails
-        {
-            Status = StatusCodes.Status409Conflict,
-            Title = "Conflict",
-        });
+        creator
+            .Conflict(Arg.Any<IEnumerable<ErrorDescriptor>>())
+            .Returns(ci => new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Conflict" });
 
         return creator;
     }

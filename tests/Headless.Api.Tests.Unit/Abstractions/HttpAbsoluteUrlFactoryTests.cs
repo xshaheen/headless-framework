@@ -58,8 +58,7 @@ public sealed class HttpAbsoluteUrlFactoryTests : TestBase
         var act = () => sut.Origin;
 
         // then
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*request is not currently available*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*request is not currently available*");
     }
 
     [Fact]
@@ -112,8 +111,7 @@ public sealed class HttpAbsoluteUrlFactoryTests : TestBase
         var act = () => sut.Origin = "https://example.com";
 
         // then
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*request is not currently available*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*request is not currently available*");
     }
 
     [Theory]
@@ -134,8 +132,7 @@ public sealed class HttpAbsoluteUrlFactoryTests : TestBase
         var act = () => sut.Origin = invalidOrigin;
 
         // then
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*must contain a scheme and host*");
+        act.Should().Throw<ArgumentException>().WithMessage("*must contain a scheme and host*");
     }
 
     #endregion
@@ -263,8 +260,7 @@ public sealed class HttpAbsoluteUrlFactoryTests : TestBase
         var act = () => sut.GetAbsoluteUrl("/users");
 
         // then
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*request is not currently available*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*request is not currently available*");
     }
 
     #endregion

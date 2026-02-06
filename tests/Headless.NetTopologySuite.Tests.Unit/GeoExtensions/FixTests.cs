@@ -13,14 +13,7 @@ public sealed class FixTests
     public void Fix_should_return_valid_geometry_unchanged()
     {
         // given - valid square polygon
-        var coords = new Coordinate[]
-        {
-            new(0, 0),
-            new(1, 0),
-            new(1, 1),
-            new(0, 1),
-            new(0, 0),
-        };
+        var coords = new Coordinate[] { new(0, 0), new(1, 0), new(1, 1), new(0, 1), new(0, 0) };
         var polygon = Factory.CreatePolygon(coords);
 
         // when
@@ -86,14 +79,7 @@ public sealed class FixTests
     private static Polygon _CreateSelfIntersecting()
     {
         // Figure-8 (self-intersecting)
-        var coords = new Coordinate[]
-        {
-            new(0, 0),
-            new(1, 1),
-            new(1, 0),
-            new(0, 1),
-            new(0, 0),
-        };
+        var coords = new Coordinate[] { new(0, 0), new(1, 1), new(1, 0), new(0, 1), new(0, 0) };
         return Factory.CreatePolygon(coords);
     }
 }

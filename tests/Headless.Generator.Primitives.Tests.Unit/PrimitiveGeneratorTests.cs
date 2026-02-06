@@ -672,10 +672,7 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(
-            source,
-            generated => generated.Files.Should().BeEmpty()
-        );
+        return TestHelper.Verify(source, generated => generated.Files.Should().BeEmpty());
     }
 
     [Fact]
@@ -715,10 +712,7 @@ public sealed class PrimitiveGeneratorTests
             }
             """;
 
-        return TestHelper.Verify(
-            source,
-            generated => generated.Files.Should().BeEmpty()
-        );
+        return TestHelper.Verify(source, generated => generated.Files.Should().BeEmpty());
     }
 
     private static class TestHelper

@@ -28,11 +28,14 @@ public sealed class RequireEnvironmentAttributeTests : TestBase
         var nextCalled = false;
 
         // when
-        await attribute.OnResourceExecutionAsync(context, () =>
-        {
-            nextCalled = true;
-            return Task.FromResult<ResourceExecutedContext>(null!);
-        });
+        await attribute.OnResourceExecutionAsync(
+            context,
+            () =>
+            {
+                nextCalled = true;
+                return Task.FromResult<ResourceExecutedContext>(null!);
+            }
+        );
 
         // then
         nextCalled.Should().BeTrue();
@@ -48,11 +51,14 @@ public sealed class RequireEnvironmentAttributeTests : TestBase
         var nextCalled = false;
 
         // when
-        await attribute.OnResourceExecutionAsync(context, () =>
-        {
-            nextCalled = true;
-            return Task.FromResult<ResourceExecutedContext>(null!);
-        });
+        await attribute.OnResourceExecutionAsync(
+            context,
+            () =>
+            {
+                nextCalled = true;
+                return Task.FromResult<ResourceExecutedContext>(null!);
+            }
+        );
 
         // then
         nextCalled.Should().BeFalse();
@@ -69,11 +75,14 @@ public sealed class RequireEnvironmentAttributeTests : TestBase
         var nextCalled = false;
 
         // when
-        await attribute.OnResourceExecutionAsync(context, () =>
-        {
-            nextCalled = true;
-            return Task.FromResult<ResourceExecutedContext>(null!);
-        });
+        await attribute.OnResourceExecutionAsync(
+            context,
+            () =>
+            {
+                nextCalled = true;
+                return Task.FromResult<ResourceExecutedContext>(null!);
+            }
+        );
 
         // then - should match due to case-insensitivity
         nextCalled.Should().BeTrue();

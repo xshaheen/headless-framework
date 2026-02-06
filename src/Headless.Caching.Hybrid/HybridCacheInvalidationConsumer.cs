@@ -7,7 +7,7 @@ namespace Headless.Caching;
 
 /// <summary>
 /// Message consumer that handles cache invalidation messages from other instances.
-/// Registered automatically by <see cref="HybridCacheSetup.AddHybridCache(Action{HybridCacheOptions}?, bool)"/>.
+/// Registered automatically by <see cref="HybridCacheSetup"/>.
 /// </summary>
 [PublicAPI]
 public sealed class HybridCacheInvalidationConsumer(HybridCache cache, ILogger<HybridCacheInvalidationConsumer> logger)
@@ -31,9 +31,8 @@ public sealed class HybridCacheInvalidationConsumer(HybridCache cache, ILogger<H
         catch (Exception ex)
         {
             var msg = context.Message;
-            logger.LogError(
+            logger.LogFailedToProcessCacheInvalidation(
                 ex,
-                "Failed to process cache invalidation message (instanceId={InstanceId}, keyCount={KeyCount}, hasPrefix={HasPrefix}, flushAll={FlushAll})",
                 msg.InstanceId,
                 msg.Keys?.Length ?? (msg.Key is not null ? 1 : 0),
                 msg.Prefix is not null,
@@ -41,4 +40,22 @@ public sealed class HybridCacheInvalidationConsumer(HybridCache cache, ILogger<H
             );
         }
     }
+}
+
+internal static partial class HybridCacheInvalidationConsumerLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToProcessCacheInvalidation",
+        Level = LogLevel.Error,
+        Message = "Failed to process cache invalidation message (instanceId={InstanceId}, keyCount={KeyCount}, hasPrefix={HasPrefix}, flushAll={FlushAll})"
+    )]
+    public static partial void LogFailedToProcessCacheInvalidation(
+        this ILogger logger,
+        Exception exception,
+        string? instanceId,
+        int keyCount,
+        bool hasPrefix,
+        bool flushAll
+    );
 }

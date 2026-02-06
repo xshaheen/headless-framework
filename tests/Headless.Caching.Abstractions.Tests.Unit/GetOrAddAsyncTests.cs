@@ -15,8 +15,7 @@ public sealed class GetOrAddAsyncTests : TestBase
     private static readonly TimeSpan _DefaultExpiration = TimeSpan.FromMinutes(5);
     private readonly FakeTimeProvider _timeProvider = new();
 
-    private InMemoryCache _CreateCache() =>
-        new(_timeProvider, new InMemoryCacheOptions());
+    private InMemoryCache _CreateCache() => new(_timeProvider, new InMemoryCacheOptions());
 
     [Fact]
     public async Task should_return_cached_value_when_exists()
@@ -244,8 +243,9 @@ public sealed class GetOrAddAsyncTests : TestBase
 
         // then - factory2 should start immediately (instance-based locking, not global)
         var factory2StartedResult = await Task.WhenAny(factory2Started.Task, Task.Delay(500, AbortToken));
-        factory2StartedResult.Should().Be(factory2Started.Task,
-            "factory2 should start immediately because cache2 has its own lock");
+        factory2StartedResult
+            .Should()
+            .Be(factory2Started.Task, "factory2 should start immediately because cache2 has its own lock");
 
         factory1CanComplete.SetResult();
         await Task.WhenAll(task1, task2);
@@ -258,16 +258,18 @@ public sealed class GetOrAddAsyncTests : TestBase
         using var cache = _CreateCache();
 
         // when
-        var act = () => cache.GetOrAddAsync<string>(
-            "key",
-            _ => throw new InvalidOperationException("Factory failed"),
-            _DefaultExpiration,
-            AbortToken
-        ).AsTask();
+        var act = () =>
+            cache
+                .GetOrAddAsync<string>(
+                    "key",
+                    _ => throw new InvalidOperationException("Factory failed"),
+                    _DefaultExpiration,
+                    AbortToken
+                )
+                .AsTask();
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("Factory failed");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Factory failed");
     }
 
     [Fact]

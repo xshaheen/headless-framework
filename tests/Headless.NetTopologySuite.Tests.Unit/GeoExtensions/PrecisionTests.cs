@@ -74,6 +74,8 @@ public sealed class PrecisionTests
         var result = streetLevelFactory.ChangePrecision(multiPolygon);
 
         // Should preserve MultiPolygon type even if precision reduction collapsed to single polygon
-        ((object)result).Should().BeAssignableTo<MultiPolygon>();
+        ((object)result)
+            .Should()
+            .BeAssignableTo<MultiPolygon>();
     }
 }

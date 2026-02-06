@@ -36,17 +36,17 @@ public sealed class MailkitEmailSender(
         }
         catch (MailKit.Net.Smtp.SmtpCommandException ex)
         {
-            logger.LogWarning(ex, "SMTP command failed: {StatusCode}", ex.StatusCode);
+            logger.LogSmtpCommandFailed(ex, ex.StatusCode);
             return SendSingleEmailResponse.Failed($"SMTP error: {ex.Message}");
         }
         catch (MailKit.Net.Smtp.SmtpProtocolException ex)
         {
-            logger.LogError(ex, "SMTP protocol error");
+            logger.LogSmtpProtocolError(ex);
             return SendSingleEmailResponse.Failed($"Protocol error: {ex.Message}");
         }
         catch (AuthenticationException ex)
         {
-            logger.LogCritical(ex, "SMTP authentication failed");
+            logger.LogSmtpAuthenticationFailed(ex);
             throw;
         }
         finally
@@ -82,4 +82,35 @@ public sealed class MailkitEmailSender(
             await client.AuthenticateAsync(options.User, options.Password, cancellationToken).ConfigureAwait(false);
         }
     }
+}
+
+internal static partial class MailkitEmailSenderLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "SmtpCommandFailed",
+        Level = LogLevel.Warning,
+        Message = "SMTP command failed: {StatusCode}"
+    )]
+    public static partial void LogSmtpCommandFailed(
+        this ILogger logger,
+        Exception exception,
+        MailKit.Net.Smtp.SmtpStatusCode statusCode
+    );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "SmtpProtocolError",
+        Level = LogLevel.Error,
+        Message = "SMTP protocol error"
+    )]
+    public static partial void LogSmtpProtocolError(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "SmtpAuthenticationFailed",
+        Level = LogLevel.Critical,
+        Message = "SMTP authentication failed"
+    )]
+    public static partial void LogSmtpAuthenticationFailed(this ILogger logger, Exception exception);
 }
