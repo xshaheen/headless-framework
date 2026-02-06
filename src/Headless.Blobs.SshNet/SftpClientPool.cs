@@ -48,7 +48,7 @@ public sealed class SftpClientPool : IDisposable
         {
             if (_Validate(client))
             {
-                _logger.LogTrace("Acquired pooled SFTP client");
+                _logger.LogAcquiredPooledClient();
                 return client;
             }
 
@@ -68,7 +68,7 @@ public sealed class SftpClientPool : IDisposable
                 {
                     // Release the slot we acquired since pooled client has its own
                     _maxConnections.Release();
-                    _logger.LogTrace("Acquired pooled SFTP client after wait");
+                    _logger.LogAcquiredPooledClientAfterWait();
                     return client;
                 }
 
@@ -104,13 +104,13 @@ public sealed class SftpClientPool : IDisposable
         if (!_idle.Writer.TryWrite(client))
         {
             // Pool full, dispose excess
-            _logger.LogTrace("Pool full, disposing excess SFTP client");
+            _logger.LogPoolFullDisposingExcess();
             _DisposeClient(client);
             _maxConnections.Release();
         }
         else
         {
-            _logger.LogTrace("Returned SFTP client to pool");
+            _logger.LogReturnedClientToPool();
         }
 
         return ValueTask.CompletedTask;
@@ -121,16 +121,11 @@ public sealed class SftpClientPool : IDisposable
         var connectionInfo = _BuildConnectionInfo(_options);
         var client = new SftpClient(connectionInfo);
 
-        _logger.LogTrace("Creating new SFTP connection to {Host}:{Port}", connectionInfo.Host, connectionInfo.Port);
+        _logger.LogCreatingConnection(connectionInfo.Host, connectionInfo.Port);
 
         await client.ConnectAsync(ct).ConfigureAwait(false);
 
-        _logger.LogTrace(
-            "Connected to {Host}:{Port}, working directory: {WorkingDirectory}",
-            connectionInfo.Host,
-            connectionInfo.Port,
-            client.WorkingDirectory
-        );
+        _logger.LogConnected(connectionInfo.Host, connectionInfo.Port, client.WorkingDirectory);
 
         return client;
     }
@@ -214,7 +209,7 @@ public sealed class SftpClientPool : IDisposable
     {
         if (!client.IsConnected)
         {
-            _logger.LogTrace("Client not connected, validation failed");
+            _logger.LogClientNotConnected();
             return false;
         }
 
@@ -226,7 +221,7 @@ public sealed class SftpClientPool : IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Client validation failed, will create new connection");
+            _logger.LogClientValidationFailed(ex);
             return false;
         }
     }
@@ -237,17 +232,13 @@ public sealed class SftpClientPool : IDisposable
         {
             if (client.IsConnected)
             {
-                _logger.LogTrace(
-                    "Disconnecting SFTP client from {Host}:{Port}",
-                    client.ConnectionInfo.Host,
-                    client.ConnectionInfo.Port
-                );
+                _logger.LogDisconnectingClient(client.ConnectionInfo.Host, client.ConnectionInfo.Port);
                 client.Disconnect();
             }
         }
         catch (Exception e)
         {
-            _logger.LogDebug(e, "Error disconnecting SFTP client");
+            _logger.LogErrorDisconnectingClient(e);
         }
         finally
         {
@@ -265,7 +256,7 @@ public sealed class SftpClientPool : IDisposable
         _disposed = true;
         _idle.Writer.Complete();
 
-        _logger.LogTrace("Disposing SFTP client pool");
+        _logger.LogDisposingPool();
 
         while (_idle.Reader.TryRead(out var client))
         {
@@ -274,6 +265,6 @@ public sealed class SftpClientPool : IDisposable
 
         _maxConnections.Dispose();
 
-        _logger.LogTrace("SFTP client pool disposed");
+        _logger.LogPoolDisposed();
     }
 }

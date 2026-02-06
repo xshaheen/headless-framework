@@ -50,7 +50,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
             if (traceEnabled)
             {
-                logger!.LogTrace("Preparing Lua script");
+                logger!.LogPreparingLuaScript();
             }
 
             var incrementWithExpire = LuaScript.Prepare(RedisScripts.IncrementWithExpire);
@@ -70,7 +70,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
                 if (traceEnabled)
                 {
-                    logger!.LogTrace("Loading Lua scripts to server: {@Endpoint}", endpoint);
+                    logger!.LogLoadingLuaScripts(endpoint);
                 }
 
                 var loadIncrementScriptTask = incrementWithExpire.LoadAsync(server);
@@ -107,7 +107,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
             if (traceEnabled)
             {
-                logger!.LogTrace("Scripts loaded successfully in {Elapsed:g}", _timeProvider.GetElapsedTime(timestamp));
+                logger!.LogScriptsLoadedSuccessfully(_timeProvider.GetElapsedTime(timestamp));
             }
         }
     }
@@ -130,7 +130,8 @@ public sealed class HeadlessRedisScriptsLoader(
 
     private void _OnConnectionRestored(object? sender, ConnectionFailedEventArgs e)
     {
-        logger?.LogInformation("Redis connection restored, resetting script state");
+        if (logger is not null)
+            logger.LogConnectionRestored();
         _scriptsLoaded = false;
     }
 

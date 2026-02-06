@@ -57,17 +57,13 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                 cancellationToken: cancellationToken
             );
 
-            _logger.LogInformation(
-                "Created partial file {FileId} with upload length {UploadLength}",
-                fileId,
-                uploadLength
-            );
+            _logger.LogCreatedPartialFile(fileId, uploadLength);
 
             return fileId;
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Failed to create partial file with upload length {UploadLength}", uploadLength);
+            _logger.LogFailedToCreatePartialFile(e, uploadLength);
 
             throw;
         }
@@ -134,7 +130,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                         {
                             // API not supported (e.g., Azurite) - fall back to streaming
                             useServerSideCopy = false;
-                            _logger.LogDebug("StageBlockFromUri not supported, falling back to streaming copy");
+                            _logger.LogStageBlockFromUriNotSupported();
 
                             await _StageBlockViaStreamingAsync(
                                 blockBlobClient,
@@ -178,22 +174,13 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                 cancellationToken: cancellationToken
             );
 
-            _logger.LogInformation(
-                "Created final file {FileId} by concatenating {PartialFileCount} partial files, total size: {TotalSize} bytes",
-                fileId,
-                partialFiles.Length,
-                totalSize
-            );
+            _logger.LogCreatedFinalFile(fileId, partialFiles.Length, totalSize);
 
             return fileId;
         }
         catch (Exception e)
         {
-            _logger.LogError(
-                e,
-                "Failed to create final file from partial files: {PartialFiles}",
-                string.Join(", ", partialFiles)
-            );
+            _logger.LogFailedToCreateFinalFile(e, string.Join(", ", partialFiles));
 
             throw;
         }

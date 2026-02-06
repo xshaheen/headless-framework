@@ -64,22 +64,18 @@ public sealed class HybridCache(
             return;
         }
 
-        if (_logger.IsEnabled(LogLevel.Trace))
-        {
-            _logger.LogTrace(
-                "Invalidating local cache from remote: id={CacheId} keyCount={KeyCount} hasPrefix={HasPrefix} flushAll={FlushAll}",
-                message.InstanceId,
-                message.Keys?.Length ?? (message.Key is not null ? 1 : 0),
-                message.Prefix is not null,
-                message.FlushAll
-            );
-        }
+        _logger.LogInvalidatingLocalCacheFromRemote(
+            message.InstanceId,
+            message.Keys?.Length ?? (message.Key is not null ? 1 : 0),
+            message.Prefix is not null,
+            message.FlushAll
+        );
 
         Interlocked.Increment(ref _invalidateCacheCalls);
 
         if (message.FlushAll)
         {
-            _logger.LogTrace("Flushed local cache");
+            _logger.LogFlushedLocalCache();
             await LocalCache.FlushAsync(ct).ConfigureAwait(false);
             return;
         }
@@ -102,7 +98,7 @@ public sealed class HybridCache(
             return;
         }
 
-        _logger.LogWarning("Unknown invalidate cache message");
+        _logger.LogUnknownInvalidateCacheMessage();
     }
 
     #region ICache - Get Operations
@@ -125,12 +121,12 @@ public sealed class HybridCache(
         var cacheValue = await LocalCache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
         if (cacheValue.HasValue)
         {
-            _logger.LogTrace("Local cache hit: {Key}", key);
+            _logger.LogLocalCacheHit(key);
             Interlocked.Increment(ref _localCacheHits);
             return cacheValue;
         }
 
-        _logger.LogTrace("Local cache miss: {Key}", key);
+        _logger.LogLocalCacheMiss(key);
 
         // Stampede protection + factory
         using (await _keyedLock.LockAsync(key, cancellationToken).ConfigureAwait(false))
@@ -163,7 +159,7 @@ public sealed class HybridCache(
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // L2 failure is non-fatal: log and continue to populate L1
-                _logger.LogWarning(ex, "Failed to write to L2 cache for key {Key}, L1 will still be populated", key);
+                _logger.LogFailedToWriteToL2Cache(ex, key);
             }
 
             // Populate L1
@@ -185,19 +181,19 @@ public sealed class HybridCache(
         var cacheValue = await LocalCache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
         if (cacheValue.HasValue)
         {
-            _logger.LogTrace("Local cache hit: {Key}", key);
+            _logger.LogLocalCacheHit(key);
             Interlocked.Increment(ref _localCacheHits);
             return cacheValue;
         }
 
-        _logger.LogTrace("Local cache miss: {Key}", key);
+        _logger.LogLocalCacheMiss(key);
         cacheValue = await l2Cache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
 
         if (cacheValue.HasValue)
         {
             var expiration = await l2Cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
             var localExpiration = _GetLocalExpiration(expiration);
-            _logger.LogTrace("Setting local cache key: {Key} with expiration: {Expiration}", key, localExpiration);
+            _logger.LogSettingLocalCacheKey(key, localExpiration);
             await LocalCache
                 .UpsertAsync(key, cacheValue.Value, localExpiration, cancellationToken)
                 .ConfigureAwait(false);
@@ -230,11 +226,11 @@ public sealed class HybridCache(
         {
             if (kvp.Value.HasValue)
             {
-                _logger.LogTrace("Local cache hit: {Key}", kvp.Key);
+                _logger.LogLocalCacheHit(kvp.Key);
             }
             else
             {
-                _logger.LogTrace("Local cache miss: {Key}", kvp.Key);
+                _logger.LogLocalCacheMiss(kvp.Key);
                 missedKeys.Add(kvp.Key);
             }
         }
@@ -265,11 +261,7 @@ public sealed class HybridCache(
         if (valuesToCache.Count > 0)
         {
             var localExpiration = _GetLocalExpiration(null);
-            _logger.LogTrace(
-                "Batch setting {Count} local cache keys with expiration: {Expiration}",
-                valuesToCache.Count,
-                localExpiration
-            );
+            _logger.LogBatchSettingLocalCacheKeys(valuesToCache.Count, localExpiration);
             await LocalCache.UpsertAllAsync(valuesToCache, localExpiration, cancellationToken).ConfigureAwait(false);
         }
 
@@ -323,12 +315,12 @@ public sealed class HybridCache(
         var localExists = await LocalCache.ExistsAsync(key, cancellationToken).ConfigureAwait(false);
         if (localExists)
         {
-            _logger.LogTrace("Local cache hit: {Key}", key);
+            _logger.LogLocalCacheHit(key);
             Interlocked.Increment(ref _localCacheHits);
             return true;
         }
 
-        _logger.LogTrace("Local cache miss: {Key}", key);
+        _logger.LogLocalCacheMiss(key);
         return await l2Cache.ExistsAsync(key, cancellationToken).ConfigureAwait(false);
     }
 
@@ -343,12 +335,12 @@ public sealed class HybridCache(
         var localExists = await LocalCache.ExistsAsync(key, cancellationToken).ConfigureAwait(false);
         if (localExists)
         {
-            _logger.LogTrace("Local cache hit: {Key}", key);
+            _logger.LogLocalCacheHit(key);
             Interlocked.Increment(ref _localCacheHits);
             return await LocalCache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
         }
 
-        _logger.LogTrace("Local cache miss: {Key}", key);
+        _logger.LogLocalCacheMiss(key);
         return await l2Cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
     }
 
@@ -369,19 +361,19 @@ public sealed class HybridCache(
             .ConfigureAwait(false);
         if (cacheValue.HasValue)
         {
-            _logger.LogTrace("Local cache hit: {Key}", key);
+            _logger.LogLocalCacheHit(key);
             Interlocked.Increment(ref _localCacheHits);
             return cacheValue;
         }
 
-        _logger.LogTrace("Local cache miss: {Key}", key);
+        _logger.LogLocalCacheMiss(key);
         cacheValue = await l2Cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken).ConfigureAwait(false);
 
         if (cacheValue.HasValue)
         {
             var expiration = await l2Cache.GetExpirationAsync(key, cancellationToken).ConfigureAwait(false);
             var localExpiration = _GetLocalExpiration(expiration);
-            _logger.LogTrace("Setting local cache key: {Key} with expiration: {Expiration}", key, localExpiration);
+            _logger.LogSettingLocalCacheKey(key, localExpiration);
             // Use UpsertAsync to replace any existing L1 data (not SetAddAsync which would merge)
             await LocalCache
                 .UpsertAsync(key, cacheValue.Value!, localExpiration, cancellationToken)
@@ -413,7 +405,7 @@ public sealed class HybridCache(
             return false;
         }
 
-        _logger.LogTrace("Setting key {Key} with expiration: {Expiration}", key, expiration);
+        _logger.LogSettingKey(key, expiration);
 
         var updated = await l2Cache.UpsertAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
 
@@ -459,7 +451,7 @@ public sealed class HybridCache(
             return 0;
         }
 
-        _logger.LogTrace("Setting keys {Keys} with expiration: {Expiration}", value.Keys, expiration);
+        _logger.LogSettingKeys(value.Keys, expiration);
 
         var setCount = await l2Cache.UpsertAllAsync(value, expiration, cancellationToken).ConfigureAwait(false);
 
@@ -501,7 +493,7 @@ public sealed class HybridCache(
             return false;
         }
 
-        _logger.LogTrace("Adding key {Key} to local cache with expiration: {Expiration}", key, expiration);
+        _logger.LogAddingKeyToLocalCache(key, expiration);
 
         var added = await l2Cache.TryInsertAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
 
@@ -1059,9 +1051,8 @@ public sealed class HybridCache(
         {
             // Publish failure is non-fatal: other instances may have stale L1 data
             // until their TTL expires. This is acceptable for eventual consistency.
-            _logger.LogWarning(
+            _logger.LogFailedToPublishCacheInvalidation(
                 ex,
-                "Failed to publish cache invalidation (keyCount={KeyCount}, hasPrefix={HasPrefix}, flushAll={FlushAll}), other instances may serve stale data until TTL expires",
                 message.Keys?.Length ?? (message.Key is not null ? 1 : 0),
                 message.Prefix is not null,
                 message.FlushAll

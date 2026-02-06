@@ -50,7 +50,7 @@ public sealed class ConnekioSmsSender(
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {
-            _logger.LogError("Empty response from Connekio API");
+            _logger.LogEmptyResponse();
 
             return SendSingleSmsResponse.Failed("Failed to send.");
         }
@@ -60,11 +60,7 @@ public sealed class ConnekioSmsSender(
             return SendSingleSmsResponse.Succeeded();
         }
 
-        _logger.LogError(
-            "Failed to send SMS using Connekio API to {DestinationCount} recipients, StatusCode={StatusCode}",
-            request.Destinations.Count,
-            response.StatusCode
-        );
+        _logger.LogFailedToSendSms(request.Destinations.Count, response.StatusCode);
 
         return SendSingleSmsResponse.Failed("Failed to send.");
     }

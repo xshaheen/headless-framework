@@ -36,7 +36,7 @@ public class GatewayProxyAgent(
             return false;
         }
 
-        _logger.LogDebug("start calling remote endpoint...");
+        _logger.LogCallingRemoteEndpoint();
 
         if (requestNodeName == null)
         {
@@ -101,7 +101,7 @@ public class GatewayProxyAgent(
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while invoking downstream node.");
+                _logger.LogErrorInvokingDownstreamNode(ex);
             }
         }
         else

@@ -132,7 +132,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
                 }
                 catch (Exception callbackEx)
                 {
-                    _logger.ExecutedThresholdCallbackFailed(callbackEx);
+                    _logger.ExecutedThresholdCallbackFailed(callbackEx, callbackEx.Message);
                 }
             }
 

@@ -45,7 +45,7 @@ public sealed class CequensSmsSender(
 
         if (string.IsNullOrEmpty(jwtToken))
         {
-            logger.LogError("Failed to get token from Cequens API");
+            logger.LogFailedToGetToken();
 
             return SendSingleSmsResponse.Failed("Failed to get token from Cequens API");
         }
@@ -71,20 +71,12 @@ public sealed class CequensSmsSender(
 
         if (response.IsSuccessStatusCode)
         {
-            logger.LogTrace(
-                "SMS sent successfully using Cequens API to {DestinationCount} recipients, StatusCode={StatusCode}",
-                request.Destinations.Count,
-                response.StatusCode
-            );
+            logger.LogSmsSentSuccessfully(request.Destinations.Count, response.StatusCode);
 
             return SendSingleSmsResponse.Succeeded();
         }
 
-        logger.LogError(
-            "Failed to send SMS using Cequens API to {DestinationCount} recipients, StatusCode={StatusCode}",
-            request.Destinations.Count,
-            response.StatusCode
-        );
+        logger.LogFailedToSendSms(request.Destinations.Count, response.StatusCode);
 
         var error = string.IsNullOrEmpty(rawContent) ? "Failed to send SMS using Cequens API" : rawContent;
 
@@ -125,7 +117,7 @@ public sealed class CequensSmsSender(
 
             if (!response.IsSuccessStatusCode)
             {
-                logger.LogError("Failed to get token from Cequens API, StatusCode={StatusCode}", response.StatusCode);
+                logger.LogFailedToGetTokenWithStatusCode(response.StatusCode);
 
                 return null;
             }

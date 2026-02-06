@@ -155,10 +155,10 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         catch (Exception ex)
         {
             _logger.ConsumerExecuteFailed(
+                ex,
                 message.Origin.GetName(),
                 message.DbId,
-                message.Origin.GetExecutionInstanceId(),
-                ex
+                message.Origin.GetExecutionInstanceId()
             );
 
             return (await _SetFailedState(message, ex).ConfigureAwait(false), OperateResult.Failed(ex));
@@ -225,7 +225,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
                 }
                 catch (Exception callbackEx)
                 {
-                    _logger.ExecutedThresholdCallbackFailed(callbackEx);
+                    _logger.ExecutedThresholdCallbackFailed(callbackEx, callbackEx.Message);
                 }
             }
 
