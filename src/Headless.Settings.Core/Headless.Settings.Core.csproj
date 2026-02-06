@@ -11,14 +11,6 @@
     <ProjectReference Include="..\Headless.Settings.Abstractions\Headless.Settings.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
-    <EmbeddedResource Update="Resources\Messages.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <LastGenOutput>Messages.Designer.cs</LastGenOutput>
-    </EmbeddedResource>
-    <Compile Update="Resources\Messages.Designer.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Messages.resx</DependentUpon>
-    </Compile>
+    <EmbeddedResource Update="Resources\Messages.resx" />
   </ItemGroup>
 </Project>

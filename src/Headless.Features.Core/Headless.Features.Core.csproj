@@ -11,14 +11,6 @@
     <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
-    <EmbeddedResource Update="Resources\FeatureMessages.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <LastGenOutput>Messages.Designer.cs</LastGenOutput>
-    </EmbeddedResource>
-    <Compile Update="Resources\FeatureMessages.Designer.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>FeaturesMessages.resx</DependentUpon>
-    </Compile>
+    <EmbeddedResource Update="Resources\FeatureMessages.resx" />
   </ItemGroup>
 </Project>

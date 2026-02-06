@@ -16,15 +16,7 @@
     <ProjectReference Include="..\Headless.Permissions.Abstractions\Headless.Permissions.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Update="Resources\Messages.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <LastGenOutput>Messages.Designer.cs</LastGenOutput>
-    </EmbeddedResource>
-    <Compile Update="Resources\Messages.Designer.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Messages.resx</DependentUpon>
-    </Compile>
+  <ItemGroup Label="Resources">
+    <EmbeddedResource Update="Resources\Messages.resx" />
   </ItemGroup>
 </Project>
