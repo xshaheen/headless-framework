@@ -62,7 +62,7 @@ public sealed class SqlServerStorageInitializer(
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams.AsArray())
             .ConfigureAwait(false);
 
-        logger.LogDebug("Ensuring all create database tables script are applied.");
+        logger.LogEnsuringTablesCreated();
     }
 
     private string _CreateDbTablesScript(string schema)

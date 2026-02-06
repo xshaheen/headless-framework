@@ -48,36 +48,36 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
     private async Task<IReadOnlyCollection<XElement>> _GetAllElementsAsync()
     {
-        _logger.LogTrace("Loading elements...");
+        _logger.LogLoadingElements();
 
         var files = (await _storage.GetBlobsListAsync(_Containers, "*.xml")).ToList();
 
         if (files.Count == 0)
         {
-            _logger.LogTrace("No elements were found");
+            _logger.LogNoElementsFound();
 
             return [];
         }
 
-        _logger.LogTrace("Found {FileCount} elements", files.Count);
+        _logger.LogFoundElements(files.Count);
 
         var elements = new List<XElement>(files.Count);
 
         foreach (var file in files)
         {
-            _logger.LogTrace("Loading element: {File}", file.BlobKey);
+            _logger.LogLoadingElement(file.BlobKey);
             await using var downloadResult = await _storage.OpenReadStreamAsync(_Containers, file.BlobKey);
 
             if (downloadResult is null)
             {
-                _logger.LogWarning("Failed to load element: {File}", file.BlobKey);
+                _logger.LogFailedToLoadElement(file.BlobKey);
 
                 continue;
             }
 
             elements.Add(XElement.Load(downloadResult.Stream));
 
-            _logger.LogTrace("Loaded element: {File}", file.BlobKey);
+            _logger.LogLoadedElement(file.BlobKey);
         }
 
         return elements.AsReadOnly();
@@ -94,9 +94,9 @@ public sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
 
     private async Task _StoreElementAsync(XElement element, string fileName)
     {
-        _logger.LogTrace("Saving element: {File}", fileName);
+        _logger.LogSavingElement(fileName);
         await _RetryPipeline.ExecuteAsync(storeElementAsync, (_storage, element, fileName));
-        _logger.LogTrace("Saved element: {File}", fileName);
+        _logger.LogSavedElement(fileName);
 
         return;
 

@@ -81,19 +81,19 @@ public sealed class MessageProcessingServer(
             var inner = e.InnerExceptions[0];
             if (inner is not OperationCanceledException)
             {
-                _logger.ExpectedOperationCanceledException(inner);
+                _logger.ExpectedOperationCanceledException(inner, inner.Message);
             }
         }
         catch (Exception e)
         {
-            _logger.LogWarning(e, "An exception was occurred when disposing.");
+            _logger.DisposingWarning(e);
         }
         finally
         {
             _context?.Dispose();
             _context = null;
             _cts.Dispose();
-            _logger.LogInformation("### Messaging system shutdown!");
+            _logger.MessagingShutdown();
         }
     }
 }

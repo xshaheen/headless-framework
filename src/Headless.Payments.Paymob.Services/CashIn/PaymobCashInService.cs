@@ -85,7 +85,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         }
         catch (Exception e)
         {
-            logger.LogCritical(e, "Failed to create wallet cash in. {Request}", request);
+            logger.LogFailedToCreateWalletCashIn(e, request);
 
             throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
         }
@@ -120,7 +120,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         }
         catch (Exception e)
         {
-            logger.LogCritical(e, "Failed to create wallet cash in. {Request}", request);
+            logger.LogFailedToCreateKioskCashIn(e, request);
 
             throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
         }
@@ -155,7 +155,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         }
         catch (Exception e)
         {
-            logger.LogCritical(e, "Failed to create saved token cash in. {Request}", request);
+            logger.LogFailedToCreateSavedTokenCashIn(e, request);
 
             throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
         }
@@ -223,7 +223,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
 
         if (string.IsNullOrWhiteSpace(paymentKeyResponse.PaymentKey))
         {
-            logger.LogCritical("Empty payment key received when request CashIn payment key");
+            logger.LogEmptyPaymentKeyReceived();
 
             throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
         }
@@ -261,7 +261,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         }
         catch (Exception e)
         {
-            logger.LogCritical(e, "Can't create CashIn payment key. {@Request}", request);
+            logger.LogCannotCreatePaymentKey(e, request.OrderId, request.IntegrationId, request.AmountCents);
 
             throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
         }
@@ -279,7 +279,7 @@ public sealed class PaymobCashInService(IPaymobCashInBroker broker, ILogger<Paym
         }
         catch (Exception e)
         {
-            logger.LogCritical(e, "Can't create CashIn order. {AmountCents}", amountCents);
+            logger.LogCannotCreateOrder(e, amountCents);
 
             throw new ConflictException(PaymobMessageDescriptor.CashIn.ProviderConnectionFailed());
         }

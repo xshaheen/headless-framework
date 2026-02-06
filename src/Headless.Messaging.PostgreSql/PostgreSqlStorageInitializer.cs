@@ -54,7 +54,7 @@ public sealed class PostgreSqlStorageInitializer(
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
             .ConfigureAwait(false);
 
-        logger.LogDebug("Ensuring all create database tables script are applied.");
+        logger.LogEnsuringTablesCreated();
     }
 
     private string _CreateDbTablesScript(string schema)

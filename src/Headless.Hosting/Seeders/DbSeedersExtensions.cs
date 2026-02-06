@@ -49,7 +49,7 @@ public static class DbSeedersExtensions
             .OrderBy(x => x.GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0)
             .ToList();
 
-        logger.LogInformation(">>> Pre-Seeding");
+        logger.LogPreSeeding();
 
         var cancellationToken =
             scope.ServiceProvider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None;
@@ -71,13 +71,13 @@ public static class DbSeedersExtensions
         {
             foreach (var type in seederTypes)
             {
-                logger.LogInformation(">>> Pre-Seeding using {TypeName}", type.GetFriendlyTypeName());
+                logger.LogPreSeedingUsing(type.GetFriendlyTypeName());
                 var seeder = (IPreSeeder)scope.ServiceProvider.GetRequiredService(type);
                 await seeder.SeedAsync(cancellationToken).ConfigureAwait(false);
             }
         }
 
-        logger.LogInformation(">>> Pre-Seeding completed");
+        logger.LogPreSeedingCompleted();
     }
 
     public static async Task SeedAsync(this IServiceProvider services, bool runInParallel = false)
@@ -95,7 +95,7 @@ public static class DbSeedersExtensions
             .OrderBy(x => x.GetCustomAttribute<SeederPriorityAttribute>()?.Priority ?? 0)
             .ToList();
 
-        logger.LogInformation(">>> Seeding");
+        logger.LogSeeding();
 
         var cancellationToken =
             scope.ServiceProvider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None;
@@ -117,12 +117,12 @@ public static class DbSeedersExtensions
         {
             foreach (var type in seederTypes)
             {
-                logger.LogInformation(">>> Seeding using {TypeName}", type.GetFriendlyTypeName());
+                logger.LogSeedingUsing(type.GetFriendlyTypeName());
                 var seeder = (ISeeder)scope.ServiceProvider.GetRequiredService(type);
                 await seeder.SeedAsync(cancellationToken).ConfigureAwait(false);
             }
         }
 
-        logger.LogInformation(">>> Seeding completed");
+        logger.LogSeedingCompleted();
     }
 }

@@ -114,9 +114,7 @@ public sealed class Dispatcher : IDispatcher
 
             if (_IsCancellationRequested())
             {
-                _logger.LogWarning(
-                    "The message has been persisted, but the messaging system is currently stopped. It will be attempted to be sent once the system becomes available."
-                );
+                _logger.MessagePersistButSystemStopped();
                 return;
             }
 
@@ -166,7 +164,7 @@ public sealed class Dispatcher : IDispatcher
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "An exception occurred when invoke subscriber. MessageId:{MessageId}", message.DbId);
+            _logger.SubscriberInvocationFailed(e, message.DbId);
         }
     }
 
@@ -283,13 +281,7 @@ public sealed class Dispatcher : IDispatcher
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(
-                            ex,
-                            "Delay message publishing failed unexpectedly, which will stop future scheduled "
-                                + "messages from publishing. See more details here: Restart the application to resume delayed message processing. "
-                                + "Exception: {Message}",
-                            ex.Message
-                        );
+                        _logger.DelayedMessagePublishFailed(ex, ex.Message);
                         throw;
                     }
                 }
@@ -320,11 +312,11 @@ public sealed class Dispatcher : IDispatcher
                     .ConfigureAwait(false)
                     .GetAwaiter()
                     .GetResult();
-                _logger.LogDebug("Update storage to delayed success of delayed message in memory queue!");
+                _logger.DelayedStorageUpdateSuccess();
             }
             catch (Exception e)
             {
-                _logger.LogWarning(e, "Update storage fails of delayed message in memory queue!");
+                _logger.DelayedStorageUpdateFailed(e);
             }
         });
     }
@@ -353,12 +345,12 @@ public sealed class Dispatcher : IDispatcher
             var result = await _sender.SendAsync(message).ConfigureAwait(false);
             if (!result.Succeeded)
             {
-                _logger.LogError("Delay message sending failed. MessageId: {MessageId} ", message.DbId);
+                _logger.DelayedMessageSendFailed(message.DbId);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending scheduled message. MessageId: {MessageId}", message.DbId);
+            _logger.ScheduledMessageSendError(ex, message.DbId);
         }
     }
 
@@ -419,16 +411,12 @@ public sealed class Dispatcher : IDispatcher
             var result = await _sender.SendAsync(message).ConfigureAwait(false);
             if (!result.Succeeded)
             {
-                _logger.MessagePublishException(message.Origin.GetId(), result.ToString(), result.Exception);
+                _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(
-                ex,
-                "An exception occurred when sending a message to the transport. Id:{MessageId}",
-                message.DbId
-            );
+            _logger.TransportSendError(ex, message.DbId);
         }
     }
 
@@ -437,7 +425,7 @@ public sealed class Dispatcher : IDispatcher
         var result = await _sender.SendAsync(message).ConfigureAwait(false);
         if (!result.Succeeded)
         {
-            _logger.MessagePublishException(message.Origin.GetId(), result.ToString(), result.Exception);
+            _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
         }
     }
 
@@ -476,11 +464,7 @@ public sealed class Dispatcher : IDispatcher
         }
         catch (Exception e)
         {
-            _logger.LogError(
-                e,
-                "An exception occurred when invoke subscriber. MessageId:{MessageId}",
-                messageData.Item1.DbId
-            );
+            _logger.SubscriberInvocationFailed(e, messageData.Item1.DbId);
         }
     }
 
