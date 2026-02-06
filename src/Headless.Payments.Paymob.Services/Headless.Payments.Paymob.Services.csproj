@@ -7,14 +7,6 @@
     <ProjectReference Include="..\Headless.Payments.Paymob.CashOut\Headless.Payments.Paymob.CashOut.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
-    <EmbeddedResource Update="Resources\CashInMessages.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <LastGenOutput>CashInMessages.Designer.cs</LastGenOutput>
-    </EmbeddedResource>
-    <Compile Update="Resources\CashInMessages.Designer.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>CashInMessages.resx</DependentUpon>
-    </Compile>
+    <EmbeddedResource Update="Resources\CashInMessages.resx" />
   </ItemGroup>
 </Project>
