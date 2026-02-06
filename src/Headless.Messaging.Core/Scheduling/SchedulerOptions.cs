@@ -22,4 +22,10 @@ public sealed class SchedulerOptions
     /// Default: <see cref="Environment.MachineName"/>.
     /// </summary>
     public string LockHolder { get; set; } = Environment.MachineName;
+
+    /// <summary>
+    /// Gets or sets the distributed lock timeout for job execution when using
+    /// an <c>IDistributedLockProvider</c> with <c>SkipIfRunning</c> jobs. Default: 5 minutes.
+    /// </summary>
+    public TimeSpan LockTimeout { get; set; } = TimeSpan.FromMinutes(5);
 }
