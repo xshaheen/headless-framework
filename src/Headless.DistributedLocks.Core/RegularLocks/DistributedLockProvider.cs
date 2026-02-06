@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Constants;
@@ -31,17 +30,6 @@ public sealed class DistributedLockProvider(
     );
 
     private readonly Lock _resetEventLock = new();
-
-    private readonly Counter<int> _lockTimeoutCounter = HeadlessDiagnostics.Meter.CreateCounter<int>(
-        "headless.lock.failed",
-        description: "Number of failed attempts to acquire a lock"
-    );
-
-    private readonly Histogram<double> _lockWaitTimeHistogram = HeadlessDiagnostics.Meter.CreateHistogram<double>(
-        "headless.lock.wait.time",
-        unit: "ms",
-        description: "Time waiting for locks"
-    );
 
     ILogger IHaveLogger.Logger => logger;
 
@@ -140,11 +128,11 @@ public sealed class DistributedLockProvider(
         }
 
         var timeWaitedForLock = timeProvider.GetElapsedTime(timestamp);
-        _lockWaitTimeHistogram.Record(timeWaitedForLock.TotalMilliseconds);
+        DistributedLockMetrics.LockWaitTime.Record(timeWaitedForLock.TotalMilliseconds);
 
         if (!gotLock)
         {
-            _lockTimeoutCounter.Add(1);
+            DistributedLockMetrics.LockFailed.Add(1);
 
             if (cts.IsCancellationRequested)
             {
