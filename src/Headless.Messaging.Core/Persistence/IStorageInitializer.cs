@@ -11,4 +11,8 @@ public interface IStorageInitializer
     string GetReceivedTableName();
 
     string GetLockTableName();
+
+    string GetScheduledJobsTableName();
+
+    string GetJobExecutionsTableName();
 }
