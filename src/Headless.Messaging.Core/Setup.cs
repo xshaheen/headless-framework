@@ -6,6 +6,7 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
+using Headless.Messaging.Scheduling;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -174,7 +175,50 @@ public static class Setup
         services.TryAddSingleton<IBootstrapper>(sp => sp.GetRequiredService<Bootstrapper>());
         services.AddHostedService(sp => sp.GetRequiredService<Bootstrapper>());
 
+        // Scheduler registration: only when IScheduledJobStorage is available
+        _RegisterSchedulerServices(services, options);
+
         return new MessagingBuilder(services);
+    }
+
+    /// <summary>
+    /// Registers scheduler infrastructure services when <see cref="IScheduledJobStorage"/> is available
+    /// and scheduled job definitions have been discovered.
+    /// </summary>
+    private static void _RegisterSchedulerServices(IServiceCollection services, MessagingOptions options)
+    {
+        var hasStorage = services.Any(d => d.ServiceType == typeof(IScheduledJobStorage));
+        var hasDefinitions = options.ScheduledJobDefinitions.Count > 0;
+
+        if (!hasStorage && !hasDefinitions)
+        {
+            return;
+        }
+
+        // Register the definition registry with all discovered definitions
+        var definitionRegistry = new ScheduledJobDefinitionRegistry();
+
+        foreach (var definition in options.ScheduledJobDefinitions)
+        {
+            definitionRegistry.Add(definition);
+        }
+
+        services.TryAddSingleton(definitionRegistry);
+
+        // Core scheduling services
+        services.TryAddSingleton<CronScheduleCache>();
+        services.TryAddSingleton<IScheduledJobDispatcher, ScheduledJobDispatcher>();
+        services.TryAddSingleton<IScheduledJobManager, ScheduledJobManager>();
+
+        // Scheduler options
+        services.TryAddSingleton(TimeProvider.System);
+
+        // Background services (only when storage is registered)
+        if (hasStorage)
+        {
+            services.AddHostedService<SchedulerJobReconciler>();
+            services.AddHostedService<SchedulerBackgroundService>();
+        }
     }
 
     /// <summary>
