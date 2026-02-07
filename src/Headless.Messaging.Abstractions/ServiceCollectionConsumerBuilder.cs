@@ -65,6 +65,24 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
     }
 
     /// <inheritdoc />
+    public IConsumerBuilder<TConsumer> WithSchedule(string cronExpression)
+    {
+        throw new NotSupportedException(
+            "WithSchedule() is not supported for ServiceCollection-based consumer registration. "
+                + "Use AddMessages() with ScanConsumers or Consumer<T>().WithSchedule() instead."
+        );
+    }
+
+    /// <inheritdoc />
+    public IConsumerBuilder<TConsumer> WithTimeZone(string ianaTimeZone)
+    {
+        throw new NotSupportedException(
+            "WithTimeZone() is not supported for ServiceCollection-based consumer registration. "
+                + "Use AddMessages() with ScanConsumers or Consumer<T>().WithSchedule() instead."
+        );
+    }
+
+    /// <inheritdoc />
     public IMessagingBuilder Build()
     {
         // ServiceCollection-based registration doesn't return to a messaging builder
