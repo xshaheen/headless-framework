@@ -6,7 +6,10 @@
     -->
     <NoWarn>$(NoWarn);xUnit1044</NoWarn>
   </PropertyGroup>
-  <ItemGroup>
+  <PropertyGroup Condition="'$(IsTestProject)' == 'false'">
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(IsTestProject)' != 'false'">
     <Content Include="../xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup Label="Global Usings">
