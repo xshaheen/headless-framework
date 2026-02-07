@@ -26,9 +26,20 @@ public sealed class SqliteConnectionStringChecker(ILogger<SqliteConnectionString
         }
         catch (Exception e)
         {
-            logger.LogWarning(e, "Error while checking connection string");
+            logger.LogErrorCheckingConnectionString(e);
 
             return result;
         }
     }
+}
+
+internal static partial class SqliteConnectionStringCheckerLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "ErrorCheckingConnectionString",
+        Level = LogLevel.Warning,
+        Message = "Error while checking connection string"
+    )]
+    public static partial void LogErrorCheckingConnectionString(this ILogger logger, Exception exception);
 }

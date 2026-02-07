@@ -29,6 +29,13 @@
       level="INFORMATION"
       enabled_by_default="true"
     />
+    <inspection_tool
+      class="HttpUrlsUsage"
+      enabled="true"
+      level="SUGGESTION"
+      enabled_by_default="true"
+      editorAttributes="SUGGESTION"
+    />
     <inspection_tool class="SqlNoDataSourceInspection" enabled="true" level="INFORMATION" enabled_by_default="true" />
     <inspection_tool
       class="SqlResolveInspection"

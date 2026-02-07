@@ -32,7 +32,7 @@ public sealed class SettingEncryptionService(
         }
         catch (Exception e)
         {
-            logger.LogWarning(e, "Failed to encrypt setting value: {SettingDefinition}", settingDefinition.Name);
+            logger.LogFailedToEncryptSettingValue(e, settingDefinition.Name);
 
             throw;
         }
@@ -51,9 +51,36 @@ public sealed class SettingEncryptionService(
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Failed to decrypt setting value: {SettingDefinition}", settingDefinition.Name);
+            logger.LogFailedToDecryptSettingValue(e, settingDefinition.Name);
 
             throw new ConflictException($@"Failed to decrypt setting '{settingDefinition.Name}'.", e);
         }
     }
+}
+
+internal static partial class SettingEncryptionServiceLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToEncryptSettingValue",
+        Level = LogLevel.Warning,
+        Message = "Failed to encrypt setting value: {SettingDefinition}"
+    )]
+    public static partial void LogFailedToEncryptSettingValue(
+        this ILogger logger,
+        Exception exception,
+        string settingDefinition
+    );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "FailedToDecryptSettingValue",
+        Level = LogLevel.Error,
+        Message = "Failed to decrypt setting value: {SettingDefinition}"
+    )]
+    public static partial void LogFailedToDecryptSettingValue(
+        this ILogger logger,
+        Exception exception,
+        string settingDefinition
+    );
 }

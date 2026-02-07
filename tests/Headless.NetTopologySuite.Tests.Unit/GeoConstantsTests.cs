@@ -103,7 +103,10 @@ public sealed class GeoConstantsTests
     }
 
     [Fact]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA1869:Cache and reuse 'JsonSerializerOptions' instances")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Reliability",
+        "CA1869:Cache and reuse 'JsonSerializerOptions' instances"
+    )]
     public void CreateGeoJsonConverter_should_not_write_bbox()
     {
         // given

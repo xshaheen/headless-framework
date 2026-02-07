@@ -10,14 +10,6 @@
     <ProjectReference Include="..\Headless.Base\Headless.Base.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
-    <EmbeddedResource Update="Resources\FluentValidatorErrors.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <LastGenOutput>FluentValidatorErrors.Designer.cs</LastGenOutput>
-    </EmbeddedResource>
-    <Compile Update="Resources\FluentValidatorErrors.Designer.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>FluentValidatorErrors.resx</DependentUpon>
-    </Compile>
+    <EmbeddedResource Update="Resources\FluentValidatorErrors.resx" />
   </ItemGroup>
 </Project>

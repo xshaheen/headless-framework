@@ -36,7 +36,7 @@ public sealed class VodafoneSmsSender(
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {
-            logger.LogError("Empty response from Vodafone API");
+            logger.LogEmptyResponse();
 
             return SendSingleSmsResponse.Failed("Failed to send.");
         }
@@ -48,11 +48,7 @@ public sealed class VodafoneSmsSender(
             return SendSingleSmsResponse.Succeeded();
         }
 
-        logger.LogError(
-            "Failed to send SMS using Vodafone API to {DestinationCount} recipients, StatusCode={StatusCode}",
-            request.Destinations.Count,
-            response.StatusCode
-        );
+        logger.LogFailedToSendSms(request.Destinations.Count, response.StatusCode);
 
         return SendSingleSmsResponse.Failed("Failed to send.");
     }

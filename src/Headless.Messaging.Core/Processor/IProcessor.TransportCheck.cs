@@ -17,17 +17,17 @@ public sealed class TransportCheckProcessor(ILogger<TransportCheckProcessor> log
 
         context.ThrowIfStopping();
 
-        logger.LogDebug("Transport connection checking...");
+        logger.TransportChecking();
 
         if (!register.IsHealthy())
         {
-            logger.LogWarning("Transport connection is unhealthy, reconnection...");
+            logger.TransportUnhealthy();
 
             await register.ReStartAsync();
         }
         else
         {
-            logger.LogDebug("Transport connection healthy!");
+            logger.TransportHealthy();
         }
 
         await context.WaitAsync(_waitingInterval).ConfigureAwait(false);

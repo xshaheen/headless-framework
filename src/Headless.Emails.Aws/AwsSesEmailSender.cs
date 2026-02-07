@@ -72,7 +72,7 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<A
             return SendSingleEmailResponse.Succeeded();
         }
 
-        logger.LogError("Failed to send an email to with response {@Response}", response);
+        logger.LogFailedToSendEmail(response);
 
         return SendSingleEmailResponse.Failed("Failed to send an email to the recipient.");
     }
@@ -111,4 +111,15 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<A
     }
 
     #endregion
+}
+
+internal static partial class AwsSesEmailSenderLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToSendEmail",
+        Level = LogLevel.Error,
+        Message = "Failed to send an email to with response {Response}"
+    )]
+    public static partial void LogFailedToSendEmail(this ILogger logger, SendEmailResponse response);
 }

@@ -18,6 +18,7 @@ namespace Tests.Security.Jwt;
 public sealed class JwtTokenFactoryTests : TestBase
 {
     private const string _TestSigningKey = "this-is-a-test-signing-key-must-be-32-bytes-or-more";
+
     // A256CBC-HS512 requires 512 bits (64 bytes) for encryption key
     private const string _TestEncryptingKey = "this-is-test-encrypt-key-must-be-64-bytes-for-aes256-cbc-hs512!!";
     private const string _TestIssuer = "test-issuer";
@@ -27,14 +28,16 @@ public sealed class JwtTokenFactoryTests : TestBase
     {
         timeProvider ??= new FakeTimeProvider(DateTimeOffset.UtcNow);
         var clock = new TestClock(timeProvider);
-        var identityOptions = Options.Create(new IdentityOptions
-        {
-            ClaimsIdentity = new ClaimsIdentityOptions
+        var identityOptions = Options.Create(
+            new IdentityOptions
             {
-                UserNameClaimType = UserClaimTypes.UserName,
-                RoleClaimType = UserClaimTypes.Roles,
-            },
-        });
+                ClaimsIdentity = new ClaimsIdentityOptions
+                {
+                    UserNameClaimType = UserClaimTypes.UserName,
+                    RoleClaimType = UserClaimTypes.Roles,
+                },
+            }
+        );
         var claimsPrincipalFactory = new ClaimsPrincipalFactory(identityOptions);
         return new JwtTokenFactory(claimsPrincipalFactory, clock);
     }
@@ -42,16 +45,17 @@ public sealed class JwtTokenFactoryTests : TestBase
     private static IClaimsPrincipalFactory _CreateMockClaimsPrincipalFactory()
     {
         var mock = Substitute.For<IClaimsPrincipalFactory>();
-        mock.CreateClaimsIdentity(Arg.Any<IEnumerable<Claim>>()).Returns(callInfo =>
-        {
-            var claims = callInfo.Arg<IEnumerable<Claim>>();
-            return new ClaimsIdentity(
-                claims,
-                AuthenticationConstants.IdentityAuthenticationType,
-                UserClaimTypes.UserName,
-                UserClaimTypes.Roles
-            );
-        });
+        mock.CreateClaimsIdentity(Arg.Any<IEnumerable<Claim>>())
+            .Returns(callInfo =>
+            {
+                var claims = callInfo.Arg<IEnumerable<Claim>>();
+                return new ClaimsIdentity(
+                    claims,
+                    AuthenticationConstants.IdentityAuthenticationType,
+                    UserClaimTypes.UserName,
+                    UserClaimTypes.Roles
+                );
+            });
         return mock;
     }
 
@@ -318,18 +322,18 @@ public sealed class JwtTokenFactoryTests : TestBase
         const string shortKey = "short-key"; // Less than 32 bytes
 
         // when
-        var act = () => factory.CreateJwtToken(
-            claims,
-            TimeSpan.FromHours(1),
-            shortKey,
-            encryptingKey: null,
-            _TestIssuer,
-            _TestAudience
-        );
+        var act = () =>
+            factory.CreateJwtToken(
+                claims,
+                TimeSpan.FromHours(1),
+                shortKey,
+                encryptingKey: null,
+                _TestIssuer,
+                _TestAudience
+            );
 
         // then
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*256 bits*32 bytes*");
+        act.Should().Throw<ArgumentException>().WithMessage("*256 bits*32 bytes*");
     }
 
     #endregion

@@ -15,7 +15,8 @@ internal static class TestHelpers
 {
     // Cache assembly references to avoid repeated enumeration across tests
     private static readonly Lazy<ImmutableArray<MetadataReference>> _cachedReferences = new(() =>
-        AppDomain.CurrentDomain.GetAssemblies()
+        AppDomain
+            .CurrentDomain.GetAssemblies()
             .Where(x => !x.IsDynamic && !string.IsNullOrWhiteSpace(x.Location))
             .Select(x => (MetadataReference)MetadataReference.CreateFromFile(x.Location))
             .Concat([
@@ -23,7 +24,8 @@ internal static class TestHelpers
                 (MetadataReference)MetadataReference.CreateFromFile(typeof(IPrimitive<>).Assembly.Location),
                 (MetadataReference)MetadataReference.CreateFromFile(typeof(DisplayAttribute).Assembly.Location),
             ])
-            .ToImmutableArray());
+            .ToImmutableArray()
+    );
 
     internal static GeneratedOutput GetGeneratedOutput<T>(string source, PrimitiveGlobalOptions? globalOptions = null)
         where T : IIncrementalGenerator, new()

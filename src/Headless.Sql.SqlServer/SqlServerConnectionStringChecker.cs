@@ -34,9 +34,20 @@ public sealed class SqlServerConnectionStringChecker(ILogger<SqlServerConnection
         }
         catch (Exception e)
         {
-            logger.LogWarning(e, "Error checking connection string");
+            logger.LogErrorCheckingConnectionString(e);
 
             return result;
         }
     }
+}
+
+internal static partial class SqlServerConnectionStringCheckerLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "ErrorCheckingConnectionString",
+        Level = LogLevel.Warning,
+        Message = "Error checking connection string"
+    )]
+    public static partial void LogErrorCheckingConnectionString(this ILogger logger, Exception exception);
 }

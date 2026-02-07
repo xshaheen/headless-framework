@@ -1,209 +1,168 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Diagnostics.Metrics;
+using Microsoft.Extensions.Diagnostics.Metrics;
 
 namespace Headless.Messaging.OpenTelemetry;
 
 /// <summary>
 /// OpenTelemetry metrics for messaging operations.
 /// </summary>
-internal sealed class MessagingMetrics : IDisposable
+internal sealed partial class MessagingMetrics : IDisposable
 {
     public const string MeterName = "Headless.Messaging";
     private const string _Version = "1.0.0";
 
     private readonly Meter _meter;
-    private readonly Counter<long> _messagesPublished;
-    private readonly Counter<long> _messagesConsumed;
-    private readonly Counter<long> _subscriberInvocations;
-    private readonly Counter<long> _publishErrors;
-    private readonly Counter<long> _consumeErrors;
-    private readonly Counter<long> _subscriberErrors;
-    private readonly Histogram<double> _publishDuration;
-    private readonly Histogram<double> _consumeDuration;
-    private readonly Histogram<double> _subscriberDuration;
-    private readonly Histogram<double> _messagePersistenceDuration;
-    private readonly Histogram<long> _messageSize;
+    private readonly PublishMessageCounter _messagesPublished;
+    private readonly ConsumeMessageCounter _messagesConsumed;
+    private readonly SubscriberInvocationCounter _subscriberInvocations;
+    private readonly PublishErrorCounter _publishErrors;
+    private readonly ConsumeErrorCounter _consumeErrors;
+    private readonly SubscriberErrorCounter _subscriberErrors;
+    private readonly PublishDurationHistogram _publishDuration;
+    private readonly ConsumeDurationHistogram _consumeDuration;
+    private readonly SubscriberDurationHistogram _subscriberDuration;
+    private readonly PersistenceDurationHistogram _messagePersistenceDuration;
+    private readonly MessageSizeHistogram _messageSize;
 
     public MessagingMetrics()
     {
         _meter = new Meter(MeterName, _Version);
 
-        // Counters for message throughput
-        _messagesPublished = _meter.CreateCounter<long>(
-            "messaging.publish.messages",
-            unit: "{message}",
-            description: "Number of messages published"
-        );
-
-        _messagesConsumed = _meter.CreateCounter<long>(
-            "messaging.consume.messages",
-            unit: "{message}",
-            description: "Number of messages consumed"
-        );
-
-        _subscriberInvocations = _meter.CreateCounter<long>(
-            "messaging.subscriber.invocations",
-            unit: "{invocation}",
-            description: "Number of subscriber invocations"
-        );
-
-        // Counters for errors
-        _publishErrors = _meter.CreateCounter<long>(
-            "messaging.publish.errors",
-            unit: "{error}",
-            description: "Number of publish errors"
-        );
-
-        _consumeErrors = _meter.CreateCounter<long>(
-            "messaging.consume.errors",
-            unit: "{error}",
-            description: "Number of consume errors"
-        );
-
-        _subscriberErrors = _meter.CreateCounter<long>(
-            "messaging.subscriber.errors",
-            unit: "{error}",
-            description: "Number of subscriber invocation errors"
-        );
-
-        // Histograms for latency
-        _publishDuration = _meter.CreateHistogram<double>(
-            "messaging.publish.duration",
-            unit: "ms",
-            description: "Duration of message publish operations"
-        );
-
-        _consumeDuration = _meter.CreateHistogram<double>(
-            "messaging.consume.duration",
-            unit: "ms",
-            description: "Duration of message consume operations"
-        );
-
-        _subscriberDuration = _meter.CreateHistogram<double>(
-            "messaging.subscriber.duration",
-            unit: "ms",
-            description: "Duration of subscriber invocations"
-        );
-
-        _messagePersistenceDuration = _meter.CreateHistogram<double>(
-            "messaging.persistence.duration",
-            unit: "ms",
-            description: "Duration of message persistence operations"
-        );
-
-        // Histogram for message size
-        _messageSize = _meter.CreateHistogram<long>(
-            "messaging.message.size",
-            unit: "By",
-            description: "Size of message bodies in bytes"
-        );
+        _messagesPublished = Instruments.CreatePublishMessageCounter(_meter);
+        _messagesConsumed = Instruments.CreateConsumeMessageCounter(_meter);
+        _subscriberInvocations = Instruments.CreateSubscriberInvocationCounter(_meter);
+        _publishErrors = Instruments.CreatePublishErrorCounter(_meter);
+        _consumeErrors = Instruments.CreateConsumeErrorCounter(_meter);
+        _subscriberErrors = Instruments.CreateSubscriberErrorCounter(_meter);
+        _publishDuration = Instruments.CreatePublishDurationHistogram(_meter);
+        _consumeDuration = Instruments.CreateConsumeDurationHistogram(_meter);
+        _subscriberDuration = Instruments.CreateSubscriberDurationHistogram(_meter);
+        _messagePersistenceDuration = Instruments.CreatePersistenceDurationHistogram(_meter);
+        _messageSize = Instruments.CreateMessageSizeHistogram(_meter);
     }
 
     public void RecordPublish(string operation, string brokerName, long? elapsedMs = null)
     {
-        var tags = new TagList { { "messaging.operation", operation }, { "messaging.system", brokerName } };
-
-        _messagesPublished.Add(1, tags);
+        _messagesPublished.Add(1, operation, brokerName);
 
         if (elapsedMs.HasValue)
         {
-            _publishDuration.Record(elapsedMs.Value, tags);
+            _publishDuration.Record(elapsedMs.Value, operation, brokerName);
         }
     }
 
     public void RecordPublishError(string operation, string brokerName, string errorType)
     {
-        _publishErrors.Add(
-            1,
-            new TagList
-            {
-                { "messaging.operation", operation },
-                { "messaging.system", brokerName },
-                { "error.type", errorType },
-            }
-        );
+        _publishErrors.Add(1, operation, brokerName, errorType);
     }
 
     public void RecordConsume(string operation, string brokerName, string? consumerGroup = null, long? elapsedMs = null)
     {
-        var tags = new TagList { { "messaging.operation", operation }, { "messaging.system", brokerName } };
-
-        if (!string.IsNullOrEmpty(consumerGroup))
-        {
-            tags.Add("messaging.consumer.group", consumerGroup);
-        }
-
-        _messagesConsumed.Add(1, tags);
+        _messagesConsumed.Add(1, operation, brokerName, consumerGroup ?? "");
 
         if (elapsedMs.HasValue)
         {
-            _consumeDuration.Record(elapsedMs.Value, tags);
+            _consumeDuration.Record(elapsedMs.Value, operation, brokerName, consumerGroup ?? "");
         }
     }
 
     public void RecordConsumeError(string operation, string brokerName, string errorType, string? consumerGroup = null)
     {
-        var tags = new TagList
-        {
-            { "messaging.operation", operation },
-            { "messaging.system", brokerName },
-            { "error.type", errorType },
-        };
-
-        if (!string.IsNullOrEmpty(consumerGroup))
-        {
-            tags.Add("messaging.consumer.group", consumerGroup);
-        }
-
-        _consumeErrors.Add(1, tags);
+        _consumeErrors.Add(1, operation, brokerName, errorType, consumerGroup ?? "");
     }
 
     public void RecordSubscriberInvocation(string subscriberName, string operation, long? elapsedMs = null)
     {
-        var tags = new TagList { { "messaging.subscriber", subscriberName }, { "messaging.operation", operation } };
-
-        _subscriberInvocations.Add(1, tags);
+        _subscriberInvocations.Add(1, subscriberName, operation);
 
         if (elapsedMs.HasValue)
         {
-            _subscriberDuration.Record(elapsedMs.Value, tags);
+            _subscriberDuration.Record(elapsedMs.Value, subscriberName, operation);
         }
     }
 
     public void RecordSubscriberError(string subscriberName, string operation, string errorType)
     {
-        _subscriberErrors.Add(
-            1,
-            new TagList
-            {
-                { "messaging.subscriber", subscriberName },
-                { "messaging.operation", operation },
-                { "error.type", errorType },
-            }
-        );
+        _subscriberErrors.Add(1, subscriberName, operation, errorType);
     }
 
     public void RecordPersistence(string operation, long elapsedMs, bool isPublish)
     {
-        _messagePersistenceDuration.Record(
-            elapsedMs,
-            new TagList
-            {
-                { "messaging.operation", operation },
-                { "messaging.persistence.type", isPublish ? "publish" : "consume" },
-            }
-        );
+        _messagePersistenceDuration.Record(elapsedMs, operation, isPublish ? "publish" : "consume");
     }
 
     public void RecordMessageSize(long sizeBytes, string operation)
     {
-        _messageSize.Record(sizeBytes, new TagList { { "messaging.operation", operation } });
+        _messageSize.Record(sizeBytes, operation);
     }
 
     public void Dispose()
     {
         _meter.Dispose();
+    }
+
+    [SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes")]
+    private static partial class Instruments
+    {
+        [Counter<long>("messaging.operation", "messaging.system", Name = "messaging.publish.messages")]
+        internal static partial PublishMessageCounter CreatePublishMessageCounter(Meter meter);
+
+        [Counter<long>(
+            "messaging.operation",
+            "messaging.system",
+            "messaging.consumer.group",
+            Name = "messaging.consume.messages"
+        )]
+        internal static partial ConsumeMessageCounter CreateConsumeMessageCounter(Meter meter);
+
+        [Counter<long>("messaging.subscriber", "messaging.operation", Name = "messaging.subscriber.invocations")]
+        internal static partial SubscriberInvocationCounter CreateSubscriberInvocationCounter(Meter meter);
+
+        [Counter<long>("messaging.operation", "messaging.system", "error.type", Name = "messaging.publish.errors")]
+        internal static partial PublishErrorCounter CreatePublishErrorCounter(Meter meter);
+
+        [Counter<long>(
+            "messaging.operation",
+            "messaging.system",
+            "error.type",
+            "messaging.consumer.group",
+            Name = "messaging.consume.errors"
+        )]
+        internal static partial ConsumeErrorCounter CreateConsumeErrorCounter(Meter meter);
+
+        [Counter<long>(
+            "messaging.subscriber",
+            "messaging.operation",
+            "error.type",
+            Name = "messaging.subscriber.errors"
+        )]
+        internal static partial SubscriberErrorCounter CreateSubscriberErrorCounter(Meter meter);
+
+        [Histogram<double>("messaging.operation", "messaging.system", Name = "messaging.publish.duration")]
+        internal static partial PublishDurationHistogram CreatePublishDurationHistogram(Meter meter);
+
+        [Histogram<double>(
+            "messaging.operation",
+            "messaging.system",
+            "messaging.consumer.group",
+            Name = "messaging.consume.duration"
+        )]
+        internal static partial ConsumeDurationHistogram CreateConsumeDurationHistogram(Meter meter);
+
+        [Histogram<double>("messaging.subscriber", "messaging.operation", Name = "messaging.subscriber.duration")]
+        internal static partial SubscriberDurationHistogram CreateSubscriberDurationHistogram(Meter meter);
+
+        [Histogram<double>(
+            "messaging.operation",
+            "messaging.persistence.type",
+            Name = "messaging.persistence.duration"
+        )]
+        internal static partial PersistenceDurationHistogram CreatePersistenceDurationHistogram(Meter meter);
+
+        [Histogram<long>("messaging.operation", Name = "messaging.message.size")]
+        internal static partial MessageSizeHistogram CreateMessageSizeHistogram(Meter meter);
     }
 }

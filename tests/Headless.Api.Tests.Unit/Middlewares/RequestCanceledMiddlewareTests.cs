@@ -131,13 +131,15 @@ public sealed class RequestCanceledMiddlewareTests : TestBase
         await middleware.InvokeAsync(context, next);
 
         // then
-        logger.Received().Log(
-            LogLevel.Information,
-            Arg.Is<EventId>(e => e.Id == 5002 && e.Name == "RequestCancelled"),
-            Arg.Any<object>(),
-            Arg.Is<Exception?>(e => e == null),
-            Arg.Any<Func<object, Exception?, string>>()
-        );
+        logger
+            .Received()
+            .Log(
+                LogLevel.Information,
+                Arg.Is<EventId>(e => e.Id == 5002 && e.Name == "RequestCancelled"),
+                Arg.Any<object>(),
+                Arg.Is<Exception?>(e => e == null),
+                Arg.Any<Func<object, Exception?, string>>()
+            );
     }
 
     [Fact]

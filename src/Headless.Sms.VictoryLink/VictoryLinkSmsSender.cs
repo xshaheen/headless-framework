@@ -54,7 +54,7 @@ public sealed class VictoryLinkSmsSender(
 
         if (string.IsNullOrWhiteSpace(rawContent))
         {
-            logger.LogError("Empty response from VictoryLink SMS API");
+            logger.LogEmptyResponse();
 
             return SendSingleSmsResponse.Failed("Failed to send.");
         }
@@ -66,11 +66,7 @@ public sealed class VictoryLinkSmsSender(
 
         var responseMessage = VictoryLinkResponseCodes.GetCodeMeaning(rawContent);
 
-        logger.LogError(
-            "Failed to send SMS using VictoryLink to {DestinationCount} recipients, ErrorMessage={ErrorMessage}",
-            request.Destinations.Count,
-            responseMessage
-        );
+        logger.LogFailedToSendSms(request.Destinations.Count, responseMessage);
 
         return SendSingleSmsResponse.Failed(responseMessage);
     }

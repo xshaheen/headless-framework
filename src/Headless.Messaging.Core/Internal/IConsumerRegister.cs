@@ -110,7 +110,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             var innerEx = e.InnerExceptions[0];
             if (innerEx is not OperationCanceledException)
             {
-                _logger.ExpectedOperationCanceledException(innerEx);
+                _logger.ExpectedOperationCanceledException(innerEx, innerEx.Message);
             }
         }
         finally
@@ -299,7 +299,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                     }
                     catch (Exception e)
                     {
-                        _logger.ExecutedThresholdCallbackFailed(e);
+                        _logger.ExecutedThresholdCallbackFailed(e, e.Message);
                     }
 
                     _TracingAfter(tracingTimestamp, transportMessage, _serverAddress);

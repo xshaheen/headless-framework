@@ -24,12 +24,12 @@ internal sealed class Bootstrapper(
     {
         if (_cts is not null)
         {
-            logger.LogInformation("### Messaging background task is already started!");
+            logger.MessagingAlreadyStarted();
 
             return;
         }
 
-        logger.LogDebug("### Messaging background task is starting.");
+        logger.MessagingStarting();
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
@@ -41,12 +41,12 @@ internal sealed class Bootstrapper(
         }
         catch (Exception e) when (e is not InvalidOperationException)
         {
-            logger.LogError(e, "Initializing the storage structure failed!");
+            logger.StorageInitFailed(e);
         }
 
         _cts.Token.Register(() =>
         {
-            logger.LogDebug("### Messaging background task is stopping.");
+            logger.MessagingStopping();
 
             foreach (var item in processors)
             {
@@ -56,7 +56,7 @@ internal sealed class Bootstrapper(
                 }
                 catch (OperationCanceledException ex)
                 {
-                    logger.ExpectedOperationCanceledException(ex);
+                    logger.ExpectedOperationCanceledException(ex, ex.Message);
                 }
             }
         });
@@ -64,7 +64,7 @@ internal sealed class Bootstrapper(
         await _BootstrapCoreAsync().ConfigureAwait(false);
 
         _disposed = false;
-        logger.LogInformation("### Messaging system started!");
+        logger.MessagingStarted();
     }
 
     private async Task _BootstrapCoreAsync()

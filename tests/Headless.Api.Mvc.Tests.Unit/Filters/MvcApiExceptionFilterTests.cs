@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Results;
-using ValidationException = FluentValidation.ValidationException;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
 using Headless.Api.Filters;
@@ -19,6 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using ValidationException = FluentValidation.ValidationException;
 
 namespace Tests.Filters;
 
@@ -321,13 +321,15 @@ public sealed class MvcApiExceptionFilterTests : TestBase
         await filter.OnExceptionAsync(context);
 
         // then
-        logger.Received().Log(
-            LogLevel.Warning,
-            Arg.Is<EventId>(e => e.Id == 5003),
-            Arg.Any<object>(),
-            exception,
-            Arg.Any<Func<object, Exception?, string>>()
-        );
+        logger
+            .Received()
+            .Log(
+                LogLevel.Warning,
+                Arg.Is<EventId>(e => e.Id == 5003),
+                Arg.Any<object>(),
+                exception,
+                Arg.Any<Func<object, Exception?, string>>()
+            );
     }
 
     [Fact]
@@ -343,13 +345,15 @@ public sealed class MvcApiExceptionFilterTests : TestBase
         await filter.OnExceptionAsync(context);
 
         // then
-        logger.Received().Log(
-            LogLevel.Debug,
-            Arg.Is<EventId>(e => e.Id == 5004),
-            Arg.Any<object>(),
-            exception,
-            Arg.Any<Func<object, Exception?, string>>()
-        );
+        logger
+            .Received()
+            .Log(
+                LogLevel.Debug,
+                Arg.Is<EventId>(e => e.Id == 5004),
+                Arg.Any<object>(),
+                exception,
+                Arg.Any<Func<object, Exception?, string>>()
+            );
     }
 
     #endregion

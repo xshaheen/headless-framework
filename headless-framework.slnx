@@ -52,9 +52,11 @@
         <Project Path="src\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
         <Project Path="src\Headless.Caching.Memory\Headless.Caching.Memory.csproj" />
         <Project Path="src\Headless.Caching.Redis\Headless.Caching.Redis.csproj" />
+        <Project Path="src/Headless.Caching.Hybrid/Headless.Caching.Hybrid.csproj" />
         <Project Path="tests\Headless.Caching.Abstractions.Tests.Unit\Headless.Caching.Abstractions.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Caching.Memory.Tests.Unit\Headless.Caching.Memory.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Caching.Redis.Tests.Integration\Headless.Caching.Redis.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Caching.Hybrid.Tests.Unit/Headless.Caching.Hybrid.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Captcha/">
         <Project Path="demo/Headless.ReCaptcha.Demo/Headless.ReCaptcha.Demo.csproj" />
@@ -271,12 +273,6 @@
         <File Path="global.json" />
         <File Path="nuget.config" />
         <File Path="README.md" />
-    </Folder>
-    <Folder Name="/src/">
-        <Project Path="src/Headless.Caching.Hybrid/Headless.Caching.Hybrid.csproj" />
-    </Folder>
-    <Folder Name="/tests/">
-        <Project Path="tests/Headless.Caching.Hybrid.Tests.Unit/Headless.Caching.Hybrid.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />

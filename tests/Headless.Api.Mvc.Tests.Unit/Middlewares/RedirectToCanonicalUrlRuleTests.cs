@@ -14,9 +14,7 @@ public sealed class RedirectToCanonicalUrlRuleTests : TestBase
 {
     #region Helper Methods
 
-    private static RedirectToCanonicalUrlRule _CreateRule(
-        bool appendTrailingSlash = true,
-        bool lowercaseUrls = true)
+    private static RedirectToCanonicalUrlRule _CreateRule(bool appendTrailingSlash = true, bool lowercaseUrls = true)
     {
         return new RedirectToCanonicalUrlRule(appendTrailingSlash, lowercaseUrls);
     }
@@ -25,7 +23,8 @@ public sealed class RedirectToCanonicalUrlRuleTests : TestBase
         string path,
         string? queryString = null,
         string method = "GET",
-        EndpointMetadataCollection? metadata = null)
+        EndpointMetadataCollection? metadata = null
+    )
     {
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Path = path;
@@ -61,19 +60,14 @@ public sealed class RedirectToCanonicalUrlRuleTests : TestBase
         var act = () => new RedirectToCanonicalUrlRule(options!);
 
         // then
-        act.Should().Throw<ArgumentNullException>()
-            .Which.ParamName.Should().Be("optionsAccessor");
+        act.Should().Throw<ArgumentNullException>().Which.ParamName.Should().Be("optionsAccessor");
     }
 
     [Fact]
     public void should_use_options_values()
     {
         // given
-        var routeOptions = new RouteOptions
-        {
-            AppendTrailingSlash = true,
-            LowercaseUrls = false,
-        };
+        var routeOptions = new RouteOptions { AppendTrailingSlash = true, LowercaseUrls = false };
         var options = Options.Create(routeOptions);
 
         // when

@@ -267,7 +267,11 @@ public sealed class HttpContextExtensionsTests : TestBase
         context.AddNoCacheHeaders();
 
         // then
-        context.Response.Headers[HeaderNames.CacheControl].ToString().Should().Be("no-cache, no-store, must-revalidate");
+        context
+            .Response.Headers[HeaderNames.CacheControl]
+            .ToString()
+            .Should()
+            .Be("no-cache, no-store, must-revalidate");
         context.Response.Headers[HeaderNames.Pragma].ToString().Should().Be("no-cache");
         context.Response.Headers[HeaderNames.Expires].ToString().Should().Be("-1");
     }

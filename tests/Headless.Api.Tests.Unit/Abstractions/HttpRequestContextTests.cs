@@ -228,8 +228,7 @@ public sealed class HttpRequestContextTests : TestBase
         var act = () => sut.TraceIdentifier;
 
         // then
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*User context is not available*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*User context is not available*");
     }
 
     #region Helpers
@@ -241,7 +240,8 @@ public sealed class HttpRequestContextTests : TestBase
         ICurrentLocale? currentLocale = null,
         ICurrentTimeZone? currentTimeZone = null,
         IWebClientInfoProvider? webClientInfoProvider = null,
-        IClock? clock = null)
+        IClock? clock = null
+    )
     {
         if (accessor is null)
         {

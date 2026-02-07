@@ -1,0 +1,14 @@
+<Project>
+  <!-- Harness/shared projects: prevent MTP from treating them as test hosts -->
+  <PropertyGroup Condition="'$(IsTestProject)' == 'false'">
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+  </PropertyGroup>
+  <!-- MTP extensions only for actual test projects -->
+  <ItemGroup Condition="'$(IsTestProject)' != 'false'">
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CrashDump" />
+    <PackageReference Include="Microsoft.Testing.Extensions.HangDump" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" />
+  </ItemGroup>
+</Project>
