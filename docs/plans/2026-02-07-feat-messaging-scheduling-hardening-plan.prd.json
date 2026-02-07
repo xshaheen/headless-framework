@@ -1,0 +1,298 @@
+{
+	"name": "messaging-scheduling-hardening",
+	"description": "Messaging scheduling hardening — stale recovery, timeout, one-time jobs, InMemory storage, execution purge, scheduling-only mode, compiled delegates",
+	"created_at": "2026-02-07T00:00:00Z",
+	"status": "pending",
+	"branches": {
+		"base": "main",
+		"feature": "xshaheen/unified-messaging-scheduling"
+	},
+	"worktree": null,
+	"userStories": [
+		{
+			"id": "US-017",
+			"title": "Add ReleaseStaleJobsAsync to IScheduledJobStorage",
+			"size": "S",
+			"priority": 1,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Add Task<int> ReleaseStaleJobsAsync(TimeSpan staleness, CancellationToken) to IScheduledJobStorage. Returns count of released jobs. XML docs.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Abstractions/Scheduling/IScheduledJobStorage.cs",
+				"src/Headless.Messaging.Core/Scheduling/SchedulerOptions.cs"
+			],
+			"acceptanceCriteria": [
+				"ReleaseStaleJobsAsync method added to IScheduledJobStorage interface",
+				"Returns count of released jobs",
+				"XML docs explain staleness threshold semantics"
+			]
+		},
+		{
+			"id": "US-018",
+			"title": "Add PurgeExecutionsAsync to IScheduledJobStorage",
+			"size": "S",
+			"priority": 2,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Add Task<int> PurgeExecutionsAsync(TimeSpan retention, CancellationToken) to IScheduledJobStorage. Deletes completed executions older than retention. Returns count. Manual-only — consumers call this from their own code or scheduled job (no automatic background purge).",
+			"filesToStudy": [
+				"src/Headless.Messaging.Abstractions/Scheduling/IScheduledJobStorage.cs"
+			],
+			"acceptanceCriteria": [
+				"PurgeExecutionsAsync method added to IScheduledJobStorage",
+				"Deletes execution records with CompletedAt older than now - retention",
+				"Returns count of purged records"
+			]
+		},
+		{
+			"id": "US-019",
+			"title": "Add Timeout support to RecurringAttribute and ScheduledJob",
+			"size": "S",
+			"priority": 3,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Add TimeoutSeconds (int, default 0) to RecurringAttribute and Timeout (TimeSpan?) to ScheduledJob. Carry timeout from attribute to job during reconciliation.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Abstractions/RecurringAttribute.cs",
+				"src/Headless.Messaging.Abstractions/Scheduling/ScheduledJob.cs",
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobDefinition.cs"
+			],
+			"acceptanceCriteria": [
+				"TimeoutSeconds property (default 0 = no timeout) on RecurringAttribute",
+				"Timeout (TimeSpan?) property on ScheduledJob entity",
+				"ScheduledJobDefinition carries timeout from attribute to job during reconciliation"
+			]
+		},
+		{
+			"id": "US-020",
+			"title": "Add ScheduleOnceAsync to IScheduledJobManager",
+			"size": "S",
+			"priority": 4,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "Type reference approach (Hangfire/Quartz pattern). No pre-registration required. Consumer resolved at runtime via keyed DI lookup, fallback to ActivatorUtilities.CreateInstance.",
+			"description": "Add ScheduleOnceAsync(name, runAt, consumerType, payload?, ct) to IScheduledJobManager. Creates OneTime ScheduledJob with NextRunTime=runAt. Consumer resolved at runtime via keyed DI or ActivatorUtilities fallback — no pre-registration needed (same pattern as Hangfire/Quartz.NET). Stores consumerType assembly-qualified name in job metadata for runtime resolution.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Abstractions/Scheduling/IScheduledJobManager.cs",
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobManager.cs",
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobDispatcher.cs"
+			],
+			"acceptanceCriteria": [
+				"ScheduleOnceAsync added to IScheduledJobManager interface",
+				"Creates ScheduledJob with Type=OneTime, NextRunTime=runAt, Status=Pending",
+				"Stores consumer Type assembly-qualified name in ScheduledJob for runtime resolution",
+				"ScheduledJobDispatcher resolves consumer: try keyed DI first, fallback to ActivatorUtilities.CreateInstance",
+				"Throws if runAt is in the past",
+				"XML docs on interface method"
+			]
+		},
+		{
+			"id": "US-021",
+			"title": "Create StaleJobRecoveryService",
+			"size": "M",
+			"priority": 5,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "Stale one-time jobs are re-queued as Pending (same as recurring). If the handler fails again and exhausts retries, it will be marked Failed per existing retry logic.",
+			"description": "Background service that polls ReleaseStaleJobsAsync at configurable interval. Add StaleJobThreshold (default 5min) and StaleJobCheckInterval (default 30s) to SchedulerOptions. Register alongside SchedulerBackgroundService. Both one-time and recurring stale jobs are re-queued as Pending.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Core/Scheduling/SchedulerBackgroundService.cs",
+				"src/Headless.Messaging.Core/Scheduling/SchedulerOptions.cs",
+				"src/Headless.Messaging.Core/Setup.cs"
+			],
+			"acceptanceCriteria": [
+				"StaleJobRecoveryService internal sealed BackgroundService in Core",
+				"Polls ReleaseStaleJobsAsync at configurable interval",
+				"StaleJobThreshold and StaleJobCheckInterval added to SchedulerOptions",
+				"Logs warning when stale jobs released",
+				"Only registered when IScheduledJobStorage present"
+			]
+		},
+		{
+			"id": "US-022",
+			"title": "Enforce execution timeout in SchedulerBackgroundService",
+			"size": "M",
+			"priority": 6,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "DefaultJobTimeout defaults to null (no timeout). Consumers opt-in via per-job Timeout or global DefaultJobTimeout.",
+			"description": "Use CancellationTokenSource.CancelAfter(timeout) per job. Fallback: job.Timeout ?? options.DefaultJobTimeout ?? no timeout. Add DefaultJobTimeout (TimeSpan?, default null) to SchedulerOptions.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Core/Scheduling/SchedulerBackgroundService.cs",
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobDispatcher.cs",
+				"src/Headless.Messaging.Core/Scheduling/SchedulerOptions.cs"
+			],
+			"acceptanceCriteria": [
+				"Linked CancellationTokenSource with CancelAfter when timeout configured",
+				"DefaultJobTimeout (TimeSpan?, default null) added to SchedulerOptions",
+				"Fallback chain: job.Timeout -> options.DefaultJobTimeout -> no timeout",
+				"Timed-out jobs marked as failed execution with timeout error",
+				"OperationCanceledException from timeout treated as failure not shutdown"
+			]
+		},
+		{
+			"id": "US-023",
+			"title": "Validate scheduling-only mode",
+			"size": "S",
+			"priority": 7,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Ensure AddMessages works without transport. Transport-dependent processors skip when ITransport not registered. Bootstrapper handles missing transport gracefully.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Core/Setup.cs",
+				"src/Headless.Messaging.Core/Internal/Bootstrapper.cs",
+				"src/Headless.Messaging.Core/Processor/MessageProcessingServer.cs"
+			],
+			"acceptanceCriteria": [
+				"AddMessages with storage + ScanConsumers works without transport",
+				"Transport-dependent processors skip gracefully when ITransport not registered",
+				"Bootstrapper does not crash without transport subscribers"
+			]
+		},
+		{
+			"id": "US-024",
+			"title": "Optimize ScheduledJobDispatcher with compiled delegates",
+			"size": "M",
+			"priority": 8,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Cache compiled handler factories in ScheduledJobDispatcher using FastExpressionCompiler. ConcurrentDictionary<string, Func<IServiceProvider, IConsume<ScheduledTrigger>>> cache. Fallback to keyed DI on compilation failure.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobDispatcher.cs",
+				"src/Headless.Messaging.Core/Internal/CompiledMessageDispatcher.cs"
+			],
+			"acceptanceCriteria": [
+				"ConcurrentDictionary cache for compiled handler factories",
+				"First dispatch compiles factory via FastExpressionCompiler",
+				"Subsequent dispatches use cached factory",
+				"Fallback to keyed DI if compilation fails",
+				"Thread-safe cache population"
+			]
+		},
+		{
+			"id": "US-025",
+			"title": "Create InMemoryScheduledJobStorage",
+			"size": "M",
+			"priority": 9,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "In-memory IScheduledJobStorage in Headless.Messaging.InMemoryStorage. ConcurrentDictionary + lock for atomicity. All methods including ReleaseStaleJobsAsync and PurgeExecutionsAsync. Register via UseInMemoryStorage().",
+			"filesToStudy": [
+				"src/Headless.Messaging.InMemoryStorage/InMemoryDataStorage.cs",
+				"src/Headless.Messaging.InMemoryStorage/Setup.cs"
+			],
+			"acceptanceCriteria": [
+				"InMemoryScheduledJobStorage sealed class in Headless.Messaging.InMemoryStorage",
+				"Implements all IScheduledJobStorage methods including ReleaseStaleJobsAsync and PurgeExecutionsAsync",
+				"AcquireDueJobsAsync uses lock for atomicity",
+				"UpsertJobAsync matches by Name",
+				"Registered via UseInMemoryStorage() extension",
+				"Thread-safe via ConcurrentDictionary + lock"
+			]
+		},
+		{
+			"id": "US-026",
+			"title": "Implement new IScheduledJobStorage methods in PostgreSQL",
+			"size": "S",
+			"priority": 10,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Add ReleaseStaleJobsAsync and PurgeExecutionsAsync to PostgreSqlScheduledJobStorage. Parameterized SQL, return affected row count.",
+			"filesToStudy": [
+				"src/Headless.Messaging.PostgreSql/PostgreSqlScheduledJobStorage.cs"
+			],
+			"acceptanceCriteria": [
+				"ReleaseStaleJobsAsync: UPDATE SET Status=Pending WHERE Status=Running AND LockedAt < threshold",
+				"PurgeExecutionsAsync: DELETE FROM job_executions WHERE CompletedAt < threshold",
+				"Both use parameterized queries",
+				"Both return affected row count"
+			]
+		},
+		{
+			"id": "US-027",
+			"title": "Unit tests for hardening features",
+			"size": "L",
+			"priority": 11,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Tests for StaleJobRecoveryService, execution timeout, ScheduleOnceAsync, compiled delegate cache, scheduling-only mode. NSubstitute, TestBase, AbortToken.",
+			"filesToStudy": [
+				"tests/Headless.Messaging.Core.Tests.Unit/",
+				"tests/Headless.Messaging.Abstractions.Tests.Unit/"
+			],
+			"acceptanceCriteria": [
+				"StaleJobRecoveryService: polling, release count logging, configurable threshold",
+				"Execution timeout: linked CTS, timeout-as-failure, fallback chain",
+				"ScheduleOnceAsync: creation, past-date rejection, runtime resolution via ActivatorUtilities",
+				"Compiled delegate cache: first-dispatch compilation, cache hit, thread safety",
+				"Scheduling-only mode: no transport, only storage + scheduler",
+				"NSubstitute mocks, TestBase, AbortToken, should_*_when_* naming"
+			]
+		},
+		{
+			"id": "US-028",
+			"title": "Integration tests for new features",
+			"size": "M",
+			"priority": 12,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "PostgreSQL integration tests for ReleaseStaleJobsAsync, PurgeExecutionsAsync, one-time jobs, scheduling-only mode. Testcontainers.",
+			"filesToStudy": [
+				"tests/Headless.Messaging.PostgreSql.Tests.Integration/"
+			],
+			"acceptanceCriteria": [
+				"ReleaseStaleJobsAsync: stuck job recovered after threshold",
+				"PurgeExecutionsAsync: old executions deleted, recent retained",
+				"One-time job end-to-end: create -> execute -> complete",
+				"Scheduling-only mode: no transport, verify job execution",
+				"Testcontainers PostgreSQL"
+			]
+		},
+		{
+			"id": "US-029",
+			"title": "Update README files",
+			"size": "S",
+			"priority": 13,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Document one-time job API, execution timeout, stale recovery, scheduling-only mode, InMemory storage for testing.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Abstractions/README.md",
+				"src/Headless.Messaging.Core/README.md",
+				"src/Headless.Messaging.InMemoryStorage/README.md"
+			],
+			"acceptanceCriteria": [
+				"Document ScheduleOnceAsync one-time job API",
+				"Document execution timeout configuration",
+				"Document stale job recovery configuration",
+				"Document scheduling-only mode",
+				"Document InMemory storage for testing"
+			]
+		}
+	],
+	"pass": false,
+	"validation_errors": []
+}
