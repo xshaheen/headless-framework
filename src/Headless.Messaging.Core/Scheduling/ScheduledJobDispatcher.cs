@@ -24,13 +24,20 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
         {
             var handler = scope.ServiceProvider.GetRequiredKeyedService<IConsume<ScheduledTrigger>>(job.Name);
 
+            var correlationId = execution.Id.ToString();
             var context = new ConsumeContext<ScheduledTrigger>
             {
                 MessageId = execution.Id.ToString(),
                 Topic = job.Name,
                 Timestamp = execution.ScheduledTime,
-                CorrelationId = null,
-                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+                CorrelationId = correlationId,
+                Headers = new MessageHeader(
+                    new Dictionary<string, string?>(StringComparer.Ordinal)
+                    {
+                        { Headers.CorrelationId, correlationId },
+                        { Headers.CorrelationSequence, "0" },
+                    }
+                ),
                 Message = new ScheduledTrigger
                 {
                     JobName = job.Name,
@@ -41,6 +48,8 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
                     Payload = job.Payload,
                 },
             };
+
+            using var correlationScope = MessagingCorrelationScope.Begin(correlationId);
 
             if (handler is IConsumerLifecycle lifecycle)
             {
