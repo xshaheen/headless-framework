@@ -34,4 +34,15 @@ public sealed class SchedulerOptions
     /// A job is misfired if its scheduled time is more than this duration in the past. Default: 1 minute.
     /// </summary>
     public TimeSpan MisfireThreshold { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Gets or sets the threshold for determining if a job is stale (locked but not progressing).
+    /// Jobs locked longer than this duration are released back to Pending status. Default: 5 minutes.
+    /// </summary>
+    public TimeSpan StaleJobThreshold { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Gets or sets the polling interval for the stale job recovery service. Default: 30 seconds.
+    /// </summary>
+    public TimeSpan StaleJobCheckInterval { get; set; } = TimeSpan.FromSeconds(30);
 }

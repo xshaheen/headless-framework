@@ -218,6 +218,7 @@ public static class Setup
         {
             services.AddHostedService<SchedulerJobReconciler>();
             services.AddHostedService<SchedulerBackgroundService>();
+            services.AddHostedService<StaleJobRecoveryService>();
         }
     }
 
