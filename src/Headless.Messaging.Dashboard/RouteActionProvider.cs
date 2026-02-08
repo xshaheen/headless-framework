@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Net;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Dashboard.Authentication;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Messaging.Internal;
@@ -92,6 +93,10 @@ public class RouteActionProvider
             .MapGet(prefixMatch + "/list-svc/{namespace}", ListServices)
             .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
         _builder.MapGet(prefixMatch + "/ping", PingServices).AllowAnonymous();
+
+        // Auth endpoints (always anonymous — used by the frontend to discover and validate auth)
+        _builder.MapGet(prefixMatch + "/auth/info", AuthInfoEndpoint).AllowAnonymous();
+        _builder.MapPost(prefixMatch + "/auth/validate", AuthValidateEndpoint).AllowAnonymous();
     }
 
     public async Task Metrics(HttpContext httpContext)
@@ -572,6 +577,31 @@ public class RouteActionProvider
             await httpContext.Response.WriteAsync(e.Message);
         }
 #pragma warning restore EPC12
+    }
+
+    public async Task AuthInfoEndpoint(HttpContext httpContext)
+    {
+        var authService = _serviceProvider.GetService<IAuthService>();
+        if (authService == null)
+        {
+            await httpContext.Response.WriteAsJsonAsync(new AuthInfo());
+            return;
+        }
+
+        await httpContext.Response.WriteAsJsonAsync(authService.GetAuthInfo());
+    }
+
+    public async Task AuthValidateEndpoint(HttpContext httpContext)
+    {
+        var authService = _serviceProvider.GetService<IAuthService>();
+        if (authService == null)
+        {
+            await httpContext.Response.WriteAsJsonAsync(AuthResult.Success("anonymous"));
+            return;
+        }
+
+        var result = await authService.AuthenticateAsync(httpContext);
+        await httpContext.Response.WriteAsJsonAsync(result);
     }
 
     private static void _BadRequest(HttpContext httpContext)

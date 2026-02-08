@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Dashboard.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -23,6 +24,11 @@ public static class MessagingBuilderExtension
 
         if (options != null)
         {
+            if (options.Auth.IsEnabled)
+            {
+                app.UseMiddleware<AuthMiddleware>();
+            }
+
             app.UseStaticFiles(
                 new StaticFileOptions
                 {
