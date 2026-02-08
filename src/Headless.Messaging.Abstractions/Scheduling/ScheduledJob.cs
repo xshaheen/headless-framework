@@ -148,4 +148,10 @@ public sealed class ScheduledJob
     /// Gets or sets the strategy for handling missed scheduled executions.
     /// </summary>
     public required MisfireStrategy MisfireStrategy { get; set; }
+
+    /// <summary>
+    /// Gets or sets the assembly-qualified type name of the consumer for one-time jobs.
+    /// Used for runtime resolution when the consumer is not pre-registered via keyed DI.
+    /// </summary>
+    public string? ConsumerTypeName { get; set; }
 }
