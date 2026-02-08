@@ -1,6 +1,6 @@
 {
 	"name": "messaging-scheduling-hardening",
-	"description": "Messaging scheduling hardening — stale recovery, timeout, one-time jobs, InMemory storage, execution purge, scheduling-only mode, compiled delegates",
+	"description": "Messaging scheduling hardening — stale recovery, timeout, one-time jobs, InMemory storage, execution purge, scheduling-only mode, compiled delegates, misfire strategy, health checks, cron config override",
 	"created_at": "2026-02-07T00:00:00Z",
 	"status": "pending",
 	"branches": {
@@ -183,10 +183,104 @@
 			]
 		},
 		{
+			"id": "US-045",
+			"title": "Add MisfireStrategy to RecurringAttribute and ScheduledJob",
+			"size": "S",
+			"priority": 5,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "MisfireStrategy enum: FireImmediately (default, current behavior), SkipAndScheduleNext. MisfireThreshold on SchedulerOptions (default 1 min).",
+			"description": "Add MisfireStrategy enum (FireImmediately, SkipAndScheduleNext) to Abstractions. Add MisfireStrategy property to RecurringAttribute (default FireImmediately), ScheduledJob entity, and ScheduledJobDefinition. Add MisfireThreshold (TimeSpan, default 1 min) to SchedulerOptions.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Abstractions/RecurringAttribute.cs",
+				"src/Headless.Messaging.Abstractions/Scheduling/ScheduledJob.cs",
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobDefinition.cs",
+				"src/Headless.Messaging.Core/Scheduling/SchedulerOptions.cs"
+			],
+			"acceptanceCriteria": [
+				"MisfireStrategy enum in Abstractions: FireImmediately (default), SkipAndScheduleNext",
+				"MisfireStrategy property (default FireImmediately) on RecurringAttribute",
+				"MisfireStrategy property on ScheduledJob entity",
+				"ScheduledJobDefinition carries misfire strategy from attribute to job during reconciliation",
+				"MisfireThreshold (TimeSpan, default 1 min) added to SchedulerOptions",
+				"XML docs on enum, properties, and option"
+			]
+		},
+		{
+			"id": "US-046",
+			"title": "Enforce misfire strategy in SchedulerBackgroundService",
+			"size": "S",
+			"priority": 9,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "Depends on US-045 (MisfireStrategy enum and properties must exist).",
+			"description": "Before dispatching a job, check if now - NextRunTime > MisfireThreshold. If misfired and SkipAndScheduleNext: skip execution, compute next cron occurrence, update job, log warning. FireImmediately: execute normally (no change). Only applies to recurring jobs.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Core/Scheduling/SchedulerBackgroundService.cs",
+				"src/Headless.Messaging.Core/Scheduling/SchedulerOptions.cs"
+			],
+			"acceptanceCriteria": [
+				"Before dispatch, check if now - job.NextRunTime > options.MisfireThreshold",
+				"If misfired and SkipAndScheduleNext: skip execution, compute next cron occurrence, update job, log warning",
+				"If FireImmediately: execute normally (current behavior)",
+				"Only applies to recurring jobs (one-time jobs always fire)",
+				"Log includes job name and next scheduled time"
+			]
+		},
+		{
+			"id": "US-047",
+			"title": "Add scheduler health checks",
+			"size": "S",
+			"priority": 10,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "Depends on US-017 (ReleaseStaleJobsAsync for stale count detection).",
+			"description": "SchedulerHealthCheck implementing IHealthCheck. Healthy: storage reachable. Degraded: stale jobs exist (count > 0). Unhealthy: storage query throws. AddSchedulerHealthChecks() extension on IHealthChecksBuilder. Only registered when IScheduledJobStorage present.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Core/Scheduling/SchedulerBackgroundService.cs",
+				"src/Headless.Messaging.Core/Setup.cs"
+			],
+			"acceptanceCriteria": [
+				"SchedulerHealthCheck internal sealed class implementing IHealthCheck",
+				"Healthy: storage reachable via lightweight query",
+				"Degraded: stale jobs exist (count > 0)",
+				"Unhealthy: storage query throws",
+				"AddSchedulerHealthChecks() extension on IHealthChecksBuilder",
+				"Only registered when IScheduledJobStorage present",
+				"Reports stale count and storage latency in health check data"
+			]
+		},
+		{
+			"id": "US-048",
+			"title": "Add cron override from IConfiguration",
+			"size": "S",
+			"priority": 11,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "Config path: Messaging:Scheduling:Jobs:{Name}:CronExpression. Only cron expression is overridable.",
+			"description": "SchedulerJobReconciler accepts IConfiguration via DI. Before using attribute cron, checks IConfiguration[\"Messaging:Scheduling:Jobs:{Name}:CronExpression\"]. Config value takes precedence. Invalid config value logs error and falls back to attribute value.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Core/Scheduling/SchedulerJobReconciler.cs",
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobDefinition.cs"
+			],
+			"acceptanceCriteria": [
+				"SchedulerJobReconciler accepts IConfiguration via DI",
+				"Before using attribute cron, check IConfiguration for override",
+				"Config value takes precedence over attribute value",
+				"If config value is invalid cron, log error and fall back to attribute value",
+				"Only cron expression is overridable from config",
+				"XML docs explain the override mechanism"
+			]
+		},
+		{
 			"id": "US-025",
 			"title": "Create InMemoryScheduledJobStorage",
 			"size": "M",
-			"priority": 9,
+			"priority": 12,
 			"pass": false,
 			"attempts": 0,
 			"commits": [],
@@ -209,7 +303,7 @@
 			"id": "US-026",
 			"title": "Implement new IScheduledJobStorage methods in PostgreSQL",
 			"size": "S",
-			"priority": 10,
+			"priority": 13,
 			"pass": false,
 			"attempts": 0,
 			"commits": [],
@@ -229,12 +323,12 @@
 			"id": "US-027",
 			"title": "Unit tests for hardening features",
 			"size": "L",
-			"priority": 11,
+			"priority": 14,
 			"pass": false,
 			"attempts": 0,
 			"commits": [],
 			"notes": "",
-			"description": "Tests for StaleJobRecoveryService, execution timeout, ScheduleOnceAsync, compiled delegate cache, scheduling-only mode. NSubstitute, TestBase, AbortToken.",
+			"description": "Tests for StaleJobRecoveryService, execution timeout, ScheduleOnceAsync, compiled delegate cache, scheduling-only mode, misfire strategy, health checks, cron config override. NSubstitute, TestBase, AbortToken.",
 			"filesToStudy": [
 				"tests/Headless.Messaging.Core.Tests.Unit/",
 				"tests/Headless.Messaging.Abstractions.Tests.Unit/"
@@ -245,6 +339,9 @@
 				"ScheduleOnceAsync: creation, past-date rejection, runtime resolution via ActivatorUtilities",
 				"Compiled delegate cache: first-dispatch compilation, cache hit, thread safety",
 				"Scheduling-only mode: no transport, only storage + scheduler",
+				"Misfire strategy: SkipAndScheduleNext skips misfired job, FireImmediately executes normally",
+				"Health check: healthy/degraded/unhealthy states, storage reachability",
+				"Cron config override: IConfiguration takes precedence, invalid config falls back to attribute",
 				"NSubstitute mocks, TestBase, AbortToken, should_*_when_* naming"
 			]
 		},
@@ -252,7 +349,7 @@
 			"id": "US-028",
 			"title": "Integration tests for new features",
 			"size": "M",
-			"priority": 12,
+			"priority": 15,
 			"pass": false,
 			"attempts": 0,
 			"commits": [],
@@ -273,12 +370,12 @@
 			"id": "US-029",
 			"title": "Update README files",
 			"size": "S",
-			"priority": 13,
+			"priority": 16,
 			"pass": false,
 			"attempts": 0,
 			"commits": [],
 			"notes": "",
-			"description": "Document one-time job API, execution timeout, stale recovery, scheduling-only mode, InMemory storage for testing.",
+			"description": "Document one-time job API, execution timeout, stale recovery, scheduling-only mode, InMemory storage for testing, misfire strategy, health checks, cron config override.",
 			"filesToStudy": [
 				"src/Headless.Messaging.Abstractions/README.md",
 				"src/Headless.Messaging.Core/README.md",
@@ -289,7 +386,10 @@
 				"Document execution timeout configuration",
 				"Document stale job recovery configuration",
 				"Document scheduling-only mode",
-				"Document InMemory storage for testing"
+				"Document InMemory storage for testing",
+				"Document misfire strategy configuration",
+				"Document health checks (AddSchedulerHealthChecks)",
+				"Document cron override from IConfiguration"
 			]
 		}
 	],

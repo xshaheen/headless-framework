@@ -1,6 +1,6 @@
 # feat: Messaging Scheduling — Hardening & Remaining Gaps
 
-> **Scope:** Remaining abstractions + core gaps identified after Phase 1+2 completion. Covers stale job recovery, execution timeout, one-time job API, InMemory storage, execution purge, scheduling-only mode, and handler resolution optimization.
+> **Scope:** Remaining abstractions + core gaps identified after Phase 1+2 completion. Covers stale job recovery, execution timeout, one-time job API, InMemory storage, execution purge, scheduling-only mode, handler resolution optimization, misfire strategy, health checks, and cron configuration override.
 >
 > **Prerequisites:** Phase 1+2 (US-001 through US-016) are complete and merged.
 >
@@ -14,8 +14,12 @@ Phase 1+2 delivered the core scheduling abstractions and infrastructure. This ph
 - New methods on `IScheduledJobStorage`: `ReleaseStaleJobsAsync`, `PurgeExecutionsAsync`
 - New method on `IScheduledJobManager`: `ScheduleOnceAsync`
 - `Timeout` property on `RecurringAttribute` and `ScheduledJob`
+- `MisfireStrategy` enum and property on `RecurringAttribute`, `ScheduledJob`, and `ScheduledJobDefinition`
 - `StaleJobRecoveryService` background service in Core
 - Timeout enforcement in `SchedulerBackgroundService`
+- Misfire detection in `SchedulerBackgroundService` before dispatch
+- `SchedulerHealthCheck` implementing `IHealthCheck`
+- Cron override from `IConfiguration` in `SchedulerJobReconciler`
 - `InMemoryScheduledJobStorage` in `Headless.Messaging.InMemoryStorage`
 - `PostgreSqlScheduledJobStorage` extended with new methods
 - Scheduling-only mode validation (no transport required)
@@ -93,6 +97,62 @@ Current `Setup.cs` registers transport-dependent processors (`IDispatcher`, `ICo
 
 Replace per-dispatch `GetRequiredKeyedService` lookup with a cached delegate factory. On first dispatch for a given job name, compile a `Func<IServiceProvider, IConsume<ScheduledTrigger>>` via `FastExpressionCompiler` and cache it. Subsequent dispatches use the cached factory directly.
 
+### Misfire Strategy
+
+When a scheduler restarts after downtime, jobs whose `NextRunTime` is far in the past need a strategy. Two options:
+
+- `FireImmediately` (default): Execute the missed run as soon as the scheduler picks it up. This is the current implicit behavior.
+- `SkipAndScheduleNext`: Skip the missed occurrence and compute the next future cron occurrence.
+
+A job is considered "misfired" when `now - NextRunTime > MisfireThreshold`. The threshold is configurable via `SchedulerOptions.MisfireThreshold` (default: 1 minute). This prevents thundering herd when many jobs have past `NextRunTime` after a long scheduler outage.
+
+```csharp
+// In SchedulerBackgroundService._ExecuteJobAsync, before dispatch:
+var misfireThreshold = _options.MisfireThreshold;
+var isMisfired = (timeProvider.GetUtcNow() - job.NextRunTime!.Value) > misfireThreshold;
+
+if (isMisfired && job.MisfireStrategy == MisfireStrategy.SkipAndScheduleNext)
+{
+    // Skip this execution, advance to next cron occurrence
+    job.NextRunTime = cronCache.GetNextOccurrence(job.CronExpression!, job.TimeZone, timeProvider.GetUtcNow());
+    job.Status = ScheduledJobStatus.Pending;
+    job.LockHolder = null;
+    job.LockedAt = null;
+    await storage.UpdateJobAsync(job, cancellationToken);
+    logger.LogWarning("Skipped misfired job '{JobName}', next run: {NextRun}", job.Name, job.NextRunTime);
+    return;
+}
+```
+
+### Health Checks
+
+`SchedulerHealthCheck` implements `IHealthCheck` from `Microsoft.Extensions.Diagnostics.HealthChecks`. Reports:
+- **Healthy**: Scheduler is running, storage is reachable, no stale jobs.
+- **Degraded**: Stale jobs exist (count > 0) — indicates potential node failures.
+- **Unhealthy**: Storage unreachable or scheduler not running.
+
+Registered via `builder.Services.AddHealthChecks().AddSchedulerChecks()` extension method.
+
+### Cron Override from IConfiguration
+
+The `SchedulerJobReconciler` checks `IConfiguration` before using the `[Recurring]` attribute's cron expression. This allows ops to override schedules via `appsettings.json` or environment variables without redeployment.
+
+```json
+{
+  "Messaging": {
+    "Scheduling": {
+      "Jobs": {
+        "UsageReportJob": {
+          "CronExpression": "0 0 */12 * * *"
+        }
+      }
+    }
+  }
+}
+```
+
+The reconciler resolves the effective cron expression as: `IConfiguration["Messaging:Scheduling:Jobs:{Name}:CronExpression"] ?? attribute.CronExpression`. Only the cron expression is overridable from config (not timezone, retry intervals, etc.) to keep the surface small.
+
 ### InMemory Storage
 
 `InMemoryScheduledJobStorage` in `Headless.Messaging.InMemoryStorage` using `ConcurrentDictionary<Guid, ScheduledJob>` + `ConcurrentDictionary<Guid, List<JobExecution>>`. `AcquireDueJobsAsync` uses `lock` for atomicity (single-process only). Essential for unit testing consumers without a database.
@@ -159,6 +219,24 @@ Enable programmatic one-time job scheduling at runtime.
 - [ ] Throws if `runAt` is in the past
 - [ ] XML docs
 
+#### US-045: Add MisfireStrategy to RecurringAttribute and ScheduledJob [S]
+
+Per-job misfire strategy — determines behavior when a job's `NextRunTime` is significantly in the past (scheduler downtime, long GC pause, etc.).
+
+**Files to Study:**
+- `src/Headless.Messaging.Abstractions/RecurringAttribute.cs`
+- `src/Headless.Messaging.Abstractions/Scheduling/ScheduledJob.cs`
+- `src/Headless.Messaging.Core/Scheduling/ScheduledJobDefinition.cs`
+- `src/Headless.Messaging.Core/Scheduling/SchedulerOptions.cs`
+
+**Acceptance Criteria:**
+- [ ] `MisfireStrategy` enum in Abstractions: `FireImmediately` (default), `SkipAndScheduleNext`
+- [ ] `MisfireStrategy MisfireStrategy` property (default `FireImmediately`) on `RecurringAttribute`
+- [ ] `MisfireStrategy` property on `ScheduledJob` entity
+- [ ] `ScheduledJobDefinition` carries misfire strategy from attribute to job during reconciliation
+- [ ] `MisfireThreshold` (TimeSpan, default 1 minute) added to `SchedulerOptions`
+- [ ] XML docs on enum, properties, and option
+
 ### Core
 
 #### US-021: Create StaleJobRecoveryService [M]
@@ -221,6 +299,54 @@ Cache compiled handler factories instead of per-dispatch keyed DI lookup.
 - [ ] Fallback to keyed DI if compilation fails
 - [ ] Thread-safe cache population
 
+#### US-046: Enforce misfire strategy in SchedulerBackgroundService [S]
+
+Check misfire condition before dispatching a job.
+
+**Files to Study:**
+- `src/Headless.Messaging.Core/Scheduling/SchedulerBackgroundService.cs`
+- `src/Headless.Messaging.Core/Scheduling/SchedulerOptions.cs`
+
+**Acceptance Criteria:**
+- [ ] Before dispatch, check if `now - job.NextRunTime > options.MisfireThreshold`
+- [ ] If misfired and `job.MisfireStrategy == SkipAndScheduleNext`: skip execution, compute next cron occurrence, update job, log warning
+- [ ] If misfired and `FireImmediately` (default): execute normally (current behavior, no code change)
+- [ ] Only applies to recurring jobs (one-time jobs always fire)
+- [ ] Log includes job name and next scheduled time
+
+#### US-047: Add scheduler health checks [S]
+
+Health check for scheduler status, storage reachability, and stale job detection.
+
+**Files to Study:**
+- `src/Headless.Messaging.Core/Scheduling/SchedulerBackgroundService.cs`
+- `src/Headless.Messaging.Core/Setup.cs`
+
+**Acceptance Criteria:**
+- [ ] `SchedulerHealthCheck` internal sealed class implementing `IHealthCheck`
+- [ ] Healthy: storage reachable (lightweight query)
+- [ ] Degraded: stale jobs exist (count > 0, requires `ReleaseStaleJobsAsync` method)
+- [ ] Unhealthy: storage query throws
+- [ ] `AddSchedulerHealthChecks()` extension on `IHealthChecksBuilder`
+- [ ] Only registered when `IScheduledJobStorage` present
+- [ ] Reports stale count and storage latency in health check data
+
+#### US-048: Add cron override from IConfiguration [S]
+
+Allow ops to override `[Recurring]` cron expressions from `appsettings.json` without redeployment.
+
+**Files to Study:**
+- `src/Headless.Messaging.Core/Scheduling/SchedulerJobReconciler.cs`
+- `src/Headless.Messaging.Core/Scheduling/ScheduledJobDefinition.cs`
+
+**Acceptance Criteria:**
+- [ ] `SchedulerJobReconciler` accepts `IConfiguration` via DI
+- [ ] Before using attribute cron, check `IConfiguration["Messaging:Scheduling:Jobs:{Name}:CronExpression"]`
+- [ ] Config value takes precedence over attribute value
+- [ ] If config value is invalid cron, log error and fall back to attribute value
+- [ ] Only cron expression is overridable from config (not timezone, retry, etc.)
+- [ ] XML docs explain the override mechanism
+
 ### InMemory Storage
 
 #### US-025: Create InMemoryScheduledJobStorage [M]
@@ -269,6 +395,9 @@ Add `ReleaseStaleJobsAsync` and `PurgeExecutionsAsync` to existing `PostgreSqlSc
 - [ ] `ScheduleOnceAsync`: creation, past-date rejection, keyed DI registration
 - [ ] Compiled delegate cache: first-dispatch compilation, cache hit, thread safety
 - [ ] Scheduling-only mode: no transport, only storage + scheduler
+- [ ] Misfire strategy: `SkipAndScheduleNext` skips misfired job, `FireImmediately` executes normally
+- [ ] Health check: healthy/degraded/unhealthy states, storage reachability
+- [ ] Cron config override: IConfiguration takes precedence, invalid config falls back to attribute
 - [ ] NSubstitute mocks, `TestBase`, `AbortToken`, `should_*_when_*` naming
 
 #### US-028: Integration tests for new features [M]
@@ -296,6 +425,9 @@ Add `ReleaseStaleJobsAsync` and `PurgeExecutionsAsync` to existing `PostgreSqlSc
 - [ ] Document stale job recovery configuration
 - [ ] Document scheduling-only mode (no transport)
 - [ ] Document InMemory storage for testing
+- [ ] Document misfire strategy configuration
+- [ ] Document health checks (`AddSchedulerHealthChecks`)
+- [ ] Document cron override from `IConfiguration`
 
 ---
 
