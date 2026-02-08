@@ -23,3 +23,5 @@
 [2026-02-08 13:25] + US-022+US-046 PASSED - commit: 98db1471. Fixed build errors (MisfireStrategy.RunImmediately→FireImmediately, CreateJobAsync→UpsertJobAsync, missing MisfireStrategy in reconciler).
 [2026-02-08 13:30] > US-023+US-048: Scheduling-only mode + Cron config override (size: S+S)
 [2026-02-08 13:30] > US-024+US-047: Compiled delegates + Health checks (size: M+S)
+[2026-02-08 13:35] + US-023+US-048 PASSED - commit: 8673b452
+[2026-02-08 13:37] + US-024+US-047 PASSED - commit: fd623839. Fixed missing HealthChecks pkg ref.

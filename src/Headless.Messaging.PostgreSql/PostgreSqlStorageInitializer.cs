@@ -125,7 +125,10 @@ public sealed class PostgreSqlStorageInitializer(
             	"DateLocked" TIMESTAMPTZ NULL,
             	"IsEnabled" BOOLEAN NOT NULL DEFAULT TRUE,
             	"DateCreated" TIMESTAMPTZ NOT NULL,
-            	"DateUpdated" TIMESTAMPTZ NOT NULL
+            	"DateUpdated" TIMESTAMPTZ NOT NULL,
+            	"Timeout" BIGINT NULL,
+            	"MisfireStrategy" VARCHAR(50) NOT NULL DEFAULT 'FireImmediately',
+            	"ConsumerTypeName" VARCHAR(500) NULL
             );
 
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_scheduled_jobs_name" ON {GetScheduledJobsTableName()} ("Name");
