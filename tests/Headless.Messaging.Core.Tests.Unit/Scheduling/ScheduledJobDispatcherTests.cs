@@ -244,6 +244,7 @@ public sealed class ScheduledJobDispatcherTests : TestBase
             IsEnabled = true,
             DateCreated = now,
             DateUpdated = now,
+            MisfireStrategy = MisfireStrategy.FireImmediately,
         };
     }
 

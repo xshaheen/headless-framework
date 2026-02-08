@@ -239,6 +239,233 @@ public sealed class SchedulerBackgroundServiceTests : TestBase
         await executeTask;
     }
 
+    [Fact]
+    public async Task should_cancel_job_when_timeout_exceeded()
+    {
+        // given
+        var job = _CreateRecurringJob();
+        job.Timeout = TimeSpan.FromMilliseconds(50);
+        _SetupAcquireOnce(job);
+
+        _dispatcher.DelayDuration = TimeSpan.FromMilliseconds(200);
+        var sut = _CreateService();
+
+        // when
+        using var cts = new CancellationTokenSource();
+        await _RunOneIterationAsync(sut, cts);
+
+        // then
+        await _storage
+            .Received()
+            .UpdateExecutionAsync(
+                Arg.Is<JobExecution>(e => e.Status == JobExecutionStatus.Failed && e.Error!.Contains("timed out")),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_use_default_timeout_when_job_timeout_is_null()
+    {
+        // given
+        var job = _CreateRecurringJob();
+        job.Timeout = null;
+        _SetupAcquireOnce(job);
+
+        _dispatcher.DelayDuration = TimeSpan.FromMilliseconds(200);
+
+        var options = Options.Create(
+            new SchedulerOptions
+            {
+                PollingInterval = TimeSpan.FromMilliseconds(10),
+                DefaultJobTimeout = TimeSpan.FromMilliseconds(50),
+            }
+        );
+
+        var services = new ServiceCollection();
+        var sp = services.BuildServiceProvider();
+        var sut = new SchedulerBackgroundService(
+            _storage,
+            _dispatcher,
+            _cronCache,
+            _timeProvider,
+            _logger,
+            options,
+            sp
+        );
+
+        // when
+        using var cts = new CancellationTokenSource();
+        await _RunOneIterationAsync(sut, cts);
+
+        // then
+        await _storage
+            .Received()
+            .UpdateExecutionAsync(
+                Arg.Is<JobExecution>(e => e.Status == JobExecutionStatus.Failed && e.Error!.Contains("timed out")),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_timeout_when_no_timeout_configured()
+    {
+        // given
+        var job = _CreateRecurringJob();
+        job.Timeout = null;
+        _SetupAcquireOnce(job);
+
+        _dispatcher.DelayDuration = TimeSpan.FromMilliseconds(100);
+
+        var options = Options.Create(
+            new SchedulerOptions { PollingInterval = TimeSpan.FromMilliseconds(10), DefaultJobTimeout = null }
+        );
+
+        var services = new ServiceCollection();
+        var sp = services.BuildServiceProvider();
+        var sut = new SchedulerBackgroundService(
+            _storage,
+            _dispatcher,
+            _cronCache,
+            _timeProvider,
+            _logger,
+            options,
+            sp
+        );
+
+        // when
+        using var cts = new CancellationTokenSource();
+        await _RunOneIterationAsync(sut, cts);
+
+        // then
+        await _storage
+            .Received()
+            .UpdateExecutionAsync(
+                Arg.Is<JobExecution>(e => e.Status == JobExecutionStatus.Succeeded),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_skip_misfired_recurring_job_when_strategy_is_skip()
+    {
+        // given
+        var job = _CreateRecurringJob();
+        job.MisfireStrategy = MisfireStrategy.SkipAndScheduleNext;
+        job.NextRunTime = _timeProvider.GetUtcNow().AddMinutes(-5);
+        _SetupAcquireOnce(job);
+
+        var options = Options.Create(
+            new SchedulerOptions
+            {
+                PollingInterval = TimeSpan.FromMilliseconds(10),
+                MisfireThreshold = TimeSpan.FromMinutes(1),
+            }
+        );
+
+        var services = new ServiceCollection();
+        var sp = services.BuildServiceProvider();
+        var sut = new SchedulerBackgroundService(
+            _storage,
+            _dispatcher,
+            _cronCache,
+            _timeProvider,
+            _logger,
+            options,
+            sp
+        );
+
+        // when
+        using var cts = new CancellationTokenSource();
+        await _RunOneIterationAsync(sut, cts);
+
+        // then — job updated with next cron occurrence, dispatch not called
+        _dispatcher.DispatchedJobs.Should().BeEmpty();
+        await _storage
+            .Received()
+            .UpdateJobAsync(
+                Arg.Is<ScheduledJob>(j =>
+                    j.Status == ScheduledJobStatus.Pending
+                    && j.NextRunTime != null
+                    && j.NextRunTime > _timeProvider.GetUtcNow()
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_execute_misfired_job_when_strategy_is_fire_immediately()
+    {
+        // given
+        var job = _CreateRecurringJob();
+        job.MisfireStrategy = MisfireStrategy.FireImmediately;
+        job.NextRunTime = _timeProvider.GetUtcNow().AddMinutes(-5);
+        _SetupAcquireOnce(job);
+
+        var options = Options.Create(
+            new SchedulerOptions
+            {
+                PollingInterval = TimeSpan.FromMilliseconds(10),
+                MisfireThreshold = TimeSpan.FromMinutes(1),
+            }
+        );
+
+        var services = new ServiceCollection();
+        var sp = services.BuildServiceProvider();
+        var sut = new SchedulerBackgroundService(
+            _storage,
+            _dispatcher,
+            _cronCache,
+            _timeProvider,
+            _logger,
+            options,
+            sp
+        );
+
+        // when
+        using var cts = new CancellationTokenSource();
+        await _RunOneIterationAsync(sut, cts);
+
+        // then — job executed normally
+        _dispatcher.DispatchedJobs.Should().ContainSingle(j => j.Name == job.Name);
+    }
+
+    [Fact]
+    public async Task should_not_check_misfire_for_one_time_jobs()
+    {
+        // given
+        var job = _CreateOneTimeJob();
+        job.MisfireStrategy = MisfireStrategy.SkipAndScheduleNext;
+        job.NextRunTime = _timeProvider.GetUtcNow().AddMinutes(-5);
+        _SetupAcquireOnce(job);
+
+        var options = Options.Create(
+            new SchedulerOptions
+            {
+                PollingInterval = TimeSpan.FromMilliseconds(10),
+                MisfireThreshold = TimeSpan.FromMinutes(1),
+            }
+        );
+
+        var services = new ServiceCollection();
+        var sp = services.BuildServiceProvider();
+        var sut = new SchedulerBackgroundService(
+            _storage,
+            _dispatcher,
+            _cronCache,
+            _timeProvider,
+            _logger,
+            options,
+            sp
+        );
+
+        // when
+        using var cts = new CancellationTokenSource();
+        await _RunOneIterationAsync(sut, cts);
+
+        // then — one-time jobs always execute
+        _dispatcher.DispatchedJobs.Should().ContainSingle(j => j.Name == job.Name);
+    }
+
     // -- helpers --
 
     private void _SetupAcquireOnce(ScheduledJob job)
@@ -305,6 +532,7 @@ public sealed class SchedulerBackgroundServiceTests : TestBase
             IsEnabled = true,
             DateCreated = now,
             DateUpdated = now,
+            MisfireStrategy = MisfireStrategy.FireImmediately,
         };
     }
 
@@ -325,6 +553,7 @@ public sealed class SchedulerBackgroundServiceTests : TestBase
             IsEnabled = true,
             DateCreated = now,
             DateUpdated = now,
+            MisfireStrategy = MisfireStrategy.FireImmediately,
         };
     }
 
@@ -335,8 +564,9 @@ public sealed class SchedulerBackgroundServiceTests : TestBase
     {
         public List<ScheduledJob> DispatchedJobs { get; } = [];
         public Exception? ExceptionToThrow { get; set; }
+        public TimeSpan DelayDuration { get; set; }
 
-        public Task DispatchAsync(
+        public async Task DispatchAsync(
             ScheduledJob job,
             JobExecution execution,
             CancellationToken cancellationToken = default
@@ -344,12 +574,15 @@ public sealed class SchedulerBackgroundServiceTests : TestBase
         {
             DispatchedJobs.Add(job);
 
+            if (DelayDuration > TimeSpan.Zero)
+            {
+                await Task.Delay(DelayDuration, cancellationToken).ConfigureAwait(false);
+            }
+
             if (ExceptionToThrow is not null)
             {
                 throw ExceptionToThrow;
             }
-
-            return Task.CompletedTask;
         }
     }
 }
