@@ -230,6 +230,7 @@ public static class Setup
         {
             services.AddHostedService<ScheduledJobReconciler>();
             services.AddHostedService<SchedulerBackgroundService>();
+            services.AddHostedService<StaleJobRecoveryService>();
         }
         else if (hasDefinitions)
         {
