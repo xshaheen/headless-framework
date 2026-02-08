@@ -51,7 +51,8 @@ public sealed class PostgreSqlScheduledJobStorage(
                       j."Payload", j."Status", j."NextRunTime", j."LastRunTime",
                       j."LastRunDuration", j."RetryCount", j."RetryIntervals",
                       j."SkipIfRunning", j."LockHolder", j."LockedAt",
-                      j."IsEnabled", j."DateCreated", j."DateUpdated";
+                      j."IsEnabled", j."DateCreated", j."DateUpdated",
+                      j."Timeout", j."MisfireStrategy", j."ConsumerTypeName";
             """;
 
         object[] sqlParams =
@@ -78,7 +79,8 @@ public sealed class PostgreSqlScheduledJobStorage(
                    "Payload", "Status", "NextRunTime", "LastRunTime",
                    "LastRunDuration", "RetryCount", "RetryIntervals",
                    "SkipIfRunning", "LockHolder", "LockedAt",
-                   "IsEnabled", "DateCreated", "DateUpdated"
+                   "IsEnabled", "DateCreated", "DateUpdated",
+                   "Timeout", "MisfireStrategy", "ConsumerTypeName"
             FROM {_jobsTable}
             WHERE "Name" = @Name;
             """;
@@ -102,7 +104,8 @@ public sealed class PostgreSqlScheduledJobStorage(
                    "Payload", "Status", "NextRunTime", "LastRunTime",
                    "LastRunDuration", "RetryCount", "RetryIntervals",
                    "SkipIfRunning", "LockHolder", "LockedAt",
-                   "IsEnabled", "DateCreated", "DateUpdated"
+                   "IsEnabled", "DateCreated", "DateUpdated",
+                   "Timeout", "MisfireStrategy", "ConsumerTypeName"
             FROM {_jobsTable}
             ORDER BY "Name";
             """;
@@ -125,13 +128,15 @@ public sealed class PostgreSqlScheduledJobStorage(
                 "Payload", "Status", "NextRunTime", "LastRunTime",
                 "LastRunDuration", "RetryCount", "RetryIntervals",
                 "SkipIfRunning", "LockHolder", "LockedAt",
-                "IsEnabled", "DateCreated", "DateUpdated"
+                "IsEnabled", "DateCreated", "DateUpdated",
+                "Timeout", "MisfireStrategy", "ConsumerTypeName"
             ) VALUES (
                 @Id, @Name, @Type, @CronExpression, @TimeZone,
                 @Payload, @Status, @NextRunTime, @LastRunTime,
                 @LastRunDuration, @RetryCount, @RetryIntervals,
                 @SkipIfRunning, @LockHolder, @LockedAt,
-                @IsEnabled, @DateCreated, @DateUpdated
+                @IsEnabled, @DateCreated, @DateUpdated,
+                @Timeout, @MisfireStrategy, @ConsumerTypeName
             )
             ON CONFLICT ("Name") DO UPDATE SET
                 "Type" = EXCLUDED."Type",
@@ -142,6 +147,9 @@ public sealed class PostgreSqlScheduledJobStorage(
                 "RetryIntervals" = EXCLUDED."RetryIntervals",
                 "SkipIfRunning" = EXCLUDED."SkipIfRunning",
                 "IsEnabled" = EXCLUDED."IsEnabled",
+                "Timeout" = EXCLUDED."Timeout",
+                "MisfireStrategy" = EXCLUDED."MisfireStrategy",
+                "ConsumerTypeName" = EXCLUDED."ConsumerTypeName",
                 "DateUpdated" = @Now;
             """;
 
@@ -176,6 +184,9 @@ public sealed class PostgreSqlScheduledJobStorage(
                 "LockHolder" = @LockHolder,
                 "LockedAt" = @LockedAt,
                 "IsEnabled" = @IsEnabled,
+                "Timeout" = @Timeout,
+                "MisfireStrategy" = @MisfireStrategy,
+                "ConsumerTypeName" = @ConsumerTypeName,
                 "DateUpdated" = @Now
             WHERE "Id" = @Id;
             """;
@@ -274,6 +285,54 @@ public sealed class PostgreSqlScheduledJobStorage(
             .ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<int> ReleaseStaleJobsAsync(TimeSpan staleness, CancellationToken cancellationToken = default)
+    {
+        var threshold = timeProvider.GetUtcNow() - staleness;
+
+        var sql = $"""
+            UPDATE {_jobsTable}
+            SET "Status" = @Status,
+                "LockHolder" = NULL,
+                "LockedAt" = NULL
+            WHERE "Status" = @RunningStatus
+              AND "LockedAt" < @Threshold;
+            """;
+
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@Status", ScheduledJobStatus.Pending.ToString("G")),
+            new NpgsqlParameter("@RunningStatus", ScheduledJobStatus.Running.ToString("G")),
+            new NpgsqlParameter("@Threshold", threshold),
+        ];
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+
+        return await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> PurgeExecutionsAsync(TimeSpan retention, CancellationToken cancellationToken = default)
+    {
+        var threshold = timeProvider.GetUtcNow() - retention;
+
+        var sql = $"""
+            DELETE FROM {_executionsTable}
+            WHERE "CompletedAt" IS NOT NULL
+              AND "CompletedAt" < @Threshold;
+            """;
+
+        object[] sqlParams = [new NpgsqlParameter("@Threshold", threshold)];
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+
+        return await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ConfigureAwait(false);
+    }
+
     private static async Task<List<ScheduledJob>> _ReadJobsAsync(
         System.Data.Common.DbDataReader reader,
         CancellationToken cancellationToken
@@ -319,6 +378,13 @@ public sealed class PostgreSqlScheduledJobStorage(
                 IsEnabled = reader.GetBoolean(15),
                 DateCreated = new DateTimeOffset(reader.GetDateTime(16), TimeSpan.Zero),
                 DateUpdated = new DateTimeOffset(reader.GetDateTime(17), TimeSpan.Zero),
+                Timeout = await reader.IsDBNullAsync(18, cancellationToken).ConfigureAwait(false)
+                    ? null
+                    : TimeSpan.FromMilliseconds(reader.GetInt64(18)),
+                MisfireStrategy = Enum.Parse<MisfireStrategy>(reader.GetString(19)),
+                ConsumerTypeName = await reader.IsDBNullAsync(20, cancellationToken).ConfigureAwait(false)
+                    ? null
+                    : reader.GetString(20),
             };
 
             jobs.Add(job);
@@ -390,6 +456,12 @@ public sealed class PostgreSqlScheduledJobStorage(
             new NpgsqlParameter("@IsEnabled", job.IsEnabled),
             new NpgsqlParameter("@DateCreated", job.DateCreated),
             new NpgsqlParameter("@DateUpdated", job.DateUpdated),
+            new NpgsqlParameter(
+                "@Timeout",
+                (object?)(job.Timeout.HasValue ? (long)job.Timeout.Value.TotalMilliseconds : null) ?? DBNull.Value
+            ),
+            new NpgsqlParameter("@MisfireStrategy", job.MisfireStrategy.ToString("G")),
+            new NpgsqlParameter("@ConsumerTypeName", (object?)job.ConsumerTypeName ?? DBNull.Value),
         ];
     }
 
