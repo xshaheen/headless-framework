@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -12,6 +14,10 @@ namespace Headless.Messaging.Scheduling;
 /// </summary>
 internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) : IScheduledJobDispatcher
 {
+    private static readonly DiagnosticSource _DiagnosticListener = new DiagnosticListener(
+        MessageDiagnosticListenerNames.DiagnosticListenerName
+    );
+
     private static readonly ConcurrentDictionary<
         string,
         Func<IServiceProvider, IConsume<ScheduledTrigger>>
@@ -85,9 +91,17 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
                 await lifecycle.OnStartingAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            long? tracingTimestamp = null;
             try
             {
+                tracingTimestamp = _TracingBefore(job, execution);
                 await handler.Consume(context, cancellationToken).ConfigureAwait(false);
+                _TracingAfter(tracingTimestamp, job, execution);
+            }
+            catch (Exception ex)
+            {
+                _TracingError(tracingTimestamp, job, execution, ex);
+                throw;
             }
             finally
             {
@@ -105,6 +119,71 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
 #pragma warning restore ERP022
                 }
             }
+        }
+    }
+
+    private static long? _TracingBefore(ScheduledJob job, JobExecution execution)
+    {
+        if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeScheduledJobDispatch))
+        {
+            var eventData = new ScheduledJobEventData
+            {
+                JobName = job.Name,
+                ExecutionId = execution.Id,
+                Attempt = execution.RetryAttempt + 1,
+                ScheduledTime = execution.ScheduledTime,
+                OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            };
+
+            _DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforeScheduledJobDispatch, eventData);
+            return eventData.OperationTimestamp;
+        }
+
+        return null;
+    }
+
+    private static void _TracingAfter(long? tracingTimestamp, ScheduledJob job, JobExecution execution)
+    {
+        if (
+            tracingTimestamp != null
+            && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterScheduledJobDispatch)
+        )
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var eventData = new ScheduledJobEventData
+            {
+                JobName = job.Name,
+                ExecutionId = execution.Id,
+                Attempt = execution.RetryAttempt + 1,
+                ScheduledTime = execution.ScheduledTime,
+                OperationTimestamp = now,
+                ElapsedTimeMs = now - tracingTimestamp.Value,
+            };
+
+            _DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterScheduledJobDispatch, eventData);
+        }
+    }
+
+    private static void _TracingError(long? tracingTimestamp, ScheduledJob job, JobExecution execution, Exception ex)
+    {
+        if (
+            tracingTimestamp != null
+            && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorScheduledJobDispatch)
+        )
+        {
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var eventData = new ScheduledJobEventData
+            {
+                JobName = job.Name,
+                ExecutionId = execution.Id,
+                Attempt = execution.RetryAttempt + 1,
+                ScheduledTime = execution.ScheduledTime,
+                OperationTimestamp = now,
+                ElapsedTimeMs = now - tracingTimestamp.Value,
+                Exception = ex,
+            };
+
+            _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorScheduledJobDispatch, eventData);
         }
     }
 }
