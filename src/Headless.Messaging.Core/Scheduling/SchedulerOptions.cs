@@ -28,4 +28,10 @@ public sealed class SchedulerOptions
     /// an <c>IDistributedLockProvider</c> with <c>SkipIfRunning</c> jobs. Default: 5 minutes.
     /// </summary>
     public TimeSpan LockTimeout { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Gets or sets the threshold for determining if a scheduled execution is considered misfired.
+    /// A job is misfired if its scheduled time is more than this duration in the past. Default: 1 minute.
+    /// </summary>
+    public TimeSpan MisfireThreshold { get; set; } = TimeSpan.FromMinutes(1);
 }

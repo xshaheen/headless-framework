@@ -37,4 +37,14 @@ internal sealed record ScheduledJobDefinition
     /// Gets whether a new occurrence should be skipped if the previous execution is still running.
     /// </summary>
     public bool SkipIfRunning { get; init; } = true;
+
+    /// <summary>
+    /// Gets the timeout for job execution, or <c>null</c> for no timeout.
+    /// </summary>
+    public TimeSpan? Timeout { get; init; }
+
+    /// <summary>
+    /// Gets the strategy for handling missed scheduled executions.
+    /// </summary>
+    public MisfireStrategy MisfireStrategy { get; init; } = MisfireStrategy.FireImmediately;
 }

@@ -65,4 +65,16 @@ public sealed class RecurringAttribute : Attribute
     /// if the previous execution is still running. Default is <c>true</c>.
     /// </summary>
     public bool SkipIfRunning { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the timeout in seconds for job execution.
+    /// When set to 0, no timeout is enforced. Default is 0.
+    /// </summary>
+    public int TimeoutSeconds { get; set; }
+
+    /// <summary>
+    /// Gets or sets the strategy for handling missed scheduled executions.
+    /// Default is <see cref="MisfireStrategy.FireImmediately"/>.
+    /// </summary>
+    public MisfireStrategy MisfireStrategy { get; set; } = MisfireStrategy.FireImmediately;
 }
