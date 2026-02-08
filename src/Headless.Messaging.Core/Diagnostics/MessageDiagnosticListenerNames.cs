@@ -28,6 +28,10 @@ public static class MessageDiagnosticListenerNames
     public const string AfterSubscriberInvoke = _Prefix + "WriteSubscriberInvokeAfter";
     public const string ErrorSubscriberInvoke = _Prefix + "WriteSubscriberInvokeError";
 
+    public const string BeforeScheduledJobDispatch = _Prefix + "WriteScheduledJobDispatchBefore";
+    public const string AfterScheduledJobDispatch = _Prefix + "WriteScheduledJobDispatchAfter";
+    public const string ErrorScheduledJobDispatch = _Prefix + "WriteScheduledJobDispatchError";
+
     //Metrics
     public const string MetricListenerName = _Prefix + "EventCounter";
     public const string PublishedPerSec = "published-per-second";
