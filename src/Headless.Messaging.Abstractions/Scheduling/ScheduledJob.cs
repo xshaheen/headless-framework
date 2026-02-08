@@ -135,4 +135,17 @@ public sealed class ScheduledJob
     /// Gets or sets the UTC time this job was last updated.
     /// </summary>
     public required DateTimeOffset DateUpdated { get; set; }
+
+    /// <summary>
+    /// Gets or sets the timeout for job execution.
+    /// </summary>
+    /// <value>
+    /// The maximum duration allowed for job execution, or <c>null</c> for no timeout.
+    /// </value>
+    public TimeSpan? Timeout { get; set; }
+
+    /// <summary>
+    /// Gets or sets the strategy for handling missed scheduled executions.
+    /// </summary>
+    public required MisfireStrategy MisfireStrategy { get; set; }
 }
