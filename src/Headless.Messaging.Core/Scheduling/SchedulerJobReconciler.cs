@@ -56,6 +56,8 @@ internal sealed class SchedulerJobReconciler(
                 IsEnabled = true,
                 DateCreated = now,
                 DateUpdated = now,
+                MisfireStrategy = definition.MisfireStrategy,
+                Timeout = definition.Timeout,
             };
 
             await storage.UpsertJobAsync(job, cancellationToken).ConfigureAwait(false);

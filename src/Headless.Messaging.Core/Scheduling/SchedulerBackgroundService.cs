@@ -59,6 +59,34 @@ internal sealed class SchedulerBackgroundService(
 
     private async Task _ProcessJobAsync(ScheduledJob job, CancellationToken cancellationToken)
     {
+        // Check misfire strategy for recurring jobs
+        if (
+            job.Type == ScheduledJobType.Recurring
+            && job.MisfireStrategy == MisfireStrategy.SkipAndScheduleNext
+            && job.NextRunTime.HasValue
+        )
+        {
+            var delay = timeProvider.GetUtcNow() - job.NextRunTime.Value;
+            if (delay > _options.MisfireThreshold)
+            {
+                var nextRun = cronCache.GetNextOccurrence(job.CronExpression!, job.TimeZone, timeProvider.GetUtcNow());
+                logger.LogWarning(
+                    "Job {JobName} misfired (delay: {Delay}), skipping to next run: {NextRun}",
+                    job.Name,
+                    delay,
+                    nextRun
+                );
+
+                job.Status = ScheduledJobStatus.Pending;
+                job.NextRunTime = nextRun;
+                job.LockHolder = null;
+                job.LockedAt = null;
+                job.DateUpdated = timeProvider.GetUtcNow();
+                await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+        }
+
         // When a distributed lock provider is available and the job skips overlapping runs,
         // acquire a cross-instance lock before dispatching. If the lock cannot be obtained
         // (another instance is already running this job), skip this occurrence.
@@ -113,9 +141,20 @@ internal sealed class SchedulerBackgroundService(
 
         await storage.CreateExecutionAsync(execution, cancellationToken).ConfigureAwait(false);
 
+        var timeout = job.Timeout ?? _options.DefaultJobTimeout;
+        CancellationTokenSource? timeoutCts = null;
+        var jobCt = cancellationToken;
+
+        if (timeout.HasValue)
+        {
+            timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(timeout.Value);
+            jobCt = timeoutCts.Token;
+        }
+
         try
         {
-            await dispatcher.DispatchAsync(job, execution, cancellationToken).ConfigureAwait(false);
+            await dispatcher.DispatchAsync(job, execution, jobCt).ConfigureAwait(false);
 
             execution.CompletedAt = timeProvider.GetUtcNow();
             execution.Status = JobExecutionStatus.Succeeded;
@@ -142,6 +181,53 @@ internal sealed class SchedulerBackgroundService(
             {
                 job.NextRunTime = null;
                 job.Status = ScheduledJobStatus.Completed;
+            }
+
+            await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+            when (timeoutCts is not null
+                && timeoutCts.IsCancellationRequested
+                && !cancellationToken.IsCancellationRequested
+            )
+        {
+            logger.LogWarning("Job {JobName} timed out after {Timeout}", job.Name, timeout);
+
+            execution.CompletedAt = timeProvider.GetUtcNow();
+            execution.Status = JobExecutionStatus.Failed;
+            execution.Duration = (long)(execution.CompletedAt.Value - execution.StartedAt!.Value).TotalMilliseconds;
+            execution.Error = $"Job timed out after {timeout}";
+
+            await storage.UpdateExecutionAsync(execution, cancellationToken).ConfigureAwait(false);
+
+            job.RetryCount++;
+            job.LockHolder = null;
+            job.LockedAt = null;
+            job.LastRunTime = execution.CompletedAt;
+            job.LastRunDuration = execution.Duration;
+
+            if (job.RetryIntervals is { Length: > 0 } retryIntervals)
+            {
+                var retryIndex = Math.Min(job.RetryCount - 1, retryIntervals.Length - 1);
+                var delayMs = retryIntervals[retryIndex];
+                job.NextRunTime = timeProvider.GetUtcNow().AddMilliseconds(delayMs);
+                job.Status = ScheduledJobStatus.Pending;
+            }
+            else
+            {
+                job.Status = ScheduledJobStatus.Failed;
+
+                // For recurring jobs, compute next regular occurrence despite failure
+                if (job.Type == ScheduledJobType.Recurring && job.CronExpression is not null)
+                {
+                    job.NextRunTime = cronCache.GetNextOccurrence(
+                        job.CronExpression,
+                        job.TimeZone,
+                        timeProvider.GetUtcNow()
+                    );
+                    job.Status = ScheduledJobStatus.Pending;
+                    job.RetryCount = 0;
+                }
             }
 
             await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
@@ -190,6 +276,10 @@ internal sealed class SchedulerBackgroundService(
             }
 
             await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            timeoutCts?.Dispose();
         }
     }
 }

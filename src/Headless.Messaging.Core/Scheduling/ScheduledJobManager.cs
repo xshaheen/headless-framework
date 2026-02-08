@@ -115,10 +115,10 @@ internal sealed class ScheduledJobManager(
             IsEnabled = true,
             DateCreated = now,
             DateUpdated = now,
-            MisfireStrategy = MisfireStrategy.RunImmediately,
+            MisfireStrategy = MisfireStrategy.FireImmediately,
             ConsumerTypeName = consumerType.AssemblyQualifiedName,
         };
 
-        await storage.CreateJobAsync(job, cancellationToken).ConfigureAwait(false);
+        await storage.UpsertJobAsync(job, cancellationToken).ConfigureAwait(false);
     }
 }

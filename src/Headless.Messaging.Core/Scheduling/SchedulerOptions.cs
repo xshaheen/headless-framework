@@ -45,4 +45,10 @@ public sealed class SchedulerOptions
     /// Gets or sets the polling interval for the stale job recovery service. Default: 30 seconds.
     /// </summary>
     public TimeSpan StaleJobCheckInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Gets or sets the default timeout for job execution when a job does not specify its own timeout.
+    /// If both this property and the job's timeout are null, no timeout is enforced. Default: null (no timeout).
+    /// </summary>
+    public TimeSpan? DefaultJobTimeout { get; set; }
 }
