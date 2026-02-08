@@ -124,7 +124,6 @@
     <PackageVersion Include="morelinq" Version="4.4.0" />
     <PackageVersion Include="NameGenerator" Version="2.0.4" />
     <PackageVersion Include="NATS.Client" Version="1.1.8" />
-    <PackageVersion Include="NCrontab.Signed" Version="3.4.0" />
     <PackageVersion Include="NetEscapades.AspNetCore.SecurityHeaders" Version="1.3.1" />
     <PackageVersion Include="NetEscapades.EnumGenerators" Version="1.0.0-beta19" />
     <PackageVersion Include="NetTopologySuite" Version="2.6.0" />

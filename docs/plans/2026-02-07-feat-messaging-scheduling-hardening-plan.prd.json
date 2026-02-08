@@ -281,9 +281,9 @@
 			"title": "Create InMemoryScheduledJobStorage",
 			"size": "M",
 			"priority": 12,
-			"pass": false,
-			"attempts": 0,
-			"commits": [],
+			"pass": true,
+			"attempts": 1,
+			"commits": ["49ec46bc"],
 			"notes": "",
 			"description": "In-memory IScheduledJobStorage in Headless.Messaging.InMemoryStorage. ConcurrentDictionary + lock for atomicity. All methods including ReleaseStaleJobsAsync and PurgeExecutionsAsync. Register via UseInMemoryStorage().",
 			"filesToStudy": [
@@ -304,10 +304,10 @@
 			"title": "Implement new IScheduledJobStorage methods in PostgreSQL",
 			"size": "S",
 			"priority": 13,
-			"pass": false,
-			"attempts": 0,
-			"commits": [],
-			"notes": "",
+			"pass": true,
+			"attempts": 1,
+			"commits": ["a145be81"],
+			"notes": "Also added Timeout, MisfireStrategy, ConsumerTypeName columns to DDL and all SQL queries.",
 			"description": "Add ReleaseStaleJobsAsync and PurgeExecutionsAsync to PostgreSqlScheduledJobStorage. Parameterized SQL, return affected row count.",
 			"filesToStudy": [
 				"src/Headless.Messaging.PostgreSql/PostgreSqlScheduledJobStorage.cs"
@@ -324,9 +324,9 @@
 			"title": "Unit tests for hardening features",
 			"size": "L",
 			"priority": 14,
-			"pass": false,
-			"attempts": 0,
-			"commits": [],
+			"pass": true,
+			"attempts": 1,
+			"commits": ["b4cdbec3"],
 			"notes": "",
 			"description": "Tests for StaleJobRecoveryService, execution timeout, ScheduleOnceAsync, compiled delegate cache, scheduling-only mode, misfire strategy, health checks, cron config override. NSubstitute, TestBase, AbortToken.",
 			"filesToStudy": [
@@ -371,9 +371,9 @@
 			"title": "Update README files",
 			"size": "S",
 			"priority": 16,
-			"pass": false,
-			"attempts": 0,
-			"commits": [],
+			"pass": true,
+			"attempts": 1,
+			"commits": ["3be7fd65"],
 			"notes": "",
 			"description": "Document one-time job API, execution timeout, stale recovery, scheduling-only mode, InMemory storage for testing, misfire strategy, health checks, cron config override.",
 			"filesToStudy": [
@@ -393,6 +393,6 @@
 			]
 		}
 	],
-	"pass": false,
+	"pass": true,
 	"validation_errors": []
 }

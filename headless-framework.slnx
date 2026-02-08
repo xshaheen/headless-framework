@@ -141,8 +141,6 @@
     </Folder>
     <Folder Name="/Messaging/" />
     <Folder Name="/Messaging/Demo/">
-        <Project Path="demo/Headless.Ticker.Api.Demo/Headless.Ticker.Api.Demo.csproj" />
-        <Project Path="demo/Headless.Ticker.Console.Demo/Headless.Ticker.Console.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.AwsSqs.InMemory.Demo/Headless.Messaging.AwsSqs.InMemory.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.AzureServiceBus.InMemory.Demo/Headless.Messaging.AzureServiceBus.InMemory.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.Console.Demo/Headless.Messaging.Console.Demo.csproj" />
@@ -154,13 +152,6 @@
         <Project Path="demo/Headless.Messaging.Redis.SqlServer.Demo/Headless.Messaging.Redis.SqlServer.Demo.csproj" />
     </Folder>
     <Folder Name="/Messaging/Src/">
-        <Project Path="src/Headless.Ticker.Abstractions/Headless.Ticker.Abstractions.csproj" />
-        <Project Path="src/Headless.Ticker.Caching.Redis/Headless.Ticker.Caching.Redis.csproj" />
-        <Project Path="src/Headless.Ticker.Core/Headless.Ticker.Core.csproj" />
-        <Project Path="src/Headless.Ticker.Dashboard/Headless.Ticker.Dashboard.csproj" />
-        <Project Path="src/Headless.Ticker.EntityFramework/Headless.Ticker.EntityFramework.csproj" />
-        <Project Path="src/Headless.Ticker.OpenTelemetry/Headless.Ticker.OpenTelemetry.csproj" />
-        <Project Path="src/Headless.Ticker.SourceGenerator/Headless.Ticker.SourceGenerator.csproj" />
         <Project Path="src/Headless.Messaging.Abstractions/Headless.Messaging.Abstractions.csproj" />
         <Project Path="src/Headless.Messaging.AwsSqs/Headless.Messaging.AwsSqs.csproj" />
         <Project Path="src/Headless.Messaging.AzureServiceBus/Headless.Messaging.AzureServiceBus.csproj" />
@@ -179,7 +170,6 @@
         <Project Path="src/Headless.Messaging.SqlServer/Headless.Messaging.SqlServer.csproj" />
     </Folder>
     <Folder Name="/Messaging/Tests/">
-        <Project Path="tests/Headless.Ticker.Tests.Unit/Headless.Ticker.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Kafka.Tests.Unit/Headless.Messaging.Kafka.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.OpenTelemetry.Tests.Unit/Headless.Messaging.OpenTelemetry.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Abstractions.Tests.Unit/Headless.Messaging.Abstractions.Tests.Unit.csproj" />
