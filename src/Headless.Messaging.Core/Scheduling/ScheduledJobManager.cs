@@ -82,4 +82,43 @@ internal sealed class ScheduledJobManager(
 
         await storage.DeleteJobAsync(job.Id, cancellationToken).ConfigureAwait(false);
     }
+
+    public async Task ScheduleOnceAsync(
+        string name,
+        DateTimeOffset runAt,
+        Type consumerType,
+        string? payload = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(name);
+        Argument.IsNotNull(consumerType);
+
+        var now = timeProvider.GetUtcNow();
+
+        if (runAt <= now)
+        {
+            throw new ArgumentException("Run time must be in the future.", nameof(runAt));
+        }
+
+        var job = new ScheduledJob
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            Type = ScheduledJobType.OneTime,
+            TimeZone = "UTC",
+            Payload = payload,
+            Status = ScheduledJobStatus.Pending,
+            NextRunTime = runAt,
+            RetryCount = 0,
+            SkipIfRunning = false,
+            IsEnabled = true,
+            DateCreated = now,
+            DateUpdated = now,
+            MisfireStrategy = MisfireStrategy.RunImmediately,
+            ConsumerTypeName = consumerType.AssemblyQualifiedName,
+        };
+
+        await storage.CreateJobAsync(job, cancellationToken).ConfigureAwait(false);
+    }
 }

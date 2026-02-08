@@ -22,7 +22,9 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
 
         await using (scope.ConfigureAwait(false))
         {
-            var handler = scope.ServiceProvider.GetRequiredKeyedService<IConsume<ScheduledTrigger>>(job.Name);
+            var handler =
+                scope.ServiceProvider.GetKeyedService<IConsume<ScheduledTrigger>>(job.Name)
+                ?? _ResolveFromTypeName(scope.ServiceProvider, job.ConsumerTypeName, job.Name);
 
             var correlationId = execution.Id.ToString();
             var context = new ConsumeContext<ScheduledTrigger>
@@ -77,5 +79,23 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
                 }
             }
         }
+    }
+
+    private static IConsume<ScheduledTrigger> _ResolveFromTypeName(
+        IServiceProvider sp,
+        string? typeName,
+        string jobName
+    )
+    {
+        if (typeName is null)
+        {
+            throw new InvalidOperationException($"No consumer registered for job '{jobName}'.");
+        }
+
+        var type =
+            Type.GetType(typeName)
+            ?? throw new InvalidOperationException($"Consumer type '{typeName}' not found for job '{jobName}'.");
+
+        return (IConsume<ScheduledTrigger>)ActivatorUtilities.CreateInstance(sp, type);
     }
 }

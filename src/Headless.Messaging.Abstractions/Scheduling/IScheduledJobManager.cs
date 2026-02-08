@@ -56,4 +56,21 @@ public interface IScheduledJobManager
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <exception cref="InvalidOperationException">Thrown when no job with the specified name exists.</exception>
     Task DeleteAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Schedules a one-time job to run at a specific time with a consumer resolved at runtime.
+    /// </summary>
+    /// <param name="name">The unique name for this job.</param>
+    /// <param name="runAt">The UTC time when the job should execute.</param>
+    /// <param name="consumerType">The consumer type that will handle the job. Will be resolved via keyed DI or ActivatorUtilities at runtime.</param>
+    /// <param name="payload">Optional payload to pass to the consumer.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <exception cref="ArgumentException">Thrown when runAt is in the past.</exception>
+    Task ScheduleOnceAsync(
+        string name,
+        DateTimeOffset runAt,
+        Type consumerType,
+        string? payload = null,
+        CancellationToken cancellationToken = default
+    );
 }
