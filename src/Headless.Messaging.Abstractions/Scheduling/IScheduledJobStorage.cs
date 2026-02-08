@@ -101,4 +101,30 @@ public interface IScheduledJobStorage
         int limit,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Releases jobs that have been locked for longer than the specified staleness threshold
+    /// by resetting their <see cref="ScheduledJobStatus"/> and clearing their lock holder.
+    /// </summary>
+    /// <param name="staleness">
+    /// The age threshold for considering a job stale. Jobs with
+    /// <see cref="ScheduledJobStatus.Running"/> status and a
+    /// <see cref="ScheduledJob.LockedAt"/> timestamp older than
+    /// <c>now - staleness</c> will be released.
+    /// </param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The number of jobs that were released.</returns>
+    Task<int> ReleaseStaleJobsAsync(TimeSpan staleness, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes execution records that completed longer ago than the specified retention period.
+    /// </summary>
+    /// <param name="retention">
+    /// The retention period for completed executions. Execution records with a
+    /// <see cref="JobExecution.CompletedAt"/> timestamp older than
+    /// <c>now - retention</c> will be permanently deleted.
+    /// </param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The number of execution records that were purged.</returns>
+    Task<int> PurgeExecutionsAsync(TimeSpan retention, CancellationToken cancellationToken = default);
 }
