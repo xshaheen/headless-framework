@@ -201,6 +201,39 @@ On startup, the scheduler reconciles `[Recurring]`-annotated consumers with pers
 
 When `IDistributedLockProvider` is registered and a job has `SkipIfRunning = true`, the scheduler acquires a cross-instance lock before dispatching. If the lock is held by another node, the occurrence is skipped.
 
+## Automatic Correlation Propagation
+
+When scheduled job handlers publish messages, those messages automatically inherit the job execution's correlation ID without requiring explicit header assignment. This enables end-to-end tracing of operations triggered by scheduled jobs.
+
+### How It Works
+
+The scheduler sets a `MessagingCorrelationScope` (AsyncLocal-based ambient context) before invoking job handlers. When publishers (`IOutboxPublisher` or `IDirectPublisher`) send messages, they check the ambient scope and apply its correlation ID if no explicit `CorrelationId` header is provided.
+
+Explicit correlation headers always take precedence over ambient scope values.
+
+### Example
+
+```csharp
+[Recurring("0 0 * * * *", Name = "DailyReportJob")]
+public sealed class DailyReportJob(IOutboxPublisher publisher) : IConsume<ScheduledTrigger>
+{
+    public async ValueTask Consume(
+        ConsumeContext<ScheduledTrigger> context,
+        CancellationToken cancellationToken)
+    {
+        var report = await GenerateReportAsync(cancellationToken);
+
+        // Message automatically inherits job execution ID as correlation ID
+        await publisher.PublishAsync("reports.generated", report, cancellationToken: cancellationToken);
+
+        // Correlation flows across multiple messages published by the same job
+        await publisher.PublishAsync("notifications.send", new EmailNotification(), cancellationToken: cancellationToken);
+    }
+}
+```
+
+All messages published from `DailyReportJob` share the same correlation ID, making it easy to trace the entire workflow in logs and distributed tracing systems.
+
 ## Message Ordering Guarantees
 
 Message ordering guarantees depend on the transport provider and configuration:
