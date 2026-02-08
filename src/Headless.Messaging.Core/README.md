@@ -232,6 +232,135 @@ public sealed class DailyReportJob(IOutboxPublisher publisher) : IConsume<Schedu
 
 All messages published from `DailyReportJob` share the same correlation ID, making it easy to trace the entire workflow in logs and distributed tracing systems.
 
+## One-Time Jobs
+
+Schedule one-off jobs with `IScheduledJobManager.ScheduleOnceAsync()`:
+
+```csharp
+public sealed class UserService(IScheduledJobManager jobManager)
+{
+    public async Task RegisterUserAsync(Guid userId, CancellationToken ct)
+    {
+        // Database save logic...
+
+        // Schedule welcome email for 5 minutes later
+        await jobManager.ScheduleOnceAsync(
+            "send-welcome-email",
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            typeof(SendWelcomeEmailConsumer),
+            payload: userId.ToString(),
+            ct
+        );
+    }
+}
+```
+
+One-time jobs are stored in the same `ScheduledJob` table as recurring jobs but execute once at the specified `runAt` time.
+
+## Execution Timeout
+
+Configure per-job timeout via `[Recurring]` attribute:
+
+```csharp
+[Recurring("0 0 * * * *", TimeoutSeconds = 300)]
+public sealed class LongRunningJob : IConsume<ScheduledTrigger>
+{
+    // Job must complete within 5 minutes
+}
+```
+
+Or set global default via `SchedulerOptions.DefaultJobTimeout`:
+
+```csharp
+builder.Services.Configure<SchedulerOptions>(options =>
+{
+    options.DefaultJobTimeout = TimeSpan.FromMinutes(10);
+});
+```
+
+Fallback order: job timeout → global timeout → no timeout. Timed-out jobs are marked as failed.
+
+## Stale Job Recovery
+
+`StaleJobRecoveryService` automatically releases jobs stuck in `Running` state. Configure thresholds via `SchedulerOptions`:
+
+```csharp
+builder.Services.Configure<SchedulerOptions>(options =>
+{
+    options.StaleJobThreshold = TimeSpan.FromMinutes(5);     // default
+    options.StaleJobCheckInterval = TimeSpan.FromSeconds(30); // default
+});
+```
+
+Jobs running longer than `StaleJobThreshold` are released back to `Pending` state for retry.
+
+## Misfire Strategy
+
+Define how to handle jobs that miss their scheduled execution time:
+
+```csharp
+[Recurring("0 0 * * * *", MisfireStrategy = MisfireStrategy.SkipAndScheduleNext)]
+public sealed class ReportJob : IConsume<ScheduledTrigger>
+{
+    // If missed, skip this occurrence and schedule next
+}
+```
+
+Strategies:
+- `FireImmediately` (default) — Execute missed jobs as soon as detected
+- `SkipAndScheduleNext` — Skip missed occurrence, schedule next from cron
+
+Configure misfire threshold via `SchedulerOptions.MisfireThreshold` (default 1 minute).
+
+## Scheduling-Only Mode
+
+Use scheduling infrastructure without message transport. Call `AddMessages` without transport configuration:
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+    // No transport registered - scheduling still works
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+Transport processors skip gracefully. Only scheduler and storage run.
+
+## Health Checks
+
+Add scheduler health checks to monitor job execution:
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddSchedulerHealthChecks();
+```
+
+Health status:
+- **Healthy** — All jobs running normally
+- **Degraded** — Stale jobs detected (stuck > threshold)
+- **Unhealthy** — Storage error or critical failure
+
+## Cron Override from Configuration
+
+Override cron expressions via `appsettings.json`:
+
+```json
+{
+  "Messaging": {
+    "Scheduling": {
+      "Jobs": {
+        "daily-report": {
+          "CronExpression": "0 */2 * * *"
+        }
+      }
+    }
+  }
+}
+```
+
+Configuration overrides take precedence over `[Recurring]` attribute values. Job name must match `Name` from attribute or fluent API.
+
 ## Message Ordering Guarantees
 
 Message ordering guarantees depend on the transport provider and configuration:
