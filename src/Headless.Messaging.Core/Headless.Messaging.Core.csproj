@@ -12,6 +12,7 @@
   <ItemGroup>
     <PackageReference Include="Cronos" />
     <PackageReference Include="FastExpressionCompiler" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />

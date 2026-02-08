@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Messaging.Messages;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11,6 +12,11 @@ namespace Headless.Messaging.Scheduling;
 /// </summary>
 internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) : IScheduledJobDispatcher
 {
+    private static readonly ConcurrentDictionary<
+        string,
+        Func<IServiceProvider, IConsume<ScheduledTrigger>>
+    > _FactoryCache = new(StringComparer.Ordinal);
+
     /// <inheritdoc />
     public async Task DispatchAsync(
         ScheduledJob job,
@@ -22,9 +28,30 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
 
         await using (scope.ConfigureAwait(false))
         {
-            var handler =
-                scope.ServiceProvider.GetKeyedService<IConsume<ScheduledTrigger>>(job.Name)
-                ?? _ResolveFromTypeName(scope.ServiceProvider, job.ConsumerTypeName, job.Name);
+            var factory = _FactoryCache.GetOrAdd(
+                job.Name,
+                static (name, state) =>
+                {
+                    var j = state;
+
+                    if (j.ConsumerTypeName is not null)
+                    {
+                        var type =
+                            Type.GetType(j.ConsumerTypeName)
+                            ?? throw new InvalidOperationException(
+                                $"Consumer type '{j.ConsumerTypeName}' not found for job '{name}'."
+                            );
+
+                        return serviceProvider =>
+                            (IConsume<ScheduledTrigger>)ActivatorUtilities.CreateInstance(serviceProvider, type);
+                    }
+
+                    return serviceProvider => serviceProvider.GetRequiredKeyedService<IConsume<ScheduledTrigger>>(name);
+                },
+                job
+            );
+
+            var handler = factory(scope.ServiceProvider);
 
             var correlationId = execution.Id.ToString();
             var context = new ConsumeContext<ScheduledTrigger>
@@ -79,23 +106,5 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
                 }
             }
         }
-    }
-
-    private static IConsume<ScheduledTrigger> _ResolveFromTypeName(
-        IServiceProvider sp,
-        string? typeName,
-        string jobName
-    )
-    {
-        if (typeName is null)
-        {
-            throw new InvalidOperationException($"No consumer registered for job '{jobName}'.");
-        }
-
-        var type =
-            Type.GetType(typeName)
-            ?? throw new InvalidOperationException($"Consumer type '{typeName}' not found for job '{jobName}'.");
-
-        return (IConsume<ScheduledTrigger>)ActivatorUtilities.CreateInstance(sp, type);
     }
 }

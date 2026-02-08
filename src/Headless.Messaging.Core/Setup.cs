@@ -10,6 +10,7 @@ using Headless.Messaging.Scheduling;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -243,5 +244,16 @@ public static class Setup
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Adds the scheduler health check that reports storage reachability and stale job status.
+    /// </summary>
+    /// <param name="builder">The health checks builder.</param>
+    /// <returns>The health checks builder for chaining.</returns>
+    public static IHealthChecksBuilder AddSchedulerHealthChecks(this IHealthChecksBuilder builder)
+    {
+        builder.AddCheck<SchedulerHealthCheck>("scheduler", tags: ["scheduler", "messaging"]);
+        return builder;
     }
 }
