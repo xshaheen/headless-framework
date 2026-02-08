@@ -60,6 +60,7 @@ public sealed class ScheduledJobDispatcherTests : TestBase
         capturedContext.Message.Attempt.Should().Be(3); // RetryAttempt + 1
         capturedContext.Message.CronExpression.Should().Be("*/5 * * * * *");
         capturedContext.Message.Payload.Should().Be("""{"key":"value"}""");
+        capturedContext.Message.ParentJobId.Should().BeNull();
     }
 
     [Fact]

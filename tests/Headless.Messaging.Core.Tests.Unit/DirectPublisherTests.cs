@@ -312,6 +312,101 @@ public sealed class DirectPublisherTests : TestBase
         publisher.Should().BeOfType<DirectPublisher>();
     }
 
+    [Fact]
+    public async Task should_use_scope_correlation_when_no_explicit_header()
+    {
+        // given
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var correlationId = Faker.Random.Guid().ToString();
+
+        using var scope = MessagingCorrelationScope.Begin(correlationId);
+
+        // when
+        await publisher.PublishAsync(new TestMessage("test"), AbortToken);
+
+        // then
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].Headers[Headers.CorrelationId].Should().Be(correlationId);
+    }
+
+    [Fact]
+    public async Task should_increment_sequence_from_scope()
+    {
+        // given
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var correlationId = Faker.Random.Guid().ToString();
+
+        using var scope = MessagingCorrelationScope.Begin(correlationId);
+
+        // when
+        await publisher.PublishAsync(new TestMessage("test1"), AbortToken);
+        await publisher.PublishAsync(new TestMessage("test2"), AbortToken);
+        await publisher.PublishAsync(new TestMessage("test3"), AbortToken);
+
+        // then
+        testTransport.SentMessages.Should().HaveCount(3);
+        testTransport.SentMessages[0].Headers[Headers.CorrelationSequence].Should().Be("1");
+        testTransport.SentMessages[1].Headers[Headers.CorrelationSequence].Should().Be("2");
+        testTransport.SentMessages[2].Headers[Headers.CorrelationSequence].Should().Be("3");
+    }
+
+    [Fact]
+    public async Task should_prefer_explicit_header_over_scope()
+    {
+        // given
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var scopeCorrelationId = Faker.Random.Guid().ToString();
+        var explicitCorrelationId = Faker.Random.Guid().ToString();
+
+        using var scope = MessagingCorrelationScope.Begin(scopeCorrelationId);
+
+        var customHeaders = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.CorrelationId] = explicitCorrelationId,
+            [Headers.CorrelationSequence] = "99",
+        };
+
+        // when
+        await publisher.PublishAsync(new TestMessage("test"), customHeaders, AbortToken);
+
+        // then
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].Headers[Headers.CorrelationId].Should().Be(explicitCorrelationId);
+        testTransport.SentMessages[0].Headers[Headers.CorrelationSequence].Should().Be("99");
+    }
+
+    [Fact]
+    public async Task should_use_message_id_when_no_scope_and_no_header()
+    {
+        // given
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+
+        // when - no scope, no explicit headers
+        await publisher.PublishAsync(new TestMessage("test"), AbortToken);
+
+        // then
+        testTransport.SentMessages.Should().HaveCount(1);
+        var messageId = testTransport.SentMessages[0].Headers[Headers.MessageId];
+        testTransport.SentMessages[0].Headers[Headers.CorrelationId].Should().Be(messageId);
+        testTransport.SentMessages[0].Headers[Headers.CorrelationSequence].Should().Be("0");
+    }
+
     private static IDirectPublisher _CreateDirectPublisher(ITransport transport, MessagingOptions options)
     {
         var services = new ServiceCollection();
