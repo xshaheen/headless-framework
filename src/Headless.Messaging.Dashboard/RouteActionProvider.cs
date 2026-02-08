@@ -5,6 +5,7 @@ using System.Net;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
+using Headless.Messaging.Dashboard.Scheduling;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
@@ -92,6 +93,36 @@ public class RouteActionProvider
             .MapGet(prefixMatch + "/list-svc/{namespace}", ListServices)
             .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
         _builder.MapGet(prefixMatch + "/ping", PingServices).AllowAnonymous();
+
+        // Auth endpoints (always anonymous — used by the frontend to discover and validate auth)
+        _builder.MapGet(prefixMatch + "/auth/info", AuthInfoEndpoint).AllowAnonymous();
+        _builder.MapPost(prefixMatch + "/auth/validate", AuthValidateEndpoint).AllowAnonymous();
+
+        // Scheduling endpoints
+        _builder
+            .MapGet(prefixMatch + "/scheduling/jobs", SchedulingJobs)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapGet(prefixMatch + "/scheduling/jobs/{name}", SchedulingJobByName)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapGet(prefixMatch + "/scheduling/jobs/{jobId:guid}/executions", SchedulingExecutions)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapGet(prefixMatch + "/scheduling/jobs/{jobId:guid}/graph", SchedulingGraph)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapGet(prefixMatch + "/scheduling/status", SchedulingStatus)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapPost(prefixMatch + "/scheduling/jobs/{name}/trigger", SchedulingTrigger)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapPost(prefixMatch + "/scheduling/jobs/{name}/enable", SchedulingEnable)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapPost(prefixMatch + "/scheduling/jobs/{name}/disable", SchedulingDisable)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
     }
 
     public async Task Metrics(HttpContext httpContext)
@@ -574,6 +605,229 @@ public class RouteActionProvider
 #pragma warning restore EPC12
     }
 
+    public async Task AuthInfoEndpoint(HttpContext httpContext)
+    {
+        var authService = _serviceProvider.GetService<IAuthService>();
+        if (authService == null)
+        {
+            await httpContext.Response.WriteAsJsonAsync(new AuthInfo());
+            return;
+        }
+
+        await httpContext.Response.WriteAsJsonAsync(authService.GetAuthInfo());
+    }
+
+    public async Task AuthValidateEndpoint(HttpContext httpContext)
+    {
+        var authService = _serviceProvider.GetService<IAuthService>();
+        if (authService == null)
+        {
+            await httpContext.Response.WriteAsJsonAsync(AuthResult.Success("anonymous"));
+            return;
+        }
+
+        var result = await authService.AuthenticateAsync(httpContext);
+        await httpContext.Response.WriteAsJsonAsync(result);
+    }
+
+    public async Task SchedulingJobs(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var repo = _serviceProvider.GetService<ISchedulingDashboardRepository>();
+        if (repo == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var nameFilter = httpContext.Request.Query["name"].ToString();
+        var statusFilter = httpContext.Request.Query["status"].ToString();
+        var jobs = await repo.GetJobsAsync(
+            string.IsNullOrEmpty(nameFilter) ? null : nameFilter,
+            string.IsNullOrEmpty(statusFilter) ? null : statusFilter,
+            httpContext.RequestAborted
+        );
+        await httpContext.Response.WriteAsJsonAsync(jobs);
+    }
+
+    public async Task SchedulingJobByName(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var repo = _serviceProvider.GetService<ISchedulingDashboardRepository>();
+        if (repo == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var name = httpContext.GetRouteData().Values["name"]?.ToString();
+        if (string.IsNullOrEmpty(name))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var job = await repo.GetJobByNameAsync(name, httpContext.RequestAborted);
+        if (job == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        await httpContext.Response.WriteAsJsonAsync(job);
+    }
+
+    public async Task SchedulingExecutions(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var repo = _serviceProvider.GetService<ISchedulingDashboardRepository>();
+        if (repo == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        if (!Guid.TryParse(httpContext.GetRouteData().Values["jobId"]?.ToString(), out var jobId))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var page = httpContext.Request.Query["page"].ToInt32OrDefault(0);
+        var pageSize = Math.Clamp(httpContext.Request.Query["pageSize"].ToInt32OrDefault(20), 1, _MaxPageSize);
+        var executions = await repo.GetExecutionsAsync(jobId, page, pageSize, httpContext.RequestAborted);
+        await httpContext.Response.WriteAsJsonAsync(executions);
+    }
+
+    public async Task SchedulingGraph(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var repo = _serviceProvider.GetService<ISchedulingDashboardRepository>();
+        if (repo == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        if (!Guid.TryParse(httpContext.GetRouteData().Values["jobId"]?.ToString(), out var jobId))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var days = httpContext.Request.Query["days"].ToInt32OrDefault(7);
+        var graph = await repo.GetExecutionGraphDataAsync(jobId, days, httpContext.RequestAborted);
+        await httpContext.Response.WriteAsJsonAsync(graph);
+    }
+
+    public async Task SchedulingStatus(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var repo = _serviceProvider.GetService<ISchedulingDashboardRepository>();
+        if (repo == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var status = await repo.GetSchedulerStatusAsync(httpContext.RequestAborted);
+        await httpContext.Response.WriteAsJsonAsync(status);
+    }
+
+    public async Task SchedulingTrigger(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var manager = _serviceProvider.GetService<IScheduledJobManager>();
+        if (manager == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var name = httpContext.GetRouteData().Values["name"]?.ToString();
+        if (string.IsNullOrEmpty(name))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        await manager.TriggerAsync(name, httpContext.RequestAborted);
+        httpContext.Response.StatusCode = StatusCodes.Status202Accepted;
+    }
+
+    public async Task SchedulingEnable(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var manager = _serviceProvider.GetService<IScheduledJobManager>();
+        if (manager == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var name = httpContext.GetRouteData().Values["name"]?.ToString();
+        if (string.IsNullOrEmpty(name))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        await manager.EnableAsync(name, httpContext.RequestAborted);
+        httpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+    }
+
+    public async Task SchedulingDisable(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var manager = _serviceProvider.GetService<IScheduledJobManager>();
+        if (manager == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var name = httpContext.GetRouteData().Values["name"]?.ToString();
+        if (string.IsNullOrEmpty(name))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        await manager.DisableAsync(name, httpContext.RequestAborted);
+        httpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+    }
     private static void _BadRequest(HttpContext httpContext)
     {
         httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
