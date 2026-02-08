@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -9,11 +10,17 @@ namespace Headless.Messaging.Scheduling;
 /// Reconciles discovered <see cref="ScheduledJobDefinition"/> instances with persistent storage
 /// on application startup. Inserts new jobs, updates changed ones, and soft-disables removed ones.
 /// </summary>
+/// <remarks>
+/// Cron expressions can be overridden via configuration at:
+/// <c>Messaging:Scheduling:Jobs:{JobName}:CronExpression</c>.
+/// Config values take precedence over attribute values. Invalid config values are logged and ignored.
+/// </remarks>
 internal sealed class SchedulerJobReconciler(
     ScheduledJobDefinitionRegistry definitionRegistry,
     IScheduledJobStorage storage,
     CronScheduleCache cronCache,
     TimeProvider timeProvider,
+    IConfiguration configuration,
     ILogger<SchedulerJobReconciler> logger
 ) : IHostedLifecycleService
 {
@@ -39,14 +46,42 @@ internal sealed class SchedulerJobReconciler(
         {
             knownNames.Add(definition.Name);
 
-            var nextRun = cronCache.GetNextOccurrence(definition.CronExpression, definition.TimeZone, now);
+            var cronExpression = definition.CronExpression;
+
+            // Check for config-based cron override
+            var configCron = configuration[$"Messaging:Scheduling:Jobs:{definition.Name}:CronExpression"];
+            if (!string.IsNullOrWhiteSpace(configCron))
+            {
+                try
+                {
+                    // Validate the cron expression by computing next occurrence
+                    cronCache.GetNextOccurrence(configCron, definition.TimeZone, now);
+                    cronExpression = configCron;
+                    logger.LogInformation(
+                        "Job '{JobName}' cron overridden from configuration: {Cron}",
+                        definition.Name,
+                        configCron
+                    );
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Invalid cron override '{Cron}' in configuration for job '{JobName}', using attribute value",
+                        configCron,
+                        definition.Name
+                    );
+                }
+            }
+
+            var nextRun = cronCache.GetNextOccurrence(cronExpression, definition.TimeZone, now);
 
             var job = new ScheduledJob
             {
                 Id = Guid.NewGuid(),
                 Name = definition.Name,
                 Type = ScheduledJobType.Recurring,
-                CronExpression = definition.CronExpression,
+                CronExpression = cronExpression,
                 TimeZone = definition.TimeZone ?? "UTC",
                 Status = ScheduledJobStatus.Pending,
                 NextRunTime = nextRun,
@@ -65,7 +100,7 @@ internal sealed class SchedulerJobReconciler(
             logger.LogDebug(
                 "Reconciled job '{JobName}' with cron '{Cron}', next run: {NextRun}",
                 definition.Name,
-                definition.CronExpression,
+                cronExpression,
                 nextRun
             );
         }

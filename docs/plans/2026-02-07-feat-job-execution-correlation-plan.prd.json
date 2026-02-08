@@ -2,7 +2,7 @@
 	"name": "job-execution-correlation",
 	"description": "Automatic correlation chain from scheduled job execution to messages published by job handlers via AsyncLocal ambient context",
 	"created_at": "2026-02-07T00:00:00Z",
-	"status": "pending",
+	"status": "in_progress",
 	"branches": {
 		"base": "main",
 		"feature": "xshaheen/unified-messaging-scheduling"
@@ -14,10 +14,10 @@
 			"title": "Create MessagingCorrelationScope",
 			"size": "S",
 			"priority": 1,
-			"pass": false,
+			"pass": true,
 			"attempts": 0,
-			"commits": [],
-			"notes": "Full Merge US-030 depends on this (consumer correlation sets scope in CompiledMessageDispatcher)",
+			"commits": ["deb24012"],
+			"notes": "MessagingCorrelationScope created in Headless.Messaging.Abstractions. AsyncLocal-based, sealed, IDisposable, nesting-safe. Begin() factory, IncrementSequence() with Interlocked.",
 			"description": "AsyncLocal-based ambient correlation context in Headless.Messaging.Abstractions. Sealed class with static Current, Begin() factory, IDisposable, CorrelationId (string), _sequence (int field for Interlocked.Increment), nesting-safe via parent restore. Chosen over MassTransit's scoped DI approach because publishers aren't resolved from dispatcher scope. Chosen over Ticker's ParentId entity model because we need correlation propagation, not execution trees.",
 			"filesToStudy": [
 				"src/Headless.Messaging.Core/Internal/OutboxPublisher.cs",
@@ -37,10 +37,10 @@
 			"title": "Populate correlation in ScheduledJobDispatcher",
 			"size": "S",
 			"priority": 2,
-			"pass": false,
+			"pass": true,
 			"attempts": 0,
-			"commits": [],
-			"notes": "",
+			"commits": ["943dd5a6"],
+			"notes": "CorrelationId set to execution.Id.ToString(), headers populated with corr-id and corr-seq=0, MessagingCorrelationScope.Begin() wraps handler invocation via using var.",
 			"description": "Set CorrelationId = execution.Id (was null), populate headers with correlation metadata, wrap handler invocation in MessagingCorrelationScope.Begin(). Scope disposed in finally.",
 			"filesToStudy": [
 				"src/Headless.Messaging.Core/Scheduling/ScheduledJobDispatcher.cs",
@@ -58,10 +58,10 @@
 			"title": "Make publishers read MessagingCorrelationScope",
 			"size": "M",
 			"priority": 3,
-			"pass": false,
+			"pass": true,
 			"attempts": 0,
-			"commits": [],
-			"notes": "",
+			"commits": ["2705afcc"],
+			"notes": "Both OutboxPublisher and DirectPublisher now check MessagingCorrelationScope.Current. If scope active: use scope.CorrelationId + IncrementSequence(). If no scope: existing behavior (MessageId, seq=0). Explicit headers always win.",
 			"description": "OutboxPublisher and DirectPublisher auto-inherit correlation from ambient MessagingCorrelationScope when CorrelationId not in explicit headers. Explicit headers always win. Backward compatible.",
 			"filesToStudy": [
 				"src/Headless.Messaging.Core/Internal/OutboxPublisher.cs",
@@ -80,10 +80,10 @@
 			"title": "Unit tests for correlation propagation",
 			"size": "M",
 			"priority": 4,
-			"pass": false,
+			"pass": true,
 			"attempts": 0,
-			"commits": [],
-			"notes": "",
+			"commits": ["2ebfec65"],
+			"notes": "Tests added: MessagingCorrelationScopeTests (scope lifecycle, nesting, sequence), ScheduledJobDispatcherTests (correlation context, scope during/after dispatch), DirectPublisherTests (scope inheritance, explicit header override, backward compat). Fixed existing BeNull assertion.",
 			"description": "Tests for MessagingCorrelationScope lifecycle, ScheduledJobDispatcher correlation setting, OutboxPublisher/DirectPublisher ambient inheritance, explicit header override, backward compatibility.",
 			"filesToStudy": [
 				"tests/Headless.Messaging.Core.Tests.Unit/",
@@ -101,9 +101,9 @@
 			"title": "Update README",
 			"size": "XS",
 			"priority": 5,
-			"pass": false,
+			"pass": true,
 			"attempts": 0,
-			"commits": [],
+			"commits": ["531ecedf"],
 			"notes": "",
 			"description": "Document automatic job-to-message correlation in Core README. Example showing handler publishing message with automatic correlation.",
 			"filesToStudy": ["src/Headless.Messaging.Core/README.md"],
@@ -113,6 +113,6 @@
 			]
 		}
 	],
-	"pass": false,
+	"pass": true,
 	"validation_errors": []
 }

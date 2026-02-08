@@ -2,7 +2,7 @@
 	"name": "ticker-messaging-full-merge",
 	"description": "Complete Ticker-to-Messaging migration: consumer correlation, OpenTelemetry scheduling, dashboard merge (Ticker UI base), Ticker removal",
 	"created_at": "2026-02-07T00:00:00Z",
-	"status": "pending",
+	"status": "in_progress",
 	"branches": {
 		"base": "main",
 		"feature": "xshaheen/unified-messaging-scheduling"

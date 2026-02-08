@@ -116,14 +116,8 @@ internal sealed class Bootstrapper(
         var messageQueueMarker = serviceProvider.GetService<MessageQueueMarkerService>();
         if (messageQueueMarker == null)
         {
-            throw new InvalidOperationException(
-                "You must be config transport provider for the messaging system!"
-                    + Environment.NewLine
-                    + "=================================================================================="
-                    + Environment.NewLine
-                    + "========   eg: services.AddMessaging( options => { options.UseRabbitMq(...) }); ========"
-                    + Environment.NewLine
-                    + "=================================================================================="
+            logger.LogWarning(
+                "No transport provider configured — messaging transport features are disabled. Scheduling-only mode is active."
             );
         }
 
