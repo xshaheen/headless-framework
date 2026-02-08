@@ -47,16 +47,23 @@ public sealed class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware>
         await next(context);
     }
 
-    private static bool _IsExcludedPath(string path, string apiPrefix)
+    private bool _IsExcludedPath(string path, string apiPrefix)
     {
-        return path.Contains("/assets/", StringComparison.Ordinal)
-            || path.EndsWith(".js", StringComparison.Ordinal)
-            || path.EndsWith(".css", StringComparison.Ordinal)
-            || path.EndsWith(".ico", StringComparison.Ordinal)
-            || path.EndsWith(".png", StringComparison.Ordinal)
-            || path.EndsWith(".jpg", StringComparison.Ordinal)
-            || path.EndsWith(".svg", StringComparison.Ordinal)
-            || path.Contains("/negotiate", StringComparison.Ordinal)
+        var dashboardPrefix = options.PathMatch.ToLowerInvariant();
+
+        return (
+                path.StartsWith(dashboardPrefix, StringComparison.Ordinal)
+                && (
+                    path.Contains("/assets/", StringComparison.Ordinal)
+                    || path.EndsWith(".js", StringComparison.Ordinal)
+                    || path.EndsWith(".css", StringComparison.Ordinal)
+                    || path.EndsWith(".ico", StringComparison.Ordinal)
+                    || path.EndsWith(".png", StringComparison.Ordinal)
+                    || path.EndsWith(".jpg", StringComparison.Ordinal)
+                    || path.EndsWith(".svg", StringComparison.Ordinal)
+                )
+            )
+            || path.EndsWith("/negotiate", StringComparison.Ordinal)
             || string.Equals(path, apiPrefix + "/auth/validate", StringComparison.Ordinal)
             || string.Equals(path, apiPrefix + "/auth/info", StringComparison.Ordinal);
     }

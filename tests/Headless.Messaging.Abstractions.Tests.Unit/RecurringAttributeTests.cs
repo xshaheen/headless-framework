@@ -164,7 +164,7 @@ public sealed class RecurringAttributeTests : TestBase
     }
 
     [Fact]
-    public void should_not_inherit_when_applied()
+    public void should_inherit_when_applied()
     {
         // when
         var usage = typeof(RecurringAttribute).GetCustomAttribute<AttributeUsageAttribute>();
