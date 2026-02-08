@@ -26,6 +26,7 @@ public static class InMemoryStorageSetup
             services.AddTransient<IOutboxTransaction, InMemoryOutboxTransaction>();
             services.AddSingleton<IDataStorage, InMemoryDataStorage>();
             services.AddSingleton<IStorageInitializer, InMemoryStorageInitializer>();
+            services.AddSingleton<IScheduledJobStorage, InMemoryScheduledJobStorage>();
         }
     }
 }
