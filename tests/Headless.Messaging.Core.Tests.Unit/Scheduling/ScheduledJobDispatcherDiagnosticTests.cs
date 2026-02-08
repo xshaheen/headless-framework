@@ -120,7 +120,7 @@ public sealed class ScheduledJobDispatcherDiagnosticTests : TestBase
         services.AddKeyedSingleton<IConsume<ScheduledTrigger>>(jobName, handler);
         var sp = services.BuildServiceProvider();
 
-        var sut = new ScheduledJobDispatcher(sp.GetRequiredService<IServiceScopeFactory>());
+        var sut = new ScheduledJobDispatcher(sp.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
         var job = new ScheduledJob
         {
             Id = Guid.NewGuid(),

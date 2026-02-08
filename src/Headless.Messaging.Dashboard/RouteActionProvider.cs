@@ -23,6 +23,7 @@ namespace Headless.Messaging.Dashboard;
 public class RouteActionProvider
 {
     private const int _MaxPageSize = 200;
+    private const int _MaxBatchSize = 200;
 
     private readonly GatewayProxyAgent? _agent;
     private readonly IEndpointRouteBuilder _builder;
@@ -301,6 +302,13 @@ public class RouteActionProvider
             return;
         }
 
+        if (messageIds.Length > _MaxBatchSize)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await httpContext.Response.WriteAsync($"Batch size exceeds maximum of {_MaxBatchSize}.");
+            return;
+        }
+
         foreach (var messageId in messageIds)
         {
             var message = await MonitoringApi.GetPublishedMessageAsync(messageId);
@@ -329,6 +337,13 @@ public class RouteActionProvider
             return;
         }
 
+        if (messageIds.Length > _MaxBatchSize)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await httpContext.Response.WriteAsync($"Batch size exceeds maximum of {_MaxBatchSize}.");
+            return;
+        }
+
         foreach (var messageId in messageIds)
         {
             _ = await DataStorage.DeletePublishedMessageAsync(messageId);
@@ -348,6 +363,13 @@ public class RouteActionProvider
         if (messageIds == null || messageIds.Length == 0)
         {
             httpContext.Response.StatusCode = StatusCodes.Status422UnprocessableEntity;
+            return;
+        }
+
+        if (messageIds.Length > _MaxBatchSize)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await httpContext.Response.WriteAsync($"Batch size exceeds maximum of {_MaxBatchSize}.");
             return;
         }
 
@@ -376,6 +398,13 @@ public class RouteActionProvider
         if (messageIds == null || messageIds.Length == 0)
         {
             httpContext.Response.StatusCode = StatusCodes.Status422UnprocessableEntity;
+            return;
+        }
+
+        if (messageIds.Length > _MaxBatchSize)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await httpContext.Response.WriteAsync($"Batch size exceeds maximum of {_MaxBatchSize}.");
             return;
         }
 
@@ -628,6 +657,14 @@ public class RouteActionProvider
         }
 
         var result = await authService.AuthenticateAsync(httpContext);
+
+        // Normalize failure responses to prevent credential enumeration via distinct error messages
+        if (!result.IsAuthenticated)
+        {
+            await httpContext.Response.WriteAsJsonAsync(AuthResult.Failure());
+            return;
+        }
+
         await httpContext.Response.WriteAsJsonAsync(result);
     }
 

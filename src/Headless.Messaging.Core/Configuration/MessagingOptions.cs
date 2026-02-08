@@ -255,6 +255,8 @@ public class MessagingOptions : IMessagingBuilder
                 TimeZone = recurring.TimeZone,
                 RetryIntervals = recurring.RetryIntervals,
                 SkipIfRunning = recurring.SkipIfRunning,
+                Timeout = recurring.TimeoutSeconds > 0 ? TimeSpan.FromSeconds(recurring.TimeoutSeconds) : null,
+                MisfireStrategy = recurring.MisfireStrategy,
             }
         );
     }

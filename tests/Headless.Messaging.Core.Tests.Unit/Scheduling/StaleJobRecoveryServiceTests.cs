@@ -19,6 +19,7 @@ public sealed class StaleJobRecoveryServiceTests : TestBase
         {
             StaleJobThreshold = TimeSpan.FromMinutes(5),
             StaleJobCheckInterval = TimeSpan.FromMilliseconds(10),
+            ExecutionRetention = TimeSpan.FromDays(7),
         }
     );
 
@@ -32,6 +33,7 @@ public sealed class StaleJobRecoveryServiceTests : TestBase
     {
         // given
         _storage.ReleaseStaleJobsAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(3);
+        _storage.PurgeExecutionsAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(0);
 
         var sut = new StaleJobRecoveryService(_storage, _logger, _options);
 
@@ -52,10 +54,11 @@ public sealed class StaleJobRecoveryServiceTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_warning_when_stale_jobs_released()
+    public async Task should_purge_old_executions_at_configured_retention()
     {
         // given
-        _storage.ReleaseStaleJobsAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(5);
+        _storage.ReleaseStaleJobsAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(0);
+        _storage.PurgeExecutionsAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(10);
 
         var sut = new StaleJobRecoveryService(_storage, _logger, _options);
 
@@ -66,7 +69,12 @@ public sealed class StaleJobRecoveryServiceTests : TestBase
         await cts.CancelAsync();
         await startTask.ConfigureAwait(false);
 
-        // then — verify warning was logged
-        await _storage.Received().ReleaseStaleJobsAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        // then
+        await _storage
+            .Received()
+            .PurgeExecutionsAsync(
+                Arg.Is<TimeSpan>(t => t == _options.Value.ExecutionRetention),
+                Arg.Any<CancellationToken>()
+            );
     }
 }

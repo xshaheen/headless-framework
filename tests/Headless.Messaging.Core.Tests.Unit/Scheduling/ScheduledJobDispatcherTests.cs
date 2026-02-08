@@ -80,7 +80,7 @@ public sealed class ScheduledJobDispatcherTests : TestBase
         var services = new ServiceCollection();
         services.AddKeyedScoped<IConsume<ScheduledTrigger>>("scoped-job", (_, _) => handler);
         var sp = services.BuildServiceProvider();
-        var sut = new ScheduledJobDispatcher(sp.GetRequiredService<IServiceScopeFactory>());
+        var sut = new ScheduledJobDispatcher(sp.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
 
         var now = DateTimeOffset.UtcNow;
         var job = _CreateJob("scoped-job", now);
@@ -221,7 +221,7 @@ public sealed class ScheduledJobDispatcherTests : TestBase
         services.AddKeyedSingleton<IConsume<ScheduledTrigger>>(jobName, handler);
         var sp = services.BuildServiceProvider();
 
-        var sut = new ScheduledJobDispatcher(sp.GetRequiredService<IServiceScopeFactory>());
+        var sut = new ScheduledJobDispatcher(sp.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
         var job = _CreateJob(jobName, now);
         var execution = _CreateExecution(job, now);
 

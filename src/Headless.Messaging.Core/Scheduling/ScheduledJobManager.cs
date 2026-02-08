@@ -31,12 +31,20 @@ internal sealed class ScheduledJobManager(
             ?? throw new InvalidOperationException($"Scheduled job '{name}' not found.");
 
         var now = timeProvider.GetUtcNow();
-        var nextRun = cronCache.GetNextOccurrence(job.CronExpression!, job.TimeZone, now);
 
         job.Status = ScheduledJobStatus.Pending;
         job.IsEnabled = true;
-        job.NextRunTime = nextRun;
         job.DateUpdated = now;
+
+        if (job.Type == ScheduledJobType.Recurring && job.CronExpression is not null)
+        {
+            job.NextRunTime = cronCache.GetNextOccurrence(job.CronExpression, job.TimeZone, now);
+        }
+        else if (job.NextRunTime is null)
+        {
+            // OneTime jobs without a scheduled time re-enable with immediate execution
+            job.NextRunTime = now;
+        }
 
         await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
     }
@@ -65,9 +73,10 @@ internal sealed class ScheduledJobManager(
             await storage.GetJobByNameAsync(name, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Scheduled job '{name}' not found.");
 
+        var now = timeProvider.GetUtcNow();
         job.Status = ScheduledJobStatus.Pending;
-        job.NextRunTime = timeProvider.GetUtcNow();
-        job.DateUpdated = timeProvider.GetUtcNow();
+        job.NextRunTime = now;
+        job.DateUpdated = now;
 
         await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
     }

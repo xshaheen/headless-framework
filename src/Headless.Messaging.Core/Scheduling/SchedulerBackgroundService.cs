@@ -37,10 +37,17 @@ internal sealed class SchedulerBackgroundService(
                     .AcquireDueJobsAsync(_options.BatchSize, _options.LockHolder, stoppingToken)
                     .ConfigureAwait(false);
 
-                foreach (var job in jobs)
-                {
-                    await _ProcessJobAsync(job, stoppingToken).ConfigureAwait(false);
-                }
+                await Parallel
+                    .ForEachAsync(
+                        jobs,
+                        new ParallelOptions
+                        {
+                            MaxDegreeOfParallelism = _options.BatchSize,
+                            CancellationToken = stoppingToken,
+                        },
+                        async (job, ct) => await _ProcessJobAsync(job, ct).ConfigureAwait(false)
+                    )
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -192,94 +199,67 @@ internal sealed class SchedulerBackgroundService(
             )
         {
             logger.LogWarning("Job {JobName} timed out after {Timeout}", job.Name, timeout);
-
-            execution.CompletedAt = timeProvider.GetUtcNow();
-            execution.Status = JobExecutionStatus.Failed;
-            execution.Duration = (long)(execution.CompletedAt.Value - execution.StartedAt!.Value).TotalMilliseconds;
-            execution.Error = $"Job timed out after {timeout}";
-
-            await storage.UpdateExecutionAsync(execution, cancellationToken).ConfigureAwait(false);
-
-            job.RetryCount++;
-            job.LockHolder = null;
-            job.LockedAt = null;
-            job.LastRunTime = execution.CompletedAt;
-            job.LastRunDuration = execution.Duration;
-
-            if (job.RetryIntervals is { Length: > 0 } retryIntervals)
-            {
-                var retryIndex = Math.Min(job.RetryCount - 1, retryIntervals.Length - 1);
-                var delayMs = retryIntervals[retryIndex];
-                job.NextRunTime = timeProvider.GetUtcNow().AddMilliseconds(delayMs);
-                job.Status = ScheduledJobStatus.Pending;
-            }
-            else
-            {
-                job.Status = ScheduledJobStatus.Failed;
-
-                // For recurring jobs, compute next regular occurrence despite failure
-                if (job.Type == ScheduledJobType.Recurring && job.CronExpression is not null)
-                {
-                    job.NextRunTime = cronCache.GetNextOccurrence(
-                        job.CronExpression,
-                        job.TimeZone,
-                        timeProvider.GetUtcNow()
-                    );
-                    job.Status = ScheduledJobStatus.Pending;
-                    job.RetryCount = 0;
-                }
-            }
-
-            await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
+            await _HandleJobFailureAsync(job, execution, $"Job timed out after {timeout}", cancellationToken)
+                .ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // Individual job failures must not crash the scheduler
         catch (Exception ex)
 #pragma warning restore CA1031
         {
             logger.LogError(ex, "Job {JobName} execution failed", job.Name);
-
-            execution.CompletedAt = timeProvider.GetUtcNow();
-            execution.Status = JobExecutionStatus.Failed;
-            execution.Duration = (long)(execution.CompletedAt.Value - execution.StartedAt!.Value).TotalMilliseconds;
-            execution.Error = ex.ToString();
-
-            await storage.UpdateExecutionAsync(execution, cancellationToken).ConfigureAwait(false);
-
-            job.RetryCount++;
-            job.LockHolder = null;
-            job.LockedAt = null;
-            job.LastRunTime = execution.CompletedAt;
-            job.LastRunDuration = execution.Duration;
-
-            if (job.RetryIntervals is { Length: > 0 } retryIntervals)
-            {
-                var retryIndex = Math.Min(job.RetryCount - 1, retryIntervals.Length - 1);
-                var delayMs = retryIntervals[retryIndex];
-                job.NextRunTime = timeProvider.GetUtcNow().AddMilliseconds(delayMs);
-                job.Status = ScheduledJobStatus.Pending;
-            }
-            else
-            {
-                job.Status = ScheduledJobStatus.Failed;
-
-                // For recurring jobs, compute next regular occurrence despite failure
-                if (job.Type == ScheduledJobType.Recurring && job.CronExpression is not null)
-                {
-                    job.NextRunTime = cronCache.GetNextOccurrence(
-                        job.CronExpression,
-                        job.TimeZone,
-                        timeProvider.GetUtcNow()
-                    );
-                    job.Status = ScheduledJobStatus.Pending;
-                    job.RetryCount = 0;
-                }
-            }
-
-            await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
+            await _HandleJobFailureAsync(job, execution, ex.ToString(), cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             timeoutCts?.Dispose();
         }
+    }
+
+    private async Task _HandleJobFailureAsync(
+        ScheduledJob job,
+        JobExecution execution,
+        string error,
+        CancellationToken cancellationToken
+    )
+    {
+        execution.CompletedAt = timeProvider.GetUtcNow();
+        execution.Status = JobExecutionStatus.Failed;
+        execution.Duration = (long)(execution.CompletedAt.Value - execution.StartedAt!.Value).TotalMilliseconds;
+        execution.Error = error;
+
+        await storage.UpdateExecutionAsync(execution, cancellationToken).ConfigureAwait(false);
+
+        job.RetryCount++;
+        job.LockHolder = null;
+        job.LockedAt = null;
+        job.LastRunTime = execution.CompletedAt;
+        job.LastRunDuration = execution.Duration;
+
+        // RetryIntervals are specified in seconds per the public API contract
+        if (job.RetryIntervals is { Length: > 0 } retryIntervals)
+        {
+            var retryIndex = Math.Min(job.RetryCount - 1, retryIntervals.Length - 1);
+            var delaySeconds = retryIntervals[retryIndex];
+            job.NextRunTime = timeProvider.GetUtcNow().AddSeconds(delaySeconds);
+            job.Status = ScheduledJobStatus.Pending;
+        }
+        else
+        {
+            job.Status = ScheduledJobStatus.Failed;
+
+            // For recurring jobs, compute next regular occurrence despite failure
+            if (job.Type == ScheduledJobType.Recurring && job.CronExpression is not null)
+            {
+                job.NextRunTime = cronCache.GetNextOccurrence(
+                    job.CronExpression,
+                    job.TimeZone,
+                    timeProvider.GetUtcNow()
+                );
+                job.Status = ScheduledJobStatus.Pending;
+                job.RetryCount = 0;
+            }
+        }
+
+        await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
     }
 }

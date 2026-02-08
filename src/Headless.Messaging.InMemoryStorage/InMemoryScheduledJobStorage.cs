@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 
 namespace Headless.Messaging.InMemoryStorage;
 
-internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : IScheduledJobStorage
+internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : IScheduledJobStorage, IDisposable
 {
     private readonly ConcurrentDictionary<Guid, ScheduledJob> _jobs = new();
     private readonly ConcurrentDictionary<Guid, JobExecution> _executions = new();
@@ -61,15 +61,36 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
 
     public async Task UpsertJobAsync(ScheduledJob job, CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var existing = await GetJobByNameAsync(job.Name, cancellationToken).ConfigureAwait(false);
-        if (existing is not null)
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            job.Id = existing.Id;
-        }
+            var existing = _jobs.Values.FirstOrDefault(j => string.Equals(j.Name, job.Name, StringComparison.Ordinal));
 
-        _jobs[job.Id] = job;
+            if (existing is not null)
+            {
+                // Match PostgreSQL semantics: only update definition fields, preserve runtime state
+                existing.Type = job.Type;
+                existing.CronExpression = job.CronExpression;
+                existing.TimeZone = job.TimeZone;
+                existing.Payload = job.Payload;
+                existing.NextRunTime = job.NextRunTime;
+                existing.RetryIntervals = job.RetryIntervals;
+                existing.SkipIfRunning = job.SkipIfRunning;
+                existing.IsEnabled = job.IsEnabled;
+                existing.Timeout = job.Timeout;
+                existing.MisfireStrategy = job.MisfireStrategy;
+                existing.ConsumerTypeName = job.ConsumerTypeName;
+                existing.DateUpdated = timeProvider.GetUtcNow();
+            }
+            else
+            {
+                _jobs[job.Id] = job;
+            }
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     public Task UpdateJobAsync(ScheduledJob job, CancellationToken cancellationToken = default)
@@ -165,4 +186,6 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
 
         return Task.FromResult(removed);
     }
+
+    public void Dispose() => _lock.Dispose();
 }

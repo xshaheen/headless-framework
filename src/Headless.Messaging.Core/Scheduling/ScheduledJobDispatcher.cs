@@ -12,7 +12,8 @@ namespace Headless.Messaging.Scheduling;
 /// Dispatches scheduled job executions to keyed <see cref="IConsume{TMessage}"/> handlers
 /// resolved by <see cref="ScheduledJob.Name"/>.
 /// </summary>
-internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) : IScheduledJobDispatcher
+internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory, TimeProvider timeProvider)
+    : IScheduledJobDispatcher
 {
     private static readonly DiagnosticSource _DiagnosticListener = new DiagnosticListener(
         MessageDiagnosticListenerNames.DiagnosticListenerName
@@ -122,7 +123,7 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
         }
     }
 
-    private static long? _TracingBefore(ScheduledJob job, JobExecution execution)
+    private long? _TracingBefore(ScheduledJob job, JobExecution execution)
     {
         if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeScheduledJobDispatch))
         {
@@ -132,7 +133,7 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
                 ExecutionId = execution.Id,
                 Attempt = execution.RetryAttempt + 1,
                 ScheduledTime = execution.ScheduledTime,
-                OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                OperationTimestamp = timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforeScheduledJobDispatch, eventData);
@@ -142,14 +143,14 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
         return null;
     }
 
-    private static void _TracingAfter(long? tracingTimestamp, ScheduledJob job, JobExecution execution)
+    private void _TracingAfter(long? tracingTimestamp, ScheduledJob job, JobExecution execution)
     {
         if (
             tracingTimestamp != null
             && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterScheduledJobDispatch)
         )
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
             var eventData = new ScheduledJobEventData
             {
                 JobName = job.Name,
@@ -164,14 +165,14 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory) 
         }
     }
 
-    private static void _TracingError(long? tracingTimestamp, ScheduledJob job, JobExecution execution, Exception ex)
+    private void _TracingError(long? tracingTimestamp, ScheduledJob job, JobExecution execution, Exception ex)
     {
         if (
             tracingTimestamp != null
             && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorScheduledJobDispatch)
         )
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
             var eventData = new ScheduledJobEventData
             {
                 JobName = job.Name,

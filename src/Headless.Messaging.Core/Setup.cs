@@ -211,7 +211,8 @@ public static class Setup
         services.TryAddSingleton<IScheduledJobDispatcher, ScheduledJobDispatcher>();
         services.TryAddSingleton<IScheduledJobManager, ScheduledJobManager>();
 
-        // Scheduler options
+        // Scheduler options (bindable from config section "Messaging:Scheduling")
+        services.AddOptions<SchedulerOptions>().BindConfiguration("Messaging:Scheduling");
         services.TryAddSingleton(TimeProvider.System);
 
         // Background services (only when storage is registered)

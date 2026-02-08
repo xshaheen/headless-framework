@@ -51,4 +51,11 @@ public sealed class SchedulerOptions
     /// If both this property and the job's timeout are null, no timeout is enforced. Default: null (no timeout).
     /// </summary>
     public TimeSpan? DefaultJobTimeout { get; set; }
+
+    /// <summary>
+    /// Gets or sets how long completed execution records are retained before being purged.
+    /// The stale job recovery service periodically deletes execution records older than this duration.
+    /// Default: 7 days.
+    /// </summary>
+    public TimeSpan ExecutionRetention { get; set; } = TimeSpan.FromDays(7);
 }

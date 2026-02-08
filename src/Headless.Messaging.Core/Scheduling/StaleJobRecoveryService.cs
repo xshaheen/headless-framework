@@ -36,6 +36,16 @@ internal sealed class StaleJobRecoveryService(
                         _options.StaleJobThreshold
                     );
                 }
+
+                // Purge old completed execution records to prevent unbounded growth
+                var purged = await storage
+                    .PurgeExecutionsAsync(_options.ExecutionRetention, stoppingToken)
+                    .ConfigureAwait(false);
+
+                if (purged > 0)
+                {
+                    logger.LogInformation("Purged {Count} old execution records", purged);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
