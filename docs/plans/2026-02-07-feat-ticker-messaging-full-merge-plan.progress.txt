@@ -1,0 +1,25 @@
+[2026-02-08 12:31] > Swarm starting — 12 stories, first: US-030
+[2026-02-08 12:39] > Starting prerequisite: correlation plan (US-006-010)
+[2026-02-08 12:39] > US-006: Create MessagingCorrelationScope (size: S)
+[2026-02-08 12:43] + US-006 PASSED - commit: deb24012
+[2026-02-08 12:43] > US-007: Populate correlation in ScheduledJobDispatcher (size: S)
+[2026-02-08 12:45] + US-007 PASSED - commit: 943dd5a6
+[2026-02-08 12:45] > US-008: Make publishers read MessagingCorrelationScope (size: M)
+[2026-02-08 12:47] + US-008 PASSED - commit: 2705afcc
+[2026-02-08 12:48] > US-009: Unit tests for correlation propagation (size: M)
+[2026-02-08 12:56] + US-009 PASSED - commit: 2ebfec65
+[2026-02-08 12:56] > US-010: Update README (size: XS)
+[2026-02-08 12:58] + US-010 PASSED - commit: 531ecedf. Correlation plan COMPLETE (US-006-010 all passed).
+[2026-02-08 12:58] > Starting prerequisite: hardening plan (US-017-029, US-045-048)
+[2026-02-08 12:58] > US-017+US-018: Add ReleaseStaleJobsAsync + PurgeExecutionsAsync to IScheduledJobStorage (size: S+S)
+[2026-02-08 13:00] + US-017+US-018 PASSED - commit: 6f1f2e54
+[2026-02-08 13:00] > US-019+US-045: Add Timeout + MisfireStrategy to RecurringAttribute/ScheduledJob (size: S+S)
+[2026-02-08 13:03] + US-019+US-045 PASSED - commit: ddb0e9d5
+[2026-02-08 13:03] > US-020: Add ScheduleOnceAsync to IScheduledJobManager (size: S)
+[2026-02-08 13:05] + US-020 PASSED - commit: 03219c57
+[2026-02-08 13:05] > US-021: Create StaleJobRecoveryService (size: M)
+[2026-02-08 13:07] + US-021 PASSED - commit: 4ad9bca8
+[2026-02-08 13:08] > US-022+US-046: Execution timeout + Misfire strategy enforcement (size: M+S)
+[2026-02-08 13:25] + US-022+US-046 PASSED - commit: 98db1471. Fixed build errors (MisfireStrategy.RunImmediately→FireImmediately, CreateJobAsync→UpsertJobAsync, missing MisfireStrategy in reconciler).
+[2026-02-08 13:30] > US-023+US-048: Scheduling-only mode + Cron config override (size: S+S)
+[2026-02-08 13:30] > US-024+US-047: Compiled delegates + Health checks (size: M+S)
