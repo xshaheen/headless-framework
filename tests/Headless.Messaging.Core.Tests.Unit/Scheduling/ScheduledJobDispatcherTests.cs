@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Messages;
 using Headless.Messaging.Scheduling;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,7 +52,9 @@ public sealed class ScheduledJobDispatcherTests : TestBase
         capturedContext!.MessageId.Should().Be(execution.Id.ToString());
         capturedContext.Topic.Should().Be(job.Name);
         capturedContext.Timestamp.Should().Be(execution.ScheduledTime);
-        capturedContext.CorrelationId.Should().BeNull();
+        capturedContext.CorrelationId.Should().Be(execution.Id.ToString());
+        capturedContext.Headers[Headers.CorrelationId].Should().Be(execution.Id.ToString());
+        capturedContext.Headers[Headers.CorrelationSequence].Should().Be("0");
         capturedContext.Message.JobName.Should().Be(job.Name);
         capturedContext.Message.ScheduledTime.Should().Be(execution.ScheduledTime);
         capturedContext.Message.Attempt.Should().Be(3); // RetryAttempt + 1
@@ -146,6 +149,63 @@ public sealed class ScheduledJobDispatcherTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("handler failure");
+    }
+
+    [Fact]
+    public async Task should_set_correlation_scope_during_handler_execution()
+    {
+        // given
+        MessagingCorrelationScope? capturedScope = null;
+        var handler = Substitute.For<IConsume<ScheduledTrigger>>();
+        handler
+            .Consume(Arg.Any<ConsumeContext<ScheduledTrigger>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                capturedScope = MessagingCorrelationScope.Current;
+                return ValueTask.CompletedTask;
+            });
+
+        var (sut, job, execution) = _CreateSut(handler);
+
+        // when
+        await sut.DispatchAsync(job, execution, AbortToken);
+
+        // then
+        capturedScope.Should().NotBeNull();
+        capturedScope!.CorrelationId.Should().Be(execution.Id.ToString());
+    }
+
+    [Fact]
+    public async Task should_dispose_correlation_scope_after_handler_completes()
+    {
+        // given
+        var handler = Substitute.For<IConsume<ScheduledTrigger>>();
+        var (sut, job, execution) = _CreateSut(handler);
+
+        // when
+        await sut.DispatchAsync(job, execution, AbortToken);
+
+        // then
+        MessagingCorrelationScope.Current.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_dispose_correlation_scope_when_handler_throws()
+    {
+        // given
+        var handler = Substitute.For<IConsume<ScheduledTrigger>>();
+        handler
+            .Consume(Arg.Any<ConsumeContext<ScheduledTrigger>>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask>(_ => throw new InvalidOperationException("handler failure"));
+
+        var (sut, job, execution) = _CreateSut(handler);
+
+        // when
+        var act = () => sut.DispatchAsync(job, execution, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        MessagingCorrelationScope.Current.Should().BeNull();
     }
 
     // -- helpers --
