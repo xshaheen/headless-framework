@@ -154,4 +154,10 @@ public sealed class ScheduledJob
     /// Used for runtime resolution when the consumer is not pre-registered via keyed DI.
     /// </summary>
     public string? ConsumerTypeName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the optimistic concurrency version token.
+    /// Incremented on every successful update to detect concurrent modifications.
+    /// </summary>
+    public long Version { get; set; }
 }

@@ -9,11 +9,14 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Scheduling;
 
-public sealed class SchedulerJobReconcilerTests : TestBase
+public sealed class SchedulerJobReconcilerTests : TestBase, IDisposable
 {
     private readonly ScheduledJobDefinitionRegistry _registry = new();
     private readonly IScheduledJobStorage _storage = Substitute.For<IScheduledJobStorage>();
     private readonly CronScheduleCache _cronCache = new();
+
+    public void Dispose() => _cronCache.Dispose();
+
     private readonly FakeTimeProvider _timeProvider = new(new DateTimeOffset(2025, 6, 1, 12, 0, 0, TimeSpan.Zero));
     private readonly ILogger<SchedulerJobReconciler> _logger;
     private readonly IConfiguration _configuration;

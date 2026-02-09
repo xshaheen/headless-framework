@@ -7,9 +7,11 @@ using Headless.Testing.Tests;
 
 namespace Tests.Scheduling;
 
-public sealed class CronScheduleCacheTests : TestBase
+public sealed class CronScheduleCacheTests : TestBase, IDisposable
 {
     private readonly CronScheduleCache _sut = new();
+
+    public void Dispose() => _sut.Dispose();
 
     // -- next occurrence --
 

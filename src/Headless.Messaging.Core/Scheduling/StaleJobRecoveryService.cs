@@ -37,6 +37,14 @@ internal sealed class StaleJobRecoveryService(
                     );
                 }
 
+                // Mark orphaned Running executions as TimedOut after releasing stale jobs
+                var timedOut = await storage.TimeoutStaleExecutionsAsync(stoppingToken).ConfigureAwait(false);
+
+                if (timedOut > 0)
+                {
+                    logger.LogWarning("Timed out {Count} orphaned execution records", timedOut);
+                }
+
                 // Purge old completed execution records to prevent unbounded growth
                 var purged = await storage
                     .PurgeExecutionsAsync(_options.ExecutionRetention, stoppingToken)

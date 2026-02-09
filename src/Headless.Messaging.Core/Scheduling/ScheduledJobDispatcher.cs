@@ -80,7 +80,6 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory, 
                     ScheduledTime = execution.ScheduledTime,
                     Attempt = execution.RetryAttempt + 1,
                     CronExpression = job.CronExpression,
-                    ParentJobId = null,
                     Payload = job.Payload,
                 },
             };

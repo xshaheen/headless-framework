@@ -286,6 +286,46 @@ public sealed class PostgreSqlScheduledJobStorage(
     }
 
     /// <inheritdoc />
+    public async Task<int> TimeoutStaleExecutionsAsync(CancellationToken cancellationToken = default)
+    {
+        var now = timeProvider.GetUtcNow();
+
+        // Mark Running executions whose parent job is no longer Running (already released)
+        var sql = $"""
+            UPDATE {_executionsTable} e
+            SET "Status" = @TimedOutStatus,
+                "CompletedAt" = @Now,
+                "Error" = @Error,
+                "Duration" = CASE
+                    WHEN e."StartedAt" IS NOT NULL
+                    THEN EXTRACT(EPOCH FROM (@Now - e."StartedAt")) * 1000
+                    ELSE NULL
+                END
+            WHERE e."Status" = @RunningStatus
+              AND NOT EXISTS (
+                  SELECT 1 FROM {_jobsTable} j
+                  WHERE j."Id" = e."JobId"
+                    AND j."Status" = @JobRunningStatus
+              );
+            """;
+
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@TimedOutStatus", JobExecutionStatus.TimedOut.ToString("G")),
+            new NpgsqlParameter("@RunningStatus", JobExecutionStatus.Running.ToString("G")),
+            new NpgsqlParameter("@JobRunningStatus", ScheduledJobStatus.Running.ToString("G")),
+            new NpgsqlParameter("@Now", now),
+            new NpgsqlParameter("@Error", "Terminated by stale job recovery: owning process became unresponsive."),
+        ];
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+
+        return await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task<int> ReleaseStaleJobsAsync(TimeSpan staleness, CancellationToken cancellationToken = default)
     {
         var threshold = timeProvider.GetUtcNow() - staleness;

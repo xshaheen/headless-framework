@@ -35,6 +35,7 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
                 job.Status = ScheduledJobStatus.Running;
                 job.LockHolder = lockHolder;
                 job.LockedAt = now;
+                job.Version++;
             }
 
             return dueJobs;
@@ -96,6 +97,13 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
     public Task UpdateJobAsync(ScheduledJob job, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (_jobs.TryGetValue(job.Id, out var existing) && existing.Version != job.Version)
+        {
+            throw new ScheduledJobConcurrencyException(job.Id, job.Version);
+        }
+
+        job.Version++;
         _jobs[job.Id] = job;
         return Task.CompletedTask;
     }
@@ -135,6 +143,41 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
             .ToList();
 
         return Task.FromResult(executions);
+    }
+
+    public async Task<int> TimeoutStaleExecutionsAsync(CancellationToken cancellationToken = default)
+    {
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var now = timeProvider.GetUtcNow();
+            var runningJobIds = _jobs
+                .Values.Where(j => j.Status == ScheduledJobStatus.Running)
+                .Select(j => j.Id)
+                .ToHashSet();
+
+            var orphaned = _executions
+                .Values.Where(e => e.Status == JobExecutionStatus.Running && !runningJobIds.Contains(e.JobId))
+                .ToList();
+
+            foreach (var execution in orphaned)
+            {
+                execution.Status = JobExecutionStatus.TimedOut;
+                execution.CompletedAt = now;
+                execution.Error = "Terminated by stale job recovery: owning process became unresponsive.";
+
+                if (execution.StartedAt.HasValue)
+                {
+                    execution.Duration = (long)(now - execution.StartedAt.Value).TotalMilliseconds;
+                }
+            }
+
+            return orphaned.Count;
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     public async Task<int> ReleaseStaleJobsAsync(TimeSpan staleness, CancellationToken cancellationToken = default)

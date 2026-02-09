@@ -169,15 +169,24 @@ internal sealed class SchedulerBackgroundService(
 
             await storage.UpdateExecutionAsync(execution, cancellationToken).ConfigureAwait(false);
 
+            // Re-read to detect concurrent DisableAsync calls — preserve admin intent.
+            var current = await storage.GetJobByNameAsync(job.Name, cancellationToken).ConfigureAwait(false);
+
             job.LastRunTime = execution.CompletedAt;
             job.LastRunDuration = execution.Duration;
             job.RetryCount = 0;
-            job.Status = ScheduledJobStatus.Pending;
             job.LockHolder = null;
             job.LockedAt = null;
 
-            if (job.Type == ScheduledJobType.Recurring && job.CronExpression is not null)
+            if (current is { IsEnabled: false })
             {
+                job.IsEnabled = false;
+                job.Status = ScheduledJobStatus.Disabled;
+                job.NextRunTime = null;
+            }
+            else if (job.Type == ScheduledJobType.Recurring && job.CronExpression is not null)
+            {
+                job.Status = ScheduledJobStatus.Pending;
                 job.NextRunTime = cronCache.GetNextOccurrence(
                     job.CronExpression,
                     job.TimeZone,
@@ -229,14 +238,23 @@ internal sealed class SchedulerBackgroundService(
 
         await storage.UpdateExecutionAsync(execution, cancellationToken).ConfigureAwait(false);
 
+        // Re-read to detect concurrent DisableAsync calls — preserve admin intent.
+        var current = await storage.GetJobByNameAsync(job.Name, cancellationToken).ConfigureAwait(false);
+
         job.RetryCount++;
         job.LockHolder = null;
         job.LockedAt = null;
         job.LastRunTime = execution.CompletedAt;
         job.LastRunDuration = execution.Duration;
 
+        if (current is { IsEnabled: false })
+        {
+            job.IsEnabled = false;
+            job.Status = ScheduledJobStatus.Disabled;
+            job.NextRunTime = null;
+        }
         // RetryIntervals are specified in seconds per the public API contract
-        if (job.RetryIntervals is { Length: > 0 } retryIntervals)
+        else if (job.RetryIntervals is { Length: > 0 } retryIntervals)
         {
             var retryIndex = Math.Min(job.RetryCount - 1, retryIntervals.Length - 1);
             var delaySeconds = retryIntervals[retryIndex];

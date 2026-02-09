@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using Cronos;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Headless.Messaging.Scheduling;
 
@@ -10,10 +10,14 @@ namespace Headless.Messaging.Scheduling;
 /// Thread-safe cache for parsed <see cref="CronExpression"/> instances.
 /// Normalizes whitespace before caching so that expressions differing only
 /// in spacing resolve to the same cached entry.
+/// Uses <see cref="MemoryCache"/> with sliding expiration so that recurring
+/// jobs keep entries warm while one-time expressions are naturally evicted.
 /// </summary>
-internal sealed partial class CronScheduleCache
+internal sealed partial class CronScheduleCache : IDisposable
 {
-    private readonly ConcurrentDictionary<string, CronExpression> _cache = new(StringComparer.Ordinal);
+    private static readonly TimeSpan _SlidingExpiration = TimeSpan.FromHours(1);
+
+    private readonly MemoryCache _cache = new(new MemoryCacheOptions { SizeLimit = 1024 });
 
     /// <summary>
     /// Returns the next occurrence after <paramref name="from"/> for the given
@@ -32,19 +36,29 @@ internal sealed partial class CronScheduleCache
     {
         var expression = _GetOrParse(cron);
 
-        var tz = string.IsNullOrWhiteSpace(timeZone)
-            ? TimeZoneInfo.Utc
-            : TimeZoneInfo.FindSystemTimeZoneById(timeZone);
+        var tz = string.IsNullOrWhiteSpace(timeZone) ? TimeZoneInfo.Utc : TimeZoneInfo.FindSystemTimeZoneById(timeZone);
 
         var next = expression.GetNextOccurrence(from.UtcDateTime, tz);
 
         return next.HasValue ? new DateTimeOffset(next.Value, TimeSpan.Zero) : null;
     }
 
+    /// <inheritdoc />
+    public void Dispose() => _cache.Dispose();
+
     private CronExpression _GetOrParse(string cron)
     {
         var key = _Normalize(cron);
-        return _cache.GetOrAdd(key, static k => CronExpression.Parse(k, CronFormat.IncludeSeconds));
+
+        return _cache.GetOrCreate(
+            key,
+            static entry =>
+            {
+                entry.SlidingExpiration = _SlidingExpiration;
+                entry.Size = 1;
+                return CronExpression.Parse((string)entry.Key, CronFormat.IncludeSeconds);
+            }
+        )!;
     }
 
     private static string _Normalize(string expression)

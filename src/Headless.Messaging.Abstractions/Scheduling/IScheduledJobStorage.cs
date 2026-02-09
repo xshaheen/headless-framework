@@ -58,11 +58,15 @@ public interface IScheduledJobStorage
     Task UpsertJobAsync(ScheduledJob job, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Updates an existing scheduled job.
+    /// Updates an existing scheduled job with optimistic concurrency control.
     /// </summary>
-    /// <param name="job">The job with updated values.</param>
+    /// <param name="job">The job with updated values. The <see cref="ScheduledJob.Version"/> is used for concurrency checking.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
+    /// <exception cref="ScheduledJobConcurrencyException">
+    /// Thrown when the job was modified by another process since it was read. The caller
+    /// should re-read the job and retry the operation.
+    /// </exception>
     Task UpdateJobAsync(ScheduledJob job, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -101,6 +105,19 @@ public interface IScheduledJobStorage
         int limit,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Marks orphaned <see cref="JobExecution"/> records as <see cref="JobExecutionStatus.TimedOut"/>
+    /// when their parent job is no longer in <see cref="ScheduledJobStatus.Running"/> status.
+    /// </summary>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The number of execution records that were timed out.</returns>
+    /// <remarks>
+    /// Call this after <see cref="ReleaseStaleJobsAsync"/> to clean up executions
+    /// that were left in <see cref="JobExecutionStatus.Running"/> status when the
+    /// owning process crashed or became unresponsive.
+    /// </remarks>
+    Task<int> TimeoutStaleExecutionsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Releases jobs that have been locked for longer than the specified staleness threshold

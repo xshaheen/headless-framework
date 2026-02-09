@@ -33,6 +33,7 @@ public sealed class StaleJobRecoveryServiceTests : TestBase
     {
         // given
         _storage.ReleaseStaleJobsAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(3);
+        _storage.TimeoutStaleExecutionsAsync(Arg.Any<CancellationToken>()).Returns(0);
         _storage.PurgeExecutionsAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(0);
 
         var sut = new StaleJobRecoveryService(_storage, _logger, _options);
@@ -54,10 +55,32 @@ public sealed class StaleJobRecoveryServiceTests : TestBase
     }
 
     [Fact]
+    public async Task should_timeout_stale_executions_after_releasing_stale_jobs()
+    {
+        // given
+        _storage.ReleaseStaleJobsAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(2);
+        _storage.TimeoutStaleExecutionsAsync(Arg.Any<CancellationToken>()).Returns(2);
+        _storage.PurgeExecutionsAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(0);
+
+        var sut = new StaleJobRecoveryService(_storage, _logger, _options);
+
+        // when
+        using var cts = new CancellationTokenSource();
+        var startTask = sut.StartAsync(cts.Token);
+        await Task.Delay(100, CancellationToken.None);
+        await cts.CancelAsync();
+        await startTask.ConfigureAwait(false);
+
+        // then
+        await _storage.Received().TimeoutStaleExecutionsAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_purge_old_executions_at_configured_retention()
     {
         // given
         _storage.ReleaseStaleJobsAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(0);
+        _storage.TimeoutStaleExecutionsAsync(Arg.Any<CancellationToken>()).Returns(0);
         _storage.PurgeExecutionsAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>()).Returns(10);
 
         var sut = new StaleJobRecoveryService(_storage, _logger, _options);

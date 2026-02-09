@@ -11,13 +11,16 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Scheduling;
 
-public sealed class SchedulerBackgroundServiceTests : TestBase
+public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
 {
     private static readonly IReadOnlyList<ScheduledJob> _EmptyJobs = [];
 
     private readonly IScheduledJobStorage _storage = Substitute.For<IScheduledJobStorage>();
     private readonly StubDispatcher _dispatcher = new();
     private readonly CronScheduleCache _cronCache = new();
+
+    public void Dispose() => _cronCache.Dispose();
+
     private readonly FakeTimeProvider _timeProvider = new(new DateTimeOffset(2025, 6, 1, 12, 0, 0, TimeSpan.Zero));
     private readonly ILogger<SchedulerBackgroundService> _logger;
     private readonly IOptions<SchedulerOptions> _options = Options.Create(
@@ -464,6 +467,94 @@ public sealed class SchedulerBackgroundServiceTests : TestBase
 
         // then — one-time jobs always execute
         _dispatcher.DispatchedJobs.Should().ContainSingle(j => j.Name == job.Name);
+    }
+
+    [Fact]
+    public async Task should_preserve_disabled_status_when_job_disabled_during_execution()
+    {
+        // given — job is disabled concurrently while executing
+        var job = _CreateRecurringJob();
+        _SetupAcquireOnce(job);
+
+        var disabledJob = new ScheduledJob
+        {
+            Id = job.Id,
+            Name = job.Name,
+            Type = job.Type,
+            CronExpression = job.CronExpression,
+            TimeZone = job.TimeZone,
+            Status = ScheduledJobStatus.Disabled,
+            IsEnabled = false,
+            NextRunTime = null,
+            RetryCount = 0,
+            SkipIfRunning = false,
+            DateCreated = job.DateCreated,
+            DateUpdated = job.DateUpdated,
+            MisfireStrategy = job.MisfireStrategy,
+        };
+
+        _storage.GetJobByNameAsync(job.Name, Arg.Any<CancellationToken>()).Returns(disabledJob);
+
+        var sut = _CreateService();
+
+        // when
+        using var cts = new CancellationTokenSource();
+        await _RunOneIterationAsync(sut, cts);
+
+        // then — disabled state preserved, not overwritten to Pending
+        await _storage
+            .Received()
+            .UpdateJobAsync(
+                Arg.Is<ScheduledJob>(j =>
+                    j.Status == ScheduledJobStatus.Disabled && !j.IsEnabled && j.NextRunTime == null
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_preserve_disabled_status_when_job_disabled_during_failed_execution()
+    {
+        // given — job fails and was disabled concurrently
+        var job = _CreateRecurringJob();
+        job.RetryIntervals = [1000];
+        _SetupAcquireOnce(job);
+        _dispatcher.ExceptionToThrow = new InvalidOperationException("fail");
+
+        var disabledJob = new ScheduledJob
+        {
+            Id = job.Id,
+            Name = job.Name,
+            Type = job.Type,
+            CronExpression = job.CronExpression,
+            TimeZone = job.TimeZone,
+            Status = ScheduledJobStatus.Disabled,
+            IsEnabled = false,
+            NextRunTime = null,
+            RetryCount = 0,
+            SkipIfRunning = false,
+            DateCreated = job.DateCreated,
+            DateUpdated = job.DateUpdated,
+            MisfireStrategy = job.MisfireStrategy,
+        };
+
+        _storage.GetJobByNameAsync(job.Name, Arg.Any<CancellationToken>()).Returns(disabledJob);
+
+        var sut = _CreateService();
+
+        // when
+        using var cts = new CancellationTokenSource();
+        await _RunOneIterationAsync(sut, cts);
+
+        // then — disabled state preserved, retry not scheduled
+        await _storage
+            .Received()
+            .UpdateJobAsync(
+                Arg.Is<ScheduledJob>(j =>
+                    j.Status == ScheduledJobStatus.Disabled && !j.IsEnabled && j.NextRunTime == null
+                ),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     // -- helpers --
