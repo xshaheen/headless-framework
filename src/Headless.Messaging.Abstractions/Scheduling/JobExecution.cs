@@ -32,7 +32,7 @@ public sealed class JobExecution
     /// <value>
     /// The start time, or <c>null</c> if the execution has not yet started.
     /// </value>
-    public DateTimeOffset? StartedAt { get; set; }
+    public DateTimeOffset? DateStarted { get; set; }
 
     /// <summary>
     /// Gets or sets the UTC time the execution completed.
@@ -40,7 +40,7 @@ public sealed class JobExecution
     /// <value>
     /// The completion time, or <c>null</c> if the execution has not yet finished.
     /// </value>
-    public DateTimeOffset? CompletedAt { get; set; }
+    public DateTimeOffset? DateCompleted { get; set; }
 
     /// <summary>
     /// Gets or sets the current status of this execution.

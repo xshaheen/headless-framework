@@ -7,9 +7,19 @@ namespace Headless.Messaging;
 /// <see cref="JobExecution"/> entities used by the scheduling infrastructure.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <strong>Lifetime contract:</strong> Implementations must be registered as
+/// <b>Singleton</b> or <b>Transient</b> — never Scoped. Singleton services
+/// (ScheduledJobManager, SchedulerBackgroundService) capture this dependency
+/// directly; a Scoped registration would create a captive dependency that
+/// never disposes correctly. Use a connection-per-call pattern internally
+/// (e.g. <c>IDbContextFactory</c>) to stay singleton-safe.
+/// </para>
+/// <para>
 /// Implementations must guarantee that <see cref="AcquireDueJobsAsync"/> atomically
 /// transitions jobs to <see cref="ScheduledJobStatus.Running"/> and sets
 /// <see cref="ScheduledJob.LockHolder"/> to prevent double-pickup by competing nodes.
+/// </para>
 /// </remarks>
 public interface IScheduledJobStorage
 {
@@ -126,7 +136,7 @@ public interface IScheduledJobStorage
     /// <param name="staleness">
     /// The age threshold for considering a job stale. Jobs with
     /// <see cref="ScheduledJobStatus.Running"/> status and a
-    /// <see cref="ScheduledJob.LockedAt"/> timestamp older than
+    /// <see cref="ScheduledJob.DateLocked"/> timestamp older than
     /// <c>now - staleness</c> will be released.
     /// </param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
@@ -138,7 +148,7 @@ public interface IScheduledJobStorage
     /// </summary>
     /// <param name="retention">
     /// The retention period for completed executions. Execution records with a
-    /// <see cref="JobExecution.CompletedAt"/> timestamp older than
+    /// <see cref="JobExecution.DateCompleted"/> timestamp older than
     /// <c>now - retention</c> will be permanently deleted.
     /// </param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>

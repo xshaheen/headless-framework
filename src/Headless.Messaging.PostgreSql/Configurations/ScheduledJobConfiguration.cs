@@ -38,7 +38,7 @@ public sealed class ScheduledJobConfiguration(string schema = PostgreSqlEntityFr
 
         builder.Property(x => x.LastRunDuration).HasColumnType("bigint");
 
-        builder.Property(x => x.RetryCount).IsRequired().HasDefaultValue(0);
+        builder.Property(x => x.MaxRetries).IsRequired().HasDefaultValue(0);
 
         builder.Property(x => x.RetryIntervals).HasColumnType("integer[]");
 
@@ -46,7 +46,7 @@ public sealed class ScheduledJobConfiguration(string schema = PostgreSqlEntityFr
 
         builder.Property(x => x.LockHolder).HasMaxLength(256);
 
-        builder.Property(x => x.LockedAt).HasColumnType("timestamptz");
+        builder.Property(x => x.DateLocked).HasColumnType("timestamptz");
 
         builder.Property(x => x.IsEnabled).IsRequired().HasDefaultValue(true);
 
@@ -81,7 +81,7 @@ public sealed class ScheduledJobConfiguration(string schema = PostgreSqlEntityFr
 
         // Partial index: running jobs for lock management
         builder
-            .HasIndex(x => new { x.LockHolder, x.LockedAt })
+            .HasIndex(x => new { x.LockHolder, x.DateLocked })
             .HasDatabaseName("ix_scheduled_jobs_lock")
             .HasFilter("\"Status\" = 'Running'");
 

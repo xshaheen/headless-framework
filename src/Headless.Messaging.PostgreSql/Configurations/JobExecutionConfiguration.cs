@@ -22,9 +22,9 @@ public sealed class JobExecutionConfiguration(string schema = PostgreSqlEntityFr
 
         builder.Property(x => x.ScheduledTime).IsRequired().HasColumnType("timestamptz");
 
-        builder.Property(x => x.StartedAt).HasColumnType("timestamptz");
+        builder.Property(x => x.DateStarted).HasColumnType("timestamptz");
 
-        builder.Property(x => x.CompletedAt).HasColumnType("timestamptz");
+        builder.Property(x => x.DateCompleted).HasColumnType("timestamptz");
 
         builder.Property(x => x.Status).IsRequired().HasConversion<string>().HasMaxLength(50);
 

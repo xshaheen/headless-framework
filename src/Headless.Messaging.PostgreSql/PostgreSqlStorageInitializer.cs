@@ -118,11 +118,11 @@ public sealed class PostgreSqlStorageInitializer(
             	"NextRunTime" TIMESTAMPTZ NULL,
             	"LastRunTime" TIMESTAMPTZ NULL,
             	"LastRunDuration" BIGINT NULL,
-            	"RetryCount" INT NOT NULL DEFAULT 0,
+            	"MaxRetries" INT NOT NULL DEFAULT 0,
             	"RetryIntervals" INT[] NULL,
             	"SkipIfRunning" BOOLEAN NOT NULL DEFAULT TRUE,
             	"LockHolder" VARCHAR(256) NULL,
-            	"LockedAt" TIMESTAMPTZ NULL,
+            	"DateLocked" TIMESTAMPTZ NULL,
             	"IsEnabled" BOOLEAN NOT NULL DEFAULT TRUE,
             	"DateCreated" TIMESTAMPTZ NOT NULL,
             	"DateUpdated" TIMESTAMPTZ NOT NULL,
@@ -134,14 +134,14 @@ public sealed class PostgreSqlStorageInitializer(
 
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_scheduled_jobs_name" ON {GetScheduledJobsTableName()} ("Name");
             CREATE INDEX IF NOT EXISTS "ix_scheduled_jobs_next_run" ON {GetScheduledJobsTableName()} ("NextRunTime") WHERE "Status" IN ('Pending') AND "IsEnabled" = true;
-            CREATE INDEX IF NOT EXISTS "ix_scheduled_jobs_lock" ON {GetScheduledJobsTableName()} ("LockHolder","LockedAt") WHERE "Status" = 'Running';
+            CREATE INDEX IF NOT EXISTS "ix_scheduled_jobs_lock" ON {GetScheduledJobsTableName()} ("LockHolder","DateLocked") WHERE "Status" = 'Running';
 
             CREATE TABLE IF NOT EXISTS {GetJobExecutionsTableName()}(
             	"Id" UUID PRIMARY KEY,
             	"JobId" UUID NOT NULL REFERENCES {GetScheduledJobsTableName()}("Id") ON DELETE CASCADE,
             	"ScheduledTime" TIMESTAMPTZ NOT NULL,
-            	"StartedAt" TIMESTAMPTZ NULL,
-            	"CompletedAt" TIMESTAMPTZ NULL,
+            	"DateStarted" TIMESTAMPTZ NULL,
+            	"DateCompleted" TIMESTAMPTZ NULL,
             	"Status" VARCHAR(50) NOT NULL,
             	"Duration" BIGINT NULL,
             	"RetryAttempt" INT NOT NULL DEFAULT 0,

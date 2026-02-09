@@ -12,6 +12,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
+using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -813,8 +814,10 @@ public class RouteActionProvider
             return;
         }
 
-        await manager.TriggerAsync(name, httpContext.RequestAborted);
-        httpContext.Response.StatusCode = StatusCodes.Status202Accepted;
+        var result = await manager.TriggerAsync(name, httpContext.RequestAborted);
+        httpContext.Response.StatusCode = result.IsSuccess
+            ? StatusCodes.Status202Accepted
+            : _MapErrorStatusCode(result.Error);
     }
 
     public async Task SchedulingEnable(HttpContext httpContext)
@@ -838,8 +841,10 @@ public class RouteActionProvider
             return;
         }
 
-        await manager.EnableAsync(name, httpContext.RequestAborted);
-        httpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+        var result = await manager.EnableAsync(name, httpContext.RequestAborted);
+        httpContext.Response.StatusCode = result.IsSuccess
+            ? StatusCodes.Status204NoContent
+            : _MapErrorStatusCode(result.Error);
     }
 
     public async Task SchedulingDisable(HttpContext httpContext)
@@ -863,14 +868,24 @@ public class RouteActionProvider
             return;
         }
 
-        await manager.DisableAsync(name, httpContext.RequestAborted);
-        httpContext.Response.StatusCode = StatusCodes.Status204NoContent;
+        var result = await manager.DisableAsync(name, httpContext.RequestAborted);
+        httpContext.Response.StatusCode = result.IsSuccess
+            ? StatusCodes.Status204NoContent
+            : _MapErrorStatusCode(result.Error);
     }
 
     private static void _BadRequest(HttpContext httpContext)
     {
         httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
     }
+
+    private static int _MapErrorStatusCode(ResultError error) =>
+        error switch
+        {
+            NotFoundError => StatusCodes.Status404NotFound,
+            ConflictError => StatusCodes.Status409Conflict,
+            _ => StatusCodes.Status500InternalServerError,
+        };
 }
 
 public class WarpResult

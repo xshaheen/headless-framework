@@ -31,7 +31,9 @@ internal sealed class SchedulerHealthCheck(
             var threshold = options.Value.StaleJobThreshold;
             var now = timeProvider.GetUtcNow();
             var staleCount = jobs.Count(j =>
-                j.Status == ScheduledJobStatus.Running && j.LockedAt.HasValue && (now - j.LockedAt.Value) > threshold
+                j.Status == ScheduledJobStatus.Running
+                && j.DateLocked.HasValue
+                && (now - j.DateLocked.Value) > threshold
             );
 
             var data = new Dictionary<string, object>(StringComparer.Ordinal)

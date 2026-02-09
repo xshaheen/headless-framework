@@ -34,7 +34,7 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
             {
                 job.Status = ScheduledJobStatus.Running;
                 job.LockHolder = lockHolder;
-                job.LockedAt = now;
+                job.DateLocked = now;
                 job.Version++;
             }
 
@@ -163,12 +163,12 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
             foreach (var execution in orphaned)
             {
                 execution.Status = JobExecutionStatus.TimedOut;
-                execution.CompletedAt = now;
+                execution.DateCompleted = now;
                 execution.Error = "Terminated by stale job recovery: owning process became unresponsive.";
 
-                if (execution.StartedAt.HasValue)
+                if (execution.DateStarted.HasValue)
                 {
-                    execution.Duration = (long)(now - execution.StartedAt.Value).TotalMilliseconds;
+                    execution.Duration = (long)(now - execution.DateStarted.Value).TotalMilliseconds;
                 }
             }
 
@@ -189,7 +189,9 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
             var staleThreshold = now - staleness;
             var staleJobs = _jobs
                 .Values.Where(j =>
-                    j.Status == ScheduledJobStatus.Running && j.LockedAt.HasValue && j.LockedAt.Value < staleThreshold
+                    j.Status == ScheduledJobStatus.Running
+                    && j.DateLocked.HasValue
+                    && j.DateLocked.Value < staleThreshold
                 )
                 .ToList();
 
@@ -197,7 +199,7 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
             {
                 job.Status = ScheduledJobStatus.Pending;
                 job.LockHolder = null;
-                job.LockedAt = null;
+                job.DateLocked = null;
             }
 
             return staleJobs.Count;
@@ -214,7 +216,7 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
         var now = timeProvider.GetUtcNow();
         var retentionThreshold = now - retention;
         var toRemove = _executions
-            .Values.Where(e => e.CompletedAt.HasValue && e.CompletedAt.Value < retentionThreshold)
+            .Values.Where(e => e.DateCompleted.HasValue && e.DateCompleted.Value < retentionThreshold)
             .Select(e => e.Id)
             .ToList();
 

@@ -23,7 +23,7 @@ public sealed class SchedulerHealthCheckTests : TestBase
         // given
         var job = _CreateJob("healthy-job");
         job.Status = ScheduledJobStatus.Pending;
-        job.LockedAt = null;
+        job.DateLocked = null;
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[job]);
 
@@ -45,11 +45,11 @@ public sealed class SchedulerHealthCheckTests : TestBase
         // given
         var staleJob = _CreateJob("stale-job");
         staleJob.Status = ScheduledJobStatus.Running;
-        staleJob.LockedAt = _timeProvider.GetUtcNow().AddMinutes(-10);
+        staleJob.DateLocked = _timeProvider.GetUtcNow().AddMinutes(-10);
 
         var healthyJob = _CreateJob("healthy-job");
         healthyJob.Status = ScheduledJobStatus.Pending;
-        healthyJob.LockedAt = null;
+        healthyJob.DateLocked = null;
 
         _storage
             .GetAllJobsAsync(Arg.Any<CancellationToken>())
@@ -100,7 +100,7 @@ public sealed class SchedulerHealthCheckTests : TestBase
             TimeZone = "UTC",
             Status = ScheduledJobStatus.Pending,
             NextRunTime = now.AddDays(1),
-            RetryCount = 0,
+            MaxRetries = 0,
             SkipIfRunning = false,
             IsEnabled = true,
             DateCreated = now,

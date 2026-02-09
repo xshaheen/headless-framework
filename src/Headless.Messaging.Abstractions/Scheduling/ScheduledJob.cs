@@ -87,9 +87,9 @@ public sealed class ScheduledJob
     public long? LastRunDuration { get; set; }
 
     /// <summary>
-    /// Gets or sets the number of retry attempts allowed for this job.
+    /// Gets or sets the maximum number of retry attempts allowed for this job.
     /// </summary>
-    public required int RetryCount { get; set; }
+    public required int MaxRetries { get; set; }
 
     /// <summary>
     /// Gets or sets the retry intervals (in seconds) between successive retry attempts.
@@ -119,7 +119,7 @@ public sealed class ScheduledJob
     /// <value>
     /// The UTC time the lock was taken, or <c>null</c> when no lock is held.
     /// </value>
-    public DateTimeOffset? LockedAt { get; set; }
+    public DateTimeOffset? DateLocked { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether this job is enabled and eligible for execution.

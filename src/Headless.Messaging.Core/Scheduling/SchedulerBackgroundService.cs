@@ -26,9 +26,15 @@ internal sealed class SchedulerBackgroundService(
     // Null when no distributed lock provider is registered (optional dependency).
     private readonly IDistributedLockProvider? _lockProvider = serviceProvider.GetService<IDistributedLockProvider>();
 
+    // Adaptive polling: back off during idle periods, reset when jobs found.
+    private int _consecutiveEmptyPolls;
+    private TimeSpan _currentInterval;
+
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _currentInterval = _options.PollingInterval;
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -37,17 +43,28 @@ internal sealed class SchedulerBackgroundService(
                     .AcquireDueJobsAsync(_options.BatchSize, _options.LockHolder, stoppingToken)
                     .ConfigureAwait(false);
 
-                await Parallel
-                    .ForEachAsync(
-                        jobs,
-                        new ParallelOptions
-                        {
-                            MaxDegreeOfParallelism = _options.BatchSize,
-                            CancellationToken = stoppingToken,
-                        },
-                        async (job, ct) => await _ProcessJobAsync(job, ct).ConfigureAwait(false)
-                    )
-                    .ConfigureAwait(false);
+                if (jobs.Count > 0)
+                {
+                    _consecutiveEmptyPolls = 0;
+                    _currentInterval = _options.PollingInterval;
+
+                    await Parallel
+                        .ForEachAsync(
+                            jobs,
+                            new ParallelOptions
+                            {
+                                MaxDegreeOfParallelism = _options.BatchSize,
+                                CancellationToken = stoppingToken,
+                            },
+                            async (job, ct) => await _ProcessJobAsync(job, ct).ConfigureAwait(false)
+                        )
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    _consecutiveEmptyPolls++;
+                    _currentInterval = _CalculateBackoffInterval();
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -60,8 +77,17 @@ internal sealed class SchedulerBackgroundService(
                 logger.LogError(ex, "Scheduler polling error");
             }
 
-            await Task.Delay(_options.PollingInterval, stoppingToken).ConfigureAwait(false);
+            await Task.Delay(_currentInterval, stoppingToken).ConfigureAwait(false);
         }
+    }
+
+    private TimeSpan _CalculateBackoffInterval()
+    {
+        // Double the base interval for each consecutive empty poll, capped at MaxPollingInterval.
+        var multiplier = 1 << Math.Min(_consecutiveEmptyPolls, 30);
+        var backoff = _options.PollingInterval * multiplier;
+
+        return backoff > _options.MaxPollingInterval ? _options.MaxPollingInterval : backoff;
     }
 
     private async Task _ProcessJobAsync(ScheduledJob job, CancellationToken cancellationToken)
@@ -87,7 +113,7 @@ internal sealed class SchedulerBackgroundService(
                 job.Status = ScheduledJobStatus.Pending;
                 job.NextRunTime = nextRun;
                 job.LockHolder = null;
-                job.LockedAt = null;
+                job.DateLocked = null;
                 job.DateUpdated = timeProvider.GetUtcNow();
                 await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
                 return;
@@ -114,18 +140,14 @@ internal sealed class SchedulerBackgroundService(
 
                 job.Status = ScheduledJobStatus.Pending;
                 job.LockHolder = null;
-                job.LockedAt = null;
+                job.DateLocked = null;
                 await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
                 return;
             }
 
-            try
+            await using (distributedLock.ConfigureAwait(false))
             {
                 await _ExecuteJobAsync(job, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                await distributedLock.ReleaseAsync().ConfigureAwait(false);
             }
         }
         else
@@ -141,9 +163,9 @@ internal sealed class SchedulerBackgroundService(
             Id = Guid.NewGuid(),
             JobId = job.Id,
             ScheduledTime = job.NextRunTime!.Value,
-            StartedAt = timeProvider.GetUtcNow(),
+            DateStarted = timeProvider.GetUtcNow(),
             Status = JobExecutionStatus.Running,
-            RetryAttempt = job.RetryCount,
+            RetryAttempt = job.MaxRetries,
         };
 
         await storage.CreateExecutionAsync(execution, cancellationToken).ConfigureAwait(false);
@@ -163,20 +185,20 @@ internal sealed class SchedulerBackgroundService(
         {
             await dispatcher.DispatchAsync(job, execution, jobCt).ConfigureAwait(false);
 
-            execution.CompletedAt = timeProvider.GetUtcNow();
+            execution.DateCompleted = timeProvider.GetUtcNow();
             execution.Status = JobExecutionStatus.Succeeded;
-            execution.Duration = (long)(execution.CompletedAt.Value - execution.StartedAt!.Value).TotalMilliseconds;
+            execution.Duration = (long)(execution.DateCompleted.Value - execution.DateStarted!.Value).TotalMilliseconds;
 
             await storage.UpdateExecutionAsync(execution, cancellationToken).ConfigureAwait(false);
 
             // Re-read to detect concurrent DisableAsync calls — preserve admin intent.
             var current = await storage.GetJobByNameAsync(job.Name, cancellationToken).ConfigureAwait(false);
 
-            job.LastRunTime = execution.CompletedAt;
+            job.LastRunTime = execution.DateCompleted;
             job.LastRunDuration = execution.Duration;
-            job.RetryCount = 0;
+            job.MaxRetries = 0;
             job.LockHolder = null;
-            job.LockedAt = null;
+            job.DateLocked = null;
 
             if (current is { IsEnabled: false })
             {
@@ -231,9 +253,9 @@ internal sealed class SchedulerBackgroundService(
         CancellationToken cancellationToken
     )
     {
-        execution.CompletedAt = timeProvider.GetUtcNow();
+        execution.DateCompleted = timeProvider.GetUtcNow();
         execution.Status = JobExecutionStatus.Failed;
-        execution.Duration = (long)(execution.CompletedAt.Value - execution.StartedAt!.Value).TotalMilliseconds;
+        execution.Duration = (long)(execution.DateCompleted.Value - execution.DateStarted!.Value).TotalMilliseconds;
         execution.Error = error;
 
         await storage.UpdateExecutionAsync(execution, cancellationToken).ConfigureAwait(false);
@@ -241,10 +263,10 @@ internal sealed class SchedulerBackgroundService(
         // Re-read to detect concurrent DisableAsync calls — preserve admin intent.
         var current = await storage.GetJobByNameAsync(job.Name, cancellationToken).ConfigureAwait(false);
 
-        job.RetryCount++;
+        job.MaxRetries++;
         job.LockHolder = null;
-        job.LockedAt = null;
-        job.LastRunTime = execution.CompletedAt;
+        job.DateLocked = null;
+        job.LastRunTime = execution.DateCompleted;
         job.LastRunDuration = execution.Duration;
 
         if (current is { IsEnabled: false })
@@ -256,7 +278,7 @@ internal sealed class SchedulerBackgroundService(
         // RetryIntervals are specified in seconds per the public API contract
         else if (job.RetryIntervals is { Length: > 0 } retryIntervals)
         {
-            var retryIndex = Math.Min(job.RetryCount - 1, retryIntervals.Length - 1);
+            var retryIndex = Math.Min(job.MaxRetries - 1, retryIntervals.Length - 1);
             var delaySeconds = retryIntervals[retryIndex];
             job.NextRunTime = timeProvider.GetUtcNow().AddSeconds(delaySeconds);
             job.Status = ScheduledJobStatus.Pending;
@@ -274,7 +296,7 @@ internal sealed class SchedulerBackgroundService(
                     timeProvider.GetUtcNow()
                 );
                 job.Status = ScheduledJobStatus.Pending;
-                job.RetryCount = 0;
+                job.MaxRetries = 0;
             }
         }
 

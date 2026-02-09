@@ -207,6 +207,28 @@ public sealed class ScheduledJobDispatcherTests : TestBase
         MessagingCorrelationScope.Current.Should().BeNull();
     }
 
+    [Fact]
+    public async Task should_throw_when_consumer_type_does_not_implement_iconsume()
+    {
+        // given
+        var now = DateTimeOffset.UtcNow;
+        var services = new ServiceCollection();
+        var sp = services.BuildServiceProvider();
+        var sut = new ScheduledJobDispatcher(sp.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
+
+        var job = _CreateJob("invalid-consumer-job", now);
+        job.ConsumerTypeName = typeof(string).AssemblyQualifiedName!;
+        var execution = _CreateExecution(job, now);
+
+        // when
+        var act = () => sut.DispatchAsync(job, execution, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*does not implement IConsume<ScheduledTrigger>*");
+    }
+
     // -- helpers --
 
     private (ScheduledJobDispatcher Sut, ScheduledJob Job, JobExecution Execution) _CreateSut(
@@ -238,7 +260,7 @@ public sealed class ScheduledJobDispatcherTests : TestBase
             TimeZone = "UTC",
             Status = ScheduledJobStatus.Running,
             NextRunTime = now,
-            RetryCount = 0,
+            MaxRetries = 0,
             SkipIfRunning = false,
             IsEnabled = true,
             DateCreated = now,
@@ -254,7 +276,7 @@ public sealed class ScheduledJobDispatcherTests : TestBase
             Id = Guid.NewGuid(),
             JobId = job.Id,
             ScheduledTime = now,
-            StartedAt = now,
+            DateStarted = now,
             Status = JobExecutionStatus.Running,
             RetryAttempt = 0,
         };

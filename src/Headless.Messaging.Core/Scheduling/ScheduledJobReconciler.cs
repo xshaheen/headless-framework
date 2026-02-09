@@ -15,13 +15,13 @@ namespace Headless.Messaging.Scheduling;
 /// <c>Messaging:Scheduling:Jobs:{JobName}:CronExpression</c>.
 /// Config values take precedence over attribute values. Invalid config values are logged and ignored.
 /// </remarks>
-internal sealed class SchedulerJobReconciler(
+internal sealed class ScheduledJobReconciler(
     ScheduledJobDefinitionRegistry definitionRegistry,
     IScheduledJobStorage storage,
     CronScheduleCache cronCache,
     TimeProvider timeProvider,
     IConfiguration configuration,
-    ILogger<SchedulerJobReconciler> logger
+    ILogger<ScheduledJobReconciler> logger
 ) : IHostedLifecycleService
 {
     /// <inheritdoc />
@@ -85,7 +85,7 @@ internal sealed class SchedulerJobReconciler(
                 TimeZone = definition.TimeZone ?? "UTC",
                 Status = ScheduledJobStatus.Pending,
                 NextRunTime = nextRun,
-                RetryCount = 0,
+                MaxRetries = 0,
                 RetryIntervals = definition.RetryIntervals,
                 SkipIfRunning = definition.SkipIfRunning,
                 IsEnabled = true,

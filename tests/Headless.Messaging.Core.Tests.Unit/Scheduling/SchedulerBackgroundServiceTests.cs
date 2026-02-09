@@ -88,7 +88,7 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
             .Received()
             .UpdateJobAsync(
                 Arg.Is<ScheduledJob>(j =>
-                    j.NextRunTime != null && j.Status == ScheduledJobStatus.Pending && j.RetryCount == 0
+                    j.NextRunTime != null && j.Status == ScheduledJobStatus.Pending && j.MaxRetries == 0
                 ),
                 Arg.Any<CancellationToken>()
             );
@@ -121,7 +121,7 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
         // given
         var job = _CreateRecurringJob();
         job.RetryIntervals = [1000, 5000, 30000];
-        job.RetryCount = 0;
+        job.MaxRetries = 0;
         _SetupAcquireOnce(job);
         _dispatcher.ExceptionToThrow = new InvalidOperationException("fail");
         var sut = _CreateService();
@@ -135,7 +135,7 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
             .Received()
             .UpdateJobAsync(
                 Arg.Is<ScheduledJob>(j =>
-                    j.RetryCount == 1 && j.Status == ScheduledJobStatus.Pending && j.NextRunTime != null
+                    j.MaxRetries == 1 && j.Status == ScheduledJobStatus.Pending && j.NextRunTime != null
                 ),
                 Arg.Any<CancellationToken>()
             );
@@ -147,7 +147,7 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
         // given
         var job = _CreateRecurringJob();
         job.RetryIntervals = null;
-        job.RetryCount = 2;
+        job.MaxRetries = 2;
         _SetupAcquireOnce(job);
         _dispatcher.ExceptionToThrow = new InvalidOperationException("fail");
         var sut = _CreateService();
@@ -161,7 +161,7 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
             .Received()
             .UpdateJobAsync(
                 Arg.Is<ScheduledJob>(j =>
-                    j.RetryCount == 0 && j.Status == ScheduledJobStatus.Pending && j.NextRunTime != null
+                    j.MaxRetries == 0 && j.Status == ScheduledJobStatus.Pending && j.NextRunTime != null
                 ),
                 Arg.Any<CancellationToken>()
             );
@@ -486,7 +486,7 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
             Status = ScheduledJobStatus.Disabled,
             IsEnabled = false,
             NextRunTime = null,
-            RetryCount = 0,
+            MaxRetries = 0,
             SkipIfRunning = false,
             DateCreated = job.DateCreated,
             DateUpdated = job.DateUpdated,
@@ -531,7 +531,7 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
             Status = ScheduledJobStatus.Disabled,
             IsEnabled = false,
             NextRunTime = null,
-            RetryCount = 0,
+            MaxRetries = 0,
             SkipIfRunning = false,
             DateCreated = job.DateCreated,
             DateUpdated = job.DateUpdated,
@@ -555,6 +555,120 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
                 ),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_back_off_polling_interval_during_idle_periods()
+    {
+        // given — always return empty jobs
+        var acquireCount = 0;
+        _storage
+            .AcquireDueJobsAsync(Arg.Any<int>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref acquireCount);
+                return _EmptyJobs;
+            });
+
+        var options = Options.Create(
+            new SchedulerOptions
+            {
+                PollingInterval = TimeSpan.FromMilliseconds(10),
+                MaxPollingInterval = TimeSpan.FromMilliseconds(80),
+            }
+        );
+
+        var services = new ServiceCollection();
+        var sp = services.BuildServiceProvider();
+        var sut = new SchedulerBackgroundService(
+            _storage,
+            _dispatcher,
+            _cronCache,
+            _timeProvider,
+            _logger,
+            options,
+            sp
+        );
+
+        // when — run for 400ms; without backoff we'd get ~40 polls (400/10).
+        // With backoff (10 -> 20 -> 40 -> 80 -> 80 -> ...) we get far fewer.
+        using var cts = new CancellationTokenSource();
+        _ = sut.StartAsync(cts.Token);
+        await Task.Delay(400, CancellationToken.None);
+        await cts.CancelAsync();
+        try
+        {
+            await sut.StopAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException) { }
+
+        // then — with backoff, expect significantly fewer polls than the ~40 we'd get at fixed 10ms
+        var polls = Volatile.Read(ref acquireCount);
+        polls.Should().BeGreaterThan(0);
+        polls.Should().BeLessThan(20, "adaptive backoff should reduce poll frequency during idle periods");
+    }
+
+    [Fact]
+    public async Task should_reset_polling_interval_when_jobs_found_after_idle()
+    {
+        // given — return empty for first N calls, then a job, then empty again
+        var job = _CreateRecurringJob();
+        var acquireCount = 0;
+        var jobReturnedAtPoll = 0;
+        _storage
+            .AcquireDueJobsAsync(Arg.Any<int>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                var count = Interlocked.Increment(ref acquireCount);
+
+                // Return a job on the 4th poll (after 3 empty polls that triggered backoff)
+                if (count == 4)
+                {
+                    Interlocked.Exchange(ref jobReturnedAtPoll, count);
+                    return (IReadOnlyList<ScheduledJob>)[job];
+                }
+
+                return _EmptyJobs;
+            });
+
+        var options = Options.Create(
+            new SchedulerOptions
+            {
+                PollingInterval = TimeSpan.FromMilliseconds(10),
+                MaxPollingInterval = TimeSpan.FromMilliseconds(80),
+            }
+        );
+
+        var services = new ServiceCollection();
+        var sp = services.BuildServiceProvider();
+        var sut = new SchedulerBackgroundService(
+            _storage,
+            _dispatcher,
+            _cronCache,
+            _timeProvider,
+            _logger,
+            options,
+            sp
+        );
+
+        // when — run for 500ms
+        using var cts = new CancellationTokenSource();
+        _ = sut.StartAsync(cts.Token);
+        await Task.Delay(500, CancellationToken.None);
+        await cts.CancelAsync();
+        try
+        {
+            await sut.StopAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException) { }
+
+        // then — the job was dispatched, and polls continued after it (interval reset to base)
+        _dispatcher.DispatchedJobs.Should().ContainSingle(j => j.Name == job.Name);
+        var totalPolls = Volatile.Read(ref acquireCount);
+
+        // After the job on poll 4, interval resets to 10ms, so we should get many more polls
+        // in the remaining ~350ms. With fixed 80ms cap we'd get ~4 more polls; with reset we get many more.
+        totalPolls.Should().BeGreaterThan(8, "interval should reset to base after finding jobs");
     }
 
     // -- helpers --
@@ -618,7 +732,7 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
             TimeZone = "UTC",
             Status = ScheduledJobStatus.Running,
             NextRunTime = now,
-            RetryCount = 0,
+            MaxRetries = 0,
             SkipIfRunning = false,
             IsEnabled = true,
             DateCreated = now,
@@ -639,7 +753,7 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
             TimeZone = "UTC",
             Status = ScheduledJobStatus.Running,
             NextRunTime = now,
-            RetryCount = 0,
+            MaxRetries = 0,
             SkipIfRunning = false,
             IsEnabled = true,
             DateCreated = now,

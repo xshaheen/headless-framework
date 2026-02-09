@@ -53,6 +53,13 @@ public sealed class SchedulerOptions
     public TimeSpan? DefaultJobTimeout { get; set; }
 
     /// <summary>
+    /// Gets or sets the maximum polling interval the scheduler will back off to during idle periods.
+    /// When no jobs are found, the polling interval doubles each cycle up to this cap.
+    /// It resets to <see cref="PollingInterval"/> when jobs are discovered. Default: 60 seconds.
+    /// </summary>
+    public TimeSpan MaxPollingInterval { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
     /// Gets or sets how long completed execution records are retained before being purged.
     /// The stale job recovery service periodically deletes execution records older than this duration.
     /// Default: 7 days.

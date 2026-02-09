@@ -130,7 +130,7 @@ public sealed class ScheduledJobDispatcherDiagnosticTests : TestBase
             TimeZone = "UTC",
             Status = ScheduledJobStatus.Running,
             NextRunTime = now,
-            RetryCount = 0,
+            MaxRetries = 0,
             SkipIfRunning = false,
             IsEnabled = true,
             DateCreated = now,
@@ -142,7 +142,7 @@ public sealed class ScheduledJobDispatcherDiagnosticTests : TestBase
             Id = Guid.NewGuid(),
             JobId = job.Id,
             ScheduledTime = now,
-            StartedAt = now,
+            DateStarted = now,
             Status = JobExecutionStatus.Running,
             RetryAttempt = 0,
         };
