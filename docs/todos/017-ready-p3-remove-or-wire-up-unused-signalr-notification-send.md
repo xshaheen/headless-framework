@@ -1,5 +1,11 @@
 ---
+<<<<<<<< HEAD:docs/todos/017-ready-p3-remove-or-wire-up-unused-signalr-notification-send.md
 status: ready
+|||||||| 6e93708f:todos/017-pending-p3-remove-or-wire-up-unused-signalr-notification-send.md
+status: pending
+========
+status: done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/017-done-p3-remove-or-wire-up-unused-signalr-notification-send.md
 priority: p3
 issue_id: "017"
 tags: ["dead-code","code-review","scheduling"]
@@ -57,3 +63,13 @@ PR #170 code review finding.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+<<<<<<<< HEAD:docs/todos/017-ready-p3-remove-or-wire-up-unused-signalr-notification-send.md
+|||||||| 6e93708f:todos/017-pending-p3-remove-or-wire-up-unused-signalr-notification-send.md
+========
+
+### 2026-02-09 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/017-done-p3-remove-or-wire-up-unused-signalr-notification-send.md

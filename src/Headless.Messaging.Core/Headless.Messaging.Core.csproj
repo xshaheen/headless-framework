@@ -12,6 +12,7 @@
   <ItemGroup>
     <PackageReference Include="Cronos" />
     <PackageReference Include="FastExpressionCompiler" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
   </ItemGroup>
   <ItemGroup>

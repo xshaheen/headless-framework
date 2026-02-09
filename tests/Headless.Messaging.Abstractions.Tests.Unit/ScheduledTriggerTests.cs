@@ -42,7 +42,6 @@ public sealed class ScheduledTriggerTests : TestBase
 
         // then
         trigger.CronExpression.Should().BeNull();
-        trigger.ParentJobId.Should().BeNull();
         trigger.Payload.Should().BeNull();
     }
 
@@ -63,25 +62,6 @@ public sealed class ScheduledTriggerTests : TestBase
 
         // then
         trigger.CronExpression.Should().Be(cron);
-    }
-
-    [Fact]
-    public void should_set_parent_job_id_when_provided()
-    {
-        // given
-        var parentId = Guid.NewGuid();
-
-        // when
-        var trigger = new ScheduledTrigger
-        {
-            ScheduledTime = DateTimeOffset.UtcNow,
-            JobName = "child-job",
-            Attempt = 1,
-            ParentJobId = parentId,
-        };
-
-        // then
-        trigger.ParentJobId.Should().Be(parentId);
     }
 
     [Fact]
@@ -111,7 +91,6 @@ public sealed class ScheduledTriggerTests : TestBase
         const string jobName = "full-job";
         const int attempt = 3;
         const string cron = "0 0 */6 * *";
-        var parentId = Guid.NewGuid();
         const string payload = """{"key":"value"}""";
 
         // when
@@ -121,7 +100,6 @@ public sealed class ScheduledTriggerTests : TestBase
             JobName = jobName,
             Attempt = attempt,
             CronExpression = cron,
-            ParentJobId = parentId,
             Payload = payload,
         };
 
@@ -130,7 +108,6 @@ public sealed class ScheduledTriggerTests : TestBase
         trigger.JobName.Should().Be(jobName);
         trigger.Attempt.Should().Be(attempt);
         trigger.CronExpression.Should().Be(cron);
-        trigger.ParentJobId.Should().Be(parentId);
         trigger.Payload.Should().Be(payload);
     }
 
@@ -148,14 +125,12 @@ public sealed class ScheduledTriggerTests : TestBase
     {
         // given
         var scheduledTime = DateTimeOffset.UtcNow;
-        var parentId = Guid.NewGuid();
 
         var trigger1 = new ScheduledTrigger
         {
             ScheduledTime = scheduledTime,
             JobName = "job",
             Attempt = 1,
-            ParentJobId = parentId,
         };
 
         var trigger2 = new ScheduledTrigger
@@ -163,7 +138,6 @@ public sealed class ScheduledTriggerTests : TestBase
             ScheduledTime = scheduledTime,
             JobName = "job",
             Attempt = 1,
-            ParentJobId = parentId,
         };
 
         // then

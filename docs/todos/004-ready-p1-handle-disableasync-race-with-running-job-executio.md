@@ -1,5 +1,11 @@
 ---
+<<<<<<<< HEAD:docs/todos/004-ready-p1-handle-disableasync-race-with-running-job-executio.md
 status: ready
+|||||||| 6e93708f:todos/004-pending-p1-handle-disableasync-race-with-running-job-executio.md
+status: pending
+========
+status: done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/004-done-p1-handle-disableasync-race-with-running-job-executio.md
 priority: p1
 issue_id: "004"
 tags: ["data-integrity","code-review","scheduling"]
@@ -59,3 +65,13 @@ PR #170 code review finding. Depends on #003 (optimistic concurrency).
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+<<<<<<<< HEAD:docs/todos/004-ready-p1-handle-disableasync-race-with-running-job-executio.md
+|||||||| 6e93708f:todos/004-pending-p1-handle-disableasync-race-with-running-job-executio.md
+========
+
+### 2026-02-09 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/004-done-p1-handle-disableasync-race-with-running-job-executio.md

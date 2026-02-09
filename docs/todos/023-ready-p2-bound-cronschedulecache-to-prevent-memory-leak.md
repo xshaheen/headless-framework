@@ -1,5 +1,11 @@
 ---
+<<<<<<<< HEAD:docs/todos/023-ready-p2-bound-cronschedulecache-to-prevent-memory-leak.md
 status: ready
+|||||||| 6e93708f:todos/023-pending-p2-bound-cronschedulecache-to-prevent-memory-leak.md
+status: pending
+========
+status: done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/023-done-p2-bound-cronschedulecache-to-prevent-memory-leak.md
 priority: p2
 issue_id: "023"
 tags: ["performance","code-review","scheduling"]
@@ -58,3 +64,13 @@ PR #170 code review finding.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+<<<<<<<< HEAD:docs/todos/023-ready-p2-bound-cronschedulecache-to-prevent-memory-leak.md
+|||||||| 6e93708f:todos/023-pending-p2-bound-cronschedulecache-to-prevent-memory-leak.md
+========
+
+### 2026-02-09 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/023-done-p2-bound-cronschedulecache-to-prevent-memory-leak.md

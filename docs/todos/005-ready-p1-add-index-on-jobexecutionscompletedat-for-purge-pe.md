@@ -1,5 +1,11 @@
 ---
+<<<<<<<< HEAD:docs/todos/005-ready-p1-add-index-on-jobexecutionscompletedat-for-purge-pe.md
 status: ready
+|||||||| 6e93708f:todos/005-pending-p1-add-index-on-jobexecutionscompletedat-for-purge-pe.md
+status: pending
+========
+status: done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/005-done-p1-add-index-on-jobexecutionscompletedat-for-purge-pe.md
 priority: p1
 issue_id: "005"
 tags: ["performance","code-review","scheduling","postgresql"]
@@ -53,3 +59,13 @@ PR #170 code review finding.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+<<<<<<<< HEAD:docs/todos/005-ready-p1-add-index-on-jobexecutionscompletedat-for-purge-pe.md
+|||||||| 6e93708f:todos/005-pending-p1-add-index-on-jobexecutionscompletedat-for-purge-pe.md
+========
+
+### 2026-02-09 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/005-done-p1-add-index-on-jobexecutionscompletedat-for-purge-pe.md

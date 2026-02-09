@@ -4,7 +4,7 @@ namespace Headless.Messaging.Scheduling;
 
 /// <summary>
 /// Collects <see cref="ScheduledJobDefinition"/> instances discovered during consumer registration.
-/// Registered as a singleton and consumed by <see cref="SchedulerJobReconciler"/> at startup.
+/// Registered as a singleton and consumed by <see cref="ScheduledJobReconciler"/> at startup.
 /// </summary>
 internal sealed class ScheduledJobDefinitionRegistry
 {

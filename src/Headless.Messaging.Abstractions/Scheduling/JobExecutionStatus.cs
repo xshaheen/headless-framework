@@ -26,4 +26,11 @@ public enum JobExecutionStatus
     /// The execution failed.
     /// </summary>
     Failed,
+
+    /// <summary>
+    /// The execution was terminated by stale job recovery because the owning process
+    /// became unresponsive or crashed before completing the job.
+    /// </summary>
+    TimedOut,
+
 }

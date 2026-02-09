@@ -188,12 +188,24 @@ public static class Setup
     /// </summary>
     private static void _RegisterSchedulerServices(IServiceCollection services, MessagingOptions options)
     {
-        var hasStorage = services.Any(d => d.ServiceType == typeof(IScheduledJobStorage));
+        var storageDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IScheduledJobStorage));
+        var hasStorage = storageDescriptor is not null;
         var hasDefinitions = options.ScheduledJobDefinitions.Count > 0;
 
         if (!hasStorage && !hasDefinitions)
         {
             return;
+        }
+
+        // IScheduledJobStorage is captured by singletons (ScheduledJobManager,
+        // SchedulerBackgroundService). A Scoped registration would create a captive
+        // dependency — fail fast so the misconfiguration is caught at startup.
+        if (storageDescriptor is { Lifetime: ServiceLifetime.Scoped })
+        {
+            throw new InvalidOperationException(
+                "IScheduledJobStorage is registered as Scoped, but it is consumed by singleton services. "
+                    + "Register it as Singleton (using a connection-per-call pattern) or Transient."
+            );
         }
 
         // Register the definition registry with all discovered definitions
@@ -218,9 +230,13 @@ public static class Setup
         // Background services (only when storage is registered)
         if (hasStorage)
         {
-            services.AddHostedService<SchedulerJobReconciler>();
+            services.AddHostedService<ScheduledJobReconciler>();
             services.AddHostedService<SchedulerBackgroundService>();
             services.AddHostedService<StaleJobRecoveryService>();
+        }
+        else if (hasDefinitions)
+        {
+            services.AddHostedService<SchedulerStorageMissingWarningService>();
         }
     }
 

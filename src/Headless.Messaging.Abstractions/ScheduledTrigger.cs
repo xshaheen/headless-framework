@@ -55,14 +55,6 @@ public sealed record ScheduledTrigger
     public string? CronExpression { get; init; }
 
     /// <summary>
-    /// Gets the identifier of a parent job that spawned this trigger, if any.
-    /// </summary>
-    /// <value>
-    /// The parent job's unique identifier, or <c>null</c> when the trigger has no parent.
-    /// </value>
-    public Guid? ParentJobId { get; init; }
-
-    /// <summary>
     /// Gets an optional opaque payload associated with the trigger.
     /// </summary>
     /// <value>

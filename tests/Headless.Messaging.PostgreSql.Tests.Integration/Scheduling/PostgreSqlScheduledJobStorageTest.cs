@@ -161,7 +161,7 @@ public sealed class PostgreSqlScheduledJobStorageTest(PostgreSqlTestFixture fixt
         acquired[0].Name.Should().Be("acquire-due");
         acquired[0].Status.Should().Be(ScheduledJobStatus.Running);
         acquired[0].LockHolder.Should().Be("node-1");
-        acquired[0].LockedAt.Should().NotBeNull();
+        acquired[0].DateLocked.Should().NotBeNull();
     }
 
     [Fact]
@@ -264,7 +264,7 @@ public sealed class PostgreSqlScheduledJobStorageTest(PostgreSqlTestFixture fixt
         // when
         job.Status = ScheduledJobStatus.Running;
         job.LockHolder = "node-1";
-        job.LockedAt = DateTimeOffset.UtcNow;
+        job.DateLocked = DateTimeOffset.UtcNow;
         job.LastRunTime = DateTimeOffset.UtcNow;
         await _storage.UpdateJobAsync(job, AbortToken);
 
@@ -273,7 +273,7 @@ public sealed class PostgreSqlScheduledJobStorageTest(PostgreSqlTestFixture fixt
         result.Should().NotBeNull();
         result!.Status.Should().Be(ScheduledJobStatus.Running);
         result.LockHolder.Should().Be("node-1");
-        result.LockedAt.Should().NotBeNull();
+        result.DateLocked.Should().NotBeNull();
         result.LastRunTime.Should().NotBeNull();
     }
 
@@ -309,7 +309,7 @@ public sealed class PostgreSqlScheduledJobStorageTest(PostgreSqlTestFixture fixt
 
         // when
         execution.Status = JobExecutionStatus.Succeeded;
-        execution.CompletedAt = DateTimeOffset.UtcNow;
+        execution.DateCompleted = DateTimeOffset.UtcNow;
         execution.Duration = 1500;
         await _storage.UpdateExecutionAsync(execution, AbortToken);
 
@@ -317,7 +317,7 @@ public sealed class PostgreSqlScheduledJobStorageTest(PostgreSqlTestFixture fixt
         var executions = await _storage.GetExecutionsAsync(job.Id, 10, AbortToken);
         executions.Should().HaveCount(1);
         executions[0].Status.Should().Be(JobExecutionStatus.Succeeded);
-        executions[0].CompletedAt.Should().NotBeNull();
+        executions[0].DateCompleted.Should().NotBeNull();
         executions[0].Duration.Should().Be(1500);
     }
 
@@ -384,7 +384,7 @@ public sealed class PostgreSqlScheduledJobStorageTest(PostgreSqlTestFixture fixt
         job.LastRunTime = DateTimeOffset.UtcNow.AddMinutes(-1);
         job.LastRunDuration = 500;
         job.LockHolder = "test-holder";
-        job.LockedAt = DateTimeOffset.UtcNow;
+        job.DateLocked = DateTimeOffset.UtcNow;
         await _storage.UpsertJobAsync(job, AbortToken);
 
         // when
@@ -397,7 +397,7 @@ public sealed class PostgreSqlScheduledJobStorageTest(PostgreSqlTestFixture fixt
         result.LastRunTime.Should().NotBeNull();
         result.LastRunDuration.Should().Be(500);
         result.LockHolder.Should().Be("test-holder");
-        result.LockedAt.Should().NotBeNull();
+        result.DateLocked.Should().NotBeNull();
     }
 
     [Fact]
@@ -412,7 +412,7 @@ public sealed class PostgreSqlScheduledJobStorageTest(PostgreSqlTestFixture fixt
         job.LastRunDuration = null;
         job.RetryIntervals = null;
         job.LockHolder = null;
-        job.LockedAt = null;
+        job.DateLocked = null;
         await _storage.UpsertJobAsync(job, AbortToken);
 
         // when
@@ -427,7 +427,7 @@ public sealed class PostgreSqlScheduledJobStorageTest(PostgreSqlTestFixture fixt
         result.LastRunDuration.Should().BeNull();
         result.RetryIntervals.Should().BeNull();
         result.LockHolder.Should().BeNull();
-        result.LockedAt.Should().BeNull();
+        result.DateLocked.Should().BeNull();
     }
 
     private static ScheduledJob _CreateJob(string name)
@@ -442,7 +442,7 @@ public sealed class PostgreSqlScheduledJobStorageTest(PostgreSqlTestFixture fixt
             TimeZone = "UTC",
             Status = ScheduledJobStatus.Pending,
             NextRunTime = now.AddMinutes(5),
-            RetryCount = 3,
+            MaxRetries = 3,
             SkipIfRunning = true,
             IsEnabled = true,
             DateCreated = now,
@@ -457,7 +457,7 @@ public sealed class PostgreSqlScheduledJobStorageTest(PostgreSqlTestFixture fixt
             Id = Guid.NewGuid(),
             JobId = jobId,
             ScheduledTime = DateTimeOffset.UtcNow,
-            StartedAt = DateTimeOffset.UtcNow,
+            DateStarted = DateTimeOffset.UtcNow,
             Status = JobExecutionStatus.Running,
             RetryAttempt = 0,
         };

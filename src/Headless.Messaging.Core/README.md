@@ -175,14 +175,16 @@ Configure scheduler behavior:
 ```csharp
 builder.Services.Configure<SchedulerOptions>(options =>
 {
-    options.PollingInterval = TimeSpan.FromSeconds(1);  // default
-    options.BatchSize = 10;                              // default
-    options.LockHolder = Environment.MachineName;        // default
-    options.LockTimeout = TimeSpan.FromMinutes(5);       // default
+    options.PollingInterval = TimeSpan.FromSeconds(1);     // default
+    options.MaxPollingInterval = TimeSpan.FromSeconds(60); // default
+    options.BatchSize = 10;                                // default
+    options.LockHolder = Environment.MachineName;          // default
+    options.LockTimeout = TimeSpan.FromMinutes(5);         // default
 });
 ```
 
-- `PollingInterval` -- how often the scheduler polls for due jobs
+- `PollingInterval` -- base polling interval; the scheduler backs off from this during idle periods
+- `MaxPollingInterval` -- upper bound for adaptive backoff (doubles each idle cycle, capped here)
 - `BatchSize` -- max jobs acquired per poll cycle
 - `LockHolder` -- instance identifier for atomic job acquisition
 - `LockTimeout` -- distributed lock timeout for `SkipIfRunning` jobs

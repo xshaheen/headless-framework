@@ -1,5 +1,11 @@
 ---
+<<<<<<<< HEAD:docs/todos/006-ready-p1-fix-inmemory-storage-thread-safety-gap-in-updatede.md
 status: ready
+|||||||| 6e93708f:todos/006-pending-p1-fix-inmemory-storage-thread-safety-gap-in-updatede.md
+status: pending
+========
+status: done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/006-done-p1-fix-inmemory-storage-thread-safety-gap-in-updatede.md
 priority: p1
 issue_id: "006"
 tags: ["thread-safety","code-review","scheduling"]
@@ -53,3 +59,13 @@ PR #170 code review finding. InMemory storage is used for tests and dev, so corr
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+<<<<<<<< HEAD:docs/todos/006-ready-p1-fix-inmemory-storage-thread-safety-gap-in-updatede.md
+|||||||| 6e93708f:todos/006-pending-p1-fix-inmemory-storage-thread-safety-gap-in-updatede.md
+========
+
+### 2026-02-09 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/006-done-p1-fix-inmemory-storage-thread-safety-gap-in-updatede.md

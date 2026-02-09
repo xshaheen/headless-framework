@@ -9,18 +9,21 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Scheduling;
 
-public sealed class SchedulerJobReconcilerTests : TestBase
+public sealed class ScheduledJobReconcilerTests : TestBase, IDisposable
 {
     private readonly ScheduledJobDefinitionRegistry _registry = new();
     private readonly IScheduledJobStorage _storage = Substitute.For<IScheduledJobStorage>();
     private readonly CronScheduleCache _cronCache = new();
+
+    public void Dispose() => _cronCache.Dispose();
+
     private readonly FakeTimeProvider _timeProvider = new(new DateTimeOffset(2025, 6, 1, 12, 0, 0, TimeSpan.Zero));
-    private readonly ILogger<SchedulerJobReconciler> _logger;
+    private readonly ILogger<ScheduledJobReconciler> _logger;
     private readonly IConfiguration _configuration;
 
-    public SchedulerJobReconcilerTests()
+    public ScheduledJobReconcilerTests()
     {
-        _logger = LoggerFactory.CreateLogger<SchedulerJobReconciler>();
+        _logger = LoggerFactory.CreateLogger<ScheduledJobReconciler>();
         _configuration = new ConfigurationBuilder().Build();
     }
 
@@ -40,7 +43,7 @@ public sealed class SchedulerJobReconcilerTests : TestBase
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[]);
 
-        var sut = new SchedulerJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -77,7 +80,7 @@ public sealed class SchedulerJobReconcilerTests : TestBase
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[]);
 
-        var sut = new SchedulerJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -111,7 +114,7 @@ public sealed class SchedulerJobReconcilerTests : TestBase
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[existingJob]);
 
-        var sut = new SchedulerJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -150,7 +153,7 @@ public sealed class SchedulerJobReconcilerTests : TestBase
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[existingJob]);
 
-        var sut = new SchedulerJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -171,7 +174,7 @@ public sealed class SchedulerJobReconcilerTests : TestBase
     public async Task should_skip_reconciliation_when_no_definitions_registered()
     {
         // given — no definitions added to registry
-        var sut = new SchedulerJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -200,7 +203,7 @@ public sealed class SchedulerJobReconcilerTests : TestBase
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[]);
 
-        var sut = new SchedulerJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -238,7 +241,7 @@ public sealed class SchedulerJobReconcilerTests : TestBase
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[oneTimeJob]);
 
-        var sut = new SchedulerJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -274,7 +277,7 @@ public sealed class SchedulerJobReconcilerTests : TestBase
         };
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(configData).Build();
 
-        var sut = new SchedulerJobReconciler(_registry, _storage, _cronCache, _timeProvider, configuration, _logger);
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, configuration, _logger);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -310,7 +313,7 @@ public sealed class SchedulerJobReconcilerTests : TestBase
         };
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(configData).Build();
 
-        var sut = new SchedulerJobReconciler(_registry, _storage, _cronCache, _timeProvider, configuration, _logger);
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, configuration, _logger);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -341,7 +344,7 @@ public sealed class SchedulerJobReconcilerTests : TestBase
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[]);
 
         var configuration = new ConfigurationBuilder().Build();
-        var sut = new SchedulerJobReconciler(_registry, _storage, _cronCache, _timeProvider, configuration, _logger);
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, configuration, _logger);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -369,7 +372,7 @@ public sealed class SchedulerJobReconcilerTests : TestBase
             TimeZone = "UTC",
             Status = ScheduledJobStatus.Pending,
             NextRunTime = now.AddDays(1),
-            RetryCount = 0,
+            MaxRetries = 0,
             SkipIfRunning = true,
             IsEnabled = true,
             DateCreated = now,

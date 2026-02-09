@@ -82,7 +82,7 @@ Type-safe job scheduling routed through the messaging infrastructure.
 
 ### ScheduledTrigger
 
-Message type consumed by scheduled job handlers. Properties: `JobName`, `ScheduledTime`, `Attempt`, `CronExpression`, `ParentJobId`, `Payload`.
+Message type consumed by scheduled job handlers. Properties: `JobName`, `ScheduledTime`, `Attempt`, `CronExpression`, `Payload`.
 
 ```csharp
 public sealed class TokenCleanupJob : IConsume<ScheduledTrigger>

@@ -19,10 +19,8 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory, 
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
-    private static readonly ConcurrentDictionary<
-        string,
-        Func<IServiceProvider, IConsume<ScheduledTrigger>>
-    > _FactoryCache = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Func<IServiceProvider, IConsume<ScheduledTrigger>>> _FactoryCache =
+        new(StringComparer.Ordinal);
 
     /// <inheritdoc />
     public async Task DispatchAsync(
@@ -48,6 +46,13 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory, 
                             ?? throw new InvalidOperationException(
                                 $"Consumer type '{j.ConsumerTypeName}' not found for job '{name}'."
                             );
+
+                        if (!typeof(IConsume<ScheduledTrigger>).IsAssignableFrom(type))
+                        {
+                            throw new InvalidOperationException(
+                                $"Consumer type '{type.FullName}' for job '{name}' does not implement IConsume<ScheduledTrigger>."
+                            );
+                        }
 
                         return serviceProvider =>
                             (IConsume<ScheduledTrigger>)ActivatorUtilities.CreateInstance(serviceProvider, type);
@@ -80,7 +85,6 @@ internal sealed class ScheduledJobDispatcher(IServiceScopeFactory scopeFactory, 
                     ScheduledTime = execution.ScheduledTime,
                     Attempt = execution.RetryAttempt + 1,
                     CronExpression = job.CronExpression,
-                    ParentJobId = null,
                     Payload = job.Payload,
                 },
             };

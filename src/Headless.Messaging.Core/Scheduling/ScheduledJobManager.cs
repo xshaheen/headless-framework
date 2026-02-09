@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Primitives;
 
 namespace Headless.Messaging.Scheduling;
 
@@ -22,13 +23,21 @@ internal sealed class ScheduledJobManager(
         return storage.GetJobByNameAsync(name, cancellationToken);
     }
 
-    public async Task EnableAsync(string name, CancellationToken cancellationToken = default)
+    public async Task<Result<ResultError>> EnableAsync(string name, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(name);
 
-        var job =
-            await storage.GetJobByNameAsync(name, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Scheduled job '{name}' not found.");
+        var job = await storage.GetJobByNameAsync(name, cancellationToken).ConfigureAwait(false);
+
+        if (job is null)
+        {
+            return _JobNotFound(name);
+        }
+
+        if (job.Status == ScheduledJobStatus.Running)
+        {
+            return _JobRunning(name);
+        }
 
         var now = timeProvider.GetUtcNow();
 
@@ -47,15 +56,19 @@ internal sealed class ScheduledJobManager(
         }
 
         await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
+        return Result<ResultError>.Ok();
     }
 
-    public async Task DisableAsync(string name, CancellationToken cancellationToken = default)
+    public async Task<Result<ResultError>> DisableAsync(string name, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(name);
 
-        var job =
-            await storage.GetJobByNameAsync(name, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Scheduled job '{name}' not found.");
+        var job = await storage.GetJobByNameAsync(name, cancellationToken).ConfigureAwait(false);
+
+        if (job is null)
+        {
+            return _JobNotFound(name);
+        }
 
         job.Status = ScheduledJobStatus.Disabled;
         job.IsEnabled = false;
@@ -63,15 +76,24 @@ internal sealed class ScheduledJobManager(
         job.DateUpdated = timeProvider.GetUtcNow();
 
         await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
+        return Result<ResultError>.Ok();
     }
 
-    public async Task TriggerAsync(string name, CancellationToken cancellationToken = default)
+    public async Task<Result<ResultError>> TriggerAsync(string name, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(name);
 
-        var job =
-            await storage.GetJobByNameAsync(name, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Scheduled job '{name}' not found.");
+        var job = await storage.GetJobByNameAsync(name, cancellationToken).ConfigureAwait(false);
+
+        if (job is null)
+        {
+            return _JobNotFound(name);
+        }
+
+        if (job.Status == ScheduledJobStatus.Running)
+        {
+            return _JobRunning(name);
+        }
 
         var now = timeProvider.GetUtcNow();
         job.Status = ScheduledJobStatus.Pending;
@@ -79,17 +101,22 @@ internal sealed class ScheduledJobManager(
         job.DateUpdated = now;
 
         await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
+        return Result<ResultError>.Ok();
     }
 
-    public async Task DeleteAsync(string name, CancellationToken cancellationToken = default)
+    public async Task<Result<ResultError>> DeleteAsync(string name, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(name);
 
-        var job =
-            await storage.GetJobByNameAsync(name, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"Scheduled job '{name}' not found.");
+        var job = await storage.GetJobByNameAsync(name, cancellationToken).ConfigureAwait(false);
+
+        if (job is null)
+        {
+            return _JobNotFound(name);
+        }
 
         await storage.DeleteJobAsync(job.Id, cancellationToken).ConfigureAwait(false);
+        return Result<ResultError>.Ok();
     }
 
     public async Task ScheduleOnceAsync(
@@ -119,7 +146,7 @@ internal sealed class ScheduledJobManager(
             Payload = payload,
             Status = ScheduledJobStatus.Pending,
             NextRunTime = runAt,
-            RetryCount = 0,
+            MaxRetries = 0,
             SkipIfRunning = false,
             IsEnabled = true,
             DateCreated = now,
@@ -130,4 +157,9 @@ internal sealed class ScheduledJobManager(
 
         await storage.UpsertJobAsync(job, cancellationToken).ConfigureAwait(false);
     }
+
+    private static NotFoundError _JobNotFound(string name) => new() { Entity = "ScheduledJob", Key = name };
+
+    private static ConflictError _JobRunning(string name) =>
+        new("scheduling:job_running", $"Job '{name}' is currently running and cannot be modified.");
 }

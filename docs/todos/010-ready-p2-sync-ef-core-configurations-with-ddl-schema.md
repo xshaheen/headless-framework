@@ -1,5 +1,11 @@
 ---
+<<<<<<<< HEAD:docs/todos/010-ready-p2-sync-ef-core-configurations-with-ddl-schema.md
 status: ready
+|||||||| 6e93708f:todos/010-pending-p2-sync-ef-core-configurations-with-ddl-schema.md
+status: pending
+========
+status: done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/010-done-p2-sync-ef-core-configurations-with-ddl-schema.md
 priority: p2
 issue_id: "010"
 tags: ["data-integrity","code-review","scheduling","ef-core"]
@@ -53,3 +59,13 @@ PR #170 code review finding.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+<<<<<<<< HEAD:docs/todos/010-ready-p2-sync-ef-core-configurations-with-ddl-schema.md
+|||||||| 6e93708f:todos/010-pending-p2-sync-ef-core-configurations-with-ddl-schema.md
+========
+
+### 2026-02-09 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/010-done-p2-sync-ef-core-configurations-with-ddl-schema.md

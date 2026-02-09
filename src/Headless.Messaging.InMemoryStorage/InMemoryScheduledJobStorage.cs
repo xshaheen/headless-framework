@@ -34,7 +34,8 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
             {
                 job.Status = ScheduledJobStatus.Running;
                 job.LockHolder = lockHolder;
-                job.LockedAt = now;
+                job.DateLocked = now;
+                job.Version++;
             }
 
             return dueJobs;
@@ -57,6 +58,17 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
         cancellationToken.ThrowIfCancellationRequested();
         IReadOnlyList<ScheduledJob> jobs = _jobs.Values.ToList();
         return Task.FromResult(jobs);
+    }
+
+    public Task<int> GetStaleJobCountAsync(DateTimeOffset threshold, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var count = _jobs.Values.Count(j =>
+            j.Status == ScheduledJobStatus.Running && j.DateLocked.HasValue && j.DateLocked.Value < threshold
+        );
+
+        return Task.FromResult(count);
     }
 
     public async Task UpsertJobAsync(ScheduledJob job, CancellationToken cancellationToken = default)
@@ -96,6 +108,13 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
     public Task UpdateJobAsync(ScheduledJob job, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (_jobs.TryGetValue(job.Id, out var existing) && existing.Version != job.Version)
+        {
+            throw new ScheduledJobConcurrencyException(job.Id, job.Version);
+        }
+
+        job.Version++;
         _jobs[job.Id] = job;
         return Task.CompletedTask;
     }
@@ -137,6 +156,66 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
         return Task.FromResult(executions);
     }
 
+    public Task<IReadOnlyList<ExecutionStatusCount>> GetExecutionStatusCountsAsync(
+        Guid jobId,
+        int days = 7,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var cutoff = timeProvider.GetUtcNow().AddDays(-days);
+
+        IReadOnlyList<ExecutionStatusCount> result = _executions
+            .Values.Where(e => e.JobId == jobId && e.ScheduledTime >= cutoff)
+            .GroupBy(e => new { e.ScheduledTime.Date, e.Status })
+            .Select(g => new ExecutionStatusCount
+            {
+                Date = new DateTimeOffset(g.Key.Date, TimeSpan.Zero),
+                Status = g.Key.Status.ToString(),
+                Count = g.Count(),
+            })
+            .OrderBy(s => s.Date)
+            .ThenBy(s => s.Status, StringComparer.Ordinal)
+            .ToList();
+
+        return Task.FromResult(result);
+    }
+
+    public async Task<int> TimeoutStaleExecutionsAsync(CancellationToken cancellationToken = default)
+    {
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var now = timeProvider.GetUtcNow();
+            var runningJobIds = _jobs
+                .Values.Where(j => j.Status == ScheduledJobStatus.Running)
+                .Select(j => j.Id)
+                .ToHashSet();
+
+            var orphaned = _executions
+                .Values.Where(e => e.Status == JobExecutionStatus.Running && !runningJobIds.Contains(e.JobId))
+                .ToList();
+
+            foreach (var execution in orphaned)
+            {
+                execution.Status = JobExecutionStatus.TimedOut;
+                execution.DateCompleted = now;
+                execution.Error = "Terminated by stale job recovery: owning process became unresponsive.";
+
+                if (execution.DateStarted.HasValue)
+                {
+                    execution.Duration = (long)(now - execution.DateStarted.Value).TotalMilliseconds;
+                }
+            }
+
+            return orphaned.Count;
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     public async Task<int> ReleaseStaleJobsAsync(TimeSpan staleness, CancellationToken cancellationToken = default)
     {
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -146,7 +225,9 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
             var staleThreshold = now - staleness;
             var staleJobs = _jobs
                 .Values.Where(j =>
-                    j.Status == ScheduledJobStatus.Running && j.LockedAt.HasValue && j.LockedAt.Value < staleThreshold
+                    j.Status == ScheduledJobStatus.Running
+                    && j.DateLocked.HasValue
+                    && j.DateLocked.Value < staleThreshold
                 )
                 .ToList();
 
@@ -154,7 +235,7 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
             {
                 job.Status = ScheduledJobStatus.Pending;
                 job.LockHolder = null;
-                job.LockedAt = null;
+                job.DateLocked = null;
             }
 
             return staleJobs.Count;
@@ -171,7 +252,7 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
         var now = timeProvider.GetUtcNow();
         var retentionThreshold = now - retention;
         var toRemove = _executions
-            .Values.Where(e => e.CompletedAt.HasValue && e.CompletedAt.Value < retentionThreshold)
+            .Values.Where(e => e.DateCompleted.HasValue && e.DateCompleted.Value < retentionThreshold)
             .Select(e => e.Id)
             .ToList();
 

@@ -633,7 +633,7 @@ public sealed class RedisCache(
         return await _database.KeyExistsAsync(_GetKey(key));
     }
 
-    public async ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    public async ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -667,7 +667,7 @@ public sealed class RedisCache(
                 }
             }
 
-            return total > int.MaxValue ? int.MaxValue : (int)total;
+            return total;
         }
 
         const int chunkSize = 2500;
@@ -688,14 +688,10 @@ public sealed class RedisCache(
             )
             {
                 count++;
-                if (count >= int.MaxValue)
-                {
-                    return int.MaxValue;
-                }
             }
         }
 
-        return (int)count;
+        return count;
     }
 
     public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)

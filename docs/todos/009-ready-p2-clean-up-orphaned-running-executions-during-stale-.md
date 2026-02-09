@@ -1,5 +1,11 @@
 ---
+<<<<<<<< HEAD:docs/todos/009-ready-p2-clean-up-orphaned-running-executions-during-stale-.md
 status: ready
+|||||||| 6e93708f:todos/009-pending-p2-clean-up-orphaned-running-executions-during-stale-.md
+status: pending
+========
+status: done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/009-done-p2-clean-up-orphaned-running-executions-during-stale-.md
 priority: p2
 issue_id: "009"
 tags: ["data-integrity","code-review","scheduling"]
@@ -53,3 +59,13 @@ PR #170 code review finding.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+<<<<<<<< HEAD:docs/todos/009-ready-p2-clean-up-orphaned-running-executions-during-stale-.md
+|||||||| 6e93708f:todos/009-pending-p2-clean-up-orphaned-running-executions-during-stale-.md
+========
+
+### 2026-02-09 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done
+>>>>>>>> refs/heads/codex/cache-perf-fixes:docs/todos/009-done-p2-clean-up-orphaned-running-executions-during-stale-.md
