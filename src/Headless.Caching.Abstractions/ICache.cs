@@ -138,10 +138,7 @@ public interface ICache
     ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default);
 
     /// <summary>Gets the count async.</summary>
-    ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default);
-
-    /// <summary>Gets the count async (long).</summary>
-    ValueTask<long> GetLongCountAsync(string prefix = "", CancellationToken cancellationToken = default);
+    ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default);
 
     /// <summary>Check if the key exists in the cache.</summary>
     ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default);

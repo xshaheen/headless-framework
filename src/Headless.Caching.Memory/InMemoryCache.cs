@@ -1039,23 +1039,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         return new ValueTask<bool>(!existingEntry.IsExpired);
     }
 
-    public ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
-    {
-        _ThrowIfDisposed();
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (string.IsNullOrEmpty(prefix))
-        {
-            return new ValueTask<int>(_memory.Count(i => !i.Value.IsExpired));
-        }
-
-        prefix = _GetKey(prefix);
-        var count = _memory.Count(x => x.Key.StartsWith(prefix, StringComparison.Ordinal) && !x.Value.IsExpired);
-
-        return new ValueTask<int>(count);
-    }
-
-    public ValueTask<long> GetLongCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         _ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();

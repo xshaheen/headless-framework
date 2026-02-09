@@ -645,7 +645,7 @@ public sealed class HybridCacheTests : TestBase
             CancellationToken ct = default
         ) => _cache.GetAllKeysByPrefixAsync(prefix, ct);
 
-        public ValueTask<int> GetCountAsync(string prefix = "", CancellationToken ct = default) =>
+        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken ct = default) =>
             _cache.GetCountAsync(prefix, ct);
 
         public ValueTask<bool> ExistsAsync(string key, CancellationToken ct = default) => _cache.ExistsAsync(key, ct);
@@ -974,7 +974,7 @@ public sealed class HybridCacheTests : TestBase
         public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) =>
             cache.GetAsync<T>(key, cancellationToken);
 
-        public ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
+        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
             cache.GetCountAsync(prefix, cancellationToken);
 
         public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
