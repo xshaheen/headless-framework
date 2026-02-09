@@ -70,7 +70,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
             ? _locks.Count
             : _locks.Count(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal));
 
-        return ValueTask.FromResult(count);
+        return ValueTask.FromResult<long>(count);
     }
 
     // Test helpers
