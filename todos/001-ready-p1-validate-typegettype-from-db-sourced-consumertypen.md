@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "001"
 tags: ["security","code-review","scheduling"]
@@ -53,3 +53,9 @@ PR #170 code review finding. Keyed DI path is safe; only the ActivatorUtilities 
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-02-08 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

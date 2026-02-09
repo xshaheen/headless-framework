@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "021"
 tags: ["di-lifetime","code-review","scheduling"]
@@ -53,3 +53,9 @@ PR #170 code review finding. PostgreSqlScheduledJobStorage is already singleton-
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-02-08 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "015"
 tags: ["naming","code-review","scheduling"]
@@ -46,3 +46,9 @@ PR #170 code review finding.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-02-09 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
