@@ -305,15 +305,6 @@ public sealed class HybridCache(
     }
 
     /// <inheritdoc />
-    public async ValueTask<long> GetLongCountAsync(string prefix = "", CancellationToken cancellationToken = default)
-    {
-        _ThrowIfDisposed();
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return await l2Cache.GetLongCountAsync(prefix, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
     public async ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
     {
         _ThrowIfDisposed();
