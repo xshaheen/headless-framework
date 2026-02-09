@@ -296,21 +296,12 @@ public sealed class HybridCache(
     }
 
     /// <inheritdoc />
-    public async ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    public async ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         _ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
 
         return await l2Cache.GetCountAsync(prefix, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <inheritdoc />
-    public async ValueTask<long> GetLongCountAsync(string prefix = "", CancellationToken cancellationToken = default)
-    {
-        _ThrowIfDisposed();
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return await l2Cache.GetLongCountAsync(prefix, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
