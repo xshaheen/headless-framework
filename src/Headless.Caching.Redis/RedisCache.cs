@@ -637,8 +637,65 @@ public sealed class RedisCache(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var keys = await GetAllKeysByPrefixAsync(prefix, cancellationToken).ConfigureAwait(false);
-        return keys.Count;
+        var endpoints = options.ConnectionMultiplexer.GetEndPoints();
+
+        if (endpoints.Length is 0)
+        {
+            return 0;
+        }
+
+        if (string.IsNullOrEmpty(prefix) && string.IsNullOrEmpty(_keyPrefix))
+        {
+            long total = 0;
+
+            foreach (var endpoint in endpoints)
+            {
+                var server = options.ConnectionMultiplexer.GetServer(endpoint);
+
+                if (server.IsReplica)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    total += await server.DatabaseSizeAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Unable to read database size from {Endpoint}", server.EndPoint);
+                }
+            }
+
+            return total > int.MaxValue ? int.MaxValue : (int)total;
+        }
+
+        const int chunkSize = 2500;
+        var pattern = $"{_GetKey(prefix)}*";
+        long count = 0;
+
+        foreach (var endpoint in endpoints)
+        {
+            var server = options.ConnectionMultiplexer.GetServer(endpoint);
+
+            if (server.IsReplica)
+            {
+                continue;
+            }
+
+            await foreach (
+                var _ in server.KeysAsync(pattern: pattern, pageSize: chunkSize).WithCancellation(cancellationToken)
+            )
+            {
+                count++;
+                if (count >= int.MaxValue)
+                {
+                    return int.MaxValue;
+                }
+            }
+        }
+
+        return (int)count;
     }
 
     public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
