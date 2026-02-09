@@ -195,7 +195,6 @@
     <PackageVersion Include="xunit.v3.assert" Version="3.2.1" />
     <PackageVersion Include="xunit.v3.mtp-v2" Version="3.2.1" />
     <PackageVersion Include="xunit.v3.extensibility.core" Version="3.2.1" />
-
   </ItemGroup>
   <ItemGroup Label="Analyzers" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
     <GlobalPackageReference Include="AsyncFixer" Version="2.1.0" />
