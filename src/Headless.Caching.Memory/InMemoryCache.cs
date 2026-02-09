@@ -63,7 +63,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         if ((_maxMemorySize.HasValue || _maxEntrySize.HasValue) && _sizeCalculator is null)
         {
             throw new ArgumentException(
-                "SizeCalculator is required when MaxMemorySize or MaxEntrySize is set.",
+                @"SizeCalculator is required when MaxMemorySize or MaxEntrySize is set.",
                 nameof(options)
             );
         }
@@ -1040,38 +1040,6 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     }
 
     public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
-    {
-        _ThrowIfDisposed();
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (string.IsNullOrEmpty(prefix))
-        {
-            return new ValueTask<long>(_memory.LongCount(i => !i.Value.IsExpired));
-        }
-
-        prefix = _GetKey(prefix);
-        var count = _memory.LongCount(x => x.Key.StartsWith(prefix, StringComparison.Ordinal) && !x.Value.IsExpired);
-
-        return new ValueTask<long>(count);
-    }
-
-    public ValueTask<long> GetLongCountAsync(string prefix = "", CancellationToken cancellationToken = default)
-    {
-        _ThrowIfDisposed();
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (string.IsNullOrEmpty(prefix))
-        {
-            return new ValueTask<long>(_memory.LongCount(i => !i.Value.IsExpired));
-        }
-
-        prefix = _GetKey(prefix);
-        var count = _memory.LongCount(x => x.Key.StartsWith(prefix, StringComparison.Ordinal) && !x.Value.IsExpired);
-
-        return new ValueTask<long>(count);
-    }
-
-    public ValueTask<long> GetLongCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         _ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
