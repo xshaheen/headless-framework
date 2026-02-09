@@ -34,11 +34,6 @@ internal sealed class ScheduledJobManager(
             return _JobNotFound(name);
         }
 
-        if (job.Status == ScheduledJobStatus.Running)
-        {
-            return _JobRunning(name);
-        }
-
         var now = timeProvider.GetUtcNow();
 
         job.Status = ScheduledJobStatus.Pending;
@@ -88,11 +83,6 @@ internal sealed class ScheduledJobManager(
         if (job is null)
         {
             return _JobNotFound(name);
-        }
-
-        if (job.Status == ScheduledJobStatus.Running)
-        {
-            return _JobRunning(name);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -159,7 +149,4 @@ internal sealed class ScheduledJobManager(
     }
 
     private static NotFoundError _JobNotFound(string name) => new() { Entity = "ScheduledJob", Key = name };
-
-    private static ConflictError _JobRunning(string name) =>
-        new("scheduling:job_running", $"Job '{name}' is currently running and cannot be modified.");
 }

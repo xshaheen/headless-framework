@@ -235,6 +235,10 @@ public static class Setup
         {
             services.AddHostedService<SchedulerStorageMissingWarningService>();
         }
+        else if (hasDefinitions)
+        {
+            services.AddHostedService<SchedulerStorageMissingWarningService>();
+        }
     }
 
     /// <summary>
