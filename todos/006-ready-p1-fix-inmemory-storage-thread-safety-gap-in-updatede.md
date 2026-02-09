@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "006"
 tags: ["thread-safety","code-review","scheduling"]
@@ -47,3 +47,9 @@ PR #170 code review finding. InMemory storage is used for tests and dev, so corr
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-02-08 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "003"
 tags: ["data-integrity","code-review","scheduling","postgresql"]
@@ -54,3 +54,9 @@ PR #170 code review finding. Related: DisableAsync on running job also affected.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-02-08 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
