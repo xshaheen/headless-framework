@@ -41,6 +41,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     private readonly bool _shouldThrowOnSerializationError;
     private long _currentMemorySize;
     private long _lastMaintenanceTicks;
+    private int _maintenanceRunning;
     private int _isDisposed;
 
     /// <summary>Gets the current memory size in bytes used by the cache.</summary>
@@ -963,6 +964,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         if (existingEntry.IsExpired)
         {
+            _RemoveExpiredKey(key);
             return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
         }
 
@@ -1383,7 +1385,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         return string.IsNullOrEmpty(_keyPrefix) ? key : $"{_keyPrefix}:{key}";
     }
 
-    private IReadOnlyList<string> _GetKeys(string prefix)
+    private List<string> _GetKeys(string prefix)
     {
         var prefixedPrefix = string.IsNullOrEmpty(prefix) ? null : _GetKey(prefix);
 
@@ -1392,15 +1394,16 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 !kvp.Value.IsExpired
                 && (prefixedPrefix is null || kvp.Key.StartsWith(prefixedPrefix, StringComparison.Ordinal))
             )
-            .OrderBy(kvp => kvp.Value.LastAccessTicks)
-            .ThenBy(kvp => kvp.Value.InstanceNumber)
             .Select(kvp => kvp.Key)
             .ToList();
     }
 
     private void _RemoveExpiredKey(string key)
     {
-        _memory.TryRemove(key, out _);
+        if (_memory.TryRemove(key, out var removedEntry))
+        {
+            Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+        }
     }
 
     private async ValueTask<bool> _SetInternalAsync(string key, CacheEntry entry, bool addOnly = false)
@@ -1486,6 +1489,11 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             await _CompactAsync().ConfigureAwait(false);
         }
 
+        if (Volatile.Read(ref _maintenanceRunning) != 0)
+        {
+            return;
+        }
+
         // Use Interlocked.CompareExchange to ensure only one thread spawns maintenance
         var utcNowTicks = utcNow.Ticks;
         var lastTicks = Volatile.Read(ref _lastMaintenanceTicks);
@@ -1496,7 +1504,10 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             // Atomically try to claim the maintenance slot
             if (Interlocked.CompareExchange(ref _lastMaintenanceTicks, utcNowTicks, lastTicks) == lastTicks)
             {
-                _ = Task.Run(_DoMaintenanceAsync, _disposedCts.Token);
+                if (Interlocked.CompareExchange(ref _maintenanceRunning, 1, 0) == 0)
+                {
+                    _ = Task.Run(_DoMaintenanceAsync, _disposedCts.Token);
+                }
             }
         }
     }
@@ -1626,44 +1637,51 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     private async Task _DoMaintenanceAsync()
     {
-        var utcNow = _timeProvider.GetUtcNow().UtcDateTime.AddMilliseconds(50);
-        var lastAccessMaximumTicks = utcNow.AddMilliseconds(-_HotAccessWindowMs).Ticks;
-
         try
         {
-            foreach (var kvp in _memory.ToArray())
+            var utcNow = _timeProvider.GetUtcNow().UtcDateTime.AddMilliseconds(50);
+            var lastAccessMaximumTicks = utcNow.AddMilliseconds(-_HotAccessWindowMs).Ticks;
+
+            try
             {
-                var lastAccessTimeIsInfrequent = kvp.Value.LastAccessTicks < lastAccessMaximumTicks;
-
-                if (!lastAccessTimeIsInfrequent)
+                foreach (var kvp in _memory.ToArray())
                 {
-                    continue;
-                }
+                    var lastAccessTimeIsInfrequent = kvp.Value.LastAccessTicks < lastAccessMaximumTicks;
 
-                var expiresAt = kvp.Value.ExpiresAt;
-
-                if (!expiresAt.HasValue)
-                {
-                    continue;
-                }
-
-                if (expiresAt < DateTime.MaxValue && expiresAt <= utcNow)
-                {
-                    if (_memory.TryRemove(kvp.Key, out var removedEntry))
+                    if (!lastAccessTimeIsInfrequent)
                     {
-                        Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+                        continue;
+                    }
+
+                    var expiresAt = kvp.Value.ExpiresAt;
+
+                    if (!expiresAt.HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (expiresAt < DateTime.MaxValue && expiresAt <= utcNow)
+                    {
+                        if (_memory.TryRemove(kvp.Key, out var removedEntry))
+                        {
+                            Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+                        }
                     }
                 }
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Cache maintenance task failed");
-        }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Cache maintenance task failed");
+            }
 
-        if (ShouldCompact)
+            if (ShouldCompact)
+            {
+                await _CompactAsync().ConfigureAwait(false);
+            }
+        }
+        finally
         {
-            await _CompactAsync().ConfigureAwait(false);
+            Interlocked.Exchange(ref _maintenanceRunning, 0);
         }
     }
 
