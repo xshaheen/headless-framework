@@ -676,21 +676,34 @@ public class RouteActionProvider
             return;
         }
 
-        var repo = _serviceProvider.GetService<ISchedulingDashboardRepository>();
-        if (repo == null)
+        var storage = _serviceProvider.GetService<IScheduledJobStorage>();
+        if (storage == null)
         {
             httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
         }
 
+        var jobs = await storage.GetAllJobsAsync(httpContext.RequestAborted).ConfigureAwait(false);
+
         var nameFilter = httpContext.Request.Query["name"].ToString();
         var statusFilter = httpContext.Request.Query["status"].ToString();
-        var jobs = await repo.GetJobsAsync(
-            string.IsNullOrEmpty(nameFilter) ? null : nameFilter,
-            string.IsNullOrEmpty(statusFilter) ? null : statusFilter,
-            httpContext.RequestAborted
-        );
-        await httpContext.Response.WriteAsJsonAsync(jobs);
+
+        IEnumerable<ScheduledJob> filtered = jobs;
+
+        if (!string.IsNullOrEmpty(nameFilter))
+        {
+            filtered = filtered.Where(j => j.Name.Contains(nameFilter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (
+            !string.IsNullOrEmpty(statusFilter)
+            && Enum.TryParse<ScheduledJobStatus>(statusFilter, ignoreCase: true, out var status)
+        )
+        {
+            filtered = filtered.Where(j => j.Status == status);
+        }
+
+        await httpContext.Response.WriteAsJsonAsync(filtered.OrderBy(j => j.Name, StringComparer.Ordinal).ToList());
     }
 
     public async Task SchedulingJobByName(HttpContext httpContext)
@@ -700,8 +713,8 @@ public class RouteActionProvider
             return;
         }
 
-        var repo = _serviceProvider.GetService<ISchedulingDashboardRepository>();
-        if (repo == null)
+        var storage = _serviceProvider.GetService<IScheduledJobStorage>();
+        if (storage == null)
         {
             httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
@@ -714,7 +727,7 @@ public class RouteActionProvider
             return;
         }
 
-        var job = await repo.GetJobByNameAsync(name, httpContext.RequestAborted);
+        var job = await storage.GetJobByNameAsync(name, httpContext.RequestAborted).ConfigureAwait(false);
         if (job == null)
         {
             httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
@@ -731,8 +744,8 @@ public class RouteActionProvider
             return;
         }
 
-        var repo = _serviceProvider.GetService<ISchedulingDashboardRepository>();
-        if (repo == null)
+        var storage = _serviceProvider.GetService<IScheduledJobStorage>();
+        if (storage == null)
         {
             httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
@@ -746,8 +759,15 @@ public class RouteActionProvider
 
         var page = httpContext.Request.Query["page"].ToInt32OrDefault(0);
         var pageSize = Math.Clamp(httpContext.Request.Query["pageSize"].ToInt32OrDefault(20), 1, _MaxPageSize);
-        var executions = await repo.GetExecutionsAsync(jobId, page, pageSize, httpContext.RequestAborted);
-        await httpContext.Response.WriteAsJsonAsync(executions);
+        var limit = (page + 1) * pageSize;
+
+        var executions = await storage
+            .GetExecutionsAsync(jobId, limit, httpContext.RequestAborted)
+            .ConfigureAwait(false);
+
+        var paged = executions.OrderByDescending(e => e.ScheduledTime).Skip(page * pageSize).Take(pageSize).ToList();
+
+        await httpContext.Response.WriteAsJsonAsync(paged);
     }
 
     public async Task SchedulingGraph(HttpContext httpContext)
@@ -757,8 +777,8 @@ public class RouteActionProvider
             return;
         }
 
-        var repo = _serviceProvider.GetService<ISchedulingDashboardRepository>();
-        if (repo == null)
+        var storage = _serviceProvider.GetService<IScheduledJobStorage>();
+        if (storage == null)
         {
             httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
@@ -771,7 +791,9 @@ public class RouteActionProvider
         }
 
         var days = httpContext.Request.Query["days"].ToInt32OrDefault(7);
-        var graph = await repo.GetExecutionGraphDataAsync(jobId, days, httpContext.RequestAborted);
+        var graph = await storage
+            .GetExecutionStatusCountsAsync(jobId, days, httpContext.RequestAborted)
+            .ConfigureAwait(false);
         await httpContext.Response.WriteAsJsonAsync(graph);
     }
 
@@ -782,15 +804,30 @@ public class RouteActionProvider
             return;
         }
 
-        var repo = _serviceProvider.GetService<ISchedulingDashboardRepository>();
-        if (repo == null)
+        var storage = _serviceProvider.GetService<IScheduledJobStorage>();
+        if (storage == null)
         {
             httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
         }
 
-        var status = await repo.GetSchedulerStatusAsync(httpContext.RequestAborted);
-        await httpContext.Response.WriteAsJsonAsync(status);
+        var jobs = await storage.GetAllJobsAsync(httpContext.RequestAborted).ConfigureAwait(false);
+
+        var byMachine = jobs.Where(j => j.Status == ScheduledJobStatus.Running && !string.IsNullOrEmpty(j.LockHolder))
+            .GroupBy(j => j.LockHolder!, StringComparer.Ordinal)
+            .Select(g => new MachineJobCount { Machine = g.Key, RunningCount = g.Count() })
+            .ToList();
+
+        var summary = new SchedulerStatusSummary
+        {
+            TotalJobs = jobs.Count,
+            RunningJobs = jobs.Count(j => j.Status == ScheduledJobStatus.Running),
+            PendingJobs = jobs.Count(j => j.Status == ScheduledJobStatus.Pending),
+            DisabledJobs = jobs.Count(j => !j.IsEnabled),
+            JobsByMachine = byMachine,
+        };
+
+        await httpContext.Response.WriteAsJsonAsync(summary);
     }
 
     public async Task SchedulingTrigger(HttpContext httpContext)

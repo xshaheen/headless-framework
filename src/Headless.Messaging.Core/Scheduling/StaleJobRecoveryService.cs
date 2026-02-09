@@ -66,7 +66,14 @@ internal sealed class StaleJobRecoveryService(
                 logger.LogError(ex, "Stale job recovery error");
             }
 
-            await Task.Delay(_options.StaleJobCheckInterval, stoppingToken).ConfigureAwait(false);
+            try
+            {
+                await Task.Delay(_options.StaleJobCheckInterval, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 }

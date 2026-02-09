@@ -118,6 +118,33 @@ public sealed class PostgreSqlScheduledJobStorage(
     }
 
     /// <inheritdoc />
+    public async Task<int> GetStaleJobCountAsync(
+        DateTimeOffset threshold,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var sql = $"""
+            SELECT COUNT(*)
+            FROM {_jobsTable}
+            WHERE "Status" = @RunningStatus
+              AND "DateLocked" IS NOT NULL
+              AND "DateLocked" < @Threshold;
+            """;
+
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@RunningStatus", ScheduledJobStatus.Running.ToString("G")),
+            new NpgsqlParameter("@Threshold", threshold),
+        ];
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+
+        return await connection
+            .ExecuteScalarAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task UpsertJobAsync(ScheduledJob job, CancellationToken cancellationToken = default)
     {
         var now = timeProvider.GetUtcNow();
@@ -282,6 +309,35 @@ public sealed class PostgreSqlScheduledJobStorage(
 
         return await connection
             .ExecuteReaderAsync(sql, _ReadExecutionsAsync, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<ExecutionStatusCount>> GetExecutionStatusCountsAsync(
+        Guid jobId,
+        int days = 7,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var cutoff = timeProvider.GetUtcNow().AddDays(-days);
+
+        var sql = $"""
+            SELECT DATE_TRUNC('day', "ScheduledTime") AS "Day",
+                   "Status",
+                   COUNT(*)::int AS "Count"
+            FROM {_executionsTable}
+            WHERE "JobId" = @JobId
+              AND "ScheduledTime" >= @Cutoff
+            GROUP BY "Day", "Status"
+            ORDER BY "Day", "Status";
+            """;
+
+        object[] sqlParams = [new NpgsqlParameter("@JobId", jobId), new NpgsqlParameter("@Cutoff", cutoff)];
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+
+        return await connection
+            .ExecuteReaderAsync(sql, _ReadStatusCountsAsync, cancellationToken: cancellationToken, sqlParams: sqlParams)
             .ConfigureAwait(false);
     }
 
@@ -467,6 +523,28 @@ public sealed class PostgreSqlScheduledJobStorage(
         }
 
         return executions;
+    }
+
+    private static async Task<List<ExecutionStatusCount>> _ReadStatusCountsAsync(
+        System.Data.Common.DbDataReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        var counts = new List<ExecutionStatusCount>();
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            counts.Add(
+                new ExecutionStatusCount
+                {
+                    Date = new DateTimeOffset(reader.GetDateTime(0), TimeSpan.Zero),
+                    Status = reader.GetString(1),
+                    Count = reader.GetInt32(2),
+                }
+            );
+        }
+
+        return counts;
     }
 
     // CA1508 false positive: nullable value types can be null, but analyzer doesn't recognize this pattern

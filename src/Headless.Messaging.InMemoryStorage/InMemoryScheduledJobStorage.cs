@@ -60,6 +60,17 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
         return Task.FromResult(jobs);
     }
 
+    public Task<int> GetStaleJobCountAsync(DateTimeOffset threshold, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var count = _jobs.Values.Count(j =>
+            j.Status == ScheduledJobStatus.Running && j.DateLocked.HasValue && j.DateLocked.Value < threshold
+        );
+
+        return Task.FromResult(count);
+    }
+
     public async Task UpsertJobAsync(ScheduledJob job, CancellationToken cancellationToken = default)
     {
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -143,6 +154,31 @@ internal sealed class InMemoryScheduledJobStorage(TimeProvider timeProvider) : I
             .ToList();
 
         return Task.FromResult(executions);
+    }
+
+    public Task<IReadOnlyList<ExecutionStatusCount>> GetExecutionStatusCountsAsync(
+        Guid jobId,
+        int days = 7,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var cutoff = timeProvider.GetUtcNow().AddDays(-days);
+
+        IReadOnlyList<ExecutionStatusCount> result = _executions
+            .Values.Where(e => e.JobId == jobId && e.ScheduledTime >= cutoff)
+            .GroupBy(e => new { e.ScheduledTime.Date, e.Status })
+            .Select(g => new ExecutionStatusCount
+            {
+                Date = new DateTimeOffset(g.Key.Date, TimeSpan.Zero),
+                Status = g.Key.Status.ToString(),
+                Count = g.Count(),
+            })
+            .OrderBy(s => s.Date)
+            .ThenBy(s => s.Status, StringComparer.Ordinal)
+            .ToList();
+
+        return Task.FromResult(result);
     }
 
     public async Task<int> TimeoutStaleExecutionsAsync(CancellationToken cancellationToken = default)

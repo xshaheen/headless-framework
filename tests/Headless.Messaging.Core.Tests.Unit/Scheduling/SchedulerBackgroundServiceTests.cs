@@ -243,6 +243,27 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
     }
 
     [Fact]
+    public async Task should_stop_without_throwing_when_cancelled_during_delay()
+    {
+        // given — storage returns empty so the service enters the delay phase
+        _storage
+            .AcquireDueJobsAsync(Arg.Any<int>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_EmptyJobs);
+
+        var sut = _CreateService();
+
+        // when — start and cancel while the service is in Task.Delay
+        using var cts = new CancellationTokenSource();
+        await sut.StartAsync(cts.Token);
+        await Task.Delay(50, CancellationToken.None);
+        await cts.CancelAsync();
+
+        // then — StopAsync completes without OperationCanceledException
+        var act = () => sut.StopAsync(CancellationToken.None);
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public async Task should_cancel_job_when_timeout_exceeded()
     {
         // given

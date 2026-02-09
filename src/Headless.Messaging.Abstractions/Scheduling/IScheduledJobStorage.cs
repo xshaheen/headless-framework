@@ -60,6 +60,17 @@ public interface IScheduledJobStorage
     Task<IReadOnlyList<ScheduledJob>> GetAllJobsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the number of stale jobs — jobs in <see cref="ScheduledJobStatus.Running"/>
+    /// status whose <see cref="ScheduledJob.DateLocked"/> is older than <paramref name="threshold"/>.
+    /// </summary>
+    /// <param name="threshold">
+    /// The absolute point in time before which a locked-and-running job is considered stale.
+    /// </param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>The count of stale jobs.</returns>
+    Task<int> GetStaleJobCountAsync(DateTimeOffset threshold, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Inserts a new job or updates an existing job matched by <see cref="ScheduledJob.Name"/>.
     /// </summary>
     /// <param name="job">The job to insert or update.</param>
@@ -113,6 +124,21 @@ public interface IScheduledJobStorage
     Task<IReadOnlyList<JobExecution>> GetExecutionsAsync(
         Guid jobId,
         int limit,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Returns execution counts grouped by UTC date and status for a given job,
+    /// covering the last <paramref name="days"/> days. Implementations should push the
+    /// aggregation to the storage engine (e.g. SQL GROUP BY) rather than fetching raw rows.
+    /// </summary>
+    /// <param name="jobId">The job identifier to filter executions by.</param>
+    /// <param name="days">Number of past days to include (default 7).</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>A list of per-date, per-status counts ordered by date then status.</returns>
+    Task<IReadOnlyList<ExecutionStatusCount>> GetExecutionStatusCountsAsync(
+        Guid jobId,
+        int days = 7,
         CancellationToken cancellationToken = default
     );
 
