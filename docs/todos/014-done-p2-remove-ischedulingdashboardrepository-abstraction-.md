@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p2
 issue_id: "014"
 tags: ["architecture","performance","code-review","scheduling"]
@@ -39,8 +39,8 @@ Push time-bucket aggregation into SQL. Remove ISchedulingDashboardRepository if 
 
 ## Acceptance Criteria
 
-- [ ] Graph endpoint does not fetch 10K rows into memory
-- [ ] SQL performs aggregation server-side
+- [x] Graph endpoint does not fetch 10K rows into memory
+- [x] SQL performs aggregation server-side
 
 ## Notes
 
@@ -59,3 +59,14 @@ PR #170 code review finding.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-02-09 - Implemented
+
+**By:** Agent
+**Actions:**
+- Removed `ISchedulingDashboardRepository` interface and `SchedulingDashboardRepository` implementation
+- Added `GetExecutionStatusCountsAsync` to `IScheduledJobStorage` with SQL GROUP BY aggregation
+- PostgreSQL: server-side DATE_TRUNC + GROUP BY replaces 10K row fetch
+- InMemory: equivalent LINQ GroupBy for dev/test
+- Dashboard endpoints now use `IScheduledJobStorage` directly
+- Status changed: ready → done
