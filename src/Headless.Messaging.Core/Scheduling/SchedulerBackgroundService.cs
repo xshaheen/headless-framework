@@ -77,7 +77,14 @@ internal sealed class SchedulerBackgroundService(
                 logger.LogError(ex, "Scheduler polling error");
             }
 
-            await Task.Delay(_currentInterval, stoppingToken).ConfigureAwait(false);
+            try
+            {
+                await Task.Delay(_currentInterval, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 

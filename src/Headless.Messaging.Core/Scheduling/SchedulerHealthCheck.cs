@@ -25,21 +25,13 @@ internal sealed class SchedulerHealthCheck(
 
         try
         {
-            var jobs = await storage.GetAllJobsAsync(cancellationToken).ConfigureAwait(false);
+            var threshold = timeProvider.GetUtcNow() - options.Value.StaleJobThreshold;
+            var staleCount = await storage.GetStaleJobCountAsync(threshold, cancellationToken).ConfigureAwait(false);
             sw.Stop();
-
-            var threshold = options.Value.StaleJobThreshold;
-            var now = timeProvider.GetUtcNow();
-            var staleCount = jobs.Count(j =>
-                j.Status == ScheduledJobStatus.Running
-                && j.DateLocked.HasValue
-                && (now - j.DateLocked.Value) > threshold
-            );
 
             var data = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 { "stale_jobs", staleCount },
-                { "total_jobs", jobs.Count },
                 { "latency_ms", sw.Elapsed.TotalMilliseconds },
             };
 
