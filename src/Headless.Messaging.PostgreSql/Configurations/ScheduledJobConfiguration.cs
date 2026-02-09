@@ -18,74 +18,70 @@ public sealed class ScheduledJobConfiguration(string schema = PostgreSqlEntityFr
 
         builder.Property(x => x.Id).ValueGeneratedNever();
 
-        builder.Property(x => x.Name)
-            .IsRequired()
-            .HasMaxLength(200);
+        builder.Property(x => x.Name).IsRequired().HasMaxLength(200);
 
-        builder.HasIndex(x => x.Name)
-            .IsUnique()
-            .HasDatabaseName("ix_scheduled_jobs_name");
+        builder.HasIndex(x => x.Name).IsUnique().HasDatabaseName("ix_scheduled_jobs_name");
 
-        builder.Property(x => x.Type)
+        builder.Property(x => x.Type).IsRequired().HasConversion<string>().HasMaxLength(20);
+
+        builder.Property(x => x.CronExpression).HasMaxLength(100);
+
+        builder.Property(x => x.TimeZone).IsRequired().HasMaxLength(100).HasDefaultValue("UTC");
+
+        builder.Property(x => x.Payload).HasColumnType("text");
+
+        builder.Property(x => x.Status).IsRequired().HasConversion<string>().HasMaxLength(50);
+
+        builder.Property(x => x.NextRunTime).HasColumnType("timestamptz");
+
+        builder.Property(x => x.LastRunTime).HasColumnType("timestamptz");
+
+        builder.Property(x => x.LastRunDuration).HasColumnType("bigint");
+
+        builder.Property(x => x.MaxRetries).IsRequired().HasDefaultValue(0);
+
+        builder.Property(x => x.RetryIntervals).HasColumnType("integer[]");
+
+        builder.Property(x => x.SkipIfRunning).IsRequired().HasDefaultValue(true);
+
+        builder.Property(x => x.LockHolder).HasMaxLength(256);
+
+        builder.Property(x => x.DateLocked).HasColumnType("timestamptz");
+
+        builder.Property(x => x.IsEnabled).IsRequired().HasDefaultValue(true);
+
+        builder.Property(x => x.DateCreated).IsRequired().HasColumnType("timestamptz");
+
+        builder.Property(x => x.DateUpdated).IsRequired().HasColumnType("timestamptz");
+
+        builder
+            .Property(x => x.Timeout)
+            .HasColumnType("bigint")
+            .HasConversion(
+                v => v.HasValue ? (long?)v.Value.TotalMilliseconds : null,
+                v => v.HasValue ? TimeSpan.FromMilliseconds(v.Value) : null
+            );
+
+        builder
+            .Property(x => x.MisfireStrategy)
             .IsRequired()
             .HasConversion<string>()
-            .HasMaxLength(20);
+            .HasMaxLength(50)
+            .HasDefaultValue(MisfireStrategy.FireImmediately);
 
-        builder.Property(x => x.CronExpression)
-            .HasMaxLength(100);
+        builder.Property(x => x.ConsumerTypeName).HasMaxLength(500);
 
-        builder.Property(x => x.TimeZone)
-            .IsRequired()
-            .HasMaxLength(100)
-            .HasDefaultValue("UTC");
-
-        builder.Property(x => x.Payload)
-            .HasColumnType("text");
-
-        builder.Property(x => x.Status)
-            .IsRequired()
-            .HasConversion<string>()
-            .HasMaxLength(50);
-
-        builder.Property(x => x.NextRunTime)
-            .HasColumnType("timestamptz");
-
-        builder.Property(x => x.LastRunTime)
-            .HasColumnType("timestamptz");
-
-        builder.Property(x => x.RetryCount)
-            .IsRequired()
-            .HasDefaultValue(0);
-
-        builder.Property(x => x.SkipIfRunning)
-            .IsRequired()
-            .HasDefaultValue(true);
-
-        builder.Property(x => x.LockHolder)
-            .HasMaxLength(256);
-
-        builder.Property(x => x.LockedAt)
-            .HasColumnType("timestamptz");
-
-        builder.Property(x => x.IsEnabled)
-            .IsRequired()
-            .HasDefaultValue(true);
-
-        builder.Property(x => x.DateCreated)
-            .IsRequired()
-            .HasColumnType("timestamptz");
-
-        builder.Property(x => x.DateUpdated)
-            .IsRequired()
-            .HasColumnType("timestamptz");
+        builder.Property(x => x.Version).IsRequired().HasDefaultValue(0L).IsConcurrencyToken();
 
         // Partial index: pending + enabled jobs eligible for next run pickup
-        builder.HasIndex(x => x.NextRunTime)
+        builder
+            .HasIndex(x => x.NextRunTime)
             .HasDatabaseName("ix_scheduled_jobs_next_run")
             .HasFilter("\"Status\" IN ('Pending') AND \"IsEnabled\" = true");
 
         // Partial index: running jobs for lock management
-        builder.HasIndex(x => new { x.LockHolder, x.LockedAt })
+        builder
+            .HasIndex(x => new { x.LockHolder, x.DateLocked })
             .HasDatabaseName("ix_scheduled_jobs_lock")
             .HasFilter("\"Status\" = 'Running'");
 

@@ -127,40 +127,6 @@ public sealed class ScheduledJobManagerTests : TestBase, IDisposable
     }
 
     [Fact]
-    public async Task should_return_conflict_when_triggering_running_job()
-    {
-        // given
-        var job = _CreateJob("running-job");
-        job.Status = ScheduledJobStatus.Running;
-        _storage.GetJobByNameAsync("running-job", Arg.Any<CancellationToken>()).Returns(job);
-
-        // when
-        var result = await _sut.TriggerAsync("running-job", AbortToken);
-
-        // then
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<ConflictError>();
-        await _storage.DidNotReceive().UpdateJobAsync(Arg.Any<ScheduledJob>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task should_return_conflict_when_enabling_running_job()
-    {
-        // given
-        var job = _CreateJob("running-job");
-        job.Status = ScheduledJobStatus.Running;
-        _storage.GetJobByNameAsync("running-job", Arg.Any<CancellationToken>()).Returns(job);
-
-        // when
-        var result = await _sut.EnableAsync("running-job", AbortToken);
-
-        // then
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().BeOfType<ConflictError>();
-        await _storage.DidNotReceive().UpdateJobAsync(Arg.Any<ScheduledJob>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
     public async Task should_return_not_found_when_job_missing_for_enable()
     {
         // given

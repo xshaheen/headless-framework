@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Messages;
 using Headless.Messaging.Scheduling;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,13 +52,14 @@ public sealed class ScheduledJobDispatcherTests : TestBase
         capturedContext!.MessageId.Should().Be(execution.Id.ToString());
         capturedContext.Topic.Should().Be(job.Name);
         capturedContext.Timestamp.Should().Be(execution.ScheduledTime);
-        capturedContext.CorrelationId.Should().BeNull();
+        capturedContext.CorrelationId.Should().Be(execution.Id.ToString());
+        capturedContext.Headers[Headers.CorrelationId].Should().Be(execution.Id.ToString());
+        capturedContext.Headers[Headers.CorrelationSequence].Should().Be("0");
         capturedContext.Message.JobName.Should().Be(job.Name);
         capturedContext.Message.ScheduledTime.Should().Be(execution.ScheduledTime);
         capturedContext.Message.Attempt.Should().Be(3); // RetryAttempt + 1
         capturedContext.Message.CronExpression.Should().Be("*/5 * * * * *");
         capturedContext.Message.Payload.Should().Be("""{"key":"value"}""");
-        capturedContext.Message.ParentJobId.Should().BeNull();
     }
 
     [Fact]
@@ -77,7 +79,7 @@ public sealed class ScheduledJobDispatcherTests : TestBase
         var services = new ServiceCollection();
         services.AddKeyedScoped<IConsume<ScheduledTrigger>>("scoped-job", (_, _) => handler);
         var sp = services.BuildServiceProvider();
-        var sut = new ScheduledJobDispatcher(sp.GetRequiredService<IServiceScopeFactory>());
+        var sut = new ScheduledJobDispatcher(sp.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
 
         var now = DateTimeOffset.UtcNow;
         var job = _CreateJob("scoped-job", now);
@@ -148,6 +150,85 @@ public sealed class ScheduledJobDispatcherTests : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("handler failure");
     }
 
+    [Fact]
+    public async Task should_set_correlation_scope_during_handler_execution()
+    {
+        // given
+        MessagingCorrelationScope? capturedScope = null;
+        var handler = Substitute.For<IConsume<ScheduledTrigger>>();
+        handler
+            .Consume(Arg.Any<ConsumeContext<ScheduledTrigger>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                capturedScope = MessagingCorrelationScope.Current;
+                return ValueTask.CompletedTask;
+            });
+
+        var (sut, job, execution) = _CreateSut(handler);
+
+        // when
+        await sut.DispatchAsync(job, execution, AbortToken);
+
+        // then
+        capturedScope.Should().NotBeNull();
+        capturedScope!.CorrelationId.Should().Be(execution.Id.ToString());
+    }
+
+    [Fact]
+    public async Task should_dispose_correlation_scope_after_handler_completes()
+    {
+        // given
+        var handler = Substitute.For<IConsume<ScheduledTrigger>>();
+        var (sut, job, execution) = _CreateSut(handler);
+
+        // when
+        await sut.DispatchAsync(job, execution, AbortToken);
+
+        // then
+        MessagingCorrelationScope.Current.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_dispose_correlation_scope_when_handler_throws()
+    {
+        // given
+        var handler = Substitute.For<IConsume<ScheduledTrigger>>();
+        handler
+            .Consume(Arg.Any<ConsumeContext<ScheduledTrigger>>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask>(_ => throw new InvalidOperationException("handler failure"));
+
+        var (sut, job, execution) = _CreateSut(handler);
+
+        // when
+        var act = () => sut.DispatchAsync(job, execution, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        MessagingCorrelationScope.Current.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_throw_when_consumer_type_does_not_implement_iconsume()
+    {
+        // given
+        var now = DateTimeOffset.UtcNow;
+        var services = new ServiceCollection();
+        var sp = services.BuildServiceProvider();
+        var sut = new ScheduledJobDispatcher(sp.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
+
+        var job = _CreateJob("invalid-consumer-job", now);
+        job.ConsumerTypeName = typeof(string).AssemblyQualifiedName!;
+        var execution = _CreateExecution(job, now);
+
+        // when
+        var act = () => sut.DispatchAsync(job, execution, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*does not implement IConsume<ScheduledTrigger>*");
+    }
+
     // -- helpers --
 
     private (ScheduledJobDispatcher Sut, ScheduledJob Job, JobExecution Execution) _CreateSut(
@@ -161,7 +242,7 @@ public sealed class ScheduledJobDispatcherTests : TestBase
         services.AddKeyedSingleton<IConsume<ScheduledTrigger>>(jobName, handler);
         var sp = services.BuildServiceProvider();
 
-        var sut = new ScheduledJobDispatcher(sp.GetRequiredService<IServiceScopeFactory>());
+        var sut = new ScheduledJobDispatcher(sp.GetRequiredService<IServiceScopeFactory>(), TimeProvider.System);
         var job = _CreateJob(jobName, now);
         var execution = _CreateExecution(job, now);
 
@@ -179,11 +260,12 @@ public sealed class ScheduledJobDispatcherTests : TestBase
             TimeZone = "UTC",
             Status = ScheduledJobStatus.Running,
             NextRunTime = now,
-            RetryCount = 0,
+            MaxRetries = 0,
             SkipIfRunning = false,
             IsEnabled = true,
             DateCreated = now,
             DateUpdated = now,
+            MisfireStrategy = MisfireStrategy.FireImmediately,
         };
     }
 
@@ -194,7 +276,7 @@ public sealed class ScheduledJobDispatcherTests : TestBase
             Id = Guid.NewGuid(),
             JobId = job.Id,
             ScheduledTime = now,
-            StartedAt = now,
+            DateStarted = now,
             Status = JobExecutionStatus.Running,
             RetryAttempt = 0,
         };

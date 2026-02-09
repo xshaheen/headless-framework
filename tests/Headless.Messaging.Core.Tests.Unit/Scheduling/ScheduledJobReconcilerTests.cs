@@ -3,24 +3,28 @@
 using Headless.Messaging;
 using Headless.Messaging.Scheduling;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Scheduling;
 
-public sealed class SchedulerJobReconcilerTests : TestBase
+public sealed class ScheduledJobReconcilerTests : TestBase, IDisposable
 {
     private readonly ScheduledJobDefinitionRegistry _registry = new();
     private readonly IScheduledJobStorage _storage = Substitute.For<IScheduledJobStorage>();
     private readonly CronScheduleCache _cronCache = new();
-    private readonly FakeTimeProvider _timeProvider = new(new DateTimeOffset(2025, 6, 1, 12, 0, 0, TimeSpan.Zero));
-    private readonly ILogger<SchedulerJobReconciler> _logger;
-    private readonly SchedulerJobReconciler _sut;
 
-    public SchedulerJobReconcilerTests()
+    public void Dispose() => _cronCache.Dispose();
+
+    private readonly FakeTimeProvider _timeProvider = new(new DateTimeOffset(2025, 6, 1, 12, 0, 0, TimeSpan.Zero));
+    private readonly ILogger<ScheduledJobReconciler> _logger;
+    private readonly IConfiguration _configuration;
+
+    public ScheduledJobReconcilerTests()
     {
-        _logger = LoggerFactory.CreateLogger<SchedulerJobReconciler>();
-        _sut = new SchedulerJobReconciler(_registry, _storage, _cronCache, _timeProvider, _logger);
+        _logger = LoggerFactory.CreateLogger<ScheduledJobReconciler>();
+        _configuration = new ConfigurationBuilder().Build();
     }
 
     [Fact]
@@ -39,8 +43,10 @@ public sealed class SchedulerJobReconcilerTests : TestBase
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[]);
 
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+
         // when
-        await _sut.StartAsync(AbortToken);
+        await sut.StartAsync(AbortToken);
 
         // then
         await _storage
@@ -74,8 +80,10 @@ public sealed class SchedulerJobReconcilerTests : TestBase
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[]);
 
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+
         // when
-        await _sut.StartAsync(AbortToken);
+        await sut.StartAsync(AbortToken);
 
         // then — upsert is called with the new cron expression
         await _storage
@@ -106,8 +114,10 @@ public sealed class SchedulerJobReconcilerTests : TestBase
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[existingJob]);
 
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+
         // when
-        await _sut.StartAsync(AbortToken);
+        await sut.StartAsync(AbortToken);
 
         // then
         await _storage
@@ -143,8 +153,10 @@ public sealed class SchedulerJobReconcilerTests : TestBase
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[existingJob]);
 
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+
         // when
-        await _sut.StartAsync(AbortToken);
+        await sut.StartAsync(AbortToken);
 
         // then — upsert called for the definition, but UpdateJobAsync not called to disable
         await _storage
@@ -162,9 +174,10 @@ public sealed class SchedulerJobReconcilerTests : TestBase
     public async Task should_skip_reconciliation_when_no_definitions_registered()
     {
         // given — no definitions added to registry
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
 
         // when
-        await _sut.StartAsync(AbortToken);
+        await sut.StartAsync(AbortToken);
 
         // then — no storage calls
         await _storage.DidNotReceive().UpsertJobAsync(Arg.Any<ScheduledJob>(), Arg.Any<CancellationToken>());
@@ -190,8 +203,10 @@ public sealed class SchedulerJobReconcilerTests : TestBase
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[]);
 
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+
         // when
-        await _sut.StartAsync(AbortToken);
+        await sut.StartAsync(AbortToken);
 
         // then
         await _storage
@@ -226,14 +241,119 @@ public sealed class SchedulerJobReconcilerTests : TestBase
 
         _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[oneTimeJob]);
 
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+
         // when
-        await _sut.StartAsync(AbortToken);
+        await sut.StartAsync(AbortToken);
 
         // then — one-time jobs should not be disabled by reconciler
         await _storage
             .DidNotReceive()
             .UpdateJobAsync(
                 Arg.Is<ScheduledJob>(j => j.Name == "one-time" && j.Status == ScheduledJobStatus.Disabled),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_use_config_cron_when_override_present()
+    {
+        // given
+        _registry.Add(
+            new ScheduledJobDefinition
+            {
+                Name = "config-job",
+                ConsumerType = typeof(object),
+                CronExpression = "0 0 0 * * *",
+                TimeZone = "UTC",
+            }
+        );
+
+        _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[]);
+
+        var configData = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            { "Messaging:Scheduling:Jobs:config-job:CronExpression", "0 */15 * * * *" },
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(configData).Build();
+
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, configuration, _logger);
+
+        // when
+        await sut.StartAsync(AbortToken);
+
+        // then
+        await _storage
+            .Received(1)
+            .UpsertJobAsync(
+                Arg.Is<ScheduledJob>(j => j.Name == "config-job" && j.CronExpression == "0 */15 * * * *"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_fallback_to_attribute_cron_when_config_is_invalid()
+    {
+        // given
+        _registry.Add(
+            new ScheduledJobDefinition
+            {
+                Name = "fallback-job",
+                ConsumerType = typeof(object),
+                CronExpression = "0 0 0 * * *",
+                TimeZone = "UTC",
+            }
+        );
+
+        _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[]);
+
+        var configData = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            { "Messaging:Scheduling:Jobs:fallback-job:CronExpression", "invalid-cron" },
+        };
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(configData).Build();
+
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, configuration, _logger);
+
+        // when
+        await sut.StartAsync(AbortToken);
+
+        // then
+        await _storage
+            .Received(1)
+            .UpsertJobAsync(
+                Arg.Is<ScheduledJob>(j => j.Name == "fallback-job" && j.CronExpression == "0 0 0 * * *"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_use_attribute_cron_when_no_config_override()
+    {
+        // given
+        _registry.Add(
+            new ScheduledJobDefinition
+            {
+                Name = "attribute-job",
+                ConsumerType = typeof(object),
+                CronExpression = "0 0 12 * * *",
+                TimeZone = "UTC",
+            }
+        );
+
+        _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[]);
+
+        var configuration = new ConfigurationBuilder().Build();
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, configuration, _logger);
+
+        // when
+        await sut.StartAsync(AbortToken);
+
+        // then
+        await _storage
+            .Received(1)
+            .UpsertJobAsync(
+                Arg.Is<ScheduledJob>(j => j.Name == "attribute-job" && j.CronExpression == "0 0 12 * * *"),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -252,11 +372,12 @@ public sealed class SchedulerJobReconcilerTests : TestBase
             TimeZone = "UTC",
             Status = ScheduledJobStatus.Pending,
             NextRunTime = now.AddDays(1),
-            RetryCount = 0,
+            MaxRetries = 0,
             SkipIfRunning = true,
             IsEnabled = true,
             DateCreated = now,
             DateUpdated = now,
+            MisfireStrategy = MisfireStrategy.FireImmediately,
         };
     }
 }
