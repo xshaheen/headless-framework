@@ -635,6 +635,12 @@ public sealed class RedisCache(
 
     public async ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
+        var count = await GetLongCountAsync(prefix, cancellationToken).ConfigureAwait(false);
+        return count > int.MaxValue ? int.MaxValue : (int)count;
+    }
+
+    public async ValueTask<long> GetLongCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
         var endpoints = options.ConnectionMultiplexer.GetEndPoints();
@@ -667,7 +673,7 @@ public sealed class RedisCache(
                 }
             }
 
-            return total > int.MaxValue ? int.MaxValue : (int)total;
+            return total;
         }
 
         const int chunkSize = 2500;
@@ -688,14 +694,10 @@ public sealed class RedisCache(
             )
             {
                 count++;
-                if (count >= int.MaxValue)
-                {
-                    return int.MaxValue;
-                }
             }
         }
 
-        return (int)count;
+        return count;
     }
 
     public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
