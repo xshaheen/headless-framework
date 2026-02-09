@@ -1,6 +1,6 @@
 {
 	"name": "execution-graph",
-	"description": "Job/message hierarchy tracking: parent-child relationships, causation chains, fan-out/fan-in patterns across scheduling and messaging subsystems",
+	"description": "Job/message hierarchy tracking: parent-child relationships, causation chains, and job chaining across scheduling and messaging subsystems",
 	"created_at": "2026-02-09T00:00:00Z",
 	"status": "planned",
 	"branches": {
@@ -88,13 +88,13 @@
 		{
 			"id": "EG-004",
 			"title": "Child Job Triggering Engine",
-			"size": "L",
+			"size": "M",
 			"priority": 4,
 			"pass": null,
 			"attempts": 0,
 			"commits": [],
 			"notes": "",
-			"description": "After parent execution completes, query child jobs, evaluate RunCondition, trigger matching children. Propagate ParentExecutionId/RootExecutionId. Enforce depth and fan-out limits.",
+			"description": "After parent execution completes, query child jobs, evaluate RunCondition, trigger matching children. Propagate ParentExecutionId/RootExecutionId. Enforce depth limit.",
 			"filesToStudy": [
 				"src/Headless.Messaging.Core/Scheduling/ScheduledJobExecutor.cs",
 				"src/Headless.Messaging.Core/Scheduling/ScheduledJobDispatcher.cs"
@@ -105,59 +105,36 @@
 				"Matching children: set NextRunTime = now, create execution with hierarchy IDs",
 				"RootExecutionId propagation: inherit from parent or parent becomes root",
 				"Depth check: reject if >= MaxJobDepth",
-				"Fan-out check: reject if >= MaxFanOut",
 				"ScheduledTrigger hierarchy fields populated",
 				"Unit tests for triggering logic"
 			]
 		},
 		{
 			"id": "EG-005",
-			"title": "Fan-In Detection",
-			"size": "M",
+			"title": "IScheduledJobManager Extensions",
+			"size": "S",
 			"priority": 5,
 			"pass": null,
 			"attempts": 0,
 			"commits": [],
 			"notes": "",
-			"description": "When all sibling child jobs complete, trigger a designated fan-in continuation. Add IsFanInContinuation flag. Atomic check to prevent double-triggering under concurrency.",
-			"filesToStudy": [
-				"src/Headless.Messaging.Core/Scheduling/ScheduledJobExecutor.cs",
-				"src/Headless.Messaging.Abstractions/Scheduling/ScheduledJob.cs"
-			],
-			"acceptanceCriteria": [
-				"ScheduledJob.IsFanInContinuation (bool) added",
-				"After child completes: check if continuation exists among siblings",
-				"Verify all non-continuation siblings complete before triggering",
-				"Atomic check prevents double-triggering under concurrency",
-				"Unit tests: 3 parallel children + 1 continuation"
-			]
-		},
-		{
-			"id": "EG-006",
-			"title": "IScheduledJobManager Extensions",
-			"size": "S",
-			"priority": 6,
-			"pass": null,
-			"attempts": 0,
-			"commits": [],
-			"notes": "",
-			"description": "Add ScheduleChildAsync and GetExecutionTreeAsync to IScheduledJobManager. Validate parent exists, depth limit, fan-out limit.",
+			"description": "Add ScheduleChildAsync and GetExecutionTreeAsync to IScheduledJobManager. Validate parent exists and depth limit.",
 			"filesToStudy": [
 				"src/Headless.Messaging.Abstractions/Scheduling/IScheduledJobManager.cs",
 				"src/Headless.Messaging.Core/Scheduling/ScheduledJobManager.cs"
 			],
 			"acceptanceCriteria": [
-				"ScheduleChildAsync validates parent exists, depth, fan-out",
+				"ScheduleChildAsync validates parent exists and depth limit",
 				"GetExecutionTreeAsync delegates to storage",
 				"Throws InvalidOperationException on limit violations",
 				"Unit tests for validation edge cases"
 			]
 		},
 		{
-			"id": "EG-007",
+			"id": "EG-006",
 			"title": "Update ScheduledTrigger with Hierarchy Data",
 			"size": "S",
-			"priority": 7,
+			"priority": 6,
 			"pass": null,
 			"attempts": 0,
 			"commits": [],
@@ -174,22 +151,20 @@
 			]
 		},
 		{
-			"id": "EG-008",
+			"id": "EG-007",
 			"title": "Integration Tests",
-			"size": "L",
-			"priority": 8,
+			"size": "M",
+			"priority": 7,
 			"pass": null,
 			"attempts": 0,
 			"commits": [],
 			"notes": "",
-			"description": "End-to-end hierarchy scenarios: chain, fan-out, fan-in, run conditions, depth limits, causation header propagation. Testcontainers + PostgreSQL.",
+			"description": "End-to-end hierarchy scenarios: chain, run conditions, depth limits, causation header propagation. Testcontainers + PostgreSQL.",
 			"filesToStudy": [
 				"tests/Headless.Messaging.Core.Tests.Integration/Scheduling/"
 			],
 			"acceptanceCriteria": [
 				"Chain test: A→B→C with correct ParentExecutionId chain",
-				"Fan-out test: A→(B,C,D) all triggered",
-				"Fan-in test: A→(B,C,D)+E continuation fires after all complete",
 				"Condition tests: OnParentSuccess/OnParentFailure behavior",
 				"Depth limit enforcement test",
 				"Causation headers propagation through job→message→child chain",
@@ -197,15 +172,15 @@
 			]
 		},
 		{
-			"id": "EG-009",
+			"id": "EG-008",
 			"title": "Configuration + Documentation",
 			"size": "S",
-			"priority": 9,
+			"priority": 8,
 			"pass": null,
 			"attempts": 0,
 			"commits": [],
 			"notes": "",
-			"description": "Add MaxJobDepth and MaxFanOut to SchedulingOptions. Document hierarchy features in README with examples.",
+			"description": "Add MaxJobDepth to SchedulingOptions. Document hierarchy features in README with examples.",
 			"filesToStudy": [
 				"src/Headless.Messaging.Core/Scheduling/SchedulingOptions.cs",
 				"src/Headless.Messaging.Core/README.md",
@@ -213,9 +188,8 @@
 			],
 			"acceptanceCriteria": [
 				"SchedulingOptions.MaxJobDepth defaults to 5",
-				"SchedulingOptions.MaxFanOut defaults to 10",
-				"README documents chaining API, fan-in pattern, causation headers",
-				"Code examples for common patterns"
+				"README documents chaining API, causation headers",
+				"Code examples for common patterns (A→B chain, A→B on failure)"
 			]
 		}
 	],
