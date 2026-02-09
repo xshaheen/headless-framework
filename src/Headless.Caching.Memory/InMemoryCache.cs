@@ -964,7 +964,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         if (existingEntry.IsExpired)
         {
-            _RemoveExpiredKey(key);
+            _memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, existingEntry));
             return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
         }
 
