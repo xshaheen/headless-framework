@@ -185,6 +185,9 @@ public static class InMemoryCacheSetup
         public ValueTask<int> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
             inMemoryCache.GetCountAsync(prefix, cancellationToken);
 
+        public ValueTask<long> GetLongCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
+            inMemoryCache.GetLongCountAsync(prefix, cancellationToken);
+
         public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
             inMemoryCache.ExistsAsync(key, cancellationToken);
 

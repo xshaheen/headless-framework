@@ -1055,6 +1055,22 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         return new ValueTask<int>(count);
     }
 
+    public ValueTask<long> GetLongCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    {
+        _ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (string.IsNullOrEmpty(prefix))
+        {
+            return new ValueTask<long>(_memory.LongCount(i => !i.Value.IsExpired));
+        }
+
+        prefix = _GetKey(prefix);
+        var count = _memory.LongCount(x => x.Key.StartsWith(prefix, StringComparison.Ordinal) && !x.Value.IsExpired);
+
+        return new ValueTask<long>(count);
+    }
+
     public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
     {
         _ThrowIfDisposed();
