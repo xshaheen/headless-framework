@@ -2,15 +2,19 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Scheduling;
+using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Scheduling;
 
-public sealed class ScheduledJobManagerTests : TestBase
+public sealed class ScheduledJobManagerTests : TestBase, IDisposable
 {
     private readonly IScheduledJobStorage _storage = Substitute.For<IScheduledJobStorage>();
     private readonly CronScheduleCache _cronCache = new();
+
+    public void Dispose() => _cronCache.Dispose();
+
     private readonly FakeTimeProvider _timeProvider = new(new DateTimeOffset(2025, 6, 1, 12, 0, 0, TimeSpan.Zero));
     private readonly ScheduledJobManager _sut;
 
@@ -60,9 +64,10 @@ public sealed class ScheduledJobManagerTests : TestBase
         _storage.GetJobByNameAsync("daily-job", Arg.Any<CancellationToken>()).Returns(job);
 
         // when
-        await _sut.EnableAsync("daily-job", AbortToken);
+        var result = await _sut.EnableAsync("daily-job", AbortToken);
 
         // then
+        result.IsSuccess.Should().BeTrue();
         job.Status.Should().Be(ScheduledJobStatus.Pending);
         job.IsEnabled.Should().BeTrue();
         job.NextRunTime.Should().NotBeNull();
@@ -78,9 +83,10 @@ public sealed class ScheduledJobManagerTests : TestBase
         _storage.GetJobByNameAsync("daily-job", Arg.Any<CancellationToken>()).Returns(job);
 
         // when
-        await _sut.DisableAsync("daily-job", AbortToken);
+        var result = await _sut.DisableAsync("daily-job", AbortToken);
 
         // then
+        result.IsSuccess.Should().BeTrue();
         job.Status.Should().Be(ScheduledJobStatus.Disabled);
         job.IsEnabled.Should().BeFalse();
         job.NextRunTime.Should().BeNull();
@@ -96,9 +102,10 @@ public sealed class ScheduledJobManagerTests : TestBase
         _storage.GetJobByNameAsync("on-demand-job", Arg.Any<CancellationToken>()).Returns(job);
 
         // when
-        await _sut.TriggerAsync("on-demand-job", AbortToken);
+        var result = await _sut.TriggerAsync("on-demand-job", AbortToken);
 
         // then
+        result.IsSuccess.Should().BeTrue();
         job.Status.Should().Be(ScheduledJobStatus.Pending);
         job.NextRunTime.Should().Be(_timeProvider.GetUtcNow());
         await _storage.Received(1).UpdateJobAsync(job, Arg.Any<CancellationToken>());
@@ -112,62 +119,144 @@ public sealed class ScheduledJobManagerTests : TestBase
         _storage.GetJobByNameAsync("deletable-job", Arg.Any<CancellationToken>()).Returns(job);
 
         // when
-        await _sut.DeleteAsync("deletable-job", AbortToken);
+        var result = await _sut.DeleteAsync("deletable-job", AbortToken);
 
         // then
+        result.IsSuccess.Should().BeTrue();
         await _storage.Received(1).DeleteJobAsync(job.Id, Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task should_throw_when_job_not_found_for_enable()
+    public async Task should_return_conflict_when_triggering_running_job()
     {
         // given
-        _storage.GetJobByNameAsync("nonexistent", Arg.Any<CancellationToken>()).Returns((ScheduledJob?)null);
+        var job = _CreateJob("running-job");
+        job.Status = ScheduledJobStatus.Running;
+        _storage.GetJobByNameAsync("running-job", Arg.Any<CancellationToken>()).Returns(job);
 
         // when
-        var act = () => _sut.EnableAsync("nonexistent", AbortToken);
+        var result = await _sut.TriggerAsync("running-job", AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*nonexistent*");
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<ConflictError>();
+        await _storage.DidNotReceive().UpdateJobAsync(Arg.Any<ScheduledJob>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task should_throw_when_job_not_found_for_disable()
+    public async Task should_return_conflict_when_enabling_running_job()
     {
         // given
-        _storage.GetJobByNameAsync("nonexistent", Arg.Any<CancellationToken>()).Returns((ScheduledJob?)null);
+        var job = _CreateJob("running-job");
+        job.Status = ScheduledJobStatus.Running;
+        _storage.GetJobByNameAsync("running-job", Arg.Any<CancellationToken>()).Returns(job);
 
         // when
-        var act = () => _sut.DisableAsync("nonexistent", AbortToken);
+        var result = await _sut.EnableAsync("running-job", AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*nonexistent*");
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<ConflictError>();
+        await _storage.DidNotReceive().UpdateJobAsync(Arg.Any<ScheduledJob>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task should_throw_when_job_not_found_for_trigger()
+    public async Task should_return_not_found_when_job_missing_for_enable()
     {
         // given
         _storage.GetJobByNameAsync("nonexistent", Arg.Any<CancellationToken>()).Returns((ScheduledJob?)null);
 
         // when
-        var act = () => _sut.TriggerAsync("nonexistent", AbortToken);
+        var result = await _sut.EnableAsync("nonexistent", AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*nonexistent*");
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<NotFoundError>().Which.Key.Should().Be("nonexistent");
     }
 
     [Fact]
-    public async Task should_throw_when_job_not_found_for_delete()
+    public async Task should_return_not_found_when_job_missing_for_disable()
     {
         // given
         _storage.GetJobByNameAsync("nonexistent", Arg.Any<CancellationToken>()).Returns((ScheduledJob?)null);
 
         // when
-        var act = () => _sut.DeleteAsync("nonexistent", AbortToken);
+        var result = await _sut.DisableAsync("nonexistent", AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*nonexistent*");
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<NotFoundError>().Which.Key.Should().Be("nonexistent");
+    }
+
+    [Fact]
+    public async Task should_return_not_found_when_job_missing_for_trigger()
+    {
+        // given
+        _storage.GetJobByNameAsync("nonexistent", Arg.Any<CancellationToken>()).Returns((ScheduledJob?)null);
+
+        // when
+        var result = await _sut.TriggerAsync("nonexistent", AbortToken);
+
+        // then
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<NotFoundError>().Which.Key.Should().Be("nonexistent");
+    }
+
+    [Fact]
+    public async Task should_return_not_found_when_job_missing_for_delete()
+    {
+        // given
+        _storage.GetJobByNameAsync("nonexistent", Arg.Any<CancellationToken>()).Returns((ScheduledJob?)null);
+
+        // when
+        var result = await _sut.DeleteAsync("nonexistent", AbortToken);
+
+        // then
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeOfType<NotFoundError>().Which.Key.Should().Be("nonexistent");
+    }
+
+    [Fact]
+    public async Task should_create_one_time_job_with_correct_properties()
+    {
+        // given
+        var runAt = _timeProvider.GetUtcNow().AddHours(2);
+        var consumerType = typeof(object);
+        const string payload = """{"data":"test"}""";
+
+        // when
+        await _sut.ScheduleOnceAsync("onetime-job", runAt, consumerType, payload, AbortToken);
+
+        // then
+        await _storage
+            .Received(1)
+            .UpsertJobAsync(
+                Arg.Is<ScheduledJob>(j =>
+                    j.Name == "onetime-job"
+                    && j.Type == ScheduledJobType.OneTime
+                    && j.NextRunTime == runAt
+                    && j.Payload == payload
+                    && j.Status == ScheduledJobStatus.Pending
+                    && j.IsEnabled
+                    && j.MisfireStrategy == MisfireStrategy.FireImmediately
+                    && j.ConsumerTypeName == consumerType.AssemblyQualifiedName
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_throw_when_run_at_is_in_the_past()
+    {
+        // given
+        var pastTime = _timeProvider.GetUtcNow().AddHours(-1);
+        var consumerType = typeof(object);
+
+        // when
+        var act = () => _sut.ScheduleOnceAsync("past-job", pastTime, consumerType, null, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*future*");
     }
 
     // -- helpers --
@@ -184,11 +273,12 @@ public sealed class ScheduledJobManagerTests : TestBase
             TimeZone = "UTC",
             Status = ScheduledJobStatus.Pending,
             NextRunTime = now.AddDays(1),
-            RetryCount = 0,
+            MaxRetries = 0,
             SkipIfRunning = false,
             IsEnabled = true,
             DateCreated = now,
             DateUpdated = now,
+            MisfireStrategy = MisfireStrategy.FireImmediately,
         };
     }
 }
