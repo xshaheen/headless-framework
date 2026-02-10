@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Text.RegularExpressions;
 using Cronos;
+using Headless.Constants;
 
 namespace Headless.Messaging.Scheduling;
 
@@ -32,9 +32,7 @@ internal sealed partial class CronScheduleCache
     {
         var expression = _GetOrParse(cron);
 
-        var tz = string.IsNullOrWhiteSpace(timeZone)
-            ? TimeZoneInfo.Utc
-            : TimeZoneInfo.FindSystemTimeZoneById(timeZone);
+        var tz = string.IsNullOrWhiteSpace(timeZone) ? TimeZoneInfo.Utc : TimeZoneInfo.FindSystemTimeZoneById(timeZone);
 
         var next = expression.GetNextOccurrence(from.UtcDateTime, tz);
 
@@ -50,9 +48,6 @@ internal sealed partial class CronScheduleCache
     private static string _Normalize(string expression)
     {
         ArgumentNullException.ThrowIfNull(expression);
-        return _WhitespaceRegex().Replace(expression.Trim(), " ");
+        return RegexPatterns.Spaces.Replace(expression.Trim(), " ");
     }
-
-    [GeneratedRegex(@"\s+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex _WhitespaceRegex();
 }
