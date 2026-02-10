@@ -87,8 +87,12 @@ public sealed class ScheduledJob
     public long? LastRunDuration { get; set; }
 
     /// <summary>
-    /// Gets or sets the maximum number of retry attempts allowed for this job.
+    /// Gets or sets the current retry attempt count for this job.
     /// </summary>
+    /// <remarks>
+    /// This value is incremented after each failed execution and reset to 0 on success.
+    /// It is not a configured retry limit.
+    /// </remarks>
     public required int MaxRetries { get; set; }
 
     /// <summary>

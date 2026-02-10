@@ -128,8 +128,12 @@ public sealed class PostgreSqlStorageInitializer(
             	"DateUpdated" TIMESTAMPTZ NOT NULL,
             	"Timeout" BIGINT NULL,
             	"MisfireStrategy" VARCHAR(50) NOT NULL DEFAULT 'FireImmediately',
-            	"ConsumerTypeName" VARCHAR(500) NULL
+            	"ConsumerTypeName" VARCHAR(500) NULL,
+                "Version" BIGINT NOT NULL DEFAULT 0
             );
+
+            ALTER TABLE {GetScheduledJobsTableName()}
+                ADD COLUMN IF NOT EXISTS "Version" BIGINT NOT NULL DEFAULT 0;
 
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_scheduled_jobs_name" ON {GetScheduledJobsTableName()} ("Name");
             CREATE INDEX IF NOT EXISTS "ix_scheduled_jobs_next_run" ON {GetScheduledJobsTableName()} ("NextRunTime") WHERE "Status" IN ('Pending') AND "IsEnabled" = true;

@@ -41,6 +41,8 @@ internal sealed class ScheduledJobReconciler(
 
         var now = timeProvider.GetUtcNow();
         var knownNames = new HashSet<string>(StringComparer.Ordinal);
+        var existingJobs = await storage.GetAllJobsAsync(cancellationToken).ConfigureAwait(false);
+        var existingByName = existingJobs.ToDictionary(j => j.Name, StringComparer.Ordinal);
 
         foreach (var definition in definitions)
         {
@@ -95,6 +97,12 @@ internal sealed class ScheduledJobReconciler(
                 Timeout = definition.Timeout,
             };
 
+            if (existingByName.TryGetValue(definition.Name, out var existing) && !existing.IsEnabled)
+            {
+                job.IsEnabled = false;
+                job.NextRunTime = null;
+            }
+
             await storage.UpsertJobAsync(job, cancellationToken).ConfigureAwait(false);
 
             logger.LogDebug(
@@ -106,9 +114,7 @@ internal sealed class ScheduledJobReconciler(
         }
 
         // Soft-disable jobs in DB that are no longer in code
-        var allJobs = await storage.GetAllJobsAsync(cancellationToken).ConfigureAwait(false);
-
-        foreach (var existingJob in allJobs)
+        foreach (var existingJob in existingJobs)
         {
             if (
                 existingJob.Type == ScheduledJobType.Recurring

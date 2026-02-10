@@ -171,6 +171,41 @@ public sealed class ScheduledJobReconcilerTests : TestBase, IDisposable
     }
 
     [Fact]
+    public async Task should_preserve_disabled_jobs_when_reconciling()
+    {
+        // given
+        _registry.Add(
+            new ScheduledJobDefinition
+            {
+                Name = "disabled-job",
+                ConsumerType = typeof(object),
+                CronExpression = "0 0 0 * * *",
+                TimeZone = "UTC",
+            }
+        );
+
+        var existingJob = _CreateJob("disabled-job");
+        existingJob.IsEnabled = false;
+        existingJob.Status = ScheduledJobStatus.Disabled;
+        existingJob.NextRunTime = null;
+
+        _storage.GetAllJobsAsync(Arg.Any<CancellationToken>()).Returns((IReadOnlyList<ScheduledJob>)[existingJob]);
+
+        var sut = new ScheduledJobReconciler(_registry, _storage, _cronCache, _timeProvider, _configuration, _logger);
+
+        // when
+        await sut.StartAsync(AbortToken);
+
+        // then
+        await _storage
+            .Received(1)
+            .UpsertJobAsync(
+                Arg.Is<ScheduledJob>(j => j.Name == "disabled-job" && !j.IsEnabled && j.NextRunTime == null),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_skip_reconciliation_when_no_definitions_registered()
     {
         // given — no definitions added to registry
