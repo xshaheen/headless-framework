@@ -150,6 +150,7 @@
         <Project Path="demo/Headless.Messaging.Pulsar.InMemory.Demo/Headless.Messaging.Pulsar.InMemory.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.RabbitMq.SqlServer.Demo/Headless.Messaging.RabbitMq.SqlServer.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.Redis.SqlServer.Demo/Headless.Messaging.Redis.SqlServer.Demo.csproj" />
+        <Project Path="demo/Headless.Messaging.Scheduling.Demo/Headless.Messaging.Scheduling.Demo.csproj" />
     </Folder>
     <Folder Name="/Messaging/Src/">
         <Project Path="src/Headless.Messaging.Abstractions/Headless.Messaging.Abstractions.csproj" />
