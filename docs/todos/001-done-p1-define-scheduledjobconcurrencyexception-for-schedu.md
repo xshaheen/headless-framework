@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "001"
 tags: ["code-review","quality","dotnet"]
@@ -39,9 +39,9 @@ Add ScheduledJobConcurrencyException to the Abstractions package and keep Update
 
 ## Acceptance Criteria
 
-- [ ] ScheduledJobConcurrencyException exists in Headless.Messaging.Abstractions
-- [ ] Headless.Messaging.InMemoryStorage compiles without missing type errors
-- [ ] UpdateJobAsync continues to throw the new exception on version mismatch
+- [x] ScheduledJobConcurrencyException exists in Headless.Messaging.Abstractions
+- [x] Headless.Messaging.InMemoryStorage compiles without missing type errors
+- [x] UpdateJobAsync continues to throw the new exception on version mismatch
 
 ## Notes
 
@@ -54,3 +54,15 @@ Found during PR #176 review
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-02-10 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-02-10 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done

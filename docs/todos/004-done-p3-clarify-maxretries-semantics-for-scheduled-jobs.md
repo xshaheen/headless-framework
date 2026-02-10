@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p3
 issue_id: "004"
 tags: ["code-review","quality","dotnet"]
@@ -38,9 +38,9 @@ Pick one: either rename to RetryCount and add a real MaxRetries limit, or update
 
 ## Acceptance Criteria
 
-- [ ] Retry semantics are explicitly documented
-- [ ] Max retry limit is enforced or clearly stated
-- [ ] Scheduler behavior and public docs are consistent
+- [x] Retry semantics are explicitly documented
+- [x] Max retry limit is enforced or clearly stated
+- [x] Scheduler behavior and public docs are consistent
 
 ## Notes
 
@@ -53,3 +53,15 @@ Found during PR #176 review
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-02-10 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-02-10 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done

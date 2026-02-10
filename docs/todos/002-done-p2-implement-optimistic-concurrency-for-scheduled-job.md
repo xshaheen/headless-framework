@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p2
 issue_id: "002"
 tags: ["code-review","data-integrity","architecture","dotnet"]
@@ -39,10 +39,10 @@ Add a Version column to scheduled_jobs, read/write it in PostgreSqlScheduledJobS
 
 ## Acceptance Criteria
 
-- [ ] scheduled_jobs table includes Version column with default 0
-- [ ] PostgreSqlScheduledJobStorage reads and writes Version
-- [ ] UpdateJobAsync checks Version and increments on success
-- [ ] Concurrency mismatch results in ScheduledJobConcurrencyException
+- [x] scheduled_jobs table includes Version column with default 0
+- [x] PostgreSqlScheduledJobStorage reads and writes Version
+- [x] UpdateJobAsync checks Version and increments on success
+- [x] Concurrency mismatch results in ScheduledJobConcurrencyException
 
 ## Notes
 
@@ -55,3 +55,15 @@ Found during PR #176 review
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-02-10 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-02-10 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done

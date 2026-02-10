@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p2
 issue_id: "003"
 tags: ["code-review","quality","dotnet"]
@@ -38,9 +38,9 @@ Update upsert semantics (and in-memory equivalent) to only change definition fie
 
 ## Acceptance Criteria
 
-- [ ] Disabled jobs remain disabled after restart
-- [ ] Reconciler only updates cron/definition fields for existing jobs
-- [ ] Regression test covers manual disable persistence
+- [x] Disabled jobs remain disabled after restart
+- [x] Reconciler only updates cron/definition fields for existing jobs
+- [x] Regression test covers manual disable persistence
 
 ## Notes
 
@@ -53,3 +53,15 @@ Found during PR #176 review
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-02-10 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-02-10 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: ready → done
