@@ -40,14 +40,14 @@ internal sealed class ScheduledJobManager(
         job.IsEnabled = true;
         job.DateUpdated = now;
 
-        if (job.Type == ScheduledJobType.Recurring && job.CronExpression is not null)
+        if (job is { Type: ScheduledJobType.Recurring, CronExpression: not null })
         {
             job.NextRunTime = cronCache.GetNextOccurrence(job.CronExpression, job.TimeZone, now);
         }
-        else if (job.NextRunTime is null)
+        else
         {
             // OneTime jobs without a scheduled time re-enable with immediate execution
-            job.NextRunTime = now;
+            job.NextRunTime ??= now;
         }
 
         await storage.UpdateJobAsync(job, cancellationToken).ConfigureAwait(false);
@@ -124,7 +124,7 @@ internal sealed class ScheduledJobManager(
 
         if (runAt <= now)
         {
-            throw new ArgumentException("Run time must be in the future.", nameof(runAt));
+            throw new ArgumentException(@"Run time must be in the future.", nameof(runAt));
         }
 
         var job = new ScheduledJob

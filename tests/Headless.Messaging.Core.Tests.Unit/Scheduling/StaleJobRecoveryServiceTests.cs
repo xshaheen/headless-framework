@@ -43,7 +43,7 @@ public sealed class StaleJobRecoveryServiceTests : TestBase
         var startTask = sut.StartAsync(cts.Token);
         await Task.Delay(100, CancellationToken.None);
         await cts.CancelAsync();
-        await startTask.ConfigureAwait(false);
+        await startTask;
 
         // then
         await _storage
@@ -69,7 +69,7 @@ public sealed class StaleJobRecoveryServiceTests : TestBase
         var startTask = sut.StartAsync(cts.Token);
         await Task.Delay(100, CancellationToken.None);
         await cts.CancelAsync();
-        await startTask.ConfigureAwait(false);
+        await startTask;
 
         // then
         await _storage.Received().TimeoutStaleExecutionsAsync(Arg.Any<CancellationToken>());
@@ -111,7 +111,7 @@ public sealed class StaleJobRecoveryServiceTests : TestBase
         var startTask = sut.StartAsync(cts.Token);
         await Task.Delay(100, CancellationToken.None);
         await cts.CancelAsync();
-        await startTask.ConfigureAwait(false);
+        await startTask;
 
         // then
         await _storage

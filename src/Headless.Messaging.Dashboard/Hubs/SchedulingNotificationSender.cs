@@ -38,7 +38,7 @@ internal sealed class SchedulingNotificationSender(IHubContext<SchedulingNotific
                     execution.Id,
                     execution.JobId,
                     Status = execution.Status.ToString(),
-                    execution.StartedAt,
+                    execution.DateStarted,
                 },
                 cancellationToken
             )

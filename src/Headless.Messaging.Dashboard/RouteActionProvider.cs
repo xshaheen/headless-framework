@@ -6,6 +6,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Messaging.Dashboard.Scheduling;
+using Headless.Messaging.Dashboard.Authentication;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;

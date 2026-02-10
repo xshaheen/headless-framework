@@ -11,15 +11,13 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Scheduling;
 
-public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
+public sealed class SchedulerBackgroundServiceTests : TestBase
 {
     private static readonly IReadOnlyList<ScheduledJob> _EmptyJobs = [];
 
     private readonly IScheduledJobStorage _storage = Substitute.For<IScheduledJobStorage>();
     private readonly StubDispatcher _dispatcher = new();
     private readonly CronScheduleCache _cronCache = new();
-
-    public void Dispose() => _cronCache.Dispose();
 
     private readonly FakeTimeProvider _timeProvider = new(new DateTimeOffset(2025, 6, 1, 12, 0, 0, TimeSpan.Zero));
     private readonly ILogger<SchedulerBackgroundService> _logger;
@@ -234,12 +232,19 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
         var sut = _CreateService();
 
         // when — cancel immediately
-        using var cts = new CancellationTokenSource();
-        await cts.CancelAsync();
-        var executeTask = sut.StartAsync(cts.Token);
+        var cts = new CancellationTokenSource();
+        try
+        {
+            await cts.CancelAsync();
+            var executeTask = sut.StartAsync(cts.Token);
 
-        // then — should complete without throwing
-        await executeTask;
+            // then — should complete without throwing
+            await executeTask;
+        }
+        finally
+        {
+            cts.Dispose();
+        }
     }
 
     [Fact]
@@ -253,14 +258,21 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
         var sut = _CreateService();
 
         // when — start and cancel while the service is in Task.Delay
-        using var cts = new CancellationTokenSource();
-        await sut.StartAsync(cts.Token);
-        await Task.Delay(50, CancellationToken.None);
-        await cts.CancelAsync();
+        var cts = new CancellationTokenSource();
+        try
+        {
+            await sut.StartAsync(cts.Token);
+            await Task.Delay(50, CancellationToken.None);
+            await cts.CancelAsync();
 
-        // then — StopAsync completes without OperationCanceledException
-        var act = () => sut.StopAsync(CancellationToken.None);
-        await act.Should().NotThrowAsync();
+            // then — StopAsync completes without OperationCanceledException
+            var act = () => sut.StopAsync(CancellationToken.None);
+            await act.Should().NotThrowAsync();
+        }
+        finally
+        {
+            cts.Dispose();
+        }
     }
 
     [Fact]
@@ -613,15 +625,22 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
 
         // when — run for 400ms; without backoff we'd get ~40 polls (400/10).
         // With backoff (10 -> 20 -> 40 -> 80 -> 80 -> ...) we get far fewer.
-        using var cts = new CancellationTokenSource();
-        _ = sut.StartAsync(cts.Token);
-        await Task.Delay(400, CancellationToken.None);
-        await cts.CancelAsync();
+        var cts = new CancellationTokenSource();
         try
         {
-            await sut.StopAsync(CancellationToken.None);
+            _ = sut.StartAsync(cts.Token);
+            await Task.Delay(400, CancellationToken.None);
+            await cts.CancelAsync();
+            try
+            {
+                await sut.StopAsync(CancellationToken.None);
+            }
+            catch (OperationCanceledException) { }
         }
-        catch (OperationCanceledException) { }
+        finally
+        {
+            cts.Dispose();
+        }
 
         // then — with backoff, expect significantly fewer polls than the ~40 we'd get at fixed 10ms
         var polls = Volatile.Read(ref acquireCount);
@@ -673,15 +692,22 @@ public sealed class SchedulerBackgroundServiceTests : TestBase, IDisposable
         );
 
         // when — run for 500ms
-        using var cts = new CancellationTokenSource();
-        _ = sut.StartAsync(cts.Token);
-        await Task.Delay(500, CancellationToken.None);
-        await cts.CancelAsync();
+        var cts = new CancellationTokenSource();
         try
         {
-            await sut.StopAsync(CancellationToken.None);
+            _ = sut.StartAsync(cts.Token);
+            await Task.Delay(500, CancellationToken.None);
+            await cts.CancelAsync();
+            try
+            {
+                await sut.StopAsync(CancellationToken.None);
+            }
+            catch (OperationCanceledException) { }
         }
-        catch (OperationCanceledException) { }
+        finally
+        {
+            cts.Dispose();
+        }
 
         // then — the job was dispatched, and polls continued after it (interval reset to base)
         _dispatcher.DispatchedJobs.Should().ContainSingle(j => j.Name == job.Name);

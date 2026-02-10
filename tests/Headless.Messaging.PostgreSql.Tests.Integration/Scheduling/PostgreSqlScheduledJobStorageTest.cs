@@ -447,6 +447,7 @@ public sealed class PostgreSqlScheduledJobStorageTest(PostgreSqlTestFixture fixt
             IsEnabled = true,
             DateCreated = now,
             DateUpdated = now,
+            MisfireStrategy = MisfireStrategy.FireImmediately,
         };
     }
 

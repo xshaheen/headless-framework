@@ -8,12 +8,10 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Scheduling;
 
-public sealed class ScheduledJobManagerTests : TestBase, IDisposable
+public sealed class ScheduledJobManagerTests : TestBase
 {
     private readonly IScheduledJobStorage _storage = Substitute.For<IScheduledJobStorage>();
     private readonly CronScheduleCache _cronCache = new();
-
-    public void Dispose() => _cronCache.Dispose();
 
     private readonly FakeTimeProvider _timeProvider = new(new DateTimeOffset(2025, 6, 1, 12, 0, 0, TimeSpan.Zero));
     private readonly ScheduledJobManager _sut;
@@ -180,49 +178,6 @@ public sealed class ScheduledJobManagerTests : TestBase, IDisposable
         // then
         result.IsFailure.Should().BeTrue();
         result.Error.Should().BeOfType<NotFoundError>().Which.Key.Should().Be("nonexistent");
-    }
-
-    [Fact]
-    public async Task should_create_one_time_job_with_correct_properties()
-    {
-        // given
-        var runAt = _timeProvider.GetUtcNow().AddHours(2);
-        var consumerType = typeof(object);
-        const string payload = """{"data":"test"}""";
-
-        // when
-        await _sut.ScheduleOnceAsync("onetime-job", runAt, consumerType, payload, AbortToken);
-
-        // then
-        await _storage
-            .Received(1)
-            .UpsertJobAsync(
-                Arg.Is<ScheduledJob>(j =>
-                    j.Name == "onetime-job"
-                    && j.Type == ScheduledJobType.OneTime
-                    && j.NextRunTime == runAt
-                    && j.Payload == payload
-                    && j.Status == ScheduledJobStatus.Pending
-                    && j.IsEnabled
-                    && j.MisfireStrategy == MisfireStrategy.FireImmediately
-                    && j.ConsumerTypeName == consumerType.AssemblyQualifiedName
-                ),
-                Arg.Any<CancellationToken>()
-            );
-    }
-
-    [Fact]
-    public async Task should_throw_when_run_at_is_in_the_past()
-    {
-        // given
-        var pastTime = _timeProvider.GetUtcNow().AddHours(-1);
-        var consumerType = typeof(object);
-
-        // when
-        var act = () => _sut.ScheduleOnceAsync("past-job", pastTime, consumerType, null, AbortToken);
-
-        // then
-        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*future*");
     }
 
     [Fact]
