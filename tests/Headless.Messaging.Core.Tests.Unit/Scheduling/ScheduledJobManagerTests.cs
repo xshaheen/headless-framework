@@ -273,6 +273,33 @@ public sealed class ScheduledJobManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_schedule_one_time_job_with_generic_string_payload_without_json_quoting()
+    {
+        // given
+        var runAt = _timeProvider.GetUtcNow().AddMinutes(30);
+
+        // when
+        await _sut.ScheduleOnceAsync<SampleScheduledConsumer, string>(
+            "generic-string-job",
+            runAt,
+            "hello",
+            AbortToken
+        );
+
+        // then
+        await _storage
+            .Received(1)
+            .UpsertJobAsync(
+                Arg.Is<ScheduledJob>(j =>
+                    j.Name == "generic-string-job"
+                    && j.ConsumerTypeName == typeof(SampleScheduledConsumer).AssemblyQualifiedName
+                    && j.Payload == "hello"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_throw_when_run_at_is_in_the_past()
     {
         // given

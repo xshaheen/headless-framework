@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p2
 issue_id: "006"
 tags: ["code-review","dotnet","architecture","quality"]
@@ -40,9 +40,9 @@ Use case-insensitive topic/group comparison in runtime uniqueness checks and ali
 
 ## Acceptance Criteria
 
-- [ ] Subscribing same topic/group with different casing is rejected
-- [ ] ConsumerExecutorDescriptorComparer.GetHashCode uses same case rules as Equals
-- [ ] Tests cover mixed-case duplicate runtime subscriptions
+- [x] Subscribing same topic/group with different casing is rejected
+- [x] ConsumerExecutorDescriptorComparer.GetHashCode uses same case rules as Equals
+- [x] Tests cover mixed-case duplicate runtime subscriptions
 
 ## Notes
 
@@ -55,3 +55,15 @@ Discovered during PR #177 review.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-02-13 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-02-13 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

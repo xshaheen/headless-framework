@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p2
 issue_id: "007"
 tags: ["code-review","dotnet","quality","scheduling"]
@@ -38,9 +38,9 @@ Use consistent JSON semantics for generic payload scheduling and add explicit te
 
 ## Acceptance Criteria
 
-- [ ] ScheduleOnceAsync<TConsumer,string>(..., "hello") results in Payload == "hello" in ScheduledJobConsumer<string>
-- [ ] Existing object payload deserialization tests continue to pass
-- [ ] A regression test covers both generic and raw-string scheduling paths
+- [x] ScheduleOnceAsync<TConsumer,string>(..., "hello") results in Payload == "hello" in ScheduledJobConsumer<string>
+- [x] Existing object payload deserialization tests continue to pass
+- [x] A regression test covers both generic and raw-string scheduling paths
 
 ## Notes
 
@@ -53,3 +53,15 @@ Discovered during PR #177 review.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-02-13 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-02-13 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

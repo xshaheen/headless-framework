@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "005"
 tags: ["code-review","dotnet","quality","reliability"]
@@ -39,9 +39,9 @@ Use the non-asserting finalizer path and ensure Dispose() still releases managed
 
 ## Acceptance Criteria
 
-- [ ] Full tests/Headless.Messaging.Core.Tests.Unit suite runs without process crash
-- [ ] ScheduledMediumMessageQueue finalizer no longer calls Debug.Fail
-- [ ] A regression test covers disposal/finalizer behavior
+- [x] Full tests/Headless.Messaging.Core.Tests.Unit suite runs without process crash
+- [x] ScheduledMediumMessageQueue finalizer no longer calls Debug.Fail
+- [x] A regression test covers disposal/finalizer behavior
 
 ## Notes
 
@@ -54,3 +54,15 @@ Discovered during PR #177 review.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-02-13 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-02-13 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

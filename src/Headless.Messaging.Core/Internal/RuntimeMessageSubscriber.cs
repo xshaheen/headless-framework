@@ -61,7 +61,12 @@ internal sealed class RuntimeMessageSubscriber(
                 );
             }
 
-            if (_subscriptions.Values.Any(s => s.TopicName == key.Topic && s.GroupName == key.Group))
+            if (
+                _subscriptions.Values.Any(s =>
+                    s.TopicName.Equals(key.Topic, StringComparison.OrdinalIgnoreCase)
+                    && s.GroupName.Equals(key.Group, StringComparison.OrdinalIgnoreCase)
+                )
+            )
             {
                 throw new InvalidOperationException(
                     $"Cannot register runtime subscription for '{key.Topic}' and group '{key.Group}' because runtime routes must be unique."
@@ -140,7 +145,7 @@ internal sealed class RuntimeMessageSubscriber(
         var subscriptions = _keys.Where(k =>
             k.MessageType == typeof(TMessage)
             && k.Topic.Equals(resolvedTopic, StringComparison.OrdinalIgnoreCase)
-            && k.Group.Equals(resolvedGroup, StringComparison.Ordinal)
+            && k.Group.Equals(resolvedGroup, StringComparison.OrdinalIgnoreCase)
             && (handlerId is null || k.HandlerId.Equals(handlerId, StringComparison.Ordinal))
         );
 
@@ -213,7 +218,7 @@ internal sealed class RuntimeMessageSubscriber(
             var group = _ResolveFullGroup(metadata.Group);
             if (
                 metadata.Topic.Equals(topic, StringComparison.OrdinalIgnoreCase)
-                && group.Equals(fullGroup, StringComparison.Ordinal)
+                && group.Equals(fullGroup, StringComparison.OrdinalIgnoreCase)
             )
             {
                 return true;

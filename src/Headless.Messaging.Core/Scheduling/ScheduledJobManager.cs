@@ -194,7 +194,20 @@ internal sealed class ScheduledJobManager(
     )
         where TConsumer : class, IConsume<ScheduledTrigger>
     {
-        var serializedPayload = payload is null ? null : JsonSerializer.Serialize(payload);
+        string? serializedPayload;
+        if (payload is null)
+        {
+            serializedPayload = null;
+        }
+        else if (payload is string rawPayload)
+        {
+            serializedPayload = rawPayload;
+        }
+        else
+        {
+            serializedPayload = JsonSerializer.Serialize(payload);
+        }
+
         return ScheduleOnceAsync<TConsumer>(name, runAt, serializedPayload, cancellationToken);
     }
 

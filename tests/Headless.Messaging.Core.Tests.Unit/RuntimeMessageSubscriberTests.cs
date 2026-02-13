@@ -181,6 +181,47 @@ public sealed class RuntimeMessageSubscriberTests : TestBase
     }
 
     [Fact]
+    public async Task should_reject_duplicate_runtime_route_when_only_casing_differs()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMessages(options =>
+        {
+            options.DefaultGroupName = "default";
+            options.Version = "v1";
+            options.UseInMemoryStorage();
+            options.UseInMemoryMessageQueue();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var runtimeSubscriber = provider.GetRequiredService<IRuntimeMessageSubscriber>();
+
+        await runtimeSubscriber.SubscribeAsync<RuntimeTestMessage>(
+            (_, _, _) => ValueTask.CompletedTask,
+            topic: "runtime.topic",
+            group: "runtime.group",
+            handlerId: "handler-1",
+            cancellationToken: AbortToken
+        );
+
+        // when
+        var act = () =>
+            runtimeSubscriber
+                .SubscribeAsync<RuntimeTestMessage>(
+                    (_, _, _) => ValueTask.CompletedTask,
+                    topic: "Runtime.Topic",
+                    group: "Runtime.Group",
+                    handlerId: "handler-2",
+                    cancellationToken: AbortToken
+                )
+                .AsTask();
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*runtime routes must be unique*");
+    }
+
+    [Fact]
     public async Task should_reject_runtime_route_when_static_consumer_exists()
     {
         // given
