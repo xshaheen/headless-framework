@@ -12,9 +12,10 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Consumer Management**: Automatic registration, invocation, and lifecycle handling
 - **Message Processing**: Retry processor, delayed message scheduler, transport health checks
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
+- **Runtime Function Subscriptions**: Broker-attached runtime handlers with scoped DI
 - **Extension System**: Pluggable storage and transport providers
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
-- **Job Scheduling**: Cron-based recurring jobs with retry, distributed locking, and execution tracking
+- **Job Scheduling**: Cron-based recurring jobs with retry, distributed locking, execution tracking, and typed job wrappers
 
 ## Installation
 
@@ -258,6 +259,43 @@ public sealed class UserService(IScheduledJobManager jobManager)
 ```
 
 One-time jobs are stored in the same `ScheduledJob` table as recurring jobs but execute once at the specified `runAt` time.
+
+Typed overload for class-based job consumers:
+
+```csharp
+await jobManager.ScheduleOnceAsync<SendWelcomeEmailConsumer, WelcomePayload>(
+    "send-welcome-email",
+    DateTimeOffset.UtcNow.AddMinutes(5),
+    new WelcomePayload(userId, email),
+    ct);
+```
+
+List jobs and executions:
+
+```csharp
+var jobs = await jobManager.ListJobsAsync(ct);
+var executions = await jobManager.ListExecutionsAsync("send-welcome-email", limit: 20, ct);
+```
+
+## Runtime Function Subscriptions
+
+Attach and remove broker-backed handlers at runtime without creating a class consumer:
+
+```csharp
+var key = await runtimeSubscriber.SubscribeAsync<OrderPlacedEvent>(
+    async (sp, context, ct) =>
+    {
+        var logger = sp.GetRequiredService<ILogger<Program>>();
+        logger.LogInformation("Order placed: {OrderId}", context.Message.OrderId);
+        await ValueTask.CompletedTask;
+    },
+    topic: "orders.placed",
+    group: "orders.runtime",
+    handlerId: "orders-runtime",
+    cancellationToken: ct);
+
+await runtimeSubscriber.UnsubscribeAsync(key, ct);
+```
 
 ## Execution Timeout
 

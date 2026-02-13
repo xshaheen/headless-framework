@@ -62,6 +62,33 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
+    public void should_validate_group_name_characters_when_strict_validation_is_enabled()
+    {
+        // given
+        var options = _CreateOptions();
+
+        // when
+        var act = () => options.Consumer<TestConsumer>().Topic("valid.topic").Group("group name").Build();
+
+        // then
+        act.Should().Throw<ArgumentException>().WithMessage("*Group name*invalid character*");
+    }
+
+    [Fact]
+    public void should_allow_invalid_group_name_when_strict_validation_is_disabled()
+    {
+        // given
+        var options = _CreateOptions();
+        options.StrictValidation = false;
+
+        // when
+        var act = () => options.Consumer<TestConsumer>().Topic("valid.topic").Group("group name").Build();
+
+        // then
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void should_accept_valid_topic_name_characters()
     {
         // given
@@ -165,6 +192,16 @@ public sealed class MessagingOptionsValidationTests : TestBase
         // then
         options.RetryBackoffStrategy.Should().NotBeNull();
         options.RetryBackoffStrategy.Should().BeOfType<ExponentialBackoffStrategy>();
+    }
+
+    [Fact]
+    public void should_enable_strict_validation_by_default()
+    {
+        // given
+        var options = new MessagingOptions();
+
+        // then
+        options.StrictValidation.Should().BeTrue();
     }
 
     [Fact]
@@ -315,4 +352,13 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     private sealed class TestMessage;
+
+    private sealed class TestConsumer : IConsume<TestMessage>
+    {
+        public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        {
+            _ = context;
+            return ValueTask.CompletedTask;
+        }
+    }
 }

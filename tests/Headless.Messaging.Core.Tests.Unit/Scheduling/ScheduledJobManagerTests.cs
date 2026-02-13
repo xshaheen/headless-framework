@@ -36,6 +36,41 @@ public sealed class ScheduledJobManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_list_recent_executions_by_job_name()
+    {
+        // given
+        var job = _CreateJob("job-a");
+        IReadOnlyList<JobExecution> executions =
+        [
+            new()
+            {
+                Id = Guid.NewGuid(),
+                JobId = job.Id,
+                ScheduledTime = _timeProvider.GetUtcNow(),
+                Status = JobExecutionStatus.Succeeded,
+                RetryAttempt = 0,
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                JobId = job.Id,
+                ScheduledTime = _timeProvider.GetUtcNow().AddMinutes(-1),
+                Status = JobExecutionStatus.Succeeded,
+                RetryAttempt = 0,
+            },
+        ];
+
+        _storage.GetJobByNameAsync(job.Name, Arg.Any<CancellationToken>()).Returns(job);
+        _storage.GetExecutionsAsync(job.Id, 2, Arg.Any<CancellationToken>()).Returns(executions);
+
+        // when
+        var result = await _sut.ListExecutionsAsync(job.Name, limit: 2, cancellationToken: AbortToken);
+
+        // then
+        result.Should().BeSameAs(executions);
+    }
+
+    [Fact]
     public async Task should_return_job_by_name()
     {
         // given
@@ -210,6 +245,34 @@ public sealed class ScheduledJobManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_schedule_one_time_job_with_generic_consumer_and_json_payload()
+    {
+        // given
+        var runAt = _timeProvider.GetUtcNow().AddMinutes(30);
+        var payload = new SamplePayload("hello", 2);
+
+        // when
+        await _sut.ScheduleOnceAsync<SampleScheduledConsumer, SamplePayload>(
+            "generic-job",
+            runAt,
+            payload,
+            AbortToken
+        );
+
+        // then
+        await _storage
+            .Received(1)
+            .UpsertJobAsync(
+                Arg.Is<ScheduledJob>(j =>
+                    j.Name == "generic-job"
+                    && j.ConsumerTypeName == typeof(SampleScheduledConsumer).AssemblyQualifiedName
+                    && j.Payload == """{"Name":"hello","Count":2}"""
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_throw_when_run_at_is_in_the_past()
     {
         // given
@@ -244,5 +307,16 @@ public sealed class ScheduledJobManagerTests : TestBase
             DateUpdated = now,
             MisfireStrategy = MisfireStrategy.FireImmediately,
         };
+    }
+
+    private sealed record SamplePayload(string Name, int Count);
+
+    private sealed class SampleScheduledConsumer : IConsume<ScheduledTrigger>
+    {
+        public ValueTask Consume(ConsumeContext<ScheduledTrigger> context, CancellationToken cancellationToken)
+        {
+            _ = context;
+            return ValueTask.CompletedTask;
+        }
     }
 }
