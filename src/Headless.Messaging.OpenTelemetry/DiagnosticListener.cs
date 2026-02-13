@@ -425,6 +425,68 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     }
                 }
                 break;
+            case MessageDiagnosticListenerNames.BeforeScheduledJobDispatch:
+                {
+                    var eventData = (ScheduledJobEventData)evt.Value!;
+                    var activity = _ActivitySource.StartActivity(
+                        $"Messaging.ScheduledJob/{eventData.JobName}/Dispatch",
+                        ActivityKind.Internal
+                    );
+                    if (activity != null)
+                    {
+                        activity.SetTag("messaging.job.name", eventData.JobName);
+                        activity.SetTag("messaging.job.execution_id", eventData.ExecutionId.ToString());
+                        activity.SetTag("messaging.job.attempt", eventData.Attempt);
+                        activity.SetTag("messaging.job.scheduled_time", eventData.ScheduledTime.ToString("O"));
+                        activity.AddEvent(
+                            new ActivityEvent(
+                                "Scheduled job dispatch start",
+                                DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
+                            )
+                        );
+                    }
+                }
+                break;
+            case MessageDiagnosticListenerNames.AfterScheduledJobDispatch:
+                {
+                    var eventData = (ScheduledJobEventData)evt.Value!;
+                    if (Activity.Current is { } activity)
+                    {
+                        activity.SetTag("messaging.job.success", true);
+                        if (eventData.ElapsedTimeMs.HasValue)
+                        {
+                            activity.SetTag("messaging.job.duration_ms", eventData.ElapsedTimeMs.Value);
+                        }
+                        activity.AddEvent(
+                            new ActivityEvent(
+                                "Scheduled job dispatch succeeded",
+                                DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
+                                new ActivityTagsCollection { new("messaging.job.duration_ms", eventData.ElapsedTimeMs) }
+                            )
+                        );
+
+                        _metrics?.RecordScheduledJobExecution(eventData.JobName, eventData.ElapsedTimeMs);
+
+                        activity.Stop();
+                    }
+                }
+                break;
+            case MessageDiagnosticListenerNames.ErrorScheduledJobDispatch:
+                {
+                    var eventData = (ScheduledJobEventData)evt.Value!;
+                    if (Activity.Current is { } activity)
+                    {
+                        var exception = eventData.Exception!;
+                        activity.SetTag("messaging.job.success", false);
+                        activity.SetStatus(ActivityStatusCode.Error, exception.Message);
+                        activity.AddException(exception);
+
+                        _metrics?.RecordScheduledJobError(eventData.JobName, exception.GetType().Name);
+
+                        activity.Stop();
+                    }
+                }
+                break;
         }
     }
 }

@@ -34,6 +34,6 @@ public sealed class CacheDistributedLockStorage(ICache cache) : IDistributedLock
             .ToDictionary(kv => kv.Key, kv => kv.Value.Value!, StringComparer.Ordinal);
     }
 
-    public ValueTask<int> GetCountAsync(string prefix = "") =>
+    public ValueTask<long> GetCountAsync(string prefix = "") =>
         cache.GetCountAsync(prefix);
 }

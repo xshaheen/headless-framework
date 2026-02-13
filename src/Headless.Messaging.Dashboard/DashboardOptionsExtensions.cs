@@ -2,6 +2,9 @@
 
 using Headless.Checks;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Dashboard.Authentication;
+using Headless.Messaging.Dashboard.Hubs;
+using Headless.Messaging.Dashboard.Scheduling;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +19,23 @@ internal sealed class DashboardOptionsExtension(Action<DashboardOptions> option)
         option?.Invoke(dashboardOptions);
         services.AddTransient<IStartupFilter, MessagingDashboardStartupFilter>();
         services.AddSingleton(dashboardOptions);
+
+        if (dashboardOptions.Auth.IsEnabled)
+        {
+            dashboardOptions.Auth.Validate();
+            services.AddSingleton(dashboardOptions.Auth);
+            services.AddSingleton<IAuthService, AuthService>();
+        }
+
+        services.AddSignalR();
+        services.AddSingleton<ISchedulingNotificationSender, SchedulingNotificationSender>();
+
         services.AddSingleton<MessagingMetricsEventListener>();
+        services.AddScoped<ISchedulingDashboardRepository>(sp =>
+        {
+            var storage = sp.GetService<IScheduledJobStorage>();
+            return storage is null ? null! : new SchedulingDashboardRepository(storage);
+        });
     }
 }
 

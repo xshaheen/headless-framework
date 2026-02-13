@@ -1,0 +1,64 @@
+[2026-02-08 12:31] > Swarm starting — 12 stories, first: US-030
+[2026-02-08 12:39] > Starting prerequisite: correlation plan (US-006-010)
+[2026-02-08 12:39] > US-006: Create MessagingCorrelationScope (size: S)
+[2026-02-08 12:43] + US-006 PASSED - commit: deb24012
+[2026-02-08 12:43] > US-007: Populate correlation in ScheduledJobDispatcher (size: S)
+[2026-02-08 12:45] + US-007 PASSED - commit: 943dd5a6
+[2026-02-08 12:45] > US-008: Make publishers read MessagingCorrelationScope (size: M)
+[2026-02-08 12:47] + US-008 PASSED - commit: 2705afcc
+[2026-02-08 12:48] > US-009: Unit tests for correlation propagation (size: M)
+[2026-02-08 12:56] + US-009 PASSED - commit: 2ebfec65
+[2026-02-08 12:56] > US-010: Update README (size: XS)
+[2026-02-08 12:58] + US-010 PASSED - commit: 531ecedf. Correlation plan COMPLETE (US-006-010 all passed).
+[2026-02-08 12:58] > Starting prerequisite: hardening plan (US-017-029, US-045-048)
+[2026-02-08 12:58] > US-017+US-018: Add ReleaseStaleJobsAsync + PurgeExecutionsAsync to IScheduledJobStorage (size: S+S)
+[2026-02-08 13:00] + US-017+US-018 PASSED - commit: 6f1f2e54
+[2026-02-08 13:00] > US-019+US-045: Add Timeout + MisfireStrategy to RecurringAttribute/ScheduledJob (size: S+S)
+[2026-02-08 13:03] + US-019+US-045 PASSED - commit: ddb0e9d5
+[2026-02-08 13:03] > US-020: Add ScheduleOnceAsync to IScheduledJobManager (size: S)
+[2026-02-08 13:05] + US-020 PASSED - commit: 03219c57
+[2026-02-08 13:05] > US-021: Create StaleJobRecoveryService (size: M)
+[2026-02-08 13:07] + US-021 PASSED - commit: 4ad9bca8
+[2026-02-08 13:08] > US-022+US-046: Execution timeout + Misfire strategy enforcement (size: M+S)
+[2026-02-08 13:25] + US-022+US-046 PASSED - commit: 98db1471. Fixed build errors (MisfireStrategy.RunImmediately→FireImmediately, CreateJobAsync→UpsertJobAsync, missing MisfireStrategy in reconciler).
+[2026-02-08 13:30] > US-023+US-048: Scheduling-only mode + Cron config override (size: S+S)
+[2026-02-08 13:30] > US-024+US-047: Compiled delegates + Health checks (size: M+S)
+[2026-02-08 13:35] + US-023+US-048 PASSED - commit: 8673b452
+[2026-02-08 13:37] + US-024+US-047 PASSED - commit: fd623839. Fixed missing HealthChecks pkg ref.
+[2026-02-08 13:38] > US-025: InMemoryScheduledJobStorage (size: M)
+[2026-02-08 13:38] > US-026: PostgreSQL ReleaseStaleJobsAsync + PurgeExecutionsAsync (size: S)
+[2026-02-08 13:42] + US-025 PASSED - commit: 49ec46bc
+[2026-02-08 13:43] + US-026 PASSED - commit: a145be81. Also added Timeout/MisfireStrategy/ConsumerTypeName columns to DDL and all SQL queries.
+[2026-02-08 13:43] > US-027: Unit tests for hardening features (size: L)
+[2026-02-08 13:43] > US-028: Integration tests (size: M) — DEFERRED (requires Docker/Testcontainers)
+[2026-02-08 13:43] > US-029: Update README files (size: S)
+[2026-02-08 13:48] + US-029 PASSED - commit: 3be7fd65
+[2026-02-08 13:54] + US-027 PASSED - commit: b4cdbec3. 275 tests total, 274 passed, 1 pre-existing failure.
+[2026-02-08 13:54] Hardening plan COMPLETE (US-017-029, US-045-048 all passed, US-028 deferred).
+[2026-02-08 14:00] > Starting main plan Phase 1: Consumer Correlation (US-030, US-031)
+[2026-02-08 14:00] > US-030: Set MessagingCorrelationScope in CompiledMessageDispatcher (size: S)
+[2026-02-08 14:02] + US-030 PASSED - commit: 657f7b5b
+[2026-02-08 14:02] > US-031: Unit tests for consumer-to-publish correlation (size: M)
+[2026-02-08 14:02] > US-032: Add DiagnosticSource events to scheduling pipeline (size: M)
+[2026-02-08 14:05] + US-032 PASSED - commit: 26c00e69
+[2026-02-08 14:05] + US-031 PASSED - commit: 011c8628. Phase 1 COMPLETE.
+[2026-02-08 14:05] > Starting Phase 2: OpenTelemetry Scheduling (US-033, US-034)
+[2026-02-08 14:05] > US-033: Subscribe to scheduling events in Messaging.OpenTelemetry (size: M)
+[2026-02-08 14:05] > US-034: Unit tests for scheduling instrumentation (size: S)
+[2026-02-08 14:10] + US-033 PASSED - commit: a57e5e23
+[2026-02-08 14:11] + US-034 PASSED - commit: 8d647c61. Phase 2 COMPLETE.
+[2026-02-08 14:11] > Starting Phase 3: Dashboard Merge (US-035-041)
+[2026-02-08 14:11] > US-035: Port auth system to Messaging Dashboard (size: M)
+[2026-02-08 14:11] > US-036: Create scheduling dashboard repository (size: M)
+[2026-02-08 14:16] + US-036 PASSED - commit: 34e1db1d
+[2026-02-08 14:18] + US-035 PASSED - commit: f2e31ed3
+[2026-02-08 14:18] > US-037: Scheduling REST endpoints (size: M)
+[2026-02-08 14:18] > US-038: SignalR hub for live updates (size: S)
+[2026-02-08 14:22] + US-037 PASSED - commit: 29933a62
+[2026-02-08 14:22] + US-038 PASSED - commit: 7da5c1c3
+[2026-02-08 14:22] > US-039: Vue 3 + TS frontend — DEFERRED (requires frontend build pipeline, Vue/TS tooling)
+[2026-02-08 14:22] > US-041: Dashboard integration tests — DEFERRED (requires Docker/Testcontainers)
+[2026-02-08 14:22] > Starting Phase 4: Ticker Removal (US-044)
+[2026-02-08 14:22] > US-044: Remove all Ticker packages (size: M)
+[2026-02-08 14:26] + US-044 PASSED - commit: 466c02c6. Phase 4 COMPLETE.
+[2026-02-08 14:26] Main plan COMPLETE (US-030-038, US-044 all passed, US-039/US-041 deferred).

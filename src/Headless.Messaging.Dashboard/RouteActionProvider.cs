@@ -5,11 +5,14 @@ using System.Net;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
+using Headless.Messaging.Dashboard.Scheduling;
+using Headless.Messaging.Dashboard.Authentication;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
+using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -21,6 +24,7 @@ namespace Headless.Messaging.Dashboard;
 public class RouteActionProvider
 {
     private const int _MaxPageSize = 200;
+    private const int _MaxBatchSize = 200;
 
     private readonly GatewayProxyAgent? _agent;
     private readonly IEndpointRouteBuilder _builder;
@@ -92,6 +96,36 @@ public class RouteActionProvider
             .MapGet(prefixMatch + "/list-svc/{namespace}", ListServices)
             .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
         _builder.MapGet(prefixMatch + "/ping", PingServices).AllowAnonymous();
+
+        // Auth endpoints (always anonymous — used by the frontend to discover and validate auth)
+        _builder.MapGet(prefixMatch + "/auth/info", AuthInfoEndpoint).AllowAnonymous();
+        _builder.MapPost(prefixMatch + "/auth/validate", AuthValidateEndpoint).AllowAnonymous();
+
+        // Scheduling endpoints
+        _builder
+            .MapGet(prefixMatch + "/scheduling/jobs", SchedulingJobs)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapGet(prefixMatch + "/scheduling/jobs/{name}", SchedulingJobByName)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapGet(prefixMatch + "/scheduling/jobs/{jobId:guid}/executions", SchedulingExecutions)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapGet(prefixMatch + "/scheduling/jobs/{jobId:guid}/graph", SchedulingGraph)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapGet(prefixMatch + "/scheduling/status", SchedulingStatus)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapPost(prefixMatch + "/scheduling/jobs/{name}/trigger", SchedulingTrigger)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapPost(prefixMatch + "/scheduling/jobs/{name}/enable", SchedulingEnable)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
+        _builder
+            .MapPost(prefixMatch + "/scheduling/jobs/{name}/disable", SchedulingDisable)
+            .AllowAnonymousIf(_options.AllowAnonymousExplicit, _options.AuthorizationPolicy);
     }
 
     public async Task Metrics(HttpContext httpContext)
@@ -269,6 +303,13 @@ public class RouteActionProvider
             return;
         }
 
+        if (messageIds.Length > _MaxBatchSize)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await httpContext.Response.WriteAsync($"Batch size exceeds maximum of {_MaxBatchSize}.");
+            return;
+        }
+
         foreach (var messageId in messageIds)
         {
             var message = await MonitoringApi.GetPublishedMessageAsync(messageId);
@@ -297,6 +338,13 @@ public class RouteActionProvider
             return;
         }
 
+        if (messageIds.Length > _MaxBatchSize)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await httpContext.Response.WriteAsync($"Batch size exceeds maximum of {_MaxBatchSize}.");
+            return;
+        }
+
         foreach (var messageId in messageIds)
         {
             _ = await DataStorage.DeletePublishedMessageAsync(messageId);
@@ -316,6 +364,13 @@ public class RouteActionProvider
         if (messageIds == null || messageIds.Length == 0)
         {
             httpContext.Response.StatusCode = StatusCodes.Status422UnprocessableEntity;
+            return;
+        }
+
+        if (messageIds.Length > _MaxBatchSize)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await httpContext.Response.WriteAsync($"Batch size exceeds maximum of {_MaxBatchSize}.");
             return;
         }
 
@@ -344,6 +399,13 @@ public class RouteActionProvider
         if (messageIds == null || messageIds.Length == 0)
         {
             httpContext.Response.StatusCode = StatusCodes.Status422UnprocessableEntity;
+            return;
+        }
+
+        if (messageIds.Length > _MaxBatchSize)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await httpContext.Response.WriteAsync($"Batch size exceeds maximum of {_MaxBatchSize}.");
             return;
         }
 
@@ -574,10 +636,292 @@ public class RouteActionProvider
 #pragma warning restore EPC12
     }
 
+    public async Task AuthInfoEndpoint(HttpContext httpContext)
+    {
+        var authService = _serviceProvider.GetService<IAuthService>();
+        if (authService == null)
+        {
+            await httpContext.Response.WriteAsJsonAsync(new AuthInfo());
+            return;
+        }
+
+        await httpContext.Response.WriteAsJsonAsync(authService.GetAuthInfo());
+    }
+
+    public async Task AuthValidateEndpoint(HttpContext httpContext)
+    {
+        var authService = _serviceProvider.GetService<IAuthService>();
+        if (authService == null)
+        {
+            await httpContext.Response.WriteAsJsonAsync(AuthResult.Success("anonymous"));
+            return;
+        }
+
+        var result = await authService.AuthenticateAsync(httpContext);
+
+        // Normalize failure responses to prevent credential enumeration via distinct error messages
+        if (!result.IsAuthenticated)
+        {
+            await httpContext.Response.WriteAsJsonAsync(AuthResult.Failure());
+            return;
+        }
+
+        await httpContext.Response.WriteAsJsonAsync(result);
+    }
+
+    public async Task SchedulingJobs(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var storage = _serviceProvider.GetService<IScheduledJobStorage>();
+        if (storage == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var jobs = await storage.GetAllJobsAsync(httpContext.RequestAborted).ConfigureAwait(false);
+
+        var nameFilter = httpContext.Request.Query["name"].ToString();
+        var statusFilter = httpContext.Request.Query["status"].ToString();
+
+        IEnumerable<ScheduledJob> filtered = jobs;
+
+        if (!string.IsNullOrEmpty(nameFilter))
+        {
+            filtered = filtered.Where(j => j.Name.Contains(nameFilter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (
+            !string.IsNullOrEmpty(statusFilter)
+            && Enum.TryParse<ScheduledJobStatus>(statusFilter, ignoreCase: true, out var status)
+        )
+        {
+            filtered = filtered.Where(j => j.Status == status);
+        }
+
+        await httpContext.Response.WriteAsJsonAsync(filtered.OrderBy(j => j.Name, StringComparer.Ordinal).ToList());
+    }
+
+    public async Task SchedulingJobByName(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var storage = _serviceProvider.GetService<IScheduledJobStorage>();
+        if (storage == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var name = httpContext.GetRouteData().Values["name"]?.ToString();
+        if (string.IsNullOrEmpty(name))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var job = await storage.GetJobByNameAsync(name, httpContext.RequestAborted).ConfigureAwait(false);
+        if (job == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        await httpContext.Response.WriteAsJsonAsync(job);
+    }
+
+    public async Task SchedulingExecutions(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var storage = _serviceProvider.GetService<IScheduledJobStorage>();
+        if (storage == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        if (!Guid.TryParse(httpContext.GetRouteData().Values["jobId"]?.ToString(), out var jobId))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var page = httpContext.Request.Query["page"].ToInt32OrDefault(0);
+        var pageSize = Math.Clamp(httpContext.Request.Query["pageSize"].ToInt32OrDefault(20), 1, _MaxPageSize);
+        var limit = (page + 1) * pageSize;
+
+        var executions = await storage
+            .GetExecutionsAsync(jobId, limit, httpContext.RequestAborted)
+            .ConfigureAwait(false);
+
+        var paged = executions.OrderByDescending(e => e.ScheduledTime).Skip(page * pageSize).Take(pageSize).ToList();
+
+        await httpContext.Response.WriteAsJsonAsync(paged);
+    }
+
+    public async Task SchedulingGraph(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var storage = _serviceProvider.GetService<IScheduledJobStorage>();
+        if (storage == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        if (!Guid.TryParse(httpContext.GetRouteData().Values["jobId"]?.ToString(), out var jobId))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var days = httpContext.Request.Query["days"].ToInt32OrDefault(7);
+        var graph = await storage
+            .GetExecutionStatusCountsAsync(jobId, days, httpContext.RequestAborted)
+            .ConfigureAwait(false);
+        await httpContext.Response.WriteAsJsonAsync(graph);
+    }
+
+    public async Task SchedulingStatus(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var storage = _serviceProvider.GetService<IScheduledJobStorage>();
+        if (storage == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var jobs = await storage.GetAllJobsAsync(httpContext.RequestAborted).ConfigureAwait(false);
+
+        var byMachine = jobs.Where(j => j.Status == ScheduledJobStatus.Running && !string.IsNullOrEmpty(j.LockHolder))
+            .GroupBy(j => j.LockHolder!, StringComparer.Ordinal)
+            .Select(g => new MachineJobCount { Machine = g.Key, RunningCount = g.Count() })
+            .ToList();
+
+        var summary = new SchedulerStatusSummary
+        {
+            TotalJobs = jobs.Count,
+            RunningJobs = jobs.Count(j => j.Status == ScheduledJobStatus.Running),
+            PendingJobs = jobs.Count(j => j.Status == ScheduledJobStatus.Pending),
+            DisabledJobs = jobs.Count(j => !j.IsEnabled),
+            JobsByMachine = byMachine,
+        };
+
+        await httpContext.Response.WriteAsJsonAsync(summary);
+    }
+
+    public async Task SchedulingTrigger(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var manager = _serviceProvider.GetService<IScheduledJobManager>();
+        if (manager == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var name = httpContext.GetRouteData().Values["name"]?.ToString();
+        if (string.IsNullOrEmpty(name))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var result = await manager.TriggerAsync(name, httpContext.RequestAborted);
+        httpContext.Response.StatusCode = result.IsSuccess
+            ? StatusCodes.Status202Accepted
+            : _MapErrorStatusCode(result.Error);
+    }
+
+    public async Task SchedulingEnable(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var manager = _serviceProvider.GetService<IScheduledJobManager>();
+        if (manager == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var name = httpContext.GetRouteData().Values["name"]?.ToString();
+        if (string.IsNullOrEmpty(name))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var result = await manager.EnableAsync(name, httpContext.RequestAborted);
+        httpContext.Response.StatusCode = result.IsSuccess
+            ? StatusCodes.Status204NoContent
+            : _MapErrorStatusCode(result.Error);
+    }
+
+    public async Task SchedulingDisable(HttpContext httpContext)
+    {
+        if (_agent != null && await _agent.Invoke(httpContext))
+        {
+            return;
+        }
+
+        var manager = _serviceProvider.GetService<IScheduledJobManager>();
+        if (manager == null)
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
+        var name = httpContext.GetRouteData().Values["name"]?.ToString();
+        if (string.IsNullOrEmpty(name))
+        {
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        var result = await manager.DisableAsync(name, httpContext.RequestAborted);
+        httpContext.Response.StatusCode = result.IsSuccess
+            ? StatusCodes.Status204NoContent
+            : _MapErrorStatusCode(result.Error);
+    }
     private static void _BadRequest(HttpContext httpContext)
     {
         httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
     }
+
+    private static int _MapErrorStatusCode(ResultError error) =>
+        error switch
+        {
+            NotFoundError => StatusCodes.Status404NotFound,
+            ConflictError => StatusCodes.Status409Conflict,
+            _ => StatusCodes.Status500InternalServerError,
+        };
 }
 
 public class WarpResult

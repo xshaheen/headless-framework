@@ -34,6 +34,16 @@ public sealed class SqlServerStorageInitializer(
         return $"{options.Value.Schema}.Lock";
     }
 
+    public string GetScheduledJobsTableName()
+    {
+        return $"{options.Value.Schema}.ScheduledJobs";
+    }
+
+    public string GetJobExecutionsTableName()
+    {
+        return $"{options.Value.Schema}.JobExecutions";
+    }
+
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         if (cancellationToken.IsCancellationRequested)
@@ -71,6 +81,8 @@ public sealed class SqlServerStorageInitializer(
         var receivedPrefix = $"{schema}_Received";
         var publishedPrefix = $"{schema}_Published";
         var lockPrefix = $"{schema}_Lock";
+        var scheduledPrefix = $"{schema}_ScheduledJobs";
+        var executionsPrefix = $"{schema}_JobExecutions";
 
         // Simplified SQL for Azure SQL Edge compatibility (no TEXTIMAGE_ON, simpler index options)
         var batchSql = $"""
@@ -118,6 +130,61 @@ public sealed class SqlServerStorageInitializer(
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_RetryQuery] ON {GetPublishedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC);
+            END;
+
+            IF OBJECT_ID(N'{GetScheduledJobsTableName()}',N'U') IS NULL
+            BEGIN
+                CREATE TABLE {GetScheduledJobsTableName()}(
+                    [Id] [uniqueidentifier] NOT NULL,
+                    [Name] [nvarchar](200) NOT NULL,
+                    [Type] [nvarchar](20) NOT NULL,
+                    [CronExpression] [nvarchar](100) NULL,
+                    [TimeZone] [nvarchar](100) NOT NULL DEFAULT 'UTC',
+                    [Payload] [nvarchar](max) NULL,
+                    [Status] [nvarchar](50) NOT NULL,
+                    [NextRunTime] [datetimeoffset](7) NULL,
+                    [LastRunTime] [datetimeoffset](7) NULL,
+                    [LastRunDuration] [bigint] NULL,
+                    [MaxRetries] [int] NOT NULL DEFAULT 0,
+                    [RetryIntervals] [nvarchar](max) NULL,
+                    [SkipIfRunning] [bit] NOT NULL DEFAULT 1,
+                    [LockHolder] [nvarchar](256) NULL,
+                    [DateLocked] [datetimeoffset](7) NULL,
+                    [IsEnabled] [bit] NOT NULL DEFAULT 1,
+                    [DateCreated] [datetimeoffset](7) NOT NULL,
+                    [DateUpdated] [datetimeoffset](7) NOT NULL,
+                    [Timeout] [bigint] NULL,
+                    [MisfireStrategy] [nvarchar](50) NOT NULL DEFAULT 'FireImmediately',
+                    [ConsumerTypeName] [nvarchar](500) NULL,
+                    [Version] [bigint] NOT NULL DEFAULT 0,
+                    CONSTRAINT [PK_{scheduledPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
+                );
+
+                CREATE UNIQUE NONCLUSTERED INDEX [IX_{scheduledPrefix}_Name] ON {GetScheduledJobsTableName()} ([Name] ASC);
+                CREATE NONCLUSTERED INDEX [IX_{scheduledPrefix}_NextRun] ON {GetScheduledJobsTableName()} ([NextRunTime] ASC)
+                    WHERE [Status] = 'Pending' AND [IsEnabled] = 1;
+                CREATE NONCLUSTERED INDEX [IX_{scheduledPrefix}_Lock] ON {GetScheduledJobsTableName()} ([LockHolder] ASC, [DateLocked] ASC)
+                    WHERE [Status] = 'Running';
+            END;
+
+            IF OBJECT_ID(N'{GetJobExecutionsTableName()}',N'U') IS NULL
+            BEGIN
+                CREATE TABLE {GetJobExecutionsTableName()}(
+                    [Id] [uniqueidentifier] NOT NULL,
+                    [JobId] [uniqueidentifier] NOT NULL,
+                    [ScheduledTime] [datetimeoffset](7) NOT NULL,
+                    [DateStarted] [datetimeoffset](7) NULL,
+                    [DateCompleted] [datetimeoffset](7) NULL,
+                    [Status] [nvarchar](50) NOT NULL,
+                    [Duration] [bigint] NULL,
+                    [RetryAttempt] [int] NOT NULL DEFAULT 0,
+                    [Error] [nvarchar](max) NULL,
+                    CONSTRAINT [PK_{executionsPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC),
+                    CONSTRAINT [FK_{executionsPrefix}_JobId] FOREIGN KEY ([JobId])
+                        REFERENCES {GetScheduledJobsTableName()}([Id]) ON DELETE CASCADE
+                );
+
+                CREATE NONCLUSTERED INDEX [IX_{executionsPrefix}_JobId] ON {GetJobExecutionsTableName()} ([JobId] ASC);
             END;
 
             """;

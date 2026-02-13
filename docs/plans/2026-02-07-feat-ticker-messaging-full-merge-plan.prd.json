@@ -1,0 +1,285 @@
+{
+	"name": "ticker-messaging-full-merge",
+	"description": "Complete Ticker-to-Messaging migration: consumer correlation, OpenTelemetry scheduling, dashboard merge (Ticker UI base), Ticker removal",
+	"created_at": "2026-02-07T00:00:00Z",
+	"status": "in_progress",
+	"branches": {
+		"base": "main",
+		"feature": "xshaheen/unified-messaging-scheduling"
+	},
+	"worktree": null,
+	"userStories": [
+		{
+			"id": "US-030",
+			"title": "Set MessagingCorrelationScope in CompiledMessageDispatcher",
+			"size": "S",
+			"priority": 1,
+			"pass": true,
+			"attempts": 1,
+			"commits": ["657f7b5b"],
+			"notes": "Depends on correlation plan US-006 (MessagingCorrelationScope must exist)",
+			"description": "Extend ambient correlation from scheduled jobs to ALL message consumers. Set MessagingCorrelationScope.Begin() before consumer.Consume() in CompiledMessageDispatcher using consumed message's CorrelationId.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Core/Internal/CompiledMessageDispatcher.cs",
+				"src/Headless.Messaging.Core/Internal/ISubscribeInvoker.cs"
+			],
+			"acceptanceCriteria": [
+				"MessagingCorrelationScope.Begin() called before consumer.Consume() in CompiledMessageDispatcher",
+				"Scope uses consumed message's CorrelationId (fall back to MessageId if null)",
+				"Scope disposed after consumer completes (in finally)",
+				"Published messages from consumer inherit correlation automatically",
+				"Callback correlation still works (explicit headers override ambient scope)"
+			]
+		},
+		{
+			"id": "US-031",
+			"title": "Unit tests for consumer-to-publish correlation",
+			"size": "M",
+			"priority": 2,
+			"pass": true,
+			"attempts": 1,
+			"commits": ["011c8628"],
+			"notes": "",
+			"description": "Tests for consumer-to-publish correlation propagation via MessagingCorrelationScope in CompiledMessageDispatcher.",
+			"filesToStudy": ["tests/Headless.Messaging.Core.Tests.Unit/"],
+			"acceptanceCriteria": [
+				"Consumer publishes message -> inherits consumed message's CorrelationId",
+				"Consumer publishes multiple messages -> incrementing CorrelationSequence",
+				"Consumer passes explicit CorrelationId header -> overrides ambient scope",
+				"No consumed message context (direct publish outside consumer) -> existing behavior",
+				"TestBase, AbortToken, should_*_when_* naming"
+			]
+		},
+		{
+			"id": "US-032",
+			"title": "Add DiagnosticSource events to scheduling pipeline",
+			"size": "M",
+			"priority": 3,
+			"pass": true,
+			"attempts": 1,
+			"commits": ["26c00e69"],
+			"notes": "Can be implemented in parallel with other phases",
+			"description": "Emit DiagnosticSource events from ScheduledJobDispatcher for OpenTelemetry to subscribe to. Same pattern as OutboxPublisher._TracingBefore/After.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Core/Scheduling/SchedulerBackgroundService.cs",
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobDispatcher.cs",
+				"src/Headless.Messaging.Core/Diagnostics/MessageDiagnosticListenerNames.cs",
+				"src/Headless.Messaging.Core/Internal/OutboxPublisher.cs"
+			],
+			"acceptanceCriteria": [
+				"DiagnosticListener instance in ScheduledJobDispatcher (same pattern as OutboxPublisher)",
+				"Events: WriteScheduledJobDispatchBefore, WriteScheduledJobDispatchAfter, WriteScheduledJobDispatchError",
+				"Event data carries: job name, execution ID, attempt number, scheduled time",
+				"Error event includes exception details",
+				"No performance impact when no subscriber (guarded by IsEnabled)"
+			]
+		},
+		{
+			"id": "US-033",
+			"title": "Subscribe to scheduling events in Messaging.OpenTelemetry",
+			"size": "M",
+			"priority": 4,
+			"pass": true,
+			"attempts": 1,
+			"commits": ["a57e5e23"],
+			"notes": "",
+			"description": "Create OpenTelemetry Activities for scheduled job execution lifecycle. Port tag naming from Ticker.OpenTelemetry where appropriate.",
+			"filesToStudy": [
+				"src/Headless.Messaging.OpenTelemetry/DiagnosticListener.cs",
+				"src/Headless.Messaging.OpenTelemetry/Setup.cs",
+				"src/Headless.Ticker.OpenTelemetry/OpenTelemetryInstrumentation.cs"
+			],
+			"acceptanceCriteria": [
+				"Subscribe to WriteScheduledJobDispatch* events in DiagnosticListener",
+				"Create Activity with name Messaging.ScheduledJob/{JobName}/Dispatch (ActivityKind.Internal)",
+				"Tags: messaging.job.name, messaging.job.execution_id, messaging.job.attempt, messaging.job.duration_ms, messaging.job.success",
+				"Error: set ActivityStatusCode.Error with exception details",
+				"Metrics: messaging.scheduled_job.executions counter, messaging.scheduled_job.duration histogram"
+			]
+		},
+		{
+			"id": "US-034",
+			"title": "Unit tests for scheduling instrumentation",
+			"size": "S",
+			"priority": 5,
+			"pass": true,
+			"attempts": 1,
+			"commits": ["8d647c61"],
+			"notes": "",
+			"description": "Tests for DiagnosticSource events emitted by scheduling pipeline and OpenTelemetry Activity creation.",
+			"filesToStudy": ["tests/Headless.Messaging.Core.Tests.Unit/"],
+			"acceptanceCriteria": [
+				"DiagnosticSource events emitted on dispatch/success/failure",
+				"Events not emitted when no subscriber (performance guard)",
+				"TestBase, AbortToken, should_*_when_* naming"
+			]
+		},
+		{
+			"id": "US-035",
+			"title": "Port auth system to Messaging Dashboard",
+			"size": "M",
+			"priority": 6,
+			"pass": true,
+			"attempts": 1,
+			"commits": ["f2e31ed3"],
+			"notes": "",
+			"description": "Replace simple auth policy with Ticker's 5-mode auth system (None, Basic, ApiKey, Host, Custom). Backward compatible.",
+			"filesToStudy": [
+				"src/Headless.Ticker.Dashboard/AuthConfig.cs",
+				"src/Headless.Ticker.Dashboard/AuthService.cs",
+				"src/Headless.Ticker.Dashboard/IAuthService.cs",
+				"src/Headless.Ticker.Dashboard/AuthMiddleware.cs",
+				"src/Headless.Messaging.Dashboard/DashboardOptions.cs",
+				"src/Headless.Messaging.Dashboard/Setup.cs"
+			],
+			"acceptanceCriteria": [
+				"AuthConfig with 5 modes: None, Basic, ApiKey, Host, Custom",
+				"AuthService with CryptographicOperations.FixedTimeEquals for secure comparison",
+				"AuthMiddleware supporting Authorization header and access_token query param",
+				"DashboardOptions extended with fluent auth config",
+				"Backward compatible - existing AuthorizationPolicy still works"
+			]
+		},
+		{
+			"id": "US-036",
+			"title": "Create scheduling dashboard repository",
+			"size": "M",
+			"priority": 7,
+			"pass": true,
+			"attempts": 1,
+			"commits": ["34e1db1d"],
+			"notes": "",
+			"description": "Backend queries for scheduled jobs and executions in dashboard. Delegates to IScheduledJobStorage with additional query methods.",
+			"filesToStudy": [
+				"src/Headless.Ticker.Dashboard/TickerDashboardRepository.cs",
+				"src/Headless.Messaging.Abstractions/Scheduling/IScheduledJobStorage.cs",
+				"src/Headless.Messaging.Dashboard/RouteActionProvider.cs"
+			],
+			"acceptanceCriteria": [
+				"ISchedulingDashboardRepository interface with paginated queries",
+				"Implementation delegates to IScheduledJobStorage + additional queries",
+				"Graph data: status counts by date range",
+				"Per-machine job counts using LockHolder field",
+				"Registered in DI when IScheduledJobStorage is present"
+			]
+		},
+		{
+			"id": "US-037",
+			"title": "Add scheduling REST endpoints to Messaging Dashboard",
+			"size": "L",
+			"priority": 8,
+			"pass": true,
+			"attempts": 1,
+			"commits": ["29933a62"],
+			"notes": "",
+			"description": "Port Ticker's scheduling endpoints adapted to Messaging's ScheduledJob/JobExecution entities. Simplified from Ticker's separate Time/Cron endpoints into unified ScheduledJob API.",
+			"filesToStudy": [
+				"src/Headless.Ticker.Dashboard/DashboardEndpoints.cs",
+				"src/Headless.Messaging.Dashboard/RouteActionProvider.cs",
+				"src/Headless.Messaging.Abstractions/Scheduling/IScheduledJobManager.cs"
+			],
+			"acceptanceCriteria": [
+				"Job CRUD: GET paginated, GET by name, POST create, PUT update, DELETE",
+				"Execution endpoints: GET by job paginated, GET graph data",
+				"Operation endpoints: POST trigger, POST enable, POST disable",
+				"Status endpoints: GET scheduler status, GET next run",
+				"All endpoints respect auth middleware",
+				"Endpoints return 404 when IScheduledJobStorage not registered"
+			]
+		},
+		{
+			"id": "US-038",
+			"title": "Add SignalR hub for real-time notifications",
+			"size": "M",
+			"priority": 9,
+			"pass": true,
+			"attempts": 1,
+			"commits": ["7da5c1c3"],
+			"notes": "",
+			"description": "Port Ticker's SignalR notification hub for live job updates. Called from SchedulerBackgroundService on lifecycle events.",
+			"filesToStudy": [
+				"src/Headless.Ticker.Dashboard/TickerQNotificationHub.cs",
+				"src/Headless.Ticker.Dashboard/TickerQNotificationHubSender.cs",
+				"src/Headless.Messaging.Dashboard/Setup.cs"
+			],
+			"acceptanceCriteria": [
+				"MessagingNotificationHub with JoinGroup/LeaveGroup/GetStatus methods",
+				"IMessagingNotificationHubSender interface with job lifecycle notifications",
+				"Hub sender called from SchedulerBackgroundService on job events",
+				"Auth validated on WebSocket connection via access_token query param",
+				"Hub mapped at /messaging-hub endpoint"
+			]
+		},
+		{
+			"id": "US-039",
+			"title": "Replace frontend with unified Vue 3 + TypeScript dashboard",
+			"size": "L",
+			"priority": 10,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "Merges previous US-039 (scheduling frontend) and US-040 (pub/sub port) into a single story. K8s node discovery merged into main dashboard.",
+			"description": "Replace Messaging Dashboard's Vue 2 frontend entirely with Ticker's Vue 3 + TS scaffold. Adapt scheduling pages from Ticker's entity model to Messaging's ScheduledJob/JobExecution. Rewrite existing pub/sub pages (Published, Received, Subscriber, Nodes) in Vue 3 + TS Composition API. Merge K8s node discovery into the Nodes page. Single unified navigation with both Messaging and Scheduling sections.",
+			"filesToStudy": [
+				"src/Headless.Ticker.Dashboard/frontend/",
+				"src/Headless.Messaging.Dashboard/frontend/",
+				"src/Headless.Messaging.Dashboard.K8s/"
+			],
+			"acceptanceCriteria": [
+				"Vue 3 + TypeScript + Vite build pipeline",
+				"Auth composable (useAuth) supporting all 5 modes",
+				"Dashboard store with SignalR connection management",
+				"Scheduling pages: Jobs list, Job detail, Executions list, Execution graph, Scheduler status",
+				"Pages adapted from Ticker entities to Messaging ScheduledJob/JobExecution",
+				"Home page with unified stats (pub/sub + scheduling)",
+				"Published/Received pages with status filtering, pagination, requeue/delete (Vue 3 + TS)",
+				"Subscriber page showing consumer groups and topics",
+				"Nodes page with Consul/K8s discovery merged in",
+				"All pages use TypeScript types and Vue 3 Composition API",
+				"Unified navigation with Scheduling and Messaging sections",
+				"Pre-built dist assets committed"
+			]
+		},
+		{
+			"id": "US-041",
+			"title": "Dashboard integration tests",
+			"size": "M",
+			"priority": 11,
+			"pass": false,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Tests for dashboard auth, scheduling endpoints, SignalR hub, and guard behavior when scheduling not configured.",
+			"filesToStudy": ["tests/Headless.Messaging.Dashboard.Tests.Unit/"],
+			"acceptanceCriteria": [
+				"Auth middleware tests: all 5 modes (None, Basic, ApiKey, Host, Custom)",
+				"Scheduling endpoint tests: CRUD, trigger, enable/disable",
+				"SignalR hub tests: connection, group join/leave, notifications",
+				"Endpoint returns 404 when scheduling not configured",
+				"TestBase, AbortToken, should_*_when_* naming"
+			]
+		},
+		{
+			"id": "US-044",
+			"title": "Remove all Ticker packages",
+			"size": "M",
+			"priority": 12,
+			"pass": true,
+			"attempts": 1,
+			"commits": ["466c02c6"],
+			"notes": "Greenfield — skip deprecation (US-042) and migration guide (US-043), go directly to removal after all features are implemented and tested.",
+			"description": "Delete all 7 Ticker source packages, all Ticker test projects, remove from solution files and Directory.Packages.props. Solution must build cleanly.",
+			"filesToStudy": ["headless-framework.slnx", "Directory.Packages.props"],
+			"acceptanceCriteria": [
+				"All 7 src/Headless.Ticker.* directories deleted",
+				"All tests/Headless.Ticker.* test projects deleted",
+				"Removed from solution file(s) and Directory.Packages.props",
+				"Remove NCrontab dependency (Messaging uses Cronos)",
+				"Solution builds cleanly with zero Ticker references",
+				"docs/merge/ files moved to docs/archive/"
+			]
+		}
+	],
+	"pass": false,
+	"validation_errors": []
+}

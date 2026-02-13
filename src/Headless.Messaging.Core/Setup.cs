@@ -6,9 +6,11 @@ using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
+using Headless.Messaging.Scheduling;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -174,7 +176,72 @@ public static class Setup
         services.TryAddSingleton<IBootstrapper>(sp => sp.GetRequiredService<Bootstrapper>());
         services.AddHostedService(sp => sp.GetRequiredService<Bootstrapper>());
 
+        // Scheduler registration: only when IScheduledJobStorage is available
+        _RegisterSchedulerServices(services, options);
+
         return new MessagingBuilder(services);
+    }
+
+    /// <summary>
+    /// Registers scheduler infrastructure services when <see cref="IScheduledJobStorage"/> is available
+    /// and scheduled job definitions have been discovered.
+    /// </summary>
+    private static void _RegisterSchedulerServices(IServiceCollection services, MessagingOptions options)
+    {
+        var storageDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IScheduledJobStorage));
+        var hasStorage = storageDescriptor is not null;
+        var hasDefinitions = options.ScheduledJobDefinitions.Count > 0;
+
+        if (!hasStorage && !hasDefinitions)
+        {
+            return;
+        }
+
+        // IScheduledJobStorage is captured by singletons (ScheduledJobManager,
+        // SchedulerBackgroundService). A Scoped registration would create a captive
+        // dependency — fail fast so the misconfiguration is caught at startup.
+        if (storageDescriptor is { Lifetime: ServiceLifetime.Scoped })
+        {
+            throw new InvalidOperationException(
+                "IScheduledJobStorage is registered as Scoped, but it is consumed by singleton services. "
+                    + "Register it as Singleton (using a connection-per-call pattern) or Transient."
+            );
+        }
+
+        // Register the definition registry with all discovered definitions
+        var definitionRegistry = new ScheduledJobDefinitionRegistry();
+
+        foreach (var definition in options.ScheduledJobDefinitions)
+        {
+            definitionRegistry.Add(definition);
+        }
+
+        services.TryAddSingleton(definitionRegistry);
+
+        // Core scheduling services
+        services.TryAddSingleton<CronScheduleCache>();
+        services.TryAddSingleton<IScheduledJobDispatcher, ScheduledJobDispatcher>();
+        services.TryAddSingleton<IScheduledJobManager, ScheduledJobManager>();
+
+        // Scheduler options (bindable from config section "Messaging:Scheduling")
+        services.AddOptions<SchedulerOptions>().BindConfiguration("Messaging:Scheduling");
+        services.TryAddSingleton(TimeProvider.System);
+
+        // Background services (only when storage is registered)
+        if (hasStorage)
+        {
+            services.AddHostedService<ScheduledJobReconciler>();
+            services.AddHostedService<SchedulerBackgroundService>();
+            services.AddHostedService<StaleJobRecoveryService>();
+        }
+        else if (hasDefinitions)
+        {
+            services.AddHostedService<SchedulerStorageMissingWarningService>();
+        }
+        else if (hasDefinitions)
+        {
+            services.AddHostedService<SchedulerStorageMissingWarningService>();
+        }
     }
 
     /// <summary>
@@ -198,5 +265,16 @@ public static class Setup
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Adds the scheduler health check that reports storage reachability and stale job status.
+    /// </summary>
+    /// <param name="builder">The health checks builder.</param>
+    /// <returns>The health checks builder for chaining.</returns>
+    public static IHealthChecksBuilder AddSchedulerHealthChecks(this IHealthChecksBuilder builder)
+    {
+        builder.AddCheck<SchedulerHealthCheck>("scheduler", tags: ["scheduler", "messaging"]);
+        return builder;
     }
 }
