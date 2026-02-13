@@ -50,12 +50,12 @@ public sealed class RuntimeMessageSubscriberTests : TestBase
 
         var descriptor = selector
             .SelectCandidates()
-            .Single(x => x.RuntimeSubscriptionKey == subscription && x.RuntimeHandler is not null);
+            .Single(x => x.RuntimeSubscriptionKey == subscription.Key && x.RuntimeHandler is not null);
 
         var mediumMessage = _CreateMediumMessage(
             new RuntimeTestMessage("abc"),
-            subscription.Topic,
-            subscription.Group,
+            subscription.Key.Topic,
+            subscription.Key.Group,
             messageId: Guid.NewGuid().ToString("N")
         );
 
@@ -97,12 +97,46 @@ public sealed class RuntimeMessageSubscriberTests : TestBase
         );
 
         // when
-        var removed = await runtimeSubscriber.UnsubscribeAsync(subscription, AbortToken);
+        var removed = await runtimeSubscriber.UnsubscribeAsync(subscription.Key, AbortToken);
 
         // then
         removed.Should().BeTrue();
-        runtimeSubscriber.ListSubscriptions().Should().NotContain(subscription);
-        selector.SelectCandidates().Should().NotContain(x => x.RuntimeSubscriptionKey == subscription);
+        runtimeSubscriber.ListSubscriptions().Should().NotContain(subscription.Key);
+        selector.SelectCandidates().Should().NotContain(x => x.RuntimeSubscriptionKey == subscription.Key);
+    }
+
+    [Fact]
+    public async Task should_unsubscribe_runtime_handler_when_subscription_is_disposed()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMessages(options =>
+        {
+            options.DefaultGroupName = "default";
+            options.Version = "v1";
+            options.UseInMemoryStorage();
+            options.UseInMemoryMessageQueue();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var runtimeSubscriber = provider.GetRequiredService<IRuntimeMessageSubscriber>();
+        var selector = provider.GetRequiredService<IConsumerServiceSelector>();
+
+        var subscription = await runtimeSubscriber.SubscribeAsync<RuntimeTestMessage>(
+            (_, _, _) => ValueTask.CompletedTask,
+            topic: "runtime.topic",
+            group: "runtime.group",
+            handlerId: "runtime-handler",
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await subscription.DisposeAsync();
+
+        // then
+        runtimeSubscriber.ListSubscriptions().Should().NotContain(subscription.Key);
+        selector.SelectCandidates().Should().NotContain(x => x.RuntimeSubscriptionKey == subscription.Key);
     }
 
     [Fact]
@@ -205,14 +239,14 @@ public sealed class RuntimeMessageSubscriberTests : TestBase
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeMessageSubscriber>();
 
         // when
-        var key = await runtimeSubscriber.SubscribeAsync<ConventionRuntimeMessage>(
+        var subscription = await runtimeSubscriber.SubscribeAsync<ConventionRuntimeMessage>(
             (_, _, _) => ValueTask.CompletedTask,
             cancellationToken: AbortToken
         );
 
         // then
-        key.Topic.Should().Be("convention-runtime-message");
-        key.Group.Should().Be("convention-group.v1");
+        subscription.Key.Topic.Should().Be("convention-runtime-message");
+        subscription.Key.Group.Should().Be("convention-group.v1");
     }
 
     private static MediumMessage _CreateMediumMessage<T>(

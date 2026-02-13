@@ -29,6 +29,17 @@ public readonly record struct RuntimeSubscriptionKey(Type MessageType, string To
 /// <summary>
 /// Registers and removes runtime function subscriptions that are attached to the message broker.
 /// </summary>
+public interface IRuntimeSubscription : IDisposable, IAsyncDisposable
+{
+    /// <summary>
+    /// Gets the subscription key for this runtime subscription.
+    /// </summary>
+    RuntimeSubscriptionKey Key { get; }
+}
+
+/// <summary>
+/// Registers and removes runtime function subscriptions that are attached to the message broker.
+/// </summary>
 public interface IRuntimeMessageSubscriber
 {
     /// <summary>
@@ -40,8 +51,10 @@ public interface IRuntimeMessageSubscriber
     /// <param name="group">Optional group. Uses conventions/defaults when omitted.</param>
     /// <param name="handlerId">Optional handler identifier. A deterministic value is generated when omitted.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The created runtime subscription key.</returns>
-    ValueTask<RuntimeSubscriptionKey> SubscribeAsync<TMessage>(
+    /// <returns>
+    /// A disposable runtime subscription. Disposing this instance unsubscribes the handler.
+    /// </returns>
+    ValueTask<IRuntimeSubscription> SubscribeAsync<TMessage>(
         RuntimeMessageHandler<TMessage> handler,
         string? topic = null,
         string? group = null,
@@ -59,8 +72,10 @@ public interface IRuntimeMessageSubscriber
     /// <param name="group">Optional group. Uses conventions/defaults when omitted.</param>
     /// <param name="handlerId">Optional handler identifier. A deterministic value is generated when omitted.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The created runtime subscription key.</returns>
-    ValueTask<RuntimeSubscriptionKey> SubscribeAsync<TMessage>(
+    /// <returns>
+    /// A disposable runtime subscription. Disposing this instance unsubscribes the handler.
+    /// </returns>
+    ValueTask<IRuntimeSubscription> SubscribeAsync<TMessage>(
         Func<ConsumeContext<TMessage>, CancellationToken, ValueTask> handler,
         string? topic = null,
         string? group = null,

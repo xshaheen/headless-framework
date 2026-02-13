@@ -27,7 +27,7 @@ internal sealed class RuntimeMessageSubscriber(
     private IReadOnlyList<ConsumerExecutorDescriptor> _descriptors = [];
     private IReadOnlyList<RuntimeSubscriptionKey> _keys = [];
 
-    public ValueTask<RuntimeSubscriptionKey> SubscribeAsync<TMessage>(
+    public async ValueTask<IRuntimeSubscription> SubscribeAsync<TMessage>(
         RuntimeMessageHandler<TMessage> handler,
         string? topic = null,
         string? group = null,
@@ -73,10 +73,11 @@ internal sealed class RuntimeMessageSubscriber(
             _RefreshSnapshots();
         }
 
-        return _RefreshConsumersAsync(key, cancellationToken);
+        await _RefreshConsumersAsync(cancellationToken).ConfigureAwait(false);
+        return new RuntimeSubscription(this, key);
     }
 
-    public ValueTask<RuntimeSubscriptionKey> SubscribeAsync<TMessage>(
+    public ValueTask<IRuntimeSubscription> SubscribeAsync<TMessage>(
         Func<ConsumeContext<TMessage>, CancellationToken, ValueTask> handler,
         string? topic = null,
         string? group = null,
@@ -257,15 +258,6 @@ internal sealed class RuntimeMessageSubscriber(
         _keys = _subscriptions.Keys.ToList().AsReadOnly();
     }
 
-    private async ValueTask<RuntimeSubscriptionKey> _RefreshConsumersAsync(
-        RuntimeSubscriptionKey key,
-        CancellationToken cancellationToken = default
-    )
-    {
-        await _RefreshConsumersAsync(cancellationToken).ConfigureAwait(false);
-        return key;
-    }
-
     private async ValueTask _RefreshConsumersAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -275,6 +267,47 @@ internal sealed class RuntimeMessageSubscriber(
         if (consumerRegister.IsStarted())
         {
             await consumerRegister.ReStartAsync(force: true).ConfigureAwait(false);
+        }
+    }
+
+    private sealed class RuntimeSubscription(RuntimeMessageSubscriber owner, RuntimeSubscriptionKey key)
+        : IRuntimeSubscription
+    {
+        private RuntimeMessageSubscriber? _owner = owner;
+        private int _disposed;
+
+        public RuntimeSubscriptionKey Key { get; } = key;
+
+        public void Dispose()
+        {
+            var subscriptionOwner = _GetOwnerAndMarkDisposed();
+            if (subscriptionOwner is null)
+            {
+                return;
+            }
+
+            subscriptionOwner.UnsubscribeAsync(Key).AsTask().GetAwaiter().GetResult();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            var subscriptionOwner = _GetOwnerAndMarkDisposed();
+            if (subscriptionOwner is null)
+            {
+                return;
+            }
+
+            await subscriptionOwner.UnsubscribeAsync(Key).ConfigureAwait(false);
+        }
+
+        private RuntimeMessageSubscriber? _GetOwnerAndMarkDisposed()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return null;
+            }
+
+            return Interlocked.Exchange(ref _owner, null);
         }
     }
 }
