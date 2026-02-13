@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
@@ -12,7 +13,7 @@ namespace Tests.Scheduling;
 
 public sealed class ScheduledJobDispatcherDiagnosticTests : TestBase
 {
-    private readonly List<KeyValuePair<string, object?>> _events = [];
+    private readonly ConcurrentQueue<KeyValuePair<string, object?>> _events = [];
     private readonly IDisposable? _subscription;
 
     public ScheduledJobDispatcherDiagnosticTests()
@@ -37,9 +38,10 @@ public sealed class ScheduledJobDispatcherDiagnosticTests : TestBase
         await sut.DispatchAsync(job, execution, AbortToken);
 
         // then
-        _events.Should().HaveCount(2);
+        var matchingEvents = _GetEventsForExecution(execution.Id);
+        matchingEvents.Should().HaveCount(2);
 
-        var beforeEvent = _events[0];
+        var beforeEvent = matchingEvents[0];
         beforeEvent.Key.Should().Be(MessageDiagnosticListenerNames.BeforeScheduledJobDispatch);
         var beforeData = beforeEvent.Value.Should().BeOfType<ScheduledJobEventData>().Subject;
         beforeData.JobName.Should().Be(job.Name);
@@ -48,7 +50,7 @@ public sealed class ScheduledJobDispatcherDiagnosticTests : TestBase
         beforeData.ScheduledTime.Should().Be(execution.ScheduledTime);
         beforeData.OperationTimestamp.Should().NotBeNull();
 
-        var afterEvent = _events[1];
+        var afterEvent = matchingEvents[1];
         afterEvent.Key.Should().Be(MessageDiagnosticListenerNames.AfterScheduledJobDispatch);
         var afterData = afterEvent.Value.Should().BeOfType<ScheduledJobEventData>().Subject;
         afterData.JobName.Should().Be(job.Name);
@@ -75,12 +77,13 @@ public sealed class ScheduledJobDispatcherDiagnosticTests : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>();
 
         // then
-        _events.Should().HaveCount(2);
+        var matchingEvents = _GetEventsForExecution(execution.Id);
+        matchingEvents.Should().HaveCount(2);
 
-        var beforeEvent = _events[0];
+        var beforeEvent = matchingEvents[0];
         beforeEvent.Key.Should().Be(MessageDiagnosticListenerNames.BeforeScheduledJobDispatch);
 
-        var errorEvent = _events[1];
+        var errorEvent = matchingEvents[1];
         errorEvent.Key.Should().Be(MessageDiagnosticListenerNames.ErrorScheduledJobDispatch);
         var errorData = errorEvent.Value.Should().BeOfType<ScheduledJobEventData>().Subject;
         errorData.JobName.Should().Be(job.Name);
@@ -150,9 +153,16 @@ public sealed class ScheduledJobDispatcherDiagnosticTests : TestBase
         return (sut, job, execution);
     }
 
+    private List<KeyValuePair<string, object?>> _GetEventsForExecution(Guid executionId) =>
+        _events
+            .ToArray()
+            .Where(x => x.Value is ScheduledJobEventData eventData && eventData.ExecutionId == executionId)
+            .ToList();
+
     // -- diagnostic observer helpers --
 
-    private sealed class ListenerObserver(List<KeyValuePair<string, object?>> events) : IObserver<DiagnosticListener>
+    private sealed class ListenerObserver(ConcurrentQueue<KeyValuePair<string, object?>> events)
+        : IObserver<DiagnosticListener>
     {
         public void OnNext(DiagnosticListener value)
         {
@@ -167,10 +177,10 @@ public sealed class ScheduledJobDispatcherDiagnosticTests : TestBase
         public void OnError(Exception error) { }
     }
 
-    private sealed class EventObserver(List<KeyValuePair<string, object?>> events)
+    private sealed class EventObserver(ConcurrentQueue<KeyValuePair<string, object?>> events)
         : IObserver<KeyValuePair<string, object?>>
     {
-        public void OnNext(KeyValuePair<string, object?> value) => events.Add(value);
+        public void OnNext(KeyValuePair<string, object?> value) => events.Enqueue(value);
 
         public void OnCompleted() { }
 
