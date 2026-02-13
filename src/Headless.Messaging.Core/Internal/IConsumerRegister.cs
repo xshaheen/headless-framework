@@ -21,6 +21,8 @@ public interface IConsumerRegister : IProcessingServer
 {
     bool IsHealthy();
 
+    bool IsStarted();
+
     ValueTask ReStartAsync(bool force = false);
 }
 
@@ -40,6 +42,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private CancellationTokenSource _cts = new();
     private IDispatcher _dispatcher = null!;
     private int _disposed;
+    private volatile bool _isStarted;
     private volatile bool _isHealthy = true;
 
     private MethodMatcherCache _selector = null!;
@@ -50,6 +53,11 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     public bool IsHealthy()
     {
         return _isHealthy;
+    }
+
+    public bool IsStarted()
+    {
+        return _isStarted;
     }
 
     public async ValueTask StartAsync(CancellationToken stoppingToken)
@@ -66,10 +74,16 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         await ExecuteAsync();
 
         _disposed = 0;
+        _isStarted = true;
     }
 
     public async ValueTask ReStartAsync(bool force = false)
     {
+        if (!_isStarted)
+        {
+            return;
+        }
+
         if (!IsHealthy() || force)
         {
             await PulseAsync();
@@ -87,6 +101,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         {
             return;
         }
+
+        _isStarted = false;
     }
 
     public async ValueTask DisposeAsync()
@@ -115,6 +131,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         }
         finally
         {
+            _isStarted = false;
+
             // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
             if (_dispatcher is not null)
             {

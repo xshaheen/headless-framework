@@ -151,7 +151,10 @@ public sealed class CompiledMessageDispatcherTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(handler);
         var sp = services.BuildServiceProvider();
-        var sut = new CompiledMessageDispatcher(sp.GetRequiredService<IServiceScopeFactory>());
+        var sut = new CompiledMessageDispatcher(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            new MessageExecutionCore()
+        );
         return (sut, handler);
     }
 

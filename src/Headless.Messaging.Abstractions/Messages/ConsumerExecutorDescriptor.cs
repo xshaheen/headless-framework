@@ -33,6 +33,16 @@ public sealed class ConsumerExecutorDescriptor
     /// Maximum number of messages to process concurrently for this consumer.
     /// </summary>
     public byte Concurrency { get; init; } = 1;
+
+    /// <summary>
+    /// Gets the runtime subscription key when this descriptor maps to a runtime function handler.
+    /// </summary>
+    public RuntimeSubscriptionKey? RuntimeSubscriptionKey { get; init; }
+
+    /// <summary>
+    /// Gets the runtime function handler delegate when this descriptor maps to a runtime subscription.
+    /// </summary>
+    public Func<IServiceProvider, object, CancellationToken, ValueTask>? RuntimeHandler { get; init; }
 }
 
 public sealed class ParameterDescriptor

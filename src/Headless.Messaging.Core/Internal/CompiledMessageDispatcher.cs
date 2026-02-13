@@ -75,6 +75,21 @@ public interface IMessageDispatcher
     /// </remarks>
     Task DispatchAsync<TMessage>(ConsumeContext<TMessage> context, CancellationToken cancellationToken)
         where TMessage : class;
+
+    /// <summary>
+    /// Dispatches a message using the provided scoped service provider.
+    /// </summary>
+    /// <typeparam name="TMessage">The type of the message to dispatch.</typeparam>
+    /// <param name="context">The consumption context containing message payload and metadata.</param>
+    /// <param name="scopedServiceProvider">The scoped service provider for this invocation.</param>
+    /// <param name="cancellationToken">A cancellation token for the dispatch operation.</param>
+    /// <returns>A task that completes when the consumer finishes processing the message.</returns>
+    Task DispatchScopedAsync<TMessage>(
+        ConsumeContext<TMessage> context,
+        IServiceProvider scopedServiceProvider,
+        CancellationToken cancellationToken
+    )
+        where TMessage : class;
 }
 
 /// <summary>
@@ -98,17 +113,20 @@ public interface IMessageDispatcher
 internal sealed class CompiledMessageDispatcher : IMessageDispatcher
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IMessageExecutionCore _executionCore;
     private readonly ConcurrentDictionary<Type, Delegate> _compiledInvokers = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CompiledMessageDispatcher"/> class.
     /// </summary>
     /// <param name="scopeFactory">Factory for creating dependency injection scopes.</param>
-    public CompiledMessageDispatcher(IServiceScopeFactory scopeFactory)
+    public CompiledMessageDispatcher(IServiceScopeFactory scopeFactory, IMessageExecutionCore executionCore)
     {
         Argument.IsNotNull(scopeFactory);
+        Argument.IsNotNull(executionCore);
 
         _scopeFactory = scopeFactory;
+        _executionCore = executionCore;
     }
 
     /// <inheritdoc />
@@ -117,50 +135,68 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
     {
         Argument.IsNotNull(context);
 
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        await DispatchScopedAsync(context, scope.ServiceProvider, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task DispatchScopedAsync<TMessage>(
+        ConsumeContext<TMessage> context,
+        IServiceProvider scopedServiceProvider,
+        CancellationToken cancellationToken
+    )
+        where TMessage : class
+    {
+        Argument.IsNotNull(context);
+        Argument.IsNotNull(scopedServiceProvider);
+
         // Get or compile the invoker for this message type
         var invoker =
             (Func<IConsume<TMessage>, ConsumeContext<TMessage>, CancellationToken, ValueTask>)
                 _compiledInvokers.GetOrAdd(typeof(TMessage), _CompileInvoker<TMessage>);
 
-        // Create async DI scope for this message
-        await using var scope = _scopeFactory.CreateAsyncScope();
-
-        // Resolve the consumer from the scope
-        var consumer = scope.ServiceProvider.GetRequiredService<IConsume<TMessage>>();
-
-        // Set correlation scope so any messages published by the consumer inherit the correlation ID
-        var correlationId = context.CorrelationId ?? context.MessageId;
-        using var correlationScope = MessagingCorrelationScope.Begin(correlationId);
-
-        // Call OnStartingAsync if consumer implements IConsumerLifecycle
-        if (consumer is IConsumerLifecycle lifecycle)
-        {
-            await lifecycle.OnStartingAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        try
-        {
-            // Invoke the compiled delegate
-            await invoker(consumer, context, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            // Call OnStoppingAsync if consumer implements IConsumerLifecycle
-            if (consumer is IConsumerLifecycle lifecycleCleanup)
-            {
-                try
+        await _executionCore
+            .ExecuteAsync(
+                context,
+                scopedServiceProvider,
+                async (provider, consumeContext, ct) =>
                 {
-                    await lifecycleCleanup.OnStoppingAsync(cancellationToken).ConfigureAwait(false);
-                }
+                    // Resolve the consumer from the scope
+                    var consumer = provider.GetRequiredService<IConsume<TMessage>>();
+
+                    // Call OnStartingAsync if consumer implements IConsumerLifecycle
+                    if (consumer is IConsumerLifecycle lifecycle)
+                    {
+                        await lifecycle.OnStartingAsync(ct).ConfigureAwait(false);
+                    }
+
+                    try
+                    {
+                        // Invoke the compiled delegate
+                        await invoker(consumer, consumeContext, ct).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        // Call OnStoppingAsync if consumer implements IConsumerLifecycle
+                        if (consumer is IConsumerLifecycle lifecycleCleanup)
+                        {
+                            try
+                            {
+                                await lifecycleCleanup.OnStoppingAsync(ct).ConfigureAwait(false);
+                            }
 #pragma warning disable ERP022
-                catch
-                {
-                    // Suppress exceptions during cleanup to avoid masking original exceptions
-                    // Logging would happen in the consumer's OnStoppingAsync implementation
-                }
+                            catch
+                            {
+                                // Suppress exceptions during cleanup to avoid masking original exceptions
+                                // Logging would happen in the consumer's OnStoppingAsync implementation
+                            }
 #pragma warning restore ERP022
-            }
-        }
+                        }
+                    }
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     /// <summary>

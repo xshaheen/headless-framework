@@ -30,6 +30,11 @@ public interface IConsumerServiceSelector
     /// <param name="key">topic or exchange router key.</param>
     /// <param name="candidates">the set of <see cref="ConsumerExecutorDescriptor" /> candidates.</param>
     ConsumerExecutorDescriptor? SelectBestCandidate(string key, IReadOnlyList<ConsumerExecutorDescriptor> candidates);
+
+    /// <summary>
+    /// Clears internal selector caches so candidate resolution reflects latest subscriptions.
+    /// </summary>
+    void InvalidateCaches();
 }
 
 public sealed class ConsumerServiceSelector : IConsumerServiceSelector
@@ -62,6 +67,12 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
 
         executorDescriptorList.AddRange(_FindConsumersFromInterfaceTypes(_serviceProvider));
 
+        var runtimeSubscriptions = _serviceProvider.GetService<IRuntimeSubscriptionCatalog>();
+        if (runtimeSubscriptions is not null)
+        {
+            executorDescriptorList.AddRange(runtimeSubscriptions.GetConsumerDescriptors());
+        }
+
         executorDescriptorList.AddRange(_FindConsumersFromControllerTypes());
 
         executorDescriptorList = executorDescriptorList
@@ -69,6 +80,11 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
             .ToList();
 
         return executorDescriptorList;
+    }
+
+    public void InvalidateCaches()
+    {
+        _cacheList.Clear();
     }
 
     public ConsumerExecutorDescriptor? SelectBestCandidate(

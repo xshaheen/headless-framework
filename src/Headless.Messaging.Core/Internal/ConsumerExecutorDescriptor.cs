@@ -47,10 +47,10 @@ public class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqualityCompa
         }
 
         //Get hash code for the GroupName field if it is not null.
-        var hashGroup = obj.GroupName == null ? 0 : StringComparer.Ordinal.GetHashCode(obj.GroupName);
+        var hashGroup = obj.GroupName == null ? 0 : StringComparer.OrdinalIgnoreCase.GetHashCode(obj.GroupName);
 
         //Get hash code for the TopicName field.
-        var hashTopicName = StringComparer.Ordinal.GetHashCode(obj.TopicName);
+        var hashTopicName = StringComparer.OrdinalIgnoreCase.GetHashCode(obj.TopicName);
 
         //Calculate the hash code.
         return hashGroup ^ hashTopicName;
