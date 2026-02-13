@@ -113,11 +113,6 @@ public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDi
     ~ScheduledMediumMessageQueue()
 #pragma warning restore MA0055
     {
-        if (!_isDisposed)
-        {
-            System.Diagnostics.Debug.Fail(
-                "ScheduledMediumMessageQueue was not disposed. Call Dispose() to release SemaphoreSlim."
-            );
-        }
+        _Dispose(disposing: false);
     }
 }

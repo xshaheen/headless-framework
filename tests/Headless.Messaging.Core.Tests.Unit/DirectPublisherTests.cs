@@ -427,7 +427,7 @@ public sealed class DirectPublisherTests : TestBase
     /// </summary>
     private sealed class TestTransport : ITransport
     {
-        private readonly ConcurrentBag<TransportMessage> _sentMessages = [];
+        private readonly ConcurrentQueue<TransportMessage> _sentMessages = [];
         private int _sendCallCount;
 
         public BrokerAddress BrokerAddress { get; } = new("Test", "localhost");
@@ -452,7 +452,7 @@ public sealed class DirectPublisherTests : TestBase
                 return Task.FromResult(OperateResult.Failed(new Exception("Transport failure")));
             }
 
-            _sentMessages.Add(message);
+            _sentMessages.Enqueue(message);
             return Task.FromResult(OperateResult.Success);
         }
 
