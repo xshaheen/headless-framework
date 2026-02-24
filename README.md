@@ -30,7 +30,7 @@ dotnet add package Headless.Caching.Redis
 # ... and many more
 ```
 
-## LLms
+## LLMs
 
 - [LLM Context (compact)](llms.txt)
 - [LLM Context (full)](llms-full.txt)
@@ -57,7 +57,6 @@ dotnet add package Headless.Caching.Redis
 | [Headless.BuildingBlocks](src/Headless.BuildingBlocks/README.md) | Domain-Driven Design building blocks |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
-| [Headless.Specifications](src/Headless.Specifications/README.md) | Specification pattern implementation |
 
 ### Blob Storage
 
@@ -75,8 +74,9 @@ dotnet add package Headless.Caching.Redis
 | Package | Description |
 |---------|-------------|
 | [Headless.Caching.Abstractions](src/Headless.Caching.Abstractions/README.md) | Caching interfaces |
-| [Headless.Caching.Foundatio.Memory](src/Headless.Caching.Foundatio.Memory/README.md) | In-memory caching |
-| [Headless.Caching.Foundatio.Redis](src/Headless.Caching.Foundatio.Redis/README.md) | Redis caching |
+| [Headless.Caching.Hybrid](src/Headless.Caching.Hybrid/README.md) | Hybrid caching (L1/L2) |
+| [Headless.Caching.Memory](src/Headless.Caching.Memory/README.md) | In-memory caching |
+| [Headless.Caching.Redis](src/Headless.Caching.Redis/README.md) | Redis caching |
 
 ### Email
 
@@ -172,10 +172,10 @@ dotnet add package Headless.Caching.Redis
 
 | Package                                                                                         | Description |
 |-------------------------------------------------------------------------------------------------|-------------|
-| [Headless.DistributedLocks.Abstractions](src/Headless.DistributedLockes.Abstractions/README.md) | Distributed locking interfaces |
-| [Headless.DistributedLocks.Core](src/Headless.DistributedLockes.Core/README.md)                 | Distributed locking implementation |
-| [Headless.DistributedLocks.Cache](src/Headless.DistributedLockes.Cache/README.md)               | Cache-based locking |
-| [Headless.DistributedLocks.Redis](src/Headless.DistributedLockes.Redis/README.md)               | Redis-based locking |
+| [Headless.DistributedLocks.Abstractions](src/Headless.DistributedLocks.Abstractions/README.md) | Distributed locking interfaces |
+| [Headless.DistributedLocks.Core](src/Headless.DistributedLocks.Core/README.md) | Distributed locking implementation |
+| [Headless.DistributedLocks.Cache](src/Headless.DistributedLocks.Cache/README.md) | Cache-based locking |
+| [Headless.DistributedLocks.Redis](src/Headless.DistributedLocks.Redis/README.md) | Redis-based locking |
 
 ### Serialization
 
@@ -229,7 +229,7 @@ dotnet add package Headless.Caching.Redis
 |---------|-------------|
 | [Headless.Tus](src/Headless.Tus/README.md) | TUS protocol utilities |
 | [Headless.Tus.Azure](src/Headless.Tus.Azure/README.md) | Azure Blob TUS store |
-| [Headless.Tus.DistributedLock](src/Headless.Tus.DistributedLock/README.md) | TUS file locking |
+| [Headless.Tus.DistributedLocks](src/Headless.Tus.DistributedLocks/README.md) | TUS file locking |
 
 ### Utilities
 
@@ -240,7 +240,7 @@ dotnet add package Headless.Caching.Redis
 | [Headless.Generator.Primitives.Abstractions](src/Headless.Generator.Primitives.Abstractions/README.md) | Generator abstractions |
 | [Headless.Hosting](src/Headless.Hosting/README.md) | .NET hosting utilities |
 | [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | Geospatial utilities |
-| [Headless.Recaptcha](src/Headless.Recaptcha/README.md) | Google reCAPTCHA integration |
+| [Headless.ReCaptcha](src/Headless.ReCaptcha/README.md) | Google reCAPTCHA integration |
 | [Headless.Redis](src/Headless.Redis/README.md) | Redis utilities |
 | [Headless.Sitemaps](src/Headless.Sitemaps/README.md) | XML sitemap generation |
 | [Headless.Slugs](src/Headless.Slugs/README.md) | URL slug generation |
