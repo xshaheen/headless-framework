@@ -1,43 +1,72 @@
+<div align="center">
+
 # .NET Headless Framework
 
+**The modular .NET framework that stays out of your way.**
+
+[![NuGet](https://img.shields.io/nuget/v/Headless.Api?label=NuGet&color=blue)](https://www.nuget.org/packages?q=Headless.)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com)
+[![License](https://img.shields.io/github/license/xshaheen/headless-framework)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 
-**[`headless-framework`](https://github.com/xshaheen/headless-framework)** is a modern, open-source **headless framework** for .NET developers who want full control with zero constraints.
+90+ NuGet packages &bull; Abstraction + Provider pattern &bull; Zero lock-in
 
-## Key Features
+[Quick Start](#quick-start) &bull; [Packages](#packages) &bull; [Architecture](#architecture) &bull; [LLM Context](#llm-context) &bull; [Contributing](#contributing)
 
-- **Unopinionated Design** — Use your own patterns and architectures; the framework stays out of your way.
-- **Supports Most Flows** — Built to integrate seamlessly with real-world use cases: CRUD, CQRS, messaging, file uploads, and more.
-- **Composable & Modular** — Pick only what you need. Each piece is a standalone NuGet package.
-- **Zero Lock-in** — Use with any storage, any frontend, any transport (REST, gRPC, GraphQL, etc.).
-- **Developer-Centric** — Designed with clean architecture support, vertical slice support, CQRS, extensibility, and performance in mind.
-- **No Magic, Just Code** — Everything is explicit. No hidden conventions or forced scaffolding.
+</div>
 
-## Ideal For .NET Developers Who:
+---
 
-- Prefer flexibility to convention
-- Want to bootstrap quickly but scale cleanly
-- Care about performance, testability, and maintainability
+## Why Headless?
 
-## Installation
+Most .NET frameworks force opinions on you — folder structures, ORM choices, messaging transports, cloud providers. **Headless doesn't.**
 
-All packages are available on NuGet. Install only what you need:
+Every feature ships as a pair: a thin **abstraction** package (interfaces and contracts) and one or more **provider** packages (concrete implementations). You pick the pieces you need, wire them up, and own the result.
+
+- **Composable** — 90+ standalone packages. Use one or use fifty.
+- **Swappable** — Switch from Redis to in-memory caching, or AWS to Azure blob storage, by changing one line.
+- **Explicit** — No hidden conventions, no magic. Every behavior is visible in your code.
+- **Testable** — Every abstraction is mockable. Every provider is integration-tested with Testcontainers.
+
+## Quick Start
 
 ```bash
 dotnet add package Headless.Api
-dotnet add package Headless.Orm.EntityFramework
 dotnet add package Headless.Caching.Redis
-# ... and many more
+dotnet add package Headless.Orm.EntityFramework
 ```
 
-## LLMs
+```csharp
+var builder = WebApplication.CreateBuilder(args);
 
-- [LLM Context (compact)](llms.txt)
-- [LLM Context (full)](llms-full.txt)
+builder.Services.AddHeadlessApi();
+
+builder.Services.AddHeadlessRedisCache(options =>
+{
+    options.ConnectionString = "localhost:6379";
+});
+
+builder.Services.AddAzureBlobStorage(options =>
+{
+    options.ConnectionString = "your-connection-string";
+    options.ContainerName = "uploads";
+});
+
+builder.Services.AddAwsSesEmail(options =>
+{
+    options.FromEmail = "noreply@example.com";
+});
+
+var app = builder.Build();
+app.UseHeadlessApi();
+app.Run();
+```
 
 ## Packages
 
 ### API & Web
+
+Everything you need to stand up production-grade ASP.NET Core APIs — request/response conventions, validation pipelines, structured logging, and OpenAPI documentation out of the box.
 
 | Package | Description |
 |---------|-------------|
@@ -51,6 +80,8 @@ dotnet add package Headless.Caching.Redis
 
 ### Core
 
+Foundational building blocks shared across the framework — domain primitives, DDD base types, guard clauses, and entity/event infrastructure.
+
 | Package | Description |
 |---------|-------------|
 | [Headless.Base](src/Headless.Base/README.md) | Core primitives and utilities |
@@ -59,6 +90,8 @@ dotnet add package Headless.Caching.Redis
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
 
 ### Blob Storage
+
+Unified blob storage interface with providers for every major cloud and protocol. Store and retrieve files without coupling to any single vendor.
 
 | Package | Description |
 |---------|-------------|
@@ -71,6 +104,8 @@ dotnet add package Headless.Caching.Redis
 
 ### Caching
 
+Multi-tier caching with a clean abstraction layer. Supports in-memory, Redis, and hybrid (L1/L2) strategies — swap providers without touching business logic.
+
 | Package | Description |
 |---------|-------------|
 | [Headless.Caching.Abstractions](src/Headless.Caching.Abstractions/README.md) | Caching interfaces |
@@ -79,6 +114,8 @@ dotnet add package Headless.Caching.Redis
 | [Headless.Caching.Redis](src/Headless.Caching.Redis/README.md) | Redis caching |
 
 ### Email
+
+Send transactional and marketing emails through a unified interface. Plug in AWS SES, SMTP via MailKit, or a no-op dev provider for local testing.
 
 | Package | Description |
 |---------|-------------|
@@ -90,6 +127,8 @@ dotnet add package Headless.Caching.Redis
 
 ### Feature Management
 
+Runtime feature flags backed by persistent storage. Toggle features without redeployment and query flag state from anywhere in your application.
+
 | Package | Description |
 |---------|-------------|
 | [Headless.Features.Abstractions](src/Headless.Features.Abstractions/README.md) | Feature flag interfaces |
@@ -98,11 +137,15 @@ dotnet add package Headless.Caching.Redis
 
 ### Identity
 
+Identity persistence and storage extensions for ASP.NET Core Identity, built on EF Core.
+
 | Package | Description |
 |---------|-------------|
 | [Headless.Identity.Storage.EntityFramework](src/Headless.Identity.Storage.EntityFramework/README.md) | EF Core identity storage |
 
 ### Imaging
+
+Image processing pipeline with pluggable backends. Resize, crop, convert, and optimize images through a clean abstraction.
 
 | Package | Description |
 |---------|-------------|
@@ -112,11 +155,15 @@ dotnet add package Headless.Caching.Redis
 
 ### Logging
 
+Structured logging utilities and enrichers built on top of Serilog.
+
 | Package | Description |
 |---------|-------------|
 | [Headless.Logging.Serilog](src/Headless.Logging.Serilog/README.md) | Serilog logging utilities |
 
 ### Media
+
+Content indexing and metadata extraction for media files — images, video, and documents.
 
 | Package | Description |
 |---------|-------------|
@@ -125,11 +172,15 @@ dotnet add package Headless.Caching.Redis
 
 ### Messaging
 
+In-process domain event publishing for decoupled, event-driven architectures within a single service boundary.
+
 | Package | Description |
 |---------|-------------|
-| [Headless.Domain.LocalPublisher](src/Headless.Domain.LocalPublisher/README.md) | In-process messaging |
+| [Headless.Domain.LocalPublisher](src/Headless.Domain.LocalPublisher/README.md) | In-process domain event publishing |
 
 ### OpenAPI
+
+API documentation generation and interactive UIs. Supports NSwag for spec generation, OData query conventions, and Scalar for a modern API explorer.
 
 | Package | Description |
 |---------|-------------|
@@ -139,12 +190,16 @@ dotnet add package Headless.Caching.Redis
 
 ### ORM
 
+Database access utilities for Entity Framework Core and Couchbase — conventions, seed data, soft deletes, and multi-tenancy support.
+
 | Package | Description |
 |---------|-------------|
 | [Headless.Orm.EntityFramework](src/Headless.Orm.EntityFramework/README.md) | Entity Framework Core utilities |
 | [Headless.Orm.Couchbase](src/Headless.Orm.Couchbase/README.md) | Couchbase ORM utilities |
 
 ### Payments
+
+Payment gateway integrations for the MENA region. Cash-in (collection) and cash-out (disbursement) flows through Paymob.
 
 | Package | Description |
 |---------|-------------|
@@ -154,6 +209,8 @@ dotnet add package Headless.Caching.Redis
 
 ### Permissions
 
+Dynamic, database-backed permission system. Define permissions as code, store assignments in EF Core, and query access control at runtime.
+
 | Package | Description |
 |---------|-------------|
 | [Headless.Permissions.Abstractions](src/Headless.Permissions.Abstractions/README.md) | Permission system interfaces |
@@ -162,22 +219,28 @@ dotnet add package Headless.Caching.Redis
 
 ### Push Notifications
 
+Send push notifications through Firebase Cloud Messaging with a clean abstraction. Includes a no-op dev provider for local testing.
+
 | Package | Description |
 |---------|-------------|
 | [Headless.PushNotifications.Abstractions](src/Headless.PushNotifications.Abstractions/README.md) | Push notification interfaces |
 | [Headless.PushNotifications.Dev](src/Headless.PushNotifications.Dev/README.md) | Development push provider |
 | [Headless.PushNotifications.Firebase](src/Headless.PushNotifications.Firebase/README.md) | Firebase Cloud Messaging |
 
-### Distributed Lock
+### Distributed Locking
 
-| Package                                                                                         | Description |
-|-------------------------------------------------------------------------------------------------|-------------|
+Coordinate access to shared resources across distributed services. Supports regular locks with expiration and throttling locks for rate limiting.
+
+| Package | Description |
+|---------|-------------|
 | [Headless.DistributedLocks.Abstractions](src/Headless.DistributedLocks.Abstractions/README.md) | Distributed locking interfaces |
 | [Headless.DistributedLocks.Core](src/Headless.DistributedLocks.Core/README.md) | Distributed locking implementation |
 | [Headless.DistributedLocks.Cache](src/Headless.DistributedLocks.Cache/README.md) | Cache-based locking |
 | [Headless.DistributedLocks.Redis](src/Headless.DistributedLocks.Redis/README.md) | Redis-based locking |
 
 ### Serialization
+
+Pluggable serialization with providers for System.Text.Json and MessagePack. Use the same interface for JSON APIs and binary wire formats.
 
 | Package | Description |
 |---------|-------------|
@@ -187,6 +250,8 @@ dotnet add package Headless.Caching.Redis
 
 ### Settings
 
+Dynamic application settings stored in a database. Change configuration at runtime without redeployment, with caching and change notification support.
+
 | Package | Description |
 |---------|-------------|
 | [Headless.Settings.Abstractions](src/Headless.Settings.Abstractions/README.md) | Dynamic settings interfaces |
@@ -194,6 +259,8 @@ dotnet add package Headless.Caching.Redis
 | [Headless.Settings.Storage.EntityFramework](src/Headless.Settings.Storage.EntityFramework/README.md) | EF Core settings storage |
 
 ### SMS
+
+Send SMS messages through a unified interface with providers for major regional and global carriers.
 
 | Package | Description |
 |---------|-------------|
@@ -209,6 +276,8 @@ dotnet add package Headless.Caching.Redis
 
 ### SQL
 
+Lightweight connection factories for raw SQL access when you need to drop below the ORM. Supports PostgreSQL, SQL Server, and SQLite.
+
 | Package | Description |
 |---------|-------------|
 | [Headless.Sql.Abstractions](src/Headless.Sql.Abstractions/README.md) | SQL connection interfaces |
@@ -218,12 +287,16 @@ dotnet add package Headless.Caching.Redis
 
 ### Testing
 
+Test infrastructure and utilities — base classes, builders, fixtures, and Testcontainers integration for real-database integration tests.
+
 | Package | Description |
 |---------|-------------|
 | [Headless.Testing](src/Headless.Testing/README.md) | Testing utilities and base classes |
 | [Headless.Testing.Testcontainers](src/Headless.Testing.Testcontainers/README.md) | Testcontainers fixtures |
 
 ### TUS (Resumable Uploads)
+
+[TUS protocol](https://tus.io) support for reliable, resumable file uploads. Handles large files gracefully with Azure Blob Storage and distributed locking.
 
 | Package | Description |
 |---------|-------------|
@@ -232,6 +305,8 @@ dotnet add package Headless.Caching.Redis
 | [Headless.Tus.DistributedLocks](src/Headless.Tus.DistributedLocks/README.md) | TUS file locking |
 
 ### Utilities
+
+Cross-cutting utilities that don't belong to a specific domain — validation extensions, source generators, hosting helpers, geospatial, and more.
 
 | Package | Description |
 |---------|-------------|
@@ -245,47 +320,27 @@ dotnet add package Headless.Caching.Redis
 | [Headless.Sitemaps](src/Headless.Sitemaps/README.md) | XML sitemap generation |
 | [Headless.Slugs](src/Headless.Slugs/README.md) | URL slug generation |
 
-## Quick Start
+## Architecture
 
-```csharp
-var builder = WebApplication.CreateBuilder(args);
+Every feature follows the **abstraction + provider** pattern:
 
-// Add API infrastructure
-builder.Services.AddHeadlessApi();
-
-// Add caching
-builder.Services.AddHeadlessRedisCache(options =>
-{
-    options.ConnectionString = "localhost:6379";
-});
-
-// Add blob storage
-builder.Services.AddAzureBlobStorage(options =>
-{
-    options.ConnectionString = "your-connection-string";
-    options.ContainerName = "uploads";
-});
-
-// Add email
-builder.Services.AddAwsSesEmail(options =>
-{
-    options.FromEmail = "noreply@example.com";
-});
-
-var app = builder.Build();
-app.UseHeadlessApi();
-app.Run();
+```
+Headless.*.Abstractions  →  Interfaces and contracts (what)
+Headless.*.<Provider>    →  Concrete implementation (how)
 ```
 
-## Architecture Pattern
+This means you can:
+- **Swap providers** without touching business logic
+- **Mock any dependency** in unit tests
+- **Add your own provider** by implementing the abstraction
 
-Each feature follows the **abstraction + provider pattern**:
+## LLM Context
 
-- `Headless.*.Abstractions` — Interfaces and contracts
-- `Headless.*.<Provider>` — Concrete implementation
+Machine-readable project context for AI-assisted development:
 
-This enables easy swapping of implementations and testing with mocks.
+- [`llms.txt`](llms.txt) — Compact overview
+- [`llms-full.txt`](llms-full.txt) — Full package documentation
 
 ## Contributing
 
-Feel free to submit issues, feature requests, or PRs. Let's build the ultimate headless .NET foundation together!
+Contributions are welcome — issues, feature requests, and PRs. See individual package READMEs for package-specific details.
