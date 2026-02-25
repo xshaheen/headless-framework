@@ -255,7 +255,7 @@
 			"description": "Implement distributed locking to prevent concurrent job execution across instances",
 			"size": "M",
 			"acceptanceCriteria": [
-				"Uses IResourceLockProvider if available",
+				"Uses IDistributedLockProvider if available",
 				"Falls back to database-based locking",
 				"Lock timeout configurable",
 				"Automatic lock release on completion/failure"

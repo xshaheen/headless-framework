@@ -1828,7 +1828,7 @@ dotnet add package Headless.Features.Core
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Requires: TimeProvider, ICache, IResourceLock, IGuidGenerator
+// Requires: TimeProvider, ICache, IDistributedLock, IGuidGenerator
 builder.Services.AddFeaturesManagementCore(options =>
 {
     options.CacheKeyPrefix = "features:";
@@ -1863,7 +1863,7 @@ services.AddFeaturesManagementCore(options =>
 - `Headless.Features.Abstractions`
 - `Headless.Domains`
 - `Headless.Caching.Abstractions`
-- `Headless.ResourceLocks.Abstractions`
+- `Headless.DistributedLocks.Abstractions`
 
 ## Side Effects
 
@@ -3453,7 +3453,7 @@ dotnet add package Headless.Permissions.Core
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Requires: TimeProvider, ICache, IResourceLock, IGuidGenerator
+// Requires: TimeProvider, ICache, IDistributedLock, IGuidGenerator
 builder.Services.AddPermissionsManagementCore(options =>
 {
     options.CacheKeyPrefix = "permissions:";
@@ -3490,7 +3490,7 @@ services.AddPermissionsManagementCore(options =>
 - `Headless.Permissions.Abstractions`
 - `Headless.Domains`
 - `Headless.Caching.Abstractions`
-- `Headless.ResourceLocks.Abstractions`
+- `Headless.DistributedLocks.Abstractions`
 
 ## Side Effects
 
@@ -3904,10 +3904,10 @@ None.
 
 ---
 
-# Headless.ResourceLocks.Abstractions
+# Headless.DistributedLocks.Abstractions
 
 
-Defines the unified interface for distributed resource locking.
+Defines the unified interface for distributed distributed lock.
 
 ## Problem Solved
 
@@ -3915,22 +3915,22 @@ Provides a provider-agnostic distributed locking API, enabling coordination acro
 
 ## Key Features
 
-- `IResourceLockProvider` - Regular locking with expiration
-- `IResourceLock` - Acquired lock handle with release
-- `IThrottlingResourceLockProvider` - Rate-limited locking
+- `IDistributedLockProvider` - Regular locking with expiration
+- `IDistributedLock` - Acquired lock handle with release
+- `IThrottlingDistributedLockProvider` - Rate-limited locking
 - `IResourceThrottlingLock` - Throttling lock handle
 - Configurable timeouts and expiration
 
 ## Installation
 
 ```bash
-dotnet add package Headless.ResourceLocks.Abstractions
+dotnet add package Headless.DistributedLocks.Abstractions
 ```
 
 ## Usage
 
 ```csharp
-public sealed class OrderService(IResourceLockProvider lockProvider)
+public sealed class OrderService(IDistributedLockProvider lockProvider)
 {
     public async Task ProcessOrderAsync(Guid orderId, CancellationToken ct)
     {
@@ -3965,25 +3965,25 @@ None.
 
 ---
 
-# Headless.ResourceLocks.Cache
+# Headless.DistributedLocks.Cache
 
 
-Cache-based resource lock storage using ICache.
+Cache-based distributed lock storage using ICache.
 
 ## Problem Solved
 
-Provides resource lock storage using the framework's `ICache` abstraction, suitable for single-instance deployments or when using a distributed cache like Redis.
+Provides distributed lock storage using the framework's `ICache` abstraction, suitable for single-instance deployments or when using a distributed cache like Redis.
 
 ## Key Features
 
-- `CacheResourceLockStorage` - Lock storage via `ICache`
-- `CacheThrottlingResourceLockStorage` - Throttling lock storage
+- `CacheDistributedLockStorage` - Lock storage via `ICache`
+- `CacheThrottlingDistributedLockStorage` - Throttling lock storage
 - Automatic expiration via cache TTL
 
 ## Installation
 
 ```bash
-dotnet add package Headless.ResourceLocks.Cache
+dotnet add package Headless.DistributedLocks.Cache
 ```
 
 ## Quick Start
@@ -3995,8 +3995,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRedisCache(options => { /* ... */ });
 
 // Add resource locks with cache storage
-builder.Services.AddResourceLock();
-builder.Services.AddSingleton<IResourceLockStorage, CacheResourceLockStorage>();
+builder.Services.AddDistributedLock();
+builder.Services.AddSingleton<IDistributedLockStorage, CacheDistributedLockStorage>();
 ```
 
 ## Configuration
@@ -4005,20 +4005,20 @@ No additional configuration required.
 
 ## Dependencies
 
-- `Headless.ResourceLocks.Core`
+- `Headless.DistributedLocks.Core`
 - `Headless.Caching.Abstractions`
 
 ## Side Effects
 
-- Registers `IResourceLockStorage` as singleton
-- Registers `IThrottlingResourceLockStorage` as singleton (optional)
+- Registers `IDistributedLockStorage` as singleton
+- Registers `IThrottlingDistributedLockStorage` as singleton (optional)
 
 ---
 
-# Headless.ResourceLocks.Core
+# Headless.DistributedLocks.Core
 
 
-Core implementation of distributed resource locking with storage abstraction.
+Core implementation of distributed distributed lock with storage abstraction.
 
 ## Problem Solved
 
@@ -4026,16 +4026,16 @@ Provides the lock provider implementation with automatic renewal, expiration han
 
 ## Key Features
 
-- `ResourceLockProvider` - Full implementation of `IResourceLockProvider`
-- `ThrottlingResourceLockProvider` - Rate-limited lock provider
-- `DisposableResourceLock` - Auto-releasing lock handle
-- Storage interfaces: `IResourceLockStorage`, `IThrottlingResourceLockStorage`
+- `DistributedLockProvider` - Full implementation of `IDistributedLockProvider`
+- `ThrottlingDistributedLockProvider` - Rate-limited lock provider
+- `DisposableDistributedLock` - Auto-releasing lock handle
+- Storage interfaces: `IDistributedLockStorage`, `IThrottlingDistributedLockStorage`
 - Configurable options for timeouts and expiration
 
 ## Installation
 
 ```bash
-dotnet add package Headless.ResourceLocks.Core
+dotnet add package Headless.DistributedLocks.Core
 ```
 
 ## Quick Start
@@ -4043,16 +4043,16 @@ dotnet add package Headless.ResourceLocks.Core
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddResourceLock(options =>
+builder.Services.AddDistributedLock(options =>
 {
     options.DefaultTimeUntilExpires = TimeSpan.FromMinutes(20);
     options.DefaultAcquireTimeout = TimeSpan.FromSeconds(30);
 });
 
 // Add storage (cache or Redis)
-builder.Services.AddResourceLockCacheStorage();
+builder.Services.AddDistributedLockCacheStorage();
 // or
-builder.Services.AddResourceLockRedisStorage();
+builder.Services.AddDistributedLockRedisStorage();
 ```
 
 ## Configuration
@@ -4060,7 +4060,7 @@ builder.Services.AddResourceLockRedisStorage();
 ### Options
 
 ```csharp
-services.AddResourceLock(options =>
+services.AddDistributedLock(options =>
 {
     options.DefaultTimeUntilExpires = TimeSpan.FromMinutes(20);
     options.DefaultAcquireTimeout = TimeSpan.FromSeconds(30);
@@ -4069,19 +4069,19 @@ services.AddResourceLock(options =>
 
 ## Dependencies
 
-- `Headless.ResourceLocks.Abstractions`
+- `Headless.DistributedLocks.Abstractions`
 
 ## Side Effects
 
-- Registers `IResourceLockProvider` as singleton
-- Registers `IThrottlingResourceLockProvider` as singleton (if throttling storage is provided)
+- Registers `IDistributedLockProvider` as singleton
+- Registers `IThrottlingDistributedLockProvider` as singleton (if throttling storage is provided)
 
 ---
 
-# Headless.ResourceLocks.Redis
+# Headless.DistributedLocks.Redis
 
 
-Redis-based resource lock storage using StackExchange.Redis.
+Redis-based distributed lock storage using StackExchange.Redis.
 
 ## Problem Solved
 
@@ -4089,15 +4089,15 @@ Provides high-performance distributed locking using Redis with atomic Lua script
 
 ## Key Features
 
-- `RedisResourceLockStorage` - Atomic lock operations via Redis
-- `RedisThrottlingResourceLockStorage` - Rate-limited locking
+- `RedisDistributedLockStorage` - Atomic lock operations via Redis
+- `RedisThrottlingDistributedLockStorage` - Rate-limited locking
 - Lua scripts for atomic acquire/release
 - High performance and reliability
 
 ## Installation
 
 ```bash
-dotnet add package Headless.ResourceLocks.Redis
+dotnet add package Headless.DistributedLocks.Redis
 ```
 
 ## Quick Start
@@ -4109,8 +4109,8 @@ var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
 builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
 
 // Add resource locks with Redis storage
-builder.Services.AddResourceLock();
-builder.Services.AddSingleton<IResourceLockStorage, RedisResourceLockStorage>();
+builder.Services.AddDistributedLock();
+builder.Services.AddSingleton<IDistributedLockStorage, RedisDistributedLockStorage>();
 ```
 
 ## Configuration
@@ -4119,14 +4119,14 @@ No additional configuration beyond Redis connection.
 
 ## Dependencies
 
-- `Headless.ResourceLocks.Core`
+- `Headless.DistributedLocks.Core`
 - `Headless.Redis`
 - `StackExchange.Redis`
 
 ## Side Effects
 
-- Registers `IResourceLockStorage` as singleton
-- Registers `IThrottlingResourceLockStorage` as singleton (optional)
+- Registers `IDistributedLockStorage` as singleton
+- Registers `IThrottlingDistributedLockStorage` as singleton (optional)
 
 ---
 
@@ -4449,7 +4449,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add required dependencies
 builder.Services.AddCaching();
-builder.Services.AddResourceLock();
+builder.Services.AddDistributedLock();
 
 // Add settings management
 builder.Services.AddSettingsManagementCore(options =>
@@ -4528,7 +4528,7 @@ services.AddSettingsManagementCore(options =>
 
 - `Headless.Settings.Abstractions`
 - `Headless.Caching.Abstractions`
-- `Headless.ResourceLocks.Abstractions`
+- `Headless.DistributedLocks.Abstractions`
 - `Headless.Domains`
 
 ## Side Effects
@@ -5902,25 +5902,25 @@ var options = new TusAzureStoreOptions
 
 ---
 
-# Headless.Tus.ResourceLock
+# Headless.Tus.DistributedLock
 
 
-TUS file locking using Headless.ResourceLocks.
+TUS file locking using Headless.DistributedLocks.
 
 ## Problem Solved
 
-Provides a TUS file lock provider implementation using the framework's distributed resource locking, enabling concurrent upload coordination across multiple instances.
+Provides a TUS file lock provider implementation using the framework's distributed distributed lock, enabling concurrent upload coordination across multiple instances.
 
 ## Key Features
 
-- `ResourceLockTusLockProvider` - ITusFileLockProvider implementation
-- `ResourceLockTusLock` - Distributed file lock wrapper
-- Works with any IResourceLockProvider (Redis, Cache)
+- `DistributedLockTusLockProvider` - ITusFileLockProvider implementation
+- `DistributedLockTusLock` - Distributed file lock wrapper
+- Works with any IDistributedLockProvider (Redis, Cache)
 
 ## Installation
 
 ```bash
-dotnet add package Headless.Tus.ResourceLock
+dotnet add package Headless.Tus.DistributedLock
 ```
 
 ## Quick Start
@@ -5928,12 +5928,12 @@ dotnet add package Headless.Tus.ResourceLock
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Add resource lock provider first
-builder.Services.AddResourceLock();
-builder.Services.AddResourceLockRedisStorage();
+// Add distributed lock provider first
+builder.Services.AddDistributedLock();
+builder.Services.AddDistributedLockRedisStorage();
 
 // Add TUS lock provider
-builder.Services.AddResourceLockTusLockProvider();
+builder.Services.AddDistributedLockTusLockProvider();
 
 var app = builder.Build();
 
@@ -5952,12 +5952,12 @@ app.MapTus("/files", async ctx =>
 
 ## Configuration
 
-No additional configuration required beyond resource lock setup.
+No additional configuration required beyond distributed lock setup.
 
 ## Dependencies
 
 - `Headless.Tus`
-- `Headless.ResourceLocks.Abstractions`
+- `Headless.DistributedLocks.Abstractions`
 - `tusdotnet`
 
 ## Side Effects
@@ -7362,9 +7362,9 @@ options.UseSqlServer(config =>
 
 ---
 
-# Headless.ResourceLocks.InMemory
+# Headless.DistributedLocks.InMemory
 
-In-memory resource lock provider for single-instance deployments, development, and testing.
+In-memory distributed lock provider for single-instance deployments, development, and testing.
 
 ## Problem Solved
 
@@ -7381,17 +7381,17 @@ Provides lightweight distributed locking and throttling using in-memory storage 
 ## Installation
 
 ```bash
-dotnet add package Headless.ResourceLocks.InMemory
+dotnet add package Headless.DistributedLocks.InMemory
 ```
 
 ## Quick Start
 
 ```csharp
 // Register in-memory resource locks
-builder.Services.AddInMemoryResourceLock();
+builder.Services.AddInMemoryDistributedLock();
 
 // Use resource locks
-public sealed class OrderService(IResourceLockProvider locks)
+public sealed class OrderService(IDistributedLockProvider locks)
 {
     public async Task ProcessOrderAsync(string orderId, CancellationToken ct)
     {
@@ -7411,7 +7411,7 @@ public sealed class OrderService(IResourceLockProvider locks)
 }
 
 // Throttling example
-builder.Services.AddInMemoryThrottlingResourceLock(new ThrottlingResourceLockOptions
+builder.Services.AddInMemoryThrottlingDistributedLock(new ThrottlingDistributedLockOptions
 {
     MaxRequests = 100,
     TimeWindow = TimeSpan.FromMinutes(1)
@@ -7422,20 +7422,20 @@ builder.Services.AddInMemoryThrottlingResourceLock(new ThrottlingResourceLockOpt
 
 ```csharp
 // Basic resource lock
-builder.Services.AddInMemoryResourceLock((options, sp) =>
+builder.Services.AddInMemoryDistributedLock((options, sp) =>
 {
     options.DefaultExpiration = TimeSpan.FromMinutes(5);
 });
 
 // Throttling lock
-builder.Services.AddInMemoryThrottlingResourceLock(new ThrottlingResourceLockOptions
+builder.Services.AddInMemoryThrottlingDistributedLock(new ThrottlingDistributedLockOptions
 {
     MaxRequests = 100,
     TimeWindow = TimeSpan.FromMinutes(1)
 });
 
 // Keyed throttling lock
-builder.Services.AddKeyedInMemoryThrottlingResourceLock("api", new ThrottlingResourceLockOptions
+builder.Services.AddKeyedInMemoryThrottlingDistributedLock("api", new ThrottlingDistributedLockOptions
 {
     MaxRequests = 1000,
     TimeWindow = TimeSpan.FromMinutes(1)
@@ -7444,7 +7444,7 @@ builder.Services.AddKeyedInMemoryThrottlingResourceLock("api", new ThrottlingRes
 
 ## Dependencies
 
-- `Headless.ResourceLocks.Cache`
+- `Headless.DistributedLocks.Cache`
 - `Headless.Caching.Memory`
 - `Headless.Messaging.Abstractions`
 

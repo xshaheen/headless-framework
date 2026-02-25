@@ -65,9 +65,9 @@ Both systems abstract the persistence layer, enabling:
 The framework already has a proven distributed locking abstraction:
 
 ```csharp
-public interface IResourceLockProvider
+public interface IDistributedLockProvider
 {
-    Task<IResourceLock?> TryAcquireAsync(
+    Task<IDistributedLock?> TryAcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
@@ -77,7 +77,7 @@ public interface IResourceLockProvider
 ```
 
 **Key integrations found**:
-- `ResourceLockProvider` already depends on `IOutboxPublisher` (publishing lock state changes)
+- `DistributedLockProvider` already depends on `IOutboxPublisher` (publishing lock state changes)
 - Used for transactional operations requiring consensus
 
 **Lesson for Ticker + Messaging**: Both systems will need distributed locks for:
@@ -87,8 +87,8 @@ public interface IResourceLockProvider
 
 ### 2.2 Lock Implementation Details
 
-**Critical pattern from ResourceLockProvider**:
-- Uses `IResourceLockStorage` (cache or Redis backed)
+**Critical pattern from DistributedLockProvider**:
+- Uses `IDistributedLockStorage` (cache or Redis backed)
 - Implements exponential backoff with configurable retry limits
 - Supports throttling locks (rate-limiting variant)
 - Auto-renewing handles (acquire → use → release)
@@ -157,7 +157,7 @@ using (transaction.Begin())
 }
 ```
 
-**Cross-system pattern found**: `ResourceLockProvider` already uses outbox for lock notifications.
+**Cross-system pattern found**: `DistributedLockProvider` already uses outbox for lock notifications.
 
 **For Ticker + Messaging merge**:
 - Ticker job completions → publish via outbox
@@ -351,17 +351,17 @@ Both systems use:
 
 ## Section 11: Known Integration Points (Already Implemented)
 
-### 11.1 ResourceLockProvider ← IOutboxPublisher
+### 11.1 DistributedLockProvider ← IOutboxPublisher
 
-Found in: `Headless.DistributedLocks.Core/RegularLocks/ResourceLockProvider.cs`
+Found in: `Headless.DistributedLocks.Core/RegularLocks/DistributedLockProvider.cs`
 
 ```csharp
-public sealed class ResourceLockProvider(
-    IResourceLockStorage storage,
+public sealed class DistributedLockProvider(
+    IDistributedLockStorage storage,
     IOutboxPublisher outboxPublisher,  // ← Cross-system dependency
-    ResourceLockOptions options,
+    DistributedLockOptions options,
     // ...
-) : IResourceLockProvider
+) : IDistributedLockProvider
 ```
 
 **Why?**: Lock state changes are published as messages for observability/monitoring.
@@ -558,7 +558,7 @@ Don't use `ArgumentNullException.ThrowIfNull()` in Headless framework code.
 - `/src/Headless.DistributedLocks.Core/README.md`
 
 ### Key Code Files
-- `Headless.DistributedLocks.Core/RegularLocks/ResourceLockProvider.cs` (outbox integration example)
+- `Headless.DistributedLocks.Core/RegularLocks/DistributedLockProvider.cs` (outbox integration example)
 - `Headless.Ticker.Core` (background service patterns)
 - `Headless.Messaging.Core` (transactional publishing patterns)
 

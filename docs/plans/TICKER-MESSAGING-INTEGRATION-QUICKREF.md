@@ -26,7 +26,7 @@ Both systems need locks for instance coordination:
 - **Ticker**: "Only instance A should process this job"
 - **Messaging**: "Only instance B should consume this message"
 
-**Current**: Use `IResourceLockProvider` (separate package)
+**Current**: Use `IDistributedLockProvider` (separate package)
 **Gotcha**: Lock timeout → other instances also try → duplicate work
 **Action**: Set realistic timeouts; monitor lock acquisition failures.
 
@@ -185,7 +185,7 @@ public class ScheduledJobToMessageIntegrationTests(PostgresFixture postgres) : T
 - [ ] Use `Argument.IsNotNull()` for validation
 - [ ] Use `AbortToken` in tests (not `CancellationToken`)
 - [ ] Propagate `CancellationToken` through all async chains
-- [ ] Use `IResourceLockProvider` for distributed coordination
+- [ ] Use `IDistributedLockProvider` for distributed coordination
 - [ ] Document timezone config for cron jobs
 - [ ] Test message ordering if order-sensitive
 

@@ -128,13 +128,13 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 - [Headless.PushNotifications.Dev](./src/Headless.PushNotifications.Dev/README.md): Development push notification implementation that does nothing.
 - [Headless.PushNotifications.Firebase](./src/Headless.PushNotifications.Firebase/README.md): Firebase Cloud Messaging (FCM) implementation for push notifications.
 
-### Resource Locking
+### Distributed Lock
 
-- [Headless.ResourceLocks.Abstractions](./src/Headless.ResourceLocks.Abstractions/README.md): Defines the unified interface for distributed resource locking.
-- [Headless.ResourceLocks.Core](./src/Headless.ResourceLocks.Core/README.md): Core implementation of distributed resource locking with storage abstraction.
-- [Headless.ResourceLocks.Cache](./src/Headless.ResourceLocks.Cache/README.md): Cache-based resource lock storage using ICache.
-- [Headless.ResourceLocks.InMemory](./src/Headless.ResourceLocks.InMemory/README.md): In-memory resource lock storage for single-instance applications and testing.
-- [Headless.ResourceLocks.Redis](./src/Headless.ResourceLocks.Redis/README.md): Redis-based resource lock storage using StackExchange.Redis.
+- [Headless.DistributedLocks.Abstractions](./src/Headless.DistributedLocks.Abstractions/README.md): Defines the unified interface for distributed locking.
+- [Headless.DistributedLocks.Core](./src/Headless.DistributedLocks.Core/README.md): Core implementation of distributed locking with storage abstraction.
+- [Headless.DistributedLocks.Cache](./src/Headless.DistributedLocks.Cache/README.md): Cache-based distributed lock storage using ICache.
+- [Headless.DistributedLocks.InMemory](./src/Headless.DistributedLocks.InMemory/README.md): In-memory distributed lock storage for single-instance applications and testing.
+- [Headless.DistributedLocks.Redis](./src/Headless.DistributedLocks.Redis/README.md): Redis-based distributed lock storage using StackExchange.Redis.
 
 ### Serialization
 
@@ -186,7 +186,7 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 
 - [Headless.Tus](./src/Headless.Tus/README.md): Core TUS protocol utilities and extensions.
 - [Headless.Tus.Azure](./src/Headless.Tus.Azure/README.md): Azure Blob Storage TUS store implementation.
-- [Headless.Tus.ResourceLock](./src/Headless.Tus.ResourceLock/README.md): TUS file locking using Headless.ResourceLocks.
+- [Headless.Tus.DistributedLocks](./src/Headless.Tus.DistributedLocks/README.md): TUS file locking using Headless.DistributedLocks.
 
 ### Utilities
 

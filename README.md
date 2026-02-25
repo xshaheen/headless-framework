@@ -168,7 +168,7 @@ dotnet add package Headless.Caching.Redis
 | [Headless.PushNotifications.Dev](src/Headless.PushNotifications.Dev/README.md) | Development push provider |
 | [Headless.PushNotifications.Firebase](src/Headless.PushNotifications.Firebase/README.md) | Firebase Cloud Messaging |
 
-### Resource Locking
+### Distributed Lock
 
 | Package                                                                                         | Description |
 |-------------------------------------------------------------------------------------------------|-------------|
