@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Cronos;
 using Headless.Checks;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Retry;
@@ -22,7 +23,7 @@ public class MessagingOptions : IMessagingBuilder
     internal ConsumerRegistry? Registry { get; set; }
     internal Dictionary<Type, string> TopicMappings { get; } = new();
     internal IList<IMessagesOptionsExtension> Extensions { get; } = new List<IMessagesOptionsExtension>();
-    internal Headless.Messaging.MessagingConventions? Conventions { get; private set; }
+    internal Headless.Messaging.MessagingConventions? Conventions { get; set; }
     internal List<ScheduledJobDefinition> ScheduledJobDefinitions { get; } = [];
 
     /// <summary>
@@ -173,6 +174,13 @@ public class MessagingOptions : IMessagingBuilder
     public IRetryBackoffStrategy RetryBackoffStrategy { get; set; } = new ExponentialBackoffStrategy();
 
     /// <summary>
+    /// Gets or sets a value indicating whether strict startup/runtime guardrails are enforced.
+    /// When enabled (default), invalid topic/group names and invalid scheduling metadata fail fast.
+    /// Set to <c>false</c> only for controlled migrations.
+    /// </summary>
+    public bool StrictValidation { get; set; } = true;
+
+    /// <summary>
     /// Registers a messaging options extension that will be executed when configuring messaging services.
     /// Extensions allow third-party libraries to customize messaging behavior without modifying core configuration.
     /// </summary>
@@ -239,6 +247,11 @@ public class MessagingOptions : IMessagingBuilder
     internal void _RegisterRecurringConsumer(Type consumerType, RecurringAttribute recurring)
     {
         Argument.IsNotNull(Services, "Services must be initialized before calling _RegisterRecurringConsumer");
+
+        if (StrictValidation)
+        {
+            _ValidateRecurringDefinition(recurring);
+        }
 
         var jobName = recurring.Name ?? _DeriveJobName(consumerType);
 
@@ -357,7 +370,10 @@ public class MessagingOptions : IMessagingBuilder
     internal void _WithTopicMapping(Type messageType, string topic)
     {
         Argument.IsNotNullOrWhiteSpace(topic);
-        _ValidateTopicName(topic);
+        if (StrictValidation)
+        {
+            ValidateTopicName(topic);
+        }
 
         if (TopicMappings.TryGetValue(messageType, out var existingTopic) && existingTopic != topic)
         {
@@ -372,7 +388,7 @@ public class MessagingOptions : IMessagingBuilder
     /// <summary>
     /// Validates topic name format and constraints.
     /// </summary>
-    private static void _ValidateTopicName(string topic)
+    internal static void ValidateTopicName(string topic)
     {
         const int maxTopicLength = 255;
 
@@ -406,6 +422,82 @@ public class MessagingOptions : IMessagingBuilder
         }
     }
 
+    internal static void ValidateSubscriptionTopicName(string topic)
+    {
+        Argument.IsNotNullOrWhiteSpace(topic);
+
+        if (topic.IndexOf('*') < 0 && topic.IndexOf('#') < 0)
+        {
+            ValidateTopicName(topic);
+            return;
+        }
+
+        const int maxTopicLength = 255;
+        if (topic.Length > maxTopicLength)
+        {
+            throw new ArgumentException(
+                $"Topic name '{topic}' exceeds maximum length of {maxTopicLength} characters.",
+                nameof(topic)
+            );
+        }
+
+        if (topic.StartsWith('.') || topic.EndsWith('.'))
+        {
+            throw new ArgumentException($"Topic name '{topic}' cannot start or end with a dot.", nameof(topic));
+        }
+
+        if (topic.Contains(".."))
+        {
+            throw new ArgumentException($"Topic name '{topic}' cannot contain consecutive dots.", nameof(topic));
+        }
+
+        foreach (var c in topic)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_' && c != '*' && c != '#')
+            {
+                throw new ArgumentException(
+                    $"Topic name '{topic}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, underscores, and wildcards (*,#) are allowed.",
+                    nameof(topic)
+                );
+            }
+        }
+    }
+
+    internal static void ValidateGroupName(string group)
+    {
+        Argument.IsNotNullOrWhiteSpace(group);
+
+        const int maxGroupLength = 255;
+        if (group.Length > maxGroupLength)
+        {
+            throw new ArgumentException(
+                $"Group name '{group}' exceeds maximum length of {maxGroupLength} characters.",
+                nameof(group)
+            );
+        }
+
+        if (group.StartsWith('.') || group.EndsWith('.'))
+        {
+            throw new ArgumentException($"Group name '{group}' cannot start or end with a dot.", nameof(group));
+        }
+
+        if (group.Contains(".."))
+        {
+            throw new ArgumentException($"Group name '{group}' cannot contain consecutive dots.", nameof(group));
+        }
+
+        foreach (var c in group)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_')
+            {
+                throw new ArgumentException(
+                    $"Group name '{group}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
+                    nameof(group)
+                );
+            }
+        }
+    }
+
     /// <summary>
     /// Registers a consumer with the specified metadata.
     /// </summary>
@@ -424,6 +516,15 @@ public class MessagingOptions : IMessagingBuilder
         // Determine the group name
         var finalGroup = group ?? Conventions?.DefaultGroup;
 
+        if (StrictValidation)
+        {
+            ValidateSubscriptionTopicName(finalTopic);
+            if (!string.IsNullOrWhiteSpace(finalGroup))
+            {
+                ValidateGroupName(finalGroup);
+            }
+        }
+
         // Create metadata
         var metadata = new ConsumerMetadata(messageType, consumerType, finalTopic, finalGroup, concurrency);
 
@@ -433,5 +534,18 @@ public class MessagingOptions : IMessagingBuilder
         // Register consumer in DI as scoped service
         var serviceType = typeof(IConsume<>).MakeGenericType(messageType);
         Services.TryAddScoped(serviceType, consumerType);
+    }
+
+    private static void _ValidateRecurringDefinition(RecurringAttribute recurring)
+    {
+        Argument.IsNotNull(recurring);
+        Argument.IsNotNullOrWhiteSpace(recurring.CronExpression);
+
+        _ = CronExpression.Parse(recurring.CronExpression, CronFormat.IncludeSeconds);
+
+        if (!string.IsNullOrWhiteSpace(recurring.TimeZone))
+        {
+            _ = TimeZoneInfo.FindSystemTimeZoneById(recurring.TimeZone);
+        }
     }
 }

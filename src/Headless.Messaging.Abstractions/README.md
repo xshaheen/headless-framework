@@ -13,9 +13,10 @@ Provides standardized interfaces for building reliable distributed messaging sys
 - **Direct Publishing**: `IDirectPublisher` for fire-and-forget, low-latency message delivery
 - **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
 - **Consumer Configuration**: `IMessagingBuilder` for assembly scanning and manual consumer registration
+- **Runtime Function Subscriptions**: `IRuntimeMessageSubscriber` for broker-attached runtime handlers
 - **Delayed Publishing**: Schedule messages for future delivery
 - **Multi-Type Consumers**: Single consumer can handle multiple message types
-- **Job Scheduling**: `ScheduledTrigger`, `[Recurring]` attribute, `IScheduledJobManager`, and `IScheduledJobStorage` contracts
+- **Job Scheduling**: `ScheduledTrigger`, `[Recurring]`, `ScheduledJobConsumer<TPayload>`, `IScheduledJobManager`, and `IScheduledJobStorage` contracts
 
 ## Installation
 
@@ -115,7 +116,42 @@ Properties:
 
 ### IScheduledJobManager
 
-Runtime management API for scheduled jobs: `GetAllAsync`, `GetByNameAsync`, `EnableAsync`, `DisableAsync`, `TriggerAsync`, `DeleteAsync`.
+Runtime management API for scheduled jobs: `ListJobsAsync`, `ListExecutionsAsync`, `GetAllAsync`, `GetByNameAsync`, `EnableAsync`, `DisableAsync`, `TriggerAsync`, `DeleteAsync`, and `ScheduleOnceAsync<TConsumer>(...)`.
+
+### Runtime Function Subscriptions
+
+Use `IRuntimeMessageSubscriber` to attach broker-backed message handlers at runtime:
+
+```csharp
+await runtimeSubscriber.SubscribeAsync<OrderPlacedEvent>(
+    async (sp, context, ct) =>
+    {
+        var logger = sp.GetRequiredService<ILogger<Program>>();
+        logger.LogInformation("Order {OrderId}", context.Message.OrderId);
+        await ValueTask.CompletedTask;
+    },
+    topic: "orders.placed",
+    group: "orders.runtime",
+    handlerId: "orders-runtime-handler",
+    cancellationToken: ct);
+```
+
+### Scheduled Job Wrapper
+
+Reduce `ScheduledTrigger` boilerplate using `ScheduledJobConsumer<TPayload>`:
+
+```csharp
+public sealed class SendReminderJob : ScheduledJobConsumer<ReminderPayload>
+{
+    protected override ValueTask ExecuteAsync(
+        ScheduledJobExecutionContext<ReminderPayload> context,
+        CancellationToken cancellationToken)
+    {
+        // context.Payload is typed and already deserialized
+        return ValueTask.CompletedTask;
+    }
+}
+```
 
 ### IScheduledJobStorage
 

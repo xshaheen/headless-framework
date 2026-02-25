@@ -1,0 +1,170 @@
+{
+  "name": "feat-function-subscriptions-and-local-job-ux",
+  "description": "Improve messaging DX with runtime function subscriptions, class-based local jobs, shared execution core, and strict guardrails.",
+  "created_at": "2026-02-13T15:44:50Z",
+  "branches": {
+    "base": "xshaheen/unified-messaging-scheduling-rebased",
+    "feature": "codex/feat-messaging-dx-function-subscription-jobs-unified"
+  },
+  "worktree": ".worktrees/feat-messaging-dx-function-subscription-jobs-unified",
+  "status": "pending",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Define minimal public DX API surface",
+      "size": "M",
+      "description": "Define and document minimal APIs for subscribe, unsubscribe, publish, schedule, trigger, enable, disable, and listing flows with deterministic defaults.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Abstractions/IMessagingBuilder.cs",
+        "src/Headless.Messaging.Abstractions/IConsumerBuilder.cs",
+        "src/Headless.Messaging.Abstractions/MessagingConventions.cs",
+        "src/Headless.Messaging.Abstractions/Scheduling/IScheduledJobManager.cs"
+      ],
+      "acceptanceCriteria": [
+        "Public APIs include minimal operations for subscribe, unsubscribe, publish, schedule, trigger, enable, disable, and list.",
+        "Omitted topic and group behavior is deterministic and convention-driven.",
+        "XML docs describe strict-by-default validation with explicit opt-out."
+      ],
+      "priority": 1,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Implement runtime broker-attached function subscriptions",
+      "size": "L",
+      "description": "Add runtime function subscription and unsubscription for regular messages, with broker routing and scoped DI execution.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Configuration/MessagingOptions.cs",
+        "src/Headless.Messaging.Core/Internal/IConsumerRegister.cs",
+        "src/Headless.Messaging.Core/Internal/ISubscribeInvoker.cs",
+        "src/Headless.Messaging.Core/ConsumerRegistry.cs"
+      ],
+      "acceptanceCriteria": [
+        "Runtime function handlers can subscribe and unsubscribe without restart.",
+        "Subscriptions are broker-attached and use deterministic defaults when topic and group are omitted.",
+        "Runtime subscriptions are ephemeral and not persisted across restarts.",
+        "Function execution uses scoped DI and cancellation tokens."
+      ],
+      "priority": 2,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Unify class and function execution via shared core",
+      "size": "L",
+      "description": "Refactor invocation so class consumers and runtime function consumers share a common execution core and behavior.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Internal/ISubscribeInvoker.cs",
+        "src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs",
+        "src/Headless.Messaging.Core/Scheduling/ScheduledJobDispatcher.cs",
+        "src/Headless.Messaging.Core/Diagnostics/MessageDiagnosticListenerNames.cs"
+      ],
+      "acceptanceCriteria": [
+        "Class and function handlers share correlation propagation and diagnostic semantics.",
+        "Shared invocation path applies filters and error behavior consistently.",
+        "Each invocation creates and disposes one DI scope safely."
+      ],
+      "priority": 3,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add class-based job wrapper abstraction for simpler scheduling",
+      "size": "M",
+      "description": "Introduce a wrapper abstraction to keep scheduled jobs class-based while reducing boilerplate.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Abstractions/RecurringAttribute.cs",
+        "src/Headless.Messaging.Abstractions/ScheduledTrigger.cs",
+        "src/Headless.Messaging.Core/ConsumerBuilder.cs",
+        "src/Headless.Messaging.Core/Scheduling/ScheduledJobDispatcher.cs"
+      ],
+      "acceptanceCriteria": [
+        "Wrapper abstraction simplifies class-based scheduled job authoring.",
+        "Scheduled jobs remain local execution and are not broker-routed subscribers.",
+        "Job execution uses scoped DI with parity to message execution behavior."
+      ],
+      "priority": 4,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Enforce strict guardrails and deterministic defaults",
+      "size": "M",
+      "description": "Implement fail-fast validation for high-risk configuration paths with explicit opt-out controls.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Configuration/MessagingOptions.cs",
+        "src/Headless.Messaging.Abstractions/MessagingConventions.cs",
+        "src/Headless.Messaging.Core/Scheduling/SchedulerOptions.cs",
+        "src/Headless.Messaging.Abstractions/RecurringAttribute.cs"
+      ],
+      "acceptanceCriteria": [
+        "Invalid topic/group and invalid schedule configurations fail fast with clear errors.",
+        "Opt-out requires explicit configuration and is documented with warnings.",
+        "Validation behavior is covered for both class and function paths."
+      ],
+      "priority": 5,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Provide migration guidance for planned breaking changes",
+      "size": "S",
+      "description": "Document upgrade guidance that maps current APIs and behavior to the new minimal surface.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Abstractions/README.md",
+        "src/Headless.Messaging.Core/README.md",
+        "README.md"
+      ],
+      "acceptanceCriteria": [
+        "Migration guide lists all breaking API and behavior changes.",
+        "Old-to-new mapping examples exist for subscribe, publish, and scheduling.",
+        "Release notes include risk notes and rollback guidance."
+      ],
+      "priority": 6,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Add comprehensive tests for runtime functions and local jobs",
+      "size": "L",
+      "description": "Add test coverage for runtime function lifecycle, local scheduling behavior, guardrails, and execution parity.",
+      "filesToStudy": [
+        "tests/Headless.Messaging.Core.Tests.Unit/Scheduling/ScheduledJobDispatcherTests.cs",
+        "tests/Headless.Messaging.Core.Tests.Unit/Scheduling/ScheduledJobManagerTests.cs",
+        "tests/Headless.Messaging.Core.Tests.Unit/DispatcherTests.cs",
+        "tests/Headless.Messaging.Abstractions.Tests.Unit/ServiceCollectionConsumerBuilderTests.cs"
+      ],
+      "acceptanceCriteria": [
+        "Runtime subscribe and unsubscribe flows are covered for success, duplicate, and removal cases.",
+        "Local scheduled job paths are covered for success, failure, retry, and misfire branches.",
+        "Shared execution core parity is verified across class and function handlers.",
+        "Guardrail fail-fast and explicit opt-out paths are validated."
+      ],
+      "priority": 7,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": ""
+    }
+  ],
+  "pass": false,
+  "validation_errors": []
+}

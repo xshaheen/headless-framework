@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Primitives;
+using System.Text.Json;
 
 namespace Headless.Messaging.Scheduling;
 
@@ -11,9 +12,35 @@ internal sealed class ScheduledJobManager(
     TimeProvider timeProvider
 ) : IScheduledJobManager
 {
-    public Task<IReadOnlyList<ScheduledJob>> GetAllAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<ScheduledJob>> ListJobsAsync(CancellationToken cancellationToken = default)
     {
         return storage.GetAllJobsAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<JobExecution>> ListExecutionsAsync(
+        string name,
+        int limit = 20,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(name);
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
+        }
+
+        var job = await storage.GetJobByNameAsync(name, cancellationToken).ConfigureAwait(false);
+        if (job is null)
+        {
+            return [];
+        }
+
+        return await storage.GetExecutionsAsync(job.Id, limit, cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task<IReadOnlyList<ScheduledJob>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        return ListJobsAsync(cancellationToken);
     }
 
     public Task<ScheduledJob?> GetByNameAsync(string name, CancellationToken cancellationToken = default)
@@ -146,6 +173,42 @@ internal sealed class ScheduledJobManager(
         };
 
         await storage.UpsertJobAsync(job, cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task ScheduleOnceAsync<TConsumer>(
+        string name,
+        DateTimeOffset runAt,
+        string? payload = null,
+        CancellationToken cancellationToken = default
+    )
+        where TConsumer : class, IConsume<ScheduledTrigger>
+    {
+        return ScheduleOnceAsync(name, runAt, typeof(TConsumer), payload, cancellationToken);
+    }
+
+    public Task ScheduleOnceAsync<TConsumer, TPayload>(
+        string name,
+        DateTimeOffset runAt,
+        TPayload payload,
+        CancellationToken cancellationToken = default
+    )
+        where TConsumer : class, IConsume<ScheduledTrigger>
+    {
+        string? serializedPayload;
+        if (payload is null)
+        {
+            serializedPayload = null;
+        }
+        else if (payload is string rawPayload)
+        {
+            serializedPayload = rawPayload;
+        }
+        else
+        {
+            serializedPayload = JsonSerializer.Serialize(payload);
+        }
+
+        return ScheduleOnceAsync<TConsumer>(name, runAt, serializedPayload, cancellationToken);
     }
 
     private static NotFoundError _JobNotFound(string name) => new() { Entity = "ScheduledJob", Key = name };

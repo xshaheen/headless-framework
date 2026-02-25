@@ -94,10 +94,14 @@ public static class Setup
         services.TryAddSingleton<IOutboxPublisher, OutboxPublisher>();
         services.TryAddSingleton<IDirectPublisher, DirectPublisher>();
 
+        services.TryAddSingleton<IMessageExecutionCore, MessageExecutionCore>();
         services.TryAddSingleton<IConsumerServiceSelector, ConsumerServiceSelector>();
         services.TryAddSingleton<ISubscribeInvoker, SubscribeInvoker>();
         services.TryAddSingleton<MethodMatcherCache>();
         services.TryAddSingleton<IMessageDispatcher, CompiledMessageDispatcher>();
+        services.TryAddSingleton<RuntimeMessageSubscriber>();
+        services.TryAddSingleton<IRuntimeMessageSubscriber>(sp => sp.GetRequiredService<RuntimeMessageSubscriber>());
+        services.TryAddSingleton<IRuntimeSubscriptionCatalog>(sp => sp.GetRequiredService<RuntimeMessageSubscriber>());
 
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
 
@@ -163,6 +167,8 @@ public static class Setup
             opt.SchedulerBatchSize = options.SchedulerBatchSize;
             opt.UseStorageLock = options.UseStorageLock;
             opt.RetryBackoffStrategy = options.RetryBackoffStrategy;
+            opt.StrictValidation = options.StrictValidation;
+            opt.Conventions = options.Conventions;
 
             // Copy internal collections
             foreach (var mapping in options.TopicMappings)

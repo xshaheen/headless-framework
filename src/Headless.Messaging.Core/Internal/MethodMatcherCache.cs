@@ -49,6 +49,13 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         return GroupConcurrent.TryGetValue(group, out var value) ? value : (byte)1;
     }
 
+    public void Refresh()
+    {
+        Entries.Clear();
+        GroupConcurrent.Clear();
+        selector.InvalidateCaches();
+    }
+
     public List<string> GetAllTopics()
     {
         if (Entries.IsEmpty)

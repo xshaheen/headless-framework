@@ -11,6 +11,26 @@ namespace Headless.Messaging;
 public interface IScheduledJobManager
 {
     /// <summary>
+    /// Lists all scheduled jobs.
+    /// </summary>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>A read-only list of all scheduled jobs.</returns>
+    Task<IReadOnlyList<ScheduledJob>> ListJobsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists recent executions for a scheduled job.
+    /// </summary>
+    /// <param name="name">The scheduled job name.</param>
+    /// <param name="limit">Maximum number of executions to return.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    /// <returns>A read-only list of job executions ordered by most recent first.</returns>
+    Task<IReadOnlyList<JobExecution>> ListExecutionsAsync(
+        string name,
+        int limit = 20,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Retrieves all scheduled jobs.
     /// </summary>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
@@ -75,4 +95,37 @@ public interface IScheduledJobManager
         string? payload = null,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Schedules a one-time job to run at a specific time for a class-based consumer.
+    /// </summary>
+    /// <typeparam name="TConsumer">The consumer type handling <see cref="ScheduledTrigger"/>.</typeparam>
+    /// <param name="name">The unique name for this job.</param>
+    /// <param name="runAt">The UTC time when the job should execute.</param>
+    /// <param name="payload">Optional serialized payload.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task ScheduleOnceAsync<TConsumer>(
+        string name,
+        DateTimeOffset runAt,
+        string? payload = null,
+        CancellationToken cancellationToken = default
+    )
+        where TConsumer : class, IConsume<ScheduledTrigger>;
+
+    /// <summary>
+    /// Schedules a one-time job to run at a specific time with a typed payload.
+    /// </summary>
+    /// <typeparam name="TConsumer">The consumer type handling <see cref="ScheduledTrigger"/>.</typeparam>
+    /// <typeparam name="TPayload">The payload type.</typeparam>
+    /// <param name="name">The unique name for this job.</param>
+    /// <param name="runAt">The UTC time when the job should execute.</param>
+    /// <param name="payload">The payload to serialize as JSON.</param>
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    Task ScheduleOnceAsync<TConsumer, TPayload>(
+        string name,
+        DateTimeOffset runAt,
+        TPayload payload,
+        CancellationToken cancellationToken = default
+    )
+        where TConsumer : class, IConsume<ScheduledTrigger>;
 }

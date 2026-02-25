@@ -23,7 +23,12 @@ public interface ISubscribeInvoker
     Task<ConsumerExecutedResult> InvokeAsync(ConsumerContext context, CancellationToken cancellationToken = default);
 }
 
-public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer serializer) : ISubscribeInvoker
+internal sealed class SubscribeInvoker(
+    IServiceProvider serviceProvider,
+    ISerializer serializer,
+    IMessageExecutionCore executionCore
+)
+    : ISubscribeInvoker
 {
     private readonly ConcurrentDictionary<Type, Delegate> _compiledFactories = new();
 
@@ -106,8 +111,25 @@ public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer seri
                 await filter.OnSubscribeExecutingAsync(etContext).ConfigureAwait(false);
             }
 
-            // Dispatch via compiled dispatcher (5-8x faster than reflection)
-            await _DispatchAsync(dispatcher, consumeContext, messageType, cancellationToken);
+            // Dispatch via compiled class consumer path or runtime function path.
+            if (descriptor.RuntimeHandler is not null)
+            {
+                await _InvokeRuntimeHandlerAsync(
+                    executionCore,
+                    descriptor.RuntimeHandler,
+                    provider,
+                    consumeContext,
+                    mediumMessage.Origin.GetId(),
+                    mediumMessage.Origin.Headers.TryGetValue(Headers.CorrelationId, out var correlationId)
+                        ? correlationId
+                        : null,
+                    cancellationToken
+                );
+            }
+            else
+            {
+                await _DispatchAsync(dispatcher, provider, consumeContext, messageType, cancellationToken);
+            }
 
             if (filter != null)
             {
@@ -298,20 +320,39 @@ public class SubscribeInvoker(IServiceProvider serviceProvider, ISerializer seri
 
     private static async Task _DispatchAsync(
         IMessageDispatcher dispatcher,
+        IServiceProvider scopedServiceProvider,
         object consumeContext,
         Type messageType,
         CancellationToken cancellationToken
     )
     {
-        // Call IMessageDispatcher.DispatchAsync<T>(ConsumeContext<T>, CancellationToken)
+        // Call IMessageDispatcher.DispatchScopedAsync<T>(ConsumeContext<T>, IServiceProvider, CancellationToken)
         var dispatchMethod = typeof(IMessageDispatcher)
             .GetMethod(
-                nameof(IMessageDispatcher.DispatchAsync),
+                nameof(IMessageDispatcher.DispatchScopedAsync),
                 BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
             )!
             .MakeGenericMethod(messageType);
 
-        var task = (Task)dispatchMethod.Invoke(dispatcher, [consumeContext, cancellationToken])!;
+        var task = (Task)dispatchMethod.Invoke(dispatcher, [consumeContext, scopedServiceProvider, cancellationToken])!;
         await task.ConfigureAwait(false);
+    }
+
+    private static ValueTask _InvokeRuntimeHandlerAsync(
+        IMessageExecutionCore executionCore,
+        Func<IServiceProvider, object, CancellationToken, ValueTask> runtimeHandler,
+        IServiceProvider scopedServiceProvider,
+        object consumeContext,
+        string messageId,
+        string? correlationId,
+        CancellationToken cancellationToken
+    )
+    {
+        return executionCore.ExecuteAsync(
+            messageId,
+            correlationId,
+            ct => runtimeHandler(scopedServiceProvider, consumeContext, ct),
+            cancellationToken
+        );
     }
 }

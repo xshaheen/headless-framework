@@ -21,7 +21,7 @@ public sealed class ConsumerLifecycleTests
 
         var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        var dispatcher = new CompiledMessageDispatcher(scopeFactory);
+        var dispatcher = new CompiledMessageDispatcher(scopeFactory, new MessageExecutionCore());
 
         var message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() };
         var context = new ConsumeContext<TestMessage>
@@ -55,7 +55,7 @@ public sealed class ConsumerLifecycleTests
 
         var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        var dispatcher = new CompiledMessageDispatcher(scopeFactory);
+        var dispatcher = new CompiledMessageDispatcher(scopeFactory, new MessageExecutionCore());
 
         var message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() };
         var context = new ConsumeContext<TestMessage>
@@ -89,7 +89,7 @@ public sealed class ConsumerLifecycleTests
 
         var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        var dispatcher = new CompiledMessageDispatcher(scopeFactory);
+        var dispatcher = new CompiledMessageDispatcher(scopeFactory, new MessageExecutionCore());
 
         var message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() };
         var context = new ConsumeContext<TestMessage>
@@ -123,7 +123,7 @@ public sealed class ConsumerLifecycleTests
 
         var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        var dispatcher = new CompiledMessageDispatcher(scopeFactory);
+        var dispatcher = new CompiledMessageDispatcher(scopeFactory, new MessageExecutionCore());
 
         var message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() };
         var context = new ConsumeContext<TestMessage>
@@ -150,7 +150,7 @@ public sealed class ConsumerLifecycleTests
 
         var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        var dispatcher = new CompiledMessageDispatcher(scopeFactory);
+        var dispatcher = new CompiledMessageDispatcher(scopeFactory, new MessageExecutionCore());
 
         var message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() };
         var context = new ConsumeContext<TestMessage>
@@ -182,7 +182,7 @@ public sealed class ConsumerLifecycleTests
 
         var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        var dispatcher = new CompiledMessageDispatcher(scopeFactory);
+        var dispatcher = new CompiledMessageDispatcher(scopeFactory, new MessageExecutionCore());
 
         var message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() };
         var context = new ConsumeContext<TestMessage>
