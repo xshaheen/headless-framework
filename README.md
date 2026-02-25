@@ -4,9 +4,7 @@
 
 **The modular .NET framework that stays out of your way.**
 
-[![NuGet](https://img.shields.io/nuget/v/Headless.Api?label=NuGet&color=blue)](https://www.nuget.org/packages?q=Headless.)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com)
-[![License](https://img.shields.io/github/license/xshaheen/headless-framework)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 
 90+ NuGet packages &bull; Abstraction + Provider pattern &bull; Zero lock-in
