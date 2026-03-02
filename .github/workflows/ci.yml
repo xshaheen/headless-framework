@@ -81,7 +81,7 @@ jobs:
         shell: pwsh
 
       - name: "Publish Artifacts"
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: packages-results
           path: ${{ env.PACKAGES_DIR }}
