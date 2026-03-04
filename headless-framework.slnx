@@ -4,6 +4,7 @@
         <Project Path="src\Headless.OpenApi.Nswag.OData\Headless.OpenApi.Nswag.OData.csproj" />
         <Project Path="src\Headless.OpenApi.Nswag\Headless.OpenApi.Nswag.csproj" />
         <Project Path="src\Headless.OpenApi.Scalar\Headless.OpenApi.Scalar.csproj" />
+        <Project Path="tests\Headless.OpenApi.Nswag.Tests.Unit\Headless.OpenApi.Nswag.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Api/">
         <Project Path="demo\Headless.Api.Demo\Headless.Api.Demo.csproj" />

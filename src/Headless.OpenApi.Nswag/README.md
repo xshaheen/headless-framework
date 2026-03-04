@@ -9,7 +9,9 @@ Provides pre-configured NSwag OpenAPI generation with FluentValidation schema en
 ## Key Features
 
 - `FluentValidationSchemaProcessor` - Extracts validation rules into OpenAPI schema
+- `GenericNullabilitySchemaProcessor` - Fixes `T?` nullability detection in generic types (NSwag limitation)
 - `NullabilityAsRequiredSchemaProcessor` - Marks non-nullable as required
+- `CamelCaseQueryParameterOperationProcessor` - Converts query parameter names to camelCase
 - Operation processors: Unauthorized, Forbidden, ProblemDetails responses
 - Bearer and API key security scheme support
 - Framework primitive type mappings (Money, Month, UserId, AccountId)

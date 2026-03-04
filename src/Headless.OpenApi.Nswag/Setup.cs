@@ -281,9 +281,11 @@ public static class NswagSetup
         settings.SchemaSettings.SchemaProcessors.Add(
             new FluentValidationSchemaProcessor(serviceProvider, headlessOptions)
         );
+        settings.SchemaSettings.SchemaProcessors.Add(new GenericNullabilitySchemaProcessor());
         settings.SchemaSettings.SchemaProcessors.Add(new NullabilityAsRequiredSchemaProcessor());
         // Operation Processors
         settings.OperationProcessors.Add(new ApiExtraInformationOperationProcessor());
+        settings.OperationProcessors.Add(new CamelCaseQueryParameterOperationProcessor());
         settings.OperationProcessors.Add(new UnauthorizedResponseOperationProcessor());
         settings.OperationProcessors.Add(new ForbiddenResponseOperationProcessor());
         settings.OperationProcessors.Add(new ProblemDetailsOperationProcessor());
