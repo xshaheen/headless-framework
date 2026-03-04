@@ -4,6 +4,7 @@ using System.Reflection;
 using Headless.Checks;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Retry;
+using Headless.Messaging.Scheduling;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -22,6 +23,7 @@ public class MessagingOptions : IMessagingBuilder
     internal Dictionary<Type, string> TopicMappings { get; } = new();
     internal IList<IMessagesOptionsExtension> Extensions { get; } = new List<IMessagesOptionsExtension>();
     internal Headless.Messaging.MessagingConventions? Conventions { get; private set; }
+    internal List<ScheduledJobDefinition> ScheduledJobDefinitions { get; } = [];
 
     /// <summary>
     /// Gets or sets the default consumer group name for subscribers.
@@ -212,12 +214,71 @@ public class MessagingOptions : IMessagingBuilder
             {
                 var messageType = consumeInterface.GetGenericArguments()[0];
 
+                // Check for [Recurring] attribute on IConsume<ScheduledTrigger> handlers
+                if (messageType == typeof(ScheduledTrigger))
+                {
+                    var recurring = consumer.Type.GetCustomAttribute<RecurringAttribute>();
+                    if (recurring is not null)
+                    {
+                        _RegisterRecurringConsumer(consumer.Type, recurring);
+                        continue;
+                    }
+                }
+
                 // Register consumer with default configuration
                 RegisterConsumer(consumer.Type, messageType, topic: null, group: null, concurrency: 1);
             }
         }
 
         return this;
+    }
+
+    /// <summary>
+    /// Registers a recurring scheduled consumer as a keyed DI service and collects its job definition.
+    /// </summary>
+    internal void _RegisterRecurringConsumer(Type consumerType, RecurringAttribute recurring)
+    {
+        Argument.IsNotNull(Services, "Services must be initialized before calling _RegisterRecurringConsumer");
+
+        var jobName = recurring.Name ?? _DeriveJobName(consumerType);
+
+        // Register as keyed service for dispatch by job name
+        Services.TryAddKeyedScoped(typeof(IConsume<ScheduledTrigger>), jobName, consumerType);
+
+        // Collect job definition for startup reconciliation
+        ScheduledJobDefinitions.Add(
+            new ScheduledJobDefinition
+            {
+                Name = jobName,
+                ConsumerType = consumerType,
+                CronExpression = recurring.CronExpression,
+                TimeZone = recurring.TimeZone,
+                RetryIntervals = recurring.RetryIntervals,
+                SkipIfRunning = recurring.SkipIfRunning,
+                Timeout = recurring.TimeoutSeconds > 0 ? TimeSpan.FromSeconds(recurring.TimeoutSeconds) : null,
+                MisfireStrategy = recurring.MisfireStrategy,
+            }
+        );
+    }
+
+    /// <summary>
+    /// Derives a job name from a consumer type by stripping common suffixes.
+    /// </summary>
+    internal static string _DeriveJobName(Type consumerType)
+    {
+        var name = consumerType.Name;
+
+        if (name.EndsWith("Consumer", StringComparison.Ordinal))
+        {
+            return name[..^"Consumer".Length];
+        }
+
+        if (name.EndsWith("Job", StringComparison.Ordinal))
+        {
+            return name[..^"Job".Length];
+        }
+
+        return name;
     }
 
     /// <inheritdoc />

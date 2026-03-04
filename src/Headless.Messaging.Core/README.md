@@ -14,6 +14,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
+- **Job Scheduling**: Cron-based recurring jobs with retry, distributed locking, and execution tracking
 
 ## Installation
 
@@ -130,6 +131,238 @@ builder.Services.AddMessages(options =>
 });
 ```
 
+## Job Scheduling
+
+Built-in cron-based job scheduling routed through the messaging consumer infrastructure.
+
+### Defining Scheduled Jobs
+
+Use the `[Recurring]` attribute on an `IConsume<ScheduledTrigger>` consumer:
+
+```csharp
+[Recurring("0 */5 * * * *", Name = "CleanupExpiredTokens")]
+public sealed class TokenCleanupJob : IConsume<ScheduledTrigger>
+{
+    public async ValueTask Consume(
+        ConsumeContext<ScheduledTrigger> context,
+        CancellationToken cancellationToken)
+    {
+        // cleanup logic
+    }
+}
+```
+
+Jobs are automatically discovered when using `ScanConsumers()`.
+
+### Fluent API
+
+Register jobs programmatically via the consumer builder:
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.Consumer<TokenCleanupJob>()
+        .WithSchedule("0 */5 * * * *")
+        .WithTimeZone("America/New_York")
+        .Build();
+});
+```
+
+### SchedulerOptions
+
+Configure scheduler behavior:
+
+```csharp
+builder.Services.Configure<SchedulerOptions>(options =>
+{
+    options.PollingInterval = TimeSpan.FromSeconds(1);     // default
+    options.MaxPollingInterval = TimeSpan.FromSeconds(60); // default
+    options.BatchSize = 10;                                // default
+    options.LockHolder = Environment.MachineName;          // default
+    options.LockTimeout = TimeSpan.FromMinutes(5);         // default
+});
+```
+
+- `PollingInterval` -- base polling interval; the scheduler backs off from this during idle periods
+- `MaxPollingInterval` -- upper bound for adaptive backoff (doubles each idle cycle, capped here)
+- `BatchSize` -- max jobs acquired per poll cycle
+- `LockHolder` -- instance identifier for atomic job acquisition
+- `LockTimeout` -- distributed lock timeout for `SkipIfRunning` jobs
+
+### Retry Behavior
+
+Set `RetryIntervals` on `[Recurring]` to define retry delays (in seconds) after failures. The last interval is reused for subsequent retries. Without `RetryIntervals`, recurring jobs skip to the next cron occurrence on failure.
+
+### Job Reconciliation
+
+On startup, the scheduler reconciles `[Recurring]`-annotated consumers with persisted `ScheduledJob` records via upsert, ensuring new jobs are registered and existing jobs have updated cron expressions.
+
+### Distributed Locking
+
+When `IDistributedLockProvider` is registered and a job has `SkipIfRunning = true`, the scheduler acquires a cross-instance lock before dispatching. If the lock is held by another node, the occurrence is skipped.
+
+## Automatic Correlation Propagation
+
+When scheduled job handlers publish messages, those messages automatically inherit the job execution's correlation ID without requiring explicit header assignment. This enables end-to-end tracing of operations triggered by scheduled jobs.
+
+### How It Works
+
+The scheduler sets a `MessagingCorrelationScope` (AsyncLocal-based ambient context) before invoking job handlers. When publishers (`IOutboxPublisher` or `IDirectPublisher`) send messages, they check the ambient scope and apply its correlation ID if no explicit `CorrelationId` header is provided.
+
+Explicit correlation headers always take precedence over ambient scope values.
+
+### Example
+
+```csharp
+[Recurring("0 0 * * * *", Name = "DailyReportJob")]
+public sealed class DailyReportJob(IOutboxPublisher publisher) : IConsume<ScheduledTrigger>
+{
+    public async ValueTask Consume(
+        ConsumeContext<ScheduledTrigger> context,
+        CancellationToken cancellationToken)
+    {
+        var report = await GenerateReportAsync(cancellationToken);
+
+        // Message automatically inherits job execution ID as correlation ID
+        await publisher.PublishAsync("reports.generated", report, cancellationToken: cancellationToken);
+
+        // Correlation flows across multiple messages published by the same job
+        await publisher.PublishAsync("notifications.send", new EmailNotification(), cancellationToken: cancellationToken);
+    }
+}
+```
+
+All messages published from `DailyReportJob` share the same correlation ID, making it easy to trace the entire workflow in logs and distributed tracing systems.
+
+## One-Time Jobs
+
+Schedule one-off jobs with `IScheduledJobManager.ScheduleOnceAsync()`:
+
+```csharp
+public sealed class UserService(IScheduledJobManager jobManager)
+{
+    public async Task RegisterUserAsync(Guid userId, CancellationToken ct)
+    {
+        // Database save logic...
+
+        // Schedule welcome email for 5 minutes later
+        await jobManager.ScheduleOnceAsync(
+            "send-welcome-email",
+            DateTimeOffset.UtcNow.AddMinutes(5),
+            typeof(SendWelcomeEmailConsumer),
+            payload: userId.ToString(),
+            ct
+        );
+    }
+}
+```
+
+One-time jobs are stored in the same `ScheduledJob` table as recurring jobs but execute once at the specified `runAt` time.
+
+## Execution Timeout
+
+Configure per-job timeout via `[Recurring]` attribute:
+
+```csharp
+[Recurring("0 0 * * * *", TimeoutSeconds = 300)]
+public sealed class LongRunningJob : IConsume<ScheduledTrigger>
+{
+    // Job must complete within 5 minutes
+}
+```
+
+Or set global default via `SchedulerOptions.DefaultJobTimeout`:
+
+```csharp
+builder.Services.Configure<SchedulerOptions>(options =>
+{
+    options.DefaultJobTimeout = TimeSpan.FromMinutes(10);
+});
+```
+
+Fallback order: job timeout → global timeout → no timeout. Timed-out jobs are marked as failed.
+
+## Stale Job Recovery
+
+`StaleJobRecoveryService` automatically releases jobs stuck in `Running` state. Configure thresholds via `SchedulerOptions`:
+
+```csharp
+builder.Services.Configure<SchedulerOptions>(options =>
+{
+    options.StaleJobThreshold = TimeSpan.FromMinutes(5);     // default
+    options.StaleJobCheckInterval = TimeSpan.FromSeconds(30); // default
+});
+```
+
+Jobs running longer than `StaleJobThreshold` are released back to `Pending` state for retry.
+
+## Misfire Strategy
+
+Define how to handle jobs that miss their scheduled execution time:
+
+```csharp
+[Recurring("0 0 * * * *", MisfireStrategy = MisfireStrategy.SkipAndScheduleNext)]
+public sealed class ReportJob : IConsume<ScheduledTrigger>
+{
+    // If missed, skip this occurrence and schedule next
+}
+```
+
+Strategies:
+- `FireImmediately` (default) — Execute missed jobs as soon as detected
+- `SkipAndScheduleNext` — Skip missed occurrence, schedule next from cron
+
+Configure misfire threshold via `SchedulerOptions.MisfireThreshold` (default 1 minute).
+
+## Scheduling-Only Mode
+
+Use scheduling infrastructure without message transport. Call `AddMessages` without transport configuration:
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+    // No transport registered - scheduling still works
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+Transport processors skip gracefully. Only scheduler and storage run.
+
+## Health Checks
+
+Add scheduler health checks to monitor job execution:
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddSchedulerHealthChecks();
+```
+
+Health status:
+- **Healthy** — All jobs running normally
+- **Degraded** — Stale jobs detected (stuck > threshold)
+- **Unhealthy** — Storage error or critical failure
+
+## Cron Override from Configuration
+
+Override cron expressions via `appsettings.json`:
+
+```json
+{
+  "Messaging": {
+    "Scheduling": {
+      "Jobs": {
+        "daily-report": {
+          "CronExpression": "0 */2 * * *"
+        }
+      }
+    }
+  }
+}
+```
+
+Configuration overrides take precedence over `[Recurring]` attribute values. Job name must match `Name` from attribute or fluent API.
+
 ## Message Ordering Guarantees
 
 Message ordering guarantees depend on the transport provider and configuration:
@@ -168,5 +401,6 @@ Message ordering guarantees depend on the transport provider and configuration:
 ## Side Effects
 
 - Starts background hosted service for message processing
-- Creates database tables for outbox storage (via storage provider)
+- Starts scheduler background service for job polling and dispatch
+- Creates database tables for outbox and scheduling storage (via storage provider)
 - Establishes transport connections (via transport provider)

@@ -6,12 +6,16 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging.AmazonSQS" />
     <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus" />
+    <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Cronos" />
     <PackageReference Include="FastExpressionCompiler" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
   </ItemGroup>

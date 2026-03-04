@@ -390,7 +390,7 @@ public sealed class DistributedLockProvider(
         return result;
     }
 
-    public Task<int> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
+    public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
     {
         return Run.WithRetriesAsync(
             _storage,

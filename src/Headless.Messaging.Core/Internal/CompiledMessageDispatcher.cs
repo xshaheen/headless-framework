@@ -128,6 +128,10 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
         // Resolve the consumer from the scope
         var consumer = scope.ServiceProvider.GetRequiredService<IConsume<TMessage>>();
 
+        // Set correlation scope so any messages published by the consumer inherit the correlation ID
+        var correlationId = context.CorrelationId ?? context.MessageId;
+        using var correlationScope = MessagingCorrelationScope.Begin(correlationId);
+
         // Call OnStartingAsync if consumer implements IConsumerLifecycle
         if (consumer is IConsumerLifecycle lifecycle)
         {

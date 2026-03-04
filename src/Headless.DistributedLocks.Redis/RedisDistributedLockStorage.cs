@@ -81,12 +81,12 @@ public sealed class RedisDistributedLockStorage(
         return result;
     }
 
-    public async ValueTask<int> GetCountAsync(string prefix = "")
+    public async ValueTask<long> GetCountAsync(string prefix = "")
     {
         var server = multiplexer.GetServers().First();
         var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
 
-        var count = 0;
+        long count = 0;
         await foreach (var _ in server.KeysAsync(pattern: pattern))
         {
             count++;

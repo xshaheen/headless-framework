@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Dashboard.Authentication;
+using Headless.Messaging.Dashboard.Hubs;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -23,6 +25,11 @@ public static class MessagingBuilderExtension
 
         if (options != null)
         {
+            if (options.Auth.IsEnabled)
+            {
+                app.UseMiddleware<AuthMiddleware>();
+            }
+
             app.UseStaticFiles(
                 new StaticFileOptions
                 {
@@ -82,6 +89,10 @@ public static class MessagingBuilderExtension
                 .AllowAnonymousIf(options.AllowAnonymousExplicit, options.AuthorizationPolicy);
 
             new RouteActionProvider(endpointRouteBuilder, options).MapDashboardRoutes();
+
+            endpointRouteBuilder
+                .MapHub<SchedulingNotificationHub>(options.PathMatch + "/scheduling-hub")
+                .AllowAnonymousIf(options.AllowAnonymousExplicit, options.AuthorizationPolicy);
         }
 
         return app;

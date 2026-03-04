@@ -26,6 +26,9 @@ internal sealed partial class MessagingMetrics : IDisposable
     private readonly SubscriberDurationHistogram _subscriberDuration;
     private readonly PersistenceDurationHistogram _messagePersistenceDuration;
     private readonly MessageSizeHistogram _messageSize;
+    private readonly ScheduledJobExecutionCounter _scheduledJobExecutions;
+    private readonly ScheduledJobDurationHistogram _scheduledJobDuration;
+    private readonly ScheduledJobErrorCounter _scheduledJobErrors;
 
     public MessagingMetrics()
     {
@@ -42,6 +45,9 @@ internal sealed partial class MessagingMetrics : IDisposable
         _subscriberDuration = Instruments.CreateSubscriberDurationHistogram(_meter);
         _messagePersistenceDuration = Instruments.CreatePersistenceDurationHistogram(_meter);
         _messageSize = Instruments.CreateMessageSizeHistogram(_meter);
+        _scheduledJobExecutions = Instruments.CreateScheduledJobExecutionCounter(_meter);
+        _scheduledJobDuration = Instruments.CreateScheduledJobDurationHistogram(_meter);
+        _scheduledJobErrors = Instruments.CreateScheduledJobErrorCounter(_meter);
     }
 
     public void RecordPublish(string operation, string brokerName, long? elapsedMs = null)
@@ -97,6 +103,21 @@ internal sealed partial class MessagingMetrics : IDisposable
     public void RecordMessageSize(long sizeBytes, string operation)
     {
         _messageSize.Record(sizeBytes, operation);
+    }
+
+    public void RecordScheduledJobExecution(string jobName, long? elapsedMs = null)
+    {
+        _scheduledJobExecutions.Add(1, jobName);
+
+        if (elapsedMs.HasValue)
+        {
+            _scheduledJobDuration.Record(elapsedMs.Value, jobName);
+        }
+    }
+
+    public void RecordScheduledJobError(string jobName, string errorType)
+    {
+        _scheduledJobErrors.Add(1, jobName, errorType);
     }
 
     public void Dispose()
@@ -164,5 +185,14 @@ internal sealed partial class MessagingMetrics : IDisposable
 
         [Histogram<long>("messaging.operation", Name = "messaging.message.size")]
         internal static partial MessageSizeHistogram CreateMessageSizeHistogram(Meter meter);
+
+        [Counter<long>("messaging.job.name", Name = "messaging.scheduled_job.executions")]
+        internal static partial ScheduledJobExecutionCounter CreateScheduledJobExecutionCounter(Meter meter);
+
+        [Histogram<double>("messaging.job.name", Name = "messaging.scheduled_job.duration")]
+        internal static partial ScheduledJobDurationHistogram CreateScheduledJobDurationHistogram(Meter meter);
+
+        [Counter<long>("messaging.job.name", "error.type", Name = "messaging.scheduled_job.errors")]
+        internal static partial ScheduledJobErrorCounter CreateScheduledJobErrorCounter(Meter meter);
     }
 }

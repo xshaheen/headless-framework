@@ -36,6 +36,20 @@ builder.Services.AddMessages(options =>
 
 No configuration required. Just call `UseInMemoryStorage()`.
 
+## Scheduling Storage
+
+`UseInMemoryStorage()` automatically registers `InMemoryScheduledJobStorage` for job scheduling. Useful for testing scheduled jobs without database dependencies:
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UseInMemoryStorage(); // Registers both outbox and scheduling storage
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+All scheduled job executions are stored in-memory and reset on restart.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

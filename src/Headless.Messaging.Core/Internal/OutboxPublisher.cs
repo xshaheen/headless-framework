@@ -190,8 +190,20 @@ internal class OutboxPublisher(IServiceProvider service) : IOutboxPublisher
 
         if (!headers.ContainsKey(Headers.CorrelationId))
         {
-            headers.Add(Headers.CorrelationId, value1);
-            headers.Add(Headers.CorrelationSequence, 0.ToString());
+            var scope = MessagingCorrelationScope.Current;
+            if (scope is not null)
+            {
+                headers.Add(Headers.CorrelationId, scope.CorrelationId);
+                headers.Add(
+                    Headers.CorrelationSequence,
+                    scope.IncrementSequence().ToString(CultureInfo.InvariantCulture)
+                );
+            }
+            else
+            {
+                headers.Add(Headers.CorrelationId, value1);
+                headers.Add(Headers.CorrelationSequence, "0");
+            }
         }
 
         headers.Add(Headers.MessageName, name);

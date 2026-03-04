@@ -187,8 +187,17 @@ internal sealed class DirectPublisher(
 
         if (!headers.ContainsKey(Headers.CorrelationId))
         {
-            headers[Headers.CorrelationId] = messageId;
-            headers[Headers.CorrelationSequence] = "0";
+            var scope = MessagingCorrelationScope.Current;
+            if (scope is not null)
+            {
+                headers[Headers.CorrelationId] = scope.CorrelationId;
+                headers[Headers.CorrelationSequence] = scope.IncrementSequence().ToString(CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                headers[Headers.CorrelationId] = messageId;
+                headers[Headers.CorrelationSequence] = "0";
+            }
         }
 
         headers[Headers.MessageName] = name;

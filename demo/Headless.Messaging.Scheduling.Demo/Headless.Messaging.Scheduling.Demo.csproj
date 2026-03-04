@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Demo</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryStorage\Headless.Messaging.InMemoryStorage.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryQueue\Headless.Messaging.InMemoryQueue.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,198 @@
+{
+	"name": "execution-graph",
+	"description": "Job/message hierarchy tracking: parent-child relationships, causation chains, and job chaining across scheduling and messaging subsystems",
+	"created_at": "2026-02-09T00:00:00Z",
+	"status": "planned",
+	"branches": {
+		"base": "xshaheen/unified-messaging-scheduling",
+		"feature": "xshaheen/feat-execution-graph"
+	},
+	"worktree": ".worktrees/xshaheen/feat-execution-graph",
+	"dependencies": ["job-execution-correlation"],
+	"userStories": [
+		{
+			"id": "EG-001",
+			"title": "Add CausationId + RootCorrelationId to Messaging",
+			"size": "M",
+			"priority": 1,
+			"pass": null,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Extend correlation model with CausationId and RootCorrelationId headers. Update MessagingCorrelationScope with new properties. Publishers propagate new headers from scope. ScheduledJobDispatcher sets RootCorrelationId = CorrelationId (job execution is root).",
+			"filesToStudy": [
+				"src/Headless.Messaging.Abstractions/Messages/Headers.cs",
+				"src/Headless.Messaging.Abstractions/MessagingCorrelationScope.cs",
+				"src/Headless.Messaging.Core/Internal/OutboxPublisher.cs",
+				"src/Headless.Messaging.Core/Internal/DirectPublisher.cs",
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobDispatcher.cs"
+			],
+			"acceptanceCriteria": [
+				"Headers.CausationId = 'headless-causation-id' added",
+				"Headers.RootCorrelationId = 'headless-root-corr-id' added",
+				"MessagingCorrelationScope gains CausationId (string?) and RootCorrelationId (string)",
+				"Begin() accepts causationId and rootCorrelationId optional params",
+				"Publishers propagate new headers when scope active",
+				"Existing behavior preserved when no scope active",
+				"Unit tests for new header propagation"
+			]
+		},
+		{
+			"id": "EG-002",
+			"title": "Add ParentJobId + RunCondition to ScheduledJob",
+			"size": "S",
+			"priority": 2,
+			"pass": null,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Add ParentJobId (Guid?) and RunCondition (JobRunCondition enum) to ScheduledJob. Add ParentExecutionId and RootExecutionId to JobExecution. Create JobRunCondition enum with None, OnParentSuccess, OnParentFailure, OnParentCompletion.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Abstractions/Scheduling/ScheduledJob.cs",
+				"src/Headless.Messaging.Abstractions/Scheduling/JobExecution.cs"
+			],
+			"acceptanceCriteria": [
+				"ScheduledJob.ParentJobId (Guid?) added",
+				"ScheduledJob.RunCondition (JobRunCondition) added, default None",
+				"JobRunCondition enum: None, OnParentSuccess, OnParentFailure, OnParentCompletion",
+				"JobExecution.ParentExecutionId (Guid?) added",
+				"JobExecution.RootExecutionId (Guid?) added",
+				"XML docs on all new members",
+				"Existing tests compile without changes"
+			]
+		},
+		{
+			"id": "EG-003",
+			"title": "Storage Layer — New Columns + Queries",
+			"size": "M",
+			"priority": 3,
+			"pass": null,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Add GetChildJobsAsync, GetExecutionTreeAsync, GetJobDepthAsync to IScheduledJobStorage. Implement in PostgreSQL (with migration) and InMemory providers. PostgreSQL: partial indexes on nullable FK columns, recursive CTE for depth.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Abstractions/Scheduling/IScheduledJobStorage.cs",
+				"src/Headless.Messaging.PostgreSql/Scheduling/PostgreSqlScheduledJobStorage.cs",
+				"src/Headless.Messaging.Core/Scheduling/InMemoryScheduledJobStorage.cs"
+			],
+			"acceptanceCriteria": [
+				"GetChildJobsAsync(parentJobId) returns direct children",
+				"GetExecutionTreeAsync(rootExecutionId) returns all executions in tree",
+				"GetJobDepthAsync(jobId) uses recursive CTE or iterative query",
+				"PostgreSQL migration for new columns + partial indexes",
+				"InMemory provider LINQ implementations",
+				"Unit tests for InMemory; integration tests for PostgreSQL"
+			]
+		},
+		{
+			"id": "EG-004",
+			"title": "Child Job Triggering Engine",
+			"size": "M",
+			"priority": 4,
+			"pass": null,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "After parent execution completes, query child jobs, evaluate RunCondition, trigger matching children. Propagate ParentExecutionId/RootExecutionId. Enforce depth limit.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobExecutor.cs",
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobDispatcher.cs"
+			],
+			"acceptanceCriteria": [
+				"After parent completes, query GetChildJobsAsync(parentJobId)",
+				"Evaluate RunCondition against parent execution status",
+				"Matching children: set NextRunTime = now, create execution with hierarchy IDs",
+				"RootExecutionId propagation: inherit from parent or parent becomes root",
+				"Depth check: reject if >= MaxJobDepth",
+				"ScheduledTrigger hierarchy fields populated",
+				"Unit tests for triggering logic"
+			]
+		},
+		{
+			"id": "EG-005",
+			"title": "IScheduledJobManager Extensions",
+			"size": "S",
+			"priority": 5,
+			"pass": null,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Add ScheduleChildAsync and GetExecutionTreeAsync to IScheduledJobManager. Validate parent exists and depth limit.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Abstractions/Scheduling/IScheduledJobManager.cs",
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobManager.cs"
+			],
+			"acceptanceCriteria": [
+				"ScheduleChildAsync validates parent exists and depth limit",
+				"GetExecutionTreeAsync delegates to storage",
+				"Throws InvalidOperationException on limit violations",
+				"Unit tests for validation edge cases"
+			]
+		},
+		{
+			"id": "EG-006",
+			"title": "Update ScheduledTrigger with Hierarchy Data",
+			"size": "S",
+			"priority": 6,
+			"pass": null,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Populate existing ParentJobId + new ParentExecutionId/RootExecutionId on ScheduledTrigger when dispatching child jobs. Backward compatible for root jobs.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Core/Scheduling/ScheduledJobDispatcher.cs",
+				"src/Headless.Messaging.Abstractions/ScheduledTrigger.cs"
+			],
+			"acceptanceCriteria": [
+				"ScheduledTrigger.ParentJobId populated from job.ParentJobId",
+				"ScheduledTrigger.ParentExecutionId and RootExecutionId populated",
+				"Root jobs have all three as null (backward compatible)"
+			]
+		},
+		{
+			"id": "EG-007",
+			"title": "Integration Tests",
+			"size": "M",
+			"priority": 7,
+			"pass": null,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "End-to-end hierarchy scenarios: chain, run conditions, depth limits, causation header propagation. Testcontainers + PostgreSQL.",
+			"filesToStudy": [
+				"tests/Headless.Messaging.Core.Tests.Integration/Scheduling/"
+			],
+			"acceptanceCriteria": [
+				"Chain test: A→B→C with correct ParentExecutionId chain",
+				"Condition tests: OnParentSuccess/OnParentFailure behavior",
+				"Depth limit enforcement test",
+				"Causation headers propagation through job→message→child chain",
+				"Testcontainers + PostgreSQL"
+			]
+		},
+		{
+			"id": "EG-008",
+			"title": "Configuration + Documentation",
+			"size": "S",
+			"priority": 8,
+			"pass": null,
+			"attempts": 0,
+			"commits": [],
+			"notes": "",
+			"description": "Add MaxJobDepth to SchedulingOptions. Document hierarchy features in README with examples.",
+			"filesToStudy": [
+				"src/Headless.Messaging.Core/Scheduling/SchedulingOptions.cs",
+				"src/Headless.Messaging.Core/README.md",
+				"src/Headless.Messaging.Abstractions/README.md"
+			],
+			"acceptanceCriteria": [
+				"SchedulingOptions.MaxJobDepth defaults to 5",
+				"README documents chaining API, causation headers",
+				"Code examples for common patterns (A→B chain, A→B on failure)"
+			]
+		}
+	],
+	"pass": null,
+	"validation_errors": []
+}

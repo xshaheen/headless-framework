@@ -21,6 +21,16 @@ internal class InMemoryStorageInitializer : IStorageInitializer
         return string.Empty;
     }
 
+    public string GetScheduledJobsTableName()
+    {
+        return string.Empty;
+    }
+
+    public string GetJobExecutionsTableName()
+    {
+        return string.Empty;
+    }
+
     public Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         return Task.CompletedTask;

@@ -23,7 +23,7 @@ public interface IDistributedLockStorage
     ValueTask<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(string prefix);
 
     /// <summary>Gets the count of locks matching the given prefix.</summary>
-    ValueTask<int> GetCountAsync(string prefix = "");
+    ValueTask<long> GetCountAsync(string prefix = "");
 }
 
 public sealed class ScopedDistributedLockStorage(IDistributedLockStorage innerStorage, string prefix)
@@ -53,7 +53,7 @@ public sealed class ScopedDistributedLockStorage(IDistributedLockStorage innerSt
         return result.ToDictionary(kv => kv.Key[prefix.Length..], kv => kv.Value, StringComparer.Ordinal);
     }
 
-    public ValueTask<int> GetCountAsync(string resourcePrefix = "") =>
+    public ValueTask<long> GetCountAsync(string resourcePrefix = "") =>
         innerStorage.GetCountAsync(_NormalizeResource(resourcePrefix));
 
     private string _NormalizeResource(string resource) => prefix + resource;

@@ -15,6 +15,7 @@ Provides standardized interfaces for building reliable distributed messaging sys
 - **Consumer Configuration**: `IMessagingBuilder` for assembly scanning and manual consumer registration
 - **Delayed Publishing**: Schedule messages for future delivery
 - **Multi-Type Consumers**: Single consumer can handle multiple message types
+- **Job Scheduling**: `ScheduledTrigger`, `[Recurring]` attribute, `IScheduledJobManager`, and `IScheduledJobStorage` contracts
 
 ## Installation
 
@@ -74,6 +75,62 @@ public sealed class MetricsService(IDirectPublisher publisher)
     }
 }
 ```
+
+## Scheduling
+
+Type-safe job scheduling routed through the messaging infrastructure.
+
+### ScheduledTrigger
+
+Message type consumed by scheduled job handlers. Properties: `JobName`, `ScheduledTime`, `Attempt`, `CronExpression`, `ParentJobId`, `Payload`.
+
+```csharp
+public sealed class TokenCleanupJob : IConsume<ScheduledTrigger>
+{
+    public async ValueTask Consume(
+        ConsumeContext<ScheduledTrigger> context,
+        CancellationToken cancellationToken)
+    {
+        var trigger = context.Message;
+        // trigger.JobName, trigger.ScheduledTime, trigger.Attempt, etc.
+    }
+}
+```
+
+### [Recurring] Attribute
+
+Marks a consumer as a cron-based recurring job. Uses 6-field cron expressions (second, minute, hour, day-of-month, month, day-of-week).
+
+```csharp
+[Recurring("0 0 */6 * * *", Name = "UsageReport", TimeZone = "America/New_York")]
+public sealed class UsageReportJob : IConsume<ScheduledTrigger> { /* ... */ }
+```
+
+Properties:
+- `CronExpression` -- 6-field cron expression
+- `Name` -- optional human-readable job name (defaults to consumer type name)
+- `TimeZone` -- IANA time zone for cron evaluation (defaults to UTC)
+- `RetryIntervals` -- retry delay intervals in seconds
+- `SkipIfRunning` -- skip occurrence if previous is still running (default: `true`)
+
+### IScheduledJobManager
+
+Runtime management API for scheduled jobs: `GetAllAsync`, `GetByNameAsync`, `EnableAsync`, `DisableAsync`, `TriggerAsync`, `DeleteAsync`.
+
+### IScheduledJobStorage
+
+Storage provider contract for job and execution persistence. Implementations must guarantee atomic job acquisition to prevent double-pickup across nodes.
+
+### Entity Types
+
+- `ScheduledJob` -- job definition with cron expression, time zone, retry config, lock state, and execution history
+- `JobExecution` -- single execution attempt tracking status, duration, retry attempt, and error
+
+### Enums
+
+- `ScheduledJobType` -- `Recurring`, `OneTime`
+- `ScheduledJobStatus` -- `Pending`, `Running`, `Completed`, `Failed`, `Disabled`
+- `JobExecutionStatus` -- `Pending`, `Running`, `Succeeded`, `Failed`
 
 ## Configuration
 
