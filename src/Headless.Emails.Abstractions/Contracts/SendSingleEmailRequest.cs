@@ -49,7 +49,7 @@ public sealed class EmailRequestDestination
 
 public sealed class EmailRequestAttachment
 {
-    public string? Name { get; init; }
+    public required string Name { get; init; }
 
     public required byte[] File { get; init; }
 }
