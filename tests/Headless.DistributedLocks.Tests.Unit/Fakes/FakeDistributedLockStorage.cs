@@ -64,13 +64,13 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
         return ValueTask.FromResult<IReadOnlyDictionary<string, string>>(result);
     }
 
-    public ValueTask<int> GetCountAsync(string prefix = "")
+    public ValueTask<long> GetCountAsync(string prefix = "")
     {
         var count = string.IsNullOrEmpty(prefix)
             ? _locks.Count
             : _locks.Count(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal));
 
-        return ValueTask.FromResult(count);
+        return ValueTask.FromResult<long>(count);
     }
 
     // Test helpers

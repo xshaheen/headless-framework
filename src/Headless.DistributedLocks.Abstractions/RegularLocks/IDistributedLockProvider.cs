@@ -75,5 +75,5 @@ public interface IDistributedLockProvider
     Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Gets the total count of active locks.</summary>
-    Task<int> GetActiveLocksCountAsync(CancellationToken cancellationToken = default);
+    Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default);
 }
