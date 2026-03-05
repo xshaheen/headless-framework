@@ -7,33 +7,27 @@ using Microsoft.Extensions.Options;
 namespace Headless.Api.Identity.TokenProviders;
 
 /// <summary>
-/// Generate 6-digit code for email confirmation purpose.
-/// NOTE: This use <see cref="TotpSecurityStampBasedTokenProvider{TUser}"/> for generate the token will have
-/// a fixed 9-minute lifetime and not configurable. See: <a href="https://github.com/dotnet/aspnetcore/issues/27088"/> and
-/// <a href="https://github.com/dotnet/aspnetcore/issues/13347" />
+/// Generates and validates 6-digit TOTP codes for email confirmation with configurable
+/// timestep, variance, and hash algorithm. The modifier is bound to the user's email address.
 /// </summary>
-/// <typeparam name="TUser">The type of the user.</typeparam>
-public sealed class EmailConfirmationCodeProvider<TUser>(IOptions<EmailConfirmationCodeProviderOptions> optionsAccessor)
-    : TotpSecurityStampBasedTokenProvider<TUser>
+public sealed class EmailConfirmationCodeProvider<TUser>(
+    TotpRfc6238Generator generator,
+    IOptions<EmailConfirmationCodeProviderOptions> optionsAccessor
+) : TotpTokenProvider<TUser>(generator, optionsAccessor.Value)
     where TUser : class
 {
-    private readonly EmailConfirmationCodeProviderOptions _options = optionsAccessor.Value;
+    private readonly EmailConfirmationCodeProviderOptions _emailOptions = optionsAccessor.Value;
 
-    public override async Task<string> GetUserModifierAsync(string purpose, UserManager<TUser> manager, TUser user)
+    protected override async Task<string> GetUserModifierAsync(string purpose, UserManager<TUser> manager, TUser user)
     {
+        Argument.IsNotNull(purpose);
         Argument.IsNotNull(manager);
         Argument.IsNotNull(user);
-        Argument.IsNotNull(purpose);
 
         var email =
-            await manager.GetEmailAsync(user)
+            await manager.GetEmailAsync(user).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The user does not have an email.");
 
-        return $"{_options.Name}:{purpose}:{email}";
-    }
-
-    public override Task<bool> CanGenerateTwoFactorTokenAsync(UserManager<TUser> manager, TUser user)
-    {
-        return Task.FromResult(false);
+        return $"{_emailOptions.Name}:{purpose}:{email}";
     }
 }

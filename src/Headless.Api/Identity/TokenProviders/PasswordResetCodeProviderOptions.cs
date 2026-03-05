@@ -2,9 +2,12 @@
 
 namespace Headless.Api.Identity.TokenProviders;
 
-public sealed class PasswordResetCodeProviderOptions
+public sealed class PasswordResetCodeProviderOptions : TotpTokenProviderOptions
 {
-    public const string DefaultName = "PasswordReset";
+    public new const string DefaultName = "PasswordReset";
 
-    public string Name { get; set; } = DefaultName;
+    public PasswordResetCodeProviderOptions()
+    {
+        Name = DefaultName;
+    }
 }

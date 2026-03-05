@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 namespace Headless.Api.Identity.TokenProviders;
 
@@ -11,4 +11,6 @@ public class TotpTokenProviderOptions
     public TimeSpan Timestep { get; set; } = TimeSpan.FromMinutes(3);
 
     public int Variance { get; set; } = 2;
+
+    public TotpHashMode HashMode { get; set; } = TotpHashMode.Sha1;
 }

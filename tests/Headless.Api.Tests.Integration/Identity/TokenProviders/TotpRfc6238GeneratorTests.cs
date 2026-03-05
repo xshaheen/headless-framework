@@ -175,4 +175,58 @@ public sealed class TotpRfc6238GeneratorTests
         //then
         generator.ValidateCode(secret, code, timestep, 1).Should().BeTrue();
     }
+
+    [Fact]
+    public void should_generate_and_validate_with_sha256()
+    {
+        //given
+        var fixedTime = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var timeProvider = new FakeTimeProvider(fixedTime);
+        var generator = new TotpRfc6238Generator(timeProvider);
+        var secret = "supersecretkey"u8.ToArray();
+        var timestep = TimeSpan.FromMinutes(3);
+
+        //when
+        var code = generator.GenerateCode(secret, timestep, "user@example.com", TotpHashMode.Sha256);
+
+        //then
+        generator.ValidateCode(secret, code, timestep, 2, "user@example.com", TotpHashMode.Sha256).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_generate_and_validate_with_sha512()
+    {
+        //given
+        var fixedTime = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var timeProvider = new FakeTimeProvider(fixedTime);
+        var generator = new TotpRfc6238Generator(timeProvider);
+        var secret = "supersecretkey"u8.ToArray();
+        var timestep = TimeSpan.FromMinutes(3);
+
+        //when
+        var code = generator.GenerateCode(secret, timestep, "user@example.com", TotpHashMode.Sha512);
+
+        //then
+        generator.ValidateCode(secret, code, timestep, 2, "user@example.com", TotpHashMode.Sha512).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_fail_validation_across_different_hash_modes()
+    {
+        //given
+        var fixedTime = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
+        var timeProvider = new FakeTimeProvider(fixedTime);
+        var generator = new TotpRfc6238Generator(timeProvider);
+        var secret = "supersecretkey"u8.ToArray();
+        var timestep = TimeSpan.FromMinutes(3);
+        var code = generator.GenerateCode(secret, timestep, "user@example.com", TotpHashMode.Sha1);
+
+        //when
+        var resultSha256 = generator.ValidateCode(secret, code, timestep, 2, "user@example.com", TotpHashMode.Sha256);
+        var resultSha512 = generator.ValidateCode(secret, code, timestep, 2, "user@example.com", TotpHashMode.Sha512);
+
+        //then
+        resultSha256.Should().BeFalse();
+        resultSha512.Should().BeFalse();
+    }
 }

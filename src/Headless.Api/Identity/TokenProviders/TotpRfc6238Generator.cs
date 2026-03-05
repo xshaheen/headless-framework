@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
 using System.Net;
@@ -14,14 +14,19 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
         throwOnInvalidBytes: true
     );
 
-    public int GenerateCode(byte[] securityToken, TimeSpan timestep, string? modifier = null)
+    public int GenerateCode(
+        byte[] securityToken,
+        TimeSpan timestep,
+        string? modifier = null,
+        TotpHashMode hashMode = TotpHashMode.Sha1
+    )
     {
         Argument.IsNotNull(securityToken);
         Argument.IsPositive(timestep);
 
         var modifierBytes = modifier is not null ? _Encoding.GetBytes(modifier) : null;
 
-        return _ComputeTotp(securityToken, _GetCurrentTimeStepNumber(timestep), modifierBytes);
+        return _ComputeTotp(securityToken, _GetCurrentTimeStepNumber(timestep), modifierBytes, hashMode);
     }
 
     public bool ValidateCode(
@@ -29,7 +34,8 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
         int code,
         TimeSpan timestep,
         int variance = 2,
-        string? modifier = null
+        string? modifier = null,
+        TotpHashMode hashMode = TotpHashMode.Sha1
     )
     {
         Argument.IsNotNull(securityToken);
@@ -41,7 +47,7 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
 
         for (var i = -variance; i <= variance; i++)
         {
-            var computedTotp = _ComputeTotp(securityToken, (ulong)((long)currentTimeStep + i), modifierBytes);
+            var computedTotp = _ComputeTotp(securityToken, (ulong)((long)currentTimeStep + i), modifierBytes, hashMode);
 
             if (computedTotp == code)
             {
@@ -49,7 +55,7 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
             }
         }
 
-        return false; // No match
+        return false;
     }
 
     private ulong _GetCurrentTimeStepNumber(TimeSpan timestep)
@@ -59,7 +65,7 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
         return (ulong)(delta.Ticks / timestep.Ticks);
     }
 
-    private static int _ComputeTotp(byte[] key, ulong timestepNumber, byte[]? modifierBytes)
+    private static int _ComputeTotp(byte[] key, ulong timestepNumber, byte[]? modifierBytes, TotpHashMode hashMode)
     {
         // See https://tools.ietf.org/html/rfc4226
         // We can add an optional modifier
@@ -80,13 +86,18 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
 
         const int mod = 1000000; // # of 0's = length of pin
 
-        Span<byte> hash = stackalloc byte[HMACSHA1.HashSizeInBytes];
-#pragma warning disable CA5350 // Uses a weak cryptographic algorithm HMACSHA1
-        var hashSuccess = HMACSHA1.TryHashData(key, modifierCombinedBytes, hash, out var written);
-#pragma warning restore CA5350
+        var hashSizeInBytes = hashMode switch
+        {
+            TotpHashMode.Sha256 => HMACSHA256.HashSizeInBytes,
+            TotpHashMode.Sha512 => HMACSHA512.HashSizeInBytes,
+            _ => HMACSHA1.HashSizeInBytes,
+        };
+
+        Span<byte> hash = stackalloc byte[hashSizeInBytes];
+
+        var hashSuccess = _TryHashData(hashMode, key, modifierCombinedBytes, hash);
 
         Debug.Assert(hashSuccess);
-        Debug.Assert(written == hash.Length);
 
         // Generate DT string
         var offset = hash[^1] & 0xf;
@@ -99,6 +110,18 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
             | (hash[offset + 3] & 0xff);
 
         return binaryCode % mod;
+    }
+
+    private static bool _TryHashData(TotpHashMode hashMode, byte[] key, Span<byte> data, Span<byte> destination)
+    {
+        return hashMode switch
+        {
+            TotpHashMode.Sha256 => HMACSHA256.TryHashData(key, data, destination, out _),
+            TotpHashMode.Sha512 => HMACSHA512.TryHashData(key, data, destination, out _),
+#pragma warning disable CA5350 // Uses a weak cryptographic algorithm HMACSHA1
+            _ => HMACSHA1.TryHashData(key, data, destination, out _),
+#pragma warning restore CA5350
+        };
     }
 
     private static byte[] _ApplyModifier(Span<byte> input, byte[] modifierBytes)

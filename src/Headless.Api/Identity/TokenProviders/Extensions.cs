@@ -2,6 +2,7 @@
 
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Api.Identity.TokenProviders;
 
@@ -47,6 +48,9 @@ public static class IdentityBuilderExtensions
             configureOptions(options);
             builder.Services.Configure(configureOptions);
         }
+
+        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.Services.TryAddSingleton<TotpRfc6238Generator>();
 
         builder.Services.Configure<IdentityOptions>(identityOptions =>
         {
@@ -99,6 +103,9 @@ public static class IdentityBuilderExtensions
             configureOptions(options);
             builder.Services.Configure(configureOptions);
         }
+
+        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.Services.TryAddSingleton<TotpRfc6238Generator>();
 
         builder.Services.Configure<IdentityOptions>(identityOptions =>
         {

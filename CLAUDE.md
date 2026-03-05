@@ -37,7 +37,7 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 - File-scoped namespaces: `namespace X;`
 - Primary constructors for DI
 - `required`/`init` for properties
-- `sealed` by default
+- `sealed` by default if not designed for inheritance
 - Collection expressions: `[]`
 - Pattern matching over old-style checks
 
