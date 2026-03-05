@@ -65,10 +65,7 @@ public sealed class InfobipSmsSender(
         try
         {
             var smsResponse = await smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken).ConfigureAwait(false);
-            logger.LogTrace(
-                "Infobip SMS sent successfully to {DestinationCount} recipients",
-                request.Destinations.Count
-            );
+            logger.LogSmsSentSuccessfully(request.Destinations.Count);
 
             return SendSingleSmsResponse.Succeeded();
         }
@@ -78,12 +75,7 @@ public sealed class InfobipSmsSender(
         }
         catch (ApiException e)
         {
-            logger.LogError(
-                e,
-                "Infobip SMS failed to {DestinationCount} recipients, ErrorCode={ErrorCode}",
-                request.Destinations.Count,
-                e.ErrorCode
-            );
+            logger.LogSmsSendFailed(e, request.Destinations.Count, e.ErrorCode);
             FormattableString error = $"ErrorCode: {e.ErrorCode} {e.Message}";
 
             return SendSingleSmsResponse.Failed(error.ToInvariantString());

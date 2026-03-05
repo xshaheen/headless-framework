@@ -71,7 +71,8 @@ public static class DbSeedersExtensions
         {
             foreach (var type in seederTypes)
             {
-                logger.LogPreSeedingUsing(type.GetFriendlyTypeName());
+                var typeName = type.GetFriendlyTypeName();
+                logger.LogPreSeedingUsing(typeName);
                 var seeder = (IPreSeeder)scope.ServiceProvider.GetRequiredService(type);
                 await seeder.SeedAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -117,7 +118,8 @@ public static class DbSeedersExtensions
         {
             foreach (var type in seederTypes)
             {
-                logger.LogSeedingUsing(type.GetFriendlyTypeName());
+                var typeName = type.GetFriendlyTypeName();
+                logger.LogSeedingUsing(typeName);
                 var seeder = (ISeeder)scope.ServiceProvider.GetRequiredService(type);
                 await seeder.SeedAsync(cancellationToken).ConfigureAwait(false);
             }

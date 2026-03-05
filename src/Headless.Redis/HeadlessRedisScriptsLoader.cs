@@ -107,7 +107,8 @@ public sealed class HeadlessRedisScriptsLoader(
 
             if (traceEnabled)
             {
-                logger!.LogScriptsLoadedSuccessfully(_timeProvider.GetElapsedTime(timestamp));
+                var elapsed = _timeProvider.GetElapsedTime(timestamp);
+                logger!.LogScriptsLoadedSuccessfully(elapsed);
             }
         }
     }

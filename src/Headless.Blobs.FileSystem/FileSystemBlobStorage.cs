@@ -189,18 +189,18 @@ public sealed class FileSystemBlobStorage(
             return ValueTask.FromResult(_DeleteDirectoryWithLogging(path));
         }
 
-        _logger.LogInformation("Deleting files matching {SearchPattern}", blobSearchPattern);
+        _logger.LogDeletingFilesMatching(blobSearchPattern);
 
         var filesCount = 0;
 
         foreach (var file in Directory.EnumerateFiles(directoryPath, blobSearchPattern, SearchOption.AllDirectories))
         {
-            _logger.LogTrace("Deleting {Path}", file);
+            _logger.LogDeletingFile(file);
             File.Delete(file);
             filesCount++;
         }
 
-        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", filesCount, blobSearchPattern);
+        _logger.LogFinishedDeletingFiles(filesCount, blobSearchPattern);
 
         return ValueTask.FromResult(filesCount);
     }
@@ -212,12 +212,12 @@ public sealed class FileSystemBlobStorage(
             return 0;
         }
 
-        _logger.LogInformation("Deleting {Directory} directory", directoryPath);
+        _logger.LogDeletingDirectory(directoryPath);
 
         var count = Directory.EnumerateFiles(directoryPath, "*.*", SearchOption.AllDirectories).Count();
         Directory.Delete(directoryPath, recursive: true);
 
-        _logger.LogTrace("Finished deleting {Directory} with {FileCount} files", directoryPath, count);
+        _logger.LogFinishedDeletingDirectory(directoryPath, count);
 
         return count;
     }
@@ -245,7 +245,7 @@ public sealed class FileSystemBlobStorage(
         var newFullPath = _BuildBlobPath(newBlobContainer, newBlobName).NormalizePath();
         var newDirectoryPath = _GetDirectoryPath(newBlobContainer);
 
-        _logger.LogTrace("Renaming {Path} to {NewPath}", oldFullPath, newFullPath);
+        _logger.LogRenamingFile(oldFullPath, newFullPath);
 
         if (!File.Exists(oldFullPath))
         {
@@ -280,7 +280,7 @@ public sealed class FileSystemBlobStorage(
         var targetPath = _BuildBlobPath(newBlobContainer, newBlobName);
         var targetDirectory = _GetDirectoryPath(newBlobContainer);
 
-        _logger.LogTrace("Copying {Path} to {TargetPath}", blobPath, targetPath);
+        _logger.LogCopyingFile(blobPath, targetPath);
 
         if (!File.Exists(blobPath))
         {
@@ -351,12 +351,12 @@ public sealed class FileSystemBlobStorage(
         var directoryPath = _GetDirectoryPath(container);
         var filePath = Path.Combine(directoryPath, blobName);
 
-        _logger.LogTrace("Getting file stream for {Path}", filePath);
+        _logger.LogGettingFileStream(filePath);
         var fileInfo = new FileInfo(filePath);
 
         if (!fileInfo.Exists)
         {
-            _logger.LogError("Unable to get file info for {Path}: File Not Found", filePath);
+            _logger.LogFileNotFound(filePath);
 
             return ValueTask.FromResult<BlobInfo?>(null);
         }
@@ -455,10 +455,7 @@ public sealed class FileSystemBlobStorage(
 
         if (!Directory.Exists(completePath))
         {
-            _logger.LogTrace(
-                "Returning empty file list matching {SearchPattern}: Directory Not Found",
-                blobSearchPattern
-            );
+            _logger.LogReturningEmptyFileList(blobSearchPattern);
 
             return PagedFileListResult.Empty;
         }
@@ -493,12 +490,7 @@ public sealed class FileSystemBlobStorage(
             pagingLimit++;
         }
 
-        _logger.LogTrace(
-            "Getting file list matching {SearchPattern} Page: {Page}, PageSize: {PageSize}",
-            searchPattern,
-            page,
-            pageSize
-        );
+        _logger.LogGettingFileList(searchPattern, page, pageSize);
 
         foreach (
             var path in Directory
