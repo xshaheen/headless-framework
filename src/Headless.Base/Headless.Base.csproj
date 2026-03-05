@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Headless</RootNamespace>
@@ -9,9 +9,11 @@
     <PackageReference Include="IdGen" />
     <PackageReference Include="Microsoft.Bcl.TimeProvider" />
     <PackageReference Include="morelinq" />
-    <PackageReference Include="MimeTypes">
+    <!-- Exclude contentfiles to avoid parallel build race condition with .pp preprocessing.
+         Instead, we preprocess the .pp file ourselves in _PreprocessMimeTypes target below. -->
+    <PackageReference Include="MimeTypes" GeneratePathProperty="true">
       <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <IncludeAssets>build; native; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Nito.AsyncEx" />
     <PackageReference Include="Nito.Disposables" />
@@ -23,4 +25,45 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
   </ItemGroup>
+
+  <!-- Preprocess MimeTypes .pp content file ourselves to avoid NuGet contentFiles race condition
+       that causes build failures with dotnet build no-incremental on the full solution. -->
+  <UsingTask
+    TaskName="_PreprocessPPFile"
+    TaskFactory="RoslynCodeTaskFactory"
+    AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll"
+  >
+    <ParameterGroup>
+      <InputFile ParameterType="System.String" Required="true" />
+      <OutputFile ParameterType="System.String" Required="true" />
+      <Namespace ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Fragment" Language="cs">
+        var content = System.IO.File.ReadAllText(InputFile);
+        content = content.Replace("$rootnamespace$", Namespace);
+        var dir = System.IO.Path.GetDirectoryName(OutputFile);
+        if (!string.IsNullOrEmpty(dir))
+            System.IO.Directory.CreateDirectory(dir);
+        System.IO.File.WriteAllText(OutputFile, content);
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <Target
+    Name="_PreprocessMimeTypes"
+    BeforeTargets="CoreCompile"
+    Inputs="$(PkgMimeTypes)/contentFiles/cs/net5.0/MimeTypes.Nullable.cs.pp"
+    Outputs="$(IntermediateOutputPath)MimeTypes.g.cs"
+    Condition="Exists('$(PkgMimeTypes)/contentFiles/cs/net5.0/MimeTypes.Nullable.cs.pp')"
+  >
+    <_PreprocessPPFile
+      InputFile="$(PkgMimeTypes)/contentFiles/cs/net5.0/MimeTypes.Nullable.cs.pp"
+      OutputFile="$(IntermediateOutputPath)MimeTypes.g.cs"
+      Namespace="$(RootNamespace)"
+    />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)MimeTypes.g.cs" />
+    </ItemGroup>
+  </Target>
 </Project>
