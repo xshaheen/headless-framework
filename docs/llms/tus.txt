@@ -1,0 +1,221 @@
+---
+domain: TUS (Resumable Uploads)
+packages: Tus, Tus.Azure, Tus.DistributedLocks
+---
+
+# TUS (Resumable Uploads)
+
+> TUS protocol implementation for resumable file uploads with Azure Blob Storage backend and distributed lock support.
+
+## Quick Orientation
+
+- `Headless.Tus` -- base utilities and types for TUS protocol (built on `tusdotnet`)
+- `Headless.Tus.Azure` -- `TusAzureStore` for storing uploads in Azure Blob Storage, supporting creation, concatenation, expiration, checksum, and termination TUS extensions
+- `Headless.Tus.DistributedLocks` -- `DistributedLockTusLockProvider` for concurrent upload safety across multiple instances
+
+Minimal setup (Azure):
+```csharp
+var store = new TusAzureStore(blobServiceClient, new TusAzureStoreOptions
+{
+    ContainerName = "uploads",
+    BlobPrefix = "tus/",
+    CreateContainerIfNotExists = true
+});
+
+app.MapTus("/files", async _ => new DefaultTusConfiguration
+{
+    Store = store,
+    UrlPath = "/files"
+});
+```
+
+For multi-instance deployments, add distributed locking:
+```csharp
+builder.Services.AddDistributedLock();
+builder.Services.AddDistributedLockRedisStorage();
+builder.Services.AddDistributedLockTusLockProvider();
+```
+
+## Agent Instructions
+
+- Use `Headless.Tus` + `Headless.Tus.Azure` for resumable uploads to Azure Blob Storage. The base `Tus` package alone is not usable -- it requires a store implementation.
+- `TusAzureStore` implements `ITusStore` and supports all major TUS extensions (creation, concatenation, expiration, checksum, termination).
+- Configure `TusAzureStoreOptions` with `ContainerName`, `BlobPrefix`, and `CreateContainerIfNotExists`.
+- For multi-instance deployments, always add `Headless.Tus.DistributedLocks` and register `AddDistributedLockTusLockProvider()`. Without it, concurrent uploads to the same file from different instances can corrupt data.
+- The distributed lock provider requires `Headless.DistributedLocks.Abstractions` to be registered first (e.g., via `AddDistributedLock()` + a storage backend like Redis).
+- Set `FileLockProvider` on `DefaultTusConfiguration` when using distributed locks -- resolve `ITusFileLockProvider` from DI.
+- All packages depend on `tusdotnet`. Use `app.MapTus()` to expose TUS endpoints.
+
+---
+# Headless.Tus
+
+Core TUS protocol utilities and extensions.
+
+## Problem Solved
+
+Provides shared utilities and base functionality for TUS (resumable file upload) protocol implementations, building on the tusdotnet library.
+
+## Key Features
+
+- Shared TUS protocol utilities
+- Base types for TUS stores
+- File metadata handling
+- Extension method helpers
+
+## Installation
+
+```bash
+dotnet add package Headless.Tus
+```
+
+## Usage
+
+This is a base package typically used by specific TUS store implementations (Azure, local filesystem). See `Headless.Tus.Azure` for a complete implementation.
+
+## Configuration
+
+No configuration required.
+
+## Dependencies
+
+- `tusdotnet`
+
+## Side Effects
+
+None.
+---
+# Headless.Tus.Azure
+
+Azure Blob Storage TUS store implementation.
+
+## Problem Solved
+
+Provides a full-featured TUS protocol store using Azure Blob Storage for resumable file uploads, supporting creation, concatenation, expiration, checksum verification, and termination extensions.
+
+## Key Features
+
+- `TusAzureStore` - Complete ITusStore implementation
+- Supports TUS extensions:
+  - Creation / CreationDeferLength
+  - Concatenation
+  - Expiration
+  - Checksum
+  - Termination
+- Azure Blob file locking
+- Configurable blob prefix and container
+- Automatic container creation
+
+## Installation
+
+```bash
+dotnet add package Headless.Tus.Azure
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+var blobServiceClient = new BlobServiceClient(connectionString);
+
+var store = new TusAzureStore(
+    blobServiceClient,
+    new TusAzureStoreOptions
+    {
+        ContainerName = "uploads",
+        BlobPrefix = "tus/",
+        CreateContainerIfNotExists = true
+    }
+);
+
+var app = builder.Build();
+
+app.MapTus("/files", async _ => new DefaultTusConfiguration
+{
+    Store = store,
+    UrlPath = "/files"
+});
+```
+
+## Configuration
+
+```csharp
+var options = new TusAzureStoreOptions
+{
+    ContainerName = "uploads",
+    BlobPrefix = "tus/",
+    CreateContainerIfNotExists = true,
+    ContainerPublicAccessType = PublicAccessType.None
+};
+```
+
+## Dependencies
+
+- `Headless.Tus`
+- `Azure.Storage.Blobs`
+- `tusdotnet`
+
+## Side Effects
+
+- Creates Azure Blob container if configured
+---
+# Headless.Tus.DistributedLock
+
+TUS file locking using Headless.DistributedLocks.
+
+## Problem Solved
+
+Provides a TUS file lock provider implementation using the framework's distributed resource locking, enabling concurrent upload coordination across multiple instances.
+
+## Key Features
+
+- `DistributedLockTusLockProvider` - ITusFileLockProvider implementation
+- `DistributedLockTusLock` - Distributed file lock wrapper
+- Works with any IDistributedLockProvider (Redis, Cache)
+
+## Installation
+
+```bash
+dotnet add package Headless.Tus.DistributedLock
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Add resource lock provider first
+builder.Services.AddDistributedLock();
+builder.Services.AddDistributedLockRedisStorage();
+
+// Add TUS lock provider
+builder.Services.AddDistributedLockTusLockProvider();
+
+var app = builder.Build();
+
+app.MapTus("/files", async ctx =>
+{
+    var lockProvider = ctx.RequestServices.GetRequiredService<ITusFileLockProvider>();
+
+    return new DefaultTusConfiguration
+    {
+        Store = store,
+        UrlPath = "/files",
+        FileLockProvider = lockProvider
+    };
+});
+```
+
+## Configuration
+
+No additional configuration required beyond resource lock setup.
+
+## Dependencies
+
+- `Headless.Tus`
+- `Headless.DistributedLocks.Abstractions`
+- `tusdotnet`
+
+## Side Effects
+
+- Registers `ITusFileLockProvider` as singleton

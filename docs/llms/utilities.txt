@@ -1,0 +1,775 @@
+---
+domain: Utilities
+packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, NetTopologySuite, Recaptcha, Redis, Sitemaps, Slugs
+---
+
+# Utilities
+
+> Standalone utility packages for validation, strongly-typed IDs, hosting helpers, geospatial ops, reCAPTCHA, Redis scripts, sitemaps, and slug generation.
+
+## Quick Orientation
+
+Install individually as needed -- these packages are independent of each other:
+
+- **Generator.Primitives + Generator.Primitives.Abstractions** -- Roslyn source generator for strongly-typed domain primitives (IDs, value types). Install both together. Define types implementing `IPrimitive<T>` and get auto-generated equality, JSON converters, EF Core value converters, Dapper handlers, and TypeConverters.
+- **FluentValidation** -- Enterprise validators on top of FluentValidation: phone numbers (`InternationalPhoneNumber()`), national IDs, collections, geo, pagination, URLs. Use `ErrorDescriptor` for structured API errors.
+- **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
+- **NetTopologySuite** -- Geometry precision, permissive operations, SQL Server geography sanitization (`SanitizeForSqlGeography()`), polygon simplification.
+- **Recaptcha** -- Google reCAPTCHA v2/v3 server-side verification (`IReCaptchaSiteVerifyV2`/`V3`) plus Razor tag helpers.
+- **Redis** -- `HeadlessRedisScriptsLoader` for centralized Lua script loading/execution with StackExchange.Redis.
+- **Sitemaps** -- XML sitemap generation (`SitemapUrl`, `SitemapIndexBuilder`) with localized URL and image support.
+- **Slugs** -- URL-friendly slug generation (`Slug.Create()`) with Unicode normalization and configurable options.
+
+## Agent Instructions
+
+- Use `Generator.Primitives` + `Generator.Primitives.Abstractions` **together** for strongly-typed domain primitives. Define a `readonly partial struct` implementing `IPrimitive<T>` with a static `Validate` method. The source generator handles everything else.
+- Use `Headless.FluentValidation` for validators, not raw `FluentValidation`. It provides `InternationalPhoneNumber()`, `EgyptianNationalId()`, `UniqueElements()`, `Latitude()`, `Longitude()`, `PageIndex()`, `PageSize()`, `Id()`, and more.
+- Use `ErrorDescriptor` with `.WithErrorDescriptor()` for structured API error responses. Convert results via `result.Errors.ToErrorDescriptors()`.
+- Use `Headless.Hosting` for DI helpers. Key methods: `AddIf(condition, action)`, `AddIfElse(condition, ifAction, elseAction)`, `AddOrReplaceSingleton<TService, TImpl>()`, `AddOptionsWithFluentValidation<TOptions, TValidator>(sectionName)`.
+- Use `ISeeder` / `IPreSeeder` from Hosting for database seeding. Call `await app.Services.RunSeedersAsync()` at startup. Use `[SeederPriority(n)]` to control order.
+- Use `Headless.NetTopologySuite` for geospatial work. Key methods: `SanitizeForSqlGeography()`, `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()`. Use `GeoConstants.GoogleMapsSrid` (4326) for SRID.
+- Use `Headless.ReCaptcha` (note capital C in directory name) for Google reCAPTCHA. Register with `AddReCaptchaV3(options => ...)`. Verify with `IReCaptchaSiteVerifyV3.VerifyAsync()`. Check `result.Success` and `result.Score`.
+- Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.LoadAsync()` on startup.
+- Use `Headless.Sitemaps` for XML sitemap generation. Create `List<SitemapUrl>` and call `urls.WriteToAsync(stream)`. Auto-splits at 50,000 URLs via `urls.WriteAsync()`. Use `SitemapAlternateUrl` for hreflang/localized URLs.
+- Use `Slug.Create(text)` for slug generation. Customize with `SlugOptions` (separator, max length, casing, character replacements). Handles Unicode/Arabic text natively.
+
+---
+# Headless.FluentValidation
+
+Extension library for FluentValidation providing enterprise-grade validators and utilities.
+
+## Problem Solved
+
+Provides a comprehensive suite of common validators (phone numbers, national IDs, URLs, pagination) and standardized error handling, eliminating the need to rewrite common validation logic across projects.
+
+## Key Features
+
+- Phone number validation (international, country-specific) via `libphonenumber-csharp`
+- Egyptian National ID validation with checksum verification
+- Collection validators (unique elements, min/max counts)
+- Geo validators (latitude/longitude)
+- Pagination validators (page index, page size, search query)
+- URL validators (absolute URLs, HTTP/HTTPS)
+- `ErrorDescriptor` integration for structured API responses
+- Automatic camelCase property path normalization
+
+## Installation
+
+```bash
+dotnet add package Headless.FluentValidation
+```
+
+## Quick Start
+
+```csharp
+using Headless.FluentValidation;
+
+public sealed class UserValidator : AbstractValidator<User>
+{
+    public UserValidator()
+    {
+        RuleFor(x => x.PhoneNumber).InternationalPhoneNumber();
+        RuleFor(x => x.Email).NotEmpty().EmailAddress();
+        RuleFor(x => x.Roles).MinimumElements(1).UniqueElements();
+    }
+}
+```
+
+## Usage
+
+### Phone Number Validation
+
+```csharp
+RuleFor(x => x.Phone).BasicPhoneNumber();                    // DataAnnotations check
+RuleFor(x => x.Phone).PhoneNumber(u => u.CountryCode);       // Country-specific
+RuleFor(x => x.Phone).InternationalPhoneNumber();            // International format
+```
+
+### Error Descriptor Integration
+
+```csharp
+RuleFor(x => x.Total).GreaterThan(0)
+    .WithErrorDescriptor(new ErrorDescriptor("ORDER_TOTAL_INVALID", "Total must be positive."));
+```
+
+### Processing Validation Results
+
+```csharp
+var errors = result.Errors.ToErrorDescriptors(); // Dictionary<string, List<ErrorDescriptor>>
+```
+
+## Available Validators
+
+| Category | Validators |
+|----------|-----------|
+| Phone | `BasicPhoneNumber`, `PhoneNumber`, `InternationalPhoneNumber`, `PhoneCountryCode` |
+| National ID | `EgyptianNationalId` |
+| Collection | `MaximumElements`, `MinimumElements`, `UniqueElements` |
+| Geo | `Latitude`, `Longitude` |
+| Pagination | `PageIndex`, `PageSize`, `SearchQuery` |
+| URL | `Url`, `HttpUrl` |
+| ID | `Id` (validates non-empty Guid, positive int/long) |
+
+## Configuration
+
+No configuration required.
+
+## Dependencies
+
+- `FluentValidation`
+- `libphonenumber-csharp`
+- `Headless.Base`
+
+## Side Effects
+
+None.
+---
+# Headless.Generator.Primitives
+
+Roslyn source generator for creating strongly-typed domain primitives.
+
+## Problem Solved
+
+Automatically generates boilerplate code for domain primitives including constructors, equality, comparison, JSON serialization, Entity Framework value converters, TypeConverters, and OpenAPI schema mappings.
+
+## Key Features
+
+- Roslyn incremental source generator
+- Generates for types implementing `IPrimitive<T>`
+- Auto-generated code:
+  - Constructors and factory methods
+  - `IEquatable<T>`, `IComparable<T>` implementations
+  - JSON converters (System.Text.Json)
+  - Entity Framework Core value converters
+  - TypeConverter for model binding
+  - Dapper type handlers
+  - NSwag/Swashbuckle schema mappings
+
+## Installation
+
+```bash
+dotnet add package Headless.Generator.Primitives
+```
+
+## Quick Start
+
+```csharp
+// Define your primitive
+[StringLength(1, 50)]
+public readonly partial struct Email : IPrimitive<string>
+{
+    public static PrimitiveValidationResult Validate(string value)
+    {
+        if (!value.Contains('@'))
+            return PrimitiveValidationResult.Error("Invalid email format");
+
+        return PrimitiveValidationResult.Ok;
+    }
+}
+
+// Generated code provides:
+var email = Email.From("user@example.com");  // Factory method
+var value = email.Value;                      // Underlying value
+var json = JsonSerializer.Serialize(email);   // JSON: "user@example.com"
+```
+
+### Entity Framework Integration
+
+```csharp
+// Auto-generated value converter is registered via:
+modelBuilder.Entity<User>()
+    .Property(u => u.Email)
+    .HasConversion<EmailValueConverter>();
+```
+
+## Configuration
+
+### MSBuild Properties
+
+```xml
+<PropertyGroup>
+  <PrimitiveGenerator_GenerateDapper>true</PrimitiveGenerator_GenerateDapper>
+  <PrimitiveGenerator_GenerateEfCore>true</PrimitiveGenerator_GenerateEfCore>
+  <PrimitiveGenerator_GenerateSwashbuckle>false</PrimitiveGenerator_GenerateSwashbuckle>
+</PropertyGroup>
+```
+
+## Dependencies
+
+- `Headless.Generator.Primitives.Abstractions`
+- `Microsoft.CodeAnalysis.CSharp` (compile-time only)
+
+## Side Effects
+
+- Generates source files at compile time
+- No runtime dependencies added
+---
+# Headless.Generator.Primitives.Abstractions
+
+Abstractions and attributes for the domain primitives source generator.
+
+## Problem Solved
+
+Provides the runtime contracts and attributes needed to define strongly-typed domain primitives that work with the source generator, ensuring type safety and domain constraints at compile time.
+
+## Key Features
+
+- `IPrimitive<T>` - Core interface for domain primitives
+- `PrimitiveValidationResult` - Validation result model
+- Attributes for generator configuration:
+  - `StringLengthAttribute` - Min/max length constraints
+  - `SupportedOperationsAttribute` - Enable comparison, math operations
+  - `SerializationFormatAttribute` - Custom serialization formats
+  - `UnderlyingPrimitiveTypeAttribute` - Specify underlying type
+- Helper extensions for DateOnly, XML serialization
+
+## Installation
+
+```bash
+dotnet add package Headless.Generator.Primitives.Abstractions
+```
+
+## Quick Start
+
+```csharp
+using Headless.Generator.Primitives;
+
+[StringLength(1, 100)]
+public readonly partial struct ProductName : IPrimitive<string>
+{
+    public static PrimitiveValidationResult Validate(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return PrimitiveValidationResult.Error("Name cannot be empty");
+
+        return PrimitiveValidationResult.Ok;
+    }
+}
+```
+
+### With Supported Operations
+
+```csharp
+[SupportedOperations(Comparison = true, Math = true)]
+public readonly partial struct Quantity : IPrimitive<int>
+{
+    public static PrimitiveValidationResult Validate(int value)
+    {
+        return value >= 0
+            ? PrimitiveValidationResult.Ok
+            : PrimitiveValidationResult.Error("Quantity cannot be negative");
+    }
+}
+```
+
+## Configuration
+
+No configuration required. This is an abstractions-only package.
+
+## Dependencies
+
+None.
+
+## Side Effects
+
+None.
+---
+# Headless.Hosting
+
+Core hosting utilities and extensions for ASP.NET Core applications.
+
+## Problem Solved
+
+Provides essential DI extensions, configuration helpers, options validation, and seeder infrastructure to reduce boilerplate in application startup and configuration.
+
+## Key Features
+
+- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`
+- Options validation with FluentValidation
+- Configuration binding extensions
+- Environment detection extensions
+- Database seeder infrastructure (`ISeeder`, `IPreSeeder`)
+- Keyed services helpers
+- Hosted service management
+
+## Installation
+
+```bash
+dotnet add package Headless.Hosting
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Conditional registration
+builder.Services.AddIf(
+    builder.Environment.IsDevelopment(),
+    s => s.AddDevEmailSender("emails.txt")
+);
+
+// Options with FluentValidation
+builder.Services.AddOptionsWithFluentValidation<MyOptions, MyOptionsValidator>("MySection");
+
+// Replace existing service
+builder.Services.AddOrReplaceSingleton<IMyService, BetterMyService>();
+```
+
+## Usage
+
+### Conditional Service Registration
+
+```csharp
+services.AddIf(condition, s => s.AddSingleton<IService, Impl>());
+services.AddIfElse(condition, ifAction, elseAction);
+```
+
+### Options with Validation
+
+```csharp
+services.AddOptionsWithFluentValidation<AppOptions, AppOptionsValidator>("App");
+```
+
+### Database Seeders
+
+```csharp
+public class UserSeeder : ISeeder
+{
+    [SeederPriority(1)]
+    public async Task SeedAsync(CancellationToken ct) { /* ... */ }
+}
+
+// In startup
+await app.Services.RunSeedersAsync();
+```
+
+### Service Replacement
+
+```csharp
+services.AddOrReplaceScoped<IService, NewImpl>();
+services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequired<IDep>()));
+```
+
+## Configuration
+
+No configuration required.
+
+## Dependencies
+
+- `Headless.Checks`
+- `Microsoft.Extensions.Hosting`
+- `Microsoft.Extensions.Options`
+
+## Side Effects
+
+None directly. Utilities for managing service registration.
+---
+# Headless.NetTopologySuite
+
+NetTopologySuite extensions for geospatial operations and SQL Server geography compatibility.
+
+## Problem Solved
+
+Provides robust geometry manipulation utilities, precision handling, and SQL Server geography sanitization, solving common issues with geometry validity, coordinate orientation, and precision when working with geospatial data.
+
+## Key Features
+
+- Geometry precision reduction and management
+- Permissive geometry operations (intersection, union, difference)
+- SQL Server geography sanitization (ring orientation, validation)
+- Polygon simplification with topology preservation
+- Geometry creation helpers (points, polygons, multi-polygons)
+- Coordinate range validation
+- Feature collection conversion
+
+## Installation
+
+```bash
+dotnet add package Headless.NetTopologySuite
+```
+
+## Quick Start
+
+```csharp
+using NetTopologySuite.Geometries;
+
+var factory = new GeometryFactory(GeoConstants.HighPrecision, GeoConstants.GoogleMapsSrid);
+
+// Create a polygon from coordinates
+var polygon = factory.CreatePolygon(new[]
+{
+    new Coordinate(0, 0),
+    new Coordinate(10, 0),
+    new Coordinate(10, 10),
+    new Coordinate(0, 10),
+    new Coordinate(0, 0)
+});
+
+// Sanitize for SQL Server geography
+var sanitized = polygon.SanitizeForSqlGeography();
+
+// Simplify polygon
+var simplified = polygon.Simplify(GeoConstants.Around1MDegrees);
+```
+
+## Usage
+
+### Permissive Operations
+
+```csharp
+var intersection = geom1.PermissiveIntersection(geom2);
+var union = geom1.PermissiveUnion(geom2);
+var overlap = geom1.ComputeOverlap(geom2);
+```
+
+### Ring Orientation
+
+```csharp
+var fixed = polygon.EnsureIsOrientedCounterClockwise();
+```
+
+## Configuration
+
+No configuration required.
+
+## Dependencies
+
+- `NetTopologySuite`
+- `NetTopologySuite.Features`
+- `Headless.Checks`
+
+## Side Effects
+
+None.
+---
+# Headless.Recaptcha
+
+Google reCAPTCHA v2 and v3 integration with verification services and tag helpers.
+
+## Problem Solved
+
+Provides complete Google reCAPTCHA integration including server-side verification for both v2 (checkbox) and v3 (invisible score-based), plus Razor tag helpers for easy frontend integration.
+
+## Key Features
+
+- `IReCaptchaSiteVerifyV2` - reCAPTCHA v2 verification
+- `IReCaptchaSiteVerifyV3` - reCAPTCHA v3 verification with score
+- Razor tag helpers for script and widget rendering
+- Language code provider for localization
+- Source-generated JSON serialization
+
+## Installation
+
+```bash
+dotnet add package Headless.Recaptcha
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddReCaptchaV3(options =>
+{
+    options.SiteKey = builder.Configuration["ReCaptcha:SiteKey"];
+    options.SiteSecret = builder.Configuration["ReCaptcha:SiteSecret"];
+});
+```
+
+## Usage
+
+### Server-Side Verification
+
+```csharp
+public class LoginController(IReCaptchaSiteVerifyV3 recaptcha)
+{
+    [HttpPost]
+    public async Task<IActionResult> Login(LoginRequest request)
+    {
+        var result = await recaptcha.VerifyAsync(new ReCaptchaSiteVerifyRequest
+        {
+            Response = request.RecaptchaToken
+        });
+
+        if (!result.Success || result.Score < 0.5f)
+            return BadRequest("reCAPTCHA validation failed");
+
+        // Continue with login...
+    }
+}
+```
+
+### Razor Tag Helpers
+
+```html
+<!-- reCAPTCHA v3 -->
+<recaptcha-script-v3 hide-badge="true" />
+<recaptcha-script-v3-js action="login" callback="onRecaptchaVerified" />
+
+<!-- reCAPTCHA v2 -->
+<recaptcha-script-v2 />
+<recaptcha-div-v2 />
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "ReCaptcha": {
+    "SiteKey": "your-site-key",
+    "SiteSecret": "your-secret-key"
+  }
+}
+```
+
+## Dependencies
+
+- `Microsoft.AspNetCore.Razor`
+
+## Side Effects
+
+- Registers `IReCaptchaSiteVerifyV2` and/or `IReCaptchaSiteVerifyV3` as scoped
+- Configures HttpClient for reCAPTCHA API
+---
+# Headless.Redis
+
+Redis utilities and Lua script management for StackExchange.Redis.
+
+## Problem Solved
+
+Provides Redis helper extensions and centralized Lua script loading/execution for StackExchange.Redis, eliminating boilerplate and ensuring consistent script management.
+
+## Key Features
+
+- `ConnectionMultiplexerExtensions` - Helper extensions for Redis connections
+- `HeadlessRedisScriptsLoader` - Centralized Lua script management
+- `RedisScripts` - Pre-defined script references
+- Script caching and execution helpers
+
+## Installation
+
+```bash
+dotnet add package Headless.Redis
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
+var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
+
+// Load scripts on startup
+await scriptsLoader.LoadAsync();
+```
+
+## Usage
+
+### Script Execution
+
+```csharp
+var db = redis.GetDatabase();
+var result = await db.ScriptEvaluateAsync(
+    RedisScripts.YourScript,
+    keys: [key],
+    values: [value]
+);
+```
+
+## Configuration
+
+No configuration required.
+
+## Dependencies
+
+- `StackExchange.Redis`
+
+## Side Effects
+
+None.
+---
+# Headless.Sitemaps
+
+XML sitemap generation utilities for SEO.
+
+## Problem Solved
+
+Provides builders and models for generating XML sitemaps and sitemap indexes compliant with the sitemap protocol, supporting localized URLs, images, change frequency, and priority metadata.
+
+## Key Features
+
+- `SitemapUrl` - URL entry with metadata (lastmod, changefreq, priority)
+- `SitemapUrls` - Extension methods to write sitemap URLs to streams
+- `SitemapIndexBuilder` - Sitemap index generation for large sites
+- `SitemapAlternateUrl` - Localized/alternate URL support (hreflang)
+- `SitemapImage` - Image sitemap support
+- `ChangeFrequency` - Standard frequency values (always, hourly, daily, weekly, etc.)
+
+## Installation
+
+```bash
+dotnet add package Headless.Sitemaps
+```
+
+## Usage
+
+### Basic Sitemap
+
+```csharp
+var urls = new List<SitemapUrl>
+{
+    new(
+        location: new Uri("https://example.com/"),
+        lastModified: DateTime.UtcNow,
+        changeFrequency: ChangeFrequency.Daily,
+        priority: 1.0f
+    ),
+    new(
+        location: new Uri("https://example.com/about"),
+        changeFrequency: ChangeFrequency.Monthly,
+        priority: 0.8f
+    ),
+};
+
+// Write to stream
+await using var stream = new MemoryStream();
+await urls.WriteToAsync(stream);
+
+// Or auto-split at 50,000 URLs per sitemap
+var streams = await urls.WriteAsync();
+```
+
+### Localized URLs
+
+```csharp
+var urls = new List<SitemapUrl>
+{
+    new(
+        alternateLocations:
+        [
+            new() { Location = new Uri("https://example.com/en/page"), LanguageCode = "en" },
+            new() { Location = new Uri("https://example.com/ar/page"), LanguageCode = "ar" },
+        ],
+        lastModified: DateTime.UtcNow
+    ),
+};
+
+await using var stream = new MemoryStream();
+await urls.WriteToAsync(stream);
+```
+
+### Sitemap Index
+
+```csharp
+var references = new List<SitemapReference>
+{
+    new() { Location = new Uri("https://example.com/sitemap-products.xml"), LastModified = DateTime.UtcNow },
+    new() { Location = new Uri("https://example.com/sitemap-blog.xml"), LastModified = DateTime.UtcNow },
+};
+
+await using var stream = new MemoryStream();
+await references.WriteToAsync(stream);
+```
+
+## Configuration
+
+No configuration required.
+
+## Dependencies
+
+- Headless.Base
+
+## Side Effects
+
+None.
+---
+# Headless.Slugs
+
+URL-friendly slug generation from text.
+
+## Problem Solved
+
+Converts arbitrary text into URL-safe slugs with proper Unicode normalization, configurable separators, character replacements, and length limits for SEO-friendly URLs.
+
+## Key Features
+
+- `Slug.Create()` - Static slug generation method
+- Unicode normalization (NFC/NFD)
+- Configurable separator character
+- Character replacement rules
+- Maximum length enforcement
+- Case transformation options
+- Handles non-ASCII characters properly
+
+## Installation
+
+```bash
+dotnet add package Headless.Slugs
+```
+
+## Usage
+
+### Basic Usage
+
+```csharp
+var slug = Slug.Create("Hello World!");
+// Result: "hello-world"
+
+var slug2 = Slug.Create("مرحبا بالعالم");
+// Result: "مرحبا-بالعالم"
+```
+
+### Custom Options
+
+```csharp
+var options = new SlugOptions
+{
+    Separator = "_",
+    MaximumLength = 50,
+    CasingTransformation = CasingTransformation.LowerCase,
+    CanEndWithSeparator = false
+};
+
+var slug = Slug.Create("Long Title That Needs Truncation", options);
+```
+
+### Character Replacements
+
+```csharp
+var options = new SlugOptions
+{
+    Replacements =
+    {
+        ["&"] = "and",
+        ["@"] = "at",
+        ["+"] = "plus"
+    }
+};
+
+var slug = Slug.Create("Tom & Jerry @ Home", options);
+// Result: "tom-and-jerry-at-home"
+```
+
+## Configuration
+
+```csharp
+var options = new SlugOptions
+{
+    Separator = "-",              // Default: "-"
+    MaximumLength = 100,          // Default: 0 (unlimited)
+    CanEndWithSeparator = false,  // Default: false
+    CasingTransformation = CasingTransformation.LowerCase
+};
+```
+
+## Dependencies
+
+None.
+
+## Side Effects
+
+None.

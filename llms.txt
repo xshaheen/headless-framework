@@ -9,6 +9,101 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 - [README.md](README.md): High-level overview
 - [CLAUDE.md](CLAUDE.md): AI/LLM guidance
 
+## Agent Instructions
+
+Follow these rules when generating code that uses Headless packages:
+
+- **Abstraction + Provider pattern**: Always depend on `Headless.*.Abstractions` interfaces. Add exactly one provider package (e.g., `Headless.Caching.Redis`) for the concrete implementation.
+- **Use `ICache` not `IDistributedCache`**: Headless provides its own `ICache` from `Headless.Caching.Abstractions`. Never use `Microsoft.Extensions.Caching.Distributed.IDistributedCache`.
+- **Use `IBlobStorage` not cloud SDKs directly**: Code against `Headless.Blobs.Abstractions.IBlobStorage`, not `Amazon.S3.IAmazonS3` or `Azure.Storage.Blobs.BlobServiceClient`.
+- **Use `ISerializer` not `JsonSerializer` directly**: For serialization, use `Headless.Serializer.Abstractions.ISerializer`. Default to `Headless.Serializer.Json` unless binary performance is critical.
+- **Use `Headless.Checks` for guard clauses**: Prefer `Check.NotNull()` over `ArgumentNullException.ThrowIfNull()`.
+- **Use `Headless.Ticker` for background jobs**: Do not use Hangfire or Quartz. Mark jobs with `[TickerQ]` and add `Headless.Ticker.SourceGenerator`.
+- **Use `Headless.Messaging` for distributed messaging**: Do not use raw transport clients (`RabbitMQ.Client`, `Confluent.Kafka`). Use the Headless abstraction layer.
+- **Use `Headless.Features` for feature flags**: Do not use `Microsoft.FeatureManagement`.
+- **Dev packages for local development**: Use `*.Dev` packages (e.g., `Emails.Dev`, `Sms.Dev`, `PushNotifications.Dev`) to avoid sending real messages during development.
+- **NuGet versions**: All package versions are managed in `Directory.Packages.props`. Never add `Version` attributes in `.csproj` files.
+- **C# conventions**: File-scoped namespaces, primary constructors, `sealed` by default, collection expressions `[]`, pattern matching.
+
+## Domain Documentation
+
+Each domain has its own documentation file with package READMEs, Quick Orientation, and Agent Instructions.
+
+### API & Web
+- [docs/llms/api.txt](docs/llms/api.txt): ASP.NET Core API infrastructure, JWT, middleware, Minimal API and MVC integrations.
+
+### Core
+- [docs/llms/core.txt](docs/llms/core.txt): Foundation utilities, DDD building blocks, guard clauses, domain events.
+
+### Blob Storage
+- [docs/llms/blobs.txt](docs/llms/blobs.txt): Unified file storage across AWS S3, Azure, file system, Redis, SFTP.
+
+### Caching
+- [docs/llms/caching.txt](docs/llms/caching.txt): Unified caching with Memory, Redis, and Hybrid (L1+L2) providers.
+
+### Email
+- [docs/llms/emails.txt](docs/llms/emails.txt): Email sending via AWS SES, MailKit SMTP, and dev no-op.
+
+### Feature Management
+- [docs/llms/features.txt](docs/llms/features.txt): Feature flags with caching, value providers, and EF Core storage.
+
+### Identity
+- [docs/llms/identity.txt](docs/llms/identity.txt): ASP.NET Core Identity with EF Core and framework extensions.
+
+### Imaging
+- [docs/llms/imaging.txt](docs/llms/imaging.txt): Image processing with ImageSharp-based resizing and compression.
+
+### Logging
+- [docs/llms/logging.txt](docs/llms/logging.txt): Serilog configuration factory with structured logging defaults.
+
+### Media
+- [docs/llms/media.txt](docs/llms/media.txt): Text extraction from PDF, Word, and PowerPoint for search indexing.
+
+### Messaging
+- [docs/llms/messaging.txt](docs/llms/messaging.txt): Distributed messaging with transactional outbox, 7 transports, 3 storage backends.
+
+### OpenAPI
+- [docs/llms/openapi.txt](docs/llms/openapi.txt): NSwag OpenAPI generation and Scalar documentation UI.
+
+### ORM
+- [docs/llms/orm.txt](docs/llms/orm.txt): Entity Framework Core and Couchbase integrations with DDD support.
+
+### Payments
+- [docs/llms/payments.txt](docs/llms/payments.txt): Paymob Accept integration for cash-in and cash-out operations.
+
+### Permissions
+- [docs/llms/permissions.txt](docs/llms/permissions.txt): Permission management with caching, authorization, and EF Core storage.
+
+### Push Notifications
+- [docs/llms/push-notifications.txt](docs/llms/push-notifications.txt): Push notifications via Firebase FCM and dev no-op.
+
+### Distributed Locks
+- [docs/llms/distributed-locks.txt](docs/llms/distributed-locks.txt): Distributed locking with Redis, cache-based, and in-memory backends.
+
+### Serialization
+- [docs/llms/serialization.txt](docs/llms/serialization.txt): Unified serialization with System.Text.Json and MessagePack.
+
+### Settings
+- [docs/llms/settings.txt](docs/llms/settings.txt): Dynamic runtime settings with hierarchical providers and EF Core storage.
+
+### SMS
+- [docs/llms/sms.txt](docs/llms/sms.txt): SMS sending via Twilio, AWS SNS, Infobip, and regional providers.
+
+### SQL
+- [docs/llms/sql.txt](docs/llms/sql.txt): SQL connection factories for PostgreSQL, SQL Server, and SQLite.
+
+### Testing
+- [docs/llms/testing.txt](docs/llms/testing.txt): xUnit base classes and Testcontainers fixtures for integration tests.
+
+### Ticker (Background Jobs)
+- [docs/llms/ticker.txt](docs/llms/ticker.txt): Distributed background job scheduling with cron, monitoring, and source generation.
+
+### TUS (Resumable Uploads)
+- [docs/llms/tus.txt](docs/llms/tus.txt): TUS protocol for resumable file uploads with Azure and distributed lock support.
+
+### Utilities
+- [docs/llms/utilities.txt](docs/llms/utilities.txt): FluentValidation extensions, source-generated primitives, reCAPTCHA, sitemaps, slugs, Redis utilities.
+
 ## Packages
 
 ### API & Web
@@ -27,8 +122,7 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 - [Headless.BuildingBlocks](./src/Headless.BuildingBlocks/README.md): Core abstractions and primitives for building domain-driven applications with multi-tenancy, user context, and cross-cutting concerns.
 - [Headless.Checks](./src/Headless.Checks/README.md): Guard clause library for argument validation and defensive programming.
 - [Headless.Domain](./src/Headless.Domain/README.md): Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
-- [Headless.Domain.DistributedMessagePublisher.Cap](./src/Headless.Domain.DistributedMessagePublisher.Cap/README.md): CAP-based implementation of IDistributedMessagePublisher for reliable distributed messaging with transactional outbox.
-- [Headless.Domain.LocalMessagePublisher.DI](./src/Headless.Domain.LocalMessagePublisher.DI/README.md): DI-based implementation of ILocalMessagePublisher for in-process domain event handling.
+- [Headless.Domain.LocalPublisher](./src/Headless.Domain.LocalPublisher/README.md): DI-based implementation of ILocalMessagePublisher for in-process domain event handling.
 
 ### Blob Storage
 
@@ -44,7 +138,7 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 - [Headless.Caching.Abstractions](./src/Headless.Caching.Abstractions/README.md): Defines the unified caching interface for both in-memory and distributed cache implementations.
 - [Headless.Caching.Memory](./src/Headless.Caching.Memory/README.md): In-memory cache implementation for single-instance applications.
 - [Headless.Caching.Redis](./src/Headless.Caching.Redis/README.md): Redis distributed cache implementation for multi-instance applications.
-- [Headless.Caching.Memory](./src/Headless.Caching.Memory/README.md): Placeholder for future in-memory cache implementation.
+- [Headless.Caching.Hybrid](./src/Headless.Caching.Hybrid/README.md): Hybrid L1 (in-memory) + L2 (distributed) cache for optimal performance.
 
 ### Email
 
@@ -98,7 +192,6 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 - [Headless.Messaging.SqlServer](./src/Headless.Messaging.SqlServer/README.md): SQL Server storage for durable message persistence in Windows environments.
 - [Headless.Messaging.InMemoryStorage](./src/Headless.Messaging.InMemoryStorage/README.md): Ephemeral message storage for development and testing.
 
-
 ### OpenAPI
 
 - [Headless.OpenApi.Nswag](./src/Headless.OpenApi.Nswag/README.md): NSwag OpenAPI document generation with framework-specific processors and defaults.
@@ -133,7 +226,6 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 - [Headless.DistributedLocks.Abstractions](./src/Headless.DistributedLocks.Abstractions/README.md): Defines the unified interface for distributed locking.
 - [Headless.DistributedLocks.Core](./src/Headless.DistributedLocks.Core/README.md): Core implementation of distributed locking with storage abstraction.
 - [Headless.DistributedLocks.Cache](./src/Headless.DistributedLocks.Cache/README.md): Cache-based distributed lock storage using ICache.
-- [Headless.DistributedLocks.InMemory](./src/Headless.DistributedLocks.InMemory/README.md): In-memory distributed lock storage for single-instance applications and testing.
 - [Headless.DistributedLocks.Redis](./src/Headless.DistributedLocks.Redis/README.md): Redis-based distributed lock storage using StackExchange.Redis.
 
 ### Serialization
@@ -202,4 +294,4 @@ Tip: start from an `*.Abstractions` package (interfaces/contracts) and then add 
 
 ## Optional
 
-- [llms-full.txt](./llms-full.txt): Full documentation for all packages
+- [llms-full.txt](./llms-full.txt): Full documentation for all packages (all domain files concatenated)

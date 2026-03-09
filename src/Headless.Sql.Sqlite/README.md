@@ -63,7 +63,7 @@ services.AddSingleton<ISqlConnectionFactory>(
 
 ## Dependencies
 
-- `Haedless.Sql.Abstractions`
+- `Headless.Sql.Abstractions`
 - `Microsoft.Data.Sqlite`
 
 ## Side Effects

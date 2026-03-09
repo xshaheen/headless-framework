@@ -1,0 +1,1314 @@
+---
+domain: Messaging
+packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.AwsSqs, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.InMemoryQueue, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage
+---
+
+# Messaging
+
+> Type-safe distributed messaging with transactional outbox, pluggable transports, and pluggable storage providers.
+
+## Quick Orientation
+
+Always install four packages together: **Abstractions + Core + one transport + one storage**.
+
+**Transports** (pick one):
+- `Headless.Messaging.RabbitMq` -- AMQP, exchanges/queues, flexible routing
+- `Headless.Messaging.Kafka` -- high-throughput event streaming, partition-based ordering
+- `Headless.Messaging.AzureServiceBus` -- enterprise Azure messaging, session-based ordering
+- `Headless.Messaging.AwsSqs` -- AWS SQS/SNS, auto-provisioning, dead-letter queues
+- `Headless.Messaging.Nats` -- lightweight cloud-native, JetStream persistence
+- `Headless.Messaging.Pulsar` -- multi-tenant, geo-replicated streaming
+- `Headless.Messaging.RedisStreams` -- sub-millisecond latency, consumer groups
+- `Headless.Messaging.InMemoryQueue` -- dev/testing only, zero infrastructure
+
+**Storage** (pick one):
+- `Headless.Messaging.PostgreSql` -- PostgreSQL outbox with auto-migration
+- `Headless.Messaging.SqlServer` -- SQL Server outbox with auto-migration
+- `Headless.Messaging.InMemoryStorage` -- dev/testing only, ephemeral
+
+**Optional add-ons:**
+- `Headless.Messaging.Dashboard` -- embedded web UI for monitoring messages
+- `Headless.Messaging.Dashboard.K8s` -- Kubernetes node discovery for dashboard
+- `Headless.Messaging.OpenTelemetry` -- distributed tracing and metrics
+
+**Minimal production setup:**
+```
+dotnet add package Headless.Messaging.Abstractions
+dotnet add package Headless.Messaging.Core
+dotnet add package Headless.Messaging.RabbitMq
+dotnet add package Headless.Messaging.PostgreSql
+```
+
+**Minimal dev/testing setup:**
+```
+dotnet add package Headless.Messaging.Abstractions
+dotnet add package Headless.Messaging.Core
+dotnet add package Headless.Messaging.InMemoryQueue
+dotnet add package Headless.Messaging.InMemoryStorage
+```
+
+Core provides the transactional outbox pattern (automatic retries, delayed delivery) when paired with a storage provider. Messages use compile-time type safety -- define message types as classes or records and register consumers via assembly scanning.
+
+## Agent Instructions
+
+- **Install pattern**: Always install `Messaging.Abstractions` + `Messaging.Core` + exactly one transport + exactly one storage. Missing any of these causes runtime failures.
+- **Use `InMemoryQueue` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
+- **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
+- **Add `Messaging.Dashboard`** when monitoring UI is needed; secure it with authorization filters in production.
+- **Messages are type-safe**: Define message types as classes/records. Register consumers implementing `IConsume<TMessage>`. Use `ScanConsumers(assembly)` for automatic registration.
+- **Two publisher modes**: Use `IOutboxPublisher` for reliable at-least-once delivery (transactional outbox). Use `IDirectPublisher` for fire-and-forget low-latency scenarios (metrics, cache invalidation).
+- **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
+- **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
+- **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
+- **Topic mapping**: Map message types to topics via `options.WithTopicMapping<TMessage>("topic.name")` or conventions.
+- **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
+- **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
+
+---
+# Headless.Messaging.Abstractions
+
+Core abstractions for type-safe, high-performance message consumption and publishing with outbox pattern support.
+
+## Problem Solved
+
+Provides standardized interfaces for building reliable distributed messaging systems with compile-time type safety, avoiding reflection overhead and enabling transactional outbox patterns for guaranteed message delivery.
+
+## Key Features
+
+- **Type-Safe Consumption**: `IConsume<TMessage>` interface with `ConsumeContext<TMessage>` for compile-time verification (5-8x faster than reflection)
+- **Outbox Publishing**: `IOutboxPublisher` for transactional message publishing with database consistency
+- **Direct Publishing**: `IDirectPublisher` for fire-and-forget, low-latency message delivery
+- **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
+- **Consumer Configuration**: `IMessagingBuilder` for assembly scanning and manual consumer registration
+- **Delayed Publishing**: Schedule messages for future delivery
+- **Multi-Type Consumers**: Single consumer can handle multiple message types
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.Abstractions
+```
+
+## Quick Start
+
+```csharp
+// Define message consumer
+public sealed class OrderPlacedHandler(
+    IOrderRepository orders,
+    ILogger<OrderPlacedHandler> logger) : IConsume<OrderPlacedEvent>
+{
+    public async ValueTask Consume(
+        ConsumeContext<OrderPlacedEvent> context,
+        CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "Processing order {OrderId} at {Timestamp}",
+            context.Message.OrderId,
+            context.Timestamp);
+
+        await orders.CreateAsync(context.Message, cancellationToken);
+    }
+}
+
+// Register consumers
+builder.Services.AddMessages(options =>
+{
+    options.ScanConsumers(typeof(Program).Assembly);
+    options.WithTopicMapping<OrderPlacedEvent>("orders.placed");
+});
+
+// Publish with outbox (reliable delivery)
+public sealed class OrderService(IOutboxPublisher publisher)
+{
+    public async Task PlaceOrderAsync(Order order, CancellationToken ct)
+    {
+        // Publish transactionally with database changes
+        await publisher.PublishAsync("orders.placed", new OrderPlacedEvent
+        {
+            OrderId = order.Id,
+            Total = order.Total
+        }, cancellationToken: ct);
+    }
+}
+
+// Publish directly (fire-and-forget)
+public sealed class MetricsService(IDirectPublisher publisher)
+{
+    public async Task TrackAsync(MetricEvent metric, CancellationToken ct)
+    {
+        // Topic resolved from WithTopicMapping<MetricEvent>()
+        await publisher.PublishAsync(metric, ct);
+    }
+}
+```
+
+## Configuration
+
+No configuration required. This is an abstractions package. Implementations are provided by:
+- `Headless.Messaging.Core` (base implementation)
+- Transport packages: `Headless.Messaging.RabbitMQ`, `Headless.Messaging.Kafka`, etc.
+- Storage packages: `Headless.Messaging.PostgreSql`, `Headless.Messaging.SqlServer`, etc.
+
+## Dependencies
+
+- `Headless.Base`
+- `Headless.Checks`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Microsoft.Extensions.Logging.Abstractions`
+
+## Side Effects
+
+None. This is an abstractions package.
+---
+# Headless.Messaging.Core
+
+Core implementation of the type-safe messaging system with outbox pattern, message processing, and consumer lifecycle management.
+
+## Problem Solved
+
+Provides the foundational runtime for reliable distributed messaging with transactional outbox, automatic retries, delayed delivery, and type-safe consumer orchestration across multiple transport providers.
+
+## Key Features
+
+- **Outbox Publisher**: Transactional message publishing with database consistency
+- **Consumer Management**: Automatic registration, invocation, and lifecycle handling
+- **Message Processing**: Retry processor, delayed message scheduler, transport health checks
+- **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
+- **Extension System**: Pluggable storage and transport providers
+- **Bootstrapper**: Hosted service for startup and shutdown coordination
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.Core
+```
+
+## Quick Start
+
+```csharp
+// Register messaging with storage and transport
+builder.Services.AddMessages(options =>
+{
+    // Core configuration
+    options.SucceedMessageExpiredAfter = 24 * 3600;
+    options.FailedRetryCount = 50;
+
+    // Add storage (required)
+    options.UsePostgreSql("connection_string");
+
+    // Add transport (required)
+    options.UseRabbitMQ(rmq =>
+    {
+        rmq.HostName = "localhost";
+        rmq.Port = 5672;
+    });
+
+    // Register consumers
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+
+// Publish messages with outbox (reliable delivery)
+public sealed class OrderService(IOutboxPublisher publisher, IOutboxTransaction transaction)
+{
+    public async Task PlaceOrderAsync(Order order, CancellationToken ct)
+    {
+        using (transaction.Begin())
+        {
+            // Database changes and message publish are atomic
+            await publisher.PublishAsync("orders.placed", order, cancellationToken: ct);
+            await transaction.CommitAsync(ct);
+        }
+    }
+}
+
+// Publish messages directly (fire-and-forget)
+public sealed class MetricsService(IDirectPublisher publisher)
+{
+    public async Task TrackEventAsync(MetricEvent metric, CancellationToken ct)
+    {
+        // Bypasses outbox - sent directly to transport
+        await publisher.PublishAsync(metric, ct);
+    }
+}
+```
+
+## Publisher Options
+
+### IOutboxPublisher (Reliable Delivery)
+
+Use `IOutboxPublisher` for messages that must not be lost:
+
+- **Transactional**: Messages are stored in database before sending
+- **At-least-once**: Automatic retries with configurable backoff
+- **Delayed delivery**: Schedule messages for future delivery
+- **Ordering**: Preserves publish order within transactions
+
+### IDirectPublisher (Fire-and-Forget)
+
+Use `IDirectPublisher` for high-throughput, low-latency scenarios where occasional message loss is acceptable:
+
+```csharp
+// Configure topic mapping
+options.WithTopicMapping<MetricEvent>("metrics.events");
+
+// Inject and publish
+public sealed class MetricsPublisher(IDirectPublisher publisher)
+{
+    public async Task PublishMetric(MetricEvent metric, CancellationToken ct)
+    {
+        // Sent immediately to transport, no persistence
+        await publisher.PublishAsync(metric, ct);
+
+        // With custom headers (using Headers constants)
+        var headers = new Dictionary<string, string?>
+        {
+            [Headers.CorrelationId] = Guid.NewGuid().ToString(),
+        };
+        await publisher.PublishAsync(metric, headers, ct);
+    }
+}
+```
+
+**Characteristics:**
+
+- **No persistence**: Messages bypass outbox storage
+- **Lower latency**: Direct transport send without database round-trip
+- **No retries**: Transport failures throw immediately
+- **Topic from type**: Topic resolved from `WithTopicMapping<T>()` or conventions
+
+**Use cases:** Metrics, telemetry, cache invalidation, real-time notifications
+
+## Configuration
+
+Register in `Program.cs`:
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.FailedRetryCount = 50;
+    options.SucceedMessageExpiredAfter = 24 * 3600;
+    options.ConsumerThreadCount = 1;
+    options.DefaultGroupName = "myapp";
+});
+```
+
+## Message Ordering Guarantees
+
+Message ordering guarantees depend on the transport provider and configuration:
+
+### Transport-Specific Ordering
+
+- **Kafka**: Messages with same partition key are strictly ordered within partitions
+- **Azure Service Bus**: FIFO ordering when sessions are enabled (`EnableSessions = true`)
+- **RabbitMQ**: No ordering guarantees by default; consumers may process messages concurrently
+- **AWS SQS**: FIFO queues provide strict ordering; standard queues do not
+- **Redis Streams**: Ordered within consumer group, but parallel consumers may process out of order
+- **NATS**: Ordering preserved per subject, but concurrent consumers introduce variability
+- **Pulsar**: Ordered within partitions when using partition key
+- **InMemoryQueue**: FIFO ordering with single consumer thread
+
+### Configuration Impact on Ordering
+
+- **`ConsumerThreadCount > 1`**: Enables concurrent message consumption, messages may process out of order
+- **`EnableSubscriberParallelExecute = true`**: Buffers messages in-memory queue for parallel processing, no ordering guarantee
+- **Single consumer thread (`ConsumerThreadCount = 1`)**: Sequential processing, maintains transport order
+
+### Recommendations
+
+- For strict ordering: Use `ConsumerThreadCount = 1` with Kafka (partition key), Azure Service Bus (sessions), or AWS SQS (FIFO)
+- For high throughput: Use parallel processing; design consumers to be order-independent
+- Test ordering behavior with your specific transport and configuration
+
+## Dependencies
+
+- `Headless.Messaging.Abstractions`
+- `Headless.Base`
+- `Headless.Checks`
+- Transport package (RabbitMQ, Kafka, etc.)
+- Storage package (PostgreSql, SqlServer, etc.)
+
+## Side Effects
+
+- Starts background hosted service for message processing
+- Creates database tables for outbox storage (via storage provider)
+- Establishes transport connections (via transport provider)
+---
+# Headless.Messaging.Dashboard
+
+Web-based dashboard for monitoring and managing distributed messaging infrastructure.
+
+## Problem Solved
+
+Provides real-time visibility into message processing, failures, retries, and system health through an embedded web UI for operations and troubleshooting.
+
+## Key Features
+
+- **Real-Time Monitoring**: Live message throughput and latency metrics
+- **Message Explorer**: Search, filter, and inspect messages
+- **Failure Management**: View and retry failed messages
+- **Node Discovery**: Multi-instance cluster visibility
+- **Performance Metrics**: Consumer processing stats and bottlenecks
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.Dashboard
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+    options.UseRabbitMQ(config);
+
+    options.UseDashboard(dashboard =>
+    {
+        dashboard.PathMatch = "/messages";
+        dashboard.StatsPollingInterval = 2000;
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+
+// Access dashboard at: http://localhost:5000/messages
+```
+
+## Configuration
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.PathMatch = "/messages";
+    dashboard.StatsPollingInterval = 2000;
+    dashboard.Authorization = new[] { new CustomDashboardAuthFilter() };
+});
+```
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+- Embedded web UI assets
+
+## Side Effects
+
+- Exposes web endpoint at configured path (default: `/messaging`)
+- Periodically polls message storage for statistics
+- Requires authentication configuration for production use
+---
+# Headless.Messaging.Dashboard.K8s
+
+Kubernetes-aware node discovery for the messaging dashboard in clustered environments.
+
+## Problem Solved
+
+Enables automatic discovery and monitoring of messaging nodes in Kubernetes clusters by querying pod endpoints for multi-instance dashboard visibility.
+
+## Key Features
+
+- **Auto-Discovery**: Automatically finds messaging nodes in Kubernetes namespace
+- **Service Integration**: Uses Kubernetes Service for node enumeration
+- **Health Monitoring**: Tracks node availability and status
+- **Dynamic Updates**: Reflects pod scaling events in real-time
+- **No Configuration**: Works with default Kubernetes service discovery
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.Dashboard.K8s
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+    options.UseRabbitMQ(config);
+
+    options.UseDashboard();
+
+    options.UseK8sDiscovery(k8s =>
+    {
+        k8s.Namespace = "production";
+        k8s.ServiceName = "messaging-service";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseK8sDiscovery(k8s =>
+{
+    k8s.Namespace = "production";
+    k8s.ServiceName = "messaging-service";
+    k8s.Port = 8080;
+});
+```
+
+## Dependencies
+
+- `Headless.Messaging.Dashboard`
+- `KubernetesClient`
+
+## Side Effects
+
+- Queries Kubernetes API for pod endpoints
+- Requires appropriate RBAC permissions (read pods/endpoints)
+- Periodically polls for cluster topology changes
+---
+# Headless.Messaging.OpenTelemetry
+
+OpenTelemetry instrumentation for distributed tracing and metrics in the messaging system.
+
+## Problem Solved
+
+Provides automatic tracing spans, metrics, and context propagation for message publishing and consumption to enable end-to-end observability across distributed systems.
+
+## Key Features
+
+- **Distributed Tracing**: Automatic span creation for publish/consume operations
+- **Context Propagation**: W3C Trace Context header injection/extraction
+- **Metrics**: Message throughput, latency, failures, and retry counts
+- **Correlation**: Links messages to originating HTTP requests and spans
+- **Standard Export**: Compatible with Jaeger, Zipkin, Prometheus, and other backends
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.OpenTelemetry
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .AddSource("Headless.Messaging")
+        .AddJaegerExporter());
+
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+    options.UseRabbitMQ(config);
+    options.UseOpenTelemetry();
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseOpenTelemetry(otel =>
+{
+    otel.EnrichPublisher = (activity, message) =>
+    {
+        activity?.SetTag("message.type", message.GetType().Name);
+    };
+
+    otel.EnrichConsumer = (activity, context) =>
+    {
+        activity?.SetTag("consumer.topic", context.Topic);
+    };
+});
+```
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+- `OpenTelemetry.Api`
+- `OpenTelemetry.Extensions.Hosting`
+
+## Side Effects
+
+- Creates tracing spans for all message operations
+- Injects W3C Trace Context headers into messages
+- Exports telemetry to configured exporters
+---
+# Headless.Messaging.AmazonSqs
+
+Amazon SQS and SNS transport provider for the messaging system.
+
+## Problem Solved
+
+Enables reliable message delivery using AWS SQS queues and SNS topics with automatic queue creation, dead-letter queues, and IAM policy management.
+
+## Key Features
+
+- **SQS Consumer**: Reliable queue-based message consumption
+- **SNS Publisher**: Topic-based message distribution
+- **Auto-Provisioning**: Automatic queue and topic creation
+- **Dead Letter Queues**: Built-in failure handling
+- **IAM Integration**: Automatic policy configuration
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.AmazonSqs
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UseAmazonSqs(sqs =>
+    {
+        sqs.Region = "us-east-1";
+        sqs.Credentials = new BasicAWSCredentials("key", "secret");
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseAmazonSqs(sqs =>
+{
+    sqs.Region = "us-east-1";
+    sqs.Credentials = awsCredentials;
+    sqs.SNSServiceUrl = "https://sns.us-east-1.amazonaws.com";
+    sqs.SQSServiceUrl = "https://sqs.us-east-1.amazonaws.com";
+});
+```
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+- `AWSSDK.SimpleNotificationService`
+- `AWSSDK.SQS`
+
+## Side Effects
+
+- Creates SQS queues and SNS topics if they don't exist
+- Configures IAM policies for queue access
+- Establishes persistent connections to AWS services
+---
+# Headless.Messaging.AzureServiceBus
+
+Azure Service Bus transport provider for the messaging system.
+
+## Problem Solved
+
+Enables enterprise messaging using Azure Service Bus with topics, subscriptions, sessions, and advanced routing capabilities.
+
+## Key Features
+
+- **Topic/Subscription Model**: Pub/sub messaging with filters
+- **Sessions**: Message ordering and state management
+- **Auto-Provisioning**: Automatic topic and subscription creation
+- **Advanced Routing**: Message routing rules and filters
+- **Enterprise Features**: Transactions, duplicate detection, dead-lettering
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.AzureServiceBus
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UseSqlServer("connection_string");
+
+    options.UseAzureServiceBus(asb =>
+    {
+        asb.ConnectionString = "Endpoint=sb://namespace.servicebus.windows.net/;...";
+        asb.TopicPath = "myapp";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseAzureServiceBus(asb =>
+{
+    asb.ConnectionString = "connection_string";
+    asb.TopicPath = "myapp-topic";
+    asb.EnableSessions = true; // Required for ordered delivery
+    asb.ManagementTokenProvider = tokenProvider;
+});
+```
+
+## Message Ordering
+
+Azure Service Bus provides **FIFO ordering when sessions are enabled**:
+
+### Session-Based Ordering
+
+Enable sessions for guaranteed message ordering within a session:
+
+```csharp
+options.UseAzureServiceBus(asb =>
+{
+    asb.EnableSessions = true;
+    asb.MaxConcurrentSessions = 8; // Concurrent sessions for throughput
+    asb.SessionIdleTimeout = TimeSpan.FromMinutes(5);
+});
+```
+
+### Publishing Ordered Messages
+
+All messages require a session ID when sessions are enabled:
+
+```csharp
+// Publish with session ID for ordered delivery
+await publisher.PublishAsync("orders.events", order,
+    headers: new Dictionary<string, string>
+    {
+        { AzureServiceBusHeaders.SessionId, order.CustomerId.ToString() }
+    });
+```
+
+### Consumer Configuration
+
+```csharp
+options.ConsumerThreadCount = 1; // Recommended for strict ordering
+options.EnableSubscriberParallelExecute = false;
+```
+
+### Ordering Guarantees
+
+- **Sessions enabled + same session ID**: Strict FIFO ordering
+- **Sessions disabled**: No ordering guarantees
+- **Multiple concurrent sessions**: Each session is ordered independently
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+- `Azure.Messaging.ServiceBus`
+
+## Side Effects
+
+- Creates Service Bus topics and subscriptions if they don't exist
+- Establishes persistent connections to Azure Service Bus
+- Configures message routing rules and filters
+---
+# Headless.Messaging.Kafka
+
+Apache Kafka transport provider for the messaging system.
+
+## Problem Solved
+
+Enables high-throughput, distributed event streaming using Apache Kafka with consumer groups, partitions, and exactly-once semantics.
+
+## Key Features
+
+- **High Throughput**: Handle millions of messages per second
+- **Partitioning**: Parallel processing with ordered delivery per partition
+- **Consumer Groups**: Load balancing across consumers
+- **Retention**: Persistent message storage with configurable retention
+- **Exactly-Once**: Transactional publishing and consuming
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.Kafka
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UseKafka(kafka =>
+    {
+        kafka.Servers = "localhost:9092";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseKafka(kafka =>
+{
+    kafka.Servers = "localhost:9092,localhost:9093";
+    kafka.ConnectionPoolSize = 10;
+    kafka.CustomHeaders = headers => headers.Add("app", "myapp");
+
+    // Kafka-specific producer settings for ordering
+    kafka.MainConfig["enable.idempotence"] = "true";
+    kafka.MainConfig["max.in.flight.requests.per.connection"] = "1"; // Strict ordering
+});
+```
+
+## Message Ordering
+
+Kafka provides **strict FIFO ordering within partitions**:
+
+### Partition-Based Ordering
+
+Messages sent to the same partition are delivered in order. Use message keys to route related messages to the same partition:
+
+```csharp
+// Publish with partition key for ordered delivery
+await publisher.PublishAsync("orders.events", order,
+    headers: new Dictionary<string, string>
+    {
+        { "PartitionKey", order.CustomerId.ToString() }
+    });
+```
+
+### Configuration for Strict Ordering
+
+```csharp
+kafka.MainConfig["enable.idempotence"] = "true";
+kafka.MainConfig["max.in.flight.requests.per.connection"] = "1";
+kafka.MainConfig["acks"] = "all";
+```
+
+### Consumer Configuration
+
+Set `ConsumerThreadCount = 1` for sequential processing:
+
+```csharp
+options.ConsumerThreadCount = 1; // Sequential processing maintains partition order
+options.EnableSubscriberParallelExecute = false; // Disable parallel execution
+```
+
+### Ordering Guarantees
+
+- Messages with same partition key: Strictly ordered
+- Messages without partition key: Round-robin distribution, no ordering guarantee
+- Multiple consumer threads (`ConsumerThreadCount > 1`): May process out of order
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+- `Confluent.Kafka`
+
+## Side Effects
+
+- Creates Kafka topics if they don't exist
+- Establishes persistent connections to Kafka brokers
+- Joins consumer groups for load balancing
+---
+# Headless.Messaging.NATS
+
+NATS messaging system transport provider for the messaging system.
+
+## Problem Solved
+
+Enables lightweight, cloud-native messaging using NATS with JetStream for persistence, subjects for routing, and NATS Streaming for reliable delivery.
+
+## Key Features
+
+- **Lightweight**: Minimal resource footprint
+- **Cloud-Native**: Kubernetes-friendly, easy clustering
+- **JetStream**: Persistent streams with at-least-once delivery
+- **Subject Routing**: Hierarchical topic patterns (e.g., `orders.*.created`)
+- **Request-Reply**: Built-in RPC support
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.NATS
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UseNATS(nats =>
+    {
+        nats.Servers = "nats://localhost:4222";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseNATS(nats =>
+{
+    nats.Servers = "nats://localhost:4222,nats://localhost:4223";
+    nats.ConnectionPoolSize = 10;
+    nats.EnableJetStream = true;
+});
+```
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+- `NATS.Client`
+
+## Side Effects
+
+- Establishes persistent connections to NATS servers
+- Creates JetStream streams if enabled
+- Subscribes to subjects for message consumption
+---
+# Headless.Messaging.Pulsar
+
+Apache Pulsar transport provider for the messaging system.
+
+## Problem Solved
+
+Enables cloud-native, multi-tenant messaging using Apache Pulsar with geo-replication, tiered storage, and unified streaming and queuing models.
+
+## Key Features
+
+- **Multi-Tenancy**: Native namespace and tenant isolation
+- **Geo-Replication**: Cross-datacenter message replication
+- **Tiered Storage**: Offload old messages to S3/GCS/Azure Blob
+- **Unified Model**: Both streaming and queuing semantics
+- **Schema Registry**: Built-in schema validation and evolution
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.Pulsar
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UsePulsar(pulsar =>
+    {
+        pulsar.ServiceUrl = "pulsar://localhost:6650";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UsePulsar(pulsar =>
+{
+    pulsar.ServiceUrl = "pulsar://localhost:6650";
+    pulsar.TenantName = "public";
+    pulsar.NamespaceName = "default";
+    pulsar.ConnectionPoolSize = 10;
+});
+```
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+- `DotPulsar`
+
+## Side Effects
+
+- Creates Pulsar topics in configured tenant/namespace
+- Establishes persistent connections to Pulsar brokers
+- Creates subscriptions for consumer groups
+---
+# Headless.Messaging.RabbitMQ
+
+RabbitMQ transport provider for the messaging system.
+
+## Problem Solved
+
+Enables reliable message delivery using RabbitMQ with exchanges, queues, routing keys, and advanced AMQP features for flexible pub/sub patterns.
+
+## Key Features
+
+- **Exchange/Queue Model**: Flexible routing with topic, direct, fanout, and headers exchanges
+- **Reliability**: Publisher confirms, consumer acknowledgments, and dead-letter exchanges
+- **Auto-Provisioning**: Automatic exchange and queue creation
+- **Clustering**: High availability with RabbitMQ clusters
+- **Priority Queues**: Message priority support
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.RabbitMQ
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UseRabbitMQ(rmq =>
+    {
+        rmq.HostName = "localhost";
+        rmq.Port = 5672;
+        rmq.UserName = "myapp_user"; // Required - cannot use 'guest'
+        rmq.Password = "secure_password"; // Required - cannot use 'guest'
+        rmq.VirtualHost = "/";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+> **Security Note:** Username and password must be configured explicitly. The default RabbitMQ credentials (`guest`/`guest`) are rejected to prevent accidental production deployments with insecure settings.
+
+## Configuration
+
+```csharp
+options.UseRabbitMQ(rmq =>
+{
+    rmq.HostName = "localhost";
+    rmq.Port = 5672;
+    rmq.UserName = builder.Configuration["RabbitMq:UserName"]!; // From config
+    rmq.Password = builder.Configuration["RabbitMq:Password"]!; // From config
+    rmq.VirtualHost = "/";
+    rmq.ExchangeName = "myapp.events";
+    rmq.ConnectionFactoryOptions = factory =>
+    {
+        factory.AutomaticRecoveryEnabled = true;
+        factory.NetworkRecoveryInterval = TimeSpan.FromSeconds(10);
+    };
+});
+```
+
+### Security Best Practices
+
+- **Never hardcode credentials** - use environment variables, configuration files, or secret management services
+- **Avoid default credentials** - the framework rejects `guest`/`guest` to prevent security issues
+- **Use strong passwords** - RabbitMQ passwords should be complex and unique
+- **Restrict permissions** - create application-specific users with minimal required permissions
+- **Enable TLS** - use encrypted connections in production environments
+
+## Message Ordering
+
+RabbitMQ provides **limited ordering guarantees**:
+
+### Single Consumer Ordering
+
+Messages are delivered in FIFO order to a single consumer on a single channel:
+
+```csharp
+// Configure for sequential processing
+options.ConsumerThreadCount = 1; // Single consumer thread
+options.EnableSubscriberParallelExecute = false; // No parallel execution
+```
+
+### Ordering Guarantees
+
+- **Single consumer**: Messages arrive in publication order
+- **Multiple consumers (`ConsumerThreadCount > 1`)**: No ordering guarantee; concurrent processing
+- **Priority queues**: Higher priority messages delivered first, breaking FIFO order
+- **Redelivery after failure**: Failed messages may be redelivered out of order
+
+### Recommendations
+
+- For strict ordering: Use `ConsumerThreadCount = 1`
+- For high throughput: Design consumers to handle out-of-order messages
+- Consider Kafka or Azure Service Bus with sessions for stronger ordering guarantees
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+- `RabbitMQ.Client`
+
+## Side Effects
+
+- Creates exchanges and queues if they don't exist
+- Establishes persistent connections to RabbitMQ
+- Configures dead-letter exchanges for failed messages
+---
+# Headless.Messaging.RedisStreams
+
+Redis Streams transport provider for the messaging system.
+
+## Problem Solved
+
+Enables lightweight, high-performance message streaming using Redis Streams with consumer groups, persistence, and at-least-once delivery guarantees.
+
+## Key Features
+
+- **Redis Streams**: Append-only log structure for message streaming
+- **Consumer Groups**: Load balancing and parallel processing
+- **Persistence**: Durable message storage with configurable retention
+- **Claim Messages**: Automatic reprocessing of unacknowledged messages
+- **Low Latency**: Sub-millisecond message delivery
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.RedisStreams
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UseRedisStreams(redis =>
+    {
+        redis.Configuration = "localhost:6379";
+    });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseRedisStreams(redis =>
+{
+    redis.Configuration = "localhost:6379,ssl=true,password=secret";
+    redis.StreamEntriesCount = 10;
+    redis.ConnectionPoolSize = 10;
+});
+```
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+- `StackExchange.Redis`
+
+## Side Effects
+
+- Creates Redis Streams for each topic
+- Creates consumer groups for message distribution
+- Maintains persistent connections to Redis
+- Periodically claims pending messages for retry
+---
+# Headless.Messaging.InMemoryQueue
+
+In-memory message queue transport for testing and development.
+
+## Problem Solved
+
+Provides a lightweight, no-infrastructure message queue for local development, testing, and single-instance applications without external dependencies.
+
+## Key Features
+
+- **Zero Dependencies**: No external broker required
+- **Fast**: In-process message delivery
+- **Testing Friendly**: Deterministic, synchronous behavior
+- **Same API**: Identical interface to production transports
+- **Thread-Safe**: Concurrent producer/consumer support
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.InMemoryQueue
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UseInMemoryStorage();
+    options.UseInMemoryQueue();
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+No configuration required. Just call `UseInMemoryQueue()`.
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+
+## Side Effects
+
+None. Messages are stored in memory only and lost on restart.
+---
+# Headless.Messaging.PostgreSql
+
+PostgreSQL outbox storage provider for the messaging system.
+
+## Problem Solved
+
+Provides durable, transactional message storage using PostgreSQL with automatic schema management, message archival, and high-performance queries.
+
+## Key Features
+
+- **Transactional Outbox**: ACID-compliant message publishing with database changes
+- **Auto-Migration**: Automatic table creation and schema updates
+- **Archival**: Automatic cleanup of old messages
+- **Performance**: Optimized indexes and queries for high throughput
+- **Monitoring**: Built-in dashboard data queries
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.PostgreSql
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UsePostgreSql(config =>
+    {
+        config.ConnectionString = "Host=localhost;Database=myapp;...";
+        config.Schema = "messaging";
+    });
+
+    options.UseRabbitMQ(rmq => { /* ... */ });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UsePostgreSql(config =>
+{
+    config.ConnectionString = "connection_string";
+    config.Schema = "messaging";
+    config.TableNamePrefix = "msg";
+});
+```
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+- `Npgsql`
+
+## Side Effects
+
+- Creates database tables in configured schema:
+  - `{prefix}_published` - Published messages
+  - `{prefix}_received` - Received messages
+  - `{prefix}_lock` - Distributed lock table
+- Creates indexes for message queries
+- Periodically cleans up expired messages
+---
+# Headless.Messaging.SqlServer
+
+SQL Server outbox storage provider for the messaging system.
+
+## Problem Solved
+
+Provides durable, transactional message storage using SQL Server with automatic schema management, message archival, and optimized queries for Windows environments.
+
+## Key Features
+
+- **Transactional Outbox**: ACID-compliant message publishing with database changes
+- **Auto-Migration**: Automatic table creation and schema updates
+- **Archival**: Automatic cleanup of old messages
+- **Performance**: Optimized indexes and queries for SQL Server
+- **Monitoring**: Built-in dashboard data queries
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.SqlServer
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UseSqlServer(config =>
+    {
+        config.ConnectionString = "Server=localhost;Database=myapp;...";
+        config.Schema = "messaging";
+    });
+
+    options.UseRabbitMQ(rmq => { /* ... */ });
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+```csharp
+options.UseSqlServer(config =>
+{
+    config.ConnectionString = "connection_string";
+    config.Schema = "messaging";
+    config.TableNamePrefix = "msg";
+});
+```
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+- `Microsoft.Data.SqlClient`
+
+## Side Effects
+
+- Creates database tables in configured schema:
+  - `{prefix}_published` - Published messages
+  - `{prefix}_received` - Received messages
+  - `{prefix}_lock` - Distributed lock table
+- Creates indexes for message queries
+- Periodically cleans up expired messages
+---
+# Headless.Messaging.InMemoryStorage
+
+In-memory outbox storage for testing and development.
+
+## Problem Solved
+
+Provides ephemeral message storage without database dependencies for local development, integration tests, and prototyping.
+
+## Key Features
+
+- **Zero Dependencies**: No database required
+- **Fast**: In-memory operations
+- **Testing**: Deterministic behavior for tests
+- **Full API**: Complete outbox storage implementation
+- **Monitoring**: In-memory dashboard data
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.InMemoryStorage
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddMessages(options =>
+{
+    options.UseInMemoryStorage();
+    options.UseRabbitMQ(config);
+
+    options.ScanConsumers(typeof(Program).Assembly);
+});
+```
+
+## Configuration
+
+No configuration required. Just call `UseInMemoryStorage()`.
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+
+## Side Effects
+
+None. All messages are stored in memory and lost on restart. Not suitable for production.

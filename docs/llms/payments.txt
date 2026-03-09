@@ -1,0 +1,244 @@
+---
+domain: Payments
+packages: Payments.Paymob.CashIn, Payments.Paymob.CashOut, Payments.Paymob.Services
+---
+
+# Payments
+
+> Paymob Accept payment gateway integration for Egypt/MENA: payment collection (CashIn), disbursements (CashOut), and higher-level service workflows.
+
+## Quick Orientation
+- Install `Headless.Payments.Paymob.CashIn` for collecting payments (cards, wallets, kiosk, cash).
+- Install `Headless.Payments.Paymob.CashOut` for disbursements (bank transfers, wallet payouts, Aman cash pickup).
+- Install `Headless.Payments.Paymob.Services` for higher-level payment flow orchestration and status tracking; it depends on CashIn.
+- All amounts in CashIn are in **cents** (multiply by 100). CashOut uses decimal amounts directly.
+- Configure via `AddPaymobCashIn(options => ...)` and `AddPaymobCashOut(options => ...)`. Services layer uses `AddPaymobServices()` on top of CashIn.
+
+## Agent Instructions
+- Use `Headless.Payments.Paymob.Services` for high-level payment workflows. Only drop to CashIn/CashOut when you need direct Paymob API access.
+- Primary interfaces: `IPaymobCashInBroker` (CashIn), `IPaymobCashOutBroker` (CashOut).
+- Always validate HMAC on callbacks using `IPaymobCashInBroker.Validate(transaction, hmac)` — never skip this.
+- CashIn and CashOut have **separate** API keys and credentials. CashOut also requires username/password.
+- CashIn uses Paymob's v2 Payment Intentions API; prefer `CreateIntentionAsync` over legacy order flows.
+- All brokers are registered as **singletons** — do not create scoped/transient registrations.
+- This is a Paymob-specific integration (Egypt/MENA region). Not a generic payments abstraction.
+
+---
+# Headless.Payments.Paymob.CashIn
+
+Paymob Accept integration for cash-in (payment collection) operations.
+
+## Problem Solved
+
+Provides a comprehensive client for Paymob Accept payment gateway, supporting multiple payment methods (cards, wallets, kiosk, cash collection) with HMAC validation for secure callbacks.
+
+## Key Features
+
+- `IPaymobCashInBroker` - Main payment operations interface
+- Payment intentions API (v2)
+- Order and transaction management
+- Multiple payment methods: Card (iframe), Wallet, Kiosk, Cash Collection
+- Saved card token payments
+- Refund and void operations
+- HMAC callback validation
+- Transaction and order queries
+
+## Installation
+
+```bash
+dotnet add package Headless.Payments.Paymob.CashIn
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddPaymobCashIn(options =>
+{
+    options.ApiKey = builder.Configuration["Paymob:ApiKey"];
+    options.HmacSecret = builder.Configuration["Paymob:HmacSecret"];
+});
+```
+
+## Usage
+
+### Create Payment Intention
+
+```csharp
+public class PaymentService(IPaymobCashInBroker broker)
+{
+    public async Task<string> CreatePaymentAsync(decimal amount)
+    {
+        var response = await broker.CreateIntentionAsync(new CashInCreateIntentionRequest
+        {
+            Amount = (int)(amount * 100), // Cents
+            Currency = "EGP",
+            PaymentMethods = [integrationId],
+            BillingData = new() { Email = "user@example.com" }
+        });
+
+        return response.ClientSecret;
+    }
+}
+```
+
+### Validate Callback
+
+```csharp
+[HttpPost("callback")]
+public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transaction, [FromQuery] string hmac)
+{
+    if (!_broker.Validate(transaction, hmac))
+        return BadRequest();
+
+    // Process transaction...
+    return Ok();
+}
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Paymob": {
+    "ApiKey": "your-api-key",
+    "HmacSecret": "your-hmac-secret"
+  }
+}
+```
+
+## Dependencies
+
+- `Headless.Base`
+
+## Side Effects
+
+- Registers `IPaymobCashInBroker` as singleton
+- Registers `IPaymobCashInAuthenticator` as singleton
+---
+# Headless.Payments.Paymob.CashOut
+
+Paymob integration for cash-out (disbursement) operations.
+
+## Problem Solved
+
+Provides a client for Paymob disbursement API, enabling payouts to bank accounts, mobile wallets, and Aman cash pickup points.
+
+## Key Features
+
+- `IPaymobCashOutBroker` - Disbursement operations interface
+- Bank transfer disbursements
+- Wallet disbursements
+- Aman cash pickup
+- Transaction queries and tracking
+
+## Installation
+
+```bash
+dotnet add package Headless.Payments.Paymob.CashOut
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddPaymobCashOut(options =>
+{
+    options.ApiKey = builder.Configuration["Paymob:CashOut:ApiKey"];
+    options.Username = builder.Configuration["Paymob:CashOut:Username"];
+    options.Password = builder.Configuration["Paymob:CashOut:Password"];
+});
+```
+
+## Usage
+
+### Bank Transfer
+
+```csharp
+public class DisbursementService(IPaymobCashOutBroker broker)
+{
+    public async Task<CashOutTransaction> DisburseAsync(decimal amount, string iban)
+    {
+        return await broker.DisburseAsync(new CashOutDisburseRequest
+        {
+            Amount = amount,
+            Iban = iban,
+            TransactionType = BankTransactionTypes.BankCard
+        });
+    }
+}
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Paymob": {
+    "CashOut": {
+      "ApiKey": "your-api-key",
+      "Username": "your-username",
+      "Password": "your-password"
+    }
+  }
+}
+```
+
+## Dependencies
+
+- `Headless.Base`
+
+## Side Effects
+
+- Registers `IPaymobCashOutBroker` as singleton
+- Registers `IPaymobCashOutAuthenticator` as singleton
+---
+# Headless.Payments.Paymob.Services
+
+Higher-level services for Paymob payment operations.
+
+## Problem Solved
+
+Provides service-layer abstractions over Paymob cash-in operations with additional models and status tracking for common payment workflows.
+
+## Key Features
+
+- Cash delivery status tracking
+- Payment flow orchestration
+- Extended status models
+- Common payment service patterns
+
+## Installation
+
+```bash
+dotnet add package Headless.Payments.Paymob.Services
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Add underlying Paymob broker
+builder.Services.AddPaymobCashIn(config);
+
+// Add service layer
+builder.Services.AddPaymobServices();
+```
+
+## Configuration
+
+No additional configuration required beyond `Headless.Payments.Paymob.CashIn`.
+
+## Dependencies
+
+- `Headless.Payments.Paymob.CashIn`
+
+## Side Effects
+
+Registers payment service implementations.
