@@ -58,7 +58,7 @@
     <PackageVersion Include="KubernetesClient" Version="19.0.2" />
     <PackageVersion Include="libphonenumber-csharp" Version="9.0.25" />
     <PackageVersion Include="Linq2Couchbase" Version="2.2.0" />
-    <PackageVersion Include="MailKit" Version="4.15.0" />
+    <PackageVersion Include="MailKit" Version="4.15.1" />
     <PackageVersion Include="MassTransit" Version="9.0.0" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.1" />
     <PackageVersion Include="MessagePack" Version="3.1.4" />
