@@ -1,4 +1,4 @@
-# Headless.Tus.DistributedLock
+# Headless.Tus.DistributedLocks
 
 TUS file locking using Headless.DistributedLocks.
 
@@ -15,7 +15,7 @@ Provides a TUS file lock provider implementation using the framework's distribut
 ## Installation
 
 ```bash
-dotnet add package Headless.Tus.DistributedLock
+dotnet add package Headless.Tus.DistributedLocks
 ```
 
 ## Quick Start

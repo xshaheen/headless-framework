@@ -1,0 +1,579 @@
+---
+domain: SMS
+packages: Sms.Abstractions, Sms.Aws, Sms.Cequens, Sms.Connekio, Sms.Dev, Sms.Infobip, Sms.Twilio, Sms.VictoryLink, Sms.Vodafone
+---
+
+# SMS
+
+> Provider-agnostic SMS sending with pluggable backends for international (Twilio, AWS SNS, Infobip) and regional MENA providers (Cequens, Connekio, VictoryLink, Vodafone).
+
+## Quick Orientation
+
+Install `Headless.Sms.Abstractions` + exactly one provider package:
+- **International**: `Sms.Twilio` (most popular), `Sms.Aws` (AWS SNS), `Sms.Infobip` (global platform)
+- **MENA regional**: `Sms.Cequens`, `Sms.Connekio`, `Sms.VictoryLink`, `Sms.Vodafone`
+- **Development**: `Sms.Dev` (logs to file or silently discards)
+
+All providers register `ISmsSender` as singleton. Code against `ISmsSender` and `SendSingleSmsRequest`/`SendSingleSmsResponse` from Abstractions. Swap providers by changing DI registration only.
+
+## Agent Instructions
+
+- Always use `Sms.Dev` in development/test environments to avoid sending real SMS. Use `AddDevSmsSender("sms-log.txt")` for file logging or `AddNoopSmsSender()` for silent discard.
+- Code against `ISmsSender` from Abstractions, never against provider-specific types.
+- Each provider has its own `Add*SmsSender()` extension method (e.g., `AddTwilioSmsSender`, `AddAwsSnsSmsSender`, `AddCequensSmsSender`).
+- Check `response.IsSuccess` after `SendAsync()` -- providers return structured errors via `SendSingleSmsResponse.ErrorMessage`.
+- Only one provider can be registered at a time (all register as `ISmsSender` singleton).
+- For Twilio, you can use either `From` (phone number) or `MessagingServiceSid` -- not both.
+- For AWS SNS, you need AWS SDK credentials configured separately via `GetAWSOptions()`.
+- Regional providers (Cequens, Connekio, VictoryLink, Vodafone) typically require vendor-issued API credentials.
+
+---
+# Headless.Sms.Abstractions
+
+Defines the unified interface for SMS sending.
+
+## Problem Solved
+
+Provides a provider-agnostic SMS sending API, enabling consistent SMS functionality across different providers (Twilio, AWS SNS, etc.) without changing application code.
+
+## Key Features
+
+- `ISmsSender` - Core interface for sending SMS
+- `SendSingleSmsRequest` - SMS request model
+- `SendSingleSmsResponse` - SMS response with status
+
+## Installation
+
+```bash
+dotnet add package Headless.Sms.Abstractions
+```
+
+## Usage
+
+```csharp
+public sealed class OtpService(ISmsSender smsSender)
+{
+    public async Task SendOtpAsync(string phoneNumber, string code, CancellationToken ct)
+    {
+        var request = new SendSingleSmsRequest
+        {
+            To = phoneNumber,
+            Message = $"Your verification code is: {code}"
+        };
+
+        var response = await smsSender.SendAsync(request, ct);
+
+        if (!response.IsSuccess)
+        {
+            throw new InvalidOperationException($"SMS failed: {response.ErrorMessage}");
+        }
+    }
+}
+```
+
+## Configuration
+
+No configuration required. This is an abstractions-only package.
+
+## Dependencies
+
+None.
+
+## Side Effects
+
+None.
+---
+# Headless.Sms.Aws
+
+AWS SNS SMS implementation.
+
+## Problem Solved
+
+Provides SMS sending via Amazon Simple Notification Service (SNS), supporting transactional and promotional message types with AWS SDK integration.
+
+## Key Features
+
+- `AwsSnsSmsSender` - ISmsSender implementation using AWS SNS
+- Configurable sender ID
+- Message type selection (transactional/promotional)
+- AWS SDK integration with flexible credentials
+
+## Installation
+
+```bash
+dotnet add package Headless.Sms.Aws
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+var awsOptions = builder.Configuration.GetAWSOptions();
+builder.Services.AddAwsSnsSmsSender(
+    builder.Configuration.GetSection("Sms:Aws"),
+    awsOptions
+);
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Sms": {
+    "Aws": {
+      "SenderId": "MyApp"
+    }
+  },
+  "AWS": {
+    "Region": "us-east-1"
+  }
+}
+```
+
+### Code Configuration
+
+```csharp
+builder.Services.AddAwsSnsSmsSender(options =>
+{
+    options.SenderId = "MyApp";
+});
+```
+
+## Dependencies
+
+- `Headless.Sms.Abstractions`
+- `AWSSDK.SimpleNotificationService`
+- `AWSSDK.Extensions.NETCore.Setup`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton
+- Registers `IAmazonSimpleNotificationService` if not already registered
+---
+# Headless.Sms.Cequens
+
+Cequens SMS gateway implementation.
+
+## Problem Solved
+
+Provides SMS sending via Cequens API, a regional SMS provider popular in the Middle East and North Africa with token-based authentication.
+
+## Key Features
+
+- `CequensSmsSender` - ISmsSender implementation using Cequens
+- JWT token-based authentication with auto-refresh
+- Configurable sender name
+- Batch SMS support
+
+## Installation
+
+```bash
+dotnet add package Headless.Sms.Cequens
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddCequensSmsSender(options =>
+{
+    options.ApiKey = "your-api-key";
+    options.UserName = "your-username";
+    options.SenderName = "MyApp";
+});
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Sms": {
+    "Cequens": {
+      "ApiKey": "your-api-key",
+      "UserName": "your-username",
+      "SenderName": "MyApp"
+    }
+  }
+}
+```
+
+## Dependencies
+
+- `Headless.Sms.Abstractions`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton
+- Registers `HttpClient` for Cequens API
+---
+# Headless.Sms.Connekio
+
+Connekio SMS gateway implementation.
+
+## Problem Solved
+
+Provides SMS sending via Connekio API, supporting both single and batch SMS delivery with basic authentication.
+
+## Key Features
+
+- `ConnekioSmsSender` - ISmsSender implementation using Connekio
+- Basic authentication (username:password:accountId)
+- Single and batch SMS support
+- Configurable sender name
+
+## Installation
+
+```bash
+dotnet add package Headless.Sms.Connekio
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddConnekioSmsSender(options =>
+{
+    options.UserName = "your-username";
+    options.Password = "your-password";
+    options.AccountId = "your-account-id";
+    options.Sender = "MyApp";
+});
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Sms": {
+    "Connekio": {
+      "UserName": "your-username",
+      "Password": "your-password",
+      "AccountId": "your-account-id",
+      "Sender": "MyApp"
+    }
+  }
+}
+```
+
+## Dependencies
+
+- `Headless.Sms.Abstractions`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton
+- Registers `HttpClient` for Connekio API
+---
+# Headless.Sms.Dev
+
+Development SMS implementations for testing.
+
+## Problem Solved
+
+Provides development-only SMS senders that either log messages to a file or silently discard them, enabling SMS workflow testing without sending actual messages.
+
+## Key Features
+
+- `DevSmsSender` - Writes SMS to a file for inspection
+- `NoopSmsSender` - Silently discards all messages
+- No external dependencies or API calls
+
+## Installation
+
+```bash
+dotnet add package Headless.Sms.Dev
+```
+
+## Quick Start
+
+### File-based Logging
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddDevSmsSender("sms-log.txt");
+}
+```
+
+### No-op (Silent)
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddNoopSmsSender();
+}
+```
+
+## Configuration
+
+No configuration required.
+
+## Dependencies
+
+- `Headless.Sms.Abstractions`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton
+- `DevSmsSender` writes to the specified file path
+---
+# Headless.Sms.Infobip
+
+Infobip SMS gateway implementation.
+
+## Problem Solved
+
+Provides SMS sending via Infobip's global messaging platform with comprehensive delivery reporting.
+
+## Key Features
+
+- `InfobipSmsSender` - ISmsSender implementation using Infobip
+- API key authentication
+- Configurable base URL for regional endpoints
+- Comprehensive delivery status reporting
+
+## Installation
+
+```bash
+dotnet add package Headless.Sms.Infobip
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddInfobipSmsSender(options =>
+{
+    options.ApiKey = "your-api-key";
+    options.BaseUrl = "https://api.infobip.com";
+    options.SenderName = "MyApp";
+});
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Sms": {
+    "Infobip": {
+      "ApiKey": "your-api-key",
+      "BaseUrl": "https://api.infobip.com",
+      "SenderName": "MyApp"
+    }
+  }
+}
+```
+
+## Dependencies
+
+- `Headless.Sms.Abstractions`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton
+---
+# Headless.Sms.Twilio
+
+Twilio SMS implementation.
+
+## Problem Solved
+
+Provides SMS sending via Twilio's messaging API with support for sender numbers and messaging service SIDs.
+
+## Key Features
+
+- `TwilioSmsSender` - ISmsSender implementation using Twilio
+- Account SID and Auth Token authentication
+- Configurable sender phone number
+- Messaging Service SID support
+
+## Installation
+
+```bash
+dotnet add package Headless.Sms.Twilio
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddTwilioSmsSender(options =>
+{
+    options.AccountSid = "your-account-sid";
+    options.AuthToken = "your-auth-token";
+    options.From = "+1234567890";
+});
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Sms": {
+    "Twilio": {
+      "AccountSid": "your-account-sid",
+      "AuthToken": "your-auth-token",
+      "From": "+1234567890"
+    }
+  }
+}
+```
+
+### Code Configuration
+
+```csharp
+builder.Services.AddTwilioSmsSender(options =>
+{
+    options.AccountSid = config["Twilio:AccountSid"]!;
+    options.AuthToken = config["Twilio:AuthToken"]!;
+    options.From = config["Twilio:From"]!;
+    // Or use MessagingServiceSid instead of From
+    options.MessagingServiceSid = config["Twilio:MessagingServiceSid"];
+});
+```
+
+## Dependencies
+
+- `Headless.Sms.Abstractions`
+- `Twilio`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton
+---
+# Headless.Sms.VictoryLink
+
+VictoryLink SMS gateway implementation.
+
+## Problem Solved
+
+Provides SMS sending via VictoryLink API, a regional SMS provider serving the Middle East market.
+
+## Key Features
+
+- `VictoryLinkSmsSender` - ISmsSender implementation using VictoryLink
+- Username/password authentication
+- Configurable sender name
+- Response code handling
+
+## Installation
+
+```bash
+dotnet add package Headless.Sms.VictoryLink
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddVictoryLinkSmsSender(options =>
+{
+    options.Username = "your-username";
+    options.Password = "your-password";
+    options.SenderName = "MyApp";
+});
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Sms": {
+    "VictoryLink": {
+      "Username": "your-username",
+      "Password": "your-password",
+      "SenderName": "MyApp"
+    }
+  }
+}
+```
+
+## Dependencies
+
+- `Headless.Sms.Abstractions`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton
+---
+# Headless.Sms.Vodafone
+
+Vodafone SMS gateway implementation.
+
+## Problem Solved
+
+Provides SMS sending via Vodafone's enterprise messaging API with OAuth2 authentication.
+
+## Key Features
+
+- `VodafoneSmsSender` - ISmsSender implementation using Vodafone
+- OAuth2 client credentials authentication
+- Configurable sender name and base URL
+- Regional endpoint support
+
+## Installation
+
+```bash
+dotnet add package Headless.Sms.Vodafone
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddVodafoneSmsSender(options =>
+{
+    options.ClientId = "your-client-id";
+    options.ClientSecret = "your-client-secret";
+    options.SenderName = "MyApp";
+    options.BaseUrl = "https://api.vodafone.com";
+});
+```
+
+## Configuration
+
+### appsettings.json
+
+```json
+{
+  "Sms": {
+    "Vodafone": {
+      "ClientId": "your-client-id",
+      "ClientSecret": "your-client-secret",
+      "SenderName": "MyApp",
+      "BaseUrl": "https://api.vodafone.com"
+    }
+  }
+}
+```
+
+## Dependencies
+
+- `Headless.Sms.Abstractions`
+
+## Side Effects
+
+- Registers `ISmsSender` as singleton

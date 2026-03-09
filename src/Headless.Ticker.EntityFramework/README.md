@@ -1,4 +1,4 @@
-# Headless.Ticker.EntityFrameworkCore
+# Headless.Ticker.EntityFramework
 
 Entity Framework Core integration for [TickerQ](https://github.com/arcenox/TickerQ), a high-performance background job scheduler for .NET.
 
@@ -9,4 +9,4 @@ This package enables persistence of time-based and cron-based jobs using EF Core
 ## 📦 Installation
 
 ```bash
-dotnet add package Headless.Ticker.EntityFrameworkCore
+dotnet add package Headless.Ticker.EntityFramework

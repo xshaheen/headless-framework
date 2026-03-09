@@ -1,0 +1,193 @@
+---
+domain: ORM
+packages: Orm.EntityFramework, Orm.Couchbase
+---
+
+# ORM
+
+> Database integration with EF Core conventions (auditing, soft delete, multi-tenancy, DDD) and Couchbase document DB support.
+
+## Quick Orientation
+
+Two providers:
+- `Headless.Orm.EntityFramework` — feature-rich EF Core base DbContext with automatic auditing, soft delete, domain events, multi-tenancy, and framework value converters
+- `Headless.Orm.Couchbase` — Couchbase bucket context with document sets and cluster management
+
+For relational databases, use `Headless.Orm.EntityFramework`:
+```csharp
+public class AppDbContext(DbContextOptions<AppDbContext> options) : HeadlessDbContext(options)
+{
+    public DbSet<Product> Products => Set<Product>();
+}
+
+builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
+    options.UseNpgsql(connectionString)
+);
+```
+
+For Couchbase, use `Headless.Orm.Couchbase`:
+```csharp
+public class AppBucketContext : CouchbaseBucketContext
+{
+    public AppBucketContext(IBucket bucket) : base(bucket) { }
+    public DocumentSet<Product> Products => GetDocumentSet<Product>("products");
+}
+```
+
+## Agent Instructions
+
+- **EF Core**: Always inherit from `HeadlessDbContext` — do NOT use `DbContext` directly. Register via `AddHeadlessDbContext<T>()`, not `AddDbContext<T>()`.
+- Automatic audit fields: `CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy` are set automatically by interceptors. Do not set them manually.
+- Soft delete: entities implementing the soft-delete interface get an `IsDeleted` global filter automatically. Use `.IgnoreQueryFilters()` to bypass.
+- Multi-tenancy: `AccountId` filtering is applied automatically. The `ICompiledQueryCacheKeyGenerator` is replaced to support tenant-aware query caching.
+- Value converters for framework types (Money, Month, AccountId, UserId, DateTime normalization) are available. Apply via `HasConversion<MoneyValueConverter>()` etc.
+- Domain events (local and distributed) are dispatched automatically during `SaveChangesAsync`.
+- Call `base.OnModelCreating(modelBuilder)` in your DbContext's `OnModelCreating` — skipping this breaks all conventions.
+- Use `modelBuilder.ApplyConfigurationsFromAssembly()` for entity configurations.
+- DataGrid extensions provide pagination and ordering helpers for list endpoints.
+- Use with `Headless.Sql.*` packages for connection string management and health checks.
+- **Couchbase**: Inherit from `CouchbaseBucketContext`. Use `GetDocumentSet<T>(collectionName)` for typed access. Cluster options via `ICouchbaseClusterOptionsProvider`.
+- Couchbase supports eventing functions seeding and collection management via assembly scanning.
+
+---
+# Headless.Orm.EntityFramework
+
+Entity Framework Core integration with framework conventions, global filters, and DDD support.
+
+## Problem Solved
+
+Provides a feature-rich DbContext base class with automatic auditing, soft delete handling, domain event dispatching, multi-tenancy support, and framework type value converters.
+
+## Key Features
+
+- `HeadlessDbContext` - Base DbContext with framework integration
+- Automatic `CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy` auditing
+- Soft delete with `IsDeleted` global filter
+- Multi-tenancy with `AccountId` filtering
+- Domain event dispatching (local and distributed)
+- Value converters: Money, Month, AccountId, UserId, DateTime normalization
+- DataGrid extensions for pagination and ordering
+- EF migration pre-seeder
+
+## Installation
+
+```bash
+dotnet add package Headless.Orm.EntityFramework
+```
+
+## Quick Start
+
+```csharp
+public class AppDbContext(DbContextOptions<AppDbContext> options) : HeadlessDbContext(options)
+{
+    public DbSet<Product> Products => Set<Product>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+    }
+}
+
+// Registration
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default"))
+);
+```
+
+## Configuration
+
+### Value Converters
+
+```csharp
+modelBuilder.Entity<Order>()
+    .Property(o => o.Total)
+    .HasConversion<MoneyValueConverter>();
+```
+
+### Global Filters
+
+Soft delete and multi-tenancy filters are automatically applied.
+
+```csharp
+// Disable filters for a query
+var allProducts = await dbContext.Products
+    .IgnoreQueryFilters()
+    .ToListAsync();
+```
+
+## Dependencies
+
+- `Headless.Domain`
+- `Headless.BuildingBlocks`
+- `Microsoft.EntityFrameworkCore`
+
+## Side Effects
+
+- Registers `IHeadlessEntityModelProcessor` as singleton
+- Registers default implementations for `IClock`, `IGuidGenerator`, `ICurrentTenant`, `ICurrentUser`
+- Replaces `ICompiledQueryCacheKeyGenerator` for multi-tenancy support
+---
+# Headless.Orm.Couchbase
+
+Couchbase integration with bucket context and cluster management.
+
+## Problem Solved
+
+Provides a structured approach to Couchbase database access with bucket contexts, document sets, and cluster management utilities for .NET applications.
+
+## Key Features
+
+- `CouchbaseBucketContext` - Base context for bucket operations
+- Document set extensions for CRUD operations
+- Cluster options and transaction configuration providers
+- Eventing functions seeder
+- Collection management via assembly scanning
+- Bucket context initialization
+
+## Installation
+
+```bash
+dotnet add package Headless.Orm.Couchbase
+```
+
+## Quick Start
+
+```csharp
+public class AppBucketContext : CouchbaseBucketContext
+{
+    public AppBucketContext(IBucket bucket) : base(bucket) { }
+
+    public DocumentSet<Product> Products => GetDocumentSet<Product>("products");
+}
+
+// Registration
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddCouchbase(options =>
+{
+    options.ConnectionString = "couchbase://localhost";
+    options.UserName = "admin";
+    options.Password = "password";
+});
+```
+
+## Configuration
+
+### Cluster Options
+
+```csharp
+services.AddSingleton<ICouchbaseClusterOptionsProvider, MyClusterOptionsProvider>();
+```
+
+## Dependencies
+
+- `CouchbaseNetClient`
+- `Headless.BuildingBlocks`
+
+## Side Effects
+
+- Registers bucket context services
+- May register eventing functions via seeder
