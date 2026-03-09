@@ -3,6 +3,7 @@ using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
 using Headless.Domain;
+using Headless.Messaging;
 using Headless.Permissions;
 using Headless.Permissions.Seeders;
 using Headless.Permissions.Storage.EntityFramework;
@@ -48,7 +49,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
-        services.AddSingleton(Substitute.For<IDistributedMessagePublisher>());
+        services.AddSingleton(Substitute.For<IDirectPublisher>());
         services.AddServiceProviderLocalMessagePublisher();
 
         // Messages

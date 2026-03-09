@@ -4,7 +4,7 @@ using System.Text.Json.Serialization.Metadata;
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.DistributedLocks;
-using Headless.Domain;
+using Headless.Messaging;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Events;
 using Headless.Permissions.Models;
@@ -34,7 +34,7 @@ public sealed class DynamicPermissionDefinitionStore(
     IPermissionDefinitionSerializer serializer,
     ICache distributedCache,
     IDistributedLockProvider distributedLockProvider,
-    IDistributedMessagePublisher messagePublisher,
+    IDirectPublisher messagePublisher,
     IGuidGenerator guidGenerator,
     IApplicationInformationAccessor application,
     IOptions<PermissionManagementOptions> optionsAccessor,

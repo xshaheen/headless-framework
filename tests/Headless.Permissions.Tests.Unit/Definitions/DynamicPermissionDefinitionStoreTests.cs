@@ -3,7 +3,7 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.DistributedLocks;
-using Headless.Domain;
+using Headless.Messaging;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Models;
@@ -22,7 +22,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
     private readonly IPermissionDefinitionSerializer _serializer;
     private readonly ICache _cache;
     private readonly IDistributedLockProvider _distributedLockProvider;
-    private readonly IDistributedMessagePublisher _messagePublisher;
+    private readonly IDirectPublisher _messagePublisher;
     private readonly IGuidGenerator _guidGenerator;
     private readonly IApplicationInformationAccessor _application;
     private readonly PermissionManagementOptions _options;
@@ -37,7 +37,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
         _serializer = Substitute.For<IPermissionDefinitionSerializer>();
         _cache = Substitute.For<ICache>();
         _distributedLockProvider = Substitute.For<IDistributedLockProvider>();
-        _messagePublisher = Substitute.For<IDistributedMessagePublisher>();
+        _messagePublisher = Substitute.For<IDirectPublisher>();
         _guidGenerator = Substitute.For<IGuidGenerator>();
         _application = Substitute.For<IApplicationInformationAccessor>();
         _options = new PermissionManagementOptions { IsDynamicPermissionStoreEnabled = true };

@@ -15,7 +15,7 @@ Provides building blocks for implementing DDD patterns: entities with identity, 
 - **Concurrency**: `IHasConcurrencyStamp`, `IHasETag`
 - **Multi-tenancy**: `IMultiTenant`
 - **Local Messaging**: `ILocalMessage`, `ILocalMessagePublisher`, `ILocalMessageHandler`
-- **Distributed Messaging**: `IDistributedMessage`, `IDistributedMessagePublisher`, `IDistributedMessageHandler`
+- **Distributed Messaging**: `IDistributedMessage`, `IDistributedMessageEmitter`
 - **Entity Events**: `EntityCreatedEventData`, `EntityUpdatedEventData`, `EntityDeletedEventData`
 
 ## Installation

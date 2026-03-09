@@ -15,6 +15,7 @@
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Permissions.Abstractions\Headless.Permissions.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
     <EmbeddedResource Update="Resources\Messages.resx" />
