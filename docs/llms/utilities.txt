@@ -1,6 +1,6 @@
 ---
 domain: Utilities
-packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, NetTopologySuite, Recaptcha, Redis, Sitemaps, Slugs
+packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, NetTopologySuite, ReCaptcha, Redis, Sitemaps, Slugs
 ---
 
 # Utilities
@@ -15,7 +15,7 @@ Install individually as needed -- these packages are independent of each other:
 - **FluentValidation** -- Enterprise validators on top of FluentValidation: phone numbers (`InternationalPhoneNumber()`), national IDs, collections, geo, pagination, URLs. Use `ErrorDescriptor` for structured API errors.
 - **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
 - **NetTopologySuite** -- Geometry precision, permissive operations, SQL Server geography sanitization (`SanitizeForSqlGeography()`), polygon simplification.
-- **Recaptcha** -- Google reCAPTCHA v2/v3 server-side verification (`IReCaptchaSiteVerifyV2`/`V3`) plus Razor tag helpers.
+- **ReCaptcha** -- Google reCAPTCHA v2/v3 server-side verification (`IReCaptchaSiteVerifyV2`/`V3`) plus Razor tag helpers.
 - **Redis** -- `HeadlessRedisScriptsLoader` for centralized Lua script loading/execution with StackExchange.Redis.
 - **Sitemaps** -- XML sitemap generation (`SitemapUrl`, `SitemapIndexBuilder`) with localized URL and image support.
 - **Slugs** -- URL-friendly slug generation (`Slug.Create()`) with Unicode normalization and configurable options.
@@ -443,7 +443,7 @@ No configuration required.
 
 None.
 ---
-# Headless.Recaptcha
+# Headless.ReCaptcha
 
 Google reCAPTCHA v2 and v3 integration with verification services and tag helpers.
 
@@ -462,7 +462,7 @@ Provides complete Google reCAPTCHA integration including server-side verificatio
 ## Installation
 
 ```bash
-dotnet add package Headless.Recaptcha
+dotnet add package Headless.ReCaptcha
 ```
 
 ## Quick Start

@@ -1,4 +1,4 @@
-# Headless.Messaging.AmazonSqs
+# Headless.Messaging.AwsSqs
 
 Amazon SQS and SNS transport provider for the messaging system.
 
@@ -11,13 +11,13 @@ Enables reliable message delivery using AWS SQS queues and SNS topics with autom
 - **SQS Consumer**: Reliable queue-based message consumption
 - **SNS Publisher**: Topic-based message distribution
 - **Auto-Provisioning**: Automatic queue and topic creation
-- **Dead Letter[Headless.Messaging.AwsSqs.csproj](Headless.Messaging.AwsSqs.csproj) Queues**: Built-in failure handling
+- **Dead Letter Queues**: Built-in failure handling
 - **IAM Integration**: Automatic policy configuration
 
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.AmazonSqs
+dotnet add package Headless.Messaging.AwsSqs
 ```
 
 ## Quick Start

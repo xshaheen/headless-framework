@@ -1,4 +1,4 @@
-# Headless.Recaptcha
+# Headless.ReCaptcha
 
 Google reCAPTCHA v2 and v3 integration with verification services and tag helpers.
 
@@ -17,7 +17,7 @@ Provides complete Google reCAPTCHA integration including server-side verificatio
 ## Installation
 
 ```bash
-dotnet add package Headless.Recaptcha
+dotnet add package Headless.ReCaptcha
 ```
 
 ## Quick Start

@@ -3377,7 +3377,7 @@ options.UseOpenTelemetry(otel =>
 - Injects W3C Trace Context headers into messages
 - Exports telemetry to configured exporters
 ---
-# Headless.Messaging.AmazonSqs
+# Headless.Messaging.AwsSqs
 
 Amazon SQS and SNS transport provider for the messaging system.
 
@@ -3396,7 +3396,7 @@ Enables reliable message delivery using AWS SQS queues and SNS topics with autom
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.AmazonSqs
+dotnet add package Headless.Messaging.AwsSqs
 ```
 
 ## Quick Start
@@ -5345,7 +5345,7 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 
 # Distributed Locks
 
-> Provider-agnostic distributed locking with automatic renewal, expiration, throttling, and pluggable storage backends (Redis, Cache, InMemory).
+> Provider-agnostic distributed locking with automatic renewal, expiration, throttling, and pluggable storage backends (Redis, Cache).
 
 ## Quick Orientation
 - Install `Headless.DistributedLocks.Abstractions` to depend on interfaces only (e.g., in domain/application layers).
@@ -5353,14 +5353,12 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 - Choose one storage backend:
   - `Headless.DistributedLocks.Redis` — production multi-instance deployments (atomic Lua scripts, high performance).
   - `Headless.DistributedLocks.Cache` — uses `ICache` abstraction; works if your cache is already distributed (e.g., Redis cache).
-  - `Headless.DistributedLocks.InMemory` — single-instance/testing only; no README, listed for completeness.
 - Use `IDistributedLockProvider.TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, ct)` to acquire locks. Returns `null` if acquisition fails.
 - For rate-limited locking, use `IThrottlingDistributedLockProvider` (requires throttling storage from the chosen backend).
 
 ## Agent Instructions
 - Always code against `IDistributedLockProvider` from Abstractions. Never reference storage-specific types in application code.
 - Use `DistributedLocks.Redis` for production multi-instance deployments. It uses atomic Lua scripts for lock acquire/release — this is the only truly safe option for distributed scenarios.
-- Use `DistributedLocks.InMemory` only for unit tests or single-instance apps. It provides no cross-process coordination.
 - Use `DistributedLocks.Cache` when you already have a distributed `ICache` (e.g., Redis cache) and don't want a separate Redis connection for locks.
 - Always check for `null` after `TryAcquireAsync` — a null return means the lock could not be acquired within the timeout.
 - Always `await using` the returned `IDistributedLock` to ensure proper release. Do not manually dispose without `await`.
@@ -7759,7 +7757,7 @@ options.UseRedisCoordination(redis =>
 - Periodically scans for and removes dead nodes
 - Creates Redis keys: `nodes:registry`, `hb:{nodeId}`
 ---
-# Headless.Ticker.EntityFrameworkCore
+# Headless.Ticker.EntityFramework
 
 Entity Framework Core integration for [TickerQ](https://github.com/arcenox/TickerQ), a high-performance background job scheduler for .NET.
 
@@ -7770,7 +7768,7 @@ This package enables persistence of time-based and cron-based jobs using EF Core
 ## 📦 Installation
 
 ```bash
-dotnet add package Headless.Ticker.EntityFrameworkCore
+dotnet add package Headless.Ticker.EntityFramework
 ```
 ---
 domain: TUS (Resumable Uploads)
@@ -7933,7 +7931,7 @@ var options = new TusAzureStoreOptions
 
 - Creates Azure Blob container if configured
 ---
-# Headless.Tus.DistributedLock
+# Headless.Tus.DistributedLocks
 
 TUS file locking using Headless.DistributedLocks.
 
@@ -7950,7 +7948,7 @@ Provides a TUS file lock provider implementation using the framework's distribut
 ## Installation
 
 ```bash
-dotnet add package Headless.Tus.DistributedLock
+dotnet add package Headless.Tus.DistributedLocks
 ```
 
 ## Quick Start
@@ -7995,7 +7993,7 @@ No additional configuration required beyond resource lock setup.
 - Registers `ITusFileLockProvider` as singleton
 ---
 domain: Utilities
-packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, NetTopologySuite, Recaptcha, Redis, Sitemaps, Slugs
+packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, NetTopologySuite, ReCaptcha, Redis, Sitemaps, Slugs
 ---
 
 # Utilities
@@ -8010,7 +8008,7 @@ Install individually as needed -- these packages are independent of each other:
 - **FluentValidation** -- Enterprise validators on top of FluentValidation: phone numbers (`InternationalPhoneNumber()`), national IDs, collections, geo, pagination, URLs. Use `ErrorDescriptor` for structured API errors.
 - **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
 - **NetTopologySuite** -- Geometry precision, permissive operations, SQL Server geography sanitization (`SanitizeForSqlGeography()`), polygon simplification.
-- **Recaptcha** -- Google reCAPTCHA v2/v3 server-side verification (`IReCaptchaSiteVerifyV2`/`V3`) plus Razor tag helpers.
+- **ReCaptcha** -- Google reCAPTCHA v2/v3 server-side verification (`IReCaptchaSiteVerifyV2`/`V3`) plus Razor tag helpers.
 - **Redis** -- `HeadlessRedisScriptsLoader` for centralized Lua script loading/execution with StackExchange.Redis.
 - **Sitemaps** -- XML sitemap generation (`SitemapUrl`, `SitemapIndexBuilder`) with localized URL and image support.
 - **Slugs** -- URL-friendly slug generation (`Slug.Create()`) with Unicode normalization and configurable options.
@@ -8438,7 +8436,7 @@ No configuration required.
 
 None.
 ---
-# Headless.Recaptcha
+# Headless.ReCaptcha
 
 Google reCAPTCHA v2 and v3 integration with verification services and tag helpers.
 
@@ -8457,7 +8455,7 @@ Provides complete Google reCAPTCHA integration including server-side verificatio
 ## Installation
 
 ```bash
-dotnet add package Headless.Recaptcha
+dotnet add package Headless.ReCaptcha
 ```
 
 ## Quick Start

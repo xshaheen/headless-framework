@@ -530,7 +530,7 @@ options.UseOpenTelemetry(otel =>
 - Injects W3C Trace Context headers into messages
 - Exports telemetry to configured exporters
 ---
-# Headless.Messaging.AmazonSqs
+# Headless.Messaging.AwsSqs
 
 Amazon SQS and SNS transport provider for the messaging system.
 
@@ -549,7 +549,7 @@ Enables reliable message delivery using AWS SQS queues and SNS topics with autom
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.AmazonSqs
+dotnet add package Headless.Messaging.AwsSqs
 ```
 
 ## Quick Start
