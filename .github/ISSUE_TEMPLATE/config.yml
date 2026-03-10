@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Project documentation
+    url: https://github.com/xshaheen/headless-framework#readme
+    about: Start with the root README and package READMEs before opening an issue.
+  - name: Security reporting
+    url: https://github.com/xshaheen/headless-framework/security/policy
+    about: Report vulnerabilities privately using the security policy.

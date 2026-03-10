@@ -1,26 +1,43 @@
-# Please see the documentation for all configuration options:
-# https://docs.github.com/en/code-security/supply-chain-security/configuration-options-for-dependency-updates
-
 version: 2
 updates:
-  - package-ecosystem: "nuget"
-    directory: "/"
+  - package-ecosystem: nuget
+    directory: /
+    target-branch: main
     labels:
-      - "dependencies"
+      - maintenance
+    commit-message:
+      prefix: build
     open-pull-requests-limit: 10
     schedule:
-      interval: "weekly"
-  - package-ecosystem: "docker"
-    directory: "/"
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+
+  - package-ecosystem: docker
+    directory: /
+    target-branch: main
     labels:
-      - "dependencies"
+      - maintenance
+    commit-message:
+      prefix: build
     open-pull-requests-limit: 10
     schedule:
-      interval: "weekly"
-  - package-ecosystem: "github-actions"
-    directory: "/"
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: main
     labels:
-      - "dependencies"
+      - maintenance
+    commit-message:
+      prefix: ci
     open-pull-requests-limit: 10
     schedule:
-      interval: "weekly"
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: UTC

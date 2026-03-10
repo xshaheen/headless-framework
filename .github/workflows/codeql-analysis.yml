@@ -1,9 +1,3 @@
-# CodeQL Code Scanning
-# Analyzes your code for security vulnerabilities and coding errors.
-# For most projects, this workflow file will not need changing; you need
-# to commit it to your repository. You may wish to alter this file to override
-# the set of languages analyzed, or to provide custom queries or build logic.
-# https://docs.github.com/en/free-pro-team@latest/github/finding-security-vulnerabilities-and-errors-in-your-code/about-code-scanning
 name: "CodeQL"
 
 on:
@@ -18,11 +12,11 @@ on:
 
 jobs:
   analyze:
-    if: "contains(github.event.head_commit.message, '#run_codeql')" # Disable since it is only for organization
     name: Analyze
     permissions:
       actions: read
       contents: read
+      packages: read
       security-events: write
     runs-on: ubuntu-latest
 
@@ -40,33 +34,26 @@ jobs:
           lfs: false
           fetch-depth: 0
 
-      # Initializes the CodeQL tools for scanning.
+      - name: "Setup .NET SDK"
+        uses: actions/setup-dotnet@v5.2.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Authenticate GitHub Packages"
+        run: |
+          dotnet nuget remove source github.com 2>/dev/null || true
+          dotnet nuget add source https://nuget.pkg.github.com/xshaheen/index.json --name github.com --username xshaheen --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text
+        shell: bash
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
-          # If you wish to specify custom queries, you can do so here or in a config file.
-          # By default, queries listed here will override any specified in a config file.
-          # Prefix the list here with "+" to use these queries and those in the config file.
+          build-mode: manual
 
-          # Details on CodeQL's query packs refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
-          # queries: security-extended,security-and-quality
-
-
-      # Autobuild attempts to build any compiled languages (C/C++, C#, or Java).
-      # If this step fails, then you should remove it and run the build manually (see below)
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v4
-
-      # ℹ️ Command-line programs to run using the OS shell.
-      # 📚 See https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstepsrun
-
-      #   If the Autobuild fails above, remove it and uncomment the following three lines.
-      #   Modify them (or add more) to build your code if your project, please refer to the EXAMPLE below for guidance.
-
-      # - run: |
-      #   echo "Run, Build Application using script"
-      #   ./location_of_script_within_repo/buildscript.sh
+      - name: ".NET Nuke Compile"
+        run: ./build.ps1 Compile -Configuration Release
+        shell: pwsh
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

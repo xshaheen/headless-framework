@@ -1,30 +1,71 @@
-name: "Bug Report"
-description: "Create a report to help us improve"
-labels: [ bug ]
+name: Bug report
+description: Report a reproducible defect in a Headless package or workflow
+labels:
+  - bug
 body:
-  - type: textarea
-    id: describe-the-bug
+  - type: markdown
     attributes:
-      label: "Describe the bug"
-      description: "A clear and concise description of what the bug is."
+      value: |
+        Thanks for the report.
+
+        Use this form for reproducible bugs. For security issues, follow the private reporting steps in `SECURITY.md`.
+  - type: input
+    id: package
+    attributes:
+      label: Affected package
+      description: Which `Headless.*` package or workflow is failing?
+      placeholder: Headless.Caching.Redis
+    validations:
+      required: true
+  - type: input
+    id: package-version
+    attributes:
+      label: Package version
+      description: Include the version or commit where you observed the issue.
+      placeholder: 1.2.3
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime and host
+      description: Include OS, .NET SDK/runtime, and any relevant hosting details.
+      placeholder: .NET 10 on Ubuntu 24.04, ASP.NET Core, Docker
     validations:
       required: true
   - type: textarea
-    id: steps-to-reproduce
+    id: expected
     attributes:
-      label: "Steps to reproduce"
-      description: "A link to some code to reproduce the bug can speed up a fix. Alternatively, show steps to reproduce the behaviour."
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Paste a minimal repro, sample config, or failing test.
+      render: csharp
       placeholder: |
-        1. Go to '...'
-        2. Click on '....'
-        3. Scroll down to '....'
-        4. See error
+        var builder = WebApplication.CreateBuilder(args);
+        // minimal repro here
     validations:
       required: true
   - type: textarea
-    id: expected-behaviour
+    id: logs
     attributes:
-      label: "Expected behaviour"
-      description: "A clear and concise description of what you expected to happen."
-    validations:
-      required: true
+      label: Logs or stack traces
+      description: Paste the relevant output if available.
+      render: shell
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Dependencies, provider choice, screenshots, or anything else that narrows the issue.

@@ -1,11 +1,59 @@
-name: "Feature Request"
-description: "Suggest an idea for this project"
-labels: [enhancement]
+name: Feature request
+description: Propose a new capability or meaningful improvement
+labels:
+  - enhancement
 body:
-  - type: textarea
-    id: describe-the-bug
+  - type: markdown
     attributes:
-      label: "Describe the feature"
-      description: "A clear and concise description of what the feature is."
+      value: |
+        Use this form for concrete proposals.
+
+        For larger work, include the target package boundary and why this belongs in the framework rather than an app-specific layer.
+  - type: input
+    id: package
+    attributes:
+      label: Target package or domain
+      description: Which package or domain should own this work?
+      placeholder: Headless.Messaging / Messaging
     validations:
       required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What limitation or pain point are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the API, behavior, or extension point you want.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing packages, custom app code, or other approaches you considered.
+  - type: textarea
+    id: api-shape
+    attributes:
+      label: Suggested API or usage example
+      description: Optional, but concrete examples help.
+      render: csharp
+  - type: dropdown
+    id: breaking-change
+    attributes:
+      label: Breaking change risk
+      options:
+        - None expected
+        - Possible but avoidable
+        - Likely breaking
+    validations:
+      required: true
+  - type: textarea
+    id: docs-impact
+    attributes:
+      label: Documentation impact
+      description: Which README, docs page, or examples would need updates?

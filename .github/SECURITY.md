@@ -2,8 +2,23 @@
 
 ## Supported Versions
 
-This project supports only the latest version with security updates. However, we'll do our best to help and answer questions about older versions.
+Security fixes are shipped for the latest published version line and `main`.
 
-## Reporting a Vulnerability
+| Version | Support |
+| --- | --- |
+| Latest published packages | Supported |
+| `main` | Supported |
+| Older package versions | Best effort |
 
-Contact [mxshaheen@gmail.com|@Mahmoud Shaheen] to report a security vulnerability.
+## Reporting A Vulnerability
+
+Do not open public GitHub issues for security reports.
+
+Email `mxshaheen@gmail.com` with:
+
+- affected package name and version
+- impact and severity
+- reproduction steps or proof of concept
+- any suggested mitigation
+
+If possible, include a minimal reproduction and the target runtime or hosting environment. You should receive an acknowledgment after the report is reviewed.

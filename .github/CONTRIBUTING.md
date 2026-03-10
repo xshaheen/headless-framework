@@ -1,16 +1,59 @@
-# All contributions, however small are valued
+# Contributing
 
-## Steps to contribute
+Thanks for contributing to `headless-framework`.
 
-If you want to make a small change, go ahead and raise a pull request, otherwise follow these steps:
+This repository is a modular .NET 10 framework, not a single application. Changes often affect multiple packages, package READMEs, XML docs, and test projects. Keep PRs focused and explicit.
 
-1. View the [Issues](https://github.com/xshaheen/headless-framework/issues) page to see a To-Do list of things to be
-   implemented.
-2. Raise an issue or comment on an existing issue with what you want to contribute if one does not already exist.
-3. When you get the go ahead, follow the coding guidelines and raise a pull request.
-4. Include a link to the issue in your pull request.
+## Before You Start
 
-## Coding Guidelines
+- Small fixes can go straight to a pull request.
+- For larger changes, open an issue first so package boundaries and API shape can be agreed before implementation.
+- Search existing issues and package READMEs before proposing new abstractions or providers.
 
--   Projects use .editorconfig to produce style warnings. Please fix all warnings in any code you submit.
--   Write unit tests for any code written.
+## Local Setup
+
+```bash
+dotnet tool restore
+./build.sh Compile
+./build.sh Test
+```
+
+On Windows, use `./build.ps1` instead of `./build.sh`.
+
+Integration tests use Testcontainers and require Docker. Unit tests should stay isolated and not depend on external services.
+
+## Repository Layout
+
+- `src/` - NuGet packages
+- `tests/` - unit, integration, and harness projects
+- `build/` - NUKE build automation
+- `docs/` - generated and hand-written documentation
+
+Most domains follow an abstraction + provider split:
+
+- `Headless.*.Abstractions` exposes contracts
+- `Headless.*.<Provider>` contains concrete implementations
+
+## Coding Rules
+
+- Use file-scoped namespaces.
+- Prefer primary constructors for DI.
+- Use `required` and `init` where appropriate.
+- Default to `sealed` unless inheritance is intentional.
+- Prefer collection expressions and pattern matching over older syntax.
+- Keep package versions in `Directory.Packages.props`. Do not add `Version=` to `.csproj` files.
+- Match existing naming, option patterns, and dependency registration style.
+
+## Tests And Docs
+
+- Add or update tests with every behavior change.
+- Update XML docs for public API changes.
+- Update the package `README.md` under `src/Headless.*/` when package behavior, options, or setup changes.
+- Keep `README.md`, `llms.txt`, and domain docs in sync when you change public guidance.
+
+## Pull Requests
+
+- Link the related issue when one exists.
+- Describe affected packages and whether the change is breaking.
+- Include the validation you ran (`Compile`, `Test`, package-specific checks).
+- Keep PRs reviewable. Separate refactors from behavior changes when possible.

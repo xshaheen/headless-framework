@@ -73,26 +73,21 @@ file sealed class Build : NukeBuild
                 .DependsOn(Compile)
                 .Executes(() =>
                 {
+                    var dotnetPath = ToolPathResolver.GetPathExecutable("dotnet");
+
                     Solution
                         .AllProjects.Where(x => x.Name.Contains(".Tests.", StringComparison.Ordinal))
                         .ForEach(project =>
                         {
-                            DotNetTest(settings =>
-                                settings
-                                    .SetProjectFile(project)
-                                    .SetConfiguration(Configuration)
-                                    .EnableNoRestore()
-                                    .EnableNoBuild()
-                                    .EnableBlameCrash()
-                                    .SetDataCollector("XPlat Code Coverage")
-                                    .EnableCollectCoverage()
-                                    .SetResultsDirectory(TestResults)
-                                    .SetLoggers(
-                                        "console;verbosity=detailed",
-                                        $"trx;LogFileName={project.Name}.trx",
-                                        $"html;LogFileName={project.Name}.html"
-                                    )
-                            );
+                            ProcessTasks
+                                .StartProcess(
+                                    dotnetPath,
+                                    $"""
+                                     test --project "{project.Path}" --configuration {Configuration} --no-restore --no-build --results-directory "{TestResults}" --output Detailed --report-trx --report-trx-filename "{project.Name}.trx" --report-xunit-html --report-xunit-html-filename "{project.Name}.html" --coverage --coverage-output-format cobertura --coverage-output "{project.Name}.coverage.xml"
+                                     """,
+                                    RootDirectory
+                                )
+                                .AssertZeroExitCode();
                         });
                 });
 

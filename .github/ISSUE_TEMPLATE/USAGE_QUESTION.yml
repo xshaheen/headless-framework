@@ -1,0 +1,40 @@
+name: Usage question
+description: Ask for guidance on how to use an existing package or pattern
+labels:
+  - question
+body:
+  - type: input
+    id: package
+    attributes:
+      label: Package or domain
+      description: Which package are you using?
+      placeholder: Headless.Api / Headless.Settings.Core
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: What are you trying to build?
+      description: Describe the use case and the outcome you want.
+    validations:
+      required: true
+  - type: textarea
+    id: current-approach
+    attributes:
+      label: Current code or configuration
+      description: Share the smallest useful example.
+      render: csharp
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: What do you need help with?
+      description: Be explicit about the decision or blocker.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Relevant provider, runtime, hosting, or constraints.
