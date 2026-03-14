@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
+using Headless.Constants;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -223,5 +224,19 @@ public static class DateTimeOffsetExtensions
     public static TimeOnly ToUtcTimeOnly(this DateTimeOffset date)
     {
         return TimeOnly.FromDateTime(date.UtcDateTime);
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTimeOffset ToEgyptTimeZone(this DateTimeOffset dateTimeOffset)
+    {
+        return dateTimeOffset.ToTimezone(TimezoneConstants.EgyptTimeZone);
+    }
+
+    [SystemPure]
+    [JetBrainsPure]
+    public static DateTimeOffset ToSaudiArabiaTimeZone(this DateTimeOffset dateTimeOffset)
+    {
+        return dateTimeOffset.ToTimezone(TimezoneConstants.SaudiArabiaTimeZone);
     }
 }
