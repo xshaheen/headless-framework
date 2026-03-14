@@ -4,6 +4,6 @@
     <RootNamespace>Headless.Abstractions</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.BuildingBlocks\Headless.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
   </ItemGroup>
 </Project>

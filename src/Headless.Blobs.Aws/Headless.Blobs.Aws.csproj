@@ -8,7 +8,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.BuildingBlocks\Headless.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>
 </Project>

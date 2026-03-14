@@ -11,7 +11,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Base\Headless.Base.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
   </ItemGroup>
 </Project>

@@ -7,7 +7,7 @@
     <PackageReference Include="FluentValidation" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Base\Headless.Base.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
     <EmbeddedResource Update="Resources\FluentValidatorErrors.resx" />

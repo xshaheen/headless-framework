@@ -8,7 +8,7 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Headless.BuildingBlocks\Headless.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

@@ -10,7 +10,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Authorization" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Base\Headless.Base.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />

@@ -118,8 +118,8 @@
         <Project Path="tests\Headless.Imaging.ImageSharp.Tests.Unit\Headless.Imaging.ImageSharp.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Kernel/">
-        <Project Path="src\Headless.Base\Headless.Base.csproj" />
-        <Project Path="src\Headless.BuildingBlocks\Headless.BuildingBlocks.csproj" />
+        <Project Path="src\Headless.Extensions\Headless.Extensions.csproj" />
+        <Project Path="src\Headless.Core\Headless.Core.csproj" />
         <Project Path="src\Headless.Checks\Headless.Checks.csproj" />
         <Project Path="src\Headless.Domain.LocalPublisher\Headless.Domain.LocalPublisher.csproj" />
         <Project Path="src\Headless.Domain\Headless.Domain.csproj" />
@@ -127,8 +127,8 @@
         <Project Path="src\Headless.NetTopologySuite\Headless.NetTopologySuite.csproj" />
         <Project Path="src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
         <Project Path="src\Headless.Testing\Headless.Testing.csproj" />
-        <Project Path="tests\Headless.Base.Tests.Unit\Headless.Base.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.BuildingBlocks.Tests.Unit\Headless.BuildingBlocks.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Extensions.Tests.Unit\Headless.Extensions.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Core.Tests.Unit\Headless.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Checks.Tests.Unit\Headless.Checks.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Domain.LocalPublisher.Tests.Unit\Headless.Domain.LocalPublisher.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Domain.Tests.Unit\Headless.Domain.Tests.Unit.csproj" />

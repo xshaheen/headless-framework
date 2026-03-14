@@ -11,6 +11,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
     <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
-    <ProjectReference Include="..\Headless.Base\Headless.Base.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
   </ItemGroup>
 </Project>

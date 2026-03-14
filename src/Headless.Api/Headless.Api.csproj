@@ -18,7 +18,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api.Abstractions\Headless.Api.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.BuildingBlocks\Headless.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
     <ProjectReference Include="..\Headless.Api.FluentValidation\Headless.Api.FluentValidation.csproj" />

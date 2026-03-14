@@ -11,6 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api\Headless.Api.csproj" />
-    <ProjectReference Include="..\Headless.BuildingBlocks\Headless.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
   </ItemGroup>
 </Project>

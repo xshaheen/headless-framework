@@ -4,7 +4,7 @@
     <RootNamespace>Headless.Permissions</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.BuildingBlocks\Headless.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Permissions.Core" />

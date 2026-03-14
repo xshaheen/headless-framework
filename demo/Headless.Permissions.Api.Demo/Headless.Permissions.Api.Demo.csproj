@@ -8,7 +8,7 @@
     <ProjectReference Include="..\..\src\Headless.Permissions.Abstractions\Headless.Permissions.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Core\Headless.Permissions.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Storage.EntityFramework\Headless.Permissions.Storage.EntityFramework.csproj" />
-    <ProjectReference Include="..\..\src\Headless.BuildingBlocks\Headless.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.OpenApi.Nswag\Headless.OpenApi.Nswag.csproj" />
   </ItemGroup>
 </Project>

@@ -17,6 +17,6 @@
     <PackageReference Include="Serilog.Sinks.File" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Base\Headless.Base.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
   </ItemGroup>
 </Project>
