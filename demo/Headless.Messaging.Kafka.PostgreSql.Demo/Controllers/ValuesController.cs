@@ -8,7 +8,11 @@ using Npgsql;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxPublisher producer, IOutboxTransaction outboxTransaction) : Controller
+public class ValuesController(
+    IOutboxPublisher producer,
+    IScheduledPublisher scheduler,
+    IOutboxTransaction outboxTransaction
+) : Controller
 {
     [Route("~/control/start")]
     public async Task<IActionResult> Start([FromServices] IBootstrapper bootstrapper)
@@ -27,7 +31,7 @@ public class ValuesController(IOutboxPublisher producer, IOutboxTransaction outb
     [Route("~/delay/{delaySeconds:int}")]
     public async Task<IActionResult> Delay(int delaySeconds)
     {
-        await producer.PublishDelayAsync(
+        await scheduler.PublishDelayAsync(
             TimeSpan.FromSeconds(delaySeconds),
             DateTime.Now,
             new PublishOptions { Topic = "sample.kafka.postgrsql" }

@@ -10,7 +10,11 @@ using NameGenerator.Generators;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxPublisher publisher, IOutboxTransaction outboxTransaction) : Controller
+public class ValuesController(
+    IOutboxPublisher producer,
+    IScheduledPublisher scheduler,
+    IOutboxTransaction outboxTransaction
+) : Controller
 {
     [Route("~/control/start")]
     public async Task<IActionResult> Start([FromServices] IBootstrapper bootstrapper)
@@ -29,7 +33,7 @@ public class ValuesController(IOutboxPublisher publisher, IOutboxTransaction out
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
     {
-        await publisher.PublishAsync(
+        await producer.PublishAsync(
             new Person { Id = 123, Name = "Bar" },
             new PublishOptions { Topic = "sample.rabbitmq.sqlserver" }
         );
@@ -40,7 +44,7 @@ public class ValuesController(IOutboxPublisher publisher, IOutboxTransaction out
     [Route("~/delay/{delaySeconds:int}")]
     public async Task<IActionResult> Delay(int delaySeconds)
     {
-        await publisher.PublishDelayAsync(
+        await scheduler.PublishDelayAsync(
             TimeSpan.FromSeconds(delaySeconds),
             new Person { Id = 123, Name = "Bar" },
             new PublishOptions { Topic = "sample.rabbitmq.sqlserver" }
@@ -63,7 +67,7 @@ public class ValuesController(IOutboxPublisher publisher, IOutboxTransaction out
                 transaction: (DbTransaction?)transaction.DbTransaction
             );
 
-            await publisher.PublishDelayAsync(
+            await scheduler.PublishDelayAsync(
                 TimeSpan.FromSeconds(delaySeconds),
                 new Person { Id = 123, Name = "Bar" },
                 new PublishOptions { Topic = "sample.rabbitmq.sqlserver" }
@@ -82,7 +86,7 @@ public class ValuesController(IOutboxPublisher publisher, IOutboxTransaction out
         {
             await using var transaction = await connection.BeginTransactionAsync(outboxTransaction, autoCommit: false);
 
-            await publisher.PublishAsync(person, new PublishOptions { Topic = "sample.rabbitmq.sqlserver" });
+            await producer.PublishAsync(person, new PublishOptions { Topic = "sample.rabbitmq.sqlserver" });
 
             await connection.ExecuteAsync(
                 "INSERT INTO Persons(Name,Age,CreateTime) VALUES(@Name,@Age, GETDATE())",
@@ -90,7 +94,7 @@ public class ValuesController(IOutboxPublisher publisher, IOutboxTransaction out
                 transaction: (DbTransaction?)transaction.DbTransaction
             );
 
-            await publisher.PublishDelayAsync(
+            await scheduler.PublishDelayAsync(
                 TimeSpan.FromSeconds(5),
                 person,
                 new PublishOptions { Topic = "sample.rabbitmq.sqlserver" }
@@ -101,7 +105,7 @@ public class ValuesController(IOutboxPublisher publisher, IOutboxTransaction out
 
         person.Name = new RealNameGenerator().Generate();
 
-        await publisher.PublishAsync(person, new PublishOptions { Topic = "sample.rabbitmq.sqlserver" });
+        await producer.PublishAsync(person, new PublishOptions { Topic = "sample.rabbitmq.sqlserver" });
 
         return Ok();
     }
@@ -113,7 +117,7 @@ public class ValuesController(IOutboxPublisher publisher, IOutboxTransaction out
         {
             dbContext.Persons.Add(new Person { Name = "ef.transaction" });
             await dbContext.SaveChangesAsync();
-            await publisher.PublishAsync(
+            await producer.PublishAsync(
                 new Person { Id = 123, Name = "Bar" },
                 new PublishOptions { Topic = "sample.rabbitmq.sqlserver" }
             );
@@ -136,7 +140,7 @@ public class ValuesController(IOutboxPublisher publisher, IOutboxTransaction out
 
             var message = TestMessage.Create($"This is message text created at {DateTime.Now:O}.");
 
-            await publisher.PublishAsync(message, new PublishOptions { Topic = typeof(TestMessage).FullName! });
+            await producer.PublishAsync(message, new PublishOptions { Topic = typeof(TestMessage).FullName! });
             await transaction.CommitAsync();
         }
 

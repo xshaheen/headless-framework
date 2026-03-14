@@ -23,7 +23,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var headers = new Headers();
+            var headers = new Confluent.Kafka.Headers();
 
             foreach (var header in message.Headers)
             {
