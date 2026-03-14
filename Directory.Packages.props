@@ -134,7 +134,7 @@
     <PackageVersion Include="NSwag.Annotations" Version="14.6.3" />
     <PackageVersion Include="NSwag.AspNetCore" Version="14.6.3" />
     <PackageVersion Include="Nito.AsyncEx" Version="5.1.2" />
-    <PackageVersion Include="Nuke.Common" Version="10.1.0" />
+
     <PackageVersion Include="OpenTelemetry" Version="1.15.0" />
     <PackageVersion Include="OpenTelemetry.Api" Version="1.15.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.InMemory" Version="1.15.0" />

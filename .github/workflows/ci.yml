@@ -7,9 +7,6 @@ on:
       - '.github/workflows/**'
       - 'src/**'
       - 'tests/**'
-      - 'build/**'
-      - 'build.ps1'
-      - 'build.sh'
       - 'Directory.*'
       - 'global.json'
       - 'headless-framework.slnx'
@@ -20,9 +17,6 @@ on:
       - '.github/workflows/**'
       - 'src/**'
       - 'tests/**'
-      - 'build/**'
-      - 'build.ps1'
-      - 'build.sh'
       - 'Directory.*'
       - 'global.json'
       - 'headless-framework.slnx'
@@ -43,8 +37,6 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   # Disable sending .NET CLI telemetry to Microsoft.
   DOTNET_CLI_TELEMETRY_OPTOUT: true
-  # Disable sending NUKE telemetry.
-  NUKE_TELEMETRY_OPTOUT: true
   # Set the build number in MinVer.
   MINVERBUILDMETADATA: build.${{github.run_number}}
   # Build Configuration
@@ -91,13 +83,11 @@ jobs:
         env:
           NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: ".NET Nuke Compile"
-        run: ./build.ps1 Compile -Configuration ${{ env.CONFIGURATION }}
-        shell: pwsh
+      - name: "Build"
+        run: dotnet build --configuration ${{ env.CONFIGURATION }}
 
-      - name: ".NET Nuke Pack"
-        run: ./build.ps1 Pack -Configuration ${{ env.CONFIGURATION }}
-        shell: pwsh
+      - name: "Pack"
+        run: dotnet pack --configuration ${{ env.CONFIGURATION }} --no-build --include-symbols --output ${{ env.PACKAGES_DIR }}
 
       - name: "Publish Artifacts"
         uses: actions/upload-artifact@v7

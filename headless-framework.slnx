@@ -279,7 +279,4 @@
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />
         <Project Path="tests/Headless.FluentValidation.Tests.Unit/Headless.FluentValidation.Tests.Unit.csproj" />
     </Folder>
-    <Project Path="build/_build.csproj">
-        <Build Project="false" />
-    </Project>
 </Solution>
