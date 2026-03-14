@@ -4,7 +4,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using Headers = Headless.Messaging.Messages.Headers;
+using Headers = Headless.Messaging.Headers;
 
 namespace Headless.Messaging.RabbitMq;
 

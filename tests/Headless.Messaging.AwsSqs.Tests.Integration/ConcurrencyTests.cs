@@ -8,7 +8,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using MessagingHeaders = Headless.Messaging.Messages.Headers;
+using MessagingHeaders = Headless.Messaging.Headers;
 using StringComparer = System.StringComparer;
 
 namespace Tests;

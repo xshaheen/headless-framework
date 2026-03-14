@@ -3,6 +3,7 @@
 using System.Reflection;
 using Amazon.SQS;
 using Amazon.SQS.Model;
+using Headless.Messaging;
 using Headless.Messaging.AwsSqs;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;

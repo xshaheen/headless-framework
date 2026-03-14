@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Retry;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Defines a strategy for calculating retry delays and determining retry eligibility for failed messages.

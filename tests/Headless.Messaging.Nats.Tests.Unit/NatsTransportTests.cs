@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NATS.Client;
 using NATS.Client.JetStream;
 using NSubstitute.ExceptionExtensions;
-using MessagingHeaders = Headless.Messaging.Messages.Headers;
+using MessagingHeaders = Headless.Messaging.Headers;
 using NatsPublishOptions = NATS.Client.JetStream.PublishOptions;
 
 namespace Tests;

@@ -1,4 +1,5 @@
-﻿using Headless.Messaging.Messages;
+﻿using Headless.Messaging;
+using Headless.Messaging.Messages;
 
 namespace Tests;
 

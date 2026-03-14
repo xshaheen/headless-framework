@@ -6,7 +6,7 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Tests.Capabilities;
 using Xunit;
-using MessagingHeaders = Headless.Messaging.Messages.Headers;
+using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
 

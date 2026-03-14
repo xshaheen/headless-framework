@@ -6,7 +6,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute.ExceptionExtensions;
-using MessagingHeaders = Headless.Messaging.Messages.Headers;
+using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
 

@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using RabbitMQ.Client.Exceptions;
-using MessagingHeaders = Headless.Messaging.Messages.Headers;
+using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
 

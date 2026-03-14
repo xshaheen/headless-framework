@@ -5,7 +5,7 @@ namespace Headless.Messaging;
 /// <summary>
 /// Configures convention-based topic naming and default consumer settings for messaging.
 /// </summary>
-public sealed partial class MessagingConventions
+public sealed class MessagingConventions
 {
     /// <summary>
     /// Gets or sets the topic naming convention to use when generating topic names from message types.
@@ -187,7 +187,7 @@ public sealed partial class MessagingConventions
             throw new ArgumentException("Value cannot be null or whitespace.", nameof(value));
         }
 
-        var builder = new System.Text.StringBuilder(value.Length);
+        var builder = new StringBuilder(value.Length);
         var previousWasSeparator = false;
 
         foreach (var c in value)

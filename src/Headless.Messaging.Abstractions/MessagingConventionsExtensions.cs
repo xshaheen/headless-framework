@@ -5,6 +5,7 @@ namespace Headless.Messaging;
 /// <summary>
 /// Extension methods for configuring <see cref="MessagingConventions"/>.
 /// </summary>
+[PublicAPI]
 public static class MessagingConventionsExtensions
 {
     /// <summary>

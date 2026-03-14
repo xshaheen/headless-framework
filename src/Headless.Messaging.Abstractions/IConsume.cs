@@ -19,21 +19,18 @@ namespace Headless.Messaging;
 /// <para>
 /// <strong>Example:</strong>
 /// <code>
-/// public sealed class OrderPlacedHandler : IConsume&lt;OrderPlacedEvent&gt;
+/// public sealed class OrderPlacedHandler(
+///     IOrderRepository orders,
+///     ILogger&lt;OrderPlacedHandler&gt; logger
+/// ) : IConsume&lt;OrderPlaced&gt;
 /// {
-///     private readonly IOrderRepository _orders;
-///     private readonly ILogger&lt;OrderPlacedHandler&gt; _logger;
-///
-///     public OrderPlacedHandler(IOrderRepository orders, ILogger&lt;OrderPlacedHandler&gt; logger)
+///     public async ValueTask Consume(
+///         ConsumeContext&lt;OrderPlaced&gt; context,
+///         CancellationToken cancellationToken
+///     )
 ///     {
-///         _orders = orders;
-///         _logger = logger;
-///     }
-///
-///     public async ValueTask Consume(ConsumeContext&lt;OrderPlacedEvent&gt; context, CancellationToken cancellationToken)
-///     {
-///         _logger.LogInformation("Processing order {OrderId}", context.Message.OrderId);
-///         await _orders.CreateAsync(context.Message, cancellationToken);
+///         logger.LogInformation("Processing order {OrderId}", context.Message.OrderId);
+///         await orders.CreateAsync(context.Message, cancellationToken);
 ///     }
 /// }
 /// </code>

@@ -1,6 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Messages;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Defines the standard header names used in messaging.

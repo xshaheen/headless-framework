@@ -43,32 +43,32 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
     /// <summary>
     /// Retrieves the unique message identifier from the message headers.
     /// </summary>
-    /// <returns>The message ID stored in the <see cref="Headless.Messaging.Messages.Headers.MessageId"/> header.</returns>
+    /// <returns>The message ID stored in the <see cref="Messaging.Headers.MessageId"/> header.</returns>
     /// <exception cref="KeyNotFoundException">Thrown if the MessageId header is not present.</exception>
     public string GetId()
     {
-        return Headers[Headless.Messaging.Messages.Headers.MessageId]!;
+        return Headers[Messaging.Headers.MessageId]!;
     }
 
     /// <summary>
     /// Retrieves the message name or topic from the message headers.
     /// </summary>
-    /// <returns>The message name stored in the <see cref="Headless.Messaging.Messages.Headers.MessageName"/> header.</returns>
+    /// <returns>The message name stored in the <see cref="Messaging.Headers.MessageName"/> header.</returns>
     /// <exception cref="KeyNotFoundException">Thrown if the MessageName header is not present.</exception>
     public string GetName()
     {
-        return Headers[Headless.Messaging.Messages.Headers.MessageName]!;
+        return Headers[Messaging.Headers.MessageName]!;
     }
 
     /// <summary>
     /// Attempts to retrieve the consumer group name from the message headers.
     /// </summary>
     /// <returns>
-    /// The consumer group name if present, or null if the <see cref="Headless.Messaging.Messages.Headers.Group"/> header is not set.
+    /// The consumer group name if present, or null if the <see cref="Messaging.Headers.Group"/> header is not set.
     /// </returns>
     public string? GetGroup()
     {
-        return Headers.TryGetValue(Headless.Messaging.Messages.Headers.Group, out var value) ? value : null;
+        return Headers.TryGetValue(Messaging.Headers.Group, out var value) ? value : null;
     }
 
     /// <summary>
@@ -76,11 +76,11 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
     /// The correlation ID links related messages in a message flow or saga pattern.
     /// </summary>
     /// <returns>
-    /// The correlation ID if present, or null if the <see cref="Headless.Messaging.Messages.Headers.CorrelationId"/> header is not set.
+    /// The correlation ID if present, or null if the <see cref="Messaging.Headers.CorrelationId"/> header is not set.
     /// </returns>
     public string? GetCorrelationId()
     {
-        return Headers.TryGetValue(Headless.Messaging.Messages.Headers.CorrelationId, out var value) ? value : null;
+        return Headers.TryGetValue(Messaging.Headers.CorrelationId, out var value) ? value : null;
     }
 
     /// <summary>
@@ -88,13 +88,11 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
     /// This ID identifies which application instance executed the message.
     /// </summary>
     /// <returns>
-    /// The execution instance ID if present, or null if the <see cref="Headless.Messaging.Messages.Headers.ExecutionInstanceId"/> header is not set.
+    /// The execution instance ID if present, or null if the <see cref="Messaging.Headers.ExecutionInstanceId"/> header is not set.
     /// </returns>
     public string? GetExecutionInstanceId()
     {
-        return Headers.TryGetValue(Headless.Messaging.Messages.Headers.ExecutionInstanceId, out var value)
-            ? value
-            : null;
+        return Headers.TryGetValue(Messaging.Headers.ExecutionInstanceId, out var value) ? value : null;
     }
 
     public bool Equals(TransportMessage other)

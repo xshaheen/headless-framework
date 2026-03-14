@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
+using Headless.Messaging;
 using Headless.Messaging.AwsSqs;
 using Headless.Messaging.Messages;
 using Headless.Testing.Tests;

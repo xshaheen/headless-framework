@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.InMemoryQueue;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -156,8 +157,8 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         // when - send a message through the shared queue
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            [Headless.Messaging.Messages.Headers.MessageId] = "test-id",
-            [Headless.Messaging.Messages.Headers.MessageName] = "shared-topic",
+            [Headers.MessageId] = "test-id",
+            [Headers.MessageName] = "shared-topic",
         };
         var message = new Headless.Messaging.Messages.TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
         _queue.Send(message);

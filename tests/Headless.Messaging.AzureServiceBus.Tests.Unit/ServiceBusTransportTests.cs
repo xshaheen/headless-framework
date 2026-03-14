@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Demo.Contracts.DomainEvents;
+using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Messages;
 using Microsoft.Extensions.Logging.Abstractions;

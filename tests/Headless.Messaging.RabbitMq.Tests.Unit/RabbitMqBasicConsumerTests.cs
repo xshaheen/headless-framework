@@ -7,7 +7,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using Headers = Headless.Messaging.Messages.Headers;
+using Headers = Headless.Messaging.Headers;
 
 namespace Tests;
 
