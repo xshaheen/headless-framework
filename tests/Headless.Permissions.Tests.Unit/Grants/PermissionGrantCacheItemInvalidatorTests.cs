@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Domain;
 using Headless.Permissions.Entities;
@@ -11,11 +12,12 @@ namespace Tests.Grants;
 public sealed class PermissionGrantCacheItemInvalidatorTests : TestBase
 {
     private readonly ICache<PermissionGrantCacheItem> _cache = Substitute.For<ICache<PermissionGrantCacheItem>>();
+    private readonly ICurrentTenant _currentTenant = Substitute.For<ICurrentTenant>();
     private readonly PermissionGrantCacheItemInvalidator _sut;
 
     public PermissionGrantCacheItemInvalidatorTests()
     {
-        _sut = new PermissionGrantCacheItemInvalidator(_cache);
+        _sut = new PermissionGrantCacheItemInvalidator(_cache, _currentTenant);
     }
 
     [Fact]
@@ -35,14 +37,16 @@ public sealed class PermissionGrantCacheItemInvalidatorTests : TestBase
         var expectedCacheKey = PermissionGrantCacheItem.CalculateCacheKey(
             entity.Name,
             entity.ProviderName,
-            entity.ProviderKey,
-            entity.TenantId
+            entity.ProviderKey
         );
+
+        _currentTenant.Change(entity.TenantId).Returns(Substitute.For<IDisposable>());
 
         // when
         await _sut.HandleAsync(eventData, AbortToken);
 
         // then
+        _currentTenant.Received(1).Change(entity.TenantId);
         await _cache.Received(1).RemoveAsync(expectedCacheKey, AbortToken);
     }
 
@@ -63,14 +67,16 @@ public sealed class PermissionGrantCacheItemInvalidatorTests : TestBase
         var expectedCacheKey = PermissionGrantCacheItem.CalculateCacheKey(
             entity.Name,
             entity.ProviderName,
-            entity.ProviderKey,
-            entity.TenantId
+            entity.ProviderKey
         );
+
+        _currentTenant.Change(null).Returns(Substitute.For<IDisposable>());
 
         // when
         await _sut.HandleAsync(eventData, AbortToken);
 
         // then
+        _currentTenant.Received(1).Change(null);
         await _cache.Received(1).RemoveAsync(expectedCacheKey, AbortToken);
     }
 }

@@ -6,16 +6,16 @@ namespace Headless.Permissions.Grants;
 
 public sealed class PermissionGrantCacheItem(bool? isGranted)
 {
-    private static readonly CompositeFormat _Format = CompositeFormat.Parse("permissions:t:{0},provider:{1}:{2},name:{3}");
+    private static readonly CompositeFormat _Format = CompositeFormat.Parse("permissions:provider:{0}:{1},name:{2}");
 
     /// <summary>
     /// True = granted, False = explicit denial, null = undefined (no cached record).
     /// </summary>
     public bool? IsGranted { get; } = isGranted;
 
-    public static string CalculateCacheKey(string name, string providerName, string? providerKey, string? tenantId)
+    public static string CalculateCacheKey(string name, string providerName, string? providerKey)
     {
-        return string.Format(CultureInfo.InvariantCulture, _Format, tenantId, providerName, providerKey, name);
+        return string.Format(CultureInfo.InvariantCulture, _Format, providerName, providerKey, name);
     }
 
     public static string? GetPermissionNameFormCacheKeyOrDefault(string cacheKey)
