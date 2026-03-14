@@ -14,9 +14,7 @@ Provides standardized interfaces for building reliable distributed messaging sys
 - **Runtime Subscriptions**: `IRuntimeSubscriber` for ephemeral broker-attached delegates with scoped DI
 - **Per-Dispatch Lifecycle Hooks**: `IConsumerLifecycle` runs around each scoped message delivery
 - **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
-- **Consumer Configuration**: `IMessagingBuilder` for deterministic assembly scanning, conventions, and manual consumer registration
 - **Delayed Publishing**: Schedule messages for future delivery
-- **Multi-Type Consumers**: Assembly scanning registers every `IConsume<T>` interface on the same consumer
 
 ## Installation
 
@@ -45,15 +43,12 @@ public sealed class OrderPlacedHandler(
     }
 }
 
-// Register consumers
+// Register consumers with Headless.Messaging.Core
 builder.Services.AddMessaging(options =>
 {
     options.SubscribeFromAssemblyContaining<Program>();
     options.WithTopicMapping<OrderPlacedEvent>("orders.placed");
 });
-
-// Explicit Subscribe<TConsumer>() is for single-message consumers.
-// Use SubscribeFromAssembly(...) when one consumer implements multiple IConsume<T> interfaces.
 
 // Publish with outbox (reliable delivery)
 public sealed class OrderService(IOutboxPublisher publisher)
@@ -131,10 +126,7 @@ No configuration required. This is an abstractions package. Implementations are 
 
 ## Dependencies
 
-- `Headless.Base`
-- `Headless.Checks`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-- `Microsoft.Extensions.Logging.Abstractions`
+- none beyond the .NET runtime surface
 
 ## Side Effects
 

@@ -6,12 +6,4 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging.Core" />
   </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
-    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
-  </ItemGroup>
 </Project>
