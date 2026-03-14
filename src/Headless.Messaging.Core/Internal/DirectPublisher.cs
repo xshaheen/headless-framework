@@ -23,16 +23,16 @@ internal sealed class DirectPublisher(
     private readonly ITransport _transport = transport;
     private readonly IMessagePublishRequestFactory _publishRequestFactory = publishRequestFactory;
 
-    public Task PublishAsync<T>(T? contentObj, PublishOptions? options = null, CancellationToken cancellationToken = default)
+    public Task PublishAsync<T>(
+        T? contentObj,
+        PublishOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
     {
         return _PublishCoreAsync(contentObj, options, cancellationToken);
     }
 
-    private async Task _PublishCoreAsync<T>(
-        T? contentObj,
-        PublishOptions? options,
-        CancellationToken cancellationToken
-    )
+    private async Task _PublishCoreAsync<T>(T? contentObj, PublishOptions? options, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 

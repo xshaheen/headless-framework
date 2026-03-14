@@ -264,10 +264,7 @@ public sealed class MinimalApiExceptionFilterTests : TestBase
         _ = await filter.InvokeAsync(context, next);
 
         // then
-        logger
-            .ReceivedCalls()
-            .Should()
-            .ContainSingle(call => _IsTimeoutDebugLog(call, exception));
+        logger.ReceivedCalls().Should().ContainSingle(call => _IsTimeoutDebugLog(call, exception));
     }
 
     #endregion

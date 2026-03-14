@@ -52,8 +52,7 @@ public sealed class PhoneNumber : IEquatable<PhoneNumber>
             return true;
         }
 
-        return CountryCode == other.CountryCode
-            && string.Equals(Number, other.Number, StringComparison.Ordinal);
+        return CountryCode == other.CountryCode && string.Equals(Number, other.Number, StringComparison.Ordinal);
     }
 
     public override bool Equals(object? obj) => Equals(obj as PhoneNumber);

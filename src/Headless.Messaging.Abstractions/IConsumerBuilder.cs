@@ -45,10 +45,10 @@ public interface IConsumerBuilder<TConsumer>
     /// <code>
     /// // Subscribe to versioned topic instead of default
     /// options.Subscribe&lt;OrderPlacedHandler&gt;()
-///     .Topic("orders.placed.v2");
-/// </code>
-/// </para>
-/// </remarks>
+    ///     .Topic("orders.placed.v2");
+    /// </code>
+    /// </para>
+    /// </remarks>
     IConsumerBuilder<TConsumer> Topic(string topic);
 
     /// <summary>
@@ -77,9 +77,9 @@ public interface IConsumerBuilder<TConsumer>
     /// <strong>Example:</strong>
     /// <code>
     /// options.Subscribe&lt;OrderPlacedHandler&gt;()
-///     .Topic("orders.placed")
-///     .Group("order-processing-service");
-/// </code>
+    ///     .Topic("orders.placed")
+    ///     .Group("order-processing-service");
+    /// </code>
     /// </para>
     /// </remarks>
     IConsumerBuilder<TConsumer> Group(string group);
@@ -115,16 +115,16 @@ public interface IConsumerBuilder<TConsumer>
     /// <code>
     /// // Process up to 10 messages concurrently
     /// options.Subscribe&lt;OrderPlacedHandler&gt;()
-///     .Topic("orders.placed")
-///     .Concurrency(10);
-///
-/// // Strictly sequential processing
-/// options.Subscribe&lt;PaymentHandler&gt;()
-///     .Topic("payments.process")
-///     .Concurrency(1);
-/// </code>
-/// </para>
-/// </remarks>
+    ///     .Topic("orders.placed")
+    ///     .Concurrency(10);
+    ///
+    /// // Strictly sequential processing
+    /// options.Subscribe&lt;PaymentHandler&gt;()
+    ///     .Topic("payments.process")
+    ///     .Concurrency(1);
+    /// </code>
+    /// </para>
+    /// </remarks>
     IConsumerBuilder<TConsumer> Concurrency(byte maxConcurrent);
 
     /// <summary>

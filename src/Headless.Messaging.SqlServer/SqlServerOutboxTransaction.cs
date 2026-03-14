@@ -254,7 +254,8 @@ public static class SqlServerTransactionExtensions
         CancellationToken cancellationToken = default
     )
     {
-        return dbConnection.BeginOutboxTransactionAsync(isolationLevel, transaction, autoCommit, cancellationToken)
+        return dbConnection
+            .BeginOutboxTransactionAsync(isolationLevel, transaction, autoCommit, cancellationToken)
             .AsTask();
     }
 }

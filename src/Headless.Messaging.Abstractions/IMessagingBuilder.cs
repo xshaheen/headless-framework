@@ -67,9 +67,9 @@ public interface IMessagingBuilder
     /// // - OrderCancelledHandler : IConsume&lt;OrderCancelled&gt;
     /// // - OrderConsumer : IConsume&lt;OrderPlaced&gt;, IConsume&lt;OrderCancelled&gt; (multi-type)
     /// options.SubscribeFromAssembly(typeof(Program).Assembly);
-/// </code>
-/// </para>
-/// </remarks>
+    /// </code>
+    /// </para>
+    /// </remarks>
     IMessagingBuilder SubscribeFromAssembly(Assembly assembly);
 
     /// <summary>
@@ -102,11 +102,11 @@ public interface IMessagingBuilder
     /// <strong>Example:</strong>
     /// <code>
     /// options.Subscribe&lt;OrderPlacedHandler&gt;()
-///     .Topic("orders.placed.v2") // Override convention-based topic
-///     .Concurrency(5); // Limit concurrent processing
-/// </code>
-/// </para>
-/// </remarks>
+    ///     .Topic("orders.placed.v2") // Override convention-based topic
+    ///     .Concurrency(5); // Limit concurrent processing
+    /// </code>
+    /// </para>
+    /// </remarks>
     IConsumerBuilder<TConsumer> Subscribe<TConsumer>()
         where TConsumer : class;
 
@@ -139,14 +139,14 @@ public interface IMessagingBuilder
     /// <code>
     /// // Register consumer and implicitly map OrderPlaced → "orders.placed"
     /// options.Subscribe&lt;OrderPlacedHandler&gt;("orders.placed")
-///     .Concurrency(5);
-///
-/// // Later in code - type-safe publishing works automatically:
-/// await publisher.PublishAsync(new OrderPlaced { OrderId = 123 });
-/// // ^ automatically publishes to "orders.placed"
-/// </code>
-/// </para>
-/// </remarks>
+    ///     .Concurrency(5);
+    ///
+    /// // Later in code - type-safe publishing works automatically:
+    /// await publisher.PublishAsync(new OrderPlaced { OrderId = 123 });
+    /// // ^ automatically publishes to "orders.placed"
+    /// </code>
+    /// </para>
+    /// </remarks>
     IConsumerBuilder<TConsumer> Subscribe<TConsumer>(string topic)
         where TConsumer : class;
 
@@ -202,15 +202,15 @@ public interface IMessagingBuilder
     /// <strong>Example:</strong>
     /// <code>
     /// options.UseConventions(c =>
-/// {
-///     c.UseKebabCaseTopics(); // OrderCreated → order-created
-///     c.WithTopicPrefix("prod."); // → prod.order-created
-///     c.WithTopicSuffix(".v1"); // → prod.order-created.v1
-///     c.UseApplicationId("my-service");
-///     c.UseVersion("v1");
-/// });
-/// </code>
-/// </para>
-/// </remarks>
+    /// {
+    ///     c.UseKebabCaseTopics(); // OrderCreated → order-created
+    ///     c.WithTopicPrefix("prod."); // → prod.order-created
+    ///     c.WithTopicSuffix(".v1"); // → prod.order-created.v1
+    ///     c.UseApplicationId("my-service");
+    ///     c.UseVersion("v1");
+    /// });
+    /// </code>
+    /// </para>
+    /// </remarks>
     IMessagingBuilder UseConventions(Action<MessagingConventions> configure);
 }

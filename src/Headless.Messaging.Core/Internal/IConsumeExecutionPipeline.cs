@@ -19,8 +19,10 @@ internal interface IConsumeExecutionPipeline
     );
 }
 
-internal sealed class ConsumeExecutionPipeline(IServiceProvider serviceProvider, IRuntimeConsumerRegistry runtimeRegistry)
-    : IConsumeExecutionPipeline
+internal sealed class ConsumeExecutionPipeline(
+    IServiceProvider serviceProvider,
+    IRuntimeConsumerRegistry runtimeRegistry
+) : IConsumeExecutionPipeline
 {
     private readonly ConcurrentDictionary<Type, Delegate> _compiledConsumeContextFactories = new();
 
@@ -107,10 +109,8 @@ internal sealed class ConsumeExecutionPipeline(IServiceProvider serviceProvider,
     private object _BuildConsumeContext(object messageInstance, MediumMessage mediumMessage, Type messageType)
     {
         var factory =
-            (Func<object, MediumMessage, object>)_compiledConsumeContextFactories.GetOrAdd(
-                messageType,
-                _CompileFactory
-            );
+            (Func<object, MediumMessage, object>)
+                _compiledConsumeContextFactories.GetOrAdd(messageType, _CompileFactory);
 
         return factory(messageInstance, mediumMessage);
     }
@@ -223,10 +223,8 @@ internal sealed class ConsumeExecutionPipeline(IServiceProvider serviceProvider,
             )
             .MakeGenericMethod(messageType);
 
-        var task = (Task)dispatchMethod.Invoke(
-            dispatcher,
-            [serviceProvider, descriptor, consumeContext, cancellationToken]
-        )!;
+        var task = (Task)
+            dispatchMethod.Invoke(dispatcher, [serviceProvider, descriptor, consumeContext, cancellationToken])!;
         await task.ConfigureAwait(false);
     }
 }

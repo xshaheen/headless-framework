@@ -4,6 +4,7 @@ using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+
 namespace Headless.Messaging.PostgreSql;
 
 /// <summary>
@@ -31,7 +32,8 @@ internal static class EntityFrameworkTransactionExtensions
         CancellationToken cancellationToken
     )
     {
-        transaction.DbTransaction = await database.BeginTransactionAsync(isolationLevel, cancellationToken)
+        transaction.DbTransaction = await database
+            .BeginTransactionAsync(isolationLevel, cancellationToken)
             .ConfigureAwait(false);
         transaction.AutoCommit = autoCommit;
 

@@ -148,10 +148,7 @@ public sealed class TypeSafePublishApiTests
     [Fact]
     public void should_not_expose_mutable_outbox_publisher_state()
     {
-        var publicPropertyNames = typeof(IOutboxPublisher)
-            .GetProperties()
-            .Select(property => property.Name)
-            .ToList();
+        var publicPropertyNames = typeof(IOutboxPublisher).GetProperties().Select(property => property.Name).ToList();
 
         publicPropertyNames.Should().NotContain("ServiceProvider");
         publicPropertyNames.Should().NotContain("Transaction");

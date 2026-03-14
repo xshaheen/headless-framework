@@ -139,10 +139,8 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
         }
     }
 
-    private sealed class ScopedExecutionFilter(
-        ScopedExecutionRecorder recorder,
-        ScopedExecutionDependency dependency
-    ) : ConsumeFilter
+    private sealed class ScopedExecutionFilter(ScopedExecutionRecorder recorder, ScopedExecutionDependency dependency)
+        : ConsumeFilter
     {
         public override ValueTask OnSubscribeExecutingAsync(ExecutingContext context)
         {
@@ -151,10 +149,8 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
         }
     }
 
-    private sealed class ScopedClassConsumer(
-        ScopedExecutionRecorder recorder,
-        ScopedExecutionDependency dependency
-    ) : IConsume<ScopedMessage>
+    private sealed class ScopedClassConsumer(ScopedExecutionRecorder recorder, ScopedExecutionDependency dependency)
+        : IConsume<ScopedMessage>
     {
         public ValueTask Consume(ConsumeContext<ScopedMessage> context, CancellationToken cancellationToken)
         {

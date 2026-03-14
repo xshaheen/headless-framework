@@ -12,9 +12,7 @@ container
     .AddMessaging(x =>
     {
         x.Subscribe<EventConsumer>().Topic("sample.console.showtime");
-
-        //console app does not support dashboard
-
+        // Console app does not support dashboard
         x.UseInMemoryStorage();
         x.UseInMemoryMessageQueue();
     })
@@ -32,11 +30,7 @@ _ = Task.Run(
             await Task.Delay(2000, cts.Token);
 
             await sp.GetRequiredService<IOutboxPublisher>()
-                .PublishAsync(
-                    DateTime.Now,
-                    new PublishOptions { Topic = "sample.console.showtime" },
-                    cts.Token
-                );
+                .PublishAsync(DateTime.Now, new PublishOptions { Topic = "sample.console.showtime" }, cts.Token);
         }
     },
     cts.Token

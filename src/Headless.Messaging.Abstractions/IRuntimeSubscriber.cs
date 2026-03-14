@@ -77,8 +77,7 @@ public sealed class RuntimeSubscriptionOptions
 /// <summary>
 /// Represents an attached runtime subscription registration.
 /// </summary>
-public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe)
-    : IAsyncDisposable
+public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAsyncDisposable
 {
     private int _disposed;
 
@@ -164,7 +163,7 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe)
 public interface IRuntimeSubscriber
 {
     /// <summary>
-     /// Attaches a runtime handler for the specified message type.
+    /// Attaches a runtime handler for the specified message type.
     /// </summary>
     /// <typeparam name="TMessage">The message type handled by the runtime delegate.</typeparam>
     /// <param name="handler">The runtime delegate to execute for matching messages.</param>

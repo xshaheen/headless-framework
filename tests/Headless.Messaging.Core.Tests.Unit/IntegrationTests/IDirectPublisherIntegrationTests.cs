@@ -236,11 +236,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // when
         await directPublisher.PublishAsync(
             new DirectTestMessage("header-test"),
-            new PublishOptions
-            {
-                Headers = customHeaders,
-                CorrelationId = "correlation-123",
-            },
+            new PublishOptions { Headers = customHeaders, CorrelationId = "correlation-123" },
             AbortToken
         );
 
@@ -282,10 +278,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // when - send multiple messages
         for (var i = 0; i < messageCount; i++)
         {
-            await directPublisher.PublishAsync(
-                new DirectTestMessage($"message-{i}"),
-                cancellationToken: AbortToken
-            );
+            await directPublisher.PublishAsync(new DirectTestMessage($"message-{i}"), cancellationToken: AbortToken);
         }
 
         // Wait for all messages

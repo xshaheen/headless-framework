@@ -389,14 +389,7 @@ public class MessagingOptions : IMessagingBuilder
         var finalTopic = ApplyTopicNamePrefix(resolvedTopic);
         var finalGroup = group ?? conventions.GetGroupName(finalHandlerId);
 
-        return new ConsumerMetadata(
-            messageType,
-            consumerType,
-            finalTopic,
-            finalGroup,
-            concurrency,
-            finalHandlerId
-        );
+        return new ConsumerMetadata(messageType, consumerType, finalTopic, finalGroup, concurrency, finalHandlerId);
     }
 
     /// <summary>

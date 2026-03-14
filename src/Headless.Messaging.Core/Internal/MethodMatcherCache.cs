@@ -9,8 +9,9 @@ namespace Headless.Messaging.Internal;
 public class MethodMatcherCache(IConsumerServiceSelector selector)
 {
     private readonly Lock _lock = new();
-    private ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> _entries =
-        new(StringComparer.Ordinal);
+    private ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> _entries = new(
+        StringComparer.Ordinal
+    );
 
     private ConcurrentDictionary<string, byte> _groupConcurrent = new(StringComparer.Ordinal);
 

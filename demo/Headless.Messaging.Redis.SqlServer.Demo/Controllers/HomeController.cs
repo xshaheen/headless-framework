@@ -10,10 +10,7 @@ public class HomeController(IOutboxPublisher publisher) : ControllerBase
     [HttpGet]
     public async Task Publish([FromQuery] string message = "test-message")
     {
-        await publisher.PublishAsync(
-            new Person { Age = 11, Name = "James" },
-            new PublishOptions { Topic = message }
-        );
+        await publisher.PublishAsync(new Person { Age = 11, Name = "James" }, new PublishOptions { Topic = message });
     }
 }
 

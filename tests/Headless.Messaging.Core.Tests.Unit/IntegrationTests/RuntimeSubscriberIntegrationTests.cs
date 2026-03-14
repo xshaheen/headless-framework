@@ -23,7 +23,11 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             AbortToken
         );
 
-        await publisher.PublishAsync(new RuntimeMessage("first"), new PublishOptions { Topic = "runtime.integration" }, AbortToken);
+        await publisher.PublishAsync(
+            new RuntimeMessage("first"),
+            new PublishOptions { Topic = "runtime.integration" },
+            AbortToken
+        );
 
         var consumed = await probe.WaitForMessageAsync(AbortToken);
 

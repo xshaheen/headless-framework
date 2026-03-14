@@ -359,10 +359,7 @@ public sealed class MvcApiExceptionFilterTests : TestBase
         await filter.OnExceptionAsync(context);
 
         // then
-        logger
-            .ReceivedCalls()
-            .Should()
-            .Contain(call => _IsTimeoutDebugLog(call, exception));
+        logger.ReceivedCalls().Should().Contain(call => _IsTimeoutDebugLog(call, exception));
     }
 
     #endregion

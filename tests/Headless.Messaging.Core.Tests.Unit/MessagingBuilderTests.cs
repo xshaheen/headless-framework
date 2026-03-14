@@ -348,9 +348,7 @@ public sealed class MessagingBuilderTests
             });
 
         // then
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*implements multiple IConsume<T> interfaces*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*implements multiple IConsume<T> interfaces*");
     }
 
     [Fact]
@@ -367,9 +365,7 @@ public sealed class MessagingBuilderTests
             });
 
         // then
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*implements multiple IConsume<T> interfaces*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*implements multiple IConsume<T> interfaces*");
     }
 
     [Fact]

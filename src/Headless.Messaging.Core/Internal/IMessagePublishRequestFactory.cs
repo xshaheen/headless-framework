@@ -70,9 +70,10 @@ internal sealed class MessagePublishRequestFactory(
         TimeSpan? delayTime
     )
     {
-        var headers = options?.Headers != null
-            ? new Dictionary<string, string?>(options.Headers, StringComparer.Ordinal)
-            : new Dictionary<string, string?>(StringComparer.Ordinal);
+        var headers =
+            options?.Headers != null
+                ? new Dictionary<string, string?>(options.Headers, StringComparer.Ordinal)
+                : new Dictionary<string, string?>(StringComparer.Ordinal);
 
         _ValidateCustomHeaders(headers);
 
@@ -157,7 +158,6 @@ internal sealed class MessagePublishRequestFactory(
                 + $"or set {nameof(PublishOptions)}.{nameof(PublishOptions.Topic)} explicitly."
         );
     }
-
 }
 
 internal sealed class PreparedPublishMessage

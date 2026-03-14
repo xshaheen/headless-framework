@@ -25,7 +25,11 @@ internal sealed class OutboxPublisher(
     private readonly IMessagePublishRequestFactory _publishRequestFactory = publishRequestFactory;
     private readonly IOutboxTransactionAccessor _transactionAccessor = transactionAccessor;
 
-    public Task PublishAsync<T>(T? contentObj, PublishOptions? options = null, CancellationToken cancellationToken = default)
+    public Task PublishAsync<T>(
+        T? contentObj,
+        PublishOptions? options = null,
+        CancellationToken cancellationToken = default
+    )
     {
         return _PublishInternalAsync(_publishRequestFactory.Create(contentObj, options), cancellationToken);
     }
@@ -40,10 +44,7 @@ internal sealed class OutboxPublisher(
         return _PublishInternalAsync(_publishRequestFactory.Create(contentObj, options, delayTime), cancellationToken);
     }
 
-    private async Task _PublishInternalAsync(
-        PreparedPublishMessage publishRequest,
-        CancellationToken cancellationToken
-    )
+    private async Task _PublishInternalAsync(PreparedPublishMessage publishRequest, CancellationToken cancellationToken)
     {
         long? tracingTimestamp = null;
         try

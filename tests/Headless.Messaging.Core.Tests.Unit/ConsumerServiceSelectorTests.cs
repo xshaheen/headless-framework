@@ -93,7 +93,10 @@ public sealed class ConsumerServiceSelectorTests
         // then
         var descriptor = candidates[0];
         var conventions = new MessagingConventions().UseApplicationId("default-app").UseVersion("v1");
-        var handlerId = MessagingConventions.GetDefaultHandlerId(typeof(SelectorTestConsumer), typeof(SelectorTestMessage));
+        var handlerId = MessagingConventions.GetDefaultHandlerId(
+            typeof(SelectorTestConsumer),
+            typeof(SelectorTestMessage)
+        );
         descriptor.GroupName.Should().Be(conventions.GetGroupName(handlerId));
     }
 

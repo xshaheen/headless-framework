@@ -52,8 +52,8 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         _serviceProvider = serviceProvider;
         _messagingOptions = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         _logger = serviceProvider.GetRequiredService<ILogger<ConsumerServiceSelector>>();
-        _runtimeConsumerRegistry = serviceProvider.GetService<IRuntimeConsumerRegistry>()
-            ?? EmptyRuntimeConsumerRegistry.Instance;
+        _runtimeConsumerRegistry =
+            serviceProvider.GetService<IRuntimeConsumerRegistry>() ?? EmptyRuntimeConsumerRegistry.Instance;
         _cacheList = new ConcurrentDictionary<string, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>>(
             StringComparer.Ordinal
         );

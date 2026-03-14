@@ -22,17 +22,22 @@ public sealed class RuntimeSubscriberTests : TestBase
 
         var handler = provider.GetRequiredService<NamedRuntimeHandler>();
 
-        var handle = await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(handler.HandleAsync, cancellationToken: AbortToken);
+        var handle = await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
+            handler.HandleAsync,
+            cancellationToken: AbortToken
+        );
 
         handle.IsAttached.Should().BeTrue();
         handle.Topic.Should().Be(conventions.GetTopicName(typeof(RuntimeMessage)));
-        handle.HandlerId.Should().Be(
-            MessagingConventions.GetDefaultRuntimeHandlerId(
-                typeof(NamedRuntimeHandler),
-                nameof(NamedRuntimeHandler.HandleAsync),
-                typeof(RuntimeMessage)
-            )
-        );
+        handle
+            .HandlerId.Should()
+            .Be(
+                MessagingConventions.GetDefaultRuntimeHandlerId(
+                    typeof(NamedRuntimeHandler),
+                    nameof(NamedRuntimeHandler.HandleAsync),
+                    typeof(RuntimeMessage)
+                )
+            );
         handle.Group.Should().Be(conventions.GetGroupName(handle.HandlerId));
         handle.SubscriptionId.Should().NotBeNullOrEmpty();
 
@@ -113,18 +118,19 @@ public sealed class RuntimeSubscriberTests : TestBase
         var cache = provider.GetRequiredService<MethodMatcherCache>();
         var handlers = provider.GetServices<ConcurrentRuntimeHandler>().ToArray();
 
-        var subscribeTasks = handlers.Select((handler, index) =>
-            runtimeSubscriber
-                .SubscribeAsync<RuntimeMessage>(
-                    handler.HandleAsync,
-                    new RuntimeSubscriptionOptions
-                    {
-                        Topic = $"runtime.concurrent.{index}",
-                        Group = "runtime.concurrent",
-                    },
-                    AbortToken
-                )
-                .AsTask()
+        var subscribeTasks = handlers.Select(
+            (handler, index) =>
+                runtimeSubscriber
+                    .SubscribeAsync<RuntimeMessage>(
+                        handler.HandleAsync,
+                        new RuntimeSubscriptionOptions
+                        {
+                            Topic = $"runtime.concurrent.{index}",
+                            Group = "runtime.concurrent",
+                        },
+                        AbortToken
+                    )
+                    .AsTask()
         );
 
         var handles = await Task.WhenAll(subscribeTasks);

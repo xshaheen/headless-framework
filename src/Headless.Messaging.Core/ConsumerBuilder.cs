@@ -88,14 +88,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
 
         _registry.Update(
             m => m.ConsumerType == typeof(TConsumer) && m.MessageType == _messageType,
-            _parent.CreateConsumerMetadata(
-                typeof(TConsumer),
-                _messageType,
-                _topic,
-                _group,
-                _concurrency,
-                _handlerId
-            )
+            _parent.CreateConsumerMetadata(typeof(TConsumer), _messageType, _topic, _group, _concurrency, _handlerId)
         );
     }
 }

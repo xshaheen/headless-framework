@@ -83,7 +83,8 @@ internal sealed class SubscribeInvoker(ISerializer serializer, IConsumeExecution
             throw new InvalidOperationException($"Failed to deserialize message of type {messageType.Name}");
         }
 
-        return await executionPipeline.ExecuteAsync(context, messageInstance, messageType, cancellationToken)
+        return await executionPipeline
+            .ExecuteAsync(context, messageInstance, messageType, cancellationToken)
             .ConfigureAwait(false);
     }
 }

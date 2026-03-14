@@ -2,6 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
+
 namespace Headless.Messaging.Transactions;
 
 /// <summary>

@@ -243,7 +243,11 @@ public sealed partial class MessagingConventions
 
                 if (
                     hasPrevious
-                    && (char.IsLower(previous) || char.IsDigit(previous) || (char.IsUpper(previous) && hasNext && char.IsLower(next)))
+                    && (
+                        char.IsLower(previous)
+                        || char.IsDigit(previous)
+                        || (char.IsUpper(previous) && hasNext && char.IsLower(next))
+                    )
                 )
                 {
                     builder.Append('-');

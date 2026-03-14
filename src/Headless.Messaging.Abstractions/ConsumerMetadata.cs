@@ -27,7 +27,8 @@ public sealed record ConsumerMetadata(
     /// <summary>
     /// Gets the resolved handler identity used by the runtime when an explicit id is not supplied.
     /// </summary>
-    public string ResolvedHandlerId => string.IsNullOrWhiteSpace(HandlerId)
-        ? MessagingConventions.GetDefaultHandlerId(ConsumerType, MessageType)
-        : HandlerId!;
+    public string ResolvedHandlerId =>
+        string.IsNullOrWhiteSpace(HandlerId)
+            ? MessagingConventions.GetDefaultHandlerId(ConsumerType, MessageType)
+            : HandlerId!;
 }

@@ -186,10 +186,7 @@ public sealed class NatsConnectionPoolTests : TestBase
         using var pool = new NatsConnectionPool(mockLogger, _options);
 
         // then
-        mockLogger
-            .ReceivedCalls()
-            .Should()
-            .ContainSingle(call => _IsDebugLog(call));
+        mockLogger.ReceivedCalls().Should().ContainSingle(call => _IsDebugLog(call));
     }
 
     private static bool _IsDebugLog(ICall call)

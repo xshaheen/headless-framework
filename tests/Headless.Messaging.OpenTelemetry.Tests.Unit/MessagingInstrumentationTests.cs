@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.OpenTelemetry;
 using Headless.Messaging.Diagnostics;
+using Headless.Messaging.OpenTelemetry;
 using Headless.Testing.Tests;
 using DiagnosticListener = Headless.Messaging.OpenTelemetry.DiagnosticListener;
 
@@ -83,11 +83,14 @@ public sealed class MessagingInstrumentationTests : TestBase
     public void should_preserve_public_diagnostic_contract_names()
     {
         MessageDiagnosticListenerNames.DiagnosticListenerName.Should().Be("MessagingDiagnosticListener");
-        MessageDiagnosticListenerNames.BeforePublishMessageStore.Should()
+        MessageDiagnosticListenerNames
+            .BeforePublishMessageStore.Should()
             .Be("Headless.Messages.WritePublishMessageStoreBefore");
-        MessageDiagnosticListenerNames.AfterPublishMessageStore.Should()
+        MessageDiagnosticListenerNames
+            .AfterPublishMessageStore.Should()
             .Be("Headless.Messages.WritePublishMessageStoreAfter");
-        MessageDiagnosticListenerNames.ErrorPublishMessageStore.Should()
+        MessageDiagnosticListenerNames
+            .ErrorPublishMessageStore.Should()
             .Be("Headless.Messages.WritePublishMessageStoreError");
         MessageDiagnosticListenerNames.BeforePublish.Should().Be("Headless.Messages.WritePublishBefore");
         MessageDiagnosticListenerNames.AfterPublish.Should().Be("Headless.Messages.WritePublishAfter");
@@ -95,9 +98,15 @@ public sealed class MessagingInstrumentationTests : TestBase
         MessageDiagnosticListenerNames.BeforeConsume.Should().Be("Headless.Messages.WriteConsumeBefore");
         MessageDiagnosticListenerNames.AfterConsume.Should().Be("Headless.Messages.WriteConsumeAfter");
         MessageDiagnosticListenerNames.ErrorConsume.Should().Be("Headless.Messages.WriteConsumeError");
-        MessageDiagnosticListenerNames.BeforeSubscriberInvoke.Should().Be("Headless.Messages.WriteSubscriberInvokeBefore");
-        MessageDiagnosticListenerNames.AfterSubscriberInvoke.Should().Be("Headless.Messages.WriteSubscriberInvokeAfter");
-        MessageDiagnosticListenerNames.ErrorSubscriberInvoke.Should().Be("Headless.Messages.WriteSubscriberInvokeError");
+        MessageDiagnosticListenerNames
+            .BeforeSubscriberInvoke.Should()
+            .Be("Headless.Messages.WriteSubscriberInvokeBefore");
+        MessageDiagnosticListenerNames
+            .AfterSubscriberInvoke.Should()
+            .Be("Headless.Messages.WriteSubscriberInvokeAfter");
+        MessageDiagnosticListenerNames
+            .ErrorSubscriberInvoke.Should()
+            .Be("Headless.Messages.WriteSubscriberInvokeError");
         MessageDiagnosticListenerNames.MetricListenerName.Should().Be("Headless.Messages.EventCounter");
         MessageDiagnosticListenerNames.PublishedPerSec.Should().Be("published-per-second");
         MessageDiagnosticListenerNames.ConsumePerSec.Should().Be("consume-per-second");

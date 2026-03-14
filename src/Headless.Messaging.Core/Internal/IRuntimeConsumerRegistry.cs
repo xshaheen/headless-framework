@@ -245,9 +245,7 @@ internal sealed class RuntimeConsumerRegistry(
     private string _ResolveGroup(string handlerId, string? explicitGroup)
     {
         _options.Conventions.Version = _options.Version;
-        return string.IsNullOrWhiteSpace(explicitGroup)
-            ? _options.Conventions.GetGroupName(handlerId)
-            : explicitGroup!;
+        return string.IsNullOrWhiteSpace(explicitGroup) ? _options.Conventions.GetGroupName(handlerId) : explicitGroup!;
     }
 
     private static byte _ResolveConcurrency(byte concurrency)
@@ -260,7 +258,12 @@ internal sealed class RuntimeConsumerRegistry(
         return concurrency;
     }
 
-    private static string _ResolveHandlerId(TypeInfo? declaringType, string methodName, Type messageType, string? explicitHandlerId)
+    private static string _ResolveHandlerId(
+        TypeInfo? declaringType,
+        string methodName,
+        Type messageType,
+        string? explicitHandlerId
+    )
     {
         if (!string.IsNullOrWhiteSpace(explicitHandlerId))
         {
@@ -338,7 +341,11 @@ internal sealed class RuntimeConsumerRegistry(
         : IRuntimeMessageHandlerInvoker
         where TMessage : class
     {
-        public ValueTask InvokeAsync(object consumeContext, IServiceProvider services, CancellationToken cancellationToken)
+        public ValueTask InvokeAsync(
+            object consumeContext,
+            IServiceProvider services,
+            CancellationToken cancellationToken
+        )
         {
             return handler((ConsumeContext<TMessage>)consumeContext, services, cancellationToken);
         }

@@ -37,7 +37,8 @@ internal sealed class OutboxTransactionHolder
 /// </remarks>
 /// <param name="dispatcher">The dispatcher used to enqueue messages for publishing and execution.</param>
 public abstract class OutboxTransaction(IDispatcher dispatcher, IOutboxTransactionAccessor accessor)
-    : IOutboxTransaction, IOutboxMessageBuffer
+    : IOutboxTransaction,
+        IOutboxMessageBuffer
 {
     private readonly ConcurrentQueue<MediumMessage> _bufferList = new();
     private readonly IOutboxTransactionAccessor _accessor = accessor;
