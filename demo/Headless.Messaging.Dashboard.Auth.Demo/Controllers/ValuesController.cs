@@ -13,7 +13,10 @@ public sealed class ValuesController(IOutboxPublisher publisher) : Controller
     [Route("publish")]
     public async Task<IActionResult> Publish()
     {
-        await publisher.PublishAsync(_MyTopic, new Person { Id = Random.Shared.Next(1, 100), Name = "Bar" });
+        await publisher.PublishAsync(
+            new Person { Id = Random.Shared.Next(1, 100), Name = "Bar" },
+            new PublishOptions { Topic = _MyTopic }
+        );
 
         return Ok();
     }
@@ -29,7 +32,15 @@ public sealed class PersonConsumer(ILogger<PersonConsumer> logger) : IConsume<Va
 {
     public ValueTask Consume(ConsumeContext<ValuesController.Person> context, CancellationToken cancellationToken)
     {
-        logger.LogInformation("Subscribe Invoked {Topic} {Person}", context.Topic, context.Message);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "Subscribe Invoked {Topic} {PersonId} {PersonName}",
+                context.Topic,
+                context.Message.Id,
+                context.Message.Name
+            );
+        }
         return ValueTask.CompletedTask;
     }
 }

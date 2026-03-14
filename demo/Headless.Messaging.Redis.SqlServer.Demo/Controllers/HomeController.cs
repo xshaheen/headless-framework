@@ -10,7 +10,10 @@ public class HomeController(IOutboxPublisher publisher) : ControllerBase
     [HttpGet]
     public async Task Publish([FromQuery] string message = "test-message")
     {
-        await publisher.PublishAsync(message, new Person { Age = 11, Name = "James" });
+        await publisher.PublishAsync(
+            new Person { Age = 11, Name = "James" },
+            new PublishOptions { Topic = message }
+        );
     }
 }
 
@@ -27,11 +30,15 @@ public sealed class PersonConsumer(ILogger<PersonConsumer> logger) : IConsume<Pe
 {
     public ValueTask Consume(ConsumeContext<Person> context, CancellationToken cancellationToken)
     {
-        logger.LogInformation(
-            "{ContextTopic} subscribed with value --> {ContextMessage}",
-            context.Topic,
-            context.Message
-        );
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "{ContextTopic} subscribed with value --> Name:{Name}, Age:{Age}",
+                context.Topic,
+                context.Message.Name,
+                context.Message.Age
+            );
+        }
 
         return ValueTask.CompletedTask;
     }

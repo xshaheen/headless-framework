@@ -1206,7 +1206,10 @@ public sealed class RedisCache(
 
         if (expiredValues > 0)
         {
-            _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expiredValues, key);
+            if (_logger.IsEnabled(LogLevel.Trace))
+            {
+                _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expiredValues, key);
+            }
         }
     }
 

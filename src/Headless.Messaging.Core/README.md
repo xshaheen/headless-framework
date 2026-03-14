@@ -1,6 +1,6 @@
 # Headless.Messaging.Core
 
-Core implementation of the type-safe messaging system with outbox pattern, message processing, and consumer lifecycle management.
+Core implementation of the type-safe messaging system with outbox pattern, message processing, and per-dispatch consumer lifecycle management.
 
 ## Problem Solved
 
@@ -9,7 +9,9 @@ Provides the foundational runtime for reliable distributed messaging with transa
 ## Key Features
 
 - **Outbox Publisher**: Transactional message publishing with database consistency
-- **Consumer Management**: Automatic registration, invocation, and lifecycle handling
+- **Unified Publish Contract**: `IDirectPublisher` and `IOutboxPublisher` share the same `PublishAsync(message, options, ct)` surface
+- **Consumer Management**: Automatic registration, invocation, and per-dispatch lifecycle handling
+- **Runtime Delegate Support**: Broker-attached function handlers with scoped DI and the same consume pipeline as class handlers
 - **Message Processing**: Retry processor, delayed message scheduler, transport health checks
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers
@@ -25,11 +27,17 @@ dotnet add package Headless.Messaging.Core
 
 ```csharp
 // Register messaging with storage and transport
-builder.Services.AddMessages(options =>
+builder.Services.AddMessaging(options =>
 {
     // Core configuration
     options.SucceedMessageExpiredAfter = 24 * 3600;
     options.FailedRetryCount = 50;
+    options.UseConventions(c =>
+    {
+        c.UseKebabCaseTopics();
+        c.UseApplicationId("ordering-api");
+        c.UseVersion("v1");
+    });
 
     // Add storage (required)
     options.UsePostgreSql("connection_string");
@@ -42,7 +50,7 @@ builder.Services.AddMessages(options =>
     });
 
     // Register consumers
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 
 // Publish messages with outbox (reliable delivery)
@@ -50,11 +58,11 @@ public sealed class OrderService(IOutboxPublisher publisher, IOutboxTransaction 
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
     {
-        using (transaction.Begin())
+        await using (var dbTransaction = await dbContext.Database.BeginTransactionAsync(transaction, autoCommit: false, ct))
         {
-            // Database changes and message publish are atomic
-            await publisher.PublishAsync("orders.placed", order, cancellationToken: ct);
-            await transaction.CommitAsync(ct);
+            await publisher.PublishAsync(order, new PublishOptions { Topic = "orders.placed" }, ct);
+            await dbContext.SaveChangesAsync(ct);
+            await dbTransaction.CommitAsync(ct);
         }
     }
 }
@@ -69,6 +77,15 @@ public sealed class MetricsService(IDirectPublisher publisher)
     }
 }
 ```
+
+## Defaults And Telemetry
+
+- `AddMessaging(...)` is the primary DI entry point.
+- `SubscribeFromAssemblyContaining<T>()` and `Subscribe<T>()` are the primary registration APIs.
+- topic and group defaults are deterministic; duplicate registrations fail fast by default.
+- direct publish, outbox publish, and runtime delegates preserve the existing diagnostic listener and metric names used by dashboards.
+- runtime delegates execute through the same scoped consume pipeline as class handlers, so diagnostics, filters, and correlation behavior stay aligned.
+- `IConsumerLifecycle` hooks run per delivery on the scoped consumer instance, not once for application startup or shutdown.
 
 ## Publisher Options
 
@@ -97,12 +114,12 @@ public sealed class MetricsPublisher(IDirectPublisher publisher)
         // Sent immediately to transport, no persistence
         await publisher.PublishAsync(metric, ct);
 
-        // With custom headers (using Headers constants)
-        var headers = new Dictionary<string, string?>
+        var options = new PublishOptions
         {
-            [Headers.CorrelationId] = Guid.NewGuid().ToString(),
+            CorrelationId = Guid.NewGuid().ToString(),
+            Headers = new Dictionary<string, string?> { ["tenant-id"] = "demo" },
         };
-        await publisher.PublishAsync(metric, headers, ct);
+        await publisher.PublishAsync(metric, options, ct);
     }
 }
 ```
@@ -116,12 +133,37 @@ public sealed class MetricsPublisher(IDirectPublisher publisher)
 
 **Use cases:** Metrics, telemetry, cache invalidation, real-time notifications
 
+## Runtime Delegates
+
+Use `IRuntimeSubscriber` for ephemeral broker-attached handlers that should share the normal consume pipeline:
+
+```csharp
+public sealed class ProjectionSubscriptions(IRuntimeSubscriber subscriber)
+{
+    public ValueTask<RuntimeSubscriptionHandle> AttachAsync(CancellationToken cancellationToken)
+    {
+        return subscriber.SubscribeAsync<OrderPlacedEvent>(
+            async (context, services, ct) =>
+            {
+                var projector = services.GetRequiredService<IOrderProjector>();
+                await projector.ProjectAsync(context.Message, ct);
+            },
+            new RuntimeSubscriptionOptions
+            {
+                HandlerId = "ProjectionSubscriptions.OrderPlaced",
+            },
+            cancellationToken
+        );
+    }
+}
+```
+
 ## Configuration
 
 Register in `Program.cs`:
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddMessaging(options =>
 {
     options.FailedRetryCount = 50;
     options.SucceedMessageExpiredAfter = 24 * 3600;

@@ -51,7 +51,7 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         services.AddServiceProviderLocalMessagePublisher();
 
         // Messages
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseInMemoryMessageQueue();
             options.UseInMemoryStorage();

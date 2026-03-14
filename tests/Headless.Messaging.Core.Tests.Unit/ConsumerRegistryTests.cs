@@ -150,6 +150,87 @@ public sealed class ConsumerRegistryTests : TestBase
     }
 
     [Fact]
+    public void should_reject_duplicate_topic_and_group_even_when_handler_ids_differ()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        registry.Register(
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "orders.placed",
+                "billing",
+                1,
+                "Tests.ConsumerA"
+            )
+        );
+
+        // when
+        var act = () =>
+            registry.Register(
+                new ConsumerMetadata(
+                    typeof(TestMessage),
+                    typeof(OtherConsumer),
+                    "orders.placed",
+                    "billing",
+                    1,
+                    "Tests.ConsumerB"
+                )
+            );
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Duplicate consumer registration detected for topic/group identity*");
+    }
+
+    [Fact]
+    public void should_reject_updates_that_collide_on_topic_and_group()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        registry.Register(
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "orders.placed",
+                "billing",
+                1,
+                "Tests.ConsumerA"
+            )
+        );
+        registry.Register(
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(OtherConsumer),
+                "orders.cancelled",
+                "analytics",
+                1,
+                "Tests.ConsumerB"
+            )
+        );
+
+        // when
+        var act = () =>
+            registry.Update(
+                m => m.ConsumerType == typeof(OtherConsumer),
+                new ConsumerMetadata(
+                    typeof(TestMessage),
+                    typeof(OtherConsumer),
+                    "orders.placed",
+                    "billing",
+                    1,
+                    "Tests.ConsumerB"
+                )
+            );
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Duplicate consumer registration detected for topic/group identity*");
+    }
+
+    [Fact]
     public async Task should_prevent_registration_after_concurrent_freeze()
     {
         // given

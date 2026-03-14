@@ -31,7 +31,7 @@ public sealed class DirectPublisherTests : TestBase
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         // when
-        await publisher.PublishAsync(new TestMessage("test-value"), AbortToken);
+        await publisher.PublishAsync(new TestMessage("test-value"), cancellationToken: AbortToken);
 
         // then
         testTransport.SentMessages.Should().HaveCount(1);
@@ -44,12 +44,12 @@ public sealed class DirectPublisherTests : TestBase
         // given
         var testTransport = new TestTransport();
         var options = new MessagingOptions();
-        options.ConfigureConventions(conventions => conventions.TopicNaming = TopicNamingConvention.KebabCase);
+        options.UseConventions(conventions => conventions.TopicNaming = TopicNamingConvention.KebabCase);
 
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         // when
-        await publisher.PublishAsync(new TestMessage("test-value"), AbortToken);
+        await publisher.PublishAsync(new TestMessage("test-value"), cancellationToken: AbortToken);
 
         // then
         testTransport.SentMessages.Should().HaveCount(1);
@@ -57,7 +57,7 @@ public sealed class DirectPublisherTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_when_no_topic_mapping()
+    public async Task should_resolve_topic_from_default_convention_when_no_mapping_exists()
     {
         // given
         var testTransport = new TestTransport();
@@ -65,16 +65,15 @@ public sealed class DirectPublisherTests : TestBase
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         // when
-        var act = () => publisher.PublishAsync(new UnmappedMessage(42), AbortToken);
+        await publisher.PublishAsync(new UnmappedMessage(42), cancellationToken: AbortToken);
 
         // then
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*No topic mapping found*UnmappedMessage*");
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].GetName().Should().Be(nameof(UnmappedMessage));
     }
 
     [Fact]
-    public async Task should_throw_when_message_is_null()
+    public async Task should_allow_null_payload()
     {
         // given
         var testTransport = new TestTransport();
@@ -83,10 +82,11 @@ public sealed class DirectPublisherTests : TestBase
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         // when
-        var act = () => publisher.PublishAsync<TestMessage>(null!, AbortToken);
+        await publisher.PublishAsync<TestMessage>(null, cancellationToken: AbortToken);
 
         // then
-        await act.Should().ThrowAsync<ArgumentNullException>();
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].Body.Length.Should().Be(0);
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public sealed class DirectPublisherTests : TestBase
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         // when
-        await publisher.PublishAsync(new TestMessage("test"), AbortToken);
+        await publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
 
         // then
         testTransport.SentMessages.Should().HaveCount(1);
@@ -118,7 +118,7 @@ public sealed class DirectPublisherTests : TestBase
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         // when
-        var act = () => publisher.PublishAsync(new TestMessage("test"), AbortToken);
+        var act = () => publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
 
         // then
         await act.Should().ThrowAsync<Headless.Messaging.PublisherSentFailedException>();
@@ -138,7 +138,7 @@ public sealed class DirectPublisherTests : TestBase
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         // when
-        var act = () => publisher.PublishAsync(new TestMessage("test"), AbortToken);
+        var act = () => publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Transport unavailable");
@@ -155,7 +155,7 @@ public sealed class DirectPublisherTests : TestBase
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         // when
-        await publisher.PublishAsync(new TestMessage("test"), AbortToken);
+        await publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
 
         // then
         testTransport.SentMessages.Should().HaveCount(1);
@@ -168,7 +168,7 @@ public sealed class DirectPublisherTests : TestBase
     }
 
     [Fact]
-    public async Task should_use_provided_message_id_when_specified_in_headers()
+    public async Task should_use_publish_options_overrides_for_message_metadata()
     {
         // given
         var testTransport = new TestTransport();
@@ -176,41 +176,65 @@ public sealed class DirectPublisherTests : TestBase
         options.TopicMappings[typeof(TestMessage)] = "test.topic";
 
         var publisher = _CreateDirectPublisher(testTransport, options);
-        var customHeaders = new Dictionary<string, string?>(StringComparer.Ordinal)
+        var publishOptions = new PublishOptions
         {
-            [Headers.MessageId] = "custom-id-123",
+            MessageId = "custom-id-123",
+            CorrelationId = "corr-123",
+            CorrelationSequence = 5,
+            CallbackName = "callback.topic",
         };
 
         // when
-        await publisher.PublishAsync(new TestMessage("test"), customHeaders, AbortToken);
+        await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
         testTransport.SentMessages.Should().HaveCount(1);
         testTransport.SentMessages[0].Headers[Headers.MessageId].Should().Be("custom-id-123");
+        testTransport.SentMessages[0].Headers[Headers.CorrelationId].Should().Be("corr-123");
+        testTransport.SentMessages[0].Headers[Headers.CorrelationSequence].Should().Be("5");
+        testTransport.SentMessages[0].Headers[Headers.CallbackName].Should().Be("callback.topic");
     }
 
     [Fact]
-    public async Task should_use_provided_correlation_id_when_specified_in_headers()
+    public async Task should_allow_explicit_topic_from_publish_options()
+    {
+        // given
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var publishOptions = new PublishOptions { Topic = "explicit.topic" };
+
+        // when
+        await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].GetName().Should().Be("explicit.topic");
+    }
+
+    [Fact]
+    public async Task should_throw_when_reserved_headers_are_supplied_as_custom_headers()
     {
         // given
         var testTransport = new TestTransport();
         var options = new MessagingOptions();
         options.TopicMappings[typeof(TestMessage)] = "test.topic";
-
         var publisher = _CreateDirectPublisher(testTransport, options);
-        var customHeaders = new Dictionary<string, string?>(StringComparer.Ordinal)
+
+        var publishOptions = new PublishOptions
         {
-            [Headers.CorrelationId] = "corr-123",
-            [Headers.CorrelationSequence] = "5",
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageName] = "forbidden.topic",
+            },
         };
 
         // when
-        await publisher.PublishAsync(new TestMessage("test"), customHeaders, AbortToken);
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
-        testTransport.SentMessages.Should().HaveCount(1);
-        testTransport.SentMessages[0].Headers[Headers.CorrelationId].Should().Be("corr-123");
-        testTransport.SentMessages[0].Headers[Headers.CorrelationSequence].Should().Be("5");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*reserved*");
     }
 
     [Fact]
@@ -224,7 +248,7 @@ public sealed class DirectPublisherTests : TestBase
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         // when
-        await publisher.PublishAsync(new TestMessage("test-value"), AbortToken);
+        await publisher.PublishAsync(new TestMessage("test-value"), cancellationToken: AbortToken);
 
         // then
         testTransport.SentMessages.Should().HaveCount(1);
@@ -246,7 +270,7 @@ public sealed class DirectPublisherTests : TestBase
         await cts.CancelAsync();
 
         // when
-        var act = () => publisher.PublishAsync(new TestMessage("test"), cts.Token);
+        var act = () => publisher.PublishAsync(new TestMessage("test"), cancellationToken: cts.Token);
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -264,7 +288,7 @@ public sealed class DirectPublisherTests : TestBase
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         // when
-        await publisher.PublishAsync(new TestMessage("test"), AbortToken);
+        await publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
 
         // then
         testTransport.SendCallCount.Should().Be(1);
@@ -276,14 +300,14 @@ public sealed class DirectPublisherTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(opt =>
+        services.AddMessaging(opt =>
         {
             opt.UseInMemoryMessageQueue();
             opt.UseInMemoryStorage();
         });
 
         // when
-        services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
 
         // then
         var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IDirectPublisher));
@@ -292,19 +316,19 @@ public sealed class DirectPublisherTests : TestBase
     }
 
     [Fact]
-    public void should_resolve_direct_publisher_from_container()
+    public async Task should_resolve_direct_publisher_from_container()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(opt =>
+        services.AddMessaging(opt =>
         {
             opt.UseInMemoryMessageQueue();
             opt.UseInMemoryStorage();
         });
 
         // when
-        var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
 
         // then - singleton can be resolved directly without scope
         var publisher = provider.GetService<IDirectPublisher>();
@@ -314,17 +338,15 @@ public sealed class DirectPublisherTests : TestBase
 
     private static IDirectPublisher _CreateDirectPublisher(ITransport transport, MessagingOptions options)
     {
-        var services = new ServiceCollection();
-        services.AddSingleton(transport);
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
-        services.AddSingleton(TimeProvider.System);
-        services.AddSingleton(Options.Create(options));
-        services.AddSingleton(options.JsonSerializerOptions);
-        services.AddSingleton<IDirectPublisher, DirectPublisher>();
+        var optionsAccessor = Options.Create(options);
+        var serializer = new JsonUtf8Serializer(optionsAccessor);
+        var publishRequestFactory = new MessagePublishRequestFactory(
+            new SnowflakeIdLongIdGenerator(),
+            TimeProvider.System,
+            optionsAccessor
+        );
 
-        var provider = services.BuildServiceProvider();
-        return provider.GetRequiredService<IDirectPublisher>();
+        return new DirectPublisher(serializer, transport, publishRequestFactory);
     }
 
     /// <summary>

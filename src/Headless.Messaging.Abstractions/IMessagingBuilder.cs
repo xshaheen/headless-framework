@@ -20,15 +20,15 @@ namespace Headless.Messaging;
 /// <para>
 /// <strong>Example:</strong>
 /// <code>
-/// services.AddMessages(options =>
+/// services.AddMessaging(options =>
 /// {
 ///     // Auto-discover all IConsume&lt;T&gt; implementations in assembly
-///     options.ScanConsumers(typeof(Program).Assembly);
+///     options.SubscribeFromAssembly(typeof(Program).Assembly);
 ///
 ///     // Or register specific consumers with custom configuration
-///     options.Consumer&lt;OrderPlacedHandler&gt;()
+///     options.Subscribe&lt;OrderPlacedHandler&gt;()
 ///         .Topic("orders.placed")
-///         .WithConcurrency(10);
+///         .Concurrency(10);
 /// });
 /// </code>
 /// </para>
@@ -66,11 +66,18 @@ public interface IMessagingBuilder
     /// // - OrderPlacedHandler : IConsume&lt;OrderPlaced&gt;
     /// // - OrderCancelledHandler : IConsume&lt;OrderCancelled&gt;
     /// // - OrderConsumer : IConsume&lt;OrderPlaced&gt;, IConsume&lt;OrderCancelled&gt; (multi-type)
-    /// options.ScanConsumers(typeof(Program).Assembly);
-    /// </code>
-    /// </para>
-    /// </remarks>
-    IMessagingBuilder ScanConsumers(Assembly assembly);
+    /// options.SubscribeFromAssembly(typeof(Program).Assembly);
+/// </code>
+/// </para>
+/// </remarks>
+    IMessagingBuilder SubscribeFromAssembly(Assembly assembly);
+
+    /// <summary>
+    /// Scans the assembly containing the specified marker type for closed <see cref="IConsume{TMessage}"/> handlers.
+    /// </summary>
+    /// <typeparam name="TMarker">A type from the target assembly.</typeparam>
+    /// <returns>The current <see cref="IMessagingBuilder"/> instance for method chaining.</returns>
+    IMessagingBuilder SubscribeFromAssemblyContaining<TMarker>();
 
     /// <summary>
     /// Registers a specific consumer type and returns a builder for additional configuration.
@@ -83,6 +90,8 @@ public interface IMessagingBuilder
     /// </returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown if <typeparamref name="TConsumer"/> does not implement any <see cref="IConsume{TMessage}"/> interfaces.
+    /// Explicit registration also rejects consumers implementing multiple <see cref="IConsume{TMessage}"/> interfaces.
+    /// Use <see cref="SubscribeFromAssembly(Assembly)"/> for multi-message consumers.
     /// </exception>
     /// <remarks>
     /// <para>
@@ -92,13 +101,13 @@ public interface IMessagingBuilder
     /// <para>
     /// <strong>Example:</strong>
     /// <code>
-    /// options.Consumer&lt;OrderPlacedHandler&gt;()
-    ///     .Topic("orders.placed.v2") // Override convention-based topic
-    ///     .WithConcurrency(5); // Limit concurrent processing
-    /// </code>
-    /// </para>
-    /// </remarks>
-    IConsumerBuilder<TConsumer> Consumer<TConsumer>()
+    /// options.Subscribe&lt;OrderPlacedHandler&gt;()
+///     .Topic("orders.placed.v2") // Override convention-based topic
+///     .Concurrency(5); // Limit concurrent processing
+/// </code>
+/// </para>
+/// </remarks>
+    IConsumerBuilder<TConsumer> Subscribe<TConsumer>()
         where TConsumer : class;
 
     /// <summary>
@@ -116,6 +125,8 @@ public interface IMessagingBuilder
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="topic"/> is null or whitespace.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown if <typeparamref name="TConsumer"/> does not implement any <see cref="IConsume{TMessage}"/> interfaces.
+    /// Explicit registration also rejects consumers implementing multiple <see cref="IConsume{TMessage}"/> interfaces.
+    /// Use <see cref="SubscribeFromAssembly(Assembly)"/> for multi-message consumers.
     /// </exception>
     /// <remarks>
     /// <para>
@@ -127,16 +138,25 @@ public interface IMessagingBuilder
     /// <strong>Example:</strong>
     /// <code>
     /// // Register consumer and implicitly map OrderPlaced → "orders.placed"
-    /// options.Consumer&lt;OrderPlacedHandler&gt;("orders.placed")
-    ///     .WithConcurrency(5);
-    ///
-    /// // Later in code - type-safe publishing works automatically:
-    /// await publisher.PublishAsync(new OrderPlaced { OrderId = 123 });
-    /// // ^ automatically publishes to "orders.placed"
-    /// </code>
-    /// </para>
-    /// </remarks>
-    IConsumerBuilder<TConsumer> Consumer<TConsumer>(string topic)
+    /// options.Subscribe&lt;OrderPlacedHandler&gt;("orders.placed")
+///     .Concurrency(5);
+///
+/// // Later in code - type-safe publishing works automatically:
+/// await publisher.PublishAsync(new OrderPlaced { OrderId = 123 });
+/// // ^ automatically publishes to "orders.placed"
+/// </code>
+/// </para>
+/// </remarks>
+    IConsumerBuilder<TConsumer> Subscribe<TConsumer>(string topic)
+        where TConsumer : class;
+
+    /// <summary>
+    /// Registers a specific consumer type and applies explicit subscription overrides in one call.
+    /// </summary>
+    /// <typeparam name="TConsumer">The consumer type to register.</typeparam>
+    /// <param name="configure">The override configuration to apply to the registration.</param>
+    /// <returns>The current <see cref="IMessagingBuilder"/> instance for method chaining.</returns>
+    IMessagingBuilder Subscribe<TConsumer>(Action<IConsumerBuilder<TConsumer>> configure)
         where TConsumer : class;
 
     /// <summary>
@@ -181,15 +201,16 @@ public interface IMessagingBuilder
     /// <para>
     /// <strong>Example:</strong>
     /// <code>
-    /// options.ConfigureConventions(c =>
-    /// {
-    ///     c.UseKebabCaseTopics(); // OrderCreated → order-created
-    ///     c.WithTopicPrefix("prod."); // → prod.order-created
-    ///     c.WithTopicSuffix(".v1"); // → prod.order-created.v1
-    ///     c.WithDefaultGroup("my-service");
-    /// });
-    /// </code>
-    /// </para>
-    /// </remarks>
-    IMessagingBuilder ConfigureConventions(Action<MessagingConventions> configure);
+    /// options.UseConventions(c =>
+/// {
+///     c.UseKebabCaseTopics(); // OrderCreated → order-created
+///     c.WithTopicPrefix("prod."); // → prod.order-created
+///     c.WithTopicSuffix(".v1"); // → prod.order-created.v1
+///     c.UseApplicationId("my-service");
+///     c.UseVersion("v1");
+/// });
+/// </code>
+/// </para>
+/// </remarks>
+    IMessagingBuilder UseConventions(Action<MessagingConventions> configure);
 }

@@ -68,9 +68,9 @@ public class Startup
                 options.Scope.Add("profile");
             });
 
-        services.AddMessages(x =>
+        services.AddMessaging(x =>
         {
-            x.ScanConsumers(typeof(Startup).Assembly);
+            x.SubscribeFromAssembly(typeof(Startup).Assembly);
             x.UseInMemoryStorage();
             x.UseInMemoryMessageQueue();
 
@@ -105,9 +105,9 @@ public class Startup
                 configureOptions: null
             );
 
-        services.AddMessages(x =>
+        services.AddMessaging(x =>
         {
-            x.ScanConsumers(typeof(Startup).Assembly);
+            x.SubscribeFromAssembly(typeof(Startup).Assembly);
             x.UseInMemoryStorage();
             x.UseInMemoryMessageQueue();
 
@@ -158,9 +158,9 @@ public class Startup
                 options.Scope.Add("profile");
             });
 
-        services.AddMessages(x =>
+        services.AddMessaging(x =>
         {
-            x.ScanConsumers(typeof(Startup).Assembly);
+            x.SubscribeFromAssembly(typeof(Startup).Assembly);
             x.UseDashboard(d =>
             {
                 d.AllowAnonymousExplicit = false;
@@ -175,9 +175,9 @@ public class Startup
 
     public IServiceCollection AddMessagingWithAnonymousAccess(IServiceCollection services)
     {
-        services.AddMessages(x =>
+        services.AddMessaging(x =>
         {
-            x.ScanConsumers(typeof(Startup).Assembly);
+            x.SubscribeFromAssembly(typeof(Startup).Assembly);
             x.UseDashboard(d =>
             {
                 d.AllowAnonymousExplicit = true;

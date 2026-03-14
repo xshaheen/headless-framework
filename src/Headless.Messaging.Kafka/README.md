@@ -61,10 +61,12 @@ Messages sent to the same partition are delivered in order. Use message keys to 
 
 ```csharp
 // Publish with partition key for ordered delivery
-await publisher.PublishAsync("orders.events", order,
-    headers: new Dictionary<string, string>
+await publisher.PublishAsync(
+    order,
+    new PublishOptions
     {
-        { "PartitionKey", order.CustomerId.ToString() }
+        Topic = "orders.events",
+        Headers = new Dictionary<string, string?> { ["PartitionKey"] = order.CustomerId.ToString() }
     });
 ```
 

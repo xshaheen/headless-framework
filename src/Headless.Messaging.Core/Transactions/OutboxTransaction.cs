@@ -36,9 +36,11 @@ internal sealed class OutboxTransactionHolder
 /// Initializes a new instance of the <see cref="OutboxTransaction"/> class with a dispatcher.
 /// </remarks>
 /// <param name="dispatcher">The dispatcher used to enqueue messages for publishing and execution.</param>
-public abstract class OutboxTransaction(IDispatcher dispatcher) : IOutboxTransaction
+public abstract class OutboxTransaction(IDispatcher dispatcher, IOutboxTransactionAccessor accessor) : IOutboxTransaction
 {
     private readonly ConcurrentQueue<MediumMessage> _bufferList = new();
+    private readonly IOutboxTransactionAccessor _accessor = accessor;
+    private object? _dbTransaction;
 
     /// <summary>
     /// Gets or sets a value indicating whether this transaction is automatically committed after a message is published.
@@ -50,7 +52,26 @@ public abstract class OutboxTransaction(IDispatcher dispatcher) : IOutboxTransac
     /// Gets or sets the underlying database transaction object.
     /// This can be cast to the specific database transaction type (e.g., SqlTransaction, NpgsqlTransaction) when needed.
     /// </summary>
-    public virtual object? DbTransaction { get; set; }
+    public virtual object? DbTransaction
+    {
+        get => _dbTransaction;
+        set
+        {
+            _dbTransaction = value;
+
+            if (value == null)
+            {
+                if (ReferenceEquals(_accessor.Current, this))
+                {
+                    _accessor.Current = null;
+                }
+
+                return;
+            }
+
+            _accessor.Current = this;
+        }
+    }
 
     /// <summary>
     /// Commits the transaction synchronously, causing all buffered messages to be sent to the message queue.

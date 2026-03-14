@@ -21,7 +21,7 @@ public class MessagingOptions : IMessagingBuilder
     internal ConsumerRegistry? Registry { get; set; }
     internal Dictionary<Type, string> TopicMappings { get; } = new();
     internal IList<IMessagesOptionsExtension> Extensions { get; } = new List<IMessagesOptionsExtension>();
-    internal Headless.Messaging.MessagingConventions? Conventions { get; private set; }
+    internal Headless.Messaging.MessagingConventions Conventions { get; set; } = new();
 
     /// <summary>
     /// Gets or sets the default consumer group name for subscribers.
@@ -184,11 +184,11 @@ public class MessagingOptions : IMessagingBuilder
     }
 
     /// <inheritdoc />
-    public IMessagingBuilder ScanConsumers(Assembly assembly)
+    public IMessagingBuilder SubscribeFromAssembly(Assembly assembly)
     {
         Argument.IsNotNull(assembly);
-        Argument.IsNotNull(Services, "Services must be initialized before calling ScanConsumers");
-        Argument.IsNotNull(Registry, "Registry must be initialized before calling ScanConsumers");
+        Argument.IsNotNull(Services, "Services must be initialized before calling SubscribeFromAssembly");
+        Argument.IsNotNull(Registry, "Registry must be initialized before calling SubscribeFromAssembly");
 
         // Single pass: filter types and cache their IConsume<T> interfaces
         var consumerTypesWithInterfaces = assembly
@@ -221,44 +221,32 @@ public class MessagingOptions : IMessagingBuilder
     }
 
     /// <inheritdoc />
-    public IConsumerBuilder<TConsumer> Consumer<TConsumer>()
-        where TConsumer : class
+    public IMessagingBuilder SubscribeFromAssemblyContaining<TMarker>()
     {
-        Argument.IsNotNull(Registry, "Registry must be initialized before calling Consumer");
-
-        // Find IConsume<T> interface
-        var consumeInterface = typeof(TConsumer)
-            .GetInterfaces()
-            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>));
-
-        if (consumeInterface == null)
-        {
-            throw new InvalidOperationException($"{typeof(TConsumer).Name} does not implement IConsume<T>");
-        }
-
-        var messageType = consumeInterface.GetGenericArguments()[0];
-
-        return new ConsumerBuilder<TConsumer>(this, Registry, messageType);
+        return SubscribeFromAssembly(typeof(TMarker).Assembly);
     }
 
     /// <inheritdoc />
-    public IConsumerBuilder<TConsumer> Consumer<TConsumer>(string topic)
+    public IConsumerBuilder<TConsumer> Subscribe<TConsumer>()
+        where TConsumer : class
+    {
+        Argument.IsNotNull(Registry, "Registry must be initialized before calling Subscribe");
+
+        var messageType = _ResolveExplicitMessageType(typeof(TConsumer));
+
+        RegisterConsumer(typeof(TConsumer), messageType, topic: null, group: null, concurrency: 1);
+
+        return new ConsumerBuilder<TConsumer>(this, Registry, messageType, autoRegistered: true);
+    }
+
+    /// <inheritdoc />
+    public IConsumerBuilder<TConsumer> Subscribe<TConsumer>(string topic)
         where TConsumer : class
     {
         Argument.IsNotNullOrWhiteSpace(topic);
-        Argument.IsNotNull(Registry, "Registry must be initialized before calling Consumer");
+        Argument.IsNotNull(Registry, "Registry must be initialized before calling Subscribe");
 
-        // Find IConsume<T> interface
-        var consumeInterface = typeof(TConsumer)
-            .GetInterfaces()
-            .FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>));
-
-        if (consumeInterface == null)
-        {
-            throw new InvalidOperationException($"{typeof(TConsumer).Name} does not implement IConsume<T>");
-        }
-
-        var messageType = consumeInterface.GetGenericArguments()[0];
+        var messageType = _ResolveExplicitMessageType(typeof(TConsumer));
 
         // Automatically create topic mapping
         _WithTopicMapping(messageType, topic);
@@ -268,6 +256,16 @@ public class MessagingOptions : IMessagingBuilder
 
         // Return builder that can update the registration if further configuration is needed
         return new ConsumerBuilder<TConsumer>(this, Registry, messageType, topic, autoRegistered: true);
+    }
+
+    /// <inheritdoc />
+    public IMessagingBuilder Subscribe<TConsumer>(Action<IConsumerBuilder<TConsumer>> configure)
+        where TConsumer : class
+    {
+        Argument.IsNotNull(configure);
+
+        configure(Subscribe<TConsumer>());
+        return this;
     }
 
     /// <inheritdoc />
@@ -281,12 +279,12 @@ public class MessagingOptions : IMessagingBuilder
     }
 
     /// <inheritdoc />
-    public IMessagingBuilder ConfigureConventions(Action<Headless.Messaging.MessagingConventions> configure)
+    public IMessagingBuilder UseConventions(Action<Headless.Messaging.MessagingConventions> configure)
     {
         Argument.IsNotNull(configure);
 
-        Conventions ??= new Headless.Messaging.MessagingConventions();
         configure(Conventions);
+        Version = Conventions.Version;
         return this;
     }
 
@@ -306,6 +304,31 @@ public class MessagingOptions : IMessagingBuilder
         }
 
         TopicMappings[messageType] = topic;
+    }
+
+    internal string ApplyTopicNamePrefix(string topic)
+    {
+        Argument.IsNotNullOrWhiteSpace(topic);
+
+        return string.IsNullOrWhiteSpace(TopicNamePrefix) ? topic : string.Concat(TopicNamePrefix, ".", topic);
+    }
+
+    private static Type _ResolveExplicitMessageType(Type consumerType)
+    {
+        var consumeInterfaces = consumerType
+            .GetInterfaces()
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
+            .ToList();
+
+        return consumeInterfaces.Count switch
+        {
+            0 => throw new InvalidOperationException($"{consumerType.Name} does not implement IConsume<T>"),
+            > 1 => throw new InvalidOperationException(
+                $"{consumerType.Name} implements multiple IConsume<T> interfaces. "
+                    + "Use SubscribeFromAssembly(...) for multi-message consumers."
+            ),
+            _ => consumeInterfaces[0].GetGenericArguments()[0],
+        };
     }
 
     /// <summary>
@@ -345,6 +368,37 @@ public class MessagingOptions : IMessagingBuilder
         }
     }
 
+    internal ConsumerMetadata CreateConsumerMetadata(
+        Type consumerType,
+        Type messageType,
+        string? topic,
+        string? group,
+        byte concurrency,
+        string? handlerId = null
+    )
+    {
+        var conventions = Conventions;
+        conventions.Version = Version;
+
+        var finalHandlerId = handlerId ?? MessagingConventions.GetDefaultHandlerId(consumerType, messageType);
+        var resolvedTopic =
+            topic
+            ?? (TopicMappings.TryGetValue(messageType, out var mappedTopic) ? mappedTopic : null)
+            ?? conventions.GetTopicName(messageType)
+            ?? messageType.Name;
+        var finalTopic = ApplyTopicNamePrefix(resolvedTopic);
+        var finalGroup = group ?? conventions.GetGroupName(finalHandlerId);
+
+        return new ConsumerMetadata(
+            messageType,
+            consumerType,
+            finalTopic,
+            finalGroup,
+            concurrency,
+            finalHandlerId
+        );
+    }
+
     /// <summary>
     /// Registers a consumer with the specified metadata.
     /// </summary>
@@ -353,24 +407,15 @@ public class MessagingOptions : IMessagingBuilder
         Argument.IsNotNull(Services, "Services must be initialized before calling _RegisterConsumer");
         Argument.IsNotNull(Registry, "Registry must be initialized before calling _RegisterConsumer");
 
-        // Determine the topic name
-        var finalTopic =
-            topic
-            ?? (TopicMappings.TryGetValue(messageType, out var mappedTopic) ? mappedTopic : null)
-            ?? Conventions?.GetTopicName(messageType)
-            ?? messageType.Name; // Fallback to message type name
+        var metadata = CreateConsumerMetadata(consumerType, messageType, topic, group, concurrency);
 
-        // Determine the group name
-        var finalGroup = group ?? Conventions?.DefaultGroup;
-
-        // Create metadata
-        var metadata = new ConsumerMetadata(messageType, consumerType, finalTopic, finalGroup, concurrency);
-
-        // Register in registry
         Registry.Register(metadata);
 
-        // Register consumer in DI as scoped service
+        Services.TryAdd(new ServiceDescriptor(consumerType, consumerType, ServiceLifetime.Scoped));
+
         var serviceType = typeof(IConsume<>).MakeGenericType(messageType);
-        Services.TryAddScoped(serviceType, consumerType);
+        Services.TryAdd(
+            new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
+        );
     }
 }

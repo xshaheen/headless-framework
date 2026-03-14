@@ -18,6 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using NSubstitute.Core;
 using ValidationException = FluentValidation.ValidationException;
 
 namespace Tests.Filters;
@@ -75,6 +76,19 @@ public sealed class MvcApiExceptionFilterTests : TestBase
             httpContextAccessor,
             apiBehaviorOptions
         );
+    }
+
+    private static bool _IsTimeoutDebugLog(ICall call, Exception exception)
+    {
+        if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+            return false;
+
+        var arguments = call.GetArguments();
+
+        return arguments[0] is LogLevel.Debug
+            && arguments[1] is EventId eventId
+            && eventId.Id == 5004
+            && ReferenceEquals(arguments[3], exception);
     }
 
     private static async Task<JsonDocument> _GetResponseBody(ExceptionContext context)
@@ -346,14 +360,9 @@ public sealed class MvcApiExceptionFilterTests : TestBase
 
         // then
         logger
-            .Received()
-            .Log(
-                LogLevel.Debug,
-                Arg.Is<EventId>(e => e.Id == 5004),
-                Arg.Any<object>(),
-                exception,
-                Arg.Any<Func<object, Exception?, string>>()
-            );
+            .ReceivedCalls()
+            .Should()
+            .Contain(call => _IsTimeoutDebugLog(call, exception));
     }
 
     #endregion

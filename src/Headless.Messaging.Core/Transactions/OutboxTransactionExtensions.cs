@@ -2,8 +2,6 @@
 
 using System.Data;
 using System.Data.Common;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Headless.Messaging.Transactions;
 
 /// <summary>
@@ -15,72 +13,63 @@ public static class OutboxTransactionExtensions
     /// <summary>
     /// Start an outbox transaction for an IDbConnection with the default isolation level.
     /// </summary>
-    /// <typeparam name="TTransaction">The concrete transaction type to create.</typeparam>
     /// <param name="dbConnection">The database connection.</param>
-    /// <param name="publisher">The outbox publisher.</param>
+    /// <param name="transaction">The outbox transaction instance.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published.</param>
     /// <returns>The created outbox transaction.</returns>
-    public static IOutboxTransaction BeginOutboxTransaction<TTransaction>(
+    public static IOutboxTransaction BeginOutboxTransaction(
         this IDbConnection dbConnection,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false
     )
-        where TTransaction : OutboxTransaction
     {
-        return dbConnection.BeginOutboxTransaction<TTransaction>(IsolationLevel.Unspecified, publisher, autoCommit);
+        return dbConnection.BeginOutboxTransaction(IsolationLevel.Unspecified, transaction, autoCommit);
     }
 
     /// <summary>
     /// Start an outbox transaction for an IDbConnection with a specific isolation level.
     /// </summary>
-    /// <typeparam name="TTransaction">The concrete transaction type to create.</typeparam>
     /// <param name="dbConnection">The database connection.</param>
     /// <param name="isolationLevel">The isolation level to use.</param>
-    /// <param name="publisher">The outbox publisher.</param>
+    /// <param name="transaction">The outbox transaction instance.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published.</param>
     /// <returns>The created outbox transaction.</returns>
-    public static IOutboxTransaction BeginOutboxTransaction<TTransaction>(
+    public static IOutboxTransaction BeginOutboxTransaction(
         this IDbConnection dbConnection,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false
     )
-        where TTransaction : OutboxTransaction
     {
         if (dbConnection.State == ConnectionState.Closed)
         {
             dbConnection.Open();
         }
 
-        var dbTransaction = dbConnection.BeginTransaction(isolationLevel);
+        transaction.DbTransaction = dbConnection.BeginTransaction(isolationLevel);
+        transaction.AutoCommit = autoCommit;
 
-        publisher.Transaction = ActivatorUtilities.CreateInstance<TTransaction>(publisher.ServiceProvider);
-        publisher.Transaction.DbTransaction = dbTransaction;
-        publisher.Transaction.AutoCommit = autoCommit;
-
-        return publisher.Transaction;
+        return transaction;
     }
 
     /// <summary>
     /// Start an outbox transaction for an IDbConnection asynchronously with the default isolation level.
     /// </summary>
-    /// <typeparam name="TTransaction">The concrete transaction type to create.</typeparam>
     /// <param name="dbConnection">The database connection.</param>
-    /// <param name="publisher">The outbox publisher.</param>
+    /// <param name="transaction">The outbox transaction instance.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that represents the asynchronous operation containing the created outbox transaction.</returns>
-    public static ValueTask<IOutboxTransaction> BeginOutboxTransactionAsync<TTransaction>(
+    public static ValueTask<IOutboxTransaction> BeginOutboxTransactionAsync(
         this IDbConnection dbConnection,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
-        where TTransaction : OutboxTransaction
     {
-        return dbConnection.BeginOutboxTransactionAsync<TTransaction>(
+        return dbConnection.BeginOutboxTransactionAsync(
             IsolationLevel.Unspecified,
-            publisher,
+            transaction,
             autoCommit,
             cancellationToken
         );
@@ -89,35 +78,30 @@ public static class OutboxTransactionExtensions
     /// <summary>
     /// Start an outbox transaction for an IDbConnection asynchronously with a specific isolation level.
     /// </summary>
-    /// <typeparam name="TTransaction">The concrete transaction type to create.</typeparam>
     /// <param name="dbConnection">The database connection.</param>
     /// <param name="isolationLevel">The isolation level to use.</param>
-    /// <param name="publisher">The outbox publisher.</param>
+    /// <param name="transaction">The outbox transaction instance.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that represents the asynchronous operation containing the created outbox transaction.</returns>
-    public static async ValueTask<IOutboxTransaction> BeginOutboxTransactionAsync<TTransaction>(
+    public static async ValueTask<IOutboxTransaction> BeginOutboxTransactionAsync(
         this IDbConnection dbConnection,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
-        where TTransaction : OutboxTransaction
     {
         if (dbConnection.State == ConnectionState.Closed)
         {
             await ((DbConnection)dbConnection).OpenAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var dbTransaction = await ((DbConnection)dbConnection)
+        transaction.DbTransaction = await ((DbConnection)dbConnection)
             .BeginTransactionAsync(isolationLevel, cancellationToken)
             .ConfigureAwait(false);
+        transaction.AutoCommit = autoCommit;
 
-        publisher.Transaction = ActivatorUtilities.CreateInstance<TTransaction>(publisher.ServiceProvider);
-        publisher.Transaction.DbTransaction = dbTransaction;
-        publisher.Transaction.AutoCommit = autoCommit;
-
-        return publisher.Transaction;
+        return transaction;
     }
 }

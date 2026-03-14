@@ -10,7 +10,8 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Headless.Messaging.PostgreSql;
 
-public class PostgreSqlOutboxTransaction(IDispatcher dispatcher) : OutboxTransaction(dispatcher)
+public sealed class PostgreSqlOutboxTransaction(IDispatcher dispatcher, IOutboxTransactionAccessor accessor)
+    : OutboxTransaction(dispatcher, accessor)
 {
     public override void Commit()
     {
@@ -83,53 +84,49 @@ public static class PostgreSqlTransactionExtensions
     /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     public static IOutboxTransaction BeginTransaction(
         this IDbConnection dbConnection,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false
     )
     {
-        return dbConnection.BeginOutboxTransaction<PostgreSqlOutboxTransaction>(publisher, autoCommit);
+        return dbConnection.BeginOutboxTransaction(transaction, autoCommit);
     }
 
     /// <summary>
     /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="isolationLevel"><see cref="IsolationLevel"/></param>
     public static IOutboxTransaction BeginTransaction(
         this IDbConnection dbConnection,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false
     )
     {
-        return dbConnection.BeginOutboxTransaction<PostgreSqlOutboxTransaction>(isolationLevel, publisher, autoCommit);
+        return dbConnection.BeginOutboxTransaction(isolationLevel, transaction, autoCommit);
     }
 
     /// <summary>
     /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="cancellationToken"></param>
     public static ValueTask<IOutboxTransaction> BeginTransactionAsync(
         this IDbConnection dbConnection,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
     {
-        return dbConnection.BeginOutboxTransactionAsync<PostgreSqlOutboxTransaction>(
-            publisher,
-            autoCommit,
-            cancellationToken
-        );
+        return dbConnection.BeginOutboxTransactionAsync(transaction, autoCommit, cancellationToken);
     }
 
     /// <summary>
@@ -137,77 +134,72 @@ public static class PostgreSqlTransactionExtensions
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
     /// <param name="isolationLevel"><see cref="IsolationLevel"/></param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="cancellationToken"></param>
     public static ValueTask<IOutboxTransaction> BeginTransactionAsync(
         this IDbConnection dbConnection,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
     {
-        return dbConnection.BeginOutboxTransactionAsync<PostgreSqlOutboxTransaction>(
-            isolationLevel,
-            publisher,
-            autoCommit,
-            cancellationToken
-        );
+        return dbConnection.BeginOutboxTransactionAsync(isolationLevel, transaction, autoCommit, cancellationToken);
     }
 
     /// <summary>
     /// Start the outbox transaction
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <returns>The <see cref="IDbContextTransaction" /> of EF DbContext transaction object.</returns>
     public static IDbContextTransaction BeginTransaction(
         this DatabaseFacade database,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false
     )
     {
-        return database.BeginEfOutboxTransaction(IsolationLevel.Unspecified, publisher, autoCommit);
+        return database.BeginEfOutboxTransaction(IsolationLevel.Unspecified, transaction, autoCommit);
     }
 
     /// <summary>
     /// Start the outbox transaction
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="isolationLevel">The <see cref="IsolationLevel" /> to use</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <returns>The <see cref="IDbContextTransaction" /> of EF DbContext transaction object.</returns>
     public static IDbContextTransaction BeginTransaction(
         this DatabaseFacade database,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false
     )
     {
-        return database.BeginEfOutboxTransaction(isolationLevel, publisher, autoCommit);
+        return database.BeginEfOutboxTransaction(isolationLevel, transaction, autoCommit);
     }
 
     /// <summary>
     /// Start the outbox transaction async
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="cancellationToken"></param>
     /// <returns>The <see cref="IDbContextTransaction" /> of EF DbContext transaction object.</returns>
     public static Task<IDbContextTransaction> BeginTransactionAsync(
         this DatabaseFacade database,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
     {
         return database.BeginEfOutboxTransactionAsync(
             IsolationLevel.Unspecified,
-            publisher,
+            transaction,
             autoCommit,
             cancellationToken
         );
@@ -217,7 +209,7 @@ public static class PostgreSqlTransactionExtensions
     /// Start the outbox transaction async
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="isolationLevel">The <see cref="IsolationLevel" /> to use</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="cancellationToken"></param>
@@ -225,11 +217,11 @@ public static class PostgreSqlTransactionExtensions
     public static Task<IDbContextTransaction> BeginTransactionAsync(
         this DatabaseFacade database,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
     {
-        return database.BeginEfOutboxTransactionAsync(isolationLevel, publisher, autoCommit, cancellationToken);
+        return database.BeginEfOutboxTransactionAsync(isolationLevel, transaction, autoCommit, cancellationToken);
     }
 }

@@ -35,14 +35,17 @@ internal class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool 
 
             var js = connection.CreateJetStreamContext(_jetStreamOptions);
 
-            var builder = PublishOptions.Builder().WithMessageId(message.GetId());
+            var builder = NATS.Client.JetStream.PublishOptions.Builder().WithMessageId(message.GetId());
 
             // Note: NATS .NET client doesn't support CancellationToken in PublishAsync yet
             var resp = await js.PublishAsync(msg, builder.Build()).ConfigureAwait(false);
 
             if (resp.Seq > 0)
             {
-                logger.LogDebug("NATS stream message [{GetName}] has been published.", message.GetName());
+                if (logger.IsEnabled(LogLevel.Debug))
+                {
+                    logger.LogDebug("NATS stream message [{GetName}] has been published.", message.GetName());
+                }
 
                 return OperateResult.Success;
             }

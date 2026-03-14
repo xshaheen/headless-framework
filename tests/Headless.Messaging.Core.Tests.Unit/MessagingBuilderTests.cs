@@ -14,12 +14,12 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.ScanConsumers(typeof(MessagingBuilderTests).Assembly);
+            messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then
@@ -36,12 +36,12 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.ScanConsumers(typeof(MessagingBuilderTests).Assembly);
+            messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then
@@ -56,17 +56,14 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging
-                .Consumer<TestOrderConsumer>()
-                .Topic("orders.placed")
-                .Group("order-service")
-                .WithConcurrency(5)
-                .Build();
+            messaging.Subscribe<TestOrderConsumer>(consumer =>
+                consumer.Topic("orders.placed").Group("order-service").Concurrency(5)
+            );
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then
@@ -87,13 +84,13 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
-            messaging.ScanConsumers(typeof(MessagingBuilderTests).Assembly);
+            messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then
@@ -108,13 +105,13 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
-            messaging.Consumer<TestOrderConsumer>().Topic("custom.orders").Build();
+            messaging.Subscribe<TestOrderConsumer>().Topic("custom.orders");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then
@@ -129,12 +126,12 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<TestOrderConsumer>().Topic("orders.placed").Build();
+            messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
 
         // then
         using var scope = provider.CreateScope();
@@ -150,14 +147,14 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<TestOrderConsumer>().Topic("orders.placed").Group("order-service").Build();
+            messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed").Group("order-service");
 
-            messaging.Consumer<AnotherOrderConsumer>().Topic("orders.placed").Group("analytics-service").Build();
+            messaging.Subscribe<AnotherOrderConsumer>().Topic("orders.placed").Group("analytics-service");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then
@@ -170,6 +167,26 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
+    public void should_reject_duplicate_topic_and_group_for_different_consumers()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var act = () =>
+            services.AddMessaging(messaging =>
+            {
+                messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed").Group("billing");
+                messaging.Subscribe<AnotherOrderConsumer>().Topic("orders.placed").Group("billing");
+            });
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Duplicate consumer registration detected for topic/group identity*");
+    }
+
+    [Fact]
     public void should_throw_when_consumer_does_not_implement_consume()
     {
         // given
@@ -177,9 +194,9 @@ public sealed class MessagingBuilderTests
 
         // when
         var act = () =>
-            services.AddMessages(messaging =>
+            services.AddMessaging(messaging =>
             {
-                messaging.Consumer<InvalidConsumer>().Topic("test").Build();
+                messaging.Subscribe<InvalidConsumer>().Topic("test");
             });
 
         // then
@@ -194,7 +211,7 @@ public sealed class MessagingBuilderTests
 
         // when
         var act = () =>
-            services.AddMessages(messaging =>
+            services.AddMessaging(messaging =>
             {
                 messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
                 messaging.WithTopicMapping<TestOrderMessage>("orders.created");
@@ -212,7 +229,7 @@ public sealed class MessagingBuilderTests
 
         // when
         var act = () =>
-            services.AddMessages(messaging =>
+            services.AddMessaging(messaging =>
             {
                 messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
                 messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
@@ -229,12 +246,12 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<TestOrderConsumer>().Topic("orders.placed").Build();
+            messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then
@@ -251,9 +268,9 @@ public sealed class MessagingBuilderTests
         // when
         var act = () =>
         {
-            return services.AddMessages(messaging =>
+            return services.AddMessaging(messaging =>
             {
-                messaging.Consumer<TestOrderConsumer>().Topic("orders.placed").WithConcurrency(0).Build();
+                messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed").Concurrency(0);
             });
         };
 
@@ -268,12 +285,12 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.ScanConsumers(typeof(MessagingBuilderTests).Assembly);
+            messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then
@@ -285,6 +302,44 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
+    public void should_reject_explicit_registration_for_multi_message_consumer()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var act = () =>
+            services.AddMessaging(messaging =>
+            {
+                messaging.Subscribe<MultiMessageConsumer>();
+            });
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*implements multiple IConsume<T> interfaces*");
+    }
+
+    [Fact]
+    public void should_reject_explicit_registration_with_topic_for_multi_message_consumer()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var act = () =>
+            services.AddMessaging(messaging =>
+            {
+                messaging.Subscribe<MultiMessageConsumer>("orders.placed");
+            });
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*implements multiple IConsume<T> interfaces*");
+    }
+
+    [Fact]
     public void should_chain_fluent_methods()
     {
         // given
@@ -292,24 +347,19 @@ public sealed class MessagingBuilderTests
 
         // when
         var act = () =>
-            services.AddMessages(messaging =>
+            services.AddMessaging(messaging =>
             {
-                messaging
-                    .WithTopicMapping<TestOrderMessage>("orders.placed")
-                    .Consumer<TestOrderConsumer>()
-                    .Topic("orders.test")
-                    .Group("test-group")
-                    .WithConcurrency(3)
-                    .Build()
-                    .Consumer<TestPaymentConsumer>()
-                    .Topic("payments.received")
-                    .Build();
+                messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
+                messaging.Subscribe<TestOrderConsumer>(consumer =>
+                    consumer.Topic("orders.test").Group("test-group").Concurrency(3)
+                );
+                messaging.Subscribe<TestPaymentConsumer>(consumer => consumer.Topic("payments.received"));
             });
 
         // then
         act.Should().NotThrow();
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
         var consumers = registry.GetAll();
         consumers.Should().HaveCount(2);
@@ -322,12 +372,12 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<TestOrderConsumer>("orders.placed");
+            messaging.Subscribe<TestOrderConsumer>("orders.placed");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then
@@ -343,17 +393,17 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             // Old way (still supported):
-            // messaging.Consumer<TestOrderConsumer>().Topic("orders.placed").Build();
+            // messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
             // messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
 
             // New way - single call, implicit mapping:
-            messaging.Consumer<TestOrderConsumer>("orders.placed");
+            messaging.Subscribe<TestOrderConsumer>("orders.placed");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then
@@ -368,12 +418,12 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<TestOrderConsumer>("orders.placed").WithConcurrency(5).Group("order-service").Build();
+            messaging.Subscribe<TestOrderConsumer>("orders.placed").Concurrency(5).Group("order-service");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then

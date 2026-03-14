@@ -12,14 +12,14 @@ public sealed class ConsumerLifecycleTests
     private readonly Faker _faker = new();
 
     [Fact]
-    public async Task should_call_OnStartingAsync_before_message_processing()
+    public async Task should_call_OnStartingAsync_before_each_message_processing()
     {
         // given
         var services = new ServiceCollection();
         services.AddSingleton<TrackedLifecycleConsumer>();
         services.AddScoped<IConsume<TestMessage>>(sp => sp.GetRequiredService<TrackedLifecycleConsumer>());
 
-        var serviceProvider = services.BuildServiceProvider();
+        using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 
@@ -41,19 +41,20 @@ public sealed class ConsumerLifecycleTests
         await using var scope = serviceProvider.CreateAsyncScope();
         var consumer = scope.ServiceProvider.GetRequiredService<TrackedLifecycleConsumer>();
 
-        consumer.OnStartingCalled.Should().BeTrue();
+        consumer.OnStartingCallCount.Should().Be(1);
+        consumer.ConsumeCallCount.Should().Be(1);
         consumer.OnStartingCalledBeforeConsume.Should().BeTrue();
     }
 
     [Fact]
-    public async Task should_call_OnStoppingAsync_after_message_processing()
+    public async Task should_call_OnStoppingAsync_after_each_message_processing()
     {
         // given
         var services = new ServiceCollection();
         services.AddSingleton<TrackedLifecycleConsumer>();
         services.AddScoped<IConsume<TestMessage>>(sp => sp.GetRequiredService<TrackedLifecycleConsumer>());
 
-        var serviceProvider = services.BuildServiceProvider();
+        using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 
@@ -75,7 +76,55 @@ public sealed class ConsumerLifecycleTests
         await using var scope = serviceProvider.CreateAsyncScope();
         var consumer = scope.ServiceProvider.GetRequiredService<TrackedLifecycleConsumer>();
 
-        consumer.OnStoppingCalled.Should().BeTrue();
+        consumer.OnStoppingCallCount.Should().Be(1);
+        consumer.ConsumeCallCount.Should().Be(1);
+        consumer.OnStoppingCalledAfterConsume.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_call_lifecycle_hooks_for_each_dispatch()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton<TrackedLifecycleConsumer>();
+        services.AddScoped<IConsume<TestMessage>>(sp => sp.GetRequiredService<TrackedLifecycleConsumer>());
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
+        var dispatcher = new CompiledMessageDispatcher(scopeFactory);
+
+        var firstContext = new ConsumeContext<TestMessage>
+        {
+            Message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() },
+            MessageId = _faker.Random.Guid().ToString(),
+            CorrelationId = null,
+            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+            Timestamp = DateTimeOffset.UtcNow,
+            Topic = "test-topic",
+        };
+
+        var secondContext = new ConsumeContext<TestMessage>
+        {
+            Message = new TestMessage { Id = _faker.Random.Guid(), Content = _faker.Lorem.Sentence() },
+            MessageId = _faker.Random.Guid().ToString(),
+            CorrelationId = null,
+            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+            Timestamp = DateTimeOffset.UtcNow,
+            Topic = "test-topic",
+        };
+
+        // when
+        await dispatcher.DispatchAsync(firstContext, CancellationToken.None);
+        await dispatcher.DispatchAsync(secondContext, CancellationToken.None);
+
+        // then
+        await using var scope = serviceProvider.CreateAsyncScope();
+        var consumer = scope.ServiceProvider.GetRequiredService<TrackedLifecycleConsumer>();
+
+        consumer.OnStartingCallCount.Should().Be(2);
+        consumer.OnStoppingCallCount.Should().Be(2);
+        consumer.ConsumeCallCount.Should().Be(2);
+        consumer.OnStartingCalledBeforeConsume.Should().BeTrue();
         consumer.OnStoppingCalledAfterConsume.Should().BeTrue();
     }
 
@@ -87,7 +136,7 @@ public sealed class ConsumerLifecycleTests
         services.AddSingleton<FailingLifecycleConsumer>();
         services.AddScoped<IConsume<TestMessage>>(sp => sp.GetRequiredService<FailingLifecycleConsumer>());
 
-        var serviceProvider = services.BuildServiceProvider();
+        using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 
@@ -121,7 +170,7 @@ public sealed class ConsumerLifecycleTests
         var services = new ServiceCollection();
         services.AddScoped<IConsume<TestMessage>, SimpleConsumer>();
 
-        var serviceProvider = services.BuildServiceProvider();
+        using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 
@@ -148,7 +197,7 @@ public sealed class ConsumerLifecycleTests
         services.AddSingleton<FailingStoppingConsumer>();
         services.AddScoped<IConsume<TestMessage>>(sp => sp.GetRequiredService<FailingStoppingConsumer>());
 
-        var serviceProvider = services.BuildServiceProvider();
+        using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 
@@ -180,7 +229,7 @@ public sealed class ConsumerLifecycleTests
         services.AddSingleton<FailingStartingConsumer>();
         services.AddScoped<IConsume<TestMessage>>(sp => sp.GetRequiredService<FailingStartingConsumer>());
 
-        var serviceProvider = services.BuildServiceProvider();
+        using var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var dispatcher = new CompiledMessageDispatcher(scopeFactory);
 
@@ -217,29 +266,29 @@ public sealed class ConsumerLifecycleTests
 
     private sealed class TrackedLifecycleConsumer : IConsume<TestMessage>, IConsumerLifecycle
     {
-        public bool OnStartingCalled { get; private set; }
-        public bool OnStoppingCalled { get; private set; }
-        public bool ConsumeCalled { get; private set; }
-        public bool OnStartingCalledBeforeConsume { get; private set; }
-        public bool OnStoppingCalledAfterConsume { get; private set; }
+        public int OnStartingCallCount { get; private set; }
+        public int OnStoppingCallCount { get; private set; }
+        public int ConsumeCallCount { get; private set; }
+        public bool OnStartingCalledBeforeConsume { get; private set; } = true;
+        public bool OnStoppingCalledAfterConsume { get; private set; } = true;
 
         public ValueTask OnStartingAsync(CancellationToken cancellationToken)
         {
-            OnStartingCalled = true;
-            OnStartingCalledBeforeConsume = !ConsumeCalled;
+            OnStartingCallCount++;
+            OnStartingCalledBeforeConsume &= ConsumeCallCount == OnStartingCallCount - 1;
             return ValueTask.CompletedTask;
         }
 
         public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
         {
-            ConsumeCalled = true;
+            ConsumeCallCount++;
             return ValueTask.CompletedTask;
         }
 
         public ValueTask OnStoppingAsync(CancellationToken cancellationToken)
         {
-            OnStoppingCalled = true;
-            OnStoppingCalledAfterConsume = ConsumeCalled;
+            OnStoppingCallCount++;
+            OnStoppingCalledAfterConsume &= ConsumeCallCount == OnStoppingCallCount;
             return ValueTask.CompletedTask;
         }
     }

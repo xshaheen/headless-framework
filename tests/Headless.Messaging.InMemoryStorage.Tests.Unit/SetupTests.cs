@@ -20,7 +20,7 @@ public sealed class SetupTests : TestBase
         services.AddOptions<MessagingOptions>();
 
         // when
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseInMemoryStorage();
         });
@@ -40,7 +40,7 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(TimeProvider.System);
         services.AddOptions<MessagingOptions>();
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseInMemoryStorage();
         });
@@ -74,7 +74,7 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(TimeProvider.System);
         services.AddOptions<MessagingOptions>();
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseInMemoryStorage();
         });
@@ -96,7 +96,7 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(TimeProvider.System);
         services.AddOptions<MessagingOptions>();
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseInMemoryStorage();
         });
@@ -118,7 +118,7 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
         services.AddSingleton(TimeProvider.System);
         services.AddOptions<MessagingOptions>();
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseInMemoryStorage();
         });

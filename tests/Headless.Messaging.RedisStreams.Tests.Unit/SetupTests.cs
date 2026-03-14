@@ -16,15 +16,15 @@ namespace Tests;
 public sealed class SetupTests : TestBase
 {
     [Fact]
-    public void should_register_redis_services_with_connection_string()
+    public async Task should_register_redis_services_with_connection_string()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(opt => opt.UseRedis("localhost:6379"));
+        services.AddMessaging(opt => opt.UseRedis("localhost:6379"));
 
         // when
-        var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
 
         // then
         provider.GetService<ITransport>().Should().NotBeNull();
@@ -34,12 +34,12 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void should_register_redis_services_with_configure_action()
+    public async Task should_register_redis_services_with_configure_action()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(opt =>
+        services.AddMessaging(opt =>
             opt.UseRedis(redisOpt =>
             {
                 redisOpt.Configuration = ConfigurationOptions.Parse("redis.example.com:6380");
@@ -49,7 +49,7 @@ public sealed class SetupTests : TestBase
         );
 
         // when
-        var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MessagingRedisOptions>>().Value;
 
         // then
@@ -58,15 +58,15 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void should_apply_default_values_via_post_configure()
+    public async Task should_apply_default_values_via_post_configure()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(opt => opt.UseRedis(_ => { }));
+        services.AddMessaging(opt => opt.UseRedis(_ => { }));
 
         // when
-        var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MessagingRedisOptions>>().Value;
 
         // then - defaults should be applied
@@ -77,15 +77,15 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void should_register_message_queue_marker_service()
+    public async Task should_register_message_queue_marker_service()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(opt => opt.UseRedis());
+        services.AddMessaging(opt => opt.UseRedis());
 
         // when
-        var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var marker = provider.GetService<MessageQueueMarkerService>();
 
         // then
@@ -101,17 +101,17 @@ public sealed class SetupTests : TestBase
         Action<MessagingRedisOptions>? nullAction = null;
 
         // when & then
-        var action = () => services.AddMessages(opt => opt.UseRedis(nullAction!));
+        var action = () => services.AddMessaging(opt => opt.UseRedis(nullAction!));
         action.Should().ThrowExactly<ArgumentNullException>();
     }
 
     [Fact]
-    public void should_preserve_explicitly_set_options()
+    public async Task should_preserve_explicitly_set_options()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(opt =>
+        services.AddMessaging(opt =>
             opt.UseRedis(redisOpt =>
             {
                 redisOpt.Configuration = ConfigurationOptions.Parse("custom-host:1234");
@@ -121,7 +121,7 @@ public sealed class SetupTests : TestBase
         );
 
         // when
-        var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MessagingRedisOptions>>().Value;
 
         // then - explicit values should not be overwritten by defaults

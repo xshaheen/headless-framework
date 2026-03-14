@@ -44,6 +44,18 @@ public sealed class ConsumerRegistry : IConsumerRegistry
                 );
             }
 
+            var existingConflict = _FindDuplicateTopicGroupConflict(_consumers!, metadata);
+
+            if (existingConflict != null)
+            {
+                throw new InvalidOperationException(
+                    "Duplicate consumer registration detected for topic/group identity: "
+                        + $"topic='{metadata.Topic}', group='{metadata.Group ?? "<default>"}', "
+                        + $"existingHandlerId='{existingConflict.ResolvedHandlerId}', "
+                        + $"newHandlerId='{metadata.ResolvedHandlerId}'."
+                );
+            }
+
             _consumers!.Add(metadata);
         }
     }
@@ -68,6 +80,17 @@ public sealed class ConsumerRegistry : IConsumerRegistry
             var index = _consumers!.FindIndex(m => predicate(m));
             if (index >= 0)
             {
+                var existingConflict = _FindDuplicateTopicGroupConflict(_consumers!, newMetadata, index);
+                if (existingConflict != null)
+                {
+                    throw new InvalidOperationException(
+                        "Duplicate consumer registration detected for topic/group identity: "
+                            + $"topic='{newMetadata.Topic}', group='{newMetadata.Group ?? "<default>"}', "
+                            + $"existingHandlerId='{existingConflict.ResolvedHandlerId}', "
+                            + $"newHandlerId='{newMetadata.ResolvedHandlerId}'."
+                    );
+                }
+
                 _consumers[index] = newMetadata;
             }
         }
@@ -158,5 +181,34 @@ public sealed class ConsumerRegistry : IConsumerRegistry
         {
             return _consumers?.Any(m => m.MessageType == messageType) ?? false;
         }
+    }
+
+    private static ConsumerMetadata? _FindDuplicateTopicGroupConflict(
+        IEnumerable<ConsumerMetadata> consumers,
+        ConsumerMetadata candidate,
+        int? skipIndex = null
+    )
+    {
+        var index = 0;
+        foreach (var existing in consumers)
+        {
+            if (skipIndex.HasValue && index == skipIndex.Value)
+            {
+                index++;
+                continue;
+            }
+
+            if (
+                string.Equals(existing.Topic, candidate.Topic, StringComparison.Ordinal)
+                && string.Equals(existing.Group, candidate.Group, StringComparison.Ordinal)
+            )
+            {
+                return existing;
+            }
+
+            index++;
+        }
+
+        return null;
     }
 }

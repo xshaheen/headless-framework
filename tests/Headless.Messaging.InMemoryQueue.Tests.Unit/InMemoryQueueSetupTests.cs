@@ -18,7 +18,7 @@ public sealed class InMemoryQueueSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseInMemoryMessageQueue();
         });
@@ -36,7 +36,7 @@ public sealed class InMemoryQueueSetupTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseInMemoryMessageQueue();
         });
@@ -59,7 +59,7 @@ public sealed class InMemoryQueueSetupTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseInMemoryMessageQueue();
         });
@@ -81,7 +81,7 @@ public sealed class InMemoryQueueSetupTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseInMemoryMessageQueue();
         });
@@ -103,7 +103,7 @@ public sealed class InMemoryQueueSetupTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseInMemoryMessageQueue();
         });

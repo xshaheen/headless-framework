@@ -1,0 +1,23 @@
+[2026-03-10 04:33] > Started work on 2026-03-10-feat-unify-messaging-contract-and-execution-model-plan.md
+[2026-03-10 04:55] * [STORY-US-001] Replaced the builder surface with AddMessaging/Subscribe*/UseConventions, removed Build-style chaining, and added deterministic handler identity/default group resolution.
+[2026-03-10 04:55] ! [STORY-US-001] Full verification is blocked in this workspace because integration suites require Docker/Testcontainers and Docker is unavailable.
+[2026-03-10 04:56] * [STORY-US-001] Updated the PRD verification command to the SDK-supported form: dotnet test --solution headless-framework.slnx.
+[2026-03-10 05:19] > [STORY-US-001] Retrying full verification after Docker became available.
+[2026-03-10 05:22] * [STORY-US-001] Full solution gate rerun with Docker available; integration suites now pass.
+[2026-03-10 05:22] ! [STORY-US-001] verification_command still fails on unrelated suites: Headless.Sql.Tests.Unit logging assertions, Headless.Messaging.Core.Tests.Unit undisposed ScheduledMediumMessageQueue, Headless.Messaging.RedisStreams.Tests.Unit undisposed RedisConnectionPool.
+[2026-03-10 05:28] > [STORY-US-002] Starting unified direct/outbox publisher contract refactor with shared PublishOptions and isolated transaction context.
+[2026-03-10 05:51] * [STORY-US-002] Docker-enabled solution verification now passes messaging integrations; remaining full-gate failures are repo-level Headless.Sql logger assertions plus existing finalizer disposal assertions in Messaging.Core and RedisStreams.
+[2026-03-10 05:51] ! [STORY-US-002] verification_command remains non-green because dotnet test --solution headless-framework.slnx still fails in Headless.Sql.Tests.Unit, Headless.Messaging.Core.Tests.Unit, and Headless.Messaging.RedisStreams.Tests.Unit outside the publisher contract changes.
+[2026-03-10 06:00] > [STORY-US-003] Starting runtime subscription registry and shared delegate/class subscribe execution path.
+[2026-03-10 06:12] * [STORY-US-003] Runtime subscriptions now attach named function handlers through a mutable descriptor registry, invalidate selector snapshots atomically, and execute through the same scoped consume pipeline as class handlers.
+[2026-03-10 06:12] ! [STORY-US-003] verification_command still fails outside runtime subscription changes in Headless.Sql.Tests.Unit, Headless.Messaging.Core.Tests.Unit, Headless.Messaging.RedisStreams.Tests.Unit, and Headless.Serializer.Tests.Unit.
+[2026-03-10 13:09] > [STORY-US-005] Restarted telemetry/docs parity as messaging-only after reverting the prior mixed out-of-scope edits.
+[2026-03-10 13:09] * [STORY-US-005] Recommitted only messaging-scoped changes: runtime subscription docs, messaging README/llm guidance, and a regression test for the public diagnostic listener and metric contract names.
+[2026-03-10 13:09] ! [STORY-US-005] Full verification_command was not rerun after the scope correction; the last repo-wide blockers remain outside this messaging-only slice in Headless.Sql.Tests.Unit and Headless.Messaging.RedisStreams.Tests.Unit.
+[2026-03-10 16:05] * Scope reset to messaging-only: removed prior out-of-scope branch edits and narrowed the plan/PRD verification gate to messaging suites.
+[2026-03-10 16:05] > [STORY-US-002] Resuming publisher parity to remove the remaining outbox-only delayed publish shape from the public contract.
+[2026-03-10 16:32] * [STORY-US-002] Reverted the rejected PublishOptions.Delay attempt; delayed publishing stays a separate outbox API and the shared primary PublishAsync contract remains intact.
+[2026-03-10 16:32] + [STORY-US-002] Messaging-only verification gate remains green for abstractions, core, OpenTelemetry, and RedisStreams.
+[2026-03-11 11:53] > [STORY-US-006] Starting lifecycle contract alignment to remove the remaining mismatch between public consumer lifecycle docs and scoped per-dispatch runtime behavior.
+[2026-03-11 11:56] * [STORY-US-006] Aligned IConsumerLifecycle and messaging docs to the real per-dispatch contract instead of introducing new startup or shutdown semantics for scoped consumers.
+[2026-03-11 11:56] + [STORY-US-006] Messaging-only verification gate passed after adding explicit per-dispatch lifecycle coverage in Headless.Messaging.Core.Tests.Unit.

@@ -19,7 +19,7 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseKafka("localhost:9092");
         });
@@ -43,7 +43,7 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseKafka(opt =>
             {
@@ -68,7 +68,7 @@ public sealed class SetupTests : TestBase
 
         // when
         var act = () =>
-            services.AddMessages(options =>
+            services.AddMessaging(options =>
             {
                 options.UseKafka((Action<MessagingKafkaOptions>)null!);
             });
@@ -85,7 +85,7 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseKafka("localhost:9092");
         });
@@ -105,7 +105,7 @@ public sealed class SetupTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             options.UseKafka("localhost:9092");
         });

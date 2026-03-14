@@ -4,17 +4,19 @@ Core abstractions for type-safe, high-performance message consumption and publis
 
 ## Problem Solved
 
-Provides standardized interfaces for building reliable distributed messaging systems with compile-time type safety, avoiding reflection overhead and enabling transactional outbox patterns for guaranteed message delivery.
+Provides standardized interfaces for building reliable distributed messaging systems with compile-time type safety, avoiding reflection overhead and enabling deterministic publish and consume behavior.
 
 ## Key Features
 
 - **Type-Safe Consumption**: `IConsume<TMessage>` interface with `ConsumeContext<TMessage>` for compile-time verification (5-8x faster than reflection)
 - **Outbox Publishing**: `IOutboxPublisher` for transactional message publishing with database consistency
 - **Direct Publishing**: `IDirectPublisher` for fire-and-forget, low-latency message delivery
+- **Runtime Subscriptions**: `IRuntimeSubscriber` for ephemeral broker-attached delegates with scoped DI
+- **Per-Dispatch Lifecycle Hooks**: `IConsumerLifecycle` runs around each scoped message delivery
 - **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
-- **Consumer Configuration**: `IMessagingBuilder` for assembly scanning and manual consumer registration
+- **Consumer Configuration**: `IMessagingBuilder` for deterministic assembly scanning, conventions, and manual consumer registration
 - **Delayed Publishing**: Schedule messages for future delivery
-- **Multi-Type Consumers**: Single consumer can handle multiple message types
+- **Multi-Type Consumers**: Assembly scanning registers every `IConsume<T>` interface on the same consumer
 
 ## Installation
 
@@ -44,23 +46,28 @@ public sealed class OrderPlacedHandler(
 }
 
 // Register consumers
-builder.Services.AddMessages(options =>
+builder.Services.AddMessaging(options =>
 {
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
     options.WithTopicMapping<OrderPlacedEvent>("orders.placed");
 });
+
+// Explicit Subscribe<TConsumer>() is for single-message consumers.
+// Use SubscribeFromAssembly(...) when one consumer implements multiple IConsume<T> interfaces.
 
 // Publish with outbox (reliable delivery)
 public sealed class OrderService(IOutboxPublisher publisher)
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
     {
-        // Publish transactionally with database changes
-        await publisher.PublishAsync("orders.placed", new OrderPlacedEvent
-        {
-            OrderId = order.Id,
-            Total = order.Total
-        }, cancellationToken: ct);
+        await publisher.PublishAsync(
+            new OrderPlacedEvent
+            {
+                OrderId = order.Id,
+                Total = order.Total
+            },
+            new PublishOptions { Topic = "orders.placed" },
+            ct);
     }
 }
 
@@ -74,6 +81,46 @@ public sealed class MetricsService(IDirectPublisher publisher)
     }
 }
 ```
+
+## Runtime Subscriptions
+
+Runtime delegates use the same scoped consume pipeline as `IConsume<T>` handlers. The default policy is deterministic and fail-fast:
+
+- topic resolves from mappings or conventions
+- group resolves from application id + handler id + version
+- duplicate registrations are rejected unless you explicitly opt into `Ignore` or `Replace`
+- anonymous delegates must provide `HandlerId`
+
+```csharp
+public sealed class ProjectionWarmup(IRuntimeSubscriber subscriber)
+{
+    public ValueTask<RuntimeSubscriptionHandle> AttachAsync(CancellationToken cancellationToken)
+    {
+        return subscriber.SubscribeAsync<OrderPlacedEvent>(
+            async (context, services, ct) =>
+            {
+                var cache = services.GetRequiredService<IProjectionCache>();
+                await cache.WarmAsync(context.Message.OrderId, ct);
+            },
+            new RuntimeSubscriptionOptions
+            {
+                HandlerId = "ProjectionWarmup.OrderPlaced",
+            },
+            cancellationToken
+        );
+    }
+}
+```
+
+## Consumer Lifecycle Hooks
+
+`IConsumerLifecycle` is a per-dispatch contract, not an app startup or shutdown contract. When a consumer implements it:
+
+- `OnStartingAsync()` runs after the scoped consumer instance is resolved and before `Consume(...)`
+- `OnStoppingAsync()` runs in a `finally` block after each delivery, even when `Consume(...)` throws
+- cleanup exceptions are suppressed so they do not mask the original message failure
+
+Use it for per-delivery setup and teardown. Do not rely on it for application-wide startup state.
 
 ## Configuration
 

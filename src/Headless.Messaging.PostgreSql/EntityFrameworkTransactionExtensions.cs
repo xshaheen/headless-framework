@@ -4,8 +4,6 @@ using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Headless.Messaging.PostgreSql;
 
 /// <summary>
@@ -16,35 +14,27 @@ internal static class EntityFrameworkTransactionExtensions
     public static IDbContextTransaction BeginEfOutboxTransaction(
         this DatabaseFacade database,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit
     )
     {
-        var trans = database.BeginTransaction(isolationLevel);
-        publisher.Transaction = ActivatorUtilities.CreateInstance<PostgreSqlOutboxTransaction>(
-            publisher.ServiceProvider
-        );
-        publisher.Transaction.DbTransaction = trans;
-        publisher.Transaction.AutoCommit = autoCommit;
-        return new PostgreSqlEntityFrameworkDbTransaction(publisher.Transaction);
+        transaction.DbTransaction = database.BeginTransaction(isolationLevel);
+        transaction.AutoCommit = autoCommit;
+        return new PostgreSqlEntityFrameworkDbTransaction(transaction);
     }
 
     public static async Task<IDbContextTransaction> BeginEfOutboxTransactionAsync(
         this DatabaseFacade database,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit,
         CancellationToken cancellationToken
     )
     {
-        var transaction = await database.BeginTransactionAsync(isolationLevel, cancellationToken).ConfigureAwait(false);
+        transaction.DbTransaction = await database.BeginTransactionAsync(isolationLevel, cancellationToken)
+            .ConfigureAwait(false);
+        transaction.AutoCommit = autoCommit;
 
-        publisher.Transaction = ActivatorUtilities.CreateInstance<PostgreSqlOutboxTransaction>(
-            publisher.ServiceProvider
-        );
-        publisher.Transaction.DbTransaction = transaction;
-        publisher.Transaction.AutoCommit = autoCommit;
-
-        return new PostgreSqlEntityFrameworkDbTransaction(publisher.Transaction);
+        return new PostgreSqlEntityFrameworkDbTransaction(transaction);
     }
 }

@@ -1,5 +1,6 @@
 ﻿using System.Data.Common;
 using Headless.Messaging;
+using Headless.Messaging.Transactions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -30,7 +31,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
 public class MessagingNpgsqlRelationalConnection : NpgsqlRelationalConnection
 {
-    private readonly IOutboxPublisher _publisher;
+    private readonly IOutboxTransactionAccessor _transactionAccessor;
 
     protected MessagingNpgsqlRelationalConnection(
         RelationalConnectionDependencies dependencies,
@@ -38,16 +39,16 @@ public class MessagingNpgsqlRelationalConnection : NpgsqlRelationalConnection
     )
         : base(dependencies, dataSource)
     {
-        _publisher = dependencies.CurrentContext.Context.GetService<IOutboxPublisher>();
+        _transactionAccessor = dependencies.CurrentContext.Context.GetService<IOutboxTransactionAccessor>();
     }
 
 #pragma warning restore EF1001
 
     public override void CommitTransaction()
     {
-        if (_publisher.Transaction != null)
+        if (_transactionAccessor.Current != null)
         {
-            _publisher.Transaction.Commit();
+            _transactionAccessor.Current.Commit();
         }
         else
         {
@@ -57,16 +58,16 @@ public class MessagingNpgsqlRelationalConnection : NpgsqlRelationalConnection
 
     public override Task CommitTransactionAsync(CancellationToken cancellationToken = default)
     {
-        return _publisher.Transaction != null
-            ? _publisher.Transaction.CommitAsync(cancellationToken)
+        return _transactionAccessor.Current != null
+            ? _transactionAccessor.Current.CommitAsync(cancellationToken)
             : base.CommitTransactionAsync(cancellationToken);
     }
 
     public override void RollbackTransaction()
     {
-        if (_publisher.Transaction != null)
+        if (_transactionAccessor.Current != null)
         {
-            _publisher.Transaction.Rollback();
+            _transactionAccessor.Current.Rollback();
         }
         else
         {
@@ -76,8 +77,8 @@ public class MessagingNpgsqlRelationalConnection : NpgsqlRelationalConnection
 
     public override Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
     {
-        return _publisher.Transaction != null
-            ? _publisher.Transaction.RollbackAsync(cancellationToken)
+        return _transactionAccessor.Current != null
+            ? _transactionAccessor.Current.RollbackAsync(cancellationToken)
             : base.RollbackTransactionAsync(cancellationToken);
     }
 }

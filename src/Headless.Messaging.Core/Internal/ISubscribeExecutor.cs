@@ -266,7 +266,15 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
 
                 await _provider
                     .GetRequiredService<IOutboxPublisher>()
-                    .PublishAsync(ret.CallbackName, ret.Result, ret.CallbackHeader, cancellationToken)
+                    .PublishAsync(
+                        ret.Result,
+                        new PublishOptions
+                        {
+                            Topic = ret.CallbackName,
+                            Headers = ret.CallbackHeader,
+                        },
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
             }
         }

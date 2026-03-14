@@ -13,8 +13,11 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Headless.Messaging.SqlServer;
 
-public sealed class SqlServerOutboxTransaction(IDispatcher dispatcher, DiagnosticProcessorObserver diagnosticProcessor)
-    : OutboxTransaction(dispatcher)
+public sealed class SqlServerOutboxTransaction(
+    IDispatcher dispatcher,
+    IOutboxTransactionAccessor accessor,
+    DiagnosticProcessorObserver diagnosticProcessor
+) : OutboxTransaction(dispatcher, accessor)
 {
     protected override void AddToSent(MediumMessage msg)
     {
@@ -104,54 +107,54 @@ public static class SqlServerTransactionExtensions
     /// Start the outbox transaction
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <returns>The <see cref="IDbContextTransaction" /> of EF DbContext transaction object.</returns>
     public static IDbContextTransaction BeginTransaction(
         this DatabaseFacade database,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false
     )
     {
-        return database.BeginEntityFrameworkOutboxTransaction(IsolationLevel.Unspecified, publisher, autoCommit);
+        return database.BeginEntityFrameworkOutboxTransaction(IsolationLevel.Unspecified, transaction, autoCommit);
     }
 
     /// <summary>
     /// Start the outbox transaction
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="isolationLevel">The <see cref="IsolationLevel" /> to use</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <returns>The <see cref="IDbContextTransaction" /> of EF DbContext transaction object.</returns>
     public static IDbContextTransaction BeginTransaction(
         this DatabaseFacade database,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false
     )
     {
-        return database.BeginEntityFrameworkOutboxTransaction(isolationLevel, publisher, autoCommit);
+        return database.BeginEntityFrameworkOutboxTransaction(isolationLevel, transaction, autoCommit);
     }
 
     /// <summary>
     /// Start the outbox transaction async
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="cancellationToken"></param>
     /// <returns>The <see cref="IDbContextTransaction" /> of EF DbContext transaction object.</returns>
     public static Task<IDbContextTransaction> BeginTransactionAsync(
         this DatabaseFacade database,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
     {
         return database.BeginEntityFrameworkOutboxTransactionAsync(
             IsolationLevel.Unspecified,
-            publisher,
+            transaction,
             autoCommit,
             cancellationToken
         );
@@ -161,7 +164,7 @@ public static class SqlServerTransactionExtensions
     /// Start the outbox transaction async
     /// </summary>
     /// <param name="database">The <see cref="DatabaseFacade" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="isolationLevel">The <see cref="IsolationLevel" /> to use</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="cancellationToken"></param>
@@ -169,14 +172,14 @@ public static class SqlServerTransactionExtensions
     public static Task<IDbContextTransaction> BeginTransactionAsync(
         this DatabaseFacade database,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
     {
         return database.BeginEntityFrameworkOutboxTransactionAsync(
             isolationLevel,
-            publisher,
+            transaction,
             autoCommit,
             cancellationToken
         );
@@ -186,16 +189,16 @@ public static class SqlServerTransactionExtensions
     /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <returns>The <see cref="IOutboxTransaction" /> object.</returns>
-    public static IDbTransaction BeginTransaction(
+    public static IOutboxTransaction BeginTransaction(
         this IDbConnection dbConnection,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false
     )
     {
-        return (IDbTransaction)dbConnection.BeginOutboxTransaction<SqlServerOutboxTransaction>(publisher, autoCommit);
+        return dbConnection.BeginOutboxTransaction(transaction, autoCommit);
     }
 
     /// <summary>
@@ -203,41 +206,35 @@ public static class SqlServerTransactionExtensions
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
     /// <param name="isolationLevel">The <see cref="IsolationLevel" /> to use</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <returns>The <see cref="IOutboxTransaction" /> object.</returns>
-    public static IDbTransaction BeginTransaction(
+    public static IOutboxTransaction BeginTransaction(
         this IDbConnection dbConnection,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false
     )
     {
-        return (IDbTransaction)
-            dbConnection.BeginOutboxTransaction<SqlServerOutboxTransaction>(isolationLevel, publisher, autoCommit);
+        return dbConnection.BeginOutboxTransaction(isolationLevel, transaction, autoCommit);
     }
 
     /// <summary>
     /// Start the outbox transaction
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="cancellationToken"></param>
     /// <returns>The <see cref="IOutboxTransaction" /> object.</returns>
-    public static async Task<IDbTransaction> BeginTransactionAsync(
+    public static Task<IOutboxTransaction> BeginTransactionAsync(
         this IDbConnection dbConnection,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
     {
-        var transaction = await dbConnection.BeginOutboxTransactionAsync<SqlServerOutboxTransaction>(
-            publisher,
-            autoCommit,
-            cancellationToken
-        );
-        return (IDbTransaction)transaction;
+        return dbConnection.BeginOutboxTransactionAsync(transaction, autoCommit, cancellationToken).AsTask();
     }
 
     /// <summary>
@@ -245,24 +242,19 @@ public static class SqlServerTransactionExtensions
     /// </summary>
     /// <param name="dbConnection">The <see cref="IDbConnection" />.</param>
     /// <param name="isolationLevel">The <see cref="IsolationLevel" /> to use</param>
-    /// <param name="publisher">The <see cref="IOutboxPublisher" />.</param>
+    /// <param name="transaction">The <see cref="IOutboxTransaction" />.</param>
     /// <param name="autoCommit">Whether the transaction is automatically committed when the message is published</param>
     /// <param name="cancellationToken"></param>
     /// <returns>The <see cref="IOutboxTransaction" /> object.</returns>
-    public static async Task<IDbTransaction> BeginTransactionAsync(
+    public static Task<IOutboxTransaction> BeginTransactionAsync(
         this IDbConnection dbConnection,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit = false,
         CancellationToken cancellationToken = default
     )
     {
-        var transaction = await dbConnection.BeginOutboxTransactionAsync<SqlServerOutboxTransaction>(
-            isolationLevel,
-            publisher,
-            autoCommit,
-            cancellationToken
-        );
-        return (IDbTransaction)transaction;
+        return dbConnection.BeginOutboxTransactionAsync(isolationLevel, transaction, autoCommit, cancellationToken)
+            .AsTask();
     }
 }

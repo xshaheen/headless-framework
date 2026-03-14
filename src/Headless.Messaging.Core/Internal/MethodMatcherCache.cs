@@ -8,10 +8,11 @@ namespace Headless.Messaging.Internal;
 
 public class MethodMatcherCache(IConsumerServiceSelector selector)
 {
-    private ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> Entries { get; } =
+    private readonly Lock _lock = new();
+    private ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> _entries =
         new(StringComparer.Ordinal);
 
-    private ConcurrentDictionary<string, byte> GroupConcurrent { get; } = new(StringComparer.Ordinal);
+    private ConcurrentDictionary<string, byte> _groupConcurrent = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Get a dictionary of candidates.In the dictionary,
@@ -22,42 +23,55 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         IReadOnlyList<ConsumerExecutorDescriptor>
     > GetCandidatesMethodsOfGroupNameGrouped()
     {
-        if (!Entries.IsEmpty)
+        if (!_entries.IsEmpty)
         {
-            return Entries;
+            return _entries;
         }
 
-        var executorCollection = selector.SelectCandidates();
-
-        // Group by GroupName directly
-        var groupedCandidates = executorCollection.GroupBy(x => x.GroupName, StringComparer.Ordinal);
-
-        foreach (var item in groupedCandidates)
+        lock (_lock)
         {
-            var candidates = item.ToList();
-            Entries.TryAdd(item.Key, candidates);
-            // Use the maximum concurrency among all consumers in the same group
-            var maxConcurrency = candidates.Max(c => c.Concurrency);
-            GroupConcurrent.TryAdd(item.Key, maxConcurrency);
+            if (!_entries.IsEmpty)
+            {
+                return _entries;
+            }
+
+            var executorCollection = selector.SelectCandidates();
+
+            var entries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
+                StringComparer.Ordinal
+            );
+            var groupConcurrent = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
+            var groupedCandidates = executorCollection.GroupBy(x => x.GroupName, StringComparer.Ordinal);
+
+            foreach (var item in groupedCandidates)
+            {
+                var candidates = item.ToList();
+                entries.TryAdd(item.Key, candidates);
+                var maxConcurrency = candidates.Max(c => c.Concurrency);
+                groupConcurrent.TryAdd(item.Key, maxConcurrency);
+            }
+
+            _entries = entries;
+            _groupConcurrent = groupConcurrent;
         }
 
-        return Entries;
+        return _entries;
     }
 
     public byte GetGroupConcurrentLimit(string group)
     {
-        return GroupConcurrent.TryGetValue(group, out var value) ? value : (byte)1;
+        return _groupConcurrent.TryGetValue(group, out var value) ? value : (byte)1;
     }
 
     public List<string> GetAllTopics()
     {
-        if (Entries.IsEmpty)
+        if (_entries.IsEmpty)
         {
             GetCandidatesMethodsOfGroupNameGrouped();
         }
 
         var result = new List<string>();
-        foreach (var item in Entries.Values)
+        foreach (var item in _entries.Values)
         {
             result.AddRange(item.Select(x => x.TopicName));
         }
@@ -67,7 +81,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
 
     /// <summary>
     /// Attempts to get the topic executor associated with the specified topic name and group name from the
-    /// <see cref="Entries" />.
+    /// cached descriptor snapshot.
     /// </summary>
     /// <param name="topicName">The topic name of the value to get.</param>
     /// <param name="groupName">The group name of the value to get.</param>
@@ -79,14 +93,14 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         [NotNullWhen(true)] out ConsumerExecutorDescriptor? matchTopic
     )
     {
-        if (Entries == null)
-        {
-            throw new InvalidOperationException("MethodMatcherCache is not initialized.");
-        }
-
         matchTopic = null;
 
-        if (Entries.TryGetValue(groupName, out var groupMatchTopics))
+        if (_entries.IsEmpty)
+        {
+            GetCandidatesMethodsOfGroupNameGrouped();
+        }
+
+        if (_entries.TryGetValue(groupName, out var groupMatchTopics))
         {
             matchTopic = selector.SelectBestCandidate(topicName, groupMatchTopics);
 
@@ -94,5 +108,16 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         }
 
         return false;
+    }
+
+    public void Invalidate()
+    {
+        lock (_lock)
+        {
+            _entries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
+                StringComparer.Ordinal
+            );
+            _groupConcurrent = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
+        }
     }
 }
