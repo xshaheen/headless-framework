@@ -62,6 +62,9 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     /// <summary>Gets the publisher for sending messages.</summary>
     protected IOutboxPublisher Publisher => ServiceProvider.GetRequiredService<IOutboxPublisher>();
 
+    /// <summary>Gets the scheduler-aware publisher for delayed messages.</summary>
+    protected IScheduledPublisher ScheduledPublisher => ServiceProvider.GetRequiredService<IScheduledPublisher>();
+
     /// <summary>Gets the data storage for message persistence.</summary>
     protected IDataStorage DataStorage => ServiceProvider.GetRequiredService<IDataStorage>();
 
@@ -343,7 +346,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var startTime = DateTimeOffset.UtcNow;
 
         // when
-        await Publisher.PublishDelayAsync(
+        await ScheduledPublisher.PublishDelayAsync(
             TimeSpan.FromSeconds(2),
             message,
             new PublishOptions { Topic = "test-message" },

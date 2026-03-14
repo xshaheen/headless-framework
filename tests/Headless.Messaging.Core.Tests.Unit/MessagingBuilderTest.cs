@@ -45,6 +45,22 @@ public sealed class MessagingBuilderTest
         messagingOptions.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task CanResolveScheduledPublisher()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMessaging(options =>
+        {
+            options.UseInMemoryMessageQueue();
+            options.UseInMemoryStorage();
+        });
+        await using var builder = services.BuildServiceProvider();
+
+        var publisher = builder.GetRequiredService<IScheduledPublisher>();
+        publisher.Should().NotBeNull();
+    }
+
     private sealed class MyProducerService : IOutboxPublisher
     {
         public Task PublishAsync<T>(
@@ -55,12 +71,5 @@ public sealed class MessagingBuilderTest
         {
             throw new NotImplementedException();
         }
-
-        public Task PublishDelayAsync<T>(
-            TimeSpan delayTime,
-            T? contentObj,
-            PublishOptions? options = null,
-            CancellationToken cancellationToken = default
-        ) => throw new NotImplementedException();
     }
 }

@@ -4,11 +4,12 @@ Core implementation of the type-safe messaging system with outbox pattern, messa
 
 ## Problem Solved
 
-Provides the foundational runtime for reliable distributed messaging with transactional outbox, automatic retries, delayed delivery, and type-safe consumer orchestration across multiple transport providers.
+Provides the foundational runtime for reliable distributed messaging with transactional outbox, automatic retries, scheduled delivery, and type-safe consumer orchestration across multiple transport providers.
 
 ## Key Features
 
 - **Outbox Publisher**: Transactional message publishing with database consistency
+- **Scheduled Publisher**: Delayed message delivery through the configured scheduler pipeline
 - **Unified Publish Contract**: `IDirectPublisher` and `IOutboxPublisher` share the same `PublishAsync(message, options, ct)` surface
 - **Consumer Management**: `AddMessaging(...)`, `Subscribe*()`, `AddConsumer(...)`, invocation, and per-dispatch lifecycle handling
 - **Runtime Delegate Support**: Broker-attached function handlers with scoped DI and the same consume pipeline as class handlers
@@ -96,8 +97,15 @@ Use `IOutboxPublisher` for messages that must not be lost:
 
 - **Transactional**: Messages are stored in database before sending
 - **At-least-once**: Automatic retries with configurable backoff
-- **Delayed delivery**: Schedule messages for future delivery
 - **Ordering**: Preserves publish order within transactions
+
+### IScheduledPublisher (Delayed Delivery)
+
+Use `IScheduledPublisher` when publish timing is part of the use case:
+
+- **Delayed delivery**: Schedule messages for future delivery
+- **Shared message model**: Uses the same message payloads and `PublishOptions`
+- **Composable**: Current core implementation uses the outbox pipeline under the hood
 
 ### IDirectPublisher (Fire-and-Forget)
 

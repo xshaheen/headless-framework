@@ -139,6 +139,11 @@ public sealed class TypeSafePublishApiTests
     {
         typeof(IDirectPublisher).GetInterfaces().Should().Contain(typeof(IMessagePublisher));
         typeof(IOutboxPublisher).GetInterfaces().Should().Contain(typeof(IMessagePublisher));
+        typeof(IOutboxPublisher).GetMethods().Should().NotContain(method => method.Name == nameof(IScheduledPublisher.PublishDelayAsync));
+        typeof(IScheduledPublisher)
+            .GetMethods()
+            .Should()
+            .ContainSingle(method => method.Name == nameof(IScheduledPublisher.PublishDelayAsync) && method.IsGenericMethod);
         typeof(IMessagePublisher)
             .GetMethods()
             .Should()

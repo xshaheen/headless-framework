@@ -14,7 +14,7 @@ internal sealed class OutboxPublisher(
     IDispatcher dispatcher,
     IMessagePublishRequestFactory publishRequestFactory,
     IOutboxTransactionAccessor transactionAccessor
-) : IOutboxPublisher
+) : IOutboxPublisher, IScheduledPublisher
 {
     // ReSharper disable once InconsistentNaming
     private static DiagnosticListener DiagnosticListener { get; } =

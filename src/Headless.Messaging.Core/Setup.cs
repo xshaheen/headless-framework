@@ -91,7 +91,9 @@ public static class Setup
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
-        services.TryAddSingleton<IOutboxPublisher, OutboxPublisher>();
+        services.TryAddSingleton<OutboxPublisher>();
+        services.TryAddSingleton<IOutboxPublisher>(sp => sp.GetRequiredService<OutboxPublisher>());
+        services.TryAddSingleton<IScheduledPublisher>(sp => sp.GetRequiredService<OutboxPublisher>());
         services.TryAddSingleton<IDirectPublisher, DirectPublisher>();
         services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();
         services.TryAddSingleton<IRuntimeSubscriber, RuntimeSubscriber>();

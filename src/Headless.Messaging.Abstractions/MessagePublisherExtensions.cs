@@ -24,7 +24,7 @@ public static class MessagePublisherExtensions
     /// Schedules a delayed publish with the default publish options.
     /// </summary>
     public static Task PublishDelayAsync<T>(
-        this IOutboxPublisher publisher,
+        this IScheduledPublisher publisher,
         TimeSpan delayTime,
         T? contentObj,
         CancellationToken cancellationToken

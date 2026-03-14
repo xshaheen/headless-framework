@@ -10,11 +10,11 @@ Provides standardized interfaces for building reliable distributed messaging sys
 
 - **Type-Safe Consumption**: `IConsume<TMessage>` interface with `ConsumeContext<TMessage>` for compile-time verification (5-8x faster than reflection)
 - **Outbox Publishing**: `IOutboxPublisher` for transactional message publishing with database consistency
+- **Scheduled Publishing**: `IScheduledPublisher` for delayed message delivery
 - **Direct Publishing**: `IDirectPublisher` for fire-and-forget, low-latency message delivery
 - **Runtime Subscriptions**: `IRuntimeSubscriber` for ephemeral broker-attached delegates with scoped DI
 - **Per-Dispatch Lifecycle Hooks**: `IConsumerLifecycle` runs around each scoped message delivery
 - **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
-- **Delayed Publishing**: Schedule messages for future delivery
 
 ## Installation
 
@@ -73,6 +73,15 @@ public sealed class MetricsService(IDirectPublisher publisher)
     {
         // Topic resolved from WithTopicMapping<MetricEvent>()
         await publisher.PublishAsync(metric, ct);
+    }
+}
+
+// Schedule a message for later delivery
+public sealed class ReminderService(IScheduledPublisher publisher)
+{
+    public async Task ScheduleAsync(ReminderEvent reminder, CancellationToken ct)
+    {
+        await publisher.PublishDelayAsync(TimeSpan.FromMinutes(5), reminder, ct);
     }
 }
 ```
