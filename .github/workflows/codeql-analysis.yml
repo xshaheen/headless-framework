@@ -51,9 +51,8 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: manual
 
-      - name: ".NET Nuke Compile"
-        run: ./build.ps1 Compile -Configuration Release
-        shell: pwsh
+      - name: "Build"
+        run: dotnet build --configuration Release
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
