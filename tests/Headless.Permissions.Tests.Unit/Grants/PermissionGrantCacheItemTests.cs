@@ -14,19 +14,35 @@ public sealed class PermissionGrantCacheItemTests : TestBase
         const string name = "Users.Create";
         const string providerName = "RoleProvider";
         const string providerKey = "admin";
+        const string tenantId = "tenant-1";
 
         // when
-        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey);
+        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey, tenantId);
 
         // then
-        cacheKey.Should().Be("permissions:provider:RoleProvider:admin,name:Users.Create");
+        cacheKey.Should().Be("permissions:t:tenant-1,provider:RoleProvider:admin,name:Users.Create");
+    }
+
+    [Fact]
+    public void should_calculate_cache_key_with_null_tenant()
+    {
+        // given
+        const string name = "Users.Create";
+        const string providerName = "RoleProvider";
+        const string providerKey = "admin";
+
+        // when
+        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey, tenantId: null);
+
+        // then
+        cacheKey.Should().Be("permissions:t:,provider:RoleProvider:admin,name:Users.Create");
     }
 
     [Fact]
     public void should_extract_permission_name_from_key()
     {
         // given
-        const string cacheKey = "permissions:provider:RoleProvider:admin,name:Users.Create";
+        const string cacheKey = "permissions:t:tenant-1,provider:RoleProvider:admin,name:Users.Create";
 
         // when
         var permissionName = PermissionGrantCacheItem.GetPermissionNameFormCacheKeyOrDefault(cacheKey);

@@ -83,7 +83,7 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken = default
     )
     {
-        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey);
+        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey, currentTenant.Id);
 
         logger.LogDebug("PermissionStore.GetCacheItemAsync: {CacheKey}", cacheKey);
 
@@ -185,7 +185,7 @@ public sealed class PermissionGrantStore(
         }
 
         await cache.UpsertAsync(
-            cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
+            cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey, currentTenant.Id),
             cacheValue: new PermissionGrantCacheItem(isGranted: true),
             expiration: _cacheExpiration,
             cancellationToken: cancellationToken
@@ -252,7 +252,7 @@ public sealed class PermissionGrantStore(
 
         foreach (var name in distinctNames)
         {
-            cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey)] = cacheItem;
+            cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey, currentTenant.Id)] = cacheItem;
         }
 
         await cache.UpsertAllAsync(cacheValues, expiration: _cacheExpiration, cancellationToken: cancellationToken);
@@ -308,7 +308,7 @@ public sealed class PermissionGrantStore(
         }
 
         await cache.UpsertAsync(
-            cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey),
+            cacheKey: PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey, currentTenant.Id),
             cacheValue: new PermissionGrantCacheItem(isGranted: false),
             expiration: _cacheExpiration,
             cancellationToken: cancellationToken
@@ -375,7 +375,7 @@ public sealed class PermissionGrantStore(
 
         foreach (var name in distinctNames)
         {
-            cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey)] = cacheItem;
+            cacheValues[PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey, currentTenant.Id)] = cacheItem;
         }
 
         await cache.UpsertAllAsync(cacheValues, expiration: _cacheExpiration, cancellationToken: cancellationToken);
@@ -391,7 +391,7 @@ public sealed class PermissionGrantStore(
     )
     {
         var cacheKeys = names
-            .Select(x => PermissionGrantCacheItem.CalculateCacheKey(x, providerName, providerKey))
+            .Select(x => PermissionGrantCacheItem.CalculateCacheKey(x, providerName, providerKey, currentTenant.Id))
             .ToList();
 
         var cacheItemsMap = await cache.GetAllAsync(cacheKeys, cancellationToken);
@@ -455,7 +455,7 @@ public sealed class PermissionGrantStore(
 
         foreach (var permission in definitions)
         {
-            var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permission.Name, providerName, providerKey);
+            var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permission.Name, providerName, providerKey, currentTenant.Id);
 
             // If there's a record in DB, use its IsGranted value (true or false)
             // If no record, it's undefined (null)
@@ -494,7 +494,7 @@ public sealed class PermissionGrantStore(
 
         foreach (var permission in definitions)
         {
-            var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permission.Name, providerName, providerKey);
+            var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permission.Name, providerName, providerKey, currentTenant.Id);
 
             // If there's a record in DB, use its IsGranted value (true or false)
             // If no record, it's undefined (null)

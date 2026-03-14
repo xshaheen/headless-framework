@@ -17,6 +17,7 @@ public sealed class PermissionGrantStoreTests : TestBase
 {
     private const string _ProviderName = "Role";
     private const string _ProviderKey = "admin";
+    private const string _TenantId = "tenant-1";
 
     private readonly IPermissionDefinitionManager _definitionManager;
     private readonly IPermissionGrantRepository _repository;
@@ -33,6 +34,8 @@ public sealed class PermissionGrantStoreTests : TestBase
         _cache = Substitute.For<ICache<PermissionGrantCacheItem>>();
         _currentTenant = Substitute.For<ICurrentTenant>();
         var logger = Substitute.For<ILogger<PermissionGrantStore>>();
+
+        _currentTenant.Id.Returns(_TenantId);
 
         _sut = new PermissionGrantStore(
             _definitionManager,
@@ -51,7 +54,7 @@ public sealed class PermissionGrantStoreTests : TestBase
     {
         // given
         const string permissionName = "Users.Create";
-        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey);
+        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey, _TenantId);
         var cachedItem = new PermissionGrantCacheItem(isGranted: true);
 
         _cache
@@ -71,7 +74,7 @@ public sealed class PermissionGrantStoreTests : TestBase
     {
         // given
         const string permissionName = "Users.Create";
-        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey);
+        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey, _TenantId);
         var permission = _CreatePermission(permissionName);
         var grantRecord = new PermissionGrantRecord(Guid.NewGuid(), permissionName, _ProviderName, _ProviderKey, true);
 
@@ -98,7 +101,7 @@ public sealed class PermissionGrantStoreTests : TestBase
     {
         // given
         const string permissionName = "Users.Create";
-        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey);
+        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey, _TenantId);
         var permission = _CreatePermission(permissionName);
 
         _cache.GetAsync(cacheKey, AbortToken).Returns(CacheValue<PermissionGrantCacheItem>.NoValue);
@@ -117,7 +120,7 @@ public sealed class PermissionGrantStoreTests : TestBase
     {
         // given
         const string permissionName = "Users.Delete";
-        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey);
+        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey, _TenantId);
         var cachedItem = new PermissionGrantCacheItem(isGranted: false);
 
         _cache
@@ -136,7 +139,7 @@ public sealed class PermissionGrantStoreTests : TestBase
     {
         // given
         const string permissionName = "Users.Create";
-        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey);
+        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey, _TenantId);
         var cachedItem = new PermissionGrantCacheItem(isGranted: null);
 
         _cache
@@ -159,7 +162,7 @@ public sealed class PermissionGrantStoreTests : TestBase
     {
         // given
         const string permissionName = "Users.Create";
-        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey);
+        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey, _TenantId);
         var cachedItem = new PermissionGrantCacheItem(isGranted: true);
 
         _cache
@@ -181,8 +184,8 @@ public sealed class PermissionGrantStoreTests : TestBase
     {
         // given
         string[] permissionNames = ["Users.Create", "Users.Update"];
-        var cacheKey1 = PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, _ProviderKey);
-        var cacheKey2 = PermissionGrantCacheItem.CalculateCacheKey("Users.Update", _ProviderName, _ProviderKey);
+        var cacheKey1 = PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, _ProviderKey, _TenantId);
+        var cacheKey2 = PermissionGrantCacheItem.CalculateCacheKey("Users.Update", _ProviderName, _ProviderKey, _TenantId);
 
         var cacheResults = new Dictionary<string, CacheValue<PermissionGrantCacheItem>>(StringComparer.Ordinal)
         {
@@ -206,8 +209,8 @@ public sealed class PermissionGrantStoreTests : TestBase
     {
         // given
         string[] permissionNames = ["Users.Create", "Users.Update"];
-        var cacheKey1 = PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, _ProviderKey);
-        var cacheKey2 = PermissionGrantCacheItem.CalculateCacheKey("Users.Update", _ProviderName, _ProviderKey);
+        var cacheKey1 = PermissionGrantCacheItem.CalculateCacheKey("Users.Create", _ProviderName, _ProviderKey, _TenantId);
+        var cacheKey2 = PermissionGrantCacheItem.CalculateCacheKey("Users.Update", _ProviderName, _ProviderKey, _TenantId);
 
         var cacheResults = new Dictionary<string, CacheValue<PermissionGrantCacheItem>>(StringComparer.Ordinal)
         {
@@ -325,7 +328,7 @@ public sealed class PermissionGrantStoreTests : TestBase
     {
         // given
         const string permissionName = "Users.Create";
-        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey);
+        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey, _TenantId);
 
         _repository
             .FindAsync(permissionName, _ProviderName, _ProviderKey, AbortToken)
@@ -506,7 +509,7 @@ public sealed class PermissionGrantStoreTests : TestBase
     {
         // given
         const string permissionName = "Users.Create";
-        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey);
+        var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(permissionName, _ProviderName, _ProviderKey, _TenantId);
         var grantedRecord = new PermissionGrantRecord(
             Guid.NewGuid(),
             permissionName,
