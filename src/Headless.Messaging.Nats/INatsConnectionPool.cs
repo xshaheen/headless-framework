@@ -31,7 +31,10 @@ public sealed class NatsConnectionPool : INatsConnectionPool, IDisposable
         _connectionPool = new ConcurrentQueue<IConnection>();
         _connectionFactory = new ConnectionFactory();
         _maxSize = _options.ConnectionPoolSize;
-        logger.LogDebug("NATS configuration: {Options}", options.Value.Options);
+        if (logger.IsEnabled(LogLevel.Debug))
+        {
+            logger.LogDebug("NATS configuration: {Options}", options.Value.Options);
+        }
     }
 
     public string ServersAddress => _options.Servers;

@@ -4,8 +4,6 @@ using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Headless.Messaging.SqlServer;
 
 /// <summary>
@@ -16,37 +14,27 @@ internal static class EntityFrameworkTransactionExtensions
     public static IDbContextTransaction BeginEntityFrameworkOutboxTransaction(
         this DatabaseFacade database,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit
     )
     {
-        var dbTransaction = database.BeginTransaction(isolationLevel);
-        publisher.Transaction = ActivatorUtilities.CreateInstance<SqlServerOutboxTransaction>(
-            publisher.ServiceProvider
-        );
-        publisher.Transaction.DbTransaction = dbTransaction;
-        publisher.Transaction.AutoCommit = autoCommit;
-        return new SqlServerEntityFrameworkDbTransaction(publisher.Transaction);
+        transaction.DbTransaction = database.BeginTransaction(isolationLevel);
+        transaction.AutoCommit = autoCommit;
+        return new SqlServerEntityFrameworkDbTransaction(transaction);
     }
 
     public static async Task<IDbContextTransaction> BeginEntityFrameworkOutboxTransactionAsync(
         this DatabaseFacade database,
         IsolationLevel isolationLevel,
-        IOutboxPublisher publisher,
+        IOutboxTransaction transaction,
         bool autoCommit,
         CancellationToken cancellationToken
     )
     {
-        var dbTransaction = await database
-            .BeginTransactionAsync(isolationLevel, cancellationToken)
+        transaction.DbTransaction = await database.BeginTransactionAsync(isolationLevel, cancellationToken)
             .ConfigureAwait(false);
+        transaction.AutoCommit = autoCommit;
 
-        publisher.Transaction = ActivatorUtilities.CreateInstance<SqlServerOutboxTransaction>(
-            publisher.ServiceProvider
-        );
-        publisher.Transaction.DbTransaction = dbTransaction;
-        publisher.Transaction.AutoCommit = autoCommit;
-
-        return new SqlServerEntityFrameworkDbTransaction(publisher.Transaction);
+        return new SqlServerEntityFrameworkDbTransaction(transaction);
     }
 }

@@ -33,6 +33,11 @@ public sealed class ConsumerExecutorDescriptor
     /// Maximum number of messages to process concurrently for this consumer.
     /// </summary>
     public byte Concurrency { get; init; } = 1;
+
+    /// <summary>
+    /// Deterministic handler identity used for diagnostics and runtime subscription matching.
+    /// </summary>
+    public string? HandlerId { get; init; }
 }
 
 public sealed class ParameterDescriptor

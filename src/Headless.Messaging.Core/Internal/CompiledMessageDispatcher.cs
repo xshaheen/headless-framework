@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using FastExpressionCompiler;
 using Headless.Checks;
+using Headless.Messaging.Messages;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Internal;
@@ -18,7 +19,7 @@ namespace Headless.Messaging.Internal;
 /// <item><description>Resolving the appropriate consumer(s) for a given message type</description></item>
 /// <item><description>Creating dependency injection scopes for each message</description></item>
 /// <item><description>Invoking consumer handlers with compiled expressions (zero reflection in hot path)</description></item>
-/// <item><description>Managing handler lifecycle (scope creation and disposal)</description></item>
+/// <item><description>Managing per-dispatch consumer lifecycle hooks, scope creation, and disposal</description></item>
 /// </list>
 /// </para>
 /// <para>
@@ -59,6 +60,7 @@ public interface IMessageDispatcher
     /// <strong>Scope Management:</strong>
     /// The dispatcher creates a new dependency injection scope for each message.
     /// Scoped services (like DbContext) are instantiated per message and disposed after processing.
+    /// If the resolved consumer implements <see cref="IConsumerLifecycle"/>, its hooks run around each dispatch on that scoped instance.
     /// </para>
     /// <para>
     /// <strong>Fan-out:</strong>
@@ -74,6 +76,31 @@ public interface IMessageDispatcher
     /// </para>
     /// </remarks>
     Task DispatchAsync<TMessage>(ConsumeContext<TMessage> context, CancellationToken cancellationToken)
+        where TMessage : class;
+
+    /// <summary>
+    /// Dispatches a message using an existing dependency injection scope.
+    /// </summary>
+    /// <typeparam name="TMessage">The type of the message to dispatch.</typeparam>
+    /// <param name="serviceProvider">The scoped service provider for the current delivery.</param>
+    /// <param name="context">The typed consume context for the current delivery.</param>
+    /// <param name="cancellationToken">A cancellation token for the dispatch operation.</param>
+    Task DispatchInScopeAsync<TMessage>(
+        IServiceProvider serviceProvider,
+        ConsumeContext<TMessage> context,
+        CancellationToken cancellationToken
+    )
+        where TMessage : class;
+
+    /// <summary>
+    /// Dispatches a message to a specific registered consumer using an existing dependency injection scope.
+    /// </summary>
+    Task DispatchInScopeAsync<TMessage>(
+        IServiceProvider serviceProvider,
+        ConsumerExecutorDescriptor descriptor,
+        ConsumeContext<TMessage> context,
+        CancellationToken cancellationToken
+    )
         where TMessage : class;
 }
 
@@ -117,16 +144,61 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
     {
         Argument.IsNotNull(context);
 
+        await using var scope = _scopeFactory.CreateAsyncScope();
+        await DispatchInScopeAsync(scope.ServiceProvider, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task DispatchInScopeAsync<TMessage>(
+        IServiceProvider serviceProvider,
+        ConsumeContext<TMessage> context,
+        CancellationToken cancellationToken
+    )
+        where TMessage : class
+    {
+        await _DispatchCoreAsync<TMessage>(serviceProvider, consumerType: null, context, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task DispatchInScopeAsync<TMessage>(
+        IServiceProvider serviceProvider,
+        ConsumerExecutorDescriptor descriptor,
+        ConsumeContext<TMessage> context,
+        CancellationToken cancellationToken
+    )
+        where TMessage : class
+    {
+        Argument.IsNotNull(serviceProvider);
+        Argument.IsNotNull(descriptor);
+        Argument.IsNotNull(context);
+
+        await _DispatchCoreAsync<TMessage>(
+                serviceProvider,
+                descriptor.ImplTypeInfo.AsType(),
+                context,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task _DispatchCoreAsync<TMessage>(
+        IServiceProvider serviceProvider,
+        Type? consumerType,
+        ConsumeContext<TMessage> context,
+        CancellationToken cancellationToken
+    )
+        where TMessage : class
+    {
+        Argument.IsNotNull(serviceProvider);
+        Argument.IsNotNull(context);
+
         // Get or compile the invoker for this message type
         var invoker =
             (Func<IConsume<TMessage>, ConsumeContext<TMessage>, CancellationToken, ValueTask>)
                 _compiledInvokers.GetOrAdd(typeof(TMessage), _CompileInvoker<TMessage>);
 
-        // Create async DI scope for this message
-        await using var scope = _scopeFactory.CreateAsyncScope();
-
-        // Resolve the consumer from the scope
-        var consumer = scope.ServiceProvider.GetRequiredService<IConsume<TMessage>>();
+        var consumer = _ResolveConsumer<TMessage>(serviceProvider, consumerType);
 
         // Call OnStartingAsync if consumer implements IConsumerLifecycle
         if (consumer is IConsumerLifecycle lifecycle)
@@ -157,6 +229,24 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
 #pragma warning restore ERP022
             }
         }
+    }
+
+    private static IConsume<TMessage> _ResolveConsumer<TMessage>(IServiceProvider serviceProvider, Type? consumerType)
+        where TMessage : class
+    {
+        if (consumerType == null)
+        {
+            return serviceProvider.GetRequiredService<IConsume<TMessage>>();
+        }
+
+        if (!typeof(IConsume<TMessage>).IsAssignableFrom(consumerType))
+        {
+            throw new InvalidOperationException(
+                $"Consumer type '{consumerType.Name}' does not implement IConsume<{typeof(TMessage).Name}>."
+            );
+        }
+
+        return (IConsume<TMessage>)serviceProvider.GetRequiredService(consumerType);
     }
 
     /// <summary>

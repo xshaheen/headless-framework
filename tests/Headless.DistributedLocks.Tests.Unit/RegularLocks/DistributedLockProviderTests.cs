@@ -479,9 +479,9 @@ public sealed class DistributedLockProviderTests : TestBase
         // then
         await _outboxPublisher
             .Received(1)
-            .PublishAsync(
+            .PublishAsync<DistributedLockReleased>(
                 Arg.Is<DistributedLockReleased>(m => m.Resource == resource && m.LockId == acquiredLock.LockId),
-                Arg.Any<string?>(),
+                Arg.Is<PublishOptions?>(options => options == null),
                 Arg.Any<CancellationToken>()
             );
     }

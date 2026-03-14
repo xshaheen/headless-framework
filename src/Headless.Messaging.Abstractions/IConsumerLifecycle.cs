@@ -3,29 +3,29 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Provides lifecycle hooks for consumer initialization and cleanup.
+/// Provides per-dispatch lifecycle hooks for consumer initialization and cleanup.
 /// Implement this interface on your <see cref="IConsume{TMessage}"/> consumers to receive notifications
-/// when the consumer starts up or shuts down.
+/// immediately before and after each message is handled by the scoped consumer instance.
 /// </summary>
 /// <remarks>
 /// <para>
 /// <strong>When to use:</strong>
 /// <list type="bullet">
-/// <item><description>Initialize resources when the consumer starts (database connections, file handles, caches)</description></item>
-/// <item><description>Clean up resources when the consumer stops (close connections, flush buffers, dispose objects)</description></item>
-/// <item><description>Perform warm-up operations (preload data, establish connections)</description></item>
-/// <item><description>Register shutdown handlers or perform graceful shutdown logic</description></item>
+/// <item><description>Initialize per-dispatch resources before the message is handled</description></item>
+/// <item><description>Clean up per-dispatch resources after the handler completes or fails</description></item>
+/// <item><description>Open short-lived connections or scopes that should not leak across deliveries</description></item>
+/// <item><description>Record delivery-specific diagnostics around the handler invocation</description></item>
 /// </list>
 /// </para>
 /// <para>
 /// <strong>Lifecycle timeline:</strong>
 /// <list type="number">
-/// <item><description>Consumer class is resolved from DI container</description></item>
-/// <item><description><see cref="OnStartingAsync"/> is called (if consumer implements this interface)</description></item>
-/// <item><description>Consumer processes messages via <see cref="IConsume{TMessage}.Consume"/></description></item>
-/// <item><description>Application shutdown begins</description></item>
-/// <item><description><see cref="OnStoppingAsync"/> is called (if consumer implements this interface)</description></item>
-/// <item><description>Consumer instance is disposed (if implements <see cref="IDisposable"/> or <see cref="IAsyncDisposable"/>)</description></item>
+/// <item><description>A new DI scope is created for the delivery</description></item>
+/// <item><description>The consumer instance is resolved from that scope</description></item>
+/// <item><description><see cref="OnStartingAsync"/> is called (if the consumer implements this interface)</description></item>
+/// <item><description><see cref="IConsume{TMessage}.Consume"/> is invoked</description></item>
+/// <item><description><see cref="OnStoppingAsync"/> is called in a <c>finally</c> block (if the consumer implements this interface)</description></item>
+/// <item><description>The DI scope is disposed</description></item>
 /// </list>
 /// </para>
 /// <para>
@@ -45,10 +45,8 @@ namespace Headless.Messaging;
 ///
 ///     public async ValueTask OnStartingAsync(CancellationToken cancellationToken)
 ///     {
-///         _logger.LogInformation("Initializing order processor");
+///         _logger.LogInformation("Preparing order processor for a message");
 ///         _httpClient = new HttpClient { BaseAddress = new Uri("https://api.example.com") };
-///
-///         // Warm up cache or database
 ///         await _repository.PreloadActiveOrdersAsync(cancellationToken);
 ///     }
 ///
@@ -60,12 +58,8 @@ namespace Headless.Messaging;
 ///
 ///     public async ValueTask OnStoppingAsync(CancellationToken cancellationToken)
 ///     {
-///         _logger.LogInformation("Shutting down order processor");
-///
-///         // Flush any pending operations
+///         _logger.LogInformation("Cleaning up order processor after a message");
 ///         await _repository.FlushAsync(cancellationToken);
-///
-///         // Dispose resources
 ///         _httpClient?.Dispose();
 ///     }
 /// }
@@ -75,47 +69,47 @@ namespace Headless.Messaging;
 public interface IConsumerLifecycle
 {
     /// <summary>
-    /// Called when the consumer is starting up, before any messages are processed.
-    /// Use this to initialize resources, establish connections, or perform warm-up operations.
+    /// Called before the current message is processed by the scoped consumer instance.
+    /// Use this to initialize per-dispatch resources or perform lightweight setup for the current delivery.
     /// </summary>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the startup operation.</param>
     /// <returns>A <see cref="ValueTask"/> representing the asynchronous startup operation.</returns>
     /// <remarks>
     /// <para>
-    /// This method is called once per consumer instance when the messaging system starts.
-    /// If this method throws an exception, the consumer will not start and the exception will be logged.
+    /// This method is called once per dispatch after the consumer instance has been resolved from the per-message DI scope.
+    /// If this method throws an exception, message handling stops and the exception is propagated.
     /// </para>
     /// <para>
     /// <strong>Best practices:</strong>
     /// <list type="bullet">
-    /// <item><description>Keep initialization logic fast to avoid delaying application startup</description></item>
+    /// <item><description>Keep initialization logic fast to avoid delaying message handling</description></item>
     /// <item><description>Use the cancellation token to support graceful cancellation</description></item>
     /// <item><description>Log important initialization steps for debugging</description></item>
-    /// <item><description>Consider using lazy initialization for expensive resources</description></item>
+    /// <item><description>Avoid keeping cross-delivery mutable state on scoped consumers</description></item>
     /// </list>
     /// </para>
     /// </remarks>
     ValueTask OnStartingAsync(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Called when the consumer is stopping, after message processing has ceased.
-    /// Use this to clean up resources, flush buffers, or perform graceful shutdown operations.
+    /// Called after the current message finishes processing, even when <see cref="IConsume{TMessage}.Consume"/> throws.
+    /// Use this to clean up per-dispatch resources, flush buffers, or perform delivery-scoped teardown.
     /// </summary>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the shutdown operation.</param>
     /// <returns>A <see cref="ValueTask"/> representing the asynchronous shutdown operation.</returns>
     /// <remarks>
     /// <para>
-    /// This method is called once per consumer instance when the messaging system is shutting down.
-    /// If this method throws an exception, it will be logged but will not prevent shutdown from continuing.
+    /// This method is called once per dispatch in a <c>finally</c> block.
+    /// If this method throws an exception, it is suppressed so cleanup does not mask the original message failure.
     /// </para>
     /// <para>
     /// <strong>Best practices:</strong>
     /// <list type="bullet">
-    /// <item><description>Complete shutdown quickly to avoid delaying application shutdown</description></item>
+    /// <item><description>Complete cleanup quickly to avoid delaying the next message</description></item>
     /// <item><description>Use the cancellation token to support graceful cancellation</description></item>
-    /// <item><description>Flush any pending work or buffered data</description></item>
-    /// <item><description>Dispose of resources (though <see cref="IDisposable"/> or <see cref="IAsyncDisposable"/> is preferred for this)</description></item>
-    /// <item><description>Log important shutdown steps for debugging</description></item>
+    /// <item><description>Flush any pending work or buffered data for the current delivery</description></item>
+    /// <item><description>Dispose of temporary resources created during <see cref="OnStartingAsync"/></description></item>
+    /// <item><description>Log important teardown steps for debugging</description></item>
     /// </list>
     /// </para>
     /// </remarks>

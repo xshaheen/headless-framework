@@ -3,9 +3,9 @@ using Headless.Messaging.Dashboard;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddMessages(x =>
+builder.Services.AddMessaging(x =>
 {
-    x.ScanConsumers(typeof(Program).Assembly);
+    x.SubscribeFromAssembly(typeof(Program).Assembly);
     x.UseInMemoryStorage();
     x.UseAmazonSqs(RegionEndpoint.CNNorthWest1);
     x.UseDashboard();

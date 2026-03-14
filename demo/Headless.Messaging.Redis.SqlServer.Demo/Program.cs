@@ -9,9 +9,9 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddMessages(x =>
+builder.Services.AddMessaging(x =>
 {
-    x.ScanConsumers(typeof(Program).Assembly);
+    x.SubscribeFromAssembly(typeof(Program).Assembly);
     x.WithTopicMapping<Person>("test-message");
 
     x.UseRedis(redis =>

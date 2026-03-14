@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
+using NSubstitute.Core;
 using ValidationException = FluentValidation.ValidationException;
 
 namespace Tests.Filters;
@@ -264,14 +265,9 @@ public sealed class MinimalApiExceptionFilterTests : TestBase
 
         // then
         logger
-            .Received(1)
-            .Log(
-                LogLevel.Debug,
-                Arg.Is<EventId>(e => e.Id == 5004 && e.Name == "RequestTimeoutException"),
-                Arg.Any<object>(),
-                exception,
-                Arg.Any<Func<object, Exception?, string>>()
-            );
+            .ReceivedCalls()
+            .Should()
+            .ContainSingle(call => _IsTimeoutDebugLog(call, exception));
     }
 
     #endregion
@@ -406,6 +402,20 @@ public sealed class MinimalApiExceptionFilterTests : TestBase
         where TException : Exception
     {
         return _ => throw exception;
+    }
+
+    private static bool _IsTimeoutDebugLog(ICall call, Exception exception)
+    {
+        if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+            return false;
+
+        var arguments = call.GetArguments();
+
+        return arguments[0] is LogLevel.Debug
+            && arguments[1] is EventId eventId
+            && eventId.Id == 5004
+            && eventId.Name == "RequestTimeoutException"
+            && ReferenceEquals(arguments[3], exception);
     }
 
     #endregion

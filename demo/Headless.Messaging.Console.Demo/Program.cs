@@ -9,9 +9,9 @@ var container = new ServiceCollection();
 container.AddLogging(x => x.AddConsole());
 
 container
-    .AddMessages(x =>
+    .AddMessaging(x =>
     {
-        x.Consumer<EventConsumer>().Topic("sample.console.showtime").Build();
+        x.Subscribe<EventConsumer>().Topic("sample.console.showtime");
 
         //console app does not support dashboard
 
@@ -32,7 +32,11 @@ _ = Task.Run(
             await Task.Delay(2000, cts.Token);
 
             await sp.GetRequiredService<IOutboxPublisher>()
-                .PublishAsync("sample.console.showtime", DateTime.Now, cancellationToken: cts.Token);
+                .PublishAsync(
+                    DateTime.Now,
+                    new PublishOptions { Topic = "sample.console.showtime" },
+                    cts.Token
+                );
         }
     },
     cts.Token

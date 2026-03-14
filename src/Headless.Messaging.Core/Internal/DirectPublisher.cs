@@ -1,130 +1,44 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless.Abstractions;
-using Headless.Checks;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
 internal sealed class DirectPublisher(
     ISerializer serializer,
     ITransport transport,
-    ILongIdGenerator idGenerator,
-    TimeProvider timeProvider,
-    IOptions<MessagingOptions> options
+    IMessagePublishRequestFactory publishRequestFactory
 ) : IDirectPublisher
 {
     private static readonly DiagnosticListener _DiagnosticListener = new(
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
-    /// <summary>
-    /// Cache for fully-resolved topic names (including prefix) keyed by message type.
-    /// Instance-level because prefix varies per MessagingOptions configuration.
-    /// Eliminates per-publish string allocations in high-throughput scenarios.
-    /// </summary>
-    private readonly ConcurrentDictionary<Type, string> _topicNameCache = new();
-
     private readonly ISerializer _serializer = serializer;
     private readonly ITransport _transport = transport;
-    private readonly ILongIdGenerator _idGenerator = idGenerator;
-    private readonly TimeProvider _timeProvider = timeProvider;
-    private readonly MessagingOptions _options = options.Value;
+    private readonly IMessagePublishRequestFactory _publishRequestFactory = publishRequestFactory;
 
-    public Task PublishAsync<T>(T contentObj, CancellationToken cancellationToken = default)
-        where T : class
+    public Task PublishAsync<T>(T? contentObj, PublishOptions? options = null, CancellationToken cancellationToken = default)
     {
-        return _PublishCoreAsync(contentObj, headers: null, cancellationToken);
-    }
-
-    public Task PublishAsync<T>(
-        T contentObj,
-        IDictionary<string, string?> headers,
-        CancellationToken cancellationToken = default
-    )
-        where T : class
-    {
-        return _PublishCoreAsync(contentObj, headers, cancellationToken);
+        return _PublishCoreAsync(contentObj, options, cancellationToken);
     }
 
     private async Task _PublishCoreAsync<T>(
-        T contentObj,
-        IDictionary<string, string?>? headers,
+        T? contentObj,
+        PublishOptions? options,
         CancellationToken cancellationToken
     )
-        where T : class
     {
-        Argument.IsNotNull(contentObj);
-
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Pre-size for: MessageId, CorrelationId, CorrelationSequence, MessageName, SentTime (+ caller headers)
-        headers ??= new Dictionary<string, string?>(capacity: 6, StringComparer.Ordinal);
+        var publishRequest = _publishRequestFactory.Create(contentObj, options);
 
-        // Resolve topic from type mapping (cached with prefix)
-        var name = _GetTopicName<T>();
-
-        // Generate standard headers
-        _GenerateHeaders(headers, name);
-
-        var message = new Message(headers, contentObj);
-
-        await _SendAsync(message, cancellationToken).ConfigureAwait(false);
-    }
-
-    private string _GetTopicName<T>()
-        where T : class
-    {
-        var messageType = typeof(T);
-
-        // Check cache first (includes prefix)
-        if (_topicNameCache.TryGetValue(messageType, out var cachedName))
-        {
-            return cachedName;
-        }
-
-        // Resolve and cache
-        var topicName = _ResolveTopicName(messageType);
-
-        // Apply prefix if configured
-        if (!string.IsNullOrEmpty(_options.TopicNamePrefix))
-        {
-            topicName = string.Concat(_options.TopicNamePrefix, ".", topicName);
-        }
-
-        // Cache includes prefix for zero-allocation on subsequent publishes
-        _topicNameCache.TryAdd(messageType, topicName);
-
-        return topicName;
-    }
-
-    private string _ResolveTopicName(Type messageType)
-    {
-        // Check explicit topic mappings first
-        if (_options.TopicMappings.TryGetValue(messageType, out var topicName))
-        {
-            return topicName;
-        }
-
-        // Check conventions
-        if (_options.Conventions?.GetTopicName(messageType) is { } conventionTopic)
-        {
-            return conventionTopic;
-        }
-
-        throw new InvalidOperationException(
-            $"No topic mapping found for message type '{messageType.Name}'. "
-                + $"Register a topic mapping using WithTopicMapping<{messageType.Name}>(\"topic-name\") "
-                + "in your messaging configuration."
-        );
+        await _SendAsync(publishRequest.Message, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task _SendAsync(Message message, CancellationToken cancellationToken)
@@ -175,24 +89,6 @@ internal sealed class DirectPublisher(
 
             throw;
         }
-    }
-
-    private void _GenerateHeaders(IDictionary<string, string?> headers, string name)
-    {
-        if (!headers.TryGetValue(Headers.MessageId, out var messageId) || string.IsNullOrEmpty(messageId))
-        {
-            messageId = _idGenerator.Create().ToString(CultureInfo.InvariantCulture);
-            headers[Headers.MessageId] = messageId;
-        }
-
-        if (!headers.ContainsKey(Headers.CorrelationId))
-        {
-            headers[Headers.CorrelationId] = messageId;
-            headers[Headers.CorrelationSequence] = "0";
-        }
-
-        headers[Headers.MessageName] = name;
-        headers[Headers.SentTime] = _timeProvider.GetUtcNow().UtcDateTime.ToString(CultureInfo.InvariantCulture);
     }
 
     #region Tracing

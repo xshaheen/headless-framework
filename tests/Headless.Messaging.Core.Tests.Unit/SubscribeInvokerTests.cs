@@ -18,12 +18,12 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<InvokerTestConsumer>().Topic("test.topic").Build();
+            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test-123");
@@ -45,12 +45,12 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<InvokerTestConsumer>().Topic("test.topic").Build();
+            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test-456");
@@ -73,12 +73,12 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<InvokerTestConsumer>().Topic("test.topic").Build();
+            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test-789");
@@ -106,12 +106,12 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<InvokerTestConsumer>().Topic("test.topic").Build();
+            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var mediumMessage = new MediumMessage
@@ -145,12 +145,12 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<InvokerTestConsumer>().Topic("test.topic").Build();
+            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test");
@@ -190,12 +190,12 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<CancellableConsumer>().Topic("test.topic").Build();
+            messaging.Subscribe<CancellableConsumer>().Topic("test.topic");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test");
@@ -219,12 +219,12 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<InvokerTestConsumer>().Topic("test.topic").Build();
+            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test");

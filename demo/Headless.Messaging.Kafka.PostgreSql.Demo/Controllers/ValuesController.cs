@@ -8,7 +8,7 @@ using Npgsql;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxPublisher producer) : Controller
+public class ValuesController(IOutboxPublisher producer, IOutboxTransaction outboxTransaction) : Controller
 {
     [Route("~/control/start")]
     public async Task<IActionResult> Start([FromServices] IBootstrapper bootstrapper)
@@ -27,7 +27,11 @@ public class ValuesController(IOutboxPublisher producer) : Controller
     [Route("~/delay/{delaySeconds:int}")]
     public async Task<IActionResult> Delay(int delaySeconds)
     {
-        await producer.PublishDelayAsync(TimeSpan.FromSeconds(delaySeconds), "sample.kafka.postgrsql", DateTime.Now);
+        await producer.PublishDelayAsync(
+            TimeSpan.FromSeconds(delaySeconds),
+            DateTime.Now,
+            new PublishOptions { Topic = "sample.kafka.postgrsql" }
+        );
 
         return Ok();
     }
@@ -35,7 +39,7 @@ public class ValuesController(IOutboxPublisher producer) : Controller
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
     {
-        await producer.PublishAsync("sample.kafka.postgrsql", DateTime.Now);
+        await producer.PublishAsync(DateTime.Now, new PublishOptions { Topic = "sample.kafka.postgrsql" });
 
         return Ok();
     }
@@ -45,7 +49,7 @@ public class ValuesController(IOutboxPublisher producer) : Controller
     {
         await using (var connection = new NpgsqlConnection(AppConstants.DbConnectionString))
         {
-            await using var transaction = await connection.BeginTransactionAsync(producer, autoCommit: false);
+            await using var transaction = await connection.BeginTransactionAsync(outboxTransaction, autoCommit: false);
 
             //your business code
             await connection.ExecuteAsync(
@@ -53,12 +57,12 @@ public class ValuesController(IOutboxPublisher producer) : Controller
                 transaction: (IDbTransaction?)transaction.DbTransaction
             );
 
-            await producer.PublishAsync("sample.kafka.postgrsql", DateTime.Now);
+            await producer.PublishAsync(DateTime.Now, new PublishOptions { Topic = "sample.kafka.postgrsql" });
 
             await transaction.CommitAsync();
         }
 
-        await producer.PublishAsync("sample.kafka.postgrsql", DateTime.Now);
+        await producer.PublishAsync(DateTime.Now, new PublishOptions { Topic = "sample.kafka.postgrsql" });
 
         return Ok();
     }
@@ -66,13 +70,13 @@ public class ValuesController(IOutboxPublisher producer) : Controller
     [Route("~/ef/transaction")]
     public async Task<IActionResult> EntityFrameworkWithTransaction([FromServices] AppDbContext dbContext)
     {
-        await using (await dbContext.Database.BeginTransactionAsync(producer, autoCommit: false))
+        await using (await dbContext.Database.BeginTransactionAsync(outboxTransaction, autoCommit: false))
         {
             dbContext.Persons.Add(new Person { Name = "ef.transaction", Age = 11 });
 
             await dbContext.SaveChangesAsync();
 
-            await producer.PublishAsync("sample.kafka.postgrsql", DateTime.UtcNow);
+            await producer.PublishAsync(DateTime.UtcNow, new PublishOptions { Topic = "sample.kafka.postgrsql" });
 
             await dbContext.Database.CommitTransactionAsync();
         }

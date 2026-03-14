@@ -80,7 +80,7 @@ static void addInMemoryDistributedLock(IServiceCollection services)
     services.AddInMemoryCache();
 
     // Messages
-    services.AddMessages(options =>
+    services.AddMessaging(options =>
     {
         options.UseInMemoryMessageQueue();
         options.UseInMemoryStorage();

@@ -10,9 +10,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddLogging(l => l.AddConsole());
 
-builder.Services.AddMessages(c =>
+builder.Services.AddMessaging(c =>
 {
-    c.Consumer<SampleSubscriber>().Topic("messaging.sample.tests").Build();
+    c.Subscribe<SampleSubscriber>().Topic("messaging.sample.tests");
 
     c.UseInMemoryStorage();
     c.UseAzureServiceBus(asb =>
@@ -52,7 +52,7 @@ app.MapGet(
     async (IOutboxPublisher publisher) =>
     {
         var message = new EntityCreatedForIntegration(Guid.NewGuid());
-        await publisher.PublishAsync(nameof(EntityCreatedForIntegration), message);
+        await publisher.PublishAsync(message, new PublishOptions { Topic = nameof(EntityCreatedForIntegration) });
     }
 );
 
@@ -61,7 +61,7 @@ app.MapGet(
     async (IOutboxPublisher publisher) =>
     {
         var message = new EntityDeletedForIntegration(Guid.NewGuid());
-        await publisher.PublishAsync(nameof(EntityDeletedForIntegration), message);
+        await publisher.PublishAsync(message, new PublishOptions { Topic = nameof(EntityDeletedForIntegration) });
     }
 );
 
@@ -70,7 +70,7 @@ app.MapGet(
     async (IOutboxPublisher publisher) =>
     {
         var message = new EntityCreated(Guid.NewGuid());
-        await publisher.PublishAsync(nameof(EntityCreated), message);
+        await publisher.PublishAsync(message, new PublishOptions { Topic = nameof(EntityCreated) });
     }
 );
 
@@ -79,7 +79,7 @@ app.MapGet(
     async (IOutboxPublisher publisher) =>
     {
         var message = new EntityDeleted(Guid.NewGuid());
-        await publisher.PublishAsync(nameof(EntityDeleted), message);
+        await publisher.PublishAsync(message, new PublishOptions { Topic = nameof(EntityDeleted) });
     }
 );
 
