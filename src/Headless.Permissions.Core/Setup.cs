@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
+using Headless.Caching;
 using Headless.Domain;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
@@ -115,6 +117,13 @@ public static class PermissionsSetup
         /*
          * You need to provide a storage implementation for `IPermissionGrantRecordRepository`
          */
+        services.AddSingleton<ICache<PermissionGrantCacheItem>>(sp =>
+            new ScopedCache<PermissionGrantCacheItem>(
+                sp.GetRequiredService<ICache>(),
+                () => $"t:{sp.GetRequiredService<ICurrentTenant>().Id}"
+            )
+        );
+
         services.TryAddSingleton<IPermissionGrantStore, PermissionGrantStore>();
         services.TryAddSingleton<IPermissionGrantProviderManager, PermissionGrantProviderManager>();
         services.TryAddSingleton<IPermissionManager, PermissionManager>();
