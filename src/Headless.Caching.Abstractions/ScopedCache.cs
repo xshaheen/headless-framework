@@ -16,7 +16,6 @@ namespace Headless.Caching;
 /// is <c>{scope}:{originalKey}</c>.
 /// </para>
 /// </remarks>
-/// <seealso cref="TenantCache{T}"/>
 [PublicAPI]
 public class ScopedCache<T>(ICache cache, Func<string> scopeProvider) : ICache<T>
 {

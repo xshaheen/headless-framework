@@ -118,9 +118,9 @@ public static class PermissionsSetup
          * You need to provide a storage implementation for `IPermissionGrantRecordRepository`
          */
         services.AddSingleton<ICache<PermissionGrantCacheItem>>(sp =>
-            new TenantCache<PermissionGrantCacheItem>(
+            new ScopedCache<PermissionGrantCacheItem>(
                 sp.GetRequiredService<ICache>(),
-                () => sp.GetRequiredService<ICurrentTenant>().Id
+                () => $"t:{sp.GetRequiredService<ICurrentTenant>().Id}"
             )
         );
 
