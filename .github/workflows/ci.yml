@@ -43,6 +43,8 @@ env:
   CONFIGURATION: Release
   # Packages Directory
   PACKAGES_DIR: ./artifacts/packages-results
+  # SBOM metadata namespace base
+  SBOM_NAMESPACE_BASE: https://github.com/xshaheen/headless-framework
   # Set the NuGet packages restore cache directory.
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   # Disable the Husky pre-commit hooks.
@@ -88,6 +90,21 @@ jobs:
 
       - name: "Pack"
         run: dotnet pack --configuration ${{ env.CONFIGURATION }} --no-build --include-symbols --output ${{ env.PACKAGES_DIR }}
+
+      - name: "Generate SBOM"
+        run: |
+          dotnet tool restore
+          curl -Lo "${RUNNER_TEMP}/sbom-tool" https://github.com/microsoft/sbom-tool/releases/latest/download/sbom-tool-linux-x64
+          chmod +x "${RUNNER_TEMP}/sbom-tool"
+          PACKAGE_VERSION="$(dotnet tool run minver)"
+          "${RUNNER_TEMP}/sbom-tool" generate \
+            -b "${PACKAGES_DIR}" \
+            -bc "${GITHUB_WORKSPACE}" \
+            -pn "headless-framework" \
+            -pv "${PACKAGE_VERSION}" \
+            -ps "Mahmoud Shaheen" \
+            -nsb "${SBOM_NAMESPACE_BASE}"
+        shell: bash
 
       - name: "Publish Artifacts"
         uses: actions/upload-artifact@v7

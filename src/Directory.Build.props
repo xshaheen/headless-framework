@@ -1,8 +1,5 @@
 <Project>
   <Import Project="../Directory.Build.props" />
-  <PropertyGroup Label="Packages Compiler settings">
-    <GenerateSBOM>true</GenerateSBOM>
-  </PropertyGroup>
   <PropertyGroup Label="Packages Source Link">
     <!-- Optional: Embed source files that are not tracked by the source control manager to the PDB -->
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
@@ -31,10 +28,6 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Condition="'$(Configuration)' == 'Release'" Include="MinVer" PrivateAssets="All">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Condition="'$(ExcludeSbomPackage)' != 'true'" Include="Microsoft.Sbom.Tool" PrivateAssets="All">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>

@@ -1,5 +1,7 @@
 ﻿# How to publish packages
 
+CI generates an SBOM for the packed artifacts at `artifacts/packages-results/_manifest/...` after `dotnet pack`. Local publishing only needs to push the `.nupkg` and `.snupkg` files.
+
 ```powershell
 ./build.ps1 pack --configuration Release
 # OR
@@ -21,4 +23,13 @@ Get-ChildItem .\ -Filter *.snupkg |
         Write-Host "Dotnet NuGet Push: $($_.Name)"
         dotnet nuget push --source GitHub --skip-duplicate --api-key $env:GITHUB_TOKEN $_
     }
+```
+
+If you need to generate the SBOM locally too:
+
+```powershell
+dotnet tool restore
+$version = dotnet tool run minver
+Invoke-WebRequest -Uri "https://github.com/microsoft/sbom-tool/releases/latest/download/sbom-tool-win-x64.exe" -OutFile "sbom-tool.exe"
+.\sbom-tool.exe generate -b .\artifacts\packages-results -bc . -pn headless-framework -pv $version -ps "Mahmoud Shaheen" -nsb "https://github.com/xshaheen/headless-framework"
 ```

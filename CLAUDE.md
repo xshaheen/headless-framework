@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Project Overview
 
 **headless-framework** is a modular .NET 10 framework for building APIs and backend services. Composed of ~94 NuGet packages organized by functional domains (API, Blobs, Caching, Messaging, ORM, etc.). Unopinionated, zero lock-in design.
@@ -57,6 +55,9 @@ dotnet tool restore  # Install: csharpier, dotnet-ef, minver-cli, husky
 ```
 
 ## Design Decisions
+
+- All NuGet versions are in `Directory.Packages.props` — never add `Version` in `.csproj`
+- Public APIs must have XML docs, and README.md files for each package must be kept up to date.
 
 ### Input Validation Responsibility
 

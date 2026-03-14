@@ -5,6 +5,7 @@ using Headless.Core;
 using Headless.Primitives;
 using Humanizer;
 using Polly;
+using File = System.IO.File;
 
 namespace Headless.IO;
 

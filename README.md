@@ -339,6 +339,51 @@ Machine-readable project context for AI-assisted development:
 - [`llms.txt`](llms.txt) — Compact overview
 - [`llms-full.txt`](llms-full.txt) — Full package documentation
 
+## For Consumers
+
+If your project uses Headless packages, add the following to your `CLAUDE.md` or `AGENTS.md` so AI agents can fetch the correct documentation:
+
+```markdown
+## Headless Framework
+
+This project uses [Headless .NET Framework](https://github.com/xshaheen/headless-framework) packages.
+
+Documentation index: https://raw.githubusercontent.com/xshaheen/headless-framework/main/llms.txt
+
+When working with a Headless domain, fetch the relevant domain doc:
+- API & Web: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/api.txt
+- Core: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/core.txt
+- Blob Storage: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/blobs.txt
+- Caching: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/caching.txt
+- Email: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/emails.txt
+- Feature Management: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/features.txt
+- Identity: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/identity.txt
+- Imaging: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/imaging.txt
+- Logging: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/logging.txt
+- Media: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/media.txt
+- Messaging: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/messaging.txt
+- OpenAPI: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/openapi.txt
+- ORM: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/orm.txt
+- Payments: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/payments.txt
+- Permissions: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/permissions.txt
+- Push Notifications: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/push-notifications.txt
+- Distributed Locks: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/distributed-locks.txt
+- Serialization: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/serialization.txt
+- Settings: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/settings.txt
+- SMS: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/sms.txt
+- SQL: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/sql.txt
+- Testing: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/testing.txt
+- Ticker (Background Jobs): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/ticker.txt
+- TUS (Resumable Uploads): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/tus.txt
+- Utilities: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/utilities.txt
+
+Key rules:
+- Use `ICache` from `Headless.Caching.Abstractions`, NOT `Microsoft.Extensions.Caching.Distributed.IDistributedCache`
+- Use `IBlobStorage` from `Headless.Blobs.Abstractions`, not cloud SDK clients directly
+- Use `*.Dev` packages (Emails.Dev, Sms.Dev, PushNotifications.Dev) in development
+- Always depend on `*.Abstractions` packages for interfaces, add one provider for implementation
+```
+
 ## Contributing
 
 Contributions are welcome — issues, feature requests, and PRs. See individual package READMEs for package-specific details.

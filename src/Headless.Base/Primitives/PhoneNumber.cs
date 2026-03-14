@@ -3,7 +3,6 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
-using Headless.Domain;
 using Headless.Text;
 using PhoneNumbers;
 using UtilsPhoneNumber = PhoneNumbers.PhoneNumber;
@@ -12,7 +11,7 @@ namespace Headless.Primitives;
 
 [PublicAPI]
 [ComplexType]
-public sealed class PhoneNumber : ValueObject
+public sealed class PhoneNumber : IEquatable<PhoneNumber>
 {
     private PhoneNumber() { }
 
@@ -41,11 +40,29 @@ public sealed class PhoneNumber : ValueObject
         return PhoneNumberUtil.GetInstance().GetRegionCodeForNumber(phoneNumber);
     }
 
-    protected override IEnumerable<object?> EqualityComponents()
+    public bool Equals(PhoneNumber? other)
     {
-        yield return CountryCode;
-        yield return Number;
+        if (other is null)
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(this, other))
+        {
+            return true;
+        }
+
+        return CountryCode == other.CountryCode
+            && string.Equals(Number, other.Number, StringComparison.Ordinal);
     }
+
+    public override bool Equals(object? obj) => Equals(obj as PhoneNumber);
+
+    public override int GetHashCode() => HashCode.Combine(CountryCode, Number);
+
+    public static bool operator ==(PhoneNumber? left, PhoneNumber? right) => Equals(left, right);
+
+    public static bool operator !=(PhoneNumber? left, PhoneNumber? right) => !Equals(left, right);
 
     public override string ToString() => GetInternationalFormat() ?? $"+{CountryCode} {Number}";
 
