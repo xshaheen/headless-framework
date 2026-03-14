@@ -72,24 +72,25 @@ internal sealed class OutboxPublisher(
             }
             else
             {
-                if (currentTransaction is not OutboxTransaction transaction)
+                if (currentTransaction is not IOutboxMessageBuffer transaction)
                 {
                     throw new InvalidOperationException(
-                        $"Registered {nameof(IOutboxTransaction)} must derive from {nameof(OutboxTransaction)}."
+                        $"Registered {nameof(IOutboxTransaction)} must implement {nameof(IOutboxMessageBuffer)} "
+                            + "when publishing with an ambient database transaction."
                     );
                 }
 
                 var mediumMessage = await _storage
-                    .StoreMessageAsync(publishRequest.Topic, publishRequest.Message, transaction.DbTransaction)
+                    .StoreMessageAsync(publishRequest.Topic, publishRequest.Message, currentTransaction.DbTransaction)
                     .ConfigureAwait(false);
 
                 _TracingAfter(tracingTimestamp, publishRequest.Message);
 
                 transaction.AddToSent(mediumMessage);
 
-                if (transaction.AutoCommit)
+                if (currentTransaction.AutoCommit)
                 {
-                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    await currentTransaction.CommitAsync(cancellationToken).ConfigureAwait(false);
                 }
             }
         }

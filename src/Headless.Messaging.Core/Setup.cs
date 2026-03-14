@@ -74,7 +74,7 @@ public static class Setup
         configure(options);
 
         // Discover consumers registered via AddConsumer<TConsumer, TMessage>()
-        _DiscoverConsumersFromDI(services, registry);
+        _DiscoverConsumersFromDI(services, options, registry);
 
         return _RegisterCoreMessagingServices(services, options, configure);
     }
@@ -186,7 +186,11 @@ public static class Setup
     /// <summary>
     /// Discovers and registers consumer metadata instances added via AddConsumer extension method.
     /// </summary>
-    private static void _DiscoverConsumersFromDI(IServiceCollection services, ConsumerRegistry registry)
+    private static void _DiscoverConsumersFromDI(
+        IServiceCollection services,
+        MessagingOptions options,
+        ConsumerRegistry registry
+    )
     {
         // Find all ConsumerMetadata instances registered in the service collection
         var metadataDescriptors = services
@@ -197,8 +201,19 @@ public static class Setup
         {
             if (descriptor.ImplementationInstance is ConsumerMetadata metadata)
             {
-                registry.Register(metadata);
+                registry.Register(_ResolveDiscoveredMetadata(metadata, options));
             }
         }
+    }
+
+    private static ConsumerMetadata _ResolveDiscoveredMetadata(ConsumerMetadata metadata, MessagingOptions options)
+    {
+        if (!string.IsNullOrWhiteSpace(metadata.Group))
+        {
+            return metadata;
+        }
+
+        options.Conventions.Version = options.Version;
+        return metadata with { Group = options.Conventions.GetGroupName(metadata.ResolvedHandlerId) };
     }
 }

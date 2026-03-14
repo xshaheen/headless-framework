@@ -187,6 +187,39 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
+    public void should_allow_addconsumer_registrations_to_share_topic_when_convention_groups_differ()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
+        services.AddConsumer<AnotherOrderConsumer, TestOrderMessage>("orders.placed");
+
+        // when
+        var act = () =>
+            services.AddMessaging(messaging =>
+            {
+                messaging.UseInMemoryMessageQueue();
+                messaging.UseInMemoryStorage();
+                messaging.UseConventions(conventions =>
+                {
+                    conventions.UseApplicationId("billing");
+                    conventions.UseVersion("v1");
+                });
+            });
+
+        // then
+        act.Should().NotThrow();
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+        var consumers = registry.GetAll().Where(c => c.Topic == "orders.placed").ToList();
+
+        consumers.Should().HaveCount(2);
+        consumers.Select(c => c.Group).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
     public void should_throw_when_consumer_does_not_implement_consume()
     {
         // given

@@ -36,7 +36,8 @@ internal sealed class OutboxTransactionHolder
 /// Initializes a new instance of the <see cref="OutboxTransaction"/> class with a dispatcher.
 /// </remarks>
 /// <param name="dispatcher">The dispatcher used to enqueue messages for publishing and execution.</param>
-public abstract class OutboxTransaction(IDispatcher dispatcher, IOutboxTransactionAccessor accessor) : IOutboxTransaction
+public abstract class OutboxTransaction(IDispatcher dispatcher, IOutboxTransactionAccessor accessor)
+    : IOutboxTransaction, IOutboxMessageBuffer
 {
     private readonly ConcurrentQueue<MediumMessage> _bufferList = new();
     private readonly IOutboxTransactionAccessor _accessor = accessor;
@@ -105,6 +106,11 @@ public abstract class OutboxTransaction(IDispatcher dispatcher, IOutboxTransacti
     protected internal virtual void AddToSent(MediumMessage msg)
     {
         _bufferList.Enqueue(msg);
+    }
+
+    void IOutboxMessageBuffer.AddToSent(MediumMessage message)
+    {
+        AddToSent(message);
     }
 
     /// <summary>

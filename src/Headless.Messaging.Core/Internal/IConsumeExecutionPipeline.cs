@@ -169,7 +169,7 @@ internal sealed class ConsumeExecutionPipeline(IServiceProvider serviceProvider,
 
         var correlationIdBinding = Expression.Bind(correlationIdProperty, correlationIdExpression);
 
-        var messageHeaderCtor = typeof(MessageHeader).GetConstructor([typeof(IDictionary<string, string>)])!;
+        var messageHeaderCtor = typeof(MessageHeader).GetConstructor([typeof(IDictionary<string, string?>)])!;
         var headersBinding = Expression.Bind(headersCtxProperty, Expression.New(messageHeaderCtor, headersProperty));
 
         var dateTimeOffsetCtor = typeof(DateTimeOffset).GetConstructor([typeof(DateTime), typeof(TimeSpan)])!;
