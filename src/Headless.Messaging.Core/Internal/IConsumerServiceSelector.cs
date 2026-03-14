@@ -42,6 +42,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
     private readonly MessagingOptions _messagingOptions;
     private readonly ILogger<ConsumerServiceSelector> _logger;
     private readonly IServiceProvider _serviceProvider;
+    private readonly IRuntimeConsumerRegistry _runtimeConsumerRegistry;
 
     /// <summary>
     /// Creates a new <see cref="ConsumerServiceSelector" />.
@@ -51,6 +52,8 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         _serviceProvider = serviceProvider;
         _messagingOptions = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         _logger = serviceProvider.GetRequiredService<ILogger<ConsumerServiceSelector>>();
+        _runtimeConsumerRegistry = serviceProvider.GetService<IRuntimeConsumerRegistry>()
+            ?? EmptyRuntimeConsumerRegistry.Instance;
         _cacheList = new ConcurrentDictionary<string, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>>(
             StringComparer.Ordinal
         );
@@ -61,6 +64,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         var executorDescriptorList = new List<ConsumerExecutorDescriptor>();
 
         executorDescriptorList.AddRange(_FindConsumersFromInterfaceTypes(_serviceProvider));
+        executorDescriptorList.AddRange(_runtimeConsumerRegistry.GetDescriptors());
 
         executorDescriptorList.AddRange(_FindConsumersFromControllerTypes());
 
@@ -123,6 +127,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
                 Parameters = _BuildParameters(consumeMethod),
                 TopicNamePrefix = _messagingOptions.TopicNamePrefix,
                 Concurrency = consumer.Concurrency,
+                HandlerId = consumer.ResolvedHandlerId,
             };
 
             results.Add(descriptor);
@@ -133,13 +138,13 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
 
     private string _GetGroupName(ConsumerMetadata metadata)
     {
-        var prefix = !string.IsNullOrEmpty(_messagingOptions.GroupNamePrefix)
-            ? $"{_messagingOptions.GroupNamePrefix}."
-            : string.Empty;
+        if (!string.IsNullOrWhiteSpace(metadata.Group))
+        {
+            return metadata.Group!;
+        }
 
-        var baseGroup = metadata.Group ?? _messagingOptions.DefaultGroupName;
-
-        return $"{prefix}{baseGroup}.{_messagingOptions.Version}";
+        _messagingOptions.Conventions.Version = _messagingOptions.Version;
+        return _messagingOptions.Conventions.GetGroupName(metadata.ResolvedHandlerId);
     }
 
     private static List<ParameterDescriptor> _BuildParameters(MethodInfo method)
@@ -158,7 +163,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
     private static IEnumerable<ConsumerExecutorDescriptor> _FindConsumersFromControllerTypes()
     {
         // Controller-based consumers are no longer supported with IConsume<T> pattern
-        // Use IMessagingBuilder.ScanConsumers() or Consumer<T>() instead
+        // Use IMessagingBuilder.SubscribeFromAssembly() or Consumer<T>() instead
         return [];
     }
 

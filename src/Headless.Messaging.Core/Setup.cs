@@ -7,6 +7,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
 using Headless.Messaging.Serialization;
+using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -34,7 +35,7 @@ public static class Setup
     /// <para>
     /// <strong>Example:</strong>
     /// <code>
-    /// services.AddMessages(options =>
+    /// services.AddMessaging(options =>
     /// {
     ///     // Configure infrastructure
     ///     options.FailedRetryCount = 50;
@@ -47,14 +48,13 @@ public static class Setup
     ///     });
     ///
     ///     // Configure consumers
-    ///     options.ScanConsumers(typeof(Program).Assembly);
+    ///     options.SubscribeFromAssembly(typeof(Program).Assembly);
     ///
     ///     // Or register specific consumers
-    ///     options.Consumer&lt;OrderPlacedHandler&gt;()
+    ///     options.Subscribe&lt;OrderPlacedHandler&gt;()
     ///         .Topic("orders.placed")
     ///         .Group("order-service")
-    ///         .WithConcurrency(5)
-    ///         .Build();
+    ///         .Concurrency(5);
     ///
     ///     // Map message types to topics
     ///     options.WithTopicMapping&lt;OrderPlaced&gt;("orders.placed");
@@ -62,7 +62,7 @@ public static class Setup
     /// </code>
     /// </para>
     /// </remarks>
-    public static MessagingBuilder AddMessages(this IServiceCollection services, Action<MessagingOptions> configure)
+    public static MessagingBuilder AddMessaging(this IServiceCollection services, Action<MessagingOptions> configure)
     {
         Argument.IsNotNull(configure);
 
@@ -74,7 +74,7 @@ public static class Setup
         configure(options);
 
         // Discover consumers registered via AddConsumer<TConsumer, TMessage>()
-        _DiscoverConsumersFromDI(services, registry);
+        _DiscoverConsumersFromDI(services, options, registry);
 
         return _RegisterCoreMessagingServices(services, options, configure);
     }
@@ -89,10 +89,15 @@ public static class Setup
         services.TryAddSingleton(new MessagingMarkerService("Messages"));
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();
+        services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
         services.TryAddSingleton<IOutboxPublisher, OutboxPublisher>();
         services.TryAddSingleton<IDirectPublisher, DirectPublisher>();
+        services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();
+        services.TryAddSingleton<IRuntimeSubscriber, RuntimeSubscriber>();
 
         services.TryAddSingleton<IConsumerServiceSelector, ConsumerServiceSelector>();
+        services.TryAddSingleton<IConsumeExecutionPipeline, ConsumeExecutionPipeline>();
         services.TryAddSingleton<ISubscribeInvoker, SubscribeInvoker>();
         services.TryAddSingleton<MethodMatcherCache>();
         services.TryAddSingleton<IMessageDispatcher, CompiledMessageDispatcher>();
@@ -131,9 +136,9 @@ public static class Setup
             serviceExtension.AddServices(services);
         }
 
-        // Register options with values that were set during AddMessages configuration.
+        // Register options with values that were set during AddMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that
-        // requires Services/Registry to be initialized - which only happens in AddMessages.
+        // requires Services/Registry to be initialized - which only happens in AddMessaging.
         services.Configure<MessagingOptions>(opt =>
         {
             // Copy internal state for consumer registration methods
@@ -145,6 +150,7 @@ public static class Setup
             opt.GroupNamePrefix = options.GroupNamePrefix;
             opt.TopicNamePrefix = options.TopicNamePrefix;
             opt.Version = options.Version;
+            opt.Conventions = options.Conventions;
             opt.SucceedMessageExpiredAfter = options.SucceedMessageExpiredAfter;
             opt.FailedMessageExpiredAfter = options.FailedMessageExpiredAfter;
             opt.FailedRetryInterval = options.FailedRetryInterval;
@@ -180,7 +186,11 @@ public static class Setup
     /// <summary>
     /// Discovers and registers consumer metadata instances added via AddConsumer extension method.
     /// </summary>
-    private static void _DiscoverConsumersFromDI(IServiceCollection services, ConsumerRegistry registry)
+    private static void _DiscoverConsumersFromDI(
+        IServiceCollection services,
+        MessagingOptions options,
+        ConsumerRegistry registry
+    )
     {
         // Find all ConsumerMetadata instances registered in the service collection
         var metadataDescriptors = services
@@ -191,12 +201,19 @@ public static class Setup
         {
             if (descriptor.ImplementationInstance is ConsumerMetadata metadata)
             {
-                // Skip if already registered (avoid duplicates)
-                if (!registry.IsRegistered(metadata.MessageType))
-                {
-                    registry.Register(metadata);
-                }
+                registry.Register(_ResolveDiscoveredMetadata(metadata, options));
             }
         }
+    }
+
+    private static ConsumerMetadata _ResolveDiscoveredMetadata(ConsumerMetadata metadata, MessagingOptions options)
+    {
+        if (!string.IsNullOrWhiteSpace(metadata.Group))
+        {
+            return metadata;
+        }
+
+        options.Conventions.Version = options.Version;
+        return metadata with { Group = options.Conventions.GetGroupName(metadata.ResolvedHandlerId) };
     }
 }

@@ -48,7 +48,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var services = new ServiceCollection();
 
         // when
-        services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed").WithConcurrency(10);
+        services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed").Concurrency(10);
         var provider = services.BuildServiceProvider();
 
         // then
@@ -97,7 +97,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
             .AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
             .Topic("orders.created")
             .Group("my-group")
-            .WithConcurrency(5);
+            .Concurrency(5);
         var provider = services.BuildServiceProvider();
 
         // then
@@ -167,7 +167,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var services = new ServiceCollection();
 
         // when
-        var act = () => services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed").WithConcurrency(0);
+        var act = () => services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed").Concurrency(0);
 
         // then
         act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*Concurrency must be greater than 0*");
@@ -230,19 +230,20 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
     }
 
     [Fact]
-    public void should_throw_on_build()
+    public void should_allow_handler_id_override_without_build()
     {
         // given
         var services = new ServiceCollection();
         var builder = services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed");
+        const string handlerId = "orders.placed.test-order-handler";
 
         // when
-        var act = () => builder.Build();
+        builder.HandlerId(handlerId);
+        var provider = services.BuildServiceProvider();
 
         // then
-        act.Should()
-            .Throw<NotSupportedException>()
-            .WithMessage("*Build() is not supported for ServiceCollection-based consumer registration*");
+        var metadata = provider.GetServices<ConsumerMetadata>().Single();
+        metadata.HandlerId.Should().Be(handlerId);
     }
 
     [Fact]
@@ -306,9 +307,9 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
             .AddConsumer<TestOrderHandler, TestOrderEvent>("initial.topic")
             .Topic("changed.topic")
             .Group("group-1")
-            .WithConcurrency(3)
+            .Concurrency(3)
             .Group("group-2")
-            .WithConcurrency(7);
+            .Concurrency(7);
 
         var provider = services.BuildServiceProvider();
 

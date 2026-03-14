@@ -17,14 +17,14 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.Consumer<OrderPlacedConsumer>().Topic("orders.placed").Group("order-service").Build();
+            messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed").Group("order-service");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
 
         // when - discovery
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
@@ -34,7 +34,7 @@ public sealed class IConsumeIntegrationTests
         candidates.Should().HaveCount(1);
         var descriptor = candidates[0];
         descriptor.TopicName.Should().Be("orders.placed");
-        descriptor.GroupName.Should().Be("order-service.v1");
+        descriptor.GroupName.Should().Be("order-service");
 
         // And - selection
         var best = selector.SelectBestCandidate("orders.placed", candidates);
@@ -49,14 +49,14 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.Consumer<OrderPlacedConsumer>().Topic("orders.placed").Build();
+            messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
 
         // Build consume context manually
         var message = new OrderPlaced("ORDER-123", 99.99m);
@@ -88,15 +88,15 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.Consumer<OrderPlacedConsumer>().Topic("orders.placed").Group("order-service").Build();
-            messaging.Consumer<OrderAnalyticsConsumer>().Topic("orders.placed").Group("analytics-service").Build();
+            messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed").Group("order-service");
+            messaging.Subscribe<OrderAnalyticsConsumer>().Topic("orders.placed").Group("analytics-service");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -119,15 +119,15 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
             messaging.WithTopicMapping<OrderPlaced>("orders.placed");
-            messaging.ScanConsumers(typeof(IConsumeIntegrationTests).Assembly);
+            messaging.SubscribeFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -149,14 +149,14 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.ScanConsumers(typeof(IConsumeIntegrationTests).Assembly);
+            messaging.SubscribeFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
@@ -182,12 +182,12 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<OrderPlacedConsumer>().Topic("orders.placed").Build();
+            messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
 
         // when
         await using var scope = provider.CreateAsyncScope();
@@ -205,14 +205,14 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.Consumer<OrderPlacedConsumer>().Topic("orders.placed").Build();
+            messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed");
 
-            messaging.Consumer<OrderCancelledConsumer>().Topic("orders.cancelled").Build();
+            messaging.Subscribe<OrderCancelledConsumer>().Topic("orders.cancelled");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var dispatcher = provider.GetRequiredService<IMessageDispatcher>();
 
         var orderPlaced = new OrderPlaced("ORDER-1", 50m);

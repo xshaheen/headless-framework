@@ -99,16 +99,16 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         });
 
         // Add messaging with abstract configuration
-        services.AddMessages(options =>
+        services.AddMessaging(options =>
         {
             ConfigureTransport(options);
             ConfigureStorage(options);
 
             // Register test consumer
-            options.Consumer<TestSubscriber>("test-message").Group("test-group").WithConcurrency(1);
+            options.Subscribe<TestSubscriber>("test-message").Group("test-group").Concurrency(1);
 
             // Register failing consumer for exception tests
-            options.Consumer<FailingTestSubscriber>("failing-message").Group("test-group").WithConcurrency(1);
+            options.Subscribe<FailingTestSubscriber>("failing-message").Group("test-group").Concurrency(1);
 
             ConfigureMessaging(options);
         });
@@ -156,7 +156,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         };
 
         // when
-        await Publisher.PublishAsync("test-message", message, cancellationToken: AbortToken);
+        await Publisher.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
 
         // Allow time for message processing
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
@@ -185,7 +185,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "HandlerInvocationTest" };
 
         // when
-        await Publisher.PublishAsync("test-message", message, cancellationToken: AbortToken);
+        await Publisher.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         // then
@@ -203,7 +203,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "StorageTest" };
 
         // when
-        await Publisher.PublishAsync("test-message", message, cancellationToken: AbortToken);
+        await Publisher.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
 
         // Allow time for message to be stored
         await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
@@ -222,7 +222,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "FailingTest" };
 
         // when
-        await Publisher.PublishAsync("failing-message", message, cancellationToken: AbortToken);
+        await Publisher.PublishAsync(message, new PublishOptions { Topic = "failing-message" }, AbortToken);
 
         // Allow time for message to be processed and potentially retried
         await Task.Delay(TimeSpan.FromSeconds(3), AbortToken);
@@ -245,7 +245,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
         // when
         var publishTasks = messages.Select(m =>
-            Publisher.PublishAsync("test-message", m, cancellationToken: AbortToken)
+            Publisher.PublishAsync(m, new PublishOptions { Topic = "test-message" }, AbortToken)
         );
         await Task.WhenAll(publishTasks);
 
@@ -268,7 +268,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "RetryTest" };
 
         // when
-        await Publisher.PublishAsync("failing-message", message, cancellationToken: AbortToken);
+        await Publisher.PublishAsync(message, new PublishOptions { Topic = "failing-message" }, AbortToken);
 
         // Allow time for retries (depends on retry configuration)
         await Task.Delay(TimeSpan.FromSeconds(5), AbortToken);
@@ -286,7 +286,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "LifecycleTest" };
 
         // when - publish -> consume -> store -> ack
-        await Publisher.PublishAsync("test-message", message, cancellationToken: AbortToken);
+        await Publisher.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
 
         // Wait for message to complete lifecycle
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
@@ -318,7 +318,11 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         };
 
         // when
-        await Publisher.PublishAsync("test-message", message, headers, AbortToken);
+        await Publisher.PublishAsync(
+            message,
+            new PublishOptions { Topic = "test-message", Headers = headers },
+            AbortToken
+        );
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         // then
@@ -341,9 +345,9 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishDelayAsync(
             TimeSpan.FromSeconds(2),
-            "test-message",
             message,
-            cancellationToken: AbortToken
+            new PublishOptions { Topic = "test-message" },
+            AbortToken
         );
 
         // Message should not be received immediately

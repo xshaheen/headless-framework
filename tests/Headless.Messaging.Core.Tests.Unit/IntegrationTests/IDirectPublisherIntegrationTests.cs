@@ -25,6 +25,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
     {
         // Reset static state before each test to ensure isolation
         DirectTestConsumer.Reset();
+        DirectAnalyticsConsumer.Reset();
         DirectTestConsumerWithHeaders.Reset();
         return ValueTask.CompletedTask;
     }
@@ -35,17 +36,17 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // given - Test the dispatcher directly to verify consumer registration works
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "test-group";
             messaging.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("direct-test-topic");
-            messaging.Consumer<DirectTestConsumer>().Topic("direct-test-topic").Build();
+            messaging.Subscribe<DirectTestConsumer>().Topic("direct-test-topic");
             messaging.UseInMemoryMessageQueue();
             messaging.UseInMemoryStorage();
         });
 
-        var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
 
         // Build consume context manually (bypasses transport and deserialization)
         var message = new DirectTestMessage("direct-dispatch-value");
@@ -67,8 +68,6 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // then
         DirectTestConsumer.ReceivedMessages.Should().HaveCount(1);
         DirectTestConsumer.ReceivedMessages.First().Value.Should().Be("direct-dispatch-value");
-
-        await provider.DisposeAsync();
     }
 
     [Fact]
@@ -77,24 +76,24 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "test-group";
             messaging.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("direct-test-topic");
-            messaging.Consumer<DirectTestConsumer>().Topic("direct-test-topic").Build();
+            messaging.Subscribe<DirectTestConsumer>().Topic("direct-test-topic");
             messaging.UseInMemoryMessageQueue();
             messaging.UseInMemoryStorage();
         });
 
-        var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
         var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
 
         // when
-        await directPublisher.PublishAsync(new DirectTestMessage("test-value-123"), AbortToken);
+        await directPublisher.PublishAsync(new DirectTestMessage("test-value-123"), cancellationToken: AbortToken);
 
         // Wait for the message to be consumed
         var received = await DirectTestConsumer.WaitForMessageAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -103,8 +102,6 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         received.Should().BeTrue("Consumer should receive the message");
         DirectTestConsumer.ReceivedMessages.Should().HaveCount(1);
         DirectTestConsumer.ReceivedMessages.First().Value.Should().Be("test-value-123");
-
-        await provider.DisposeAsync();
     }
 
     [Fact]
@@ -113,24 +110,24 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "test-group";
             messaging.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("custom-topic-name");
-            messaging.Consumer<DirectTestConsumer>().Topic("custom-topic-name").Build();
+            messaging.Subscribe<DirectTestConsumer>().Topic("custom-topic-name");
             messaging.UseInMemoryMessageQueue();
             messaging.UseInMemoryStorage();
         });
 
-        var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
         var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
 
         // when - PublishAsync uses the mapped topic, not the type name
-        await directPublisher.PublishAsync(new DirectTestMessage("mapping-test"), AbortToken);
+        await directPublisher.PublishAsync(new DirectTestMessage("mapping-test"), cancellationToken: AbortToken);
 
         var received = await DirectTestConsumer.WaitForMessageAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -138,8 +135,75 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         received.Should().BeTrue("Message should be delivered via topic mapping");
         DirectTestConsumer.ReceivedMessages.Should().HaveCount(1);
         DirectTestConsumer.ReceivedMessages.First().Value.Should().Be("mapping-test");
+    }
 
-        await provider.DisposeAsync();
+    [Fact]
+    public async Task should_deliver_message_to_each_group_for_same_message_type()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging(x => x.AddProvider(LoggerProvider));
+        services.AddMessaging(messaging =>
+        {
+            messaging.DefaultGroupName = "test-group";
+            messaging.Version = "v1";
+            messaging.WithTopicMapping<DirectTestMessage>("multi-group-test");
+            messaging.Subscribe<DirectTestConsumer>().Topic("multi-group-test").Group("direct.primary");
+            messaging.Subscribe<DirectAnalyticsConsumer>().Topic("multi-group-test").Group("direct.analytics");
+            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemoryStorage();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        await using var scope = provider.CreateAsyncScope();
+        var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
+
+        // when
+        await directPublisher.PublishAsync(new DirectTestMessage("fanout"), cancellationToken: AbortToken);
+
+        var primaryReceived = await DirectTestConsumer.WaitForMessageAsync(TimeSpan.FromSeconds(5), AbortToken);
+        var analyticsReceived = await DirectAnalyticsConsumer.WaitForMessageAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        primaryReceived.Should().BeTrue("primary consumer group should receive the message");
+        analyticsReceived.Should().BeTrue("analytics consumer group should receive the message");
+        DirectTestConsumer.ReceivedMessages.Should().ContainSingle(m => m.Value == "fanout");
+        DirectAnalyticsConsumer.ReceivedMessages.Should().ContainSingle(m => m.Value == "fanout");
+    }
+
+    [Fact]
+    public async Task should_deliver_message_when_topic_prefix_is_configured()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging(x => x.AddProvider(LoggerProvider));
+        services.AddMessaging(messaging =>
+        {
+            messaging.DefaultGroupName = "test-group";
+            messaging.Version = "v1";
+            messaging.TopicNamePrefix = "myapp";
+            messaging.WithTopicMapping<DirectTestMessage>("prefixed-test");
+            messaging.Subscribe<DirectTestConsumer>().Topic("prefixed-test");
+            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemoryStorage();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        await using var scope = provider.CreateAsyncScope();
+        var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
+
+        // when
+        await directPublisher.PublishAsync(new DirectTestMessage("prefixed-value"), cancellationToken: AbortToken);
+
+        var received = await DirectTestConsumer.WaitForMessageAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        received.Should().BeTrue("prefixed topic should round-trip between publish and subscribe");
+        DirectTestConsumer.ReceivedMessages.Should().ContainSingle(m => m.Value == "prefixed-value");
     }
 
     [Fact]
@@ -148,17 +212,17 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "test-group";
             messaging.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("header-test-topic");
-            messaging.Consumer<DirectTestConsumerWithHeaders>().Topic("header-test-topic").Build();
+            messaging.Subscribe<DirectTestConsumerWithHeaders>().Topic("header-test-topic");
             messaging.UseInMemoryMessageQueue();
             messaging.UseInMemoryStorage();
         });
 
-        var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
@@ -167,11 +231,18 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         var customHeaders = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             ["custom-header"] = "custom-value",
-            [Headers.CorrelationId] = "correlation-123",
         };
 
         // when
-        await directPublisher.PublishAsync(new DirectTestMessage("header-test"), customHeaders, AbortToken);
+        await directPublisher.PublishAsync(
+            new DirectTestMessage("header-test"),
+            new PublishOptions
+            {
+                Headers = customHeaders,
+                CorrelationId = "correlation-123",
+            },
+            AbortToken
+        );
 
         var received = await DirectTestConsumerWithHeaders.WaitForContextAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -182,8 +253,6 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         var ctx = DirectTestConsumerWithHeaders.ReceivedContexts.First();
         ctx.Headers["custom-header"].Should().Be("custom-value");
         ctx.Headers[Headers.CorrelationId].Should().Be("correlation-123");
-
-        await provider.DisposeAsync();
     }
 
     [Fact]
@@ -194,17 +263,17 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "test-group";
             messaging.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("sequential-test");
-            messaging.Consumer<DirectTestConsumer>().Topic("sequential-test").Build();
+            messaging.Subscribe<DirectTestConsumer>().Topic("sequential-test");
             messaging.UseInMemoryMessageQueue();
             messaging.UseInMemoryStorage();
         });
 
-        var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
@@ -213,7 +282,10 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // when - send multiple messages
         for (var i = 0; i < messageCount; i++)
         {
-            await directPublisher.PublishAsync(new DirectTestMessage($"message-{i}"), AbortToken);
+            await directPublisher.PublishAsync(
+                new DirectTestMessage($"message-{i}"),
+                cancellationToken: AbortToken
+            );
         }
 
         // Wait for all messages
@@ -226,8 +298,6 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         {
             DirectTestConsumer.ReceivedMessages.Should().Contain(m => m.Value == $"message-{i}");
         }
-
-        await provider.DisposeAsync();
     }
 }
 
@@ -307,6 +377,48 @@ public sealed class DirectTestConsumer : IConsume<DirectTestMessage>
         try
         {
             await _messageReceivedTcs.Task.WaitAsync(cts.Token).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+}
+
+public sealed class DirectAnalyticsConsumer : IConsume<DirectTestMessage>
+{
+    private static readonly ConcurrentQueue<DirectTestMessage> _receivedMessages = new();
+    private static readonly Lock _lock = new();
+    private static TaskCompletionSource<bool> _messageReceivedTcs = new();
+
+    public static IReadOnlyCollection<DirectTestMessage> ReceivedMessages => [.. _receivedMessages];
+
+    public static void Reset()
+    {
+        while (_receivedMessages.TryDequeue(out _)) { }
+
+        _messageReceivedTcs = new TaskCompletionSource<bool>();
+    }
+
+    public ValueTask Consume(ConsumeContext<DirectTestMessage> context, CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            _receivedMessages.Enqueue(context.Message);
+            _messageReceivedTcs.TrySetResult(true);
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public static async Task<bool> WaitForMessageAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(timeout);
+            await _messageReceivedTcs.Task.WaitAsync(cts.Token);
             return true;
         }
         catch (OperationCanceledException)

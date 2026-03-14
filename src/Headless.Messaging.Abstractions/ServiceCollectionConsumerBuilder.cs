@@ -11,7 +11,7 @@ namespace Headless.Messaging;
 /// <typeparam name="TConsumer">The consumer type being configured.</typeparam>
 /// <remarks>
 /// This builder allows library authors and app developers to configure consumer behavior
-/// using the same fluent pattern as <see cref="IMessagingBuilder.Consumer{TConsumer}()"/>.
+/// using the same fluent pattern as <see cref="IMessagingBuilder.Subscribe{TConsumer}()"/>.
 /// It directly modifies the <see cref="ConsumerMetadata"/> instance registered in DI.
 /// </remarks>
 public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
@@ -52,7 +52,7 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
     }
 
     /// <inheritdoc />
-    public IConsumerBuilder<TConsumer> WithConcurrency(byte maxConcurrent)
+    public IConsumerBuilder<TConsumer> Concurrency(byte maxConcurrent)
     {
         if (maxConcurrent == 0)
         {
@@ -65,13 +65,13 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
     }
 
     /// <inheritdoc />
-    public IMessagingBuilder Build()
+    public IConsumerBuilder<TConsumer> HandlerId(string handlerId)
     {
-        // ServiceCollection-based registration doesn't return to a messaging builder
-        throw new NotSupportedException(
-            "Build() is not supported for ServiceCollection-based consumer registration. "
-                + "The consumer is already registered and will be discovered automatically."
-        );
+        Argument.IsNotNullOrWhiteSpace(handlerId);
+
+        _metadata = _metadata with { HandlerId = handlerId };
+        _UpdateMetadataInServices();
+        return this;
     }
 
     private void _UpdateMetadataInServices()

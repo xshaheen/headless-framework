@@ -18,6 +18,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     private readonly bool _autoRegistered;
     private string? _topic;
     private string? _group;
+    private string? _handlerId;
     private byte _concurrency = 1;
 
     internal ConsumerBuilder(
@@ -41,6 +42,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
         Argument.IsNotNullOrWhiteSpace(topic);
 
         _topic = topic;
+        _UpdateIfAutoRegistered();
         return this;
     }
 
@@ -55,7 +57,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     }
 
     /// <inheritdoc />
-    public IConsumerBuilder<TConsumer> WithConcurrency(byte maxConcurrent)
+    public IConsumerBuilder<TConsumer> Concurrency(byte maxConcurrent)
     {
         if (maxConcurrent == 0)
         {
@@ -68,20 +70,13 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     }
 
     /// <inheritdoc />
-    public IMessagingBuilder Build()
+    public IConsumerBuilder<TConsumer> HandlerId(string handlerId)
     {
-        // If already auto-registered, just update with final settings
-        if (_autoRegistered)
-        {
-            _UpdateIfAutoRegistered();
-        }
-        else
-        {
-            // Register the consumer metadata with the parent builder
-            _parent.RegisterConsumer(typeof(TConsumer), _messageType, _topic, _group, _concurrency);
-        }
+        Argument.IsNotNullOrWhiteSpace(handlerId);
 
-        return _parent;
+        _handlerId = handlerId;
+        _UpdateIfAutoRegistered();
+        return this;
     }
 
     private void _UpdateIfAutoRegistered()
@@ -91,13 +86,16 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
             return;
         }
 
-        // Determine final topic
-        var finalTopic = _topic ?? _messageType.Name;
-
-        // Update the existing registration
         _registry.Update(
             m => m.ConsumerType == typeof(TConsumer) && m.MessageType == _messageType,
-            new ConsumerMetadata(_messageType, typeof(TConsumer), finalTopic, _group, _concurrency)
+            _parent.CreateConsumerMetadata(
+                typeof(TConsumer),
+                _messageType,
+                _topic,
+                _group,
+                _concurrency,
+                _handlerId
+            )
         );
     }
 }

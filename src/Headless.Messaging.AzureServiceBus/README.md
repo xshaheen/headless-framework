@@ -72,10 +72,12 @@ All messages require a session ID when sessions are enabled:
 
 ```csharp
 // Publish with session ID for ordered delivery
-await publisher.PublishAsync("orders.events", order,
-    headers: new Dictionary<string, string>
+await publisher.PublishAsync(
+    order,
+    new PublishOptions
     {
-        { AzureServiceBusHeaders.SessionId, order.CustomerId.ToString() }
+        Topic = "orders.events",
+        Headers = new Dictionary<string, string?> { [AzureServiceBusHeaders.SessionId] = order.CustomerId.ToString() }
     });
 ```
 

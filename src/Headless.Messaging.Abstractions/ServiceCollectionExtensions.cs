@@ -33,7 +33,7 @@ public static class MessagingServiceCollectionExtensions
     /// public static IServiceCollection AddMyLibrary(this IServiceCollection services)
     /// {
     ///     services.AddConsumer&lt;MyEventHandler, MyEvent&gt;("my-library.events")
-    ///         .WithConcurrency(5);
+    ///         .Concurrency(5);
     ///     return services;
     /// }
     /// </code>
@@ -42,7 +42,7 @@ public static class MessagingServiceCollectionExtensions
     /// <strong>Example (Application Developer):</strong>
     /// <code>
     /// services.AddConsumer&lt;OrderPlacedHandler, OrderPlaced&gt;("orders.placed")
-    ///     .WithConcurrency(10)
+    ///     .Concurrency(10)
     ///     .WithTimeout(TimeSpan.FromSeconds(30));
     /// </code>
     /// </para>
@@ -58,7 +58,8 @@ public static class MessagingServiceCollectionExtensions
         Argument.IsNotNullOrWhiteSpace(topic);
 
         // Register consumer in DI as scoped service
-        services.TryAddScoped<IConsume<TMessage>, TConsumer>();
+        services.TryAddScoped<TConsumer>();
+        services.TryAddScoped<IConsume<TMessage>>(sp => sp.GetRequiredService<TConsumer>());
 
         // Create consumer metadata
         var metadata = new ConsumerMetadata(
@@ -66,7 +67,8 @@ public static class MessagingServiceCollectionExtensions
             ConsumerType: typeof(TConsumer),
             Topic: topic,
             Group: null,
-            Concurrency: 1
+            Concurrency: 1,
+            HandlerId: MessagingConventions.GetDefaultHandlerId(typeof(TConsumer), typeof(TMessage))
         );
 
         // Register metadata as singleton for discovery

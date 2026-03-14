@@ -51,7 +51,7 @@ public static class AddDistributedLockExtensions
                 .AddConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
                     "headless.locks.released"
                 )
-                .WithConcurrency(1);
+                .Concurrency(1);
 
             return services;
         }

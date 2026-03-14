@@ -9,7 +9,7 @@ namespace Headless.Messaging.Configuration;
 
 /// <summary>
 /// A marker service used internally to verify that the messaging service has been registered on a <see cref="IServiceCollection"/>.
-/// This service is registered when <c>AddMessages()</c> is called during dependency injection setup.
+/// This service is registered when <c>AddMessaging()</c> is called during dependency injection setup.
 /// </summary>
 public class MessagingMarkerService
 {
@@ -82,7 +82,7 @@ public class MessageQueueMarkerService(string name)
 /// This builder allows registration of subscriber filters, custom subscriber assembly scanning, and other messaging extensions.
 /// </summary>
 /// <remarks>
-/// The <see cref="MessagingBuilder"/> is typically obtained through the <c>AddMessages()</c> extension method on <see cref="IServiceCollection"/>,
+/// The <see cref="MessagingBuilder"/> is typically obtained through the <c>AddMessaging()</c> extension method on <see cref="IServiceCollection"/>,
 /// enabling a fluent configuration experience for messaging setup. All builder methods return the builder instance to support method chaining.
 /// </remarks>
 /// <remarks>

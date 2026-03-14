@@ -53,7 +53,10 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
 
             if (result.Status is PersistenceStatus.Persisted or PersistenceStatus.PossiblyPersisted)
             {
-                _logger.LogDebug("kafka topic message [{GetName}] has been published.", message.GetName());
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug("kafka topic message [{GetName}] has been published.", message.GetName());
+                }
 
                 return OperateResult.Success;
             }

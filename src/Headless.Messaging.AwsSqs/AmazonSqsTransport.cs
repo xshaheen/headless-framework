@@ -49,7 +49,10 @@ internal sealed class AmazonSqsTransport(
 
                 await _snsClient!.PublishAsync(request, cancellationToken);
 
-                _logger.LogDebug("SNS topic message [{NormalizeForAws}] has been published.", normalizeForAws);
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug("SNS topic message [{NormalizeForAws}] has been published.", normalizeForAws);
+                }
 
                 return OperateResult.Success;
             }

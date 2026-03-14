@@ -11,16 +11,15 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// The consumer builder allows fine-grained control over a specific consumer's runtime behavior,
-/// including topic routing, retry policies, resource limits, and message filtering.
+/// including topic routing, handler identity, and concurrency limits.
 /// </para>
 /// <para>
 /// All configuration methods return <c>this</c> for method chaining, enabling fluent configuration:
 /// <code>
-/// options.Consumer&lt;OrderHandler&gt;()
+/// options.Subscribe&lt;OrderHandler&gt;()
 ///     .Topic("orders.v2")
-///     .WithRetry(new ExponentialBackoffStrategy())
-///     .WithConcurrency(maxInFlight: 10)
-///     .WithThrottling(maxMessages: 100, perSecond: 1);
+///     .Group("order-service")
+///     .Concurrency(maxInFlight: 10);
 /// </code>
 /// </para>
 /// </remarks>
@@ -45,11 +44,11 @@ public interface IConsumerBuilder<TConsumer>
     /// <strong>Example:</strong>
     /// <code>
     /// // Subscribe to versioned topic instead of default
-    /// options.Consumer&lt;OrderPlacedHandler&gt;()
-    ///     .Topic("orders.placed.v2");
-    /// </code>
-    /// </para>
-    /// </remarks>
+    /// options.Subscribe&lt;OrderPlacedHandler&gt;()
+///     .Topic("orders.placed.v2");
+/// </code>
+/// </para>
+/// </remarks>
     IConsumerBuilder<TConsumer> Topic(string topic);
 
     /// <summary>
@@ -71,15 +70,16 @@ public interface IConsumerBuilder<TConsumer>
     /// </list>
     /// </para>
     /// <para>
-    /// If not specified, defaults to the assembly name.
+    /// If not specified, a deterministic default is derived from the configured application id,
+    /// the handler identity, and the messaging version.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>
     /// <code>
-    /// options.Consumer&lt;OrderPlacedHandler&gt;()
-    ///     .Topic("orders.placed")
-    ///     .Group("order-processing-service");
-    /// </code>
+    /// options.Subscribe&lt;OrderPlacedHandler&gt;()
+///     .Topic("orders.placed")
+///     .Group("order-processing-service");
+/// </code>
     /// </para>
     /// </remarks>
     IConsumerBuilder<TConsumer> Group(string group);
@@ -107,53 +107,30 @@ public interface IConsumerBuilder<TConsumer>
     /// </list>
     /// </para>
     /// <para>
-    /// <strong>Note:</strong> If you set this value but don't specify a Group, a group will be
-    /// automatically created using the topic name.
+    /// <strong>Note:</strong> If you do not specify a group, a deterministic group name is generated
+    /// from the configured application id, handler identity, and version.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>
     /// <code>
     /// // Process up to 10 messages concurrently
-    /// options.Consumer&lt;OrderPlacedHandler&gt;()
-    ///     .Topic("orders.placed")
-    ///     .WithConcurrency(10);
-    ///
-    /// // Strictly sequential processing
-    /// options.Consumer&lt;PaymentHandler&gt;()
-    ///     .Topic("payments.process")
-    ///     .WithConcurrency(1);
-    /// </code>
-    /// </para>
-    /// </remarks>
-    IConsumerBuilder<TConsumer> WithConcurrency(byte maxConcurrent);
+    /// options.Subscribe&lt;OrderPlacedHandler&gt;()
+///     .Topic("orders.placed")
+///     .Concurrency(10);
+///
+/// // Strictly sequential processing
+/// options.Subscribe&lt;PaymentHandler&gt;()
+///     .Topic("payments.process")
+///     .Concurrency(1);
+/// </code>
+/// </para>
+/// </remarks>
+    IConsumerBuilder<TConsumer> Concurrency(byte maxConcurrent);
 
     /// <summary>
-    /// Completes the consumer configuration and returns to the messaging builder.
+    /// Overrides the deterministic default handler identity for this consumer registration.
     /// </summary>
-    /// <returns>
-    /// The parent <see cref="IMessagingBuilder"/> instance for continued configuration.
-    /// </returns>
-    /// <remarks>
-    /// <para>
-    /// Call this method after configuring all consumer-specific settings to finalize
-    /// the configuration and return to the messaging builder for additional setup.
-    /// </para>
-    /// <para>
-    /// <strong>Example:</strong>
-    /// <code>
-    /// services.AddMessages(options =>
-    /// {
-    ///     options.Consumer&lt;OrderHandler&gt;()
-    ///         .Topic("orders.placed")
-    ///         .WithConcurrency(maxInFlight: 10)
-    ///         .Build(); // Finalizes consumer configuration
-    ///
-    ///     options.Consumer&lt;PaymentHandler&gt;()
-    ///         .Topic("payments.processed")
-    ///         .Build();
-    /// });
-    /// </code>
-    /// </para>
-    /// </remarks>
-    IMessagingBuilder Build();
+    /// <param name="handlerId">The explicit handler identity to use for duplicate detection and diagnostics.</param>
+    /// <returns>The current <see cref="IConsumerBuilder{TConsumer}"/> instance for method chaining.</returns>
+    IConsumerBuilder<TConsumer> HandlerId(string handlerId);
 }

@@ -6,18 +6,24 @@ public class XSlowProcessingReceiver(ILogger<XSlowProcessingReceiver> logger) : 
 {
     public async ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
     {
-        logger.LogInformation(
-            "Starting SLOW processing handler {DateTime}: {MessageText}",
-            DateTime.Now,
-            context.Message.Text
-        );
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "Starting SLOW processing handler {DateTime}: {MessageText}",
+                DateTime.Now,
+                context.Message.Text
+            );
+        }
 
         await Task.Delay(10000, cancellationToken);
 
-        logger.LogInformation(
-            "Ending   SLOW processing handler {DateTime}: {MessageText}",
-            DateTime.Now,
-            context.Message.Text
-        );
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "Ending   SLOW processing handler {DateTime}: {MessageText}",
+                DateTime.Now,
+                context.Message.Text
+            );
+        }
     }
 }

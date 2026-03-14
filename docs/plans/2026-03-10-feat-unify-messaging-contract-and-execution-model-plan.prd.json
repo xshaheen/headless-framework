@@ -1,0 +1,194 @@
+{
+  "name": "feat-unify-messaging-contract-and-execution-model",
+  "title": "feat: Unify messaging contract and execution model",
+  "type": "feat",
+  "date": "2026-03-10",
+  "description": "Refine the messaging packages into one consistent execution model for direct publish, outbox publish, class subscriptions, and runtime subscriptions as a hard public-contract replacement while preserving deterministic defaults and telemetry parity.",
+  "created_at": "2026-03-10T00:31:47Z",
+  "branches": {
+    "base": "main",
+    "feature": "xshaheen/messaging-dx-unified-contract-plan"
+  },
+  "worktree": ".worktrees/xshaheen/messaging-dx-unified-contract-plan",
+  "verification_command": "dotnet test --project tests/Headless.Messaging.Abstractions.Tests.Unit/Headless.Messaging.Abstractions.Tests.Unit.csproj --no-build && dotnet test --project tests/Headless.Messaging.Core.Tests.Unit/Headless.Messaging.Core.Tests.Unit.csproj && dotnet test --project tests/Headless.Messaging.OpenTelemetry.Tests.Unit/Headless.Messaging.OpenTelemetry.Tests.Unit.csproj && dotnet test --project tests/Headless.Messaging.RedisStreams.Tests.Unit/Headless.Messaging.RedisStreams.Tests.Unit.csproj",
+  "status": "completed",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "[M] Define unified abstractions and DI registration surface",
+      "size": "M",
+      "description": "TDD order: write failing test -> implement minimal code -> verify PASS. Replace the current split registration experience with one explicit DI entrypoint and deterministic auto-registration rules for message handlers while keeping class handlers centered on IConsume<T>. This story assumes the legacy registration surface is removed rather than preserved as a parallel API.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Abstractions/IConsume.cs",
+        "src/Headless.Messaging.Abstractions/ConsumeContext.cs",
+        "src/Headless.Messaging.Abstractions/IDirectPublisher.cs",
+        "src/Headless.Messaging.Abstractions/IOutboxPublisher.cs",
+        "src/Headless.Messaging.Abstractions/IMessagingBuilder.cs",
+        "src/Headless.Messaging.Abstractions/ServiceCollectionExtensions.cs",
+        "src/Headless.Messaging.Abstractions/MessagingConventions.cs",
+        "src/Headless.Messaging.Abstractions/README.md"
+      ],
+      "acceptanceCriteria": [
+        "A single DI registration surface exists for direct publish, outbox publish, handler scanning, and explicit overrides without requiring Build-style follow-up calls.",
+        "Auto-registration scans concrete closed IConsume<T> handlers, registers them once per closed interface, and fails startup on duplicate topic/group/handler identity conflicts.",
+        "Convention-based defaults for topic, group, and handler identity are deterministic, documented, and only overridden through explicit audited configuration.",
+        "The superseded public registration DSL is removed or folded into the new surface instead of being kept as a long-lived compatibility layer."
+      ],
+      "priority": 1,
+      "pass": true,
+      "attempts": 1,
+      "commits": [
+        "b92474b1"
+      ],
+      "notes": [
+        "Replaced the registration surface with AddMessaging, SubscribeFromAssembly*, Subscribe*, and convention-based deterministic defaults.",
+        "Focused verification passed through the messaging abstractions and core builder-related suites."
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "[M] Align direct and outbox publish execution",
+      "size": "M",
+      "description": "TDD order: write failing test -> implement minimal code -> verify PASS. Converge direct and outbox publish flows on the same application-facing experience, default resolution path, and validation model while isolating delivery-mode differences to infrastructure internals. This story assumes the old public publisher split is replaced rather than retained beside the new contract.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Internal/DirectPublisher.cs",
+        "src/Headless.Messaging.Core/Internal/OutboxPublisher.cs",
+        "src/Headless.Messaging.Core/Configuration/MessagingOptions.cs",
+        "src/Headless.Messaging.Core/Setup.cs",
+        "src/Headless.Messaging.Core/README.md",
+        "tests/Headless.Messaging.Core.Tests.Unit/DirectPublisherTests.cs"
+      ],
+      "acceptanceCriteria": [
+        "Direct and outbox publishers expose the same primary publish experience, including shared options for headers, correlation, and convention-based topic resolution.",
+        "Mutable ambient publisher state such as transaction or service-provider mutation is removed from the primary app-facing DX or isolated behind scoped infrastructure.",
+        "Validation remains fail-fast by default, and all non-default behavior is explicit and emitted through logs and diagnostics.",
+        "The superseded public publisher surface does not remain available as a long-lived side-by-side API after the redesign ships."
+      ],
+      "priority": 2,
+      "pass": true,
+      "attempts": 2,
+      "commits": [
+        "c7cafb5e"
+      ],
+      "notes": [
+        "Introduced IMessagePublisher and aligned the primary direct and outbox publish API around shared PublishOptions and scoped outbox infrastructure.",
+        "The rejected PublishOptions.Delay experiment was reverted; delayed publishing intentionally remains a separate outbox API rather than part of the shared primary publish contract."
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "[L] Add runtime function subscriptions on the shared execution core",
+      "size": "L",
+      "description": "TDD order: write failing test -> implement minimal code -> verify PASS. Introduce ephemeral runtime function subscriptions for broker-attached messages, backed by the same scoped DI, filters, retry, correlation, and diagnostics pipeline used by class handlers.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/ConsumerRegistry.cs",
+        "src/Headless.Messaging.Core/Internal/IConsumerServiceSelector.cs",
+        "src/Headless.Messaging.Core/Internal/ISubscribeInvoker.cs",
+        "src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs",
+        "tests/Headless.Messaging.Core.Tests.Unit/ConsumerRegistryTests.cs",
+        "tests/Headless.Messaging.Core.Tests.Unit/SubscribeInvokerTests.cs",
+        "tests/Headless.Messaging.Core.Tests.Unit/ConsumerLifecycleTests.cs"
+      ],
+      "acceptanceCriteria": [
+        "Runtime subscribe and unsubscribe support ephemeral broker-attached function handlers with scoped DI, filters, retry, correlation, and diagnostics parity with class handlers.",
+        "The runtime registry uses atomic snapshot updates so concurrent subscribe or unsubscribe operations cannot corrupt registration state or expose partially updated handlers.",
+        "Duplicate registration conflicts reject by default, in-flight unsubscribe semantics are defined and tested, and deterministic handler identity is required unless an explicit auditable opt-out is enabled."
+      ],
+      "priority": 3,
+      "pass": true,
+      "attempts": 1,
+      "commits": [
+        "18be6e79"
+      ],
+      "notes": [
+        "Runtime subscriptions now attach named function handlers through an atomic mutable registry and execute through the same scoped consume pipeline as class handlers.",
+        "Focused verification passed through runtime subscriber unit and integration coverage in the messaging core suite."
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "[M] Preserve telemetry, docs, and regression coverage",
+      "size": "M",
+      "description": "TDD order: write failing test -> implement minimal code -> verify PASS. Preserve diagnostics and correlation parity, update public docs, and add regression coverage so the new contract does not silently break observability or consumer guidance.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Diagnostics/MessageDiagnosticListenerNames.cs",
+        "tests/Headless.Messaging.OpenTelemetry.Tests.Unit/MessagingInstrumentationTests.cs",
+        "src/Headless.Messaging.Abstractions/README.md",
+        "src/Headless.Messaging.Core/README.md",
+        "docs/llms/messaging.txt"
+      ],
+      "acceptanceCriteria": [
+        "Existing diagnostic listener and metric names required by dashboards remain preserved or aliased so telemetry consumers do not silently break.",
+        "Correlation and message identity metadata remain consistent across direct publish, outbox publish, and runtime subscriptions.",
+        "Public docs and XML documentation are updated to reflect the new contract, defaults, opt-outs, and verification guidance."
+      ],
+      "priority": 4,
+      "pass": true,
+      "attempts": 2,
+      "commits": [
+        "89ee32a2"
+      ],
+      "notes": [
+        "Scope corrected to messaging-only after reverting the prior out-of-scope edits from US-005.",
+        "Added a regression test that locks the public messaging diagnostic listener and metric contract names in place for dashboards and OpenTelemetry consumers.",
+        "Updated messaging README, llm guidance, and runtime subscription XML docs to document AddMessaging, runtime subscriptions, deterministic defaults, and fail-fast duplicate behavior.",
+        "Focused verification passed through the messaging OpenTelemetry suite and the narrowed messaging-only verification gate."
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "[S] Align consumer lifecycle contract with scoped dispatch semantics",
+      "size": "S",
+      "description": "TDD order: write failing test -> implement minimal code -> verify PASS. Align the public lifecycle contract with the actual scoped dispatch model so consumer lifecycle hooks are deterministic, documented, and covered by explicit per-dispatch tests.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Abstractions/IConsumerLifecycle.cs",
+        "src/Headless.Messaging.Core/Internal/CompiledMessageDispatcher.cs",
+        "tests/Headless.Messaging.Core.Tests.Unit/ConsumerLifecycleTests.cs",
+        "src/Headless.Messaging.Abstractions/README.md",
+        "src/Headless.Messaging.Core/README.md",
+        "docs/llms/messaging.txt"
+      ],
+      "acceptanceCriteria": [
+        "Public lifecycle documentation states that IConsumerLifecycle hooks run per delivery on the scoped consumer instance rather than once at application startup or shutdown.",
+        "Consumer lifecycle tests explicitly verify that OnStartingAsync and OnStoppingAsync run around each dispatch and preserve the documented failure semantics.",
+        "Messaging package guidance and llm docs reflect the same lifecycle contract so consumers are not steered toward incorrect app-wide startup assumptions."
+      ],
+      "priority": 5,
+      "pass": true,
+      "attempts": 1,
+      "commits": [
+        "fe5029b3"
+      ],
+      "notes": [
+        "Aligned IConsumerLifecycle XML docs, package guidance, and llm guidance to the scoped per-dispatch execution model already enforced by the dispatcher.",
+        "Added explicit lifecycle regression coverage showing OnStartingAsync and OnStoppingAsync run around each dispatch with the documented failure semantics."
+      ]
+    }
+  ],
+  "pass": true,
+  "validation_errors": [],
+  "metadata": {
+    "research": {
+      "local": {
+        "findings": [
+          "ConsumerRegistry freezes on first read and throws on later register or update, which blocks runtime-safe ephemeral subscriptions (src/Headless.Messaging.Core/ConsumerRegistry.cs:17).",
+          "DirectPublisher and OutboxPublisher duplicate topic resolution, correlation header generation, and validation while exposing different application-facing ergonomics (src/Headless.Messaging.Core/Internal/DirectPublisher.cs:58, src/Headless.Messaging.Core/Internal/OutboxPublisher.cs:166).",
+          "CompiledMessageDispatcher currently invokes IConsumerLifecycle startup and shutdown hooks per message even though the public contract describes once-per-consumer-lifetime behavior (src/Headless.Messaging.Abstractions/IConsumerLifecycle.cs:85, src/Headless.Messaging.Core/Internal/CompiledMessageDispatcher.cs:131).",
+          "Internal package guidance already positions messaging as type-safe scan-based registration with outbox and direct publish modes, so the redesign should preserve that mental model while simplifying the surface (docs/llms/messaging.txt)."
+        ],
+        "timestamp": "2026-03-10T00:31:47Z"
+      },
+      "external": {
+        "findings": [
+          "MassTransit consumer configuration emphasizes convention-based endpoint naming with explicit override points, which supports deterministic default registration without hiding opt-outs (https://masstransit.io/documentation/configuration/consumers).",
+          "MassTransit scoped middleware shows that publish and consume cross-cutting behavior should flow through scoped filters rather than separate ad-hoc hooks per execution path (https://masstransit.io/documentation/configuration/middleware/scoped).",
+          "MassTransit transactional outbox reinforces aligning direct and durable publish APIs while isolating reliability behavior behind infrastructure responsibilities (https://masstransit.io/documentation/patterns/transactional-outbox).",
+          "MassTransit mediator supports runtime connect and disconnect for handlers and consumers, which is a useful reference point for safe ephemeral runtime subscriptions (https://masstransit.io/documentation/concepts/mediator).",
+          "Foundatio.Mediator favors a minimal handler contract plus a shared middleware pipeline, reinforcing the choice to keep class handlers centered on one shape rather than fragmenting the model further (https://github.com/FoundatioFx/Foundatio.Mediator/blob/main/README.md)."
+        ],
+        "timestamp": "2026-03-10T00:31:47Z"
+      }
+    },
+    "projectLearnings": []
+  }
+}

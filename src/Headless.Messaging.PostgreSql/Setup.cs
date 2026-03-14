@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.PostgreSql;
@@ -94,6 +95,7 @@ public static class MessagingOptionsExtensions
             services.AddSingleton<IConfigureOptions<PostgreSqlOptions>, ConfigurePostgreSqlOptions>();
             services.AddSingleton<IValidateOptions<PostgreSqlOptions>, PostgreSqlOptionsValidator>();
 
+            services.AddTransient<IOutboxTransaction, PostgreSqlOutboxTransaction>();
             services.AddSingleton<IDataStorage, PostgreSqlDataStorage>();
             services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         }

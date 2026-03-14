@@ -5,6 +5,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NATS.Client;
+using NSubstitute.Core;
 using MsOptions = Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -179,19 +180,23 @@ public sealed class NatsConnectionPoolTests : TestBase
     {
         // given
         var mockLogger = Substitute.For<ILogger<NatsConnectionPool>>();
+        mockLogger.IsEnabled(LogLevel.Debug).Returns(true);
 
         // when
         using var pool = new NatsConnectionPool(mockLogger, _options);
 
         // then
         mockLogger
-            .Received()
-            .Log(
-                LogLevel.Debug,
-                Arg.Any<EventId>(),
-                Arg.Any<object>(),
-                Arg.Any<Exception?>(),
-                Arg.Any<Func<object, Exception?, string>>()
-            );
+            .ReceivedCalls()
+            .Should()
+            .ContainSingle(call => _IsDebugLog(call));
+    }
+
+    private static bool _IsDebugLog(ICall call)
+    {
+        if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+            return false;
+
+        return call.GetArguments()[0] is LogLevel.Debug;
     }
 }

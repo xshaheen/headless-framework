@@ -17,14 +17,14 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").Group("test-group").Build();
+            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic").Group("test-group");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -42,20 +42,22 @@ public sealed class ConsumerServiceSelectorTests
     }
 
     [Fact]
-    public void should_build_group_name_with_prefix_and_version()
+    public void should_use_explicit_group_without_appending_convention_suffixes()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.GroupNamePrefix = "my-app";
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v2";
-            messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").Group("test-group").Build();
+            messaging.UseConventions(conventions =>
+            {
+                conventions.UseApplicationId("my-app");
+                conventions.UseVersion("v2");
+            });
+            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic").Group("test-group");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -63,7 +65,7 @@ public sealed class ConsumerServiceSelectorTests
 
         // then
         var descriptor = candidates[0];
-        descriptor.GroupName.Should().Be("my-app.test-group.v2");
+        descriptor.GroupName.Should().Be("test-group");
     }
 
     [Fact]
@@ -72,14 +74,17 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default-group";
-            messaging.Version = "v1";
-            messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").Build();
+            messaging.UseConventions(conventions =>
+            {
+                conventions.UseApplicationId("default-app");
+                conventions.UseVersion("v1");
+            });
+            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -87,7 +92,9 @@ public sealed class ConsumerServiceSelectorTests
 
         // then
         var descriptor = candidates[0];
-        descriptor.GroupName.Should().Be("default-group.v1");
+        var conventions = new MessagingConventions().UseApplicationId("default-app").UseVersion("v1");
+        var handlerId = MessagingConventions.GetDefaultHandlerId(typeof(SelectorTestConsumer), typeof(SelectorTestMessage));
+        descriptor.GroupName.Should().Be(conventions.GetGroupName(handlerId));
     }
 
     [Fact]
@@ -96,15 +103,15 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.TopicNamePrefix = "my-app";
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").Build();
+            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -121,15 +128,15 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.Consumer<SelectorTestConsumer>().Topic("orders.placed").Build();
-            messaging.Consumer<AnotherSelectorConsumer>().Topic("orders.cancelled").Build();
+            messaging.Subscribe<SelectorTestConsumer>().Topic("orders.placed");
+            messaging.Subscribe<AnotherSelectorConsumer>().Topic("orders.cancelled");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -148,14 +155,14 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.Consumer<SelectorTestConsumer>().Topic("orders.placed").Build();
+            messaging.Subscribe<SelectorTestConsumer>().Topic("orders.placed");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -172,14 +179,14 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.Consumer<SelectorTestConsumer>().Topic("orders.*").Build();
+            messaging.Subscribe<SelectorTestConsumer>().Topic("orders.*");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -197,15 +204,15 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.Consumer<SelectorTestConsumer>().Topic("orders.placed").Group("group1").Build();
-            messaging.Consumer<AnotherSelectorConsumer>().Topic("orders.placed").Group("group2").Build();
+            messaging.Subscribe<SelectorTestConsumer>().Topic("orders.placed").Group("group1");
+            messaging.Subscribe<AnotherSelectorConsumer>().Topic("orders.placed").Group("group2");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -223,14 +230,14 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").Build();
+            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -258,7 +265,7 @@ public sealed class ConsumerServiceSelectorTests
         });
         services.TryAddSingleton<IConsumerServiceSelector, ConsumerServiceSelector>();
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -274,14 +281,14 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").WithConcurrency(5).Build();
+            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic").Concurrency(5);
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when
@@ -298,14 +305,14 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(messaging =>
+        services.AddMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
-            messaging.Consumer<SelectorTestConsumer>().Topic("test.topic").Build();
+            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic");
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when

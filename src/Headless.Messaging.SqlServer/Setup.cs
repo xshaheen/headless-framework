@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
@@ -71,6 +72,7 @@ public static class MessagesSqlServerSetup
             services.AddSingleton(new MessageStorageMarkerService("SqlServer"));
 
             services.AddSingleton<DiagnosticProcessorObserver>();
+            services.AddTransient<IOutboxTransaction, SqlServerOutboxTransaction>();
             services.AddSingleton<IDataStorage, SqlServerDataStorage>();
             services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IProcessingServer, DiagnosticRegister>());

@@ -11,6 +11,7 @@ using NATS.Client;
 using NATS.Client.JetStream;
 using NSubstitute.ExceptionExtensions;
 using MessagingHeaders = Headless.Messaging.Messages.Headers;
+using NatsPublishOptions = NATS.Client.JetStream.PublishOptions;
 
 namespace Tests;
 
@@ -50,7 +51,7 @@ public sealed class NatsTransportTests : TestBase
         _pool.RentConnection().Returns(connection);
         connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
         jetStream
-            .PublishAsync(Arg.Any<Msg>(), Arg.Any<PublishOptions>())
+            .PublishAsync(Arg.Any<Msg>(), Arg.Any<NatsPublishOptions>())
             .ThrowsAsync(new NATSException("Connection closed")); // Force an exception to test the flow
 
         // when
@@ -73,7 +74,7 @@ public sealed class NatsTransportTests : TestBase
         _pool.RentConnection().Returns(connection);
         connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
         jetStream
-            .PublishAsync(Arg.Any<Msg>(), Arg.Any<PublishOptions>())
+            .PublishAsync(Arg.Any<Msg>(), Arg.Any<NatsPublishOptions>())
             .ThrowsAsync(new InvalidOperationException("Publish failed"));
 
         // when
@@ -97,7 +98,7 @@ public sealed class NatsTransportTests : TestBase
         _pool.RentConnection().Returns(connection);
         connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
         jetStream
-            .PublishAsync(Arg.Any<Msg>(), Arg.Any<PublishOptions>())
+            .PublishAsync(Arg.Any<Msg>(), Arg.Any<NatsPublishOptions>())
             .ThrowsAsync(new NATSException("NATS connection closed"));
 
         // when
@@ -131,7 +132,7 @@ public sealed class NatsTransportTests : TestBase
 
         Msg? capturedMsg = null;
         jetStream
-            .PublishAsync(Arg.Do<Msg>(m => capturedMsg = m), Arg.Any<PublishOptions>())
+            .PublishAsync(Arg.Do<Msg>(m => capturedMsg = m), Arg.Any<NatsPublishOptions>())
             .ThrowsAsync(new NATSException("Test exception")); // Force exception after capture
 
         // when
@@ -157,7 +158,7 @@ public sealed class NatsTransportTests : TestBase
 
         Msg? capturedMsg = null;
         jetStream
-            .PublishAsync(Arg.Do<Msg>(m => capturedMsg = m), Arg.Any<PublishOptions>())
+            .PublishAsync(Arg.Do<Msg>(m => capturedMsg = m), Arg.Any<NatsPublishOptions>())
             .ThrowsAsync(new NATSException("Test exception")); // Force exception after capture
 
         // when
@@ -180,9 +181,9 @@ public sealed class NatsTransportTests : TestBase
         _pool.RentConnection().Returns(connection);
         connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
 
-        PublishOptions? capturedOptions = null;
+        NatsPublishOptions? capturedOptions = null;
         jetStream
-            .PublishAsync(Arg.Any<Msg>(), Arg.Do<PublishOptions>(o => capturedOptions = o))
+            .PublishAsync(Arg.Any<Msg>(), Arg.Do<NatsPublishOptions>(o => capturedOptions = o))
             .ThrowsAsync(new NATSException("Test exception")); // Force exception after capture
 
         // when
@@ -230,7 +231,7 @@ public sealed class NatsTransportTests : TestBase
 
         Msg? capturedMsg = null;
         jetStream
-            .PublishAsync(Arg.Do<Msg>(m => capturedMsg = m), Arg.Any<PublishOptions>())
+            .PublishAsync(Arg.Do<Msg>(m => capturedMsg = m), Arg.Any<NatsPublishOptions>())
             .ThrowsAsync(new NATSException("Test exception")); // Force exception after capture
 
         // when

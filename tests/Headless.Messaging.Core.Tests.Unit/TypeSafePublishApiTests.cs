@@ -1,5 +1,7 @@
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Messages;
+using Headless.Messaging.Transactions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -23,7 +25,7 @@ public sealed class TypeSafePublishApiTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(opt =>
+        services.AddMessaging(opt =>
         {
             opt.WithTopicMapping<OrderCreated>("orders.created");
             opt.UseInMemoryMessageQueue();
@@ -31,7 +33,7 @@ public sealed class TypeSafePublishApiTests
         });
 
         // when
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
 
         // then
@@ -45,7 +47,7 @@ public sealed class TypeSafePublishApiTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(opt =>
+        services.AddMessaging(opt =>
         {
             opt.WithTopicMapping<OrderCreated>("orders.created");
             opt.WithTopicMapping<UserRegistered>("users.registered");
@@ -54,7 +56,7 @@ public sealed class TypeSafePublishApiTests
         });
 
         // when
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
 
         // then
@@ -72,7 +74,7 @@ public sealed class TypeSafePublishApiTests
         // when/Then
         services
             .Invoking(s =>
-                s.AddMessages(opt =>
+                s.AddMessaging(opt =>
                 {
                     opt.WithTopicMapping<OrderCreated>("orders.created");
                     opt.WithTopicMapping<OrderCreated>("orders.new"); // Different topic
@@ -94,7 +96,7 @@ public sealed class TypeSafePublishApiTests
         // when/Then - Should not throw
         services
             .Invoking(s =>
-                s.AddMessages(opt =>
+                s.AddMessaging(opt =>
                 {
                     opt.WithTopicMapping<OrderCreated>("orders.created");
                     opt.WithTopicMapping<OrderCreated>("orders.created"); // Same topic
@@ -107,13 +109,13 @@ public sealed class TypeSafePublishApiTests
     }
 
     [Fact]
-    public void should_support_consumer_and_publisher_using_same_topic_mapping()
+    public async Task should_support_consumer_and_publisher_using_same_topic_mapping()
     {
         // This test documents that topic mappings work for both consumers and publishers
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessages(opt =>
+        services.AddMessaging(opt =>
         {
             // Topic mapping can be used by both publisher and consumer
             opt.WithTopicMapping<OrderCreated>("orders.created");
@@ -122,7 +124,7 @@ public sealed class TypeSafePublishApiTests
         });
 
         // when
-        var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         var publisher = provider.GetRequiredService<IOutboxPublisher>();
 
@@ -133,48 +135,26 @@ public sealed class TypeSafePublishApiTests
     }
 
     [Fact]
-    public void should_have_type_safe_publish_overloads_available()
+    public void should_share_primary_publish_contract_between_direct_and_outbox_publishers()
     {
-        // This test verifies that the type-safe API compiles and is available
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddMessages(opt =>
-        {
-            opt.WithTopicMapping<OrderCreated>("orders.created");
-            opt.UseInMemoryMessageQueue();
-            opt.UseInMemoryStorage();
-        });
-
-        var provider = services.BuildServiceProvider();
-        var publisher = provider.GetRequiredService<IOutboxPublisher>();
-
-        // when/Then - Verify type-safe API methods exist via reflection
-        var methods = typeof(IOutboxPublisher)
+        typeof(IDirectPublisher).GetInterfaces().Should().Contain(typeof(IMessagePublisher));
+        typeof(IOutboxPublisher).GetInterfaces().Should().Contain(typeof(IMessagePublisher));
+        typeof(IMessagePublisher)
             .GetMethods()
-            .Where(m => m.Name == nameof(IOutboxPublisher.PublishAsync) && m.IsGenericMethod)
-            .Where(m =>
-            {
-                // Type-safe methods don't have a string "name" parameter
-                var parameters = m.GetParameters();
-                return !parameters.Any(p => p.Name == "name" && p.ParameterType == typeof(string));
-            })
+            .Should()
+            .ContainSingle(method => method.Name == nameof(IMessagePublisher.PublishAsync) && method.IsGenericMethod);
+    }
+
+    [Fact]
+    public void should_not_expose_mutable_outbox_publisher_state()
+    {
+        var publicPropertyNames = typeof(IOutboxPublisher)
+            .GetProperties()
+            .Select(property => property.Name)
             .ToList();
 
-        // Should have 2 type-safe PublishAsync overloads (with callback and with headers)
-        methods.Should().HaveCountGreaterThanOrEqualTo(2, "should have type-safe PublishAsync overloads");
-
-        // Verify they have class constraints
-        foreach (var method in methods)
-        {
-            var genericParam = method.GetGenericArguments()[0];
-            genericParam
-                .GenericParameterAttributes.Should()
-                .HaveFlag(
-                    System.Reflection.GenericParameterAttributes.ReferenceTypeConstraint,
-                    $"method {method} should have class constraint"
-                );
-        }
+        publicPropertyNames.Should().NotContain("ServiceProvider");
+        publicPropertyNames.Should().NotContain("Transaction");
     }
 
     [Fact]
@@ -191,11 +171,70 @@ public sealed class TypeSafePublishApiTests
         expectedErrorPattern.Should().Contain("OrderCreated");
     }
 
+    [Fact]
+    public async Task should_support_custom_outbox_transaction_buffers()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMessaging(opt =>
+        {
+            opt.WithTopicMapping<OrderCreated>("orders.created");
+            opt.UseInMemoryMessageQueue();
+            opt.UseInMemoryStorage();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var publisher = provider.GetRequiredService<IOutboxPublisher>();
+        var accessor = provider.GetRequiredService<IOutboxTransactionAccessor>();
+        var transaction = new TestOutboxTransaction { DbTransaction = new object() };
+        accessor.Current = transaction;
+
+        try
+        {
+            // when
+            await publisher.PublishAsync(new OrderCreated { OrderId = 42 });
+        }
+        finally
+        {
+            accessor.Current = null;
+        }
+
+        // then
+        transaction.BufferedMessages.Should().ContainSingle();
+    }
+
     private sealed class OrderCreatedHandler : IConsume<OrderCreated>
     {
         public ValueTask Consume(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class TestOutboxTransaction : IOutboxTransaction, IOutboxMessageBuffer
+    {
+        public List<MediumMessage> BufferedMessages { get; } = [];
+
+        public bool AutoCommit { get; set; }
+
+        public object? DbTransaction { get; set; }
+
+        public void Commit() { }
+
+        public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void Rollback() { }
+
+        public Task RollbackAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void AddToSent(MediumMessage message)
+        {
+            BufferedMessages.Add(message);
+        }
+
+        public void Dispose() { }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }
