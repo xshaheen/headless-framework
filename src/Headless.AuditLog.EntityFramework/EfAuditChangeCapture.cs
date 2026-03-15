@@ -11,11 +11,12 @@ using Microsoft.Extensions.Options;
 namespace Headless.AuditLog;
 
 internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, ILogger<EfAuditChangeCapture> logger)
-    : IAuditChangeCapture
+    : IAuditChangeCapture, IAuditEntityIdResolver
 {
     private static readonly ConcurrentDictionary<PropertyInfo, AuditPropertyMetadata> _PropertyCache = new();
     private readonly ConcurrentDictionary<Type, bool> _entityFilterCache = new();
     private readonly ConcurrentDictionary<(Type Type, string PropertyName), bool> _propertyFilterCache = new();
+    private readonly List<(AuditLogEntryData Data, EntityEntry EntityEntry)> _deferredEntityIds = [];
     private bool _hasLoggedDisabledWarning;
 
     /// <inheritdoc />
@@ -35,6 +36,7 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
             return [];
         }
 
+        _deferredEntityIds.Clear();
         List<AuditLogEntryData>? result = null;
 
         foreach (var obj in entries)
@@ -56,6 +58,10 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
                 {
                     result ??= [];
                     result.Add(data);
+
+                    // Defer EntityId resolution for Added entities with store-generated keys.
+                    if (entry.State == EntityState.Added)
+                        _deferredEntityIds.Add((data, entry));
                 }
             }
             catch (Exception ex)
@@ -72,6 +78,20 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         }
 
         return result ?? [];
+    }
+
+    /// <inheritdoc />
+    public void ResolveEntityIds(IReadOnlyList<AuditLogEntryData> entries)
+    {
+        foreach (var (data, entityEntry) in _deferredEntityIds)
+        {
+            var (_, entityId) = _GetEntityIdentity(entityEntry);
+            data.EntityId = entityId;
+        }
+
+        // Not cleared here — cleared at the start of the next CaptureChanges call.
+        // This allows execution strategy retries to re-resolve after failed attempts
+        // where store-generated keys may differ.
     }
 
     private void _LogDisabledWarningOnce()

@@ -3,7 +3,7 @@
 namespace Headless.AuditLog;
 
 /// <summary>
-/// Immutable DTO representing one captured audit log entry.
+/// DTO representing one captured audit log entry.
 /// Produced by the change-capture pipeline; consumed by <see cref="IAuditLogStore"/>.
 /// </summary>
 public sealed record AuditLogEntryData
@@ -51,8 +51,9 @@ public sealed record AuditLogEntryData
     /// <summary>
     /// String representation of the entity's primary key.
     /// Composite keys are encoded as a JSON array of string values.
+    /// Mutable so the capture pipeline can patch in store-generated keys after save.
     /// </summary>
-    public string? EntityId { get; init; }
+    public string? EntityId { get; set; }
 
     // Changes
     /// <summary>Property values before the change. <c>null</c> for Created entries.</summary>

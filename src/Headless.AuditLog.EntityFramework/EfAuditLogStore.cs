@@ -7,21 +7,48 @@ namespace Headless.AuditLog;
 internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
 {
     /// <inheritdoc />
-    public void Save(IReadOnlyList<AuditLogEntryData> entries) => _AddEntries(entries);
+    public void Save(IReadOnlyList<AuditLogEntryData> entries) => _AddEntries(entries, dbContext);
 
     /// <inheritdoc />
     public Task SaveAsync(IReadOnlyList<AuditLogEntryData> entries, CancellationToken cancellationToken = default)
     {
-        _AddEntries(entries);
+        _AddEntries(entries, dbContext);
         return Task.CompletedTask;
     }
 
-    private void _AddEntries(IReadOnlyList<AuditLogEntryData> entries)
+    /// <inheritdoc />
+    public void Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext)
+        => _AddEntries(entries, savingContext as DbContext ?? dbContext);
+
+    /// <inheritdoc />
+    public Task SaveAsync(
+        IReadOnlyList<AuditLogEntryData> entries,
+        object savingContext,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _AddEntries(entries, savingContext as DbContext ?? dbContext);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public void PrepareForRetry(object savingContext)
+    {
+        var context = savingContext as DbContext ?? dbContext;
+
+        foreach (var entry in context.ChangeTracker.Entries<AuditLogEntry>().ToList())
+        {
+            if (entry.State == EntityState.Added)
+                entry.State = EntityState.Detached;
+        }
+    }
+
+    private static void _AddEntries(IReadOnlyList<AuditLogEntryData> entries, DbContext context)
     {
         if (entries.Count == 0)
             return;
 
-        var set = dbContext.Set<AuditLogEntry>();
+        var set = context.Set<AuditLogEntry>();
 
         foreach (var entry in entries)
         {

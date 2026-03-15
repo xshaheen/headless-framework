@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p2
 issue_id: "003"
 tags: ["code-review","quality","dotnet","entity-framework"]
@@ -55,3 +55,15 @@ The test fixture comment already documents the limitation locally, but the produ
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-15 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

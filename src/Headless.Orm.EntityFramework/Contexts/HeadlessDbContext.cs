@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Orm.EntityFramework.ChangeTrackers;
 using Microsoft.EntityFrameworkCore;
@@ -41,18 +40,14 @@ public abstract class HeadlessDbContext : DbContext
     )
     {
         var report = _entityProcessor.ProcessEntries(this);
-        var auditEntries = await _CaptureAuditEntriesAsync(cancellationToken).ConfigureAwait(false);
+        var auditEntries = AuditSavePipelineHelper.CaptureAuditEntries(this, _AuditLogger);
 
         // No need to be in transaction if there are no emitters
         if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
         {
-            if (auditEntries is { Count: > 0 })
-            {
-                await _SaveAuditEntriesAsync(auditEntries, cancellationToken).ConfigureAwait(false);
-            }
-
             var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken)
                 .ConfigureAwait(false);
+            await _ResolveAndPersistAuditAsync(auditEntries, cancellationToken).ConfigureAwait(false);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
             return result;
@@ -61,15 +56,11 @@ public abstract class HeadlessDbContext : DbContext
         // Has current transaction
         if (Database.CurrentTransaction is not null)
         {
-            if (auditEntries is { Count: > 0 })
-            {
-                await _SaveAuditEntriesAsync(auditEntries, cancellationToken).ConfigureAwait(false);
-            }
-
             await PublishMessagesAsync(report.LocalEmitters, Database.CurrentTransaction, cancellationToken)
                 .ConfigureAwait(false);
             var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken)
                 .ConfigureAwait(false);
+            await _ResolveAndPersistAuditAsync(auditEntries, cancellationToken).ConfigureAwait(false);
             await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken)
                 .ConfigureAwait(false);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
@@ -78,20 +69,19 @@ public abstract class HeadlessDbContext : DbContext
             return result;
         }
 
-        // Add audit entries before the execution strategy so they're only added
-        // once, preventing duplicates when the strategy retries on transient failures.
-        if (auditEntries is { Count: > 0 })
-        {
-            await _SaveAuditEntriesAsync(auditEntries, cancellationToken).ConfigureAwait(false);
-        }
-
+        // No current transaction — use execution strategy with explicit transaction.
+        // Audit entries are captured once above; inside the callback we resolve IDs
+        // (which may differ across retries) and persist. PrepareForRetry detaches
+        // stale AuditLogEntry entities from prior failed attempts.
         return await Database
             .CreateExecutionStrategy()
             .ExecuteAsync(
-                (this, report, acceptAllChangesOnSuccess, cancellationToken),
+                (this, report, auditEntries, acceptAllChangesOnSuccess, cancellationToken),
                 static async state =>
                 {
-                    var (context, report, acceptAllChangesOnSuccess, cancellationToken) = state;
+                    var (context, report, auditEntries, acceptAllChangesOnSuccess, cancellationToken) = state;
+
+                    AuditSavePipelineHelper.PrepareForRetry(context);
 
                     await using var transaction = await context.Database.BeginTransactionAsync(
                         IsolationLevel.ReadCommitted,
@@ -103,6 +93,9 @@ public abstract class HeadlessDbContext : DbContext
                         .ConfigureAwait(false);
                     var result = await context
                         ._BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken)
+                        .ConfigureAwait(false);
+                    await context
+                        ._ResolveAndPersistAuditAsync(auditEntries, cancellationToken)
                         .ConfigureAwait(false);
                     await context
                         .PublishMessagesAsync(report.DistributedEmitters, transaction, cancellationToken)
@@ -121,17 +114,13 @@ public abstract class HeadlessDbContext : DbContext
     protected virtual int CoreSaveChanges(bool acceptAllChangesOnSuccess = true)
     {
         var report = _entityProcessor.ProcessEntries(this);
-        var auditEntries = _CaptureAuditEntries();
+        var auditEntries = AuditSavePipelineHelper.CaptureAuditEntries(this, _AuditLogger);
 
         // No need to be in transaction if there are no emitters
         if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
         {
-            if (auditEntries is { Count: > 0 })
-            {
-                _SaveAuditEntries(auditEntries);
-            }
-
             var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
+            _ResolveAndPersistAudit(auditEntries);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
             return result;
@@ -140,13 +129,9 @@ public abstract class HeadlessDbContext : DbContext
         // Has current transaction
         if (Database.CurrentTransaction is not null)
         {
-            if (auditEntries is { Count: > 0 })
-            {
-                _SaveAuditEntries(auditEntries);
-            }
-
             PublishMessages(report.LocalEmitters, Database.CurrentTransaction);
             var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
+            _ResolveAndPersistAudit(auditEntries);
             PublishMessages(report.DistributedEmitters, Database.CurrentTransaction);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
             report.ClearEmitterMessages();
@@ -154,27 +139,23 @@ public abstract class HeadlessDbContext : DbContext
             return result;
         }
 
-        // Add audit entries before the execution strategy so they're only added
-        // once, preventing duplicates when the strategy retries on transient failures.
-        if (auditEntries is { Count: > 0 })
-        {
-            _SaveAuditEntries(auditEntries);
-        }
-
-        // No current transaction, create a new one
+        // No current transaction — use execution strategy with explicit transaction.
 #pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
         return Database
             .CreateExecutionStrategy()
             .Execute(
-                (this, report, acceptAllChangesOnSuccess),
+                (this, report, auditEntries, acceptAllChangesOnSuccess),
                 static state =>
                 {
-                    var (context, report, acceptAllChangesOnSuccess) = state;
+                    var (context, report, auditEntries, acceptAllChangesOnSuccess) = state;
+
+                    AuditSavePipelineHelper.PrepareForRetry(context);
 
                     using var transaction = context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
 
                     context.PublishMessages(report.LocalEmitters, transaction);
                     var result = context._BaseSaveChanges(acceptAllChangesOnSuccess);
+                    context._ResolveAndPersistAudit(auditEntries);
                     context.PublishMessages(report.DistributedEmitters, transaction);
 
                     transaction.Commit();
@@ -466,66 +447,39 @@ public abstract class HeadlessDbContext : DbContext
 
     #endregion
 
-    #region Audit Capture
+    #region Audit Pipeline
 
-    private IReadOnlyList<AuditLogEntryData>? _CaptureAuditEntries()
-    {
-        var auditCapture = this.GetService<IAuditChangeCapture>();
+    private ILogger? _AuditLogger =>
+        field ??= this.GetService<ILoggerFactory>()?.CreateLogger<HeadlessDbContext>();
 
-        if (auditCapture is null)
-        {
-            return null;
-        }
-
-        var currentUser = this.GetService<ICurrentUser>();
-        var currentTenant = this.GetService<ICurrentTenant>();
-        var correlationIdProvider = this.GetService<ICorrelationIdProvider>();
-        var clock = this.GetService<IClock>();
-        var timestamp = clock?.UtcNow ?? DateTimeOffset.UtcNow;
-
-        try
-        {
-            return auditCapture.CaptureChanges(
-                ChangeTracker.Entries().Select(static e => (object)e),
-                currentUser?.UserId?.ToString(),
-                currentUser?.AccountId?.ToString(),
-                currentTenant?.Id,
-                correlationIdProvider?.CorrelationId,
-                timestamp
-            );
-        }
-        catch (Exception ex)
-        {
-            var logger = this.GetService<ILoggerFactory>()?.CreateLogger<HeadlessDbContext>();
-            logger?.LogWarning(ex, "Audit change capture failed. Continuing with entity save.");
-
-            return null;
-        }
-    }
-
-    private Task<IReadOnlyList<AuditLogEntryData>?> _CaptureAuditEntriesAsync(CancellationToken cancellationToken)
-    {
-        // Capture is synchronous; wrapping to match async call-sites cleanly.
-        return Task.FromResult(_CaptureAuditEntries());
-    }
-
-    private void _SaveAuditEntries(IReadOnlyList<AuditLogEntryData> entries)
-    {
-        var store = this.GetService<IAuditLogStore>();
-        store?.Save(entries);
-    }
-
-    private async Task _SaveAuditEntriesAsync(
-        IReadOnlyList<AuditLogEntryData> entries,
+    /// <summary>
+    /// Two-phase audit persist: resolves deferred entity IDs (store-generated keys for
+    /// Added entities) then adds audit entries to the context and saves them.
+    /// </summary>
+    private async Task _ResolveAndPersistAuditAsync(
+        IReadOnlyList<AuditLogEntryData>? entries,
         CancellationToken cancellationToken
     )
     {
-        var store = this.GetService<IAuditLogStore>();
+        if (entries is not { Count: > 0 })
+            return;
 
-        if (store is not null)
-        {
-            await store.SaveAsync(entries, cancellationToken).ConfigureAwait(false);
-        }
+        AuditSavePipelineHelper.ResolveEntityIds(this, entries);
+        await AuditSavePipelineHelper.SaveAuditEntriesAsync(this, entries, cancellationToken)
+            .ConfigureAwait(false);
+        await _BaseSaveChangesAsync(true, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void _ResolveAndPersistAudit(IReadOnlyList<AuditLogEntryData>? entries)
+    {
+        if (entries is not { Count: > 0 })
+            return;
+
+        AuditSavePipelineHelper.ResolveEntityIds(this, entries);
+        AuditSavePipelineHelper.SaveAuditEntries(this, entries);
+#pragma warning disable MA0045
+        _BaseSaveChanges(true);
+#pragma warning restore MA0045
     }
 
     #endregion
