@@ -51,7 +51,7 @@ app.UseAuthorization();
 
 ## HTTP Setup
 
-`AddHeadlessApi()` now registers `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. `AddHeadlessMultiTenancy()` is the opt-in helper that:
+`AddHeadlessApi()` and `AddHeadlessDbContextServices()` now register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. `AddHeadlessMultiTenancy()` is the opt-in helper that:
 
 - Ensures `ICurrentTenant` resolves to `CurrentTenant`
 - Registers `ICurrentTenantAccessor` if needed

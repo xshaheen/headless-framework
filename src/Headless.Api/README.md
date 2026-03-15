@@ -60,7 +60,7 @@ app.Run();
 
 ## Multi-Tenancy
 
-`AddHeadlessApi()` registers `CurrentTenant` by default. For claim-based HTTP tenant resolution, opt in with:
+`AddHeadlessApi()` registers `CurrentTenant` by default, and `Headless.Orm.EntityFramework` now uses the same default for `AddHeadlessDbContextServices()`. For claim-based HTTP tenant resolution, opt in with:
 
 ```csharp
 builder.AddHeadlessMultiTenancy(options =>
