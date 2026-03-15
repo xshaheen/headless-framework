@@ -28,6 +28,18 @@ public class AzureServiceBusOptions
     public string Namespace { get; set; } = default!;
 
     /// <summary>
+    /// When set to <c>true</c> (default), topics, subscriptions, and rules are automatically created
+    /// using the <see cref="Azure.Messaging.ServiceBus.Administration.ServiceBusAdministrationClient"/>.
+    /// Set to <c>false</c> to skip automatic provisioning — useful when the admin API is unavailable
+    /// (e.g., Azure Service Bus Emulator) or entities are managed externally (e.g., via Infrastructure as Code).
+    /// </summary>
+    /// <remarks>
+    /// When <c>false</c>, all required topics, subscriptions, and subscription filter rules must already
+    /// exist before the application starts.
+    /// </remarks>
+    public bool AutoProvision { get; set; } = true;
+
+    /// <summary>
     /// Whether Service Bus sessions are enabled. If enabled, all messages must contain a
     /// <see cref="AzureServiceBusHeaders.SessionId" /> header. Defaults to false.
     /// </summary>

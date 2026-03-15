@@ -41,15 +41,15 @@ internal sealed class AzureServiceBusConsumerClient(
 
         await ConnectAsync();
 
-        if (_administrationClient is null)
+        if (!_asbOptions.AutoProvision)
         {
-            throw new InvalidOperationException("Azure Service Bus administration client is not initialized.");
+            return;
         }
 
         // Get existing rules
 
         var allRuleNames = new List<string>();
-        var allRules = _administrationClient.GetRulesAsync(_asbOptions.TopicPath, subscriptionName);
+        var allRules = _administrationClient!.GetRulesAsync(_asbOptions.TopicPath, subscriptionName);
 
         await foreach (var rule in allRules)
         {
@@ -212,54 +212,57 @@ internal sealed class AzureServiceBusConsumerClient(
             if (_serviceBusProcessor == null)
 #pragma warning restore CA1508
             {
-                if (_asbOptions.TokenCredential != null)
-                {
-                    _administrationClient = new ServiceBusAdministrationClient(
-                        _asbOptions.Namespace,
-                        _asbOptions.TokenCredential
-                    );
-                    _serviceBusClient = new ServiceBusClient(_asbOptions.Namespace, _asbOptions.TokenCredential);
-                }
-                else
-                {
-                    _administrationClient = new ServiceBusAdministrationClient(_asbOptions.ConnectionString);
-                    _serviceBusClient = new ServiceBusClient(_asbOptions.ConnectionString);
-                }
+                _serviceBusClient = _asbOptions.TokenCredential is not null
+                    ? new ServiceBusClient(_asbOptions.Namespace, _asbOptions.TokenCredential)
+                    : new ServiceBusClient(_asbOptions.ConnectionString);
 
-                var topicConfigs = _asbOptions
-                    .CustomProducers.Select(producer =>
-                        (topicPaths: producer.TopicPath, subscribe: producer.CreateSubscription)
-                    )
-                    .Append((topicPaths: _asbOptions.TopicPath, subscribe: true))
-                    .GroupBy(n => n.topicPaths, StringComparer.OrdinalIgnoreCase)
-                    .Select(n => (topicPaths: n.Key, subscribe: n.Max(o => o.subscribe)));
-
-                foreach (var (topicPath, subscribe) in topicConfigs)
+                if (_asbOptions.AutoProvision)
                 {
-                    if (!await _administrationClient.TopicExistsAsync(topicPath))
+                    _administrationClient = _asbOptions.TokenCredential is not null
+                        ? new ServiceBusAdministrationClient(
+                            _asbOptions.Namespace,
+                            _asbOptions.TokenCredential
+                        )
+                        : new ServiceBusAdministrationClient(_asbOptions.ConnectionString);
+
+                    var topicConfigs = _asbOptions
+                        .CustomProducers.Select(producer =>
+                            (topicPaths: producer.TopicPath, subscribe: producer.CreateSubscription)
+                        )
+                        .Append((topicPaths: _asbOptions.TopicPath, subscribe: true))
+                        .GroupBy(n => n.topicPaths, StringComparer.OrdinalIgnoreCase)
+                        .Select(n => (topicPaths: n.Key, subscribe: n.Max(o => o.subscribe)));
+
+                    foreach (var (topicPath, subscribe) in topicConfigs)
                     {
-                        await _administrationClient.CreateTopicAsync(topicPath);
-                        logger.LogInformation("Azure Service Bus created topic: {TopicPath}", topicPath);
-                    }
-
-                    if (subscribe && !await _administrationClient.SubscriptionExistsAsync(topicPath, subscriptionName))
-                    {
-                        var subscriptionDescription = new CreateSubscriptionOptions(topicPath, subscriptionName)
+                        if (!await _administrationClient.TopicExistsAsync(topicPath))
                         {
-                            RequiresSession = _asbOptions.EnableSessions,
-                            AutoDeleteOnIdle = _asbOptions.SubscriptionAutoDeleteOnIdle,
-                            LockDuration = _asbOptions.SubscriptionMessageLockDuration,
-                            DefaultMessageTimeToLive = _asbOptions.SubscriptionDefaultMessageTimeToLive,
-                            MaxDeliveryCount = _asbOptions.SubscriptionMaxDeliveryCount,
-                        };
+                            await _administrationClient.CreateTopicAsync(topicPath);
+                            logger.LogInformation("Azure Service Bus created topic: {TopicPath}", topicPath);
+                        }
 
-                        await _administrationClient.CreateSubscriptionAsync(subscriptionDescription);
+                        if (
+                            subscribe
+                            && !await _administrationClient.SubscriptionExistsAsync(topicPath, subscriptionName)
+                        )
+                        {
+                            var subscriptionDescription = new CreateSubscriptionOptions(topicPath, subscriptionName)
+                            {
+                                RequiresSession = _asbOptions.EnableSessions,
+                                AutoDeleteOnIdle = _asbOptions.SubscriptionAutoDeleteOnIdle,
+                                LockDuration = _asbOptions.SubscriptionMessageLockDuration,
+                                DefaultMessageTimeToLive = _asbOptions.SubscriptionDefaultMessageTimeToLive,
+                                MaxDeliveryCount = _asbOptions.SubscriptionMaxDeliveryCount,
+                            };
 
-                        logger.LogInformation(
-                            "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}",
-                            topicPath,
-                            subscriptionName
-                        );
+                            await _administrationClient.CreateSubscriptionAsync(subscriptionDescription);
+
+                            logger.LogInformation(
+                                "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}",
+                                topicPath,
+                                subscriptionName
+                            );
+                        }
                     }
                 }
 
