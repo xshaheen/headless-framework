@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.AuditLog</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Orm.EntityFramework\Headless.Orm.EntityFramework.csproj" />
+  </ItemGroup>
+</Project>

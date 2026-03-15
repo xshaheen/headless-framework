@@ -52,6 +52,10 @@ public static class OrmEntityFrameworkSetup
                 optionsLifetime
             );
 
+            // Forward DbContext → TDbContext so infrastructure services (e.g. audit log store)
+            // can inject DbContext without knowing the concrete type.
+            services.TryAddScoped<DbContext>(sp => sp.GetRequiredService<TDbContext>());
+
             return services;
         }
 
