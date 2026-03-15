@@ -51,6 +51,14 @@ public class Customer : IAuditTracked
     public Address Address { get; set; } = new();
 }
 
+public class PropertyTransformOrder : IAuditTracked
+{
+    public Guid Id { get; set; }
+
+    [AuditSensitive(SensitiveDataStrategy.Transform)]
+    public string Secret { get; set; } = "";
+}
+
 public class Address
 {
     public string Street { get; set; } = "";
@@ -67,6 +75,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
     public DbSet<Product> Products => Set<Product>();
     public DbSet<InternalLog> InternalLogs => Set<InternalLog>();
     public DbSet<Customer> Customers => Set<Customer>();
+    public DbSet<PropertyTransformOrder> PropertyTransformOrders => Set<PropertyTransformOrder>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -75,6 +84,7 @@ public class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(
         modelBuilder.Entity<Product>().Property(e => e.Id).ValueGeneratedNever();
         modelBuilder.Entity<InternalLog>().Property(e => e.Id).ValueGeneratedNever();
         modelBuilder.Entity<Customer>().Property(e => e.Id).ValueGeneratedNever();
+        modelBuilder.Entity<PropertyTransformOrder>().Property(e => e.Id).ValueGeneratedNever();
     }
 }
 
@@ -354,6 +364,27 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             var entry = result[0];
             // Email uses [AuditSensitive] without explicit strategy, so falls back to global Transform
             entry.NewValues.Should().ContainKey("Email").WhoseValue.Should().Be("[MASKED:Email]");
+        }
+    }
+
+    [Fact]
+    public async Task property_level_transform_without_transformer_throws()
+    {
+        // given
+        var (db, conn) = _CreateDb();
+        await using (conn)
+        await using (db)
+        {
+            db.PropertyTransformOrders.Add(new PropertyTransformOrder { Id = Guid.NewGuid(), Secret = "top-secret" });
+            var sut = _CreateSut();
+
+            // when
+            var act = () => _Capture(sut, db);
+
+            // then
+            act.Should()
+                .Throw<OptionsValidationException>()
+                .WithMessage("*SensitiveValueTransformer must be configured when SensitiveDataStrategy is Transform.*");
         }
     }
 

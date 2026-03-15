@@ -15,6 +15,7 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 - `AuditLogOptions` - Master enable/disable, `AuditAllEntities` mode, per-entity/property filters, sensitive-value transformer
 - `IAuditLog` - Explicit logging of non-mutation events (reads, reveals, failures)
 - `IAuditLogStore` - Storage abstraction called by the change-tracking pipeline
+- `IReadAuditLog` - Query abstraction for reading audit entries back without coupling callers to EF types
 - `IAuditChangeCapture` - Scans ChangeTracker entries and produces `AuditLogEntryData` records
 
 ## Installation
@@ -58,9 +59,16 @@ services.AddHeadlessAuditLog(o =>
 | `IsEnabled` | `true` | Master switch; `false` disables all capture |
 | `AuditAllEntities` | `false` | When `true`, audits every entity unless `[AuditIgnore]` is present |
 | `SensitiveDataStrategy` | `Redact` | Global strategy for `[AuditSensitive]` properties |
-| `SensitiveValueTransformer` | `null` | Required when strategy is `Transform`; must be a pure, synchronous function |
+| `SensitiveValueTransformer` | `null` | Required whenever the effective strategy is `Transform`; must be a pure, synchronous function |
 | `EntityFilter` | `null` | Predicate returning `true` to exclude a type; result is cached per type |
 | `PropertyFilter` | `null` | Predicate returning `true` to exclude a property; result is cached |
+
+## Important Notes
+
+- `AddHeadlessAuditLog` validates the global `SensitiveDataStrategy.Transform` configuration and fails options resolution when no `SensitiveValueTransformer` is configured.
+- If a property explicitly uses `[AuditSensitive(SensitiveDataStrategy.Transform)]`, the first capture attempt throws an `OptionsValidationException` unless `SensitiveValueTransformer` is configured.
+- `AuditLogEntryData.OldValues` and `NewValues` may contain `JsonElement` values after provider round-trips; use `JsonElement` APIs such as `GetDecimal()` for typed access.
+- `IpAddress` and `UserAgent` are not auto-populated by the built-in EF change-capture pipeline; set them explicitly through `IAuditLog.LogAsync` or a custom capture implementation.
 
 ## Dependencies
 

@@ -11,6 +11,7 @@ Wires the audit log pipeline into EF Core's ChangeTracker so that entity mutatio
 - `EfAuditChangeCapture` - Scans ChangeTracker before save; produces `AuditLogEntryData` per changed entity
 - `EfAuditLogStore` - Adds `AuditLogEntry` rows to the same DbContext so they commit in the same transaction
 - `EfAuditLog` - Implements `IAuditLog` for explicit event logging (reads, PII reveals, failures)
+- `EfReadAuditLog` - Implements `IReadAuditLog` for filtered read-back without leaking EF entities
 - `AuditLogEntry` - Single-table entity with JSON columns for `OldValues`, `NewValues`, and `ChangedFields`
 - `ConfigureAuditLog()` - ModelBuilder extension; supports custom table name, schema, and JSON column type
 - Soft-delete detection: automatically emits `entity.soft_deleted` / `entity.restored` actions when `IsDeleted` transitions
@@ -73,6 +74,17 @@ await auditLog.LogAsync(
 );
 ```
 
+### Query audit entries
+
+```csharp
+var entries = await readAuditLog.QueryAsync(
+    action: "entity.updated",
+    entityType: typeof(Patient).FullName,
+    limit: 50,
+    cancellationToken: cancellationToken
+);
+```
+
 ## Configuration
 
 ### PostgreSQL JSON columns
@@ -97,6 +109,8 @@ modelBuilder.ConfigureAuditLog(tableName: "audit_entries", schema: "audit");
 | `Exclude` | Omits the property entirely from `OldValues`, `NewValues`, and `ChangedFields` |
 | `Transform` | Passes value through `AuditLogOptions.SensitiveValueTransformer` (hash, mask, tokenize) |
 
+`SensitiveValueTransformer` must be configured whenever the effective strategy is `Transform`. Global misconfiguration fails options resolution; per-property `[AuditSensitive(SensitiveDataStrategy.Transform)]` without a transformer throws an `OptionsValidationException` during capture instead of silently redacting.
+
 Per-property strategy override:
 
 ```csharp
@@ -111,6 +125,8 @@ public string CreditCardToken { get; set; } = "";
 - **Soft-delete detection** - Monitors `IsDeleted` and `IsSuspended` property transitions; emits semantic action names instead of generic `entity.updated`
 - **Owned entities** - Inherit auditability from their aggregate owner
 - **Audit capture errors are non-fatal** - If capturing a single entity fails, a warning is logged and the save continues without that entry
+- **JSON round-trip shape** - `OldValues` and `NewValues` deserialize non-string values as `JsonElement`; use `GetDecimal()`, `GetBoolean()`, and similar APIs when reading them back
+- **Client metadata** - `IpAddress` and `UserAgent` are persisted when explicitly supplied, but automatic EF change capture does not populate them
 
 ## Dependencies
 
@@ -123,3 +139,4 @@ public string CreditCardToken { get; set; } = "";
 - Registers `IAuditChangeCapture` as scoped (`EfAuditChangeCapture`)
 - Registers `IAuditLogStore` as scoped (`EfAuditLogStore`)
 - Registers `IAuditLog` as scoped (`EfAuditLog`)
+- Registers `IReadAuditLog` as scoped (`EfReadAuditLog`)

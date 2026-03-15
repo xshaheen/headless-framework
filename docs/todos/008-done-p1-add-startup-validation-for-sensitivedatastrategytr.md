@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p1
 issue_id: "008"
 tags: ["code-review","security","dotnet"]
@@ -34,10 +34,10 @@ In Abstractions/Setup.cs: add `services.AddOptions<AuditLogOptions>().Validate(o
 
 ## Acceptance Criteria
 
-- [ ] Application fails to start with descriptive error when Transform is set without a transformer
-- [ ] Same validation applies when per-property [AuditSensitive(Transform)] is used
-- [ ] Dead else-branch in _ApplySensitiveValues removed after validation is in place
-- [ ] Unit test: startup throws OptionsValidationException when misconfigured
+- [x] Application fails to start with descriptive error when Transform is set without a transformer
+- [x] Same validation applies when per-property [AuditSensitive(Transform)] is used
+- [x] Dead else-branch in _ApplySensitiveValues removed after validation is in place
+- [x] Unit test: startup throws OptionsValidationException when misconfigured
 
 ## Notes
 
@@ -56,3 +56,9 @@ Discovered during PR #187 code review.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

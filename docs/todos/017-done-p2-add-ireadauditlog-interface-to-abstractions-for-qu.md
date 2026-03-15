@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p2
 issue_id: "017"
 tags: ["code-review","architecture","dotnet","agent-native"]
@@ -32,10 +32,10 @@ Add `IReadAuditLog` to Abstractions with `Task<IReadOnlyList<AuditLogEntryData>>
 
 ## Acceptance Criteria
 
-- [ ] IReadAuditLog interface added to Abstractions package
-- [ ] EfReadAuditLog implementation in EntityFramework package
-- [ ] Registered in AddHeadlessAuditLogEntityFramework
-- [ ] Returns AuditLogEntryData (not AuditLogEntry) to avoid leaking EF entity
+- [x] IReadAuditLog interface added to Abstractions package
+- [x] EfReadAuditLog implementation in EntityFramework package
+- [x] Registered in AddHeadlessAuditLogEntityFramework
+- [x] Returns AuditLogEntryData (not AuditLogEntry) to avoid leaking EF entity
 
 ## Notes
 
@@ -54,3 +54,9 @@ Discovered during PR #187 code review. Agent-native reviewer flagged this as a k
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

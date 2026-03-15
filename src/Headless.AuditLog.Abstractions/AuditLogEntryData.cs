@@ -19,9 +19,19 @@ public sealed record AuditLogEntryData
     public string? TenantId { get; init; }
 
     /// <summary>Client IP address (if available).</summary>
+    /// <remarks>
+    /// Not populated by automatic change capture. Consumers must set this
+    /// via explicit <see cref="IAuditLog.LogAsync"/> calls or a custom
+    /// <see cref="IAuditChangeCapture"/> implementation.
+    /// </remarks>
     public string? IpAddress { get; init; }
 
     /// <summary>HTTP User-Agent string (if available).</summary>
+    /// <remarks>
+    /// Not populated by automatic change capture. Consumers must set this
+    /// via explicit <see cref="IAuditLog.LogAsync"/> calls or a custom
+    /// <see cref="IAuditChangeCapture"/> implementation.
+    /// </remarks>
     public string? UserAgent { get; init; }
 
     /// <summary>Correlation ID grouping related operations in one logical unit.</summary>
@@ -43,9 +53,19 @@ public sealed record AuditLogEntryData
 
     // Changes
     /// <summary>Property values before the change. <c>null</c> for Created entries.</summary>
+    /// <remarks>
+    /// Providers may serialize CLR values on write but deserialize them as
+    /// <see cref="System.Text.Json.JsonElement"/> on read. Use <c>GetDecimal()</c>,
+    /// <c>GetInt32()</c>, and similar APIs for typed access.
+    /// </remarks>
     public Dictionary<string, object?>? OldValues { get; init; }
 
     /// <summary>Property values after the change. <c>null</c> for Deleted entries.</summary>
+    /// <remarks>
+    /// Providers may serialize CLR values on write but deserialize them as
+    /// <see cref="System.Text.Json.JsonElement"/> on read. Use <c>GetDecimal()</c>,
+    /// <c>GetInt32()</c>, and similar APIs for typed access.
+    /// </remarks>
     public Dictionary<string, object?>? NewValues { get; init; }
 
     /// <summary>Names of properties that changed. Non-null for Updated entries.</summary>

@@ -2,6 +2,7 @@ using Headless.AuditLog;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using System.Text.Json;
 using Tests.Fixture;
 
 namespace Tests;
@@ -29,6 +30,7 @@ public sealed class AuditLogIntegrationTests : TestBase
 
         // when
         await db.SaveChangesAsync(AbortToken);
+        db.ChangeTracker.Clear();
 
         // then
         var entries = await db.Set<AuditLogEntry>().ToListAsync(AbortToken);
@@ -42,9 +44,56 @@ public sealed class AuditLogIntegrationTests : TestBase
         entry.OldValues.Should().BeNull();
         entry.NewValues.Should().NotBeNull();
         entry.NewValues.Should().ContainKey("CustomerName");
+        entry.NewValues.Should().ContainKey("Amount");
+        entry.NewValues.Should().ContainKey("IsDeleted");
         entry.UserId.Should().Be(AuditIntegrationFixture.UserId);
         entry.TenantId.Should().Be(AuditIntegrationFixture.TenantId);
         entry.CreatedAt.Should().Be(AuditIntegrationFixture.Now);
+
+        var amount = entry.NewValues["Amount"].Should().BeOfType<JsonElement>().Subject;
+        amount.GetDecimal().Should().Be(99.99m);
+
+        var isDeleted = entry.NewValues["IsDeleted"].Should().BeOfType<JsonElement>().Subject;
+        isDeleted.GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task read_audit_log_query_returns_dto_results()
+    {
+        // given
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
+        await using var _ = conn;
+        await using var _sp = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+        var readAuditLog = scope.ServiceProvider.GetRequiredService<IReadAuditLog>();
+
+        var order = new Order
+        {
+            Id = Guid.NewGuid(),
+            CustomerName = "Alice",
+            Email = "alice@example.com",
+            Amount = 12.5m,
+        };
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(AbortToken);
+
+        // when
+        var entries = await readAuditLog.QueryAsync(
+            action: "entity.created",
+            entityType: typeof(Order).FullName,
+            limit: 10,
+            cancellationToken: AbortToken
+        );
+
+        // then
+        entries.Should().ContainSingle();
+        var entry = entries[0];
+        entry.Action.Should().Be("entity.created");
+        entry.EntityType.Should().Be(typeof(Order).FullName);
+        entry.EntityId.Should().Be(order.Id.ToString());
+        entry.NewValues.Should().ContainKey("Amount");
+        entry.NewValues!["Amount"].Should().BeOfType<JsonElement>();
     }
 
     [Fact]

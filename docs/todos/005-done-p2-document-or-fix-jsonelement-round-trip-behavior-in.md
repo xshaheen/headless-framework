@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p2
 issue_id: "005"
 tags: ["code-review","architecture","dotnet","quality"]
@@ -45,9 +45,9 @@ Short-term: Option A — add XML docs on OldValues, NewValues that values are de
 
 ## Acceptance Criteria
 
-- [ ] XML docs on AuditLogEntry.OldValues and NewValues state that values are JsonElement on read
-- [ ] Integration test added for numeric and boolean value round-trip
-- [ ] Test documents that JsonElement.GetDecimal() is needed, not direct cast
+- [x] XML docs on AuditLogEntry.OldValues and NewValues state that values are JsonElement on read
+- [x] Integration test added for numeric and boolean value round-trip
+- [x] Test documents that JsonElement.GetDecimal() is needed, not direct cast
 
 ## Notes
 
@@ -66,3 +66,9 @@ Discovered during PR #187 code review.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

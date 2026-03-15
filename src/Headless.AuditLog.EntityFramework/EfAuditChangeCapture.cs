@@ -63,6 +63,9 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
             }
             catch (Exception ex)
             {
+                if (ex is OptionsValidationException)
+                    throw;
+
                 logger.LogWarning(
                     ex,
                     "Audit capture failed for entity {EntityType}. Audit entry skipped; entity save continues.",
@@ -289,50 +292,52 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
                 break;
 
             case SensitiveDataStrategy.Transform:
+                var transformer =
+                    opts.SensitiveValueTransformer
+                    ?? throw new OptionsValidationException(
+                        nameof(AuditLogOptions),
+                        typeof(AuditLogOptions),
+                        [
+                            "SensitiveValueTransformer must be configured when SensitiveDataStrategy is Transform."
+                        ]
+                    );
+
                 object? transformedNew = null;
                 object? transformedOld = null;
 
-                if (opts.SensitiveValueTransformer is not null)
+                try
                 {
-                    try
-                    {
-                        transformedNew = opts.SensitiveValueTransformer(
-                            new SensitiveValueContext(
-                                clrType.FullName ?? clrType.Name,
-                                propertyName,
-                                property.Metadata.ClrType,
-                                property.CurrentValue
-                            )
-                        );
-                        transformedOld = opts.SensitiveValueTransformer(
-                            new SensitiveValueContext(
-                                clrType.FullName ?? clrType.Name,
-                                propertyName,
-                                property.Metadata.ClrType,
-                                property.OriginalValue
-                            )
-                        );
-                    }
-                    catch (Exception ex) when (_FallbackToRedact(ex))
-                    {
-                        // Transformer threw — fall back to Redact for this property
-                        _ApplyValues(
-                            changeType,
-                            oldValues,
-                            newValues,
-                            changedFields,
+                    transformedNew = transformer(
+                        new SensitiveValueContext(
+                            clrType.FullName ?? clrType.Name,
                             propertyName,
-                            "***",
-                            "***",
-                            property.IsModified
-                        );
-                        break;
-                    }
+                            property.Metadata.ClrType,
+                            property.CurrentValue
+                        )
+                    );
+                    transformedOld = transformer(
+                        new SensitiveValueContext(
+                            clrType.FullName ?? clrType.Name,
+                            propertyName,
+                            property.Metadata.ClrType,
+                            property.OriginalValue
+                        )
+                    );
                 }
-                else
+                catch (Exception ex) when (_FallbackToRedact(ex))
                 {
-                    transformedNew = "***";
-                    transformedOld = "***";
+                    // Transformer threw — fall back to Redact for this property
+                    _ApplyValues(
+                        changeType,
+                        oldValues,
+                        newValues,
+                        changedFields,
+                        propertyName,
+                        "***",
+                        "***",
+                        property.IsModified
+                    );
+                    break;
                 }
 
                 _ApplyValues(

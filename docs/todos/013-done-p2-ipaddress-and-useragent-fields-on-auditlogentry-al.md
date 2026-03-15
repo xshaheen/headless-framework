@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p2
 issue_id: "013"
 tags: ["code-review","architecture","dotnet"]
@@ -45,9 +45,9 @@ Option C short-term: add XML docs on IpAddress and UserAgent stating they are no
 
 ## Acceptance Criteria
 
-- [ ] IpAddress and UserAgent have clear XML docs explaining they are not auto-populated
-- [ ] README updated to reflect this limitation
-- [ ] OR: both fields wired up via IHttpContextAccessor with proper null guard for non-HTTP scenarios
+- [x] IpAddress and UserAgent have clear XML docs explaining they are not auto-populated
+- [x] README updated to reflect this limitation
+- Chose the documented short-term path instead of adding an `IHttpContextAccessor` dependency to the EF package.
 
 ## Notes
 
@@ -66,3 +66,9 @@ Discovered during PR #187 code review.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done
