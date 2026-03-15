@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Jobs</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Jobs.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Jobs.Core" />
+    <InternalsVisibleTo Include="Headless.Jobs.Caching.Redis" />
+    <InternalsVisibleTo Include="Headless.Jobs.Dashboard" />
+    <InternalsVisibleTo Include="Headless.Jobs.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.Jobs.OpenTelemetry" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" />
+    <PackageReference Include="NCrontab.Signed" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+  </ItemGroup>
+</Project>

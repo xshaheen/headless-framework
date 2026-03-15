@@ -1,0 +1,99 @@
+using Microsoft.CodeAnalysis;
+
+namespace Headless.Jobs.SourceGenerator.Validation;
+
+/// <summary>
+/// Contains all diagnostic descriptors used by the Jobs source generator.
+/// </summary>
+internal static class DiagnosticDescriptors
+{
+    public static readonly DiagnosticDescriptor ClassAccessibility = new(
+        "TQ001",
+        "Class accessibility issue",
+        "The class '{0}' should be public or internal to be used with [TickerFunction]",
+        "Headless.Jobs.SourceGenerator",
+        DiagnosticSeverity.Error,
+        true
+    );
+
+    public static readonly DiagnosticDescriptor MethodAccessibility = new(
+        "TQ002",
+        "Method accessibility issue",
+        "The method '{0}' should be public or internal to be used with [TickerFunction]",
+        "Headless.Jobs.SourceGenerator",
+        DiagnosticSeverity.Error,
+        true
+    );
+
+    public static readonly DiagnosticDescriptor InvalidCronExpression = new(
+        "TQ003",
+        "Invalid cron expression",
+        "The cron expression '{0}' in function '{1}' is invalid",
+        "Headless.Jobs.SourceGenerator",
+        DiagnosticSeverity.Error,
+        true
+    );
+
+    public static readonly DiagnosticDescriptor MissingFunctionName = new(
+        "TQ004",
+        "Missing function name",
+        "The [TickerFunction] attribute on method '{0}' in class '{1}' must specify a function name",
+        "Headless.Jobs.SourceGenerator",
+        DiagnosticSeverity.Error,
+        true
+    );
+
+    public static readonly DiagnosticDescriptor DuplicateFunctionName = new(
+        "TQ005",
+        "Duplicate function name",
+        "The function name '{0}' is already used by another [TickerFunction] method",
+        "Headless.Jobs.SourceGenerator",
+        DiagnosticSeverity.Error,
+        true
+    );
+
+    public static readonly DiagnosticDescriptor MultipleConstructors = new(
+        "TQ006",
+        "Multiple constructors detected",
+        "The class '{0}' has multiple constructors. Only the first constructor will be used for dependency injection. Consider using [JobsConstructor] attribute to explicitly mark the preferred constructor.",
+        "Headless.Jobs.SourceGenerator",
+        DiagnosticSeverity.Warning,
+        true
+    );
+
+    public static readonly DiagnosticDescriptor AbstractClass = new(
+        "TQ007",
+        "Abstract class with TickerFunction",
+        "The abstract class '{0}' contains [TickerFunction] methods",
+        "Headless.Jobs.SourceGenerator",
+        DiagnosticSeverity.Error,
+        true
+    );
+
+    public static readonly DiagnosticDescriptor NestedClass = new(
+        "TQ008",
+        "Nested class with TickerFunction",
+        "The nested class '{0}' contains [TickerFunction] methods. TickerFunction methods are only allowed in top-level classes.",
+        "Headless.Jobs.SourceGenerator",
+        DiagnosticSeverity.Error,
+        true
+    );
+
+    public static readonly DiagnosticDescriptor InvalidMethodParameter = new(
+        "TQ009",
+        "Invalid TickerFunction parameter",
+        "The method '{0}' has invalid parameter '{1}' of type '{2}'. TickerFunction methods can only have TickerFunctionContext, TickerFunctionContext<T>, CancellationToken parameters, or no parameters.",
+        "Headless.Jobs.SourceGenerator",
+        DiagnosticSeverity.Error,
+        true
+    );
+
+    public static readonly DiagnosticDescriptor MultipleJobsConstructorAttributes = new(
+        "TQ010",
+        "Multiple JobsConstructor attributes",
+        "The class '{0}' has multiple constructors with [JobsConstructor] attribute. Only one constructor can be marked with [JobsConstructor].",
+        "Headless.Jobs.SourceGenerator",
+        DiagnosticSeverity.Error,
+        true
+    );
+}

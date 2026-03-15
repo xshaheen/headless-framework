@@ -18,7 +18,7 @@ Follow these rules when generating code that uses Headless packages:
 - **Use `IBlobStorage` not cloud SDKs directly**: Code against `Headless.Blobs.Abstractions.IBlobStorage`, not `Amazon.S3.IAmazonS3` or `Azure.Storage.Blobs.BlobServiceClient`.
 - **Use `ISerializer` not `JsonSerializer` directly**: For serialization, use `Headless.Serializer.Abstractions.ISerializer`. Default to `Headless.Serializer.Json` unless binary performance is critical.
 - **Use `Headless.Checks` for guard clauses**: Prefer `Check.NotNull()` over `ArgumentNullException.ThrowIfNull()`.
-- **Use `Headless.Ticker` for background jobs**: Do not use Hangfire or Quartz. Mark jobs with `[TickerQ]` and add `Headless.Ticker.SourceGenerator`.
+- **Use `Headless.Jobs` for background jobs**: Do not use Hangfire or Quartz. Mark jobs with `[Jobs]` and add `Headless.Jobs.SourceGenerator`.
 - **Use `Headless.Messaging` for distributed messaging**: Do not use raw transport clients (`RabbitMQ.Client`, `Confluent.Kafka`). Use the Headless abstraction layer.
 - **Use `Headless.Features` for feature flags**: Do not use `Microsoft.FeatureManagement`.
 - **Dev packages for local development**: Use `*.Dev` packages (e.g., `Emails.Dev`, `Sms.Dev`, `PushNotifications.Dev`) to avoid sending real messages during development.
@@ -269,13 +269,13 @@ Each domain has its own documentation file with package READMEs, Quick Orientati
 
 ### Ticker (Background Jobs)
 
-- [Headless.Ticker.Abstractions](./src/Headless.Ticker.Abstractions/README.md): Simple utilities for queuing and executing cron/time-based jobs in the background.
-- [Headless.Ticker.Core](./src/Headless.Ticker.Core/README.md): Reliable distributed background job scheduling with cron expressions, delayed execution, and monitoring.
-- [Headless.Ticker.Dashboard](./src/Headless.Ticker.Dashboard/README.md): Authentication and web UI for TickerQ background job monitoring.
-- [Headless.Ticker.SourceGenerator](./src/Headless.Ticker.SourceGenerator/README.md): Compile-time code generation for TickerQ jobs marked with [TickerQ] attribute.
-- [Headless.Ticker.OpenTelemetry](./src/Headless.Ticker.OpenTelemetry/README.md): OpenTelemetry tracing and metrics for TickerQ job execution.
-- [Headless.Ticker.Caching.Redis](./src/Headless.Ticker.Caching.Redis/README.md): Redis-based node registry and heartbeat monitoring for multi-instance TickerQ deployments.
-- [Headless.Ticker.EntityFramework](./src/Headless.Ticker.EntityFramework/README.md): Entity Framework Core persistence for TickerQ job tracking and state management.
+- [Headless.Jobs.Abstractions](./src/Headless.Jobs.Abstractions/README.md): Simple utilities for queuing and executing cron/time-based jobs in the background.
+- [Headless.Jobs.Core](./src/Headless.Jobs.Core/README.md): Reliable distributed background job scheduling with cron expressions, delayed execution, and monitoring.
+- [Headless.Jobs.Dashboard](./src/Headless.Jobs.Dashboard/README.md): Authentication and web UI for Jobs background job monitoring.
+- [Headless.Jobs.SourceGenerator](./src/Headless.Jobs.SourceGenerator/README.md): Compile-time code generation for Jobs jobs marked with [Jobs] attribute.
+- [Headless.Jobs.OpenTelemetry](./src/Headless.Jobs.OpenTelemetry/README.md): OpenTelemetry tracing and metrics for Jobs job execution.
+- [Headless.Jobs.Caching.Redis](./src/Headless.Jobs.Caching.Redis/README.md): Redis-based node registry and heartbeat monitoring for multi-instance Jobs deployments.
+- [Headless.Jobs.EntityFramework](./src/Headless.Jobs.EntityFramework/README.md): Entity Framework Core persistence for Jobs job tracking and state management.
 
 ### TUS (Resumable Uploads)
 

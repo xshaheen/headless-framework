@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Jobs</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Jobs.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Jobs.Abstractions\Headless.Jobs.Abstractions.csproj" />
+  </ItemGroup>
+  <Target Name="CopyAnalyzer" AfterTargets="Build">
+    <MakeDir Directories="$(OutputPath)analyzers/dotnet/cs" />
+  </Target>
+  <ItemGroup>
+    <None
+      Include="..\Headless.Jobs.SourceGenerator\bin\$(Configuration)\netstandard2.0\Headless.Jobs.SourceGenerator.dll"
+      Pack="true"
+      PackagePath="analyzers/dotnet/cs"
+    />
+  </ItemGroup>
+</Project>
