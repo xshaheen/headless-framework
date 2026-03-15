@@ -69,6 +69,12 @@ public static class AddMiddlewareExtensions
         return services.AddSingleton<RequestCanceledMiddleware>();
     }
 
+    /// <summary>Adds middleware that resolves the current tenant from authenticated user claims.</summary>
+    public static IServiceCollection AddHeadlessTenantResolution(this IServiceCollection services)
+    {
+        return services.AddSingleton<TenantResolutionMiddleware>();
+    }
+
     /// <summary>
     /// Handles <see cref="OperationCanceledException"/> caused by the HTTP request being aborted, then shortcuts and
     /// returns an error status code.
@@ -77,5 +83,14 @@ public static class AddMiddlewareExtensions
     public static IApplicationBuilder UseRequestCanceled(this IApplicationBuilder application)
     {
         return application.UseMiddleware<RequestCanceledMiddleware>();
+    }
+
+    /// <summary>
+    /// Resolves the current tenant from the authenticated user's claims for the lifetime of the HTTP request.
+    /// Register this after <c>UseAuthentication()</c> and before <c>UseAuthorization()</c>.
+    /// </summary>
+    public static IApplicationBuilder UseHeadlessTenantResolution(this IApplicationBuilder application)
+    {
+        return application.UseMiddleware<TenantResolutionMiddleware>();
     }
 }

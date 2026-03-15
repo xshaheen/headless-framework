@@ -79,7 +79,7 @@ public static class ApiSetup
         builder.Services.TryAddSingleton<ICurrentUser, HttpCurrentUser>();
         builder.Services.TryAddSingleton<ICurrentTimeZone, LocalCurrentTimeZone>();
         builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
-        builder.Services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
+        builder.Services.TryAddSingleton<ICurrentTenant, CurrentTenant>();
         builder.Services.TryAddSingleton<IWebClientInfoProvider, HttpWebClientInfoProvider>();
 
         builder.Services.TryAddScoped<IRequestContext, HttpRequestContext>();
