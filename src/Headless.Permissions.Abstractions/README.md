@@ -61,7 +61,7 @@ No configuration required. This is an abstractions-only package.
 
 ## Dependencies
 
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 
 ## Side Effects
 

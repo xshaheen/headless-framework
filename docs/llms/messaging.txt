@@ -160,7 +160,7 @@ No configuration required. This is an abstractions package. Implementations are 
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 - `Headless.Checks`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
@@ -331,7 +331,7 @@ Message ordering guarantees depend on the transport provider and configuration:
 ## Dependencies
 
 - `Headless.Messaging.Abstractions`
-- `Headless.Base`
+- `Headless.Extensions`
 - `Headless.Checks`
 - Transport package (RabbitMQ, Kafka, etc.)
 - Storage package (PostgreSql, SqlServer, etc.)

@@ -58,7 +58,7 @@ builder.Services.AddAzureBlobStorage(options =>
 ## Dependencies
 
 - `Headless.Blobs.Abstractions`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Headless.Hosting`
 - `Azure.Storage.Blobs`
 - `Azure.Storage.Blobs.Batch`

@@ -53,7 +53,7 @@ services.AddSingleton<ICouchbaseClusterOptionsProvider, MyClusterOptionsProvider
 ## Dependencies
 
 - `CouchbaseNetClient`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 
 ## Side Effects
 

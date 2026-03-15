@@ -87,7 +87,7 @@ No configuration required.
 
 ## Dependencies
 
-- Headless.Base
+- Headless.Extensions
 
 ## Side Effects
 

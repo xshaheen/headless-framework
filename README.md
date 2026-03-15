@@ -82,8 +82,8 @@ Foundational building blocks shared across the framework — domain primitives, 
 
 | Package | Description |
 |---------|-------------|
-| [Headless.Base](src/Headless.Base/README.md) | Core primitives and utilities |
-| [Headless.BuildingBlocks](src/Headless.BuildingBlocks/README.md) | Domain-Driven Design building blocks |
+| [Headless.Extensions](src/Headless.Extensions/README.md) | Core primitives and utilities |
+| [Headless.Core](src/Headless.Core/README.md) | Domain-Driven Design building blocks |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
 

@@ -59,7 +59,7 @@ No configuration required. This is an abstractions-only package.
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 - `Headless.Serializer.Json`
 
 ## Side Effects

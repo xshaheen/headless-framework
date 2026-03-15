@@ -94,7 +94,7 @@ No configuration required. This is an abstractions-only package.
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 - `Headless.Serializer.Json`
 
 ## Side Effects
@@ -170,7 +170,7 @@ options.BucketName = "my-bucket";
 ## Dependencies
 
 - `Headless.Blobs.Abstractions`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Headless.Hosting`
 - `AWSSDK.S3`
 - `AWSSDK.Extensions.NETCore.Setup`
@@ -241,7 +241,7 @@ builder.Services.AddAzureBlobStorage(options =>
 ## Dependencies
 
 - `Headless.Blobs.Abstractions`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Headless.Hosting`
 - `Azure.Storage.Blobs`
 - `Azure.Storage.Blobs.Batch`
@@ -375,7 +375,7 @@ builder.Services.AddRedisBlobStorage(options =>
 ## Dependencies
 
 - `Headless.Blobs.Abstractions`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Headless.Hosting`
 - `StackExchange.Redis`
 

@@ -109,7 +109,7 @@ app.Run();
 ## Dependencies
 
 - `Headless.Api.Abstractions`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Headless.Caching.Abstractions`
 - `Headless.FluentValidation`
 - `Headless.Api.FluentValidation`
@@ -182,7 +182,7 @@ No configuration required. This package contains interfaces only.
 
 ## Dependencies
 
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 
 ## Side Effects
 

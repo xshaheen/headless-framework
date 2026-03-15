@@ -67,7 +67,7 @@ options.BucketName = "my-bucket";
 ## Dependencies
 
 - `Headless.Blobs.Abstractions`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Headless.Hosting`
 - `AWSSDK.S3`
 - `AWSSDK.Extensions.NETCore.Setup`

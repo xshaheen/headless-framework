@@ -121,8 +121,8 @@ Each domain has its own documentation file with package READMEs, Quick Orientati
 
 ### Core
 
-- [Headless.Base](./src/Headless.Base/README.md): Foundational utility library providing extension methods, primitives, helpers, and common abstractions.
-- [Headless.BuildingBlocks](./src/Headless.BuildingBlocks/README.md): Core abstractions and primitives for building domain-driven applications with multi-tenancy, user context, and cross-cutting concerns.
+- [Headless.Extensions](./src/Headless.Extensions/README.md): Foundational utility library providing extension methods, primitives, helpers, and common abstractions.
+- [Headless.Core](./src/Headless.Core/README.md): Core abstractions and primitives for building domain-driven applications with multi-tenancy, user context, and cross-cutting concerns.
 - [Headless.Checks](./src/Headless.Checks/README.md): Guard clause library for argument validation and defensive programming.
 - [Headless.Domain](./src/Headless.Domain/README.md): Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
 - [Headless.Domain.LocalPublisher](./src/Headless.Domain.LocalPublisher/README.md): DI-based implementation of ILocalMessagePublisher for in-process domain event handling.

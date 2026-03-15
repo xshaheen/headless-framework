@@ -59,7 +59,7 @@ builder.Services.AddRedisBlobStorage(options =>
 ## Dependencies
 
 - `Headless.Blobs.Abstractions`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Headless.Hosting`
 - `StackExchange.Redis`
 

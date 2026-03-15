@@ -95,7 +95,7 @@ app.UseTickerQ(TickerQStartMode.Manual);    // Wait for manual trigger
 ## Dependencies
 
 - `Headless.Ticker.Abstractions`
-- `Headless.Base`
+- `Headless.Extensions`
 
 ## Side Effects
 

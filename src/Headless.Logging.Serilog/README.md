@@ -60,7 +60,7 @@ builder.Host.UseSerilog((context, services, config) =>
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 - `Serilog`
 - `Serilog.AspNetCore`
 - `Serilog.Enrichers.*`

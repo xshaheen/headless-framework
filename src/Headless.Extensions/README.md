@@ -1,4 +1,4 @@
-# Headless.Base
+# Headless.Extensions
 
 Foundational utility library providing extension methods, primitives, helpers, and common abstractions used throughout the framework.
 
@@ -22,7 +22,7 @@ Eliminates repetitive utility code across projects by providing a comprehensive 
 ## Installation
 
 ```bash
-dotnet add package Headless.Base
+dotnet add package Headless.Extensions
 ```
 
 ## Quick Start

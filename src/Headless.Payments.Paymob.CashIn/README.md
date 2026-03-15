@@ -86,7 +86,7 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 
 ## Side Effects
 
