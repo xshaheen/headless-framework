@@ -26,23 +26,28 @@ internal sealed class EfAuditLog(
         CancellationToken cancellationToken = default
     )
     {
-        if (!options.Value.IsEnabled) return Task.CompletedTask;
+        if (!options.Value.IsEnabled)
+            return Task.CompletedTask;
 
-        dbContext.Set<AuditLogEntry>().Add(new AuditLogEntry
-        {
-            CreatedAt = clock.UtcNow,
-            UserId = currentUser.UserId?.ToString(),
-            AccountId = currentUser.AccountId?.ToString(),
-            TenantId = currentTenant.Id,
-            CorrelationId = correlationIdProvider.CorrelationId,
-            Action = action,
-            ChangeType = null,
-            EntityType = entityType,
-            EntityId = entityId,
-            NewValues = data,
-            Success = success,
-            ErrorCode = errorCode,
-        });
+        dbContext
+            .Set<AuditLogEntry>()
+            .Add(
+                new AuditLogEntry
+                {
+                    CreatedAt = clock.UtcNow,
+                    UserId = currentUser.UserId?.ToString(),
+                    AccountId = currentUser.AccountId?.ToString(),
+                    TenantId = currentTenant.Id,
+                    CorrelationId = correlationIdProvider.CorrelationId,
+                    Action = action,
+                    ChangeType = null,
+                    EntityType = entityType,
+                    EntityId = entityId,
+                    NewValues = data,
+                    Success = success,
+                    ErrorCode = errorCode,
+                }
+            );
 
         return Task.CompletedTask;
     }

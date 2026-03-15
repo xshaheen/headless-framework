@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.AuditLog;
 using Headless.Abstractions;
+using Headless.AuditLog;
 using Headless.Orm.EntityFramework.ChangeTrackers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -511,7 +511,10 @@ public abstract class HeadlessDbContext : DbContext
         store?.Save(entries);
     }
 
-    private async Task _SaveAuditEntriesAsync(IReadOnlyList<AuditLogEntryData> entries, CancellationToken cancellationToken)
+    private async Task _SaveAuditEntriesAsync(
+        IReadOnlyList<AuditLogEntryData> entries,
+        CancellationToken cancellationToken
+    )
     {
         var store = this.GetService<IAuditLogStore>();
 

@@ -35,13 +35,15 @@ internal sealed class TestHeadlessServicesOptionsExtension(
 
     public DbContextOptionsExtensionInfo Info => new TestExtensionInfo(this);
 
-    private sealed class TestExtensionInfo(IDbContextOptionsExtension e)
-        : DbContextOptionsExtensionInfo(e)
+    private sealed class TestExtensionInfo(IDbContextOptionsExtension e) : DbContextOptionsExtensionInfo(e)
     {
         public override string LogFragment => "TestHeadlessServicesExtension";
         public override bool IsDatabaseProvider => false;
+
         public override void PopulateDebugInfo(IDictionary<string, string> debugInfo) { }
+
         public override int GetServiceProviderHashCode() => 0;
+
         public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other) =>
             other is TestExtensionInfo;
     }

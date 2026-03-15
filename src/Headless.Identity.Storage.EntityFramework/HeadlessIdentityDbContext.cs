@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.AuditLog;
 using Headless.Abstractions;
+using Headless.AuditLog;
 using Headless.Orm.EntityFramework.ChangeTrackers;
 using Headless.Orm.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
@@ -479,7 +479,19 @@ public abstract class HeadlessIdentityDbContext<
         }
         catch (Exception ex)
         {
-            var logger = this.GetService<ILoggerFactory>()?.CreateLogger<HeadlessIdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>>();
+            var logger = this.GetService<ILoggerFactory>()
+                ?.CreateLogger<
+                    HeadlessIdentityDbContext<
+                        TUser,
+                        TRole,
+                        TKey,
+                        TUserClaim,
+                        TUserRole,
+                        TUserLogin,
+                        TRoleClaim,
+                        TUserToken
+                    >
+                >();
             logger?.LogWarning(ex, "Audit change capture failed. Continuing with entity save.");
 
             return null;
@@ -498,7 +510,10 @@ public abstract class HeadlessIdentityDbContext<
         store?.Save(entries);
     }
 
-    private async Task _SaveAuditEntriesAsync(IReadOnlyList<AuditLogEntryData> entries, CancellationToken cancellationToken)
+    private async Task _SaveAuditEntriesAsync(
+        IReadOnlyList<AuditLogEntryData> entries,
+        CancellationToken cancellationToken
+    )
     {
         var store = this.GetService<IAuditLogStore>();
 

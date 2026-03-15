@@ -17,9 +17,15 @@ public class Order : IAuditTracked
 {
     public Guid Id { get; set; }
     public string CustomerName { get; set; } = "";
-    [AuditSensitive] public string Email { get; set; } = "";
-    [AuditSensitive(SensitiveDataStrategy.Exclude)] public string Phone { get; set; } = "";
-    [AuditIgnore] public DateTime LastComputedAt { get; set; }
+
+    [AuditSensitive]
+    public string Email { get; set; } = "";
+
+    [AuditSensitive(SensitiveDataStrategy.Exclude)]
+    public string Phone { get; set; } = "";
+
+    [AuditIgnore]
+    public DateTime LastComputedAt { get; set; }
     public bool IsDeleted { get; set; }
     public bool IsSuspended { get; set; }
     public decimal Amount { get; set; }
@@ -85,13 +91,14 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     private const string _CorrelationId = "correlation-1";
 
     // Each test gets its own in-memory SQLite connection so databases are isolated
-    private static (TestDbContext db, SqliteConnection conn) _CreateDb(Action<DbContextOptionsBuilder<TestDbContext>>? configure = null)
+    private static (TestDbContext db, SqliteConnection conn) _CreateDb(
+        Action<DbContextOptionsBuilder<TestDbContext>>? configure = null
+    )
     {
         var conn = new SqliteConnection("Data Source=:memory:");
         conn.Open();
 
-        var builder = new DbContextOptionsBuilder<TestDbContext>()
-            .UseSqlite(conn);
+        var builder = new DbContextOptionsBuilder<TestDbContext>().UseSqlite(conn);
 
         configure?.Invoke(builder);
 
@@ -108,10 +115,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         return new EfAuditChangeCapture(Options.Create(opts), logger);
     }
 
-    private static IReadOnlyList<AuditLogEntryData> _Capture(
-        EfAuditChangeCapture sut,
-        TestDbContext db
-    )
+    private static IReadOnlyList<AuditLogEntryData> _Capture(EfAuditChangeCapture sut, TestDbContext db)
     {
         var entries = db.ChangeTracker.Entries().Select(e => (object)e);
         return sut.CaptureChanges(entries, _UserId, _AccountId, _TenantId, _CorrelationId, _Timestamp);
@@ -127,7 +131,13 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "alice@example.com", Phone = "555-1234" };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "alice@example.com",
+                Phone = "555-1234",
+            };
             db.Orders.Add(order);
 
             var sut = _CreateSut();
@@ -155,7 +165,13 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (db)
         {
             var orderId = Guid.NewGuid();
-            var order = new Order { Id = orderId, CustomerName = "Alice", Email = "a@b.com", Phone = "555" };
+            var order = new Order
+            {
+                Id = orderId,
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+            };
             db.Orders.Add(order);
             await db.SaveChangesAsync();
 
@@ -185,7 +201,13 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555" };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+            };
             db.Orders.Add(order);
             await db.SaveChangesAsync();
 
@@ -214,7 +236,14 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555", LastComputedAt = DateTime.UtcNow };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+                LastComputedAt = DateTime.UtcNow,
+            };
             db.Orders.Add(order);
             await db.SaveChangesAsync();
 
@@ -244,7 +273,13 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "alice@secret.com", Phone = "555" };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "alice@secret.com",
+                Phone = "555",
+            };
             db.Orders.Add(order);
 
             var sut = _CreateSut(); // default strategy is Redact
@@ -267,7 +302,13 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555-secret" };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555-secret",
+            };
             db.Orders.Add(order);
 
             var sut = _CreateSut();
@@ -290,7 +331,13 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "alice@secret.com", Phone = "555" };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "alice@secret.com",
+                Phone = "555",
+            };
             db.Orders.Add(order);
 
             var sut = _CreateSut(opts =>
@@ -382,7 +429,13 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555" };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+            };
             db.Orders.Add(order);
 
             var sut = _CreateSut(opts => opts.EntityFilter = t => t == typeof(Order));
@@ -403,7 +456,13 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555" };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+            };
             db.Orders.Add(order);
 
             var sut = _CreateSut(opts => opts.PropertyFilter = (_, name) => name == "CustomerName");
@@ -425,7 +484,12 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var customer = new Customer { Id = Guid.NewGuid(), Name = "Alice", Address = new Address { Street = "Main St", City = "Springfield" } };
+            var customer = new Customer
+            {
+                Id = Guid.NewGuid(),
+                Name = "Alice",
+                Address = new Address { Street = "Main St", City = "Springfield" },
+            };
             db.Customers.Add(customer);
 
             var sut = _CreateSut();
@@ -435,7 +499,9 @@ public sealed class EfAuditChangeCaptureTests : TestBase
 
             // then - should capture both Customer and the owned Address
             result.Should().NotBeEmpty();
-            var addressEntry = result.FirstOrDefault(e => e.EntityType != null && e.EntityType.Contains(nameof(Address)));
+            var addressEntry = result.FirstOrDefault(e =>
+                e.EntityType != null && e.EntityType.Contains(nameof(Address))
+            );
             addressEntry.Should().NotBeNull();
         }
     }
@@ -460,7 +526,12 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (db)
         {
             var customerId = Guid.NewGuid();
-            var customer = new Customer { Id = customerId, Name = "Alice", Address = new Address { Street = "Main", City = "Town" } };
+            var customer = new Customer
+            {
+                Id = customerId,
+                Name = "Alice",
+                Address = new Address { Street = "Main", City = "Town" },
+            };
             db.Customers.Add(customer);
             await db.SaveChangesAsync();
 
@@ -488,7 +559,14 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555", IsDeleted = false };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+                IsDeleted = false,
+            };
             db.Orders.Add(order);
             await db.SaveChangesAsync();
 
@@ -513,7 +591,14 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555", IsDeleted = true };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+                IsDeleted = true,
+            };
             db.Orders.Add(order);
             await db.SaveChangesAsync();
 
@@ -538,7 +623,14 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555", IsSuspended = false };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+                IsSuspended = false,
+            };
             db.Orders.Add(order);
             await db.SaveChangesAsync();
 
@@ -588,7 +680,13 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555" };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+            };
             db.Orders.Add(order);
 
             var sut = _CreateSut(opts => opts.IsEnabled = false);
@@ -611,7 +709,14 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555", Amount = 100m };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+                Amount = 100m,
+            };
             db.Orders.Add(order);
 
             var sut = _CreateSut();
@@ -623,7 +728,18 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             result.Should().HaveCount(1);
             var entry = result[0];
             // None of the framework-managed property names should appear
-            var frameworkProps = new[] { "ConcurrencyStamp", "DateCreated", "DateUpdated", "DateDeleted", "DateSuspended", "CreatedById", "UpdatedById", "DeletedById", "SuspendedById" };
+            var frameworkProps = new[]
+            {
+                "ConcurrencyStamp",
+                "DateCreated",
+                "DateUpdated",
+                "DateDeleted",
+                "DateSuspended",
+                "CreatedById",
+                "UpdatedById",
+                "DeletedById",
+                "SuspendedById",
+            };
             foreach (var prop in frameworkProps)
             {
                 entry.NewValues?.Keys.Should().NotContain(prop);
@@ -643,7 +759,13 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            var order = new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555" };
+            var order = new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Alice",
+                Email = "a@b.com",
+                Phone = "555",
+            };
             db.Orders.Add(order);
 
             var sut = _CreateSut();

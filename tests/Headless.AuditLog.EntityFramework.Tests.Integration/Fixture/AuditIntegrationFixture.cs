@@ -29,10 +29,7 @@ public static class AuditIntegrationFixture
 
         var clock = new TestClock { TimeProvider = new FakeTimeProvider(Now) };
         var currentTenant = new TestCurrentTenant { Id = TenantId };
-        var currentUser = new TestCurrentUser
-        {
-            UserId = new Headless.Primitives.UserId(UserId),
-        };
+        var currentUser = new TestCurrentUser { UserId = new Headless.Primitives.UserId(UserId) };
 
         var services = new ServiceCollection();
 

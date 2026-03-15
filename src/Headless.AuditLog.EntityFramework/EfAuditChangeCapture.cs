@@ -9,10 +9,8 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog;
 
-internal sealed class EfAuditChangeCapture(
-    IOptions<AuditLogOptions> options,
-    ILogger<EfAuditChangeCapture> logger
-) : IAuditChangeCapture
+internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, ILogger<EfAuditChangeCapture> logger)
+    : IAuditChangeCapture
 {
     private static readonly ConcurrentDictionary<PropertyInfo, AuditPropertyMetadata> _PropertyCache = new();
 
@@ -40,7 +38,8 @@ internal sealed class EfAuditChangeCapture(
     )
     {
         var opts = options.Value;
-        if (!opts.IsEnabled) return [];
+        if (!opts.IsEnabled)
+            return [];
 
         var result = new List<AuditLogEntryData>();
 
@@ -125,7 +124,8 @@ internal sealed class EfAuditChangeCapture(
             _ => null,
         };
 
-        if (changeType is null) return null;
+        if (changeType is null)
+            return null;
 
         var action = _DetermineAction(entry, changeType.Value);
 
@@ -135,33 +135,54 @@ internal sealed class EfAuditChangeCapture(
 
         foreach (var property in entry.Properties)
         {
-            if (property.Metadata.PropertyInfo is null) continue; // shadow properties — skip
+            if (property.Metadata.PropertyInfo is null)
+                continue; // shadow properties — skip
 
             var propertyName = property.Metadata.Name;
 
             // Default framework property exclusion
-            if (_DefaultExcludedProperties.Contains(propertyName)) continue;
+            if (_DefaultExcludedProperties.Contains(propertyName))
+                continue;
 
             var meta = _GetPropertyMetadata(property.Metadata.PropertyInfo);
 
             // [AuditIgnore] — skip entirely
-            if (meta.IsIgnored) continue;
+            if (meta.IsIgnored)
+                continue;
 
             // Option-based property filter
-            if (opts.PropertyFilter?.Invoke(clrType, propertyName) == true) continue;
+            if (opts.PropertyFilter?.Invoke(clrType, propertyName) == true)
+                continue;
 
             // [AuditSensitive] — apply strategy
             if (meta.IsSensitive)
             {
                 var strategy = meta.SensitiveStrategy ?? opts.SensitiveDataStrategy;
-                _ApplySensitiveValues(strategy, entry, property, opts, clrType, propertyName,
-                    oldValues, newValues, changedFields);
+                _ApplySensitiveValues(
+                    strategy,
+                    entry,
+                    property,
+                    opts,
+                    clrType,
+                    propertyName,
+                    oldValues,
+                    newValues,
+                    changedFields
+                );
                 continue;
             }
 
             // Normal property
-            _ApplyValues(changeType.Value, oldValues, newValues, changedFields,
-                propertyName, property.OriginalValue, property.CurrentValue, property.IsModified);
+            _ApplyValues(
+                changeType.Value,
+                oldValues,
+                newValues,
+                changedFields,
+                propertyName,
+                property.OriginalValue,
+                property.CurrentValue,
+                property.IsModified
+            );
         }
 
         // Skip updates with no real changed fields
@@ -199,8 +220,10 @@ internal sealed class EfAuditChangeCapture(
                 var nowDeleted = isDeletedProp.CurrentValue is true;
                 var wasDeleted = isDeletedProp.OriginalValue is true;
 
-                if (!wasDeleted && nowDeleted) return "entity.soft_deleted";
-                if (wasDeleted && !nowDeleted) return "entity.restored";
+                if (!wasDeleted && nowDeleted)
+                    return "entity.soft_deleted";
+                if (wasDeleted && !nowDeleted)
+                    return "entity.restored";
             }
 
             // Suspend detection: check IsSuspended transition
@@ -211,8 +234,10 @@ internal sealed class EfAuditChangeCapture(
                 var nowSuspended = isSuspendedProp.CurrentValue is true;
                 var wasSuspended = isSuspendedProp.OriginalValue is true;
 
-                if (!wasSuspended && nowSuspended) return "entity.suspended";
-                if (wasSuspended && !nowSuspended) return "entity.unsuspended";
+                if (!wasSuspended && nowSuspended)
+                    return "entity.suspended";
+                if (wasSuspended && !nowSuspended)
+                    return "entity.unsuspended";
             }
         }
 
@@ -251,8 +276,16 @@ internal sealed class EfAuditChangeCapture(
                 return;
 
             case SensitiveDataStrategy.Redact:
-                _ApplyValues(changeType, oldValues, newValues, changedFields,
-                    propertyName, "***", "***", property.IsModified);
+                _ApplyValues(
+                    changeType,
+                    oldValues,
+                    newValues,
+                    changedFields,
+                    propertyName,
+                    "***",
+                    "***",
+                    property.IsModified
+                );
                 break;
 
             case SensitiveDataStrategy.Transform:
@@ -263,16 +296,36 @@ internal sealed class EfAuditChangeCapture(
                 {
                     try
                     {
-                        transformedNew = opts.SensitiveValueTransformer(new SensitiveValueContext(
-                            clrType.FullName ?? clrType.Name, propertyName, property.Metadata.ClrType, property.CurrentValue));
-                        transformedOld = opts.SensitiveValueTransformer(new SensitiveValueContext(
-                            clrType.FullName ?? clrType.Name, propertyName, property.Metadata.ClrType, property.OriginalValue));
+                        transformedNew = opts.SensitiveValueTransformer(
+                            new SensitiveValueContext(
+                                clrType.FullName ?? clrType.Name,
+                                propertyName,
+                                property.Metadata.ClrType,
+                                property.CurrentValue
+                            )
+                        );
+                        transformedOld = opts.SensitiveValueTransformer(
+                            new SensitiveValueContext(
+                                clrType.FullName ?? clrType.Name,
+                                propertyName,
+                                property.Metadata.ClrType,
+                                property.OriginalValue
+                            )
+                        );
                     }
                     catch (Exception ex) when (_FallbackToRedact(ex))
                     {
                         // Transformer threw — fall back to Redact for this property
-                        _ApplyValues(changeType, oldValues, newValues, changedFields,
-                            propertyName, "***", "***", property.IsModified);
+                        _ApplyValues(
+                            changeType,
+                            oldValues,
+                            newValues,
+                            changedFields,
+                            propertyName,
+                            "***",
+                            "***",
+                            property.IsModified
+                        );
                         break;
                     }
                 }
@@ -282,8 +335,16 @@ internal sealed class EfAuditChangeCapture(
                     transformedOld = "***";
                 }
 
-                _ApplyValues(changeType, oldValues, newValues, changedFields,
-                    propertyName, transformedOld, transformedNew, property.IsModified);
+                _ApplyValues(
+                    changeType,
+                    oldValues,
+                    newValues,
+                    changedFields,
+                    propertyName,
+                    transformedOld,
+                    transformedNew,
+                    property.IsModified
+                );
                 break;
         }
     }
@@ -327,26 +388,24 @@ internal sealed class EfAuditChangeCapture(
 
             var entityType = $"{ownerType.FullName}.{ownedType.Name}";
 
-            var ownerKeyValues = ownership.Properties
-                .Select(p => entry.Property(p.Name).CurrentValue)
-                .ToArray();
+            var ownerKeyValues = ownership.Properties.Select(p => entry.Property(p.Name).CurrentValue).ToArray();
 
-            var entityId = ownerKeyValues.Length == 1
-                ? ownerKeyValues[0]?.ToString()
-                : string.Join(",", ownerKeyValues.Select(v => v?.ToString()));
+            var entityId =
+                ownerKeyValues.Length == 1
+                    ? ownerKeyValues[0]?.ToString()
+                    : string.Join(",", ownerKeyValues.Select(v => v?.ToString()));
 
             return (entityType, entityId);
         }
 
         var key = entry.Metadata.FindPrimaryKey();
 
-        if (key is null) return (entry.Metadata.ClrType.FullName, null);
+        if (key is null)
+            return (entry.Metadata.ClrType.FullName, null);
 
         var values = key.Properties.Select(p => entry.Property(p.Name).CurrentValue).ToArray();
 
-        var id = values.Length == 1
-            ? values[0]?.ToString()
-            : string.Join(",", values.Select(v => v?.ToString()));
+        var id = values.Length == 1 ? values[0]?.ToString() : string.Join(",", values.Select(v => v?.ToString()));
 
         return (entry.Metadata.ClrType.FullName, id);
     }
@@ -356,17 +415,20 @@ internal sealed class EfAuditChangeCapture(
     private static bool _FallbackToRedact(Exception _) => true;
 
     private static AuditPropertyMetadata _GetPropertyMetadata(PropertyInfo propInfo) =>
-        _PropertyCache.GetOrAdd(propInfo, static pi =>
-        {
-            var ignore = pi.GetCustomAttribute<AuditIgnoreAttribute>();
-            var sensitive = pi.GetCustomAttribute<AuditSensitiveAttribute>();
+        _PropertyCache.GetOrAdd(
+            propInfo,
+            static pi =>
+            {
+                var ignore = pi.GetCustomAttribute<AuditIgnoreAttribute>();
+                var sensitive = pi.GetCustomAttribute<AuditSensitiveAttribute>();
 
-            return new(
-                IsIgnored: ignore is not null,
-                IsSensitive: sensitive is not null,
-                SensitiveStrategy: sensitive?.Strategy
-            );
-        });
+                return new(
+                    IsIgnored: ignore is not null,
+                    IsSensitive: sensitive is not null,
+                    SensitiveStrategy: sensitive?.Strategy
+                );
+            }
+        );
 
     private sealed record AuditPropertyMetadata(
         bool IsIgnored,

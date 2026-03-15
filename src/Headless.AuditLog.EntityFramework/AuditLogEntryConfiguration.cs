@@ -6,11 +6,8 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.AuditLog;
 
-internal sealed class AuditLogEntryConfiguration(
-    string? schema,
-    string tableName,
-    string? jsonColumnType
-) : IEntityTypeConfiguration<AuditLogEntry>
+internal sealed class AuditLogEntryConfiguration(string? schema, string tableName, string? jsonColumnType)
+    : IEntityTypeConfiguration<AuditLogEntry>
 {
     private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -35,19 +32,22 @@ internal sealed class AuditLogEntryConfiguration(
         builder.Property(e => e.ErrorCode).HasMaxLength(256);
 
         // JSON stored as string columns — universally portable across all DB providers
-        builder.Property(e => e.OldValues)
+        builder
+            .Property(e => e.OldValues)
             .HasConversion(
                 v => v == null ? null : JsonSerializer.Serialize(v, _JsonOptions),
                 v => v == null ? null : JsonSerializer.Deserialize<Dictionary<string, object?>>(v, _JsonOptions)
             );
 
-        builder.Property(e => e.NewValues)
+        builder
+            .Property(e => e.NewValues)
             .HasConversion(
                 v => v == null ? null : JsonSerializer.Serialize(v, _JsonOptions),
                 v => v == null ? null : JsonSerializer.Deserialize<Dictionary<string, object?>>(v, _JsonOptions)
             );
 
-        builder.Property(e => e.ChangedFields)
+        builder
+            .Property(e => e.ChangedFields)
             .HasConversion(
                 v => v == null ? null : JsonSerializer.Serialize(v, _JsonOptions),
                 v => v == null ? null : JsonSerializer.Deserialize<List<string>>(v, _JsonOptions)
@@ -62,13 +62,24 @@ internal sealed class AuditLogEntryConfiguration(
         }
 
         // Indexes optimized for common query patterns
-        builder.HasIndex(e => new { e.TenantId, e.CreatedAt })
-            .HasDatabaseName("ix_audit_log_tenant_time");
-        builder.HasIndex(e => new { e.TenantId, e.EntityType, e.EntityId, e.CreatedAt })
+        builder.HasIndex(e => new { e.TenantId, e.CreatedAt }).HasDatabaseName("ix_audit_log_tenant_time");
+        builder
+            .HasIndex(e => new
+            {
+                e.TenantId,
+                e.EntityType,
+                e.EntityId,
+                e.CreatedAt,
+            })
             .HasDatabaseName("ix_audit_log_tenant_entity_time");
-        builder.HasIndex(e => new { e.TenantId, e.UserId, e.CreatedAt })
+        builder
+            .HasIndex(e => new
+            {
+                e.TenantId,
+                e.UserId,
+                e.CreatedAt,
+            })
             .HasDatabaseName("ix_audit_log_tenant_actor_time");
-        builder.HasIndex(e => e.CorrelationId)
-            .HasDatabaseName("ix_audit_log_correlation");
+        builder.HasIndex(e => e.CorrelationId).HasDatabaseName("ix_audit_log_correlation");
     }
 }

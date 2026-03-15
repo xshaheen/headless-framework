@@ -68,9 +68,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         await db.SaveChangesAsync(AbortToken);
 
         // Remove the created audit entry so only the update remains
-        await db.Set<AuditLogEntry>()
-            .Where(e => e.Action == "entity.created")
-            .ExecuteDeleteAsync(AbortToken);
+        await db.Set<AuditLogEntry>().Where(e => e.Action == "entity.created").ExecuteDeleteAsync(AbortToken);
 
         // when
         order.CustomerName = "Robert";
@@ -108,9 +106,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         db.Orders.Add(order);
         await db.SaveChangesAsync(AbortToken);
 
-        await db.Set<AuditLogEntry>()
-            .Where(e => e.Action == "entity.created")
-            .ExecuteDeleteAsync(AbortToken);
+        await db.Set<AuditLogEntry>().Where(e => e.Action == "entity.created").ExecuteDeleteAsync(AbortToken);
 
         // when
         db.Orders.Remove(order);
