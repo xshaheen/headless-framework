@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
+
 namespace Headless.AuditLog;
 
 /// <summary>Configuration options for the audit log subsystem.</summary>
@@ -43,4 +45,16 @@ public sealed class AuditLogOptions
     /// Applied after attribute-based filtering.
     /// </summary>
     public Func<Type, string, bool>? PropertyFilter { get; set; }
+}
+
+/// <summary>Validates <see cref="AuditLogOptions"/>.</summary>
+public sealed class AuditLogOptionsValidator : AbstractValidator<AuditLogOptions>
+{
+    public AuditLogOptionsValidator()
+    {
+        RuleFor(x => x.SensitiveValueTransformer)
+            .NotNull()
+            .When(x => x.SensitiveDataStrategy == SensitiveDataStrategy.Transform)
+            .WithMessage("SensitiveValueTransformer must be configured when SensitiveDataStrategy is Transform.");
+    }
 }

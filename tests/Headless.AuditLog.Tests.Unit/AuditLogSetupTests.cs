@@ -24,7 +24,7 @@ public sealed class AuditLogSetupTests
         assertions
             .And.Failures
             .Should()
-            .Contain("SensitiveValueTransformer must be configured when SensitiveDataStrategy is Transform.");
+            .Contain(failure => failure.Contains("SensitiveValueTransformer must be configured when SensitiveDataStrategy is Transform."));
     }
 
     [Fact]

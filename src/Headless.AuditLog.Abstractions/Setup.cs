@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog;
 
@@ -18,14 +16,7 @@ public static class AuditLogSetup
         /// </summary>
         public IServiceCollection AddHeadlessAuditLog(Action<AuditLogOptions>? configure = null)
         {
-            services.AddOptions<AuditLogOptions>()
-                .Validate(
-                    static opts =>
-                        opts.SensitiveDataStrategy != SensitiveDataStrategy.Transform
-                        || opts.SensitiveValueTransformer is not null,
-                    "SensitiveValueTransformer must be configured when SensitiveDataStrategy is Transform."
-                )
-                .ValidateOnStart();
+            services.AddOptions<AuditLogOptions, AuditLogOptionsValidator>();
 
             if (configure is not null)
                 services.Configure(configure);
