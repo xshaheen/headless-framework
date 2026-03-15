@@ -13,7 +13,7 @@ namespace Headless.Orm.EntityFramework;
 /// <c>HeadlessIdentityDbContext</c>. Ensures a single implementation for
 /// capture → resolve → persist.
 /// </summary>
-public static class AuditSavePipelineHelper
+internal static class AuditSavePipelineHelper
 {
     /// <summary>
     /// Captures audit entries from the change tracker before SaveChanges.
