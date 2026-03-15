@@ -12,7 +12,7 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 - `AuditIgnoreAttribute` - Excludes a property (or entire entity) from change capture
 - `AuditSensitiveAttribute` - Marks a property as PII/secret; value is handled per configured strategy
 - `SensitiveDataStrategy` - `Redact` (replace with `"***"`), `Exclude` (omit entirely), or `Transform` (custom function)
-- `AuditLogOptions` - Master enable/disable, `AuditAllEntities` mode, per-entity/property filters, sensitive-value transformer
+- `AuditLogOptions` - Master enable/disable, `AuditByDefault` mode, per-entity/property filters, configurable default exclusions, sensitive-value transformer
 - `IAuditLog` - Explicit logging of non-mutation events (reads, reveals, failures)
 - `IAuditLogStore` - Storage abstraction called by the change-tracking pipeline
 - `IReadAuditLog` - Query abstraction for reading audit entries back without coupling callers to EF types
@@ -57,21 +57,25 @@ services.AddHeadlessAuditLog(o =>
 | Option | Default | Description |
 |--------|---------|-------------|
 | `IsEnabled` | `true` | Master switch; `false` disables all capture |
-| `AuditAllEntities` | `false` | When `true`, audits every entity unless `[AuditIgnore]` is present |
+| `AuditByDefault` | `false` | When `true`, audits every entity unless `[AuditIgnore]` is present |
 | `SensitiveDataStrategy` | `Redact` | Global strategy for `[AuditSensitive]` properties |
 | `SensitiveValueTransformer` | `null` | Required whenever the effective strategy is `Transform`; must be a pure, synchronous function |
-| `EntityFilter` | `null` | Predicate returning `true` to exclude a type; result is cached per type |
-| `PropertyFilter` | `null` | Predicate returning `true` to exclude a property; result is cached |
+| `EntityFilter` | `null` | Predicate returning `true` to exclude a type; first result is cached per type for the capture service lifetime |
+| `PropertyFilter` | `null` | Predicate returning `true` to exclude a property; first result is cached per `(Type, propertyName)` for the capture service lifetime |
+| `DefaultExcludedProperties` | Framework-managed names | Default property names skipped during change capture; consumers can add/remove entries |
 
 ## Important Notes
 
 - `AddHeadlessAuditLog` validates the global `SensitiveDataStrategy.Transform` configuration and fails options resolution when no `SensitiveValueTransformer` is configured.
 - If a property explicitly uses `[AuditSensitive(SensitiveDataStrategy.Transform)]`, the first capture attempt throws an `OptionsValidationException` unless `SensitiveValueTransformer` is configured.
+- `EntityFilter` and `PropertyFilter` results are cached after first evaluation, so predicates must be pure and deterministic.
 - `AuditLogEntryData.OldValues` and `NewValues` may contain `JsonElement` values after provider round-trips; use `JsonElement` APIs such as `GetDecimal()` for typed access.
+- `EntityId` stays a plain string for single-column keys; composite keys are serialized as a JSON string array.
 - `IpAddress` and `UserAgent` are not auto-populated by the built-in EF change-capture pipeline; set them explicitly through `IAuditLog.LogAsync` or a custom capture implementation.
 
 ## Dependencies
 
+- `Headless.Hosting`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Options`
 

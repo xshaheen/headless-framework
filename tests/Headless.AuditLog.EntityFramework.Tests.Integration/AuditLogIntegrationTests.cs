@@ -37,7 +37,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         entries.Should().ContainSingle();
 
         var entry = entries[0];
-        entry.Action.Should().Be("entity.created");
+        entry.Action.Should().Be(AuditActionNames.Created);
         entry.ChangeType.Should().Be(AuditChangeType.Created);
         entry.EntityType.Should().Be(typeof(Order).FullName);
         entry.EntityId.Should().Be(order.Id.ToString());
@@ -80,7 +80,7 @@ public sealed class AuditLogIntegrationTests : TestBase
 
         // when
         var entries = await readAuditLog.QueryAsync(
-            action: "entity.created",
+            action: AuditActionNames.Created,
             entityType: typeof(Order).FullName,
             limit: 10,
             cancellationToken: AbortToken
@@ -89,7 +89,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         // then
         entries.Should().ContainSingle();
         var entry = entries[0];
-        entry.Action.Should().Be("entity.created");
+        entry.Action.Should().Be(AuditActionNames.Created);
         entry.EntityType.Should().Be(typeof(Order).FullName);
         entry.EntityId.Should().Be(order.Id.ToString());
         entry.NewValues.Should().ContainKey("Amount");
@@ -117,7 +117,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         await db.SaveChangesAsync(AbortToken);
 
         // Remove the created audit entry so only the update remains
-        await db.Set<AuditLogEntry>().Where(e => e.Action == "entity.created").ExecuteDeleteAsync(AbortToken);
+        await db.Set<AuditLogEntry>().Where(e => e.Action == AuditActionNames.Created).ExecuteDeleteAsync(AbortToken);
 
         // when
         order.CustomerName = "Robert";
@@ -128,7 +128,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         entries.Should().ContainSingle();
 
         var entry = entries[0];
-        entry.Action.Should().Be("entity.updated");
+        entry.Action.Should().Be(AuditActionNames.Updated);
         entry.ChangeType.Should().Be(AuditChangeType.Updated);
         entry.ChangedFields.Should().Contain("CustomerName");
         entry.OldValues.Should().NotBeNull();
@@ -155,7 +155,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         db.Orders.Add(order);
         await db.SaveChangesAsync(AbortToken);
 
-        await db.Set<AuditLogEntry>().Where(e => e.Action == "entity.created").ExecuteDeleteAsync(AbortToken);
+        await db.Set<AuditLogEntry>().Where(e => e.Action == AuditActionNames.Created).ExecuteDeleteAsync(AbortToken);
 
         // when
         db.Orders.Remove(order);
@@ -166,7 +166,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         entries.Should().ContainSingle();
 
         var entry = entries[0];
-        entry.Action.Should().Be("entity.deleted");
+        entry.Action.Should().Be(AuditActionNames.Deleted);
         entry.ChangeType.Should().Be(AuditChangeType.Deleted);
         entry.OldValues.Should().NotBeNull();
         entry.NewValues.Should().BeNull();

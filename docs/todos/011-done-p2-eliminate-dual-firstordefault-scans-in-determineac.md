@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p2
 issue_id: "011"
 tags: ["code-review","performance","dotnet"]
@@ -38,9 +38,9 @@ Move soft-delete/suspend flag detection into the main property loop and compute 
 
 ## Acceptance Criteria
 
-- [ ] entry.Properties iterated exactly once per entity (not 3 times)
-- [ ] IsDeleted/IsSuspended transition detection preserved
-- [ ] Unit tests for soft_deleted, restored, suspended, unsuspended actions still pass
+- [x] entry.Properties iterated exactly once per entity (not 3 times)
+- [x] IsDeleted/IsSuspended transition detection preserved
+- [x] Unit tests for soft_deleted, restored, suspended, unsuspended actions still pass
 
 ## Notes
 
@@ -59,3 +59,9 @@ Discovered during PR #187 code review.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

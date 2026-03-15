@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p3
 issue_id: "003"
 tags: ["code-review","quality","dotnet"]
@@ -27,8 +27,8 @@ Add `private static class AuditActions { public const string SoftDeleted = "enti
 
 ## Acceptance Criteria
 
-- [ ] All 8 action strings extracted to named constants
-- [ ] Tests use constants not inline strings
+- [x] All 8 action strings extracted to named constants
+- [x] Tests use constants not inline strings
 
 ## Notes
 
@@ -47,3 +47,9 @@ Discovered during PR #187 code review.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

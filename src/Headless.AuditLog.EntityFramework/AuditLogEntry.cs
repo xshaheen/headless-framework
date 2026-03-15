@@ -5,7 +5,7 @@ namespace Headless.AuditLog;
 /// <summary>
 /// Persistent audit log entity. Single table with JSON columns for old/new values.
 /// </summary>
-[AuditIgnore] // Prevent recursive capture when AuditAllEntities is enabled
+[AuditIgnore] // Prevent recursive capture when AuditByDefault is enabled
 public sealed class AuditLogEntry
 {
     /// <summary>Auto-generated sequential ID.</summary>
@@ -54,7 +54,10 @@ public sealed class AuditLogEntry
     /// <summary>Full CLR type name of the affected entity.</summary>
     public string? EntityType { get; init; }
 
-    /// <summary>String representation of the entity's primary key.</summary>
+    /// <summary>
+    /// String representation of the entity's primary key.
+    /// Composite keys are encoded as a JSON array of string values.
+    /// </summary>
     public string? EntityId { get; init; }
 
     // Changes — stored as string columns, serialized via value converters

@@ -48,7 +48,10 @@ public sealed record AuditLogEntryData
     /// <summary>Full CLR type name of the affected entity.</summary>
     public string? EntityType { get; init; }
 
-    /// <summary>String representation of the entity's primary key.</summary>
+    /// <summary>
+    /// String representation of the entity's primary key.
+    /// Composite keys are encoded as a JSON array of string values.
+    /// </summary>
     public string? EntityId { get; init; }
 
     // Changes

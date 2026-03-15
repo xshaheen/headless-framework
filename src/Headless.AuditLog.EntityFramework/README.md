@@ -16,6 +16,7 @@ Wires the audit log pipeline into EF Core's ChangeTracker so that entity mutatio
 - `ConfigureAuditLog()` - ModelBuilder extension; supports custom table name, schema, and JSON column type
 - Soft-delete detection: automatically emits `entity.soft_deleted` / `entity.restored` actions when `IsDeleted` transitions
 - Suspend detection: emits `entity.suspended` / `entity.unsuspended` when `IsSuspended` transitions
+- `EntityFilter` and `PropertyFilter` results are cached after first evaluation for the capture service lifetime
 - Zero overhead when `AuditLogOptions.IsEnabled` is `false`
 
 ## Installation
@@ -122,11 +123,17 @@ public string CreditCardToken { get; set; } = "";
 
 - **Atomicity** - Audit entries are added to the same DbContext and committed in the same transaction as entity changes
 - **Zero overhead** - When `IsEnabled` is `false`, `CaptureChanges` returns an empty list immediately
+- **Disabled auditing signal** - When `IsEnabled` is `false`, the first capture attempt logs a warning with remediation guidance
 - **Soft-delete detection** - Monitors `IsDeleted` and `IsSuspended` property transitions; emits semantic action names instead of generic `entity.updated`
 - **Owned entities** - Inherit auditability from their aggregate owner
 - **Audit capture errors are non-fatal** - If capturing a single entity fails, a warning is logged and the save continues without that entry
 - **JSON round-trip shape** - `OldValues` and `NewValues` deserialize non-string values as `JsonElement`; use `GetDecimal()`, `GetBoolean()`, and similar APIs when reading them back
+- **Composite key encoding** - Single-column `EntityId` values remain plain strings; composite keys are serialized as JSON string arrays such as `["tenant-a","order,42"]`
 - **Client metadata** - `IpAddress` and `UserAgent` are persisted when explicitly supplied, but automatic EF change capture does not populate them
+
+## Migration Note
+
+Composite-key `EntityId` values are now serialized as JSON arrays instead of comma-joined strings. Existing stored audit rows using the old comma-joined format remain unchanged; downstream parsers should handle both shapes during transition.
 
 ## Dependencies
 

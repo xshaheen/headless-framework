@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p2
 issue_id: "009"
 tags: ["code-review","quality","dotnet"]
@@ -32,9 +32,9 @@ Delete `_FallbackToRedact`. Replace `catch (Exception ex) when (_FallbackToRedac
 
 ## Acceptance Criteria
 
-- [ ] _FallbackToRedact method deleted
-- [ ] Transformer exceptions logged at Warning level with entity type and property name
-- [ ] Test: transformer that throws produces Redact output AND a log warning
+- [x] _FallbackToRedact method deleted
+- [x] Transformer exceptions logged at Warning level with entity type and property name
+- [x] Test: transformer that throws produces Redact output AND a log warning
 
 ## Notes
 
@@ -53,3 +53,9 @@ Discovered during PR #187 code review.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p3
 issue_id: "006"
 tags: ["code-review","quality","dotnet"]
@@ -27,9 +27,9 @@ Pass `AuditChangeType changeType` as a parameter to `_ApplySensitiveValues` and 
 
 ## Acceptance Criteria
 
-- [ ] Inner switch in _ApplySensitiveValues removed
-- [ ] changeType passed as parameter from _CaptureEntry
-- [ ] All tests still pass
+- [x] Inner switch in _ApplySensitiveValues removed
+- [x] changeType passed as parameter from _CaptureEntry
+- [x] All tests still pass
 
 ## Notes
 
@@ -48,3 +48,9 @@ Discovered during PR #187 code review.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

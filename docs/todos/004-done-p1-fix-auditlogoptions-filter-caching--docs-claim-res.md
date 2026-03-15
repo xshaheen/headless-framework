@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p1
 issue_id: "004"
 tags: ["code-review","performance","security","dotnet"]
@@ -40,10 +40,10 @@ Option A: Add ConcurrentDictionary<Type, bool> _EntityFilterCache and Concurrent
 
 ## Acceptance Criteria
 
-- [ ] EntityFilter result cached per Type after first invocation
-- [ ] PropertyFilter result cached per (Type, propertyName) after first invocation
-- [ ] XML docs accurately describe caching behavior
-- [ ] Test: EntityFilter called exactly once per entity type across multiple SaveChanges calls
+- [x] EntityFilter result cached per Type after first invocation
+- [x] PropertyFilter result cached per (Type, propertyName) after first invocation
+- [x] XML docs accurately describe caching behavior
+- [x] Test: EntityFilter called exactly once per entity type across multiple SaveChanges calls
 
 ## Notes
 
@@ -62,3 +62,9 @@ Discovered during PR #187 code review. Both security-sentinel and performance-or
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

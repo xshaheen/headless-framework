@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p2
 issue_id: "018"
 tags: ["code-review","architecture","dotnet"]
@@ -32,10 +32,10 @@ Add `public HashSet<string> DefaultExcludedProperties { get; set; } = new(String
 
 ## Acceptance Criteria
 
-- [ ] DefaultExcludedProperties exposed on AuditLogOptions
-- [ ] EfAuditChangeCapture reads from opts.DefaultExcludedProperties (not static field)
-- [ ] Default value matches current hardcoded list
-- [ ] Test: consumer can include previously-excluded property by removing from DefaultExcludedProperties
+- [x] DefaultExcludedProperties exposed on AuditLogOptions
+- [x] EfAuditChangeCapture reads from opts.DefaultExcludedProperties (not static field)
+- [x] Default value matches current hardcoded list
+- [x] Test: consumer can include previously-excluded property by removing from DefaultExcludedProperties
 
 ## Notes
 
@@ -54,3 +54,9 @@ Discovered during PR #187 code review.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

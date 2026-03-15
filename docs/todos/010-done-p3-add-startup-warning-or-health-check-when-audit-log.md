@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p3
 issue_id: "010"
 tags: ["code-review","security","dotnet"]
@@ -27,8 +27,8 @@ Log at Warning level on first SaveChanges call when IsEnabled = false, or add a 
 
 ## Acceptance Criteria
 
-- [ ] IsEnabled=false produces at least one LogWarning at startup or first capture attempt
-- [ ] Warning is clear and actionable: 'Audit logging is disabled — set AuditLogOptions.IsEnabled = true to enable'
+- [x] IsEnabled=false produces at least one LogWarning at startup or first capture attempt
+- [x] Warning is clear and actionable: 'Audit logging is disabled — set AuditLogOptions.IsEnabled = true to enable'
 
 ## Notes
 
@@ -47,3 +47,9 @@ Discovered during PR #187 code review.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

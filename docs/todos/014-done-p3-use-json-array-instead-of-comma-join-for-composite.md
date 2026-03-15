@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p3
 issue_id: "014"
 tags: ["code-review","quality","dotnet"]
@@ -27,10 +27,10 @@ Use JSON array encoding for composite keys: `string.Join(",", values)` → `Json
 
 ## Acceptance Criteria
 
-- [ ] Composite PK EntityId serialized as JSON array e.g. '["part1","part2"]'
-- [ ] Single-PK EntityId unchanged (plain string)
-- [ ] Test: composite PK with comma in a key value round-trips correctly
-- [ ] Migration note if breaking change affects existing data
+- [x] Composite PK EntityId serialized as JSON array e.g. '["part1","part2"]'
+- [x] Single-PK EntityId unchanged (plain string)
+- [x] Test: composite PK with comma in a key value round-trips correctly
+- [x] Migration note if breaking change affects existing data
 
 ## Notes
 
@@ -49,3 +49,9 @@ Discovered during PR #187 code review.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done
