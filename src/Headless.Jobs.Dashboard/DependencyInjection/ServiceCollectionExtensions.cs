@@ -79,7 +79,7 @@ internal static partial class ServiceCollectionExtensions
     {
         // Get the assembly and set up the embedded file provider
         var assembly = Assembly.GetExecutingAssembly();
-        var embeddedFileProvider = new EmbeddedFileProvider(assembly, "Headless.Jobs.Dashboard.wwwroot.dist");
+        var embeddedFileProvider = new EmbeddedFileProvider(assembly, "Headless.Jobs.wwwroot.dist");
 
         // Validate and normalize base path
         var basePath = _NormalizeBasePath(config.BasePath);
