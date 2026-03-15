@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.ComponentModel;
 using FluentValidation;
 
 namespace Headless.AuditLog;
@@ -20,17 +19,6 @@ public sealed class AuditLogOptions
     /// When <c>false</c> (default), only entities implementing <see cref="IAuditTracked"/> are audited.
     /// </summary>
     public bool AuditByDefault { get; set; }
-
-    /// <summary>
-    /// Obsolete alias for <see cref="AuditByDefault"/>.
-    /// </summary>
-    [Obsolete("Use AuditByDefault instead.")]
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public bool AuditAllEntities
-    {
-        get => AuditByDefault;
-        set => AuditByDefault = value;
-    }
 
     /// <summary>
     /// Global default strategy for properties marked with <see cref="AuditSensitiveAttribute"/>.
