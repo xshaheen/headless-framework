@@ -131,6 +131,14 @@ public string CreditCardToken { get; set; } = "";
 - **Composite key encoding** - Single-column `EntityId` values remain plain strings; composite keys are serialized as JSON string arrays such as `["tenant-a","order,42"]`
 - **Client metadata** - `IpAddress` and `UserAgent` are persisted when explicitly supplied, but automatic EF change capture does not populate them
 
+## SQLite Limitation
+
+The default entity configuration uses a composite primary key `(CreatedAt, Id)` for partition-readiness. SQLite does not support `ValueGeneratedOnAdd` (autoincrement) on composite keys. Consumers targeting SQLite must override the key configuration — for example, using a single-column PK on `Id`:
+
+```csharp
+builder.HasKey(e => e.Id); // Override for SQLite
+```
+
 ## Migration Note
 
 Composite-key `EntityId` values are now serialized as JSON arrays instead of comma-joined strings. Existing stored audit rows using the old comma-joined format remain unchanged; downstream parsers should handle both shapes during transition.

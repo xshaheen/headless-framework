@@ -15,7 +15,9 @@ internal sealed class AuditLogEntryConfiguration(string? schema, string tableNam
     {
         builder.ToTable(tableName, schema);
 
-        // Composite PK for partition-readiness (time-range partitioning by CreatedAt)
+        // Composite PK for partition-readiness (time-range partitioning by CreatedAt).
+        // Note: SQLite does not support autoincrement on composite keys. Consumers
+        // targeting SQLite must override the key configuration (e.g. single-column PK on Id).
         builder.HasKey(e => new { e.CreatedAt, e.Id });
 
         builder.Property(e => e.Id).ValueGeneratedOnAdd();

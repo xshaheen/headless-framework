@@ -559,20 +559,9 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task owned_entity_owner_not_audited_skips_owned()
+    public async Task owned_entity_update_captured_when_owner_is_audit_tracked()
     {
-        // given - NonTrackedOwner does not implement IAuditTracked; it owns Address
-        // We simulate this by using Product (not IAuditTracked) as context
-        // Since Customer is IAuditTracked we can't directly test via Customer.
-        // Instead, test that in opt-in mode a non-tracked owner's owned entity is skipped.
-        // We'll use Customer with AuditByDefault=false and verify only IAuditTracked owners emit Address entries.
-        // Actually the proper test: use AuditByDefault=false, add a Product (not IAuditTracked) — Address not captured (covered by non_audit_tracked_entity_skipped).
-        // The subtlety: owned entities inherit from owner. Customer IS tracked, so Address IS captured.
-        // To prove the negative: if customer were not IAuditTracked, address would be skipped.
-        // Since we can't easily add a new non-tracked owner with an owned type in the same DbContext,
-        // we verify that in AuditByDefault=false mode, owned entities of non-tracked owners are not emitted.
-        // The existing test (non_audit_tracked_entity_skipped) covers the owner side.
-        // This test verifies the owned Address from Customer IS captured in opt-in mode (positive case).
+        // given - Customer (IAuditTracked) owns Address; modifying Address should emit an audit entry.
         var (db, conn) = _CreateDb();
         await using (conn)
         await using (db)
@@ -950,13 +939,9 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task capture_exception_in_one_entry_skips_that_entry_and_continues()
+    public async Task non_entity_entry_objects_in_entries_are_silently_skipped()
     {
-        // given - pass a mix of a valid EntityEntry and a non-EntityEntry object
-        // The non-EntityEntry will be silently ignored (the code does `if (obj is not EntityEntry) continue`)
-        // To trigger the catch block, we'd need an EntityEntry that throws during processing,
-        // which is hard to arrange without mocking. Instead, verify that passing a non-EntityEntry
-        // object alongside a valid entry still returns the valid entry (graceful skip).
+        // given - non-EntityEntry objects mixed with valid entries are silently skipped.
         var (db, conn) = _CreateDb();
         await using (conn)
         await using (db)
