@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p3
 issue_id: "006"
 tags: ["code-review","api-design","audit","ux"]
@@ -58,3 +58,15 @@ Discovered during PR #187 review. Low urgency for v1 but should be tracked befor
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-15 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

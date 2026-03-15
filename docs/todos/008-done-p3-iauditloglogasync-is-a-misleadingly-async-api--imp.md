@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p3
 issue_id: "008"
 tags: ["code-review","api-design","audit"]
@@ -58,3 +58,15 @@ Discovered during PR #187 review. This is a design taste issue, not a correctnes
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-15 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

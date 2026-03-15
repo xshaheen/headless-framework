@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p2
 issue_id: "004"
 tags: ["code-review","performance","correctness","audit"]
@@ -47,3 +47,15 @@ Discovered during PR #187 review. The current ordering will work correctly on mo
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-15 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done
