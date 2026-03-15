@@ -60,7 +60,8 @@ public static class OrmEntityFrameworkSetup
             services.TryAddScoped<IHeadlessEntityModelProcessor, HeadlessEntityModelProcessor>();
             services.TryAddSingleton<IClock, Clock>();
             services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
-            services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
+            services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+            services.TryAddSingleton<ICurrentTenant, CurrentTenant>();
             services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
             services._ReplaceCompiledQueryCacheKeyGenerator();
         }

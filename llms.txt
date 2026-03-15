@@ -35,6 +35,9 @@ Each domain has its own documentation file with package READMEs, Quick Orientati
 ### Core
 - [docs/llms/core.txt](docs/llms/core.txt): Foundation utilities, DDD building blocks, guard clauses, domain events.
 
+### Multi-Tenancy
+- [docs/llms/multi-tenancy.txt](docs/llms/multi-tenancy.txt): Tenant context setup across HTTP requests, EF Core filters, permission caching, and background processing.
+
 ### Blob Storage
 - [docs/llms/blobs.txt](docs/llms/blobs.txt): Unified file storage across AWS S3, Azure, file system, Redis, SFTP.
 

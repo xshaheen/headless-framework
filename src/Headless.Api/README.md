@@ -9,6 +9,7 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 ## Key Features
 
 - One-call service registration via `AddHeadlessApi()`
+- Multi-tenancy primitives via `AddHeadlessMultiTenancy()` and `UseHeadlessTenantResolution()`
 - Response compression (Brotli, Gzip) with optimized settings
 - Problem details standardization
 - JWT token factory and claims principal handling
@@ -32,10 +33,16 @@ dotnet add package Headless.Api
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure global settings (regex timeout, FluentValidation, JWT)
-ApiRegistration.ConfigureGlobalSettings();
+ApiSetup.ConfigureGlobalSettings();
 
 // Register all framework API services
-builder.AddHeadlessApi();
+builder.AddHeadlessApi(encryption =>
+{
+    encryption.DefaultPassPhrase = "YourPassPhrase123";
+    encryption.InitVectorBytes = "YourInitVector16"u8.ToArray();
+    encryption.DefaultSalt = "YourSalt"u8.ToArray();
+});
+builder.AddHeadlessMultiTenancy();
 
 var app = builder.Build();
 
@@ -44,9 +51,29 @@ using var _ = app.AddHeadlessApiDiagnosticListeners();
 
 app.UseResponseCompression();
 app.UseHsts();
+app.UseAuthentication();
+app.UseHeadlessTenantResolution();
+app.UseAuthorization();
 
 app.Run();
 ```
+
+## Multi-Tenancy
+
+`AddHeadlessApi()` registers `CurrentTenant` by default, and `Headless.Orm.EntityFramework` now uses the same default for `AddHeadlessDbContextServices()`. For claim-based HTTP tenant resolution, opt in with:
+
+```csharp
+builder.AddHeadlessMultiTenancy(options =>
+{
+    options.ClaimType = UserClaimTypes.TenantId; // default
+});
+
+app.UseAuthentication();
+app.UseHeadlessTenantResolution();
+app.UseAuthorization();
+```
+
+Place `UseHeadlessTenantResolution()` after authentication and before authorization.
 
 ## Configuration
 
