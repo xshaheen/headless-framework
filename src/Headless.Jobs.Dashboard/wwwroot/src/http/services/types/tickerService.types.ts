@@ -1,17 +1,17 @@
-export class CancelTickerRequest {
+export class CancelJobRequest {
     
 }
 
-export class CancelTickerResponse {
+export class CancelJobResponse {
 
 }
 
 
-export class GetTickerDataRequest{
+export class GetJobDataRequest{
 
 }
 
-export class GetTickerDataResponse{
+export class GetJobDataResponse{
     result?:string;
     matchType!:number;
 }
@@ -27,11 +27,11 @@ export class GetFunctionDataResponse{
     priority!:number
 }
 
-export class GetNextPlannedTickerResponse{
+export class GetNextPlannedJobResponse{
     nextOccurrence?:string;
 }
 
-export class GetTickerHostStatusResponse{
+export class GetJobHostStatusResponse{
     isRunning!:boolean;
 }
 

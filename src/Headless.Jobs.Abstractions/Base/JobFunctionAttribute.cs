@@ -8,7 +8,7 @@ public sealed class JobFunctionAttribute : Attribute
     public JobFunctionAttribute(
         string functionName,
         string? cronExpression = null,
-        TickerTaskPriority taskPriority = TickerTaskPriority.Normal,
+        JobPriority taskPriority = JobPriority.Normal,
         int maxConcurrency = 0
     )
     {
@@ -18,7 +18,7 @@ public sealed class JobFunctionAttribute : Attribute
         _ = maxConcurrency;
     }
 
-    public JobFunctionAttribute(string functionName, TickerTaskPriority taskPriority, int maxConcurrency = 0)
+    public JobFunctionAttribute(string functionName, JobPriority taskPriority, int maxConcurrency = 0)
     {
         _ = functionName;
         _ = taskPriority;

@@ -10,24 +10,24 @@ public static class JobsQueryExtensions
         this IQueryable<TTimeTicker> q,
         string lockHolder
     )
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>
+        where TTimeTicker : TimeJobEntity<TTimeTicker>
     {
         Expression<Func<TTimeTicker, bool>> pred = e =>
-            ((e.Status == TickerStatus.Idle || e.Status == TickerStatus.Queued) && e.LockHolder == lockHolder)
-            || ((e.Status == TickerStatus.Idle || e.Status == TickerStatus.Queued) && e.LockedAt == null);
+            ((e.Status == JobStatus.Idle || e.Status == JobStatus.Queued) && e.LockHolder == lockHolder)
+            || ((e.Status == JobStatus.Idle || e.Status == JobStatus.Queued) && e.LockedAt == null);
 
         return q.Where(pred);
     }
 
-    public static IQueryable<CronTickerOccurrenceEntity<TCronTicker>> WhereCanAcquire<TCronTicker>(
-        this IQueryable<CronTickerOccurrenceEntity<TCronTicker>> q,
+    public static IQueryable<CronJobOccurrenceEntity<TCronTicker>> WhereCanAcquire<TCronTicker>(
+        this IQueryable<CronJobOccurrenceEntity<TCronTicker>> q,
         string lockHolder
     )
-        where TCronTicker : CronTickerEntity
+        where TCronTicker : CronJobEntity
     {
         return q.Where(e =>
-            ((e.Status == TickerStatus.Idle || e.Status == TickerStatus.Queued) && e.LockHolder == lockHolder)
-            || ((e.Status == TickerStatus.Idle || e.Status == TickerStatus.Queued) && e.LockedAt == null)
+            ((e.Status == JobStatus.Idle || e.Status == JobStatus.Queued) && e.LockHolder == lockHolder)
+            || ((e.Status == JobStatus.Idle || e.Status == JobStatus.Queued) && e.LockedAt == null)
         );
     }
 }

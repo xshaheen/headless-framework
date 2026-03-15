@@ -1,11 +1,11 @@
 
 import { useBaseHttpService } from '../base/baseHttpService';
-import { CancelTickerRequest, CancelTickerResponse, GetFunctionDataRequest, GetJobStatusesOverall, GetFunctionDataResponse, GetJobStatusesPastWeek, GetMachineJobs, GetNextPlannedTickerResponse, GetOptions, GetTickerDataRequest, GetTickerDataResponse, GetTickerHostStatusResponse } from './types/tickerService.types';
+import { CancelJobRequest, CancelJobResponse, GetFunctionDataRequest, GetJobStatusesOverall, GetFunctionDataResponse, GetJobStatusesPastWeek, GetMachineJobs, GetNextPlannedJobResponse, GetOptions, GetJobDataRequest, GetJobDataResponse, GetJobHostStatusResponse } from './types/tickerService.types';
 
 const requestCancel = () => {
-    const baseHttp = useBaseHttpService<CancelTickerRequest, CancelTickerResponse>('single');
+    const baseHttp = useBaseHttpService<CancelJobRequest, CancelJobResponse>('single');
 
-    const requestAsync = async (id: string) => (await baseHttp.sendAsync("POST", "ticker/cancel", { paramData: { id: id } }));
+    const requestAsync = async (id: string) => (await baseHttp.sendAsync("POST", "job/cancel", { paramData: { id: id } }));
 
     return {
         ...baseHttp,
@@ -14,9 +14,9 @@ const requestCancel = () => {
 }
 
 const getRequestData = () => {
-    const baseHttp = useBaseHttpService<GetTickerDataRequest, GetTickerDataResponse>('single');
+    const baseHttp = useBaseHttpService<GetJobDataRequest, GetJobDataResponse>('single');
 
-    const requestAsync = async (id: string, type: number) => (await baseHttp.sendAsync("GET", "ticker-request/id", { paramData: { tickerId: id, tickerType: type } }));
+    const requestAsync = async (id: string, type: number) => (await baseHttp.sendAsync("GET", "job-request/id", { paramData: { tickerId: id, tickerType: type } }));
 
     return {
         ...baseHttp,
@@ -36,9 +36,9 @@ const getFunctionData = () => {
 }
 
 const getNextPlannedTicker = () => {
-    const baseHttp = useBaseHttpService<object, GetNextPlannedTickerResponse>('single');
+    const baseHttp = useBaseHttpService<object, GetNextPlannedJobResponse>('single');
 
-    const requestAsync = async () => (await baseHttp.sendAsync("GET", "ticker-host/next-ticker"));
+    const requestAsync = async () => (await baseHttp.sendAsync("GET", "job-host/next-ticker"));
 
     return {
         ...baseHttp,
@@ -49,7 +49,7 @@ const getNextPlannedTicker = () => {
 const stopTicker = () => {
     const baseHttp = useBaseHttpService<object, object>('single');
 
-    const requestAsync = async () => (await baseHttp.sendAsync("POST", "ticker-host/stop"));
+    const requestAsync = async () => (await baseHttp.sendAsync("POST", "job-host/stop"));
 
     return {
         ...baseHttp,
@@ -60,7 +60,7 @@ const stopTicker = () => {
 const startTicker = () => {
     const baseHttp = useBaseHttpService<object, object>('single');
 
-    const requestAsync = async () => (await baseHttp.sendAsync("POST", "ticker-host/start"));
+    const requestAsync = async () => (await baseHttp.sendAsync("POST", "job-host/start"));
 
     return {
         ...baseHttp,
@@ -71,7 +71,7 @@ const startTicker = () => {
 const restartTicker = () => {
     const baseHttp = useBaseHttpService<object, object>('single');
 
-    const requestAsync = async () => (await baseHttp.sendAsync("POST", "ticker-host/restart"));
+    const requestAsync = async () => (await baseHttp.sendAsync("POST", "job-host/restart"));
 
     return {
         ...baseHttp,
@@ -80,9 +80,9 @@ const restartTicker = () => {
 }
 
 const getTickerHostStatus = () => {
-    const baseHttp = useBaseHttpService<object, GetTickerHostStatusResponse>('single');
+    const baseHttp = useBaseHttpService<object, GetJobHostStatusResponse>('single');
 
-    const requestAsync = async () => (await baseHttp.sendAsync("GET", "ticker-host/status"));
+    const requestAsync = async () => (await baseHttp.sendAsync("GET", "job-host/status"));
 
     return {
         ...baseHttp,

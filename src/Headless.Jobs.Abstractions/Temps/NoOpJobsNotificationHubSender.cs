@@ -64,18 +64,18 @@ internal class NoOpJobsNotificationHubSender : IJobsNotificationHubSender
         return Task.CompletedTask;
     }
 
-    public Task UpdateTimeTickerFromInternalFunctionContext<TTimeTickerEntity>(
+    public Task UpdateTimeTickerFromInternalFunctionContext<TTimeJobEntity>(
         InternalFunctionContext internalFunctionContext
     )
-        where TTimeTickerEntity : TimeTickerEntity<TTimeTickerEntity>, new()
+        where TTimeJobEntity : TimeJobEntity<TTimeJobEntity>, new()
     {
         return Task.CompletedTask;
     }
 
-    public Task UpdateCronOccurrenceFromInternalFunctionContext<TCronTickerEntity>(
+    public Task UpdateCronOccurrenceFromInternalFunctionContext<TCronJobEntity>(
         InternalFunctionContext internalFunctionContext
     )
-        where TCronTickerEntity : CronTickerEntity, new()
+        where TCronJobEntity : CronJobEntity, new()
     {
         return Task.CompletedTask;
     }

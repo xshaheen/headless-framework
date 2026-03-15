@@ -1,7 +1,7 @@
-export class GetCronTickerRequest {
+export class GetCronJobRequest {
 }
 
-export class GetCronTickerResponse {
+export class GetCronJobResponse {
     id!:string;
     function!:string;
     expression!:string;
@@ -15,7 +15,7 @@ export class GetCronTickerResponse {
     actions:string|undefined = undefined;
 }
 
-export class UpdateCronTickerRequest {
+export class UpdateCronJobRequest {
     function!:string;
     expression!:string;
     request?:string;
@@ -24,17 +24,17 @@ export class UpdateCronTickerRequest {
     intervals?:number[];
 }
 
-export class GetCronTickerGraphDataRangeResponse{
+export class GetCronJobGraphDataRangeResponse{
     date!:string;
     results!:{item1:number, item2:number }[];
 }
 
-export class GetCronTickerGraphDataResponse{
+export class GetCronJobGraphDataResponse{
     item1!:number;
     item2!:number;
 }
 
-export class AddCronTickerRequest {
+export class AddCronJobRequest {
     function!:string;
     expression!:string;
     request?:string;

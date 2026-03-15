@@ -1,13 +1,13 @@
 
 import { formatDate, formatTime } from '@/utilities/dateTimeParser';
 import { useBaseHttpService } from '../base/baseHttpService';
-import { AddCronTickerRequest, GetCronTickerGraphDataRangeResponse, GetCronTickerGraphDataResponse, GetCronTickerRequest, GetCronTickerResponse, UpdateCronTickerRequest } from './types/cronTickerService.types';
+import { AddCronJobRequest, GetCronJobGraphDataRangeResponse, GetCronJobGraphDataResponse, GetCronJobRequest, GetCronJobResponse, UpdateCronJobRequest } from './types/cronTickerService.types';
 import { nameof } from '@/utilities/nameof';
 import { useFunctionNameStore } from '@/stores/functionNames';
 import { useTimeZoneStore } from '@/stores/timeZoneStore';
 
 interface PaginatedCronTickerResponse {
-    items: GetCronTickerResponse[]
+    items: GetCronJobResponse[]
     totalCount: number
     pageNumber: number
     pageSize: number
@@ -17,8 +17,8 @@ const getCronTickers = () => {
     const functionNamesStore = useFunctionNameStore();
     const timeZoneStore = useTimeZoneStore();
 
-    const baseHttp = useBaseHttpService<GetCronTickerRequest, GetCronTickerResponse>('array')
-        .FixToResponseModel(GetCronTickerResponse, response => {
+    const baseHttp = useBaseHttpService<GetCronJobRequest, GetCronJobResponse>('array')
+        .FixToResponseModel(GetCronJobResponse, response => {
             response.requestType = functionNamesStore.getNamespaceOrNull(response.function) ?? 'N/A';
             response.createdAt = formatDate(response.createdAt, true, timeZoneStore.effectiveTimeZone);
             response.updatedAt = formatDate(response.updatedAt, true, timeZoneStore.effectiveTimeZone);
@@ -33,16 +33,16 @@ const getCronTickers = () => {
             return response;
         })
         .FixToHeaders((header) => {
-            if (header.key == nameof<GetCronTickerResponse>(x => x.actions)) {
+            if (header.key == nameof<GetCronJobResponse>(x => x.actions)) {
                 header.sortable = false;
             }
-            if (nameof<GetCronTickerResponse>(x => x.id, x => x.retries).includes(header.key)) {
+            if (nameof<GetCronJobResponse>(x => x.id, x => x.retries).includes(header.key)) {
                 header.visibility = false;
             }
             return header;
         });
 
-    const requestAsync = async () => (await baseHttp.sendAsync("GET", "cron-tickers"));
+    const requestAsync = async () => (await baseHttp.sendAsync("GET", "cron-jobs"));
 
     return {
         ...baseHttp,
@@ -59,7 +59,7 @@ const getCronTickersPaginated = () => {
     const processResponse = (response: PaginatedCronTickerResponse): PaginatedCronTickerResponse => {
             // Process items in the paginated response
             if (response && response.items && Array.isArray(response.items)) {
-                response.items = response.items.map((item: GetCronTickerResponse) => {
+                response.items = response.items.map((item: GetCronJobResponse) => {
                     item.requestType = functionNamesStore.getNamespaceOrNull(item.function) ?? 'N/A';
                     item.createdAt = formatDate(item.createdAt, true, timeZoneStore.effectiveTimeZone);
                     item.updatedAt = formatDate(item.updatedAt, true, timeZoneStore.effectiveTimeZone);
@@ -79,7 +79,7 @@ const getCronTickersPaginated = () => {
     };
     
     const requestAsync = async (pageNumber: number = 1, pageSize: number = 20) => {
-        const response = await baseHttp.sendAsync("GET", "cron-tickers/paginated", { 
+        const response = await baseHttp.sendAsync("GET", "cron-jobs/paginated", { 
             paramData: { pageNumber, pageSize } 
         });
         return processResponse(response);
@@ -92,8 +92,8 @@ const getCronTickersPaginated = () => {
 }
 
 const updateCronTicker = () => {
-    const baseHttp = useBaseHttpService<UpdateCronTickerRequest, object>('single')
-    const requestAsync = async (id: string, request: UpdateCronTickerRequest) => (await baseHttp.sendAsync("PUT", "cron-ticker/update", { bodyData: request, paramData: { id } }));
+    const baseHttp = useBaseHttpService<UpdateCronJobRequest, object>('single')
+    const requestAsync = async (id: string, request: UpdateCronJobRequest) => (await baseHttp.sendAsync("PUT", "cron-job/update", { bodyData: request, paramData: { id } }));
 
     return {
         ...baseHttp,
@@ -102,8 +102,8 @@ const updateCronTicker = () => {
 }
 
 const addCronTicker = () => {
-    const baseHttp = useBaseHttpService<AddCronTickerRequest, object>('single')
-    const requestAsync = async (request: AddCronTickerRequest) => (await baseHttp.sendAsync("POST", "cron-ticker/add", { bodyData: request }));
+    const baseHttp = useBaseHttpService<AddCronJobRequest, object>('single')
+    const requestAsync = async (request: AddCronJobRequest) => (await baseHttp.sendAsync("POST", "cron-job/add", { bodyData: request }));
 
     return {
         ...baseHttp,
@@ -113,7 +113,7 @@ const addCronTicker = () => {
 
 const deleteCronTicker = () => {
     const baseHttp = useBaseHttpService<object, object>('single')
-    const requestAsync = async (id: string) => (await baseHttp.sendAsync("DELETE", "cron-ticker/delete", { paramData: { id } }));
+    const requestAsync = async (id: string) => (await baseHttp.sendAsync("DELETE", "cron-job/delete", { paramData: { id } }));
 
     return {
         ...baseHttp,
@@ -123,7 +123,7 @@ const deleteCronTicker = () => {
 
 const runCronTickerOnDemand = () => {
     const baseHttp = useBaseHttpService<object, object>('single')
-    const requestAsync = async (id: string) => (await baseHttp.sendAsync("POST", "cron-ticker/run", { paramData: { id } }));
+    const requestAsync = async (id: string) => (await baseHttp.sendAsync("POST", "cron-job/run", { paramData: { id } }));
 
     return {
         ...baseHttp,
@@ -132,15 +132,15 @@ const runCronTickerOnDemand = () => {
 }
 
 const getTimeTickersGraphDataRange = () => {
-    const baseHttp = useBaseHttpService<object, GetCronTickerGraphDataRangeResponse>('array')
-        .FixToResponseModel(GetCronTickerGraphDataRangeResponse, (item) => {
+    const baseHttp = useBaseHttpService<object, GetCronJobGraphDataRangeResponse>('array')
+        .FixToResponseModel(GetCronJobGraphDataRangeResponse, (item) => {
             return {
                 ...item,
                 date: formatDate(item.date, false),
             }
         });
 
-    const requestAsync = async (startDate: number, endDate: number) => (await baseHttp.sendAsync("GET", "cron-tickers/graph-data-range", {paramData: {pastDays: startDate, futureDays: endDate}}));
+    const requestAsync = async (startDate: number, endDate: number) => (await baseHttp.sendAsync("GET", "cron-jobs/graph-data-range", {paramData: {pastDays: startDate, futureDays: endDate}}));
 
     return {
         ...baseHttp,
@@ -149,15 +149,15 @@ const getTimeTickersGraphDataRange = () => {
 }
 
 const getTimeTickersGraphDataRangeById = () => {
-    const baseHttp = useBaseHttpService<object, GetCronTickerGraphDataRangeResponse>('array')
-        .FixToResponseModel(GetCronTickerGraphDataRangeResponse, (item) => {
+    const baseHttp = useBaseHttpService<object, GetCronJobGraphDataRangeResponse>('array')
+        .FixToResponseModel(GetCronJobGraphDataRangeResponse, (item) => {
             return {
                 ...item,
                 date: formatDate(item.date, false),
             }
         });
 
-    const requestAsync = async (id:string ,startDate: number, endDate: number) => (await baseHttp.sendAsync("GET", "cron-tickers/graph-data-range-id", {paramData: {id: id, pastDays: startDate, futureDays: endDate}}));
+    const requestAsync = async (id:string ,startDate: number, endDate: number) => (await baseHttp.sendAsync("GET", "cron-jobs/graph-data-range-id", {paramData: {id: id, pastDays: startDate, futureDays: endDate}}));
 
     return {
         ...baseHttp,
@@ -166,9 +166,9 @@ const getTimeTickersGraphDataRangeById = () => {
 }
 
 const getTimeTickersGraphData = () => {
-    const baseHttp = useBaseHttpService<object, GetCronTickerGraphDataResponse>('array');
+    const baseHttp = useBaseHttpService<object, GetCronJobGraphDataResponse>('array');
 
-    const requestAsync = async () => (await baseHttp.sendAsync("GET", "cron-tickers/graph-data"));
+    const requestAsync = async () => (await baseHttp.sendAsync("GET", "cron-jobs/graph-data"));
 
     return {
         ...baseHttp,

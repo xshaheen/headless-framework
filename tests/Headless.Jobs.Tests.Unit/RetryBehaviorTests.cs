@@ -75,15 +75,15 @@ public sealed class RetryBehaviorTests
 
     // Helpers
     private static (
-        TickerExecutionTaskHandler handler,
+        JobsExecutionTaskHandler handler,
         InternalFunctionContext context,
-        IInternalTickerManager manager,
+        IInternalJobManager manager,
         List<Attempt> attempts
     ) _SetupRetryTestFixture(int[] retryIntervals, int retries, int? succeedOnRetryCount = null)
     {
         var services = new ServiceCollection();
-        var clock = Substitute.For<ITickerClock>();
-        var internalManager = Substitute.For<IInternalTickerManager>();
+        var clock = Substitute.For<IJobClock>();
+        var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
 
         clock.UtcNow.Returns(DateTime.UtcNow);
@@ -92,20 +92,20 @@ public sealed class RetryBehaviorTests
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
 
-        var handler = new TickerExecutionTaskHandler(serviceProvider, clock, instrumentation, internalManager);
+        var handler = new JobsExecutionTaskHandler(serviceProvider, clock, instrumentation, internalManager);
 
         var attempts = new List<Attempt>();
 
         var context = new InternalFunctionContext
         {
-            TickerId = Guid.NewGuid(),
+            JobId = Guid.NewGuid(),
             FunctionName = "TestFunction",
-            Type = TickerType.CronTickerOccurrence,
+            Type = JobType.CronJobOccurrence,
             ExecutionTime = DateTime.UtcNow,
             RetryIntervals = retryIntervals,
             Retries = retries,
             RetryCount = 0,
-            Status = TickerStatus.Idle,
+            Status = JobStatus.Idle,
             CachedDelegate = (ct, sp, tctx) =>
             {
                 attempts.Add(new Attempt(DateTime.UtcNow, tctx.RetryCount));

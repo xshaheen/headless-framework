@@ -17,7 +17,7 @@ export const methodName = {
   onReceiveHostExceptionMessage: "UpdateHostExceptionNotification"
 }
 // Define a SignalR service class
-class TickerNotificationHub extends BaseHub {  
+class JobNotificationHub extends BaseHub {  
 
   async startConnection(): Promise<void> {
     await this.startConnectionAsync();
@@ -121,6 +121,6 @@ class TickerNotificationHub extends BaseHub {
   }
 
 }
-export type TickerNotificationHubType = InstanceType<typeof TickerNotificationHub>;
+export type JobNotificationHubType = InstanceType<typeof JobNotificationHub>;
 // Export as a singleton instance
-export default new TickerNotificationHub();
+export default new JobNotificationHub();

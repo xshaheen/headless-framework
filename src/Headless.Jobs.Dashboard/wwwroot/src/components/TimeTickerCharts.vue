@@ -143,7 +143,7 @@ const safeRange = computed({
 // Chart options
 const lineChartOptions = computed(() => ({
   title: {
-    text: 'Time Tickers Execution Timeline',
+    text: 'Time Jobs Execution Timeline',
     textStyle: {
       color: '#ffffff',
       fontSize: 16,

@@ -3,7 +3,7 @@ import { computed, ref, toRef, watch, type PropType } from 'vue'
 import { useFunctionNameStore } from '@/stores/functionNames'
 import { useForm } from '@/composables/useCustomForm'
 import { tickerService } from '@/http/services/tickerService'
-import type { GetCronTickerResponse } from '@/http/services/types/cronTickerService.types'
+import type { GetCronJobResponse } from '@/http/services/types/cronTickerService.types'
 import { cronTickerService } from '@/http/services/cronTickerService'
 import { formatTime } from '@/utilities/dateTimeParser'
 import cronstrue from 'cronstrue'
@@ -19,7 +19,7 @@ const emit = defineEmits<{
 
 const props = defineProps({
   dialogProps: {
-    type: Object as PropType<GetCronTickerResponse & { isFromDuplicate: boolean }>,
+    type: Object as PropType<GetCronJobResponse & { isFromDuplicate: boolean }>,
     required: true,
   },
   isOpen: {
@@ -312,7 +312,7 @@ defineExpose({
           </v-col>
           <v-col cols="7">
             <v-card-title class="py-4">
-              {{ !props.dialogProps.isFromDuplicate ? 'Update' : 'Add New' }} Cron Ticker
+              {{ !props.dialogProps.isFromDuplicate ? 'Update' : 'Add New' }} Cron Job
             </v-card-title>
 
             <v-card-subtitle v-if="props.dialogProps.initIdentifier">

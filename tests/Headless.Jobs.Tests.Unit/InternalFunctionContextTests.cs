@@ -13,7 +13,7 @@ public sealed class InternalFunctionContextTests
         var context = new InternalFunctionContext() { FunctionName = "Test" };
 
         context
-            .SetProperty(c => c.Status, TickerStatus.InProgress)
+            .SetProperty(c => c.Status, JobStatus.InProgress)
             .SetProperty(c => c.ElapsedTime, 123L)
             .SetProperty(c => c.ReleaseLock, true);
 
@@ -31,7 +31,7 @@ public sealed class InternalFunctionContextTests
             );
         updated.Count.Should().Be(3);
 
-        context.Status.Should().Be(TickerStatus.InProgress);
+        context.Status.Should().Be(JobStatus.InProgress);
         context.ElapsedTime.Should().Be(123L);
         context.ReleaseLock.Should().BeTrue();
     }
@@ -41,7 +41,7 @@ public sealed class InternalFunctionContextTests
     {
         var context = new InternalFunctionContext() { FunctionName = "Test" };
 
-        context.SetProperty(c => c.Status, TickerStatus.Done).SetProperty(c => c.ElapsedTime, 500L);
+        context.SetProperty(c => c.Status, JobStatus.Done).SetProperty(c => c.ElapsedTime, 500L);
 
         context.GetPropsToUpdate().Should().NotBeEmpty();
 
@@ -55,11 +55,11 @@ public sealed class InternalFunctionContextTests
     {
         var context = new InternalFunctionContext() { FunctionName = "Test" };
 
-        context.SetProperty(c => c.Status, TickerStatus.Done).SetProperty(c => c.ElapsedTime, 250L);
+        context.SetProperty(c => c.Status, JobStatus.Done).SetProperty(c => c.ElapsedTime, 250L);
 
         context.ResetUpdateProps();
 
-        context.Status.Should().Be(TickerStatus.Done);
+        context.Status.Should().Be(JobStatus.Done);
         context.ElapsedTime.Should().Be(250L);
         context.GetPropsToUpdate().Should().BeEmpty();
     }
@@ -78,7 +78,7 @@ public sealed class InternalFunctionContextTests
         parametersProperty.Should().NotBeNull();
         parametersProperty.SetValue(context, null);
 
-        context.SetProperty(c => c.Status, TickerStatus.InProgress);
+        context.SetProperty(c => c.Status, JobStatus.InProgress);
 
         var updated = context.GetPropsToUpdate();
         updated.Should().NotBeNull();
@@ -90,9 +90,9 @@ public sealed class InternalFunctionContextTests
     {
         var context = new InternalFunctionContext() { FunctionName = "Test" };
 
-        context.SetProperty(c => c.Status, TickerStatus.InProgress).SetProperty(c => c.Status, TickerStatus.Failed);
+        context.SetProperty(c => c.Status, JobStatus.InProgress).SetProperty(c => c.Status, JobStatus.Failed);
 
-        context.Status.Should().Be(TickerStatus.Failed);
+        context.Status.Should().Be(JobStatus.Failed);
 
         var updated = context.GetPropsToUpdate();
         updated.Should().Contain(nameof(InternalFunctionContext.Status));
@@ -110,24 +110,24 @@ public sealed class InternalFunctionContextTests
     }
 
     [Fact]
-    public void TimeTickerChildren_Defaults_To_Empty_List_And_Can_Add()
+    public void TimeJobChildren_Defaults_To_Empty_List_And_Can_Add()
     {
         var context = new InternalFunctionContext() { FunctionName = "Test" };
 
-        context.TimeTickerChildren.Should().NotBeNull();
-        context.TimeTickerChildren.Should().BeEmpty();
+        context.TimeJobChildren.Should().NotBeNull();
+        context.TimeJobChildren.Should().BeEmpty();
 
         var child = new InternalFunctionContext
         {
-            TickerId = Guid.NewGuid(),
+            JobId = Guid.NewGuid(),
             ParentId = Guid.NewGuid(),
             FunctionName = "ChildFunction",
         };
 
-        context.TimeTickerChildren.Add(child);
+        context.TimeJobChildren.Add(child);
 
-        context.TimeTickerChildren.Should().ContainSingle();
-        context.TimeTickerChildren.Single().FunctionName.Should().Be("ChildFunction");
+        context.TimeJobChildren.Should().ContainSingle();
+        context.TimeJobChildren.Single().FunctionName.Should().Be("ChildFunction");
     }
 
     [Fact]
@@ -137,10 +137,10 @@ public sealed class InternalFunctionContextTests
         JobFunctionDelegate handler = (_, _, _) => Task.CompletedTask;
 
         context.CachedDelegate = handler;
-        context.CachedPriority = TickerTaskPriority.High;
+        context.CachedPriority = JobPriority.High;
 
         context.CachedDelegate.Should().BeSameAs(handler);
-        context.CachedPriority.Should().Be(TickerTaskPriority.High);
+        context.CachedPriority.Should().Be(JobPriority.High);
     }
 
     [Fact]

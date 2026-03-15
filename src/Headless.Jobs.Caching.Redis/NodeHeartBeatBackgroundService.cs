@@ -11,18 +11,18 @@ internal class NodeHeartBeatBackgroundService : BackgroundService
     private int _started;
     private readonly IJobsRedisContext _context;
     private readonly PeriodicTimer _tickerHeartBeatPeriodicTimer;
-    private readonly IInternalTickerManager _internalTickerManager;
+    private readonly IInternalJobManager _internalJobsManager;
     private readonly ILogger<NodeHeartBeatBackgroundService> _logger;
 
     public NodeHeartBeatBackgroundService(
         ServiceExtension.JobsRedisOptionBuilder schedulerOptionsBuilder,
         IJobsRedisContext context,
-        IInternalTickerManager internalTickerManager,
+        IInternalJobManager internalJobsManager,
         ILogger<NodeHeartBeatBackgroundService> logger
     )
     {
         _context = context;
-        _internalTickerManager = internalTickerManager;
+        _internalJobsManager = internalJobsManager;
         _logger = logger;
         _tickerHeartBeatPeriodicTimer = new PeriodicTimer(schedulerOptionsBuilder.NodeHeartbeatInterval);
     }
@@ -56,7 +56,7 @@ internal class NodeHeartBeatBackgroundService : BackgroundService
             {
                 foreach (var deadNode in deadNodes)
                 {
-                    await _internalTickerManager.ReleaseDeadNodeResources(deadNode, stoppingToken);
+                    await _internalJobsManager.ReleaseDeadNodeResources(deadNode, stoppingToken);
                 }
             }
 

@@ -72,7 +72,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
     /// </summary>
     public async Task QueueAsync(
         Func<CancellationToken, Task> work,
-        TickerTaskPriority priority, // Kept for backward compatibility but ignored
+        JobPriority priority, // Kept for backward compatibility but ignored
         CancellationToken cancellationToken = default
     )
     {
@@ -86,7 +86,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         }
 
         // Handle long-running tasks specially
-        if (priority == TickerTaskPriority.LongRunning)
+        if (priority == JobPriority.LongRunning)
         {
             // Bypass pool for long-running tasks
             _ = Task

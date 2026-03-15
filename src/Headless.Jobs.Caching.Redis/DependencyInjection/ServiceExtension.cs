@@ -8,12 +8,12 @@ namespace Headless.Jobs.DependencyInjection;
 
 public static class ServiceExtension
 {
-    public static TickerOptionsBuilder<TTimeTicker, TCronTicker> AddStackExchangeRedis<TTimeTicker, TCronTicker>(
-        this TickerOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
+    public static JobsOptionsBuilder<TTimeTicker, TCronTicker> AddStackExchangeRedis<TTimeTicker, TCronTicker>(
+        this JobsOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
         Action<JobsRedisOptionBuilder> setupAction
     )
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
-        where TCronTicker : CronTickerEntity, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TCronTicker : CronJobEntity, new()
     {
         tickerConfiguration.ExternalProviderConfigServiceAction += services =>
         {

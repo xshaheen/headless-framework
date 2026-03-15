@@ -1,5 +1,5 @@
 
-export class GetTimeTickerResponse {
+export class GetTimeJobResponse {
     id!:string;
     function!:string;
     status!:string|number;
@@ -21,20 +21,20 @@ export class GetTimeTickerResponse {
     skippedReason?:string;
     batchParent?:string;
     batchRunCondition?:string|number;
-    children?:GetTimeTickerResponse[];
+    children?:GetTimeJobResponse[];
 }
 
-export class GetTimeTickerGraphDataRangeResponse{
+export class GetTimeJobGraphDataRangeResponse{
     date!:string;
     results!:{item1:number, item2:number }[];
 }
 
-export class GetTimeTickerGraphDataResponse{
+export class GetTimeJobGraphDataResponse{
     item1!:number;
     item2!:number;
 }
 
-export class AddTimeTickerRequest {
+export class AddTimeJobRequest {
     function!:string;
     request!:string;
     retries!:number;
@@ -43,7 +43,7 @@ export class AddTimeTickerRequest {
     intervals?:number[];
 }
 
-export class UpdateTimeTickerRequest {
+export class UpdateTimeJobRequest {
     function!:string;
     request!:string;
     retries!:number;

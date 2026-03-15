@@ -23,7 +23,7 @@ public static class AspNetCoreExtensions
         serviceProvider.UseJobs(qStartMode);
 
         // Handle Dashboard-specific initialization if configured
-        var tickerExecutionContext = serviceProvider.GetService<TickerExecutionContext>();
+        var tickerExecutionContext = serviceProvider.GetService<JobsExecutionContext>();
         if (tickerExecutionContext?.DashboardApplicationAction != null)
         {
             // Cast object back to IApplicationBuilder for Dashboard middleware

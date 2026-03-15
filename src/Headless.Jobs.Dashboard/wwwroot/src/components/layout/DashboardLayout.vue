@@ -11,8 +11,8 @@ import AuthHeader from '../common/AuthHeader.vue'
 
 const navigationLinks = [
   { icon: 'mdi-view-dashboard', text: 'Dashboard', path: '/' },
-  { icon: 'mdi-alarm', text: 'Time Tickers', path: '/time-tickers' },
-  { icon: 'mdi-calendar-sync', text: 'Cron Tickers', path: '/cron-tickers' },
+  { icon: 'mdi-alarm', text: 'Time Jobs', path: '/time-jobs' },
+  { icon: 'mdi-calendar-sync', text: 'Cron Jobs', path: '/cron-jobs' },
 ]
 
 // Reactive state

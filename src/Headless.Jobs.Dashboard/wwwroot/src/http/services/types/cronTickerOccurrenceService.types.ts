@@ -1,8 +1,8 @@
-export class GetCronTickerOccurrenceRequest {
+export class GetCronJobOccurrenceRequest {
     id!:string
 }
 
-export class GetCronTickerOccurrenceResponse {
+export class GetCronJobOccurrenceResponse {
     id!: string;
     status!:number|string;
     exceptionMessage?:string;
@@ -19,10 +19,10 @@ export class GetCronTickerOccurrenceResponse {
 }
 
 
-export class GetCronTickerOccurrenceGraphDataRequest{
+export class GetCronJobOccurrenceGraphDataRequest{
 }
 
-export class GetCronTickerOccurrenceGraphDataResponse{
+export class GetCronJobOccurrenceGraphDataResponse{
     date!:string;
     results!:{item1:number, item2:number }[];
     type!: string;

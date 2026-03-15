@@ -34,10 +34,10 @@ app.UseJobs();
 // Minimal endpoint to schedule the sample job
 app.MapPost(
     "/schedule-sample",
-    async (ITimeTickerManager<TimeTickerEntity> manager) =>
+    async (ITimeJobManager<TimeJobEntity> manager) =>
     {
         var result = await manager.AddAsync(
-            new TimeTickerEntity { Function = "WebApiSample_HelloWorld", ExecutionTime = DateTime.UtcNow.AddSeconds(5) }
+            new TimeJobEntity { Function = "WebApiSample_HelloWorld", ExecutionTime = DateTime.UtcNow.AddSeconds(5) }
         );
 
         return Results.Ok(new { result.Result!.Id, ScheduledFor = result.Result.ExecutionTime });

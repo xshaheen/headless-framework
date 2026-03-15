@@ -9,29 +9,29 @@ namespace Headless.Jobs.BackgroundServices;
 internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostScheduler
 {
     private readonly RestartThrottleManager _restartThrottle;
-    private readonly IInternalTickerManager _internalTickerManager;
-    private readonly TickerExecutionContext _executionContext;
+    private readonly IInternalJobManager _internalJobsManager;
+    private readonly JobsExecutionContext _executionContext;
     private SafeCancellationTokenSource? _schedulerLoopCancellationTokenSource;
     private readonly JobsTaskScheduler _taskScheduler;
-    private readonly TickerExecutionTaskHandler _taskHandler;
+    private readonly JobsExecutionTaskHandler _taskHandler;
     private readonly IJobFunctionConcurrencyGate _concurrencyGate;
     private int _started;
     public bool SkipFirstRun { get; set; }
     public bool IsRunning => _started == 1;
 
     public JobsSchedulerBackgroundService(
-        TickerExecutionContext executionContext,
-        TickerExecutionTaskHandler taskHandler,
+        JobsExecutionContext executionContext,
+        JobsExecutionTaskHandler taskHandler,
         JobsTaskScheduler taskScheduler,
-        IInternalTickerManager internalTickerManager,
+        IInternalJobManager internalJobsManager,
         IJobFunctionConcurrencyGate concurrencyGate
     )
     {
         _executionContext = executionContext;
         _taskHandler = taskHandler;
         _taskScheduler = taskScheduler;
-        _internalTickerManager =
-            internalTickerManager ?? throw new ArgumentNullException(nameof(internalTickerManager));
+        _internalJobsManager =
+            internalJobsManager ?? throw new ArgumentNullException(nameof(internalJobsManager));
         _concurrencyGate = concurrencyGate;
         _restartThrottle = new RestartThrottleManager(() => _schedulerLoopCancellationTokenSource?.Cancel());
     }
@@ -65,14 +65,14 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                 )
             {
                 // This is a restart request - release resources and continue loop
-                await _internalTickerManager.ReleaseAcquiredResources(_executionContext.Functions, stoppingToken);
+                await _internalJobsManager.ReleaseAcquiredResources(_executionContext.Functions, stoppingToken);
                 // Small delay to allow resources to be released
                 await Task.Delay(100, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 // Application is shutting down - release resources and exit
-                await _internalTickerManager.ReleaseAcquiredResources(
+                await _internalJobsManager.ReleaseAcquiredResources(
                     _executionContext.Functions,
                     CancellationToken.None
                 );
@@ -100,7 +100,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
         {
             if (_executionContext.Functions.Length != 0)
             {
-                await _internalTickerManager.SetTickersInProgress(_executionContext.Functions, cancellationToken);
+                await _internalJobsManager.SetTickersInProgress(_executionContext.Functions, cancellationToken);
 
                 foreach (var function in _executionContext.Functions.OrderBy(x => x.CachedPriority))
                 {
@@ -134,7 +134,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                 _executionContext.SetFunctions(null);
             }
 
-            var (timeRemaining, functions) = await _internalTickerManager.GetNextTickers(cancellationToken);
+            var (timeRemaining, functions) = await _internalJobsManager.GetNextTickers(cancellationToken);
 
             _executionContext.SetFunctions(functions);
 
@@ -168,7 +168,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
             _executionContext.NotifyCoreAction(ex.ToString(), CoreNotifyActionType.NotifyHostExceptionMessage);
         }
 
-        await _internalTickerManager.ReleaseAcquiredResources([], CancellationToken.None);
+        await _internalJobsManager.ReleaseAcquiredResources([], CancellationToken.None);
     }
 
     public void RestartIfNeeded(DateTime? dateTime)

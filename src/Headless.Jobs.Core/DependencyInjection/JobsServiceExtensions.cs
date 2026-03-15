@@ -19,19 +19,19 @@ public static class JobsServiceExtensions
 {
     public static IServiceCollection AddJobs(
         this IServiceCollection services,
-        Action<TickerOptionsBuilder<TimeTickerEntity, CronTickerEntity>>? optionsBuilder = null
-    ) => services.AddJobs<TimeTickerEntity, CronTickerEntity>(optionsBuilder);
+        Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? optionsBuilder = null
+    ) => services.AddJobs<TimeJobEntity, CronJobEntity>(optionsBuilder);
 
     public static IServiceCollection AddJobs<TTimeTicker, TCronTicker>(
         this IServiceCollection services,
-        Action<TickerOptionsBuilder<TTimeTicker, TCronTicker>>? optionsBuilder = null
+        Action<JobsOptionsBuilder<TTimeTicker, TCronTicker>>? optionsBuilder = null
     )
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
-        where TCronTicker : CronTickerEntity, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TCronTicker : CronJobEntity, new()
     {
-        var tickerExecutionContext = new TickerExecutionContext();
+        var tickerExecutionContext = new JobsExecutionContext();
         var schedulerOptionsBuilder = new SchedulerOptionsBuilder();
-        var optionInstance = new TickerOptionsBuilder<TTimeTicker, TCronTicker>(
+        var optionInstance = new JobsOptionsBuilder<TTimeTicker, TCronTicker>(
             tickerExecutionContext,
             schedulerOptionsBuilder
         );
@@ -41,21 +41,21 @@ public static class JobsServiceExtensions
         // Apply JSON serializer options for ticker requests if configured during service registration
         if (optionInstance.RequestJsonSerializerOptions != null)
         {
-            TickerHelper.RequestJsonSerializerOptions = optionInstance.RequestJsonSerializerOptions;
+            JobsHelper.RequestJsonSerializerOptions = optionInstance.RequestJsonSerializerOptions;
         }
 
         // Configure whether ticker request payloads should use GZip compression
-        TickerHelper.UseGZipCompression = optionInstance.RequestGZipCompressionEnabled;
-        services.AddSingleton<ITimeTickerManager<TTimeTicker>, TickerManager<TTimeTicker, TCronTicker>>();
-        services.AddSingleton<ICronTickerManager<TCronTicker>, TickerManager<TTimeTicker, TCronTicker>>();
-        services.AddSingleton<IInternalTickerManager, InternalTickerManager<TTimeTicker, TCronTicker>>();
+        JobsHelper.UseGZipCompression = optionInstance.RequestGZipCompressionEnabled;
+        services.AddSingleton<ITimeJobManager<TTimeTicker>, JobsManager<TTimeTicker, TCronTicker>>();
+        services.AddSingleton<ICronJobManager<TCronTicker>, JobsManager<TTimeTicker, TCronTicker>>();
+        services.AddSingleton<IInternalJobManager, InternalJobsManager<TTimeTicker, TCronTicker>>();
         services.AddSingleton<IJobsRedisContext, NoOpJobsRedisContext>();
         services.AddSingleton<
-            ITickerPersistenceProvider<TTimeTicker, TCronTicker>,
-            TickerInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
+            IJobPersistenceProvider<TTimeTicker, TCronTicker>,
+            JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         >();
         services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
-        services.AddSingleton<ITickerClock, TickerSystemClock>();
+        services.AddSingleton<IJobClock, JobSystemClock>();
 
         // Only register background services if enabled (default is true)
         if (optionInstance.RegisterBackgroundServices)
@@ -67,7 +67,7 @@ public static class JobsServiceExtensions
             services.AddHostedService(provider => provider.GetRequiredService<JobsSchedulerBackgroundService>());
             services.AddHostedService(provider => provider.GetRequiredService<JobsFallbackBackgroundService>());
             services.AddSingleton<JobsFallbackBackgroundService>();
-            services.AddSingleton<TickerExecutionTaskHandler>();
+            services.AddSingleton<JobsExecutionTaskHandler>();
             services.AddSingleton<IJobsDispatcher, JobsDispatcher>();
             services.AddSingleton(sp =>
             {
@@ -95,9 +95,9 @@ public static class JobsServiceExtensions
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
         optionInstance.DashboardServiceAction?.Invoke(services);
 
-        if (optionInstance.TickerExceptionHandlerType != null)
+        if (optionInstance.JobExceptionHandlerType != null)
         {
-            services.AddSingleton(typeof(ITickerExceptionHandler), optionInstance.TickerExceptionHandlerType);
+            services.AddSingleton(typeof(IJobExceptionHandler), optionInstance.JobExceptionHandlerType);
         }
 
         services.AddSingleton(_ => optionInstance);
@@ -129,7 +129,7 @@ public static class JobsServiceExtensions
 
     private static void _InitializeJobs(IServiceProvider serviceProvider, JobsStartMode qStartMode)
     {
-        var tickerExecutionContext = serviceProvider.GetRequiredService<TickerExecutionContext>();
+        var tickerExecutionContext = serviceProvider.GetRequiredService<JobsExecutionContext>();
         var configuration = serviceProvider.GetRequiredService<IConfiguration>();
         var notificationHubSender = serviceProvider.GetRequiredService<IJobsNotificationHubSender>();
         var backgroundScheduler = serviceProvider.GetRequiredService<JobsSchedulerBackgroundService>();
@@ -202,13 +202,13 @@ public static class JobsServiceExtensions
 
     private static async Task _SeedDefinedCronTickers(IServiceProvider serviceProvider)
     {
-        var internalTickerManager = serviceProvider.GetRequiredService<IInternalTickerManager>();
+        var internalJobsManager = serviceProvider.GetRequiredService<IInternalJobManager>();
 
         var functionsToSeed = JobFunctionProvider
             .JobFunctions.Where(x => !string.IsNullOrEmpty(x.Value.cronExpression))
             .Select(x => (x.Key, x.Value.cronExpression))
             .ToArray();
 
-        await internalTickerManager.MigrateDefinedCronTickers(functionsToSeed);
+        await internalJobsManager.MigrateDefinedCronTickers(functionsToSeed);
     }
 }

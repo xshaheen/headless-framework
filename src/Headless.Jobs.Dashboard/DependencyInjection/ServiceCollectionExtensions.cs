@@ -28,8 +28,8 @@ internal static partial class ServiceCollectionExtensions
         this IServiceCollection services,
         DashboardOptionsBuilder config
     )
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
-        where TCronTicker : CronTickerEntity, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TCronTicker : CronJobEntity, new()
     {
         // Configure default Dashboard JSON options if not already configured
         if (config.DashboardJsonOptions == null)
@@ -74,8 +74,8 @@ internal static partial class ServiceCollectionExtensions
         this IApplicationBuilder app,
         DashboardOptionsBuilder config
     )
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
-        where TCronTicker : CronTickerEntity, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TCronTicker : CronJobEntity, new()
     {
         // Get the assembly and set up the embedded file provider
         var assembly = Assembly.GetExecutingAssembly();

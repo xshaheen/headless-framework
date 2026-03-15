@@ -61,12 +61,12 @@ namespace Headless.Jobs.Console.Demo
     }
 
     // Hosted service that schedules a single job on startup
-    public class SampleScheduler(ITimeTickerManager<TimeTickerEntity> timeTickerManager) : IHostedService
+    public class SampleScheduler(ITimeJobManager<TimeJobEntity> timeJobManager) : IHostedService
     {
         public async Task StartAsync(CancellationToken cancellationToken)
         {
-            var result = await timeTickerManager.AddAsync(
-                new TimeTickerEntity
+            var result = await timeJobManager.AddAsync(
+                new TimeJobEntity
                 {
                     Function = "ConsoleSample_HelloWorld",
                     ExecutionTime = DateTime.UtcNow.AddSeconds(5),

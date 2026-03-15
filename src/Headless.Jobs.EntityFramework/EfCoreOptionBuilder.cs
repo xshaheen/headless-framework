@@ -7,8 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Jobs;
 
 public class JobsEfCoreOptionBuilder<TTimeTicker, TCronTicker>
-    where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
-    where TCronTicker : CronTickerEntity, new()
+    where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+    where TCronTicker : CronJobEntity, new()
 {
     internal Action<IServiceCollection> ConfigureServices { get; set; } = _ => { };
     internal int PoolSize { get; set; } = 1024;

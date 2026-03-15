@@ -18,8 +18,8 @@ public class StringToByteArrayConverter : JsonConverter<byte[]>
             }
 
             var dataToObject = JsonSerializer.Deserialize<object>(stringValue);
-            // Use TickerHelper to convert string to bytes (same logic as backend)
-            return TickerHelper.CreateTickerRequest(dataToObject);
+            // Use JobsHelper to convert string to bytes (same logic as backend)
+            return JobsHelper.CreateJobRequest(dataToObject);
         }
 
         if (reader.TokenType == JsonTokenType.StartArray)
@@ -44,7 +44,7 @@ public class StringToByteArrayConverter : JsonConverter<byte[]>
 
         try
         {
-            var stringValue = TickerHelper.ReadTickerRequestAsString(value);
+            var stringValue = JobsHelper.ReadJobRequestAsString(value);
             writer.WriteStringValue(stringValue);
         }
 #pragma warning disable ERP022  // Fallback to raw byte array when string deserialization fails.

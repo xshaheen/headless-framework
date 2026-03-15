@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GetTimeTickerResponse } from '@/http/services/types/timeTickerService.types'
+import type { GetTimeJobResponse } from '@/http/services/types/timeTickerService.types'
 import { computed, ref, toRef, watch, type PropType } from 'vue'
 import { useFunctionNameStore } from '@/stores/functionNames'
 import { useForm } from '@/composables/useCustomForm'
@@ -21,7 +21,7 @@ const emit = defineEmits<{
 
 const props = defineProps({
   dialogProps: {
-    type: Object as PropType<GetTimeTickerResponse & { isFromDuplicate: boolean }>,
+    type: Object as PropType<GetTimeJobResponse & { isFromDuplicate: boolean }>,
     required: true,
   },
   isOpen: {
@@ -412,7 +412,7 @@ defineExpose({
                     ? 'Add New'
                     : 'Clone'
               }}
-              Time Ticker
+              Time Job
             </v-card-title>
             <v-divider></v-divider>
             <v-form>

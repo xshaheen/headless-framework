@@ -14,7 +14,7 @@ public sealed class JobFunctionContextTests
         var baseContext = new JobFunctionContext
         {
             Id = Guid.NewGuid(),
-            Type = TickerType.TimeTicker,
+            Type = JobType.TimeJob,
             RetryCount = 1,
             IsDue = true,
             ScheduledFor = scheduledFor,

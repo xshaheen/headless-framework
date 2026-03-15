@@ -50,7 +50,7 @@ No runtime configuration. Uses attributes:
 
 ```csharp
 // Cron job
-[Jobs("0 0 * * *", Priority = TickerTaskPriority.High)]
+[Jobs("0 0 * * *", Priority = JobPriority.High)]
 public static class DailyReport { /* ... */ }
 
 // Job with request payload

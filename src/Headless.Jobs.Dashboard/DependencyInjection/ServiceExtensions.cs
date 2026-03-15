@@ -10,12 +10,12 @@ namespace Headless.Jobs.DependencyInjection;
 
 public static class ServiceExtensions
 {
-    public static TickerOptionsBuilder<TTimeTicker, TCronTicker> AddDashboard<TTimeTicker, TCronTicker>(
-        this TickerOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
+    public static JobsOptionsBuilder<TTimeTicker, TCronTicker> AddDashboard<TTimeTicker, TCronTicker>(
+        this JobsOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
         Action<DashboardOptionsBuilder>? configureDashboard = null
     )
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
-        where TCronTicker : CronTickerEntity, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TCronTicker : CronJobEntity, new()
     {
         var dashboardConfig = new DashboardOptionsBuilder
         {
@@ -27,8 +27,8 @@ public static class ServiceExtensions
         tickerConfiguration.DashboardServiceAction = (services) =>
         {
             services.AddScoped<
-                ITickerDashboardRepository<TTimeTicker, TCronTicker>,
-                TickerDashboardRepository<TTimeTicker, TCronTicker>
+                IJobsDashboardRepository<TTimeTicker, TCronTicker>,
+                JobsDashboardRepository<TTimeTicker, TCronTicker>
             >();
 
             services.Replace(
@@ -71,11 +71,11 @@ public static class ServiceExtensions
     }
 
     private static void _UseDashboardDelegate<TTimeTicker, TCronTicker>(
-        this TickerOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
+        this JobsOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
         DashboardOptionsBuilder dashboardConfig
     )
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
-        where TCronTicker : CronTickerEntity, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TCronTicker : CronJobEntity, new()
     {
         tickerConfiguration.UseDashboardApplication(
             (appObj) =>

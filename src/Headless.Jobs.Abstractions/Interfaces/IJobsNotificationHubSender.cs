@@ -19,11 +19,11 @@ internal interface IJobsNotificationHubSender
     Task UpdateNodeHeartBeatAsync(object nodeHeartBeat);
     Task AddCronOccurrenceAsync(Guid groupId, object occurrence);
     Task UpdateCronOccurrenceAsync(Guid groupId, object occurrence);
-    Task UpdateTimeTickerFromInternalFunctionContext<TTimeTickerEntity>(InternalFunctionContext internalFunctionContext)
-        where TTimeTickerEntity : TimeTickerEntity<TTimeTickerEntity>, new();
-    Task UpdateCronOccurrenceFromInternalFunctionContext<TCronTickerEntity>(
+    Task UpdateTimeTickerFromInternalFunctionContext<TTimeJobEntity>(InternalFunctionContext internalFunctionContext)
+        where TTimeJobEntity : TimeJobEntity<TTimeJobEntity>, new();
+    Task UpdateCronOccurrenceFromInternalFunctionContext<TCronJobEntity>(
         InternalFunctionContext internalFunctionContext
     )
-        where TCronTickerEntity : CronTickerEntity, new();
+        where TCronJobEntity : CronJobEntity, new();
     Task CanceledTickerNotifyAsync(Guid id);
 }

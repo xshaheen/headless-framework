@@ -21,7 +21,7 @@ internal interface IJobsInstrumentation
         string requestType,
         string functionName,
         Guid tickerId,
-        TickerType type,
+        JobType type,
         Exception exception
     );
 }

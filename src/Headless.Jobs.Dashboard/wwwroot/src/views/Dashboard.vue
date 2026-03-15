@@ -2,7 +2,7 @@
 import { tickerService } from '@/http/services/tickerService'
 import { formatDate } from '@/utilities/dateTimeParser'
 import { computed, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
-import TickerNotificationHub, { methodName } from '@/hub/tickerNotificationHub'
+import JobNotificationHub, { methodName } from '@/hub/tickerNotificationHub'
 import { useFunctionNameStore } from '@/stores/functionNames'
 import { useDashboardStore } from '@/stores/dashboardStore'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
@@ -71,16 +71,16 @@ onMounted(async () => {
     currentFunctionsPage.value = 1
   })
 
-  TickerNotificationHub.onReceiveThreadsActive((threads: number) => {
+  JobNotificationHub.onReceiveThreadsActive((threads: number) => {
     activeThreads.value = threads
   })
 
-  TickerNotificationHub.onReceiveNextOccurrence((nextOccurrence: string) => {
+  JobNotificationHub.onReceiveNextOccurrence((nextOccurrence: string) => {
     getNextPlannedTicker.updateProperty('nextOccurrence', nextOccurrence)
     dashboardStore.setNextOccurrence(nextOccurrence)
   })
 
-  TickerNotificationHub.onReceiveHostExceptionMessage((message: string) => {
+  JobNotificationHub.onReceiveHostExceptionMessage((message: string) => {
     getOptions.updateProperty('lastHostExceptionMessage', message)
   })
 })
@@ -112,10 +112,10 @@ function getTotalFinalJobsCount(): number {
 }
 
 onUnmounted(() => {
-  TickerNotificationHub.stopReceiver(methodName.onReceiveThreadsActive)
-  TickerNotificationHub.stopReceiver(methodName.onReceiveNextOccurrence)
-  TickerNotificationHub.stopReceiver(methodName.onReceiveHostStatus)
-  TickerNotificationHub.stopReceiver(methodName.onReceiveHostExceptionMessage)
+  JobNotificationHub.stopReceiver(methodName.onReceiveThreadsActive)
+  JobNotificationHub.stopReceiver(methodName.onReceiveNextOccurrence)
+  JobNotificationHub.stopReceiver(methodName.onReceiveHostStatus)
+  JobNotificationHub.stopReceiver(methodName.onReceiveHostExceptionMessage)
 })
 
 const statuses: Ref<Array<{ name: string; count: number; percentage: string }>> = ref([

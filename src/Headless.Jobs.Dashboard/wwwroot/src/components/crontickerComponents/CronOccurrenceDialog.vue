@@ -5,8 +5,8 @@ import { Status } from '@/http/services/types/base/baseHttpResponse.types'
 import { tickerService } from '@/http/services/tickerService'
 import { sleep } from '@/utilities/sleep'
 import { useDialog } from '@/composables/useDialog'
-import { methodName, type TickerNotificationHubType } from '@/hub/tickerNotificationHub'
-import type { GetCronTickerOccurrenceResponse } from '@/http/services/types/cronTickerOccurrenceService.types'
+import { methodName, type JobNotificationHubType } from '@/hub/tickerNotificationHub'
+import type { GetCronJobOccurrenceResponse } from '@/http/services/types/cronTickerOccurrenceService.types'
 import { ConfirmDialogProps } from '@/components/common/ConfirmDialog.vue'
 import PaginationFooter from '@/components/PaginationFooter.vue'
 import { formatTime } from '@/utilities/dateTimeParser'
@@ -21,7 +21,7 @@ const exceptionDialog = useDialog<ConfirmDialogProps>().withComponent(
 )
 
 // Use paginated service
-const getByCronTickerIdPaginated = cronTickerOccurrenceService.getByCronTickerIdPaginated()
+const getByCronJobIdPaginated = cronTickerOccurrenceService.getByCronJobIdPaginated()
 const requestCancelTicker = tickerService.requestCancel()
 const deleteCronOccurrence = cronTickerOccurrenceService.deleteCronTickerOccurrence()
 
@@ -47,7 +47,7 @@ const props = defineProps({
     required: true,
   },
   tickerNotificationHub: {
-    type: Object as PropType<TickerNotificationHubType>,
+    type: Object as PropType<JobNotificationHubType>,
     required: true,
   },
   isOpen: {
@@ -64,7 +64,7 @@ const emit = defineEmits<{
 const loadPageData = async () => {
   if (props.dialogProps.id != undefined) {
     try {
-      const response = await getByCronTickerIdPaginated.requestAsync(props.dialogProps.id, currentPage.value, pageSize.value)
+      const response = await getByCronJobIdPaginated.requestAsync(props.dialogProps.id, currentPage.value, pageSize.value)
       if (response) {
         totalCount.value = response.totalCount || 0
       }
@@ -88,11 +88,11 @@ const handlePageSizeChange = async (size: number) => {
 }
 
 const addHubListeners = async () => {
-  props.tickerNotificationHub.onReceiveUpdateCronTickerOccurrence((val:GetCronTickerOccurrenceResponse) => {
+  props.tickerNotificationHub.onReceiveUpdateCronTickerOccurrence((val:GetCronJobOccurrenceResponse) => {
     // Update in-memory items array while preserving lockedAt and lockHolder
-    const response = getByCronTickerIdPaginated.response.value;
+    const response = getByCronJobIdPaginated.response.value;
     if (response && response.items) {
-      const itemIndex = response.items.findIndex((item: GetCronTickerOccurrenceResponse) => item.id === val.id);
+      const itemIndex = response.items.findIndex((item: GetCronJobOccurrenceResponse) => item.id === val.id);
       if (itemIndex !== -1) {
         const currentItem = response.items[itemIndex];
         // Merge update while preserving lockedAt and lockHolder
@@ -116,7 +116,7 @@ const addHubListeners = async () => {
     }
   });
 
-  props.tickerNotificationHub.onReceiveAddCronTickerOccurrence((val:GetCronTickerOccurrenceResponse) => {
+  props.tickerNotificationHub.onReceiveAddCronTickerOccurrence((val:GetCronJobOccurrenceResponse) => {
     // Reload current page when new item is added
     loadPageData();
   });
@@ -265,7 +265,7 @@ const setRowProp = (propContext: any) => {
           <div class="header-left">
             <v-icon size="24" color="primary" class="header-icon">mdi-calendar-clock</v-icon>
             <div class="header-text">
-              <h2 class="dialog-title">Cron Ticker Occurrences</h2>
+              <h2 class="dialog-title">Cron Job Occurrences</h2>
               <p class="dialog-subtitle">Execution history and retry attempts</p>
             </div>
           </div>
@@ -284,12 +284,12 @@ const setRowProp = (propContext: any) => {
 
       <!-- Content -->
       <v-card-text class="dialog-content">
-        <div v-if="getByCronTickerIdPaginated.loader.value" class="loading-container">
+        <div v-if="getByCronJobIdPaginated.loader.value" class="loading-container">
           <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
           <p class="loading-text">Loading occurrences...</p>
         </div>
 
-        <div v-else-if="!getByCronTickerIdPaginated.response.value || getByCronTickerIdPaginated.response.value?.items?.length === 0" class="empty-state">
+        <div v-else-if="!getByCronJobIdPaginated.response.value || getByCronJobIdPaginated.response.value?.items?.length === 0" class="empty-state">
           <v-icon size="64" color="grey-lighten-1">mdi-calendar-remove</v-icon>
           <h3 class="empty-title">No Occurrences Found</h3>
           <p class="empty-subtitle">This cron ticker hasn't been executed yet.</p>
@@ -298,8 +298,8 @@ const setRowProp = (propContext: any) => {
         <div v-else class="table-container">
           <v-data-table
             :headers="headers"
-            :loading="getByCronTickerIdPaginated.loader.value"
-            :items="getByCronTickerIdPaginated.response.value?.items || []"
+            :loading="getByCronJobIdPaginated.loader.value"
+            :items="getByCronJobIdPaginated.response.value?.items || []"
             item-value="Id"
             :row-props="setRowProp"
             key="Id"

@@ -3,12 +3,12 @@ import { formatDate, formatTime } from '@/utilities/dateTimeParser';
 import { useBaseHttpService } from '../base/baseHttpService';
 import { Status } from './types/base/baseHttpResponse.types';
 import {
-  AddTimeTickerRequest,
+  AddTimeJobRequest,
   AddChainJobsRequest,
-  GetTimeTickerGraphDataRangeResponse,
-  GetTimeTickerGraphDataResponse,
-  GetTimeTickerResponse,
-  UpdateTimeTickerRequest
+  GetTimeJobGraphDataRangeResponse,
+  GetTimeJobGraphDataResponse,
+  GetTimeJobResponse,
+  UpdateTimeJobRequest
 } from './types/timeTickerService.types'
 import { nameof } from '@/utilities/nameof';
 import { format} from 'timeago.js';
@@ -16,7 +16,7 @@ import { useFunctionNameStore } from '@/stores/functionNames';
 import { useTimeZoneStore } from '@/stores/timeZoneStore';
 
 interface PaginatedTimeTickerResponse {
-    items: GetTimeTickerResponse[]
+    items: GetTimeJobResponse[]
     totalCount: number
     pageNumber: number
     pageSize: number
@@ -26,15 +26,15 @@ const getTimeTickers = () => {
     const functionNamesStore = useFunctionNameStore();
     const timeZoneStore = useTimeZoneStore();
 
-    const baseHttp = useBaseHttpService<object, GetTimeTickerResponse>('array')
-        .FixToResponseModel(GetTimeTickerResponse, response => {
+    const baseHttp = useBaseHttpService<object, GetTimeJobResponse>('array')
+        .FixToResponseModel(GetTimeJobResponse, response => {
             // Add null check to prevent "Cannot set properties of undefined" error
             if (!response) {
                 return response;
             }
 
             // Recursive function to process item and its children
-            const processItem = (item: GetTimeTickerResponse): GetTimeTickerResponse => {
+            const processItem = (item: GetTimeJobResponse): GetTimeJobResponse => {
                 // Safely set status with null check
                 if (item.status !== undefined && item.status !== null) {
                     item.status = Status[item.status as any];
@@ -64,24 +64,24 @@ const getTimeTickers = () => {
             return processItem(response);
         })
         .FixToHeaders((header) => {
-            if (nameof<GetTimeTickerResponse>(x => x.actions) == header.key) {
+            if (nameof<GetTimeJobResponse>(x => x.actions) == header.key) {
                 header.sortable = false;
             }
-            if (nameof<GetTimeTickerResponse>(x => x.id, x => x.exceptionMessage,x => x.skippedReason, x => x.retries, x => x.lockedAt, x => x.createdAt, x => x.updatedAt, x => x.retryCount, x => x.elapsedTime, x => x.executionTime, x => x.children).includes(header.key)) {
+            if (nameof<GetTimeJobResponse>(x => x.id, x => x.exceptionMessage,x => x.skippedReason, x => x.retries, x => x.lockedAt, x => x.createdAt, x => x.updatedAt, x => x.retryCount, x => x.elapsedTime, x => x.executionTime, x => x.children).includes(header.key)) {
                 header.visibility = false;
             }
-            if (nameof<GetTimeTickerResponse>(x => x.executedAt) == header.key) {
+            if (nameof<GetTimeJobResponse>(x => x.executedAt) == header.key) {
                 header.title = "Executed At (Elapsed Time)"
             }
-            if (nameof<GetTimeTickerResponse>(x => x.executionTimeFormatted) == header.key) {
+            if (nameof<GetTimeJobResponse>(x => x.executionTimeFormatted) == header.key) {
                 header.title = "Execution Time"
             }
 
-            if (nameof<GetTimeTickerResponse>((x) => x.batchParent) == header.key) {
+            if (nameof<GetTimeJobResponse>((x) => x.batchParent) == header.key) {
               header.visibility = false
             }
 
-            if (nameof<GetTimeTickerResponse>((x) => x.batchRunCondition) == header.key) {
+            if (nameof<GetTimeJobResponse>((x) => x.batchRunCondition) == header.key) {
               header.visibility = false
             }
 
@@ -89,7 +89,7 @@ const getTimeTickers = () => {
         })
         .ReOrganizeResponse((res) => res.sort((a, b) => new Date(b.executionTime).getTime() - new Date(a.executionTime).getTime()));
 
-    const requestAsync = async () => (await baseHttp.sendAsync("GET", "time-tickers"));
+    const requestAsync = async () => (await baseHttp.sendAsync("GET", "time-jobs"));
 
     return {
         ...baseHttp,
@@ -106,8 +106,8 @@ const getTimeTickersPaginated = () => {
     const processResponse = (response: PaginatedTimeTickerResponse): PaginatedTimeTickerResponse => {
             // Process items in the paginated response
             if (response && response.items && Array.isArray(response.items)) {
-                response.items = response.items.map((item: GetTimeTickerResponse) => {
-                    const processItem = (item: GetTimeTickerResponse): GetTimeTickerResponse => {
+                response.items = response.items.map((item: GetTimeJobResponse) => {
+                    const processItem = (item: GetTimeJobResponse): GetTimeJobResponse => {
                         if (item.status !== undefined && item.status !== null) {
                             item.status = Status[item.status as any];
                         }
@@ -136,7 +136,7 @@ const getTimeTickersPaginated = () => {
                 });
                 
                 // Sort items
-                response.items.sort((a: GetTimeTickerResponse, b: GetTimeTickerResponse) => 
+                response.items.sort((a: GetTimeJobResponse, b: GetTimeJobResponse) => 
                     new Date(b.executionTime).getTime() - new Date(a.executionTime).getTime()
                 );
             }
@@ -145,7 +145,7 @@ const getTimeTickersPaginated = () => {
     };
     
     const requestAsync = async (pageNumber: number = 1, pageSize: number = 20) => {
-        const response = await baseHttp.sendAsync("GET", "time-tickers/paginated", { 
+        const response = await baseHttp.sendAsync("GET", "time-jobs/paginated", { 
             paramData: { pageNumber, pageSize } 
         });
         return processResponse(response);
@@ -158,15 +158,15 @@ const getTimeTickersPaginated = () => {
 }
 
 const getTimeTickersGraphDataRange = () => {
-    const baseHttp = useBaseHttpService<object, GetTimeTickerGraphDataRangeResponse>('array')
-        .FixToResponseModel(GetTimeTickerGraphDataRangeResponse, (item) => {
+    const baseHttp = useBaseHttpService<object, GetTimeJobGraphDataRangeResponse>('array')
+        .FixToResponseModel(GetTimeJobGraphDataRangeResponse, (item) => {
             return {
                 ...item,
                 date: formatDate(item.date, false),
             }
         });
 
-    const requestAsync = async (startDate: number, endDate: number) => (await baseHttp.sendAsync("GET", "time-tickers/graph-data-range", {paramData: {pastDays: startDate, futureDays: endDate}}));
+    const requestAsync = async (startDate: number, endDate: number) => (await baseHttp.sendAsync("GET", "time-jobs/graph-data-range", {paramData: {pastDays: startDate, futureDays: endDate}}));
 
     return {
         ...baseHttp,
@@ -175,9 +175,9 @@ const getTimeTickersGraphDataRange = () => {
 }
 
 const getTimeTickersGraphData = () => {
-    const baseHttp = useBaseHttpService<object, GetTimeTickerGraphDataResponse>('array');
+    const baseHttp = useBaseHttpService<object, GetTimeJobGraphDataResponse>('array');
 
-    const requestAsync = async () => (await baseHttp.sendAsync("GET", "time-tickers/graph-data"));
+    const requestAsync = async () => (await baseHttp.sendAsync("GET", "time-jobs/graph-data"));
 
     return {
         ...baseHttp,
@@ -189,7 +189,7 @@ const getTimeTickersGraphData = () => {
 const deleteTimeTicker = () => {
     const baseHttp = useBaseHttpService<object, object>('single');
 
-    const requestAsync = async (id: string) => (await baseHttp.sendAsync("DELETE", "time-ticker/delete", { paramData: { id: id } }));
+    const requestAsync = async (id: string) => (await baseHttp.sendAsync("DELETE", "time-job/delete", { paramData: { id: id } }));
 
     return {
         ...baseHttp,
@@ -201,7 +201,7 @@ const deleteTimeTickersBatch = () => {
     const baseHttp = useBaseHttpService<object, object>('single');
 
     const requestAsync = async (ids: string[]) =>
-        await baseHttp.sendAsync("DELETE", "time-ticker/delete-batch", { bodyData: ids });
+        await baseHttp.sendAsync("DELETE", "time-job/delete-batch", { bodyData: ids });
 
     return {
         ...baseHttp,
@@ -210,14 +210,14 @@ const deleteTimeTickersBatch = () => {
 }
 
 const addTimeTicker = () => {
-    const baseHttp = useBaseHttpService<AddTimeTickerRequest, object>('single');
+    const baseHttp = useBaseHttpService<AddTimeJobRequest, object>('single');
 
-    const requestAsync = async (data: AddTimeTickerRequest, timeZoneId?: string | null) => {
+    const requestAsync = async (data: AddTimeJobRequest, timeZoneId?: string | null) => {
         const paramData: Record<string, any> = {};
         if (timeZoneId) {
             paramData.timeZoneId = timeZoneId;
         }
-        return await baseHttp.sendAsync("POST", "time-ticker/add", { bodyData: data, paramData });
+        return await baseHttp.sendAsync("POST", "time-job/add", { bodyData: data, paramData });
     };
 
     return {
@@ -227,14 +227,14 @@ const addTimeTicker = () => {
 }
 
 const updateTimeTicker = () => {
-    const baseHttp = useBaseHttpService<UpdateTimeTickerRequest, object>('single');
+    const baseHttp = useBaseHttpService<UpdateTimeJobRequest, object>('single');
 
-    const requestAsync = async (id: string, data: UpdateTimeTickerRequest, timeZoneId?: string | null) => {
+    const requestAsync = async (id: string, data: UpdateTimeJobRequest, timeZoneId?: string | null) => {
         const paramData: Record<string, any> = { id };
         if (timeZoneId) {
             paramData.timeZoneId = timeZoneId;
         }
-        return await baseHttp.sendAsync("PUT", "time-ticker/update", { bodyData: data, paramData });
+        return await baseHttp.sendAsync("PUT", "time-job/update", { bodyData: data, paramData });
     };
 
     return {
@@ -246,7 +246,7 @@ const updateTimeTicker = () => {
 const addChainJobs = () => {
   const baseHttp = useBaseHttpService<AddChainJobsRequest, object>('single');
 
-  const requestAsync = async (data: AddChainJobsRequest) => (await baseHttp.sendAsync("POST", "time-ticker/add", { bodyData: data }));
+  const requestAsync = async (data: AddChainJobsRequest) => (await baseHttp.sendAsync("POST", "time-job/add", { bodyData: data }));
 
   return {
     ...baseHttp,

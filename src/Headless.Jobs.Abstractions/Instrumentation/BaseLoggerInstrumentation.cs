@@ -63,7 +63,7 @@ public abstract class JobsBaseLoggerInstrumentation(ILogger logger, string insta
     public virtual void LogSeedingDataStarted(string seedingDataType)
     {
         logger.LogInformation(
-            "Jobs start seeding data: {TickerType} ({EnvironmentName})",
+            "Jobs start seeding data: {JobType} ({EnvironmentName})",
             seedingDataType,
             InstanceIdentifier
         );
@@ -72,7 +72,7 @@ public abstract class JobsBaseLoggerInstrumentation(ILogger logger, string insta
     public virtual void LogSeedingDataCompleted(string seedingDataType)
     {
         logger.LogInformation(
-            "Jobs completed seeding data: {TickerType} ({EnvironmentName})",
+            "Jobs completed seeding data: {JobType} ({EnvironmentName})",
             seedingDataType,
             InstanceIdentifier
         );
@@ -82,12 +82,12 @@ public abstract class JobsBaseLoggerInstrumentation(ILogger logger, string insta
         string requestType,
         string functionName,
         Guid tickerId,
-        TickerType type,
+        JobType type,
         Exception exception
     )
     {
         logger.LogError(
-            "Failed to deserialize request to {RequestType} - {TickerId} - {TickerType}: {Exception}",
+            "Failed to deserialize request to {RequestType} - {JobId} - {JobType}: {Exception}",
             requestType,
             tickerId,
             type,

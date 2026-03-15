@@ -50,12 +50,12 @@ class BaseHub {
         // Use backend domain for WebSocket if configured, otherwise use base path
         let hubUrl: string;
         if (backendUrl) {
-            hubUrl = `${backendUrl}/ticker-notification-hub`;
+            hubUrl = `${backendUrl}/job-notification-hub`;
         } else {
             // Avoid leading '//' when basePath is '/'
             hubUrl = basePath === '/' 
-                ? '/ticker-notification-hub' 
-                : `${basePath}/ticker-notification-hub`;
+                ? '/job-notification-hub' 
+                : `${basePath}/job-notification-hub`;
         }
 
         const authInfo = getAuthInfo();

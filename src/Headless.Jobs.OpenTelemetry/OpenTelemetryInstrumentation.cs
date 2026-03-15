@@ -19,7 +19,7 @@ internal class OpenTelemetryInstrumentation(
 
         if (activity != null)
         {
-            activity.SetTag("Headless.Jobs.job.id", context.TickerId.ToString());
+            activity.SetTag("Headless.Jobs.job.id", context.JobId.ToString());
             activity.SetTag("Headless.Jobs.job.type", context.Type.ToString());
             activity.SetTag("Headless.Jobs.job.function", context.FunctionName);
             activity.SetTag("Headless.Jobs.job.priority", context.CachedPriority.ToString());
@@ -31,7 +31,7 @@ internal class OpenTelemetryInstrumentation(
                 activity.SetTag("Headless.Jobs.job.parent_id", context.ParentId.Value.ToString());
             }
 
-            if (context.Type == TickerType.TimeTicker && context.ParentId.HasValue)
+            if (context.Type == JobType.TimeJob && context.ParentId.HasValue)
             {
                 activity.SetTag("Headless.Jobs.job.run_condition", context.RunCondition.ToString());
             }
@@ -146,7 +146,7 @@ internal class OpenTelemetryInstrumentation(
         string requestType,
         string functionName,
         Guid tickerId,
-        TickerType type,
+        JobType type,
         Exception exception
     )
     {

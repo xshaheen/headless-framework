@@ -79,7 +79,7 @@ internal static class DelegateGenerator
 
         // Generate delegate registration with proper multiline format
         sb.AppendLine(
-            $"            jobFunctionDelegateDict.TryAdd(\"{functionName}\", ({cronExprFlag}, (TickerTaskPriority){functionPriority}, new JobFunctionDelegate({asyncFlag}(cancellationToken, serviceProvider, context) =>"
+            $"            jobFunctionDelegateDict.TryAdd(\"{functionName}\", ({cronExprFlag}, (JobPriority){functionPriority}, new JobFunctionDelegate({asyncFlag}(cancellationToken, serviceProvider, context) =>"
         );
         sb.AppendLine("            {");
 

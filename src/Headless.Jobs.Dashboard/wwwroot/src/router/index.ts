@@ -18,13 +18,13 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
-      path: '/cron-tickers',
+      path: '/cron-jobs',
       name: 'CronTicker',
       component: () => import('../views/CronTicker.vue'),
       meta: { requiresAuth: true }
     },
     {
-      path: '/time-tickers',
+      path: '/time-jobs',
       name: 'TimeTicker',
       component: () => import('../views/TimeTicker.vue'),
       meta: { requiresAuth: true }

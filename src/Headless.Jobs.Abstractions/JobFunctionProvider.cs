@@ -24,16 +24,16 @@ public static class JobFunctionProvider
     private static Action<
         Dictionary<
             string,
-            (string cronExpression, TickerTaskPriority Priority, JobFunctionDelegate Delegate, int MaxConcurrency)
+            (string cronExpression, JobPriority Priority, JobFunctionDelegate Delegate, int MaxConcurrency)
         >
     >? _functionRegistrations;
 
     // Final frozen dictionaries
     public static FrozenDictionary<
         string,
-        (string cronExpression, TickerTaskPriority Priority, JobFunctionDelegate Delegate, int MaxConcurrency)
+        (string cronExpression, JobPriority Priority, JobFunctionDelegate Delegate, int MaxConcurrency)
     > JobFunctions { get; private set; } =
-        FrozenDictionary<string, (string, TickerTaskPriority, JobFunctionDelegate, int)>.Empty;
+        FrozenDictionary<string, (string, JobPriority, JobFunctionDelegate, int)>.Empty;
 
     public static FrozenDictionary<string, (string, Type)> JobFunctionRequestTypes { get; private set; } =
         FrozenDictionary<string, (string, Type)>.Empty;
@@ -45,7 +45,7 @@ public static class JobFunctionProvider
     /// <param name="functions">The functions to register. Cannot be null.</param>
     /// <exception cref="ArgumentNullException">Thrown when functions parameter is null.</exception>
     public static void RegisterFunctions(
-        IDictionary<string, (string, TickerTaskPriority, JobFunctionDelegate, int)> functions
+        IDictionary<string, (string, JobPriority, JobFunctionDelegate, int)> functions
     )
     {
         ArgumentNullException.ThrowIfNull(functions);
@@ -72,7 +72,7 @@ public static class JobFunctionProvider
     /// <param name="_">The total expected capacity (ignored - capacity calculated automatically).</param>
     /// <exception cref="ArgumentNullException">Thrown when functions parameter is null.</exception>
     public static void RegisterFunctions(
-        IDictionary<string, (string, TickerTaskPriority, JobFunctionDelegate, int)> functions,
+        IDictionary<string, (string, JobPriority, JobFunctionDelegate, int)> functions,
         int _
     )
     {
@@ -159,7 +159,7 @@ public static class JobFunctionProvider
                 string,
                 (
                     string cronExpression,
-                    TickerTaskPriority Priority,
+                    JobPriority Priority,
                     JobFunctionDelegate Delegate,
                     int MaxConcurrency
                 )
@@ -174,7 +174,7 @@ public static class JobFunctionProvider
                 string,
                 (
                     string cronExpression,
-                    TickerTaskPriority Priority,
+                    JobPriority Priority,
                     JobFunctionDelegate Delegate,
                     int MaxConcurrency
                 )
@@ -199,15 +199,15 @@ public static class JobFunctionProvider
     }
 }
 
-public static class TickerRequestProvider
+public static class JobsRequestProvider
 {
     public static async Task<T?> GetRequestAsync<T>(JobFunctionContext context, CancellationToken cancellationToken)
     {
         try
         {
-            var internalTickerManager =
-                context.ServiceScope.ServiceProvider.GetRequiredService<IInternalTickerManager>();
-            return await internalTickerManager.GetRequestAsync<T>(context.Id, context.Type, cancellationToken);
+            var internalJobsManager =
+                context.ServiceScope.ServiceProvider.GetRequiredService<IInternalJobManager>();
+            return await internalJobsManager.GetRequestAsync<T>(context.Id, context.Type, cancellationToken);
         }
         catch (Exception e)
         {

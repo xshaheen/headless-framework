@@ -8,12 +8,12 @@ namespace Headless.Jobs.DependencyInjection;
 
 public static class ServiceExtension
 {
-    public static TickerOptionsBuilder<TTimeTicker, TCronTicker> AddOperationalStore<TTimeTicker, TCronTicker>(
-        this TickerOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
+    public static JobsOptionsBuilder<TTimeTicker, TCronTicker> AddOperationalStore<TTimeTicker, TCronTicker>(
+        this JobsOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
         Action<JobsEfCoreOptionBuilder<TTimeTicker, TCronTicker>>? efConfiguration = null
     )
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
-        where TCronTicker : CronTickerEntity, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TCronTicker : CronJobEntity, new()
     {
         var efCoreOptionBuilder = new JobsEfCoreOptionBuilder<TTimeTicker, TCronTicker>();
 
@@ -39,16 +39,16 @@ public static class ServiceExtension
     }
 
     private static void _UseApplicationService<TTimeTicker, TCronTicker>(
-        TickerOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
+        JobsOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
         JobsEfCoreOptionBuilder<TTimeTicker, TCronTicker> options
     )
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
-        where TCronTicker : CronTickerEntity, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TCronTicker : CronJobEntity, new()
     {
         tickerConfiguration.UseExternalProviderApplication(
             (serviceProvider) =>
             {
-                var internalTickerManager = serviceProvider.GetRequiredService<IInternalTickerManager>();
+                var internalJobsManager = serviceProvider.GetRequiredService<IInternalJobManager>();
                 var hostLifetime = serviceProvider.GetRequiredService<IHostApplicationLifetime>();
                 var schedulerOptions = serviceProvider.GetRequiredService<SchedulerOptionsBuilder>();
                 var hostScheduler = serviceProvider.GetService<IJobsHostScheduler>();
@@ -58,7 +58,7 @@ public static class ServiceExtension
                     _ = Task.Run(async () =>
                     {
                         // Release resources held by dead nodes before the scheduler starts processing.
-                        await internalTickerManager.ReleaseDeadNodeResources(schedulerOptions.NodeIdentifier);
+                        await internalJobsManager.ReleaseDeadNodeResources(schedulerOptions.NodeIdentifier);
 
                         // After cleanup, restart the host scheduler so it immediately
                         // picks up newly seeded cron tickers and jobs configured via the core pipeline.

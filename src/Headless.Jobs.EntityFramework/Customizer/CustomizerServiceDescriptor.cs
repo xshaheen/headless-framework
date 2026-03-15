@@ -16,8 +16,8 @@ public static class ServiceBuilder
         ConfigurationType configurationType
     )
         where TContext : DbContext
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
-        where TCronTicker : CronTickerEntity, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TCronTicker : CronJobEntity, new()
     {
         builder.ConfigureServices = (services) =>
         {
@@ -72,8 +72,8 @@ public static class ServiceBuilder
             });
 
             services.AddSingleton<
-                ITickerPersistenceProvider<TTimeTicker, TCronTicker>,
-                TickerEfCorePersistenceProvider<TContext, TTimeTicker, TCronTicker>
+                IJobPersistenceProvider<TTimeTicker, TCronTicker>,
+                JobsEfCorePersistenceProvider<TContext, TTimeTicker, TCronTicker>
             >();
         };
     }
@@ -83,8 +83,8 @@ public static class ServiceBuilder
         Action<DbContextOptionsBuilder> optionsAction
     )
         where TContext : JobsDbContext<TTimeTicker, TCronTicker>
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
-        where TCronTicker : CronTickerEntity, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TCronTicker : CronJobEntity, new()
     {
         builder.ConfigureServices = services =>
         {
@@ -97,8 +97,8 @@ public static class ServiceBuilder
                 return new PooledDbContextFactory<TContext>(optionsBuilder.Options, builder.PoolSize);
             });
             services.AddSingleton<
-                ITickerPersistenceProvider<TTimeTicker, TCronTicker>,
-                TickerEfCorePersistenceProvider<TContext, TTimeTicker, TCronTicker>
+                IJobPersistenceProvider<TTimeTicker, TCronTicker>,
+                JobsEfCorePersistenceProvider<TContext, TTimeTicker, TCronTicker>
             >();
         };
     }
@@ -108,13 +108,13 @@ public static class ServiceBuilder
         Func<IServiceProvider, object> oldFactory
     )
         where TContext : DbContext
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
-        where TCronTicker : CronTickerEntity, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TCronTicker : CronJobEntity, new()
     {
         var factory = (DbContextOptions<TContext>)oldFactory(serviceProvider);
 
         return new DbContextOptionsBuilder<TContext>(factory)
-            .ReplaceService<IModelCustomizer, TickerModelCustomizer<TTimeTicker, TCronTicker>>()
+            .ReplaceService<IModelCustomizer, JobsModelCustomizer<TTimeTicker, TCronTicker>>()
             .Options;
     }
 }

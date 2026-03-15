@@ -1,13 +1,13 @@
 <script lang="ts" setup>
 import { onMounted, ref, provide, computed, onUnmounted, nextTick, watch } from 'vue'
 import { timeTickerService } from '@/http/services/timeTickerService'
-import type { GetTimeTickerResponse } from '@/http/services/types/timeTickerService.types'
+import type { GetTimeJobResponse } from '@/http/services/types/timeTickerService.types'
 import { Status } from '@/http/services/types/base/baseHttpResponse.types'
 import { tickerService } from '@/http/services/tickerService'
 import { useDialog } from '@/composables/useDialog'
 import { ConfirmDialogProps } from '@/components/common/ConfirmDialog.vue'
 import ChainJobsModal from '@/components/ChainJobsModal.vue'
-import TickerNotificationHub, { methodName } from '@/hub/tickerNotificationHub'
+import JobNotificationHub, { methodName } from '@/hub/tickerNotificationHub'
 import { formatDate } from '@/utilities/dateTimeParser'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
@@ -24,7 +24,7 @@ import {
   DataZoomComponent,
 } from 'echarts/components'
 import VChart, { THEME_KEY } from 'vue-echarts'
-import type { GetTimeTickerGraphDataRangeResponse } from '@/http/services/types/timeTickerService.types'
+import type { GetTimeJobGraphDataRangeResponse } from '@/http/services/types/timeTickerService.types'
 
 use([
   CanvasRenderer,
@@ -52,7 +52,7 @@ const pageSize = ref(20)
 const totalCount = ref(0)
 
 const crudTimeTickerDialog = useDialog<
-  GetTimeTickerResponse & { isFromDuplicate: boolean }
+  GetTimeJobResponse & { isFromDuplicate: boolean }
 >().withComponent(
   () => import('@/components/timetickerComponents/CRUDTimeTickerDialogComponent.vue'),
 )
@@ -62,7 +62,7 @@ const confirmDialog = useDialog<ConfirmDialogProps & { id: string }>().withCompo
 )
 
 const tickerRequestDialog = useDialog<{ id: string }>().withComponent(
-  () => import('@/components/common/TickerRequestDialog.vue'),
+  () => import('@/components/common/JobRequestDialog.vue'),
 )
 
 const exceptionDialog = useDialog<ConfirmDialogProps>().withComponent(
@@ -90,7 +90,7 @@ const chartData = ref({
   xAxisData: [] as string[],
   series: [] as any[],
   legend: {} as any,
-  title: 'Job statuses for all Time Tickers',
+  title: 'Job statuses for all Time Jobs',
 })
 const pieChartData = ref<any[]>([])
 const pieChartKey = ref(0)
@@ -147,10 +147,10 @@ watch(
 )
 
 onUnmounted(() => {
-  TickerNotificationHub.stopReceiver(methodName.onReceiveAddTimeTicker)
-  TickerNotificationHub.stopReceiver(methodName.onReceiveUpdateTimeTicker)
-  TickerNotificationHub.stopReceiver(methodName.onReceiveDeleteTimeTicker)
-  TickerNotificationHub.stopReceiver(methodName.onReceiveAddTimeTickersBatch)
+  JobNotificationHub.stopReceiver(methodName.onReceiveAddTimeTicker)
+  JobNotificationHub.stopReceiver(methodName.onReceiveUpdateTimeTicker)
+  JobNotificationHub.stopReceiver(methodName.onReceiveDeleteTimeTicker)
+  JobNotificationHub.stopReceiver(methodName.onReceiveAddTimeTickersBatch)
 })
 
 // Load page data with pagination
@@ -206,7 +206,7 @@ const loadPieChartData = async () => {
   }
 }
 
-const processTimeSeriesData = (data: GetTimeTickerGraphDataRangeResponse[]) => {
+const processTimeSeriesData = (data: GetTimeJobGraphDataRangeResponse[]) => {
   if (!data || !Array.isArray(data)) {
     chartData.value.xAxisData = []
     chartData.value.series = []
@@ -343,15 +343,15 @@ const addHubListeners = async () => {
     loadPieChartData()
   }, 200)
 
-  TickerNotificationHub.onReceiveAddTimeTicker<GetTimeTickerResponse>(() => {
+  JobNotificationHub.onReceiveAddTimeTicker<GetTimeJobResponse>(() => {
     debouncedRefresh()
   })
 
-  TickerNotificationHub.onReceiveUpdateTimeTicker<void>(() => {
+  JobNotificationHub.onReceiveUpdateTimeTicker<void>(() => {
     debouncedRefresh()
   })
 
-  TickerNotificationHub.onReceiveDeleteTimeTicker<string>((id) => {
+  JobNotificationHub.onReceiveDeleteTimeTicker<string>((id) => {
     // Reload current page when item is deleted
     loadPageData()
     // Update charts
@@ -359,7 +359,7 @@ const addHubListeners = async () => {
   })
 
   // Batch insert notification: just refresh current view and charts once
-  TickerNotificationHub.onReceiveAddTimeTickersBatch(() => {
+  JobNotificationHub.onReceiveAddTimeTickersBatch(() => {
     loadPageData()
     loadTimeSeriesChartData(-3, 3)
     loadPieChartData()
@@ -855,7 +855,7 @@ const canBeForceDeleted = ref<string[]>([])
 </script>
 
 <template>
-  <div class="time-ticker-dashboard">
+  <div class="time-job-dashboard">
     <!-- Content Section -->
     <div class="dashboard-content">
       <!-- Analytics Section -->
@@ -919,7 +919,7 @@ const canBeForceDeleted = ref<string[]>([])
         <div class="section-header">
           <h2 class="section-title">
             <v-icon class="section-icon" color="primary">mdi-table</v-icon>
-            Time Ticker Operations
+            Time Job Operations
           </h2>
           <div class="table-controls">
             <!-- Primary Actions Group -->
@@ -929,7 +929,7 @@ const canBeForceDeleted = ref<string[]>([])
                   class="premium-action-btn primary-action"
                   @click="
                     crudTimeTickerDialog.open({
-                      ...({} as GetTimeTickerResponse),
+                      ...({} as GetTimeJobResponse),
                       isFromDuplicate: true,
                     })
                   "
@@ -937,7 +937,7 @@ const canBeForceDeleted = ref<string[]>([])
                   <div class="btn-icon">
                     <v-icon size="18">mdi-plus</v-icon>
                   </div>
-                  <span class="btn-text">Add Ticker</span>
+                  <span class="btn-text">Add Job</span>
                   <div class="btn-shine"></div>
                 </button>
 
@@ -1382,7 +1382,7 @@ const canBeForceDeleted = ref<string[]>([])
                       </button>
                     </template>
                     <span>{{
-                      canBeForceDeleted.includes(item.id) ? 'Force Delete Ticker' : 'Delete Ticker'
+                      canBeForceDeleted.includes(item.id) ? 'Force Delete Job' : 'Delete Job'
                     }}</span>
                   </v-tooltip>
                 </div>
@@ -1746,7 +1746,7 @@ const canBeForceDeleted = ref<string[]>([])
 }
 
 /* Dashboard Layout */
-.time-ticker-dashboard {
+.time-job-dashboard {
   background: linear-gradient(135deg, #212121 0%, #2d2d2d 100%);
   min-height: 100vh;
   font-family:

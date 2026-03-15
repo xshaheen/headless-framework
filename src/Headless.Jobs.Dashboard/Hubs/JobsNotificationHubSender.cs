@@ -99,7 +99,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
     public Task UpdateTimeTickerFromInternalFunctionContext<TTimeTicker>(
         InternalFunctionContext internalFunctionContext
     )
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
     {
         // Debounce high-frequency updates into a single notification
         if (Interlocked.Exchange(ref _hasPendingTimeTickerUpdate, 1) == 0)
@@ -123,13 +123,13 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
     public Task UpdateCronOccurrenceFromInternalFunctionContext<TCronTicker>(
         InternalFunctionContext internalFunctionContext
     )
-        where TCronTicker : CronTickerEntity, new()
+        where TCronTicker : CronJobEntity, new()
     {
         var updatePayload = new
         {
-            id = internalFunctionContext.TickerId,
+            id = internalFunctionContext.JobId,
             status = internalFunctionContext.Status,
-            cronTickerId = internalFunctionContext.ParentId,
+            cronJobId = internalFunctionContext.ParentId,
             executedAt = internalFunctionContext.ExecutedAt,
             elapsedTime = internalFunctionContext.ElapsedTime,
             retryCount = internalFunctionContext.RetryCount,

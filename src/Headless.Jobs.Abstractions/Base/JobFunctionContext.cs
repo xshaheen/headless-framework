@@ -26,7 +26,7 @@ public class JobFunctionContext
     internal AsyncServiceScope ServiceScope { get; set; }
     public required Action RequestCancelOperationAction { get; init; }
     public Guid Id { get; internal set; }
-    public TickerType Type { get; internal set; }
+    public JobType Type { get; internal set; }
     public int RetryCount { get; internal set; }
     public bool IsDue { get; internal set; }
 

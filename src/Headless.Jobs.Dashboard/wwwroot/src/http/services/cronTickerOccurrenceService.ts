@@ -2,22 +2,22 @@
 import { formatDate, formatTime } from '@/utilities/dateTimeParser';
 import { useBaseHttpService } from '../base/baseHttpService';
 import { Status } from './types/base/baseHttpResponse.types';
-import { GetCronTickerOccurrenceGraphDataRequest, GetCronTickerOccurrenceGraphDataResponse, GetCronTickerOccurrenceRequest, GetCronTickerOccurrenceResponse } from './types/cronTickerOccurrenceService.types';
+import { GetCronJobOccurrenceGraphDataRequest, GetCronJobOccurrenceGraphDataResponse, GetCronJobOccurrenceRequest, GetCronJobOccurrenceResponse } from './types/cronTickerOccurrenceService.types';
 import { format} from 'timeago.js';
 import { nameof } from '@/utilities/nameof';
 import { useTimeZoneStore } from '@/stores/timeZoneStore';
 
 interface PaginatedCronTickerOccurrenceResponse {
-    items: GetCronTickerOccurrenceResponse[]
+    items: GetCronJobOccurrenceResponse[]
     totalCount: number
     pageNumber: number
     pageSize: number
 }
 
-const getByCronTickerId = () => {
+const getByCronJobId = () => {
     const timeZoneStore = useTimeZoneStore();
-    const baseHttp = useBaseHttpService<GetCronTickerOccurrenceRequest, GetCronTickerOccurrenceResponse>('array')
-        .FixToResponseModel(GetCronTickerOccurrenceResponse, response => {
+    const baseHttp = useBaseHttpService<GetCronJobOccurrenceRequest, GetCronJobOccurrenceResponse>('array')
+        .FixToResponseModel(GetCronJobOccurrenceResponse, response => {
             if (!response) {
                 return response;
             }
@@ -39,16 +39,16 @@ const getByCronTickerId = () => {
             return response;
         })
         .FixToHeaders((header) => {
-            if (header.key == nameof<GetCronTickerOccurrenceResponse>(x => x.actions)) {
+            if (header.key == nameof<GetCronJobOccurrenceResponse>(x => x.actions)) {
                 header.sortable = false;
             }
-            if (nameof<GetCronTickerOccurrenceResponse>(x => x.id, x => x.elapsedTime, x => x.executionTime, x => x.retryCount, x => x.exceptionMessage, x => x.skippedReason).includes(header.key)) {
+            if (nameof<GetCronJobOccurrenceResponse>(x => x.id, x => x.elapsedTime, x => x.executionTime, x => x.retryCount, x => x.exceptionMessage, x => x.skippedReason).includes(header.key)) {
                 header.visibility = false;
             }
-            if (nameof<GetCronTickerOccurrenceResponse>(x => x.executedAt) == header.key) {
+            if (nameof<GetCronJobOccurrenceResponse>(x => x.executedAt) == header.key) {
                 header.title = "Executed At (Elapsed Time)"
             }
-            if (nameof<GetCronTickerOccurrenceResponse>(x => x.executionTimeFormatted) == header.key) {
+            if (nameof<GetCronJobOccurrenceResponse>(x => x.executionTimeFormatted) == header.key) {
                 header.title = "Execution Time"
             }
             return header;
@@ -56,7 +56,7 @@ const getByCronTickerId = () => {
         .ReOrganizeResponse((res) => res.sort((a, b) => new Date(b.executionTime).getTime() - new Date(a.executionTime).getTime()));
 
 
-    const requestAsync = async (id: string | undefined) => (await baseHttp.sendAsync("GET", `cron-ticker-occurrences/${id}`));
+    const requestAsync = async (id: string | undefined) => (await baseHttp.sendAsync("GET", `cron-job-occurrences/${id}`));
 
     return {
         ...baseHttp,
@@ -64,14 +64,14 @@ const getByCronTickerId = () => {
     };
 }
 
-const getByCronTickerIdPaginated = () => {
+const getByCronJobIdPaginated = () => {
     const timeZoneStore = useTimeZoneStore();
     const baseHttp = useBaseHttpService<object, PaginatedCronTickerOccurrenceResponse>('single');
     
     const processResponse = (response: PaginatedCronTickerOccurrenceResponse): PaginatedCronTickerOccurrenceResponse => {
             // Process items in the paginated response
             if (response && response.items && Array.isArray(response.items)) {
-                response.items = response.items.map((item: GetCronTickerOccurrenceResponse) => {
+                response.items = response.items.map((item: GetCronJobOccurrenceResponse) => {
                     if (!item) return item;
                     
                     // Safely set status with null check and ensure it's always a string
@@ -96,7 +96,7 @@ const getByCronTickerIdPaginated = () => {
                 });
                 
                 // Sort items
-                response.items.sort((a: GetCronTickerOccurrenceResponse, b: GetCronTickerOccurrenceResponse) => 
+                response.items.sort((a: GetCronJobOccurrenceResponse, b: GetCronJobOccurrenceResponse) => 
                     new Date(b.executionTime).getTime() - new Date(a.executionTime).getTime()
                 );
             }
@@ -105,7 +105,7 @@ const getByCronTickerIdPaginated = () => {
     };
     
     const requestAsync = async (id: string | undefined, pageNumber: number = 1, pageSize: number = 20) => {
-        const response = await baseHttp.sendAsync("GET", `cron-ticker-occurrences/${id}/paginated`, { 
+        const response = await baseHttp.sendAsync("GET", `cron-job-occurrences/${id}/paginated`, { 
             paramData: { pageNumber, pageSize } 
         });
         return processResponse(response);
@@ -120,7 +120,7 @@ const getByCronTickerIdPaginated = () => {
 const deleteCronTickerOccurrence = () => {
     const baseHttp = useBaseHttpService<object, object>('single');
 
-    const requestAsync = async (id: string) => (await baseHttp.sendAsync("DELETE", "cron-ticker-occurrence/delete", { paramData: { id: id } }));
+    const requestAsync = async (id: string) => (await baseHttp.sendAsync("DELETE", "cron-job-occurrence/delete", { paramData: { id: id } }));
 
     return {
         ...baseHttp,
@@ -130,8 +130,8 @@ const deleteCronTickerOccurrence = () => {
 
 const getCronTickerOccurrenceGraphData = () => {
     const timeZoneStore = useTimeZoneStore();
-    const baseHttp = useBaseHttpService<GetCronTickerOccurrenceGraphDataRequest, GetCronTickerOccurrenceGraphDataResponse>('array')
-        .FixToResponseModel(GetCronTickerOccurrenceGraphDataResponse, (item) => {
+    const baseHttp = useBaseHttpService<GetCronJobOccurrenceGraphDataRequest, GetCronJobOccurrenceGraphDataResponse>('array')
+        .FixToResponseModel(GetCronJobOccurrenceGraphDataResponse, (item) => {
             return {
                 ...item,
                 date: formatDate(item.date, false, timeZoneStore.effectiveTimeZone),
@@ -140,7 +140,7 @@ const getCronTickerOccurrenceGraphData = () => {
             }
         });
 
-    const requestAsync = async (id: string) => (await baseHttp.sendAsync("GET", `cron-ticker-occurrences/${id}/graph-data`));
+    const requestAsync = async (id: string) => (await baseHttp.sendAsync("GET", `cron-job-occurrences/${id}/graph-data`));
 
     return {
         ...baseHttp,
@@ -149,8 +149,8 @@ const getCronTickerOccurrenceGraphData = () => {
 }
 
 export const cronTickerOccurrenceService = {
-    getByCronTickerId,
-    getByCronTickerIdPaginated,
+    getByCronJobId,
+    getByCronJobIdPaginated,
     deleteCronTickerOccurrence,
     getCronTickerOccurrenceGraphData
 };

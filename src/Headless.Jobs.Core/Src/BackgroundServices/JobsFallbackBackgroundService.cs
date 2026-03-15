@@ -6,15 +6,15 @@ using Microsoft.Extensions.Hosting;
 namespace Headless.Jobs.BackgroundServices;
 
 internal class JobsFallbackBackgroundService(
-    IInternalTickerManager internalTickerManager,
+    IInternalJobManager internalJobsManager,
     SchedulerOptionsBuilder schedulerOptions,
-    TickerExecutionTaskHandler tickerExecutionTaskHandler,
+    JobsExecutionTaskHandler tickerExecutionTaskHandler,
     JobsTaskScheduler tickerQTaskScheduler,
     IJobFunctionConcurrencyGate concurrencyGate
 ) : BackgroundService
 {
     private int _started;
-    private readonly TickerExecutionTaskHandler _tickerExecutionTaskHandler = tickerExecutionTaskHandler;
+    private readonly JobsExecutionTaskHandler _tickerExecutionTaskHandler = tickerExecutionTaskHandler;
     private readonly TimeSpan _fallbackJobPeriod = schedulerOptions.FallbackIntervalChecker;
 
     public override Task StartAsync(CancellationToken ct)
@@ -36,7 +36,7 @@ internal class JobsFallbackBackgroundService(
                     continue;
                 }
 
-                var functions = await internalTickerManager.RunTimedOutTickers(stoppingToken);
+                var functions = await internalJobsManager.RunTimedOutTickers(stoppingToken);
 
                 if (functions.Length != 0)
                 {
@@ -54,7 +54,7 @@ internal class JobsFallbackBackgroundService(
                             function.CachedMaxConcurrency = tickerItem.MaxConcurrency;
                         }
 
-                        foreach (var child in function.TimeTickerChildren)
+                        foreach (var child in function.TimeJobChildren)
                         {
                             if (
                                 JobFunctionProvider.JobFunctions.TryGetValue(
@@ -68,7 +68,7 @@ internal class JobsFallbackBackgroundService(
                                 child.CachedMaxConcurrency = childItem.MaxConcurrency;
                             }
 
-                            foreach (var grandChild in child.TimeTickerChildren)
+                            foreach (var grandChild in child.TimeJobChildren)
                             {
                                 if (
                                     JobFunctionProvider.JobFunctions.TryGetValue(

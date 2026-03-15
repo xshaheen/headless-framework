@@ -8,9 +8,9 @@ namespace Headless.Jobs.Infrastructure;
 
 internal static class MappingExtensions
 {
-    public static Expression<Func<TCronTicker, CronTickerEntity>> ForCronTickerExpressions<TCronTicker>()
-        where TCronTicker : CronTickerEntity, new() =>
-        e => new CronTickerEntity
+    public static Expression<Func<TCronTicker, CronJobEntity>> ForCronTickerExpressions<TCronTicker>()
+        where TCronTicker : CronJobEntity, new() =>
+        e => new CronJobEntity
         {
             Id = e.Id,
             Expression = e.Expression,
@@ -19,9 +19,9 @@ internal static class MappingExtensions
             Retries = e.Retries,
         };
 
-    internal static Expression<Func<TTimeTicker, TimeTickerEntity>> ForQueueTimeTickers<TTimeTicker>()
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new() =>
-        e => new TimeTickerEntity
+    internal static Expression<Func<TTimeTicker, TimeJobEntity>> ForQueueTimeTickers<TTimeTicker>()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new() =>
+        e => new TimeJobEntity
         {
             Id = e.Id,
             Function = e.Function,
@@ -31,7 +31,7 @@ internal static class MappingExtensions
             ParentId = e.ParentId,
             ExecutionTime = e.ExecutionTime,
             Children = e
-                .Children.Select(ch => new TimeTickerEntity
+                .Children.Select(ch => new TimeJobEntity
                 {
                     Id = ch.Id,
                     Function = ch.Function,
@@ -39,7 +39,7 @@ internal static class MappingExtensions
                     RetryIntervals = ch.RetryIntervals,
                     RunCondition = ch.RunCondition,
                     Children = ch
-                        .Children.Select(gch => new TimeTickerEntity
+                        .Children.Select(gch => new TimeJobEntity
                         {
                             Function = gch.Function,
                             Retries = gch.Retries,
@@ -53,15 +53,15 @@ internal static class MappingExtensions
         };
 
     internal static Expression<
-        Func<TCronTickerOccurrence, CronTickerOccurrenceEntity<TCronTicker>>
+        Func<TCronTickerOccurrence, CronJobOccurrenceEntity<TCronTicker>>
     > ForQueueCronTickerOccurrence<TCronTickerOccurrence, TCronTicker>()
-        where TCronTicker : CronTickerEntity, new()
-        where TCronTickerOccurrence : CronTickerOccurrenceEntity<TCronTicker>, new() =>
-        e => new CronTickerOccurrenceEntity<TCronTicker>
+        where TCronTicker : CronJobEntity, new()
+        where TCronTickerOccurrence : CronJobOccurrenceEntity<TCronTicker>, new() =>
+        e => new CronJobOccurrenceEntity<TCronTicker>
         {
             Id = e.Id,
             UpdatedAt = e.UpdatedAt,
-            CronTickerId = e.CronTickerId,
+            CronJobId = e.CronJobId,
             CronTicker = new TCronTicker
             {
                 Id = e.CronTicker.Id,
@@ -72,15 +72,15 @@ internal static class MappingExtensions
         };
 
     internal static Expression<
-        Func<TCronTickerOccurrence, CronTickerOccurrenceEntity<TCronTicker>>
+        Func<TCronTickerOccurrence, CronJobOccurrenceEntity<TCronTicker>>
     > ForLatestQueuedCronTickerOccurrence<TCronTickerOccurrence, TCronTicker>()
-        where TCronTicker : CronTickerEntity, new()
-        where TCronTickerOccurrence : CronTickerOccurrenceEntity<TCronTicker>, new() =>
-        e => new CronTickerOccurrenceEntity<TCronTicker>
+        where TCronTicker : CronJobEntity, new()
+        where TCronTickerOccurrence : CronJobOccurrenceEntity<TCronTicker>, new() =>
+        e => new CronJobOccurrenceEntity<TCronTicker>
         {
             Id = e.Id,
             CreatedAt = e.CreatedAt,
-            CronTickerId = e.CronTickerId,
+            CronJobId = e.CronJobId,
             ExecutionTime = e.ExecutionTime,
             CronTicker = new TCronTicker
             {
@@ -93,17 +93,17 @@ internal static class MappingExtensions
         };
 
     internal static void UpdateCronTickerOccurrence<TCronTicker>(
-        this UpdateSettersBuilder<CronTickerOccurrenceEntity<TCronTicker>> setters,
+        this UpdateSettersBuilder<CronJobOccurrenceEntity<TCronTicker>> setters,
         InternalFunctionContext functionContext
     )
-        where TCronTicker : CronTickerEntity, new()
+        where TCronTicker : CronJobEntity, new()
     {
         var propsToUpdate = functionContext.GetPropsToUpdate();
 
         // STATUS / SKIPPED
         if (
             propsToUpdate.Contains(nameof(InternalFunctionContext.Status))
-            && functionContext.Status != TickerStatus.Skipped
+            && functionContext.Status != JobStatus.Skipped
         )
         {
             setters.SetProperty(x => x.Status, functionContext.Status);
@@ -124,7 +124,7 @@ internal static class MappingExtensions
         // EXCEPTION DETAILS
         if (
             propsToUpdate.Contains(nameof(InternalFunctionContext.ExceptionDetails))
-            && functionContext.Status != TickerStatus.Skipped
+            && functionContext.Status != JobStatus.Skipped
         )
         {
             setters.SetProperty(x => x.ExceptionMessage, functionContext.ExceptionDetails);
@@ -160,14 +160,14 @@ internal static class MappingExtensions
         InternalFunctionContext functionContext,
         DateTime updatedAt
     )
-        where TTimeTicker : TimeTickerEntity<TTimeTicker>, new()
+        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
     {
         var propsToUpdate = functionContext.GetPropsToUpdate();
 
         // STATUS / SKIPPED
         if (
             propsToUpdate.Contains(nameof(InternalFunctionContext.Status))
-            && functionContext.Status != TickerStatus.Skipped
+            && functionContext.Status != JobStatus.Skipped
         )
         {
             setters.SetProperty(x => x.Status, functionContext.Status);
@@ -188,7 +188,7 @@ internal static class MappingExtensions
         // EXCEPTION DETAILS
         if (
             propsToUpdate.Contains(nameof(InternalFunctionContext.ExceptionDetails))
-            && functionContext.Status != TickerStatus.Skipped
+            && functionContext.Status != JobStatus.Skipped
         )
         {
             setters.SetProperty(x => x.ExceptionMessage, functionContext.ExceptionDetails);

@@ -495,7 +495,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         if (delegateCount > 0)
         {
             sb.AppendLine(
-                $"            var jobFunctionDelegateDict = new Dictionary<string, (string, TickerTaskPriority, JobFunctionDelegate, int)>({delegateCount});"
+                $"            var jobFunctionDelegateDict = new Dictionary<string, (string, JobPriority, JobFunctionDelegate, int)>({delegateCount});"
             );
 
             foreach (var delegateCode in delegateList)
@@ -524,7 +524,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         if (delegateCount > 0)
         {
             sb.AppendLine(
-                $"      var jobFunctionDelegateDict = new Dictionary<string, (string, TickerTaskPriority, JobFunctionDelegate, int)>({delegateCount});"
+                $"      var jobFunctionDelegateDict = new Dictionary<string, (string, JobPriority, JobFunctionDelegate, int)>({delegateCount});"
             );
 
             foreach (var delegateCode in delegateList)
@@ -562,7 +562,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         sb.AppendLine("            CancellationToken cancellationToken)");
         sb.AppendLine("        {");
         sb.AppendLine(
-            "            var request = await TickerRequestProvider.GetRequestAsync<T>(context, cancellationToken);"
+            "            var request = await JobsRequestProvider.GetRequestAsync<T>(context, cancellationToken);"
         );
         sb.AppendLine("            return new JobFunctionContext<T>(context, request);");
         sb.AppendLine("        }");
@@ -578,7 +578,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         sb.AppendLine("      CancellationToken cancellationToken)");
         sb.AppendLine("    {");
         sb.AppendLine(
-            "      var request = await TickerRequestProvider.GetRequestAsync<T>(context, cancellationToken);"
+            "      var request = await JobsRequestProvider.GetRequestAsync<T>(context, cancellationToken);"
         );
         sb.AppendLine("      return new JobFunctionContext<T>(context, request);");
         sb.AppendLine("    }");

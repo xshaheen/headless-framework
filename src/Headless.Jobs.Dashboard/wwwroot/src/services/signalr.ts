@@ -147,9 +147,9 @@ class SignalRService {
     // Build hub URL
     let hubUrl: string;
     if (backendDomain) {
-      hubUrl = `${backendDomain}/ticker-notification-hub`;
+      hubUrl = `${backendDomain}/job-notification-hub`;
     } else {
-      hubUrl = `${basePath}/ticker-notification-hub`;
+      hubUrl = `${basePath}/job-notification-hub`;
     }
 
     // Get access token for authentication
@@ -224,7 +224,7 @@ class SignalRService {
       this.emit('error', error);
     });
 
-    // Ticker notifications
+    // Job notifications
     this.connection.on('TickerUpdate', (data) => {
       this.emit('tickerUpdate', data);
     });

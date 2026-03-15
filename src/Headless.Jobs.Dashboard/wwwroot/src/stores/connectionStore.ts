@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import TickerNotificationHub from '../hub/tickerNotificationHub'
+import JobNotificationHub from '../hub/tickerNotificationHub'
 
 export const useConnectionStore = defineStore('connection', () => {
   // State
@@ -87,7 +87,7 @@ export const useConnectionStore = defineStore('connection', () => {
     }
 
     try {
-      await TickerNotificationHub.startConnection()
+      await JobNotificationHub.startConnection()
       _isInitialized.value = true
       setConnectionState('Connected')
       setBackendHealthy(true)
@@ -108,7 +108,7 @@ export const useConnectionStore = defineStore('connection', () => {
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        await TickerNotificationHub.startConnection()
+        await JobNotificationHub.startConnection()
         _isInitialized.value = true
         setConnectionState('Connected')
         setBackendHealthy(true)
@@ -134,7 +134,7 @@ export const useConnectionStore = defineStore('connection', () => {
   async function _establishConnection(): Promise<void> {
     try {
       // Add timeout to prevent hanging
-      const connectionPromise = TickerNotificationHub.startConnection()
+      const connectionPromise = JobNotificationHub.startConnection()
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('Connection timeout after 10 seconds')), 10000)
       })
@@ -170,7 +170,7 @@ export const useConnectionStore = defineStore('connection', () => {
 
   // Sync our state with the actual SignalR connection state
   function _syncConnectionState(): void {
-    const connection = TickerNotificationHub.connection
+    const connection = JobNotificationHub.connection
     if (!connection) return
     
     switch (connection.state) {
@@ -203,7 +203,7 @@ export const useConnectionStore = defineStore('connection', () => {
   }
 
   function _setupConnectionHandlers(): void {
-    const connection = TickerNotificationHub.connection
+    const connection = JobNotificationHub.connection
     
     if (!connection) {
       return
@@ -283,7 +283,7 @@ export const useConnectionStore = defineStore('connection', () => {
   async function forceReconnection(): Promise<void> {
     // Stop current connection if it exists
     try {
-      await TickerNotificationHub.stopConnection()
+      await JobNotificationHub.stopConnection()
     } catch (error) {
       // Error stopping connection during force reconnection
     }
@@ -305,7 +305,7 @@ export const useConnectionStore = defineStore('connection', () => {
   // Force immediate status update
   async function _forceStatusUpdate(): Promise<void> {
     // Get current connection state
-    const connection = TickerNotificationHub.connection
+    const connection = JobNotificationHub.connection
     const currentState = connection?.state
     
     // Update states based on actual connection
@@ -326,12 +326,12 @@ export const useConnectionStore = defineStore('connection', () => {
   async function updateAuthToken(newAuthToken: string): Promise<void> {
     // Stop current connection
     if (_isInitialized.value) {
-      await TickerNotificationHub.stopConnection()
+      await JobNotificationHub.stopConnection()
       _isInitialized.value = false
     }
     
     // Rebuild the connection with the new auth token
-    TickerNotificationHub.rebuildConnection()
+    JobNotificationHub.rebuildConnection()
     
     // Reinitialize connection
     await initializeConnection()
@@ -384,7 +384,7 @@ export const useConnectionStore = defineStore('connection', () => {
   // Perform backend health check
   async function _performHealthCheck(): Promise<void> {
     try {
-      const connection = TickerNotificationHub.connection
+      const connection = JobNotificationHub.connection
       if (connection && connection.state === 'Connected') {
         // Simple health check: if the connection state is 'Connected' and we can access it,
         // consider the backend healthy
@@ -421,7 +421,7 @@ export const useConnectionStore = defineStore('connection', () => {
     await _performHealthCheck()
     
     // Get current connection state
-    const connection = TickerNotificationHub.connection
+    const connection = JobNotificationHub.connection
     const currentState = connection?.state
     
     // Force reactive updates
@@ -438,7 +438,7 @@ export const useConnectionStore = defineStore('connection', () => {
   // Force UI refresh by triggering all computed properties
   function forceUIUpdate(): void {
     // Sync current SignalR state with store
-    const currentSignalRState = TickerNotificationHub.connection?.state
+    const currentSignalRState = JobNotificationHub.connection?.state
     if (currentSignalRState) {
       setConnectionState(currentSignalRState as 'Disconnected' | 'Connecting' | 'Connected')
     }
@@ -470,7 +470,7 @@ export const useConnectionStore = defineStore('connection', () => {
 
   // Get connection status for debugging
   function getConnectionStatus() {
-    const connection = TickerNotificationHub.connection
+    const connection = JobNotificationHub.connection
     const status = {
       isInitialized: _isInitialized.value,
       isConnecting: _isConnecting.value,
@@ -486,7 +486,7 @@ export const useConnectionStore = defineStore('connection', () => {
 
   // Get raw connection state (bypassing computed properties)
   function getRawConnectionState() {
-    const connection = TickerNotificationHub.connection
+    const connection = JobNotificationHub.connection
     return {
       rawSignalRState: connection?.state,
       rawBackendHealthy: _isBackendHealthy.value,
@@ -500,13 +500,13 @@ export const useConnectionStore = defineStore('connection', () => {
     return {
       isHealthy: _isBackendHealthy.value,
       lastCheck: _lastHealthCheck.value,
-      connectionState: TickerNotificationHub.connection?.state
+      connectionState: JobNotificationHub.connection?.state
     }
   }
 
   // Get detailed connection information for debugging
   function getDetailedConnectionInfo() {
-    const connection = TickerNotificationHub.connection
+    const connection = JobNotificationHub.connection
     return {
       ...getConnectionStatus(),
       connectionId: connection?.connectionId,
@@ -523,7 +523,7 @@ export const useConnectionStore = defineStore('connection', () => {
   async function cleanup(): Promise<void> {
     _stopHealthCheck()
     if (_isInitialized.value) {
-      await TickerNotificationHub.stopConnection()
+      await JobNotificationHub.stopConnection()
       _isInitialized.value = false
     }
   }
