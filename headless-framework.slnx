@@ -26,6 +26,7 @@
     <Folder Name="/AuditLog/">
         <Project Path="src\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
         <Project Path="src\Headless.AuditLog.EntityFramework\Headless.AuditLog.EntityFramework.csproj" />
+        <Project Path="tests\Headless.AuditLog.Tests.Unit\Headless.AuditLog.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Blobs/">
         <Project Path="demo\Headless.Tus.Demo\Headless.Tus.Demo.csproj" />

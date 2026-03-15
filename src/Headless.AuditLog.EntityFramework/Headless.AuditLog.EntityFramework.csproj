@@ -4,6 +4,10 @@
     <RootNamespace>Headless.AuditLog</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.AuditLog.Tests.Unit" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
   </ItemGroup>
   <ItemGroup>
