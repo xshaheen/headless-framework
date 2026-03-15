@@ -9,10 +9,10 @@ internal static class SourceGeneratorConstants
 {
     #region Type Names
 
-    public const string TickerFunctionAttributeName = "TickerFunctionAttribute";
+    public const string JobFunctionAttributeName = "JobFunctionAttribute";
     public const string CancellationTokenTypeName = "System.Threading.CancellationToken";
-    public const string BaseTickerFunctionContextTypeName = "Headless.Jobs.Base.TickerFunctionContext";
-    public const string BaseGenericTickerFunctionContextTypeName = "Headless.Jobs.Base.TickerFunctionContext`1";
+    public const string BaseJobFunctionContextTypeName = "Headless.Jobs.Base.JobFunctionContext";
+    public const string BaseGenericJobFunctionContextTypeName = "Headless.Jobs.Base.JobFunctionContext`1";
     public const string FromKeyedServicesAttributeName = "FromKeyedServicesAttribute";
 
     #endregion
@@ -44,7 +44,7 @@ internal static class SourceGeneratorConstants
         "context",
         "service",
         "serviceProvider",
-        "tickerFunctionDelegateDict",
+        "jobFunctionDelegateDict",
         "cancellationToken",
         "genericContext",
         "requestTypes",

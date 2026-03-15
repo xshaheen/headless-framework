@@ -134,7 +134,7 @@ public sealed class InternalFunctionContextTests
     public void CachedDelegate_And_Priority_Can_Be_Assigned()
     {
         var context = new InternalFunctionContext() { FunctionName = "Test" };
-        TickerFunctionDelegate handler = (_, _, _) => Task.CompletedTask;
+        JobFunctionDelegate handler = (_, _, _) => Task.CompletedTask;
 
         context.CachedDelegate = handler;
         context.CachedPriority = TickerTaskPriority.High;

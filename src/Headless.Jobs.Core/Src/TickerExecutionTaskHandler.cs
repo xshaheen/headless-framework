@@ -154,7 +154,7 @@ internal class TickerExecutionTaskHandler(
         // This ensures the current occurrence is properly tracked when the callback checks for siblings
         TickerCancellationTokenManager.AddTickerCancellationToken(cancellationTokenSource, context, isDue);
 
-        var tickerFunctionContext = new TickerFunctionContext
+        var jobFunctionContext = new JobFunctionContext
         {
             FunctionName = context.FunctionName,
             Id = context.TickerId,
@@ -193,7 +193,7 @@ internal class TickerExecutionTaskHandler(
 
         for (var attempt = context.RetryCount; attempt <= context.Retries; attempt++)
         {
-            tickerFunctionContext.RetryCount = attempt;
+            jobFunctionContext.RetryCount = attempt;
 
             // Update activity with current attempt information
             jobActivity?.SetTag("Headless.Jobs.job.current_attempt", attempt + 1);
@@ -209,11 +209,11 @@ internal class TickerExecutionTaskHandler(
 
                 // Create service scope - will be disposed automatically via await using
                 await using var scope = serviceProvider.CreateAsyncScope();
-                tickerFunctionContext.SetServiceScope(scope);
+                jobFunctionContext.SetServiceScope(scope);
                 await context.CachedDelegate(
                     cancellationTokenSource.Token,
                     scope.ServiceProvider,
-                    tickerFunctionContext
+                    jobFunctionContext
                 );
 
                 success = true;

@@ -4,7 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace Headless.Jobs.SourceGenerator.Validation;
 
 /// <summary>
-/// Handles validation of constructor configurations for TickerFunction classes.
+/// Handles validation of constructor configurations for JobFunction classes.
 /// </summary>
 internal static class ConstructorValidator
 {

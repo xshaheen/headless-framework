@@ -452,7 +452,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
             };
 
             // Populate cached delegate and priority so the dispatcher can execute the job
-            if (TickerFunctionProvider.TickerFunctions.TryGetValue(context.FunctionName, out var tickerItem))
+            if (JobFunctionProvider.JobFunctions.TryGetValue(context.FunctionName, out var tickerItem))
             {
                 context.CachedDelegate = tickerItem.Delegate;
                 context.CachedPriority = tickerItem.Priority;
@@ -666,7 +666,7 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
 
         var jsonRequest = TickerHelper.ReadTickerRequestAsString(jsonRequestBytes);
 
-        if (!TickerFunctionProvider.TickerFunctionRequestTypes.TryGetValue(functionName, out var functionTypeContext))
+        if (!JobFunctionProvider.JobFunctionRequestTypes.TryGetValue(functionName, out var functionTypeContext))
         {
             return (jsonRequest, 2);
         }
@@ -684,25 +684,23 @@ internal class TickerDashboardRepository<TTimeTicker, TCronTicker>
 #pragma warning restore ERP022
     }
 
-    public IEnumerable<(string, (string, string, TickerTaskPriority))> GetTickerFunctions()
+    public IEnumerable<(string, (string, string, TickerTaskPriority))> GetJobFunctions()
     {
-        foreach (
-            var tickerFunction in TickerFunctionProvider.TickerFunctions.Select(x => new { x.Key, x.Value.Priority })
-        )
+        foreach (var jobFunction in JobFunctionProvider.JobFunctions.Select(x => new { x.Key, x.Value.Priority }))
         {
             if (
-                TickerFunctionProvider.TickerFunctionRequestTypes.TryGetValue(
-                    tickerFunction.Key,
+                JobFunctionProvider.JobFunctionRequestTypes.TryGetValue(
+                    jobFunction.Key,
                     out var functionTypeContext
                 )
             )
             {
                 JsonExampleGenerator.TryGenerateExampleJson(functionTypeContext.Item2, out var exampleJson);
-                yield return (tickerFunction.Key, (functionTypeContext.Item1, exampleJson, tickerFunction.Priority));
+                yield return (jobFunction.Key, (functionTypeContext.Item1, exampleJson, jobFunction.Priority));
             }
             else
             {
-                yield return (tickerFunction.Key, (string.Empty, string.Empty, tickerFunction.Priority));
+                yield return (jobFunction.Key, (string.Empty, string.Empty, jobFunction.Priority));
             }
         }
     }

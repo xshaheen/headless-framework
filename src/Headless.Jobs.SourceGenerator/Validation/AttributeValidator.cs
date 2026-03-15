@@ -4,14 +4,14 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace Headless.Jobs.SourceGenerator.Validation;
 
 /// <summary>
-/// Handles validation of TickerFunction attribute values and usage.
+/// Handles validation of JobFunction attribute values and usage.
 /// </summary>
 internal static class AttributeValidator
 {
     /// <summary>
-    /// Validates all aspects of a TickerFunction attribute and its usage.
+    /// Validates all aspects of a JobFunction attribute and its usage.
     /// </summary>
-    public static void ValidateTickerFunctionAttribute(
+    public static void ValidateJobFunctionAttribute(
         (string? functionName, string? cronExpression, int taskPriority, int maxConcurrency) attributeValues,
         ClassDeclarationSyntax classDeclaration,
         MethodDeclarationSyntax methodDeclaration,
@@ -50,7 +50,7 @@ internal static class AttributeValidator
         }
 
         // Validate cron expression
-        TickerFunctionValidator.ValidateCronExpression(
+        JobFunctionValidator.ValidateCronExpression(
             attributeValues.cronExpression,
             className,
             attributeLocation,

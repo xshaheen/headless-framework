@@ -58,7 +58,7 @@ public static class DailyReport { /* ... */ }
 public sealed class OrderProcessor(IOrderService orders)
 {
     public async Task ExecuteAsync(
-        TickerFunctionContext<OrderRequest> context,
+        JobFunctionContext<OrderRequest> context,
         CancellationToken ct)
     {
         await orders.ProcessAsync(context.Request, ct);

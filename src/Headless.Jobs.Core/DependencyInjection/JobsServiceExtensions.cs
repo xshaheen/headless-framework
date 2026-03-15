@@ -89,7 +89,7 @@ public static class JobsServiceExtensions
             services.AddSingleton<IJobsDispatcher, NoOpJobsDispatcher>();
         }
 
-        services.AddSingleton<ITickerFunctionConcurrencyGate, TickerFunctionConcurrencyGate>();
+        services.AddSingleton<IJobFunctionConcurrencyGate, JobFunctionConcurrencyGate>();
         services.AddSingleton<IJobsInstrumentation, LoggerInstrumentation>();
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
@@ -168,8 +168,8 @@ public static class JobsServiceExtensions
         // If background services are not registered (due to DisableBackgroundServices()),
         // silently skip background service configuration. This is expected behavior.
 
-        TickerFunctionProvider.UpdateCronExpressionsFromIConfiguration(configuration);
-        TickerFunctionProvider.Build();
+        JobFunctionProvider.UpdateCronExpressionsFromIConfiguration(configuration);
+        JobFunctionProvider.Build();
 
         // Run core seeding pipeline based on main options (works for both in-memory and EF providers).
         var options = tickerExecutionContext.OptionsSeeding;
@@ -204,8 +204,8 @@ public static class JobsServiceExtensions
     {
         var internalTickerManager = serviceProvider.GetRequiredService<IInternalTickerManager>();
 
-        var functionsToSeed = TickerFunctionProvider
-            .TickerFunctions.Where(x => !string.IsNullOrEmpty(x.Value.cronExpression))
+        var functionsToSeed = JobFunctionProvider
+            .JobFunctions.Where(x => !string.IsNullOrEmpty(x.Value.cronExpression))
             .Select(x => (x.Key, x.Value.cronExpression))
             .ToArray();
 

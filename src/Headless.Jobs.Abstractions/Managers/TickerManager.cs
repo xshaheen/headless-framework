@@ -108,10 +108,10 @@ internal class TickerManager<TTimeTicker, TCronTicker>
             entity.Id = Guid.NewGuid();
         }
 
-        if (TickerFunctionProvider.TickerFunctions.All(x => x.Key != entity?.Function))
+        if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity?.Function))
         {
             return new TickerResult<TTimeTicker>(
-                new TickerValidatorException($"Cannot find TickerFunction with name {entity?.Function}")
+                new TickerValidatorException($"Cannot find JobFunction with name {entity?.Function}")
             );
         }
 
@@ -169,10 +169,10 @@ internal class TickerManager<TTimeTicker, TCronTicker>
             entity.Id = Guid.NewGuid();
         }
 
-        if (TickerFunctionProvider.TickerFunctions.All(x => x.Key != entity?.Function))
+        if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity?.Function))
         {
             return new TickerResult<TCronTicker>(
-                new TickerValidatorException($"Cannot find TickerFunction with name {entity?.Function}")
+                new TickerValidatorException($"Cannot find JobFunction with name {entity?.Function}")
             );
         }
 
@@ -257,10 +257,10 @@ internal class TickerManager<TTimeTicker, TCronTicker>
             );
         }
 
-        if (TickerFunctionProvider.TickerFunctions.All(x => x.Key != cronTicker?.Function))
+        if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronTicker?.Function))
         {
             return new TickerResult<TCronTicker>(
-                new TickerValidatorException($"Cannot find TickerFunction with name {cronTicker.Function}")
+                new TickerValidatorException($"Cannot find JobFunction with name {cronTicker.Function}")
             );
         }
 
@@ -351,7 +351,7 @@ internal class TickerManager<TTimeTicker, TCronTicker>
         for (var i = 0; i < functions.Length; i++)
         {
             ref var context = ref functions[i];
-            if (TickerFunctionProvider.TickerFunctions.TryGetValue(context.FunctionName, out var tickerItem))
+            if (JobFunctionProvider.JobFunctions.TryGetValue(context.FunctionName, out var tickerItem))
             {
                 context.CachedDelegate = tickerItem.Delegate;
                 context.CachedPriority = tickerItem.Priority;
@@ -399,8 +399,8 @@ internal class TickerManager<TTimeTicker, TCronTicker>
             return new TickerResult<List<TTimeTicker>>(entities ?? new List<TTimeTicker>());
         }
 
-        var tickerFunctionsHashSet = new HashSet<string>(
-            TickerFunctionProvider.TickerFunctions.Keys,
+        var jobFunctionsHashSet = new HashSet<string>(
+            JobFunctionProvider.JobFunctions.Keys,
             StringComparer.Ordinal
         );
         var immediateTickers = new List<Guid>();
@@ -413,10 +413,10 @@ internal class TickerManager<TTimeTicker, TCronTicker>
                 entity.Id = Guid.NewGuid();
             }
 
-            if (!tickerFunctionsHashSet.Contains(entity.Function))
+            if (!jobFunctionsHashSet.Contains(entity.Function))
             {
                 return new TickerResult<List<TTimeTicker>>(
-                    new TickerValidatorException($"Cannot find TickerFunction with name {entity?.Function}")
+                    new TickerValidatorException($"Cannot find JobFunction with name {entity?.Function}")
                 );
             }
 
@@ -487,9 +487,9 @@ internal class TickerManager<TTimeTicker, TCronTicker>
                 entity.Id = Guid.NewGuid();
             }
 
-            if (TickerFunctionProvider.TickerFunctions.All(x => x.Key != entity?.Function))
+            if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity?.Function))
             {
-                errors.Add(new TickerValidatorException($"Cannot find TickerFunction with name {entity?.Function}"));
+                errors.Add(new TickerValidatorException($"Cannot find JobFunction with name {entity?.Function}"));
                 continue;
             }
 
@@ -620,9 +620,9 @@ internal class TickerManager<TTimeTicker, TCronTicker>
                 continue;
             }
 
-            if (TickerFunctionProvider.TickerFunctions.All(x => x.Key != cronTicker?.Function))
+            if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronTicker?.Function))
             {
-                errors.Add(new TickerValidatorException($"Cannot find TickerFunction with name {cronTicker.Function}"));
+                errors.Add(new TickerValidatorException($"Cannot find JobFunction with name {cronTicker.Function}"));
                 continue;
             }
 

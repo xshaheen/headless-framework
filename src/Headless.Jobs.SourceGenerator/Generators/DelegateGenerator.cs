@@ -7,7 +7,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace Headless.Jobs.SourceGenerator.Generators;
 
 /// <summary>
-/// Handles generation of delegate code for TickerFunction methods.
+/// Handles generation of delegate code for JobFunction methods.
 /// </summary>
 internal static class DelegateGenerator
 {
@@ -33,7 +33,7 @@ internal static class DelegateGenerator
 
             if (
                 typeName.StartsWith(
-                    SourceGeneratorConstants.BaseGenericTickerFunctionContextTypeName.Replace("`1", "<"),
+                    SourceGeneratorConstants.BaseGenericJobFunctionContextTypeName.Replace("`1", "<"),
                     StringComparison.Ordinal
                 )
             )
@@ -54,7 +54,7 @@ internal static class DelegateGenerator
     }
 
     /// <summary>
-    /// Generates the delegate code for a TickerFunction method.
+    /// Generates the delegate code for a JobFunction method.
     /// </summary>
     public static string GenerateDelegateCode(
         ClassDeclarationSyntax classDeclaration,
@@ -79,7 +79,7 @@ internal static class DelegateGenerator
 
         // Generate delegate registration with proper multiline format
         sb.AppendLine(
-            $"            tickerFunctionDelegateDict.TryAdd(\"{functionName}\", ({cronExprFlag}, (TickerTaskPriority){functionPriority}, new TickerFunctionDelegate({asyncFlag}(cancellationToken, serviceProvider, context) =>"
+            $"            jobFunctionDelegateDict.TryAdd(\"{functionName}\", ({cronExprFlag}, (TickerTaskPriority){functionPriority}, new JobFunctionDelegate({asyncFlag}(cancellationToken, serviceProvider, context) =>"
         );
         sb.AppendLine("            {");
 
@@ -119,7 +119,7 @@ internal static class DelegateGenerator
             {
                 parametersList.Add("cancellationToken");
             }
-            else if (parameterType.Contains("TickerFunctionContext"))
+            else if (parameterType.Contains("JobFunctionContext"))
             {
                 parametersList.Add(parameterType.Contains("<") ? "genericContext" : "context");
             }
@@ -177,12 +177,12 @@ internal static class DelegateGenerator
 
         if (SourceGeneratorUtilities.IsMethodAwaitable(methodDeclaration))
         {
-            // For Task-returning methods, await returns the Task (satisfies TickerFunctionDelegate)
+            // For Task-returning methods, await returns the Task (satisfies JobFunctionDelegate)
             sb.AppendLine($"                await {methodCall}({parameters});");
         }
         else
         {
-            // For void methods, we must explicitly return Task.CompletedTask to satisfy TickerFunctionDelegate
+            // For void methods, we must explicitly return Task.CompletedTask to satisfy JobFunctionDelegate
             sb.AppendLine($"                {methodCall}({parameters});");
             // Always return Task.CompletedTask for void methods to satisfy the Task-returning delegate
             // This is required whether the lambda is async or not

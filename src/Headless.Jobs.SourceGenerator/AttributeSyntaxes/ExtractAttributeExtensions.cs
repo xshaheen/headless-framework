@@ -9,7 +9,7 @@ public static class ExtractAttributeExtensions
         string? cronExpression,
         int taskPriority,
         int maxConcurrency
-    ) GetTickerFunctionAttributeValues(this AttributeData attrData)
+    ) GetJobFunctionAttributeValues(this AttributeData attrData)
     {
         // If for some reason there is no ctor (should be rare), return defaults
         var ctor = attrData.AttributeConstructor;

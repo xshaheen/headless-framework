@@ -46,7 +46,7 @@ internal class TickerExecutionContext
         for (var i = 0; i < functions.Length; i++)
         {
             ref var context = ref functions[i];
-            if (TickerFunctionProvider.TickerFunctions.TryGetValue(context.FunctionName, out var tickerItem))
+            if (JobFunctionProvider.JobFunctions.TryGetValue(context.FunctionName, out var tickerItem))
             {
                 context.CachedDelegate = tickerItem.Delegate;
                 context.CachedPriority = tickerItem.Priority;

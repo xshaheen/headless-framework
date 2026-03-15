@@ -14,7 +14,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
     private SafeCancellationTokenSource? _schedulerLoopCancellationTokenSource;
     private readonly JobsTaskScheduler _taskScheduler;
     private readonly TickerExecutionTaskHandler _taskHandler;
-    private readonly ITickerFunctionConcurrencyGate _concurrencyGate;
+    private readonly IJobFunctionConcurrencyGate _concurrencyGate;
     private int _started;
     public bool SkipFirstRun { get; set; }
     public bool IsRunning => _started == 1;
@@ -24,7 +24,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
         TickerExecutionTaskHandler taskHandler,
         JobsTaskScheduler taskScheduler,
         IInternalTickerManager internalTickerManager,
-        ITickerFunctionConcurrencyGate concurrencyGate
+        IJobFunctionConcurrencyGate concurrencyGate
     )
     {
         _executionContext = executionContext;

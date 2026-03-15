@@ -1,7 +1,7 @@
 namespace Headless.Jobs.SourceGenerator.Models;
 
 /// <summary>
-/// Contains information about method parameters for TickerFunction methods.
+/// Contains information about method parameters for JobFunction methods.
 /// </summary>
 internal class MethodParameterInfo
 {

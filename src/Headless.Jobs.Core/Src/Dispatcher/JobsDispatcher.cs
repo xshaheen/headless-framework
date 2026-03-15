@@ -7,14 +7,14 @@ namespace Headless.Jobs.Dispatcher;
 internal class JobsDispatcher(
     JobsTaskScheduler taskScheduler,
     TickerExecutionTaskHandler taskHandler,
-    ITickerFunctionConcurrencyGate concurrencyGate
+    IJobFunctionConcurrencyGate concurrencyGate
 ) : IJobsDispatcher
 {
     private readonly JobsTaskScheduler _taskScheduler =
         taskScheduler ?? throw new ArgumentNullException(nameof(taskScheduler));
     private readonly TickerExecutionTaskHandler _taskHandler =
         taskHandler ?? throw new ArgumentNullException(nameof(taskHandler));
-    private readonly ITickerFunctionConcurrencyGate _concurrencyGate =
+    private readonly IJobFunctionConcurrencyGate _concurrencyGate =
         concurrencyGate ?? throw new ArgumentNullException(nameof(concurrencyGate));
 
     public bool IsEnabled => true;

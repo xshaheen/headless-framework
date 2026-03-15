@@ -10,7 +10,7 @@ internal class JobsFallbackBackgroundService(
     SchedulerOptionsBuilder schedulerOptions,
     TickerExecutionTaskHandler tickerExecutionTaskHandler,
     JobsTaskScheduler tickerQTaskScheduler,
-    ITickerFunctionConcurrencyGate concurrencyGate
+    IJobFunctionConcurrencyGate concurrencyGate
 ) : BackgroundService
 {
     private int _started;
@@ -43,7 +43,7 @@ internal class JobsFallbackBackgroundService(
                     foreach (var function in functions)
                     {
                         if (
-                            TickerFunctionProvider.TickerFunctions.TryGetValue(
+                            JobFunctionProvider.JobFunctions.TryGetValue(
                                 function.FunctionName,
                                 out var tickerItem
                             )
@@ -57,7 +57,7 @@ internal class JobsFallbackBackgroundService(
                         foreach (var child in function.TimeTickerChildren)
                         {
                             if (
-                                TickerFunctionProvider.TickerFunctions.TryGetValue(
+                                JobFunctionProvider.JobFunctions.TryGetValue(
                                     child.FunctionName,
                                     out var childItem
                                 )
@@ -71,7 +71,7 @@ internal class JobsFallbackBackgroundService(
                             foreach (var grandChild in child.TimeTickerChildren)
                             {
                                 if (
-                                    TickerFunctionProvider.TickerFunctions.TryGetValue(
+                                    JobFunctionProvider.JobFunctions.TryGetValue(
                                         grandChild.FunctionName,
                                         out var grandChildItem
                                     )

@@ -40,8 +40,8 @@ await using (var scope = host.Services.CreateAsyncScope())
     await db.Database.MigrateAsync();
 }
 
-// Build function metadata so TickerFunctionProvider.TickerFunctions is initialized
-TickerFunctionProvider.Build();
+// Build function metadata so JobFunctionProvider.JobFunctions is initialized
+JobFunctionProvider.Build();
 
 await host.RunAsync();
 
@@ -50,8 +50,8 @@ namespace Headless.Jobs.Console.Demo
     // Simple sample job
     public static class ConsoleSampleJobs
     {
-        [TickerFunction("ConsoleSample_HelloWorld")]
-        public static Task HelloWorldAsync(TickerFunctionContext context, CancellationToken cancellationToken)
+        [JobFunction("ConsoleSample_HelloWorld")]
+        public static Task HelloWorldAsync(JobFunctionContext context, CancellationToken cancellationToken)
         {
             System.Console.WriteLine(
                 $"[Console] Hello from Jobs! Id={context.Id}, ScheduledFor={context.ScheduledFor:O}"

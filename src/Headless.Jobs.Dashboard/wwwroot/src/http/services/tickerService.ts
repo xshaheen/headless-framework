@@ -27,7 +27,7 @@ const getRequestData = () => {
 const getFunctionData = () => {
     const baseHttp = useBaseHttpService<GetFunctionDataRequest, GetFunctionDataResponse>('array');
 
-    const requestAsync = async () => (await baseHttp.sendAsync("GET", "ticker-functions"));
+    const requestAsync = async () => (await baseHttp.sendAsync("GET", "job-functions"));
 
     return {
         ...baseHttp,

@@ -61,7 +61,7 @@ internal interface ITickerDashboardRepository<TTimeTicker, TCronTicker>
         TickerType tickerType,
         CancellationToken cancellationToken = default
     );
-    IEnumerable<(string, (string, string, TickerTaskPriority))> GetTickerFunctions();
+    IEnumerable<(string, (string, string, TickerTaskPriority))> GetJobFunctions();
     Task<IList<(int, int)>> GetLastWeekJobStatusesAsync(CancellationToken cancellationToken = default);
     Task<IList<(TickerStatus, int)>> GetOverallJobStatusesAsync(CancellationToken cancellationToken = default);
     Task<IList<(string, int)>> GetMachineJobsAsync(CancellationToken cancellationToken = default);

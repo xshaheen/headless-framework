@@ -186,9 +186,9 @@ public static class DashboardEndpoints
             .WithSummary("Get ticker request by ID");
 
         apiGroup
-            .MapGet("/ticker-functions", _GetTickerFunctions<TTimeTicker, TCronTicker>)
-            .WithName("GetTickerFunctions")
-            .WithSummary("Get available ticker functions");
+            .MapGet("/job-functions", _GetJobFunctions<TTimeTicker, TCronTicker>)
+            .WithName("GetJobFunctions")
+            .WithSummary("Get available job functions");
 
         // Host operations
         apiGroup
@@ -728,7 +728,7 @@ public static class DashboardEndpoints
         return Results.Json(response, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static IResult _GetTickerFunctions<TTimeTicker, TCronTicker>(
+    private static IResult _GetJobFunctions<TTimeTicker, TCronTicker>(
         ITickerDashboardRepository<TTimeTicker, TCronTicker> repository,
         DashboardOptionsBuilder dashboardOptions
     )
@@ -736,7 +736,7 @@ public static class DashboardEndpoints
         where TCronTicker : CronTickerEntity, new()
     {
         var result = repository
-            .GetTickerFunctions()
+            .GetJobFunctions()
             .Select(x => new
             {
                 FunctionName = x.Item1,

@@ -19,15 +19,15 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     /// </summary>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var tickerMethods = context
+        var jobMethods = context
             .SyntaxProvider.CreateSyntaxProvider(
                 predicate: (node, _) => node is MethodDeclarationSyntax { AttributeLists.Count: > 0 },
-                transform: (ctx, _) => _GetTickerMethodIfAny(ctx)
+                transform: (ctx, _) => _GetJobMethodIfAny(ctx)
             )
             .Where(pair => pair is not null)
             .Select((pair, _) => pair!.Value);
 
-        var compilationAndMethods = context.CompilationProvider.Combine(tickerMethods.Collect());
+        var compilationAndMethods = context.CompilationProvider.Combine(jobMethods.Collect());
 
         context.RegisterSourceOutput(
             compilationAndMethods,
@@ -45,7 +45,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                     .ToList();
 
                 // Generate delegates and detect type conflicts for generic types
-                var initialDelegatesWithMetadata = _BuildTickerFunctionDelegates(
+                var initialDelegatesWithMetadata = _BuildJobFunctionDelegates(
                         methodPairs,
                         compilation,
                         productionContext,
@@ -59,7 +59,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 var typeNameConflicts = _DetectTypeNameConflicts(typeNames);
 
                 // Regenerate delegates with type conflict information for generic types
-                var delegatesWithMetadata = _BuildTickerFunctionDelegates(
+                var delegatesWithMetadata = _BuildJobFunctionDelegates(
                         methodPairs,
                         compilation,
                         productionContext,
@@ -93,9 +93,9 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Extracts ticker method information from the syntax context if it has a TickerFunction attribute.
+    /// Extracts job method information from the syntax context if it has a JobFunction attribute.
     /// </summary>
-    private static (ClassDeclarationSyntax ClassDecl, MethodDeclarationSyntax MethodDecl)? _GetTickerMethodIfAny(
+    private static (ClassDeclarationSyntax ClassDecl, MethodDeclarationSyntax MethodDecl)? _GetJobMethodIfAny(
         GeneratorSyntaxContext ctx
     )
     {
@@ -115,10 +115,10 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             return null;
         }
 
-        var hasTickerFunction = methodSymbol
+        var hasJobFunction = methodSymbol
             .GetAttributes()
-            .Any(attr => attr.AttributeClass?.Name == SourceGeneratorConstants.TickerFunctionAttributeName);
-        if (!hasTickerFunction)
+            .Any(attr => attr.AttributeClass?.Name == SourceGeneratorConstants.JobFunctionAttributeName);
+        if (!hasJobFunction)
         {
             return null;
         }
@@ -132,12 +132,12 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Builds ticker function delegates for all discovered methods with TickerFunction attributes.
+    /// Builds job function delegates for all discovered methods with JobFunction attributes.
     /// </summary>
     private static IEnumerable<(
         string DelegateCode,
         (string GenericTypeName, string FunctionName)
-    )> _BuildTickerFunctionDelegates(
+    )> _BuildJobFunctionDelegates(
         ImmutableArray<(ClassDeclarationSyntax ClassDecl, MethodDeclarationSyntax MethodDecl)> methodPairs,
         Compilation compilation,
         SourceProductionContext context,
@@ -154,7 +154,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             var classDeclaration = pair.ClassDecl;
             var methodDeclaration = pair.MethodDecl;
 
-            TickerFunctionValidator.ValidateClassAndMethod(classDeclaration, methodDeclaration, compilation, context);
+            JobFunctionValidator.ValidateClassAndMethod(classDeclaration, methodDeclaration, compilation, context);
 
             var semanticModel = compilation.GetSemanticModel(methodDeclaration.SyntaxTree);
 
@@ -162,25 +162,25 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             if (validatedClasses.Add(classDeclaration))
             {
                 ConstructorValidator.ValidateMultipleConstructors(classDeclaration, semanticModel, context);
-                TickerFunctionValidator.ValidateNotNestedClass(classDeclaration, context);
+                JobFunctionValidator.ValidateNotNestedClass(classDeclaration, context);
             }
             var methodSymbol = semanticModel.GetDeclaredSymbol(methodDeclaration);
 
-            var tickerAttributeData = methodSymbol
+            var jobFunctionAttributeData = methodSymbol
                 ?.GetAttributes()
-                .FirstOrDefault(ad => ad.AttributeClass?.Name == SourceGeneratorConstants.TickerFunctionAttributeName);
-            if (tickerAttributeData == null)
+                .FirstOrDefault(ad => ad.AttributeClass?.Name == SourceGeneratorConstants.JobFunctionAttributeName);
+            if (jobFunctionAttributeData == null)
             {
                 continue;
             }
 
-            var attributeValues = tickerAttributeData.GetTickerFunctionAttributeValues();
+            var attributeValues = jobFunctionAttributeData.GetJobFunctionAttributeValues();
             var attributeLocation =
-                tickerAttributeData.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
+                jobFunctionAttributeData.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
                 ?? methodDeclaration.Identifier.GetLocation();
 
             // Validate all attribute values
-            AttributeValidator.ValidateTickerFunctionAttribute(
+            AttributeValidator.ValidateJobFunctionAttribute(
                 attributeValues,
                 classDeclaration,
                 methodDeclaration,
@@ -192,7 +192,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             );
 
             // Validate method parameters
-            TickerFunctionValidator.ValidateMethodParameters(methodDeclaration, methodSymbol, context);
+            JobFunctionValidator.ValidateMethodParameters(methodDeclaration, methodSymbol, context);
 
             yield return _BuildSingleDelegate(
                 classDeclaration,
@@ -210,7 +210,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Builds a single delegate for a ticker function method.
+    /// Builds a single delegate for a job function method.
     /// </summary>
     private static (string DelegateCode, (string GenericTypeName, string FunctionName)) _BuildSingleDelegate(
         ClassDeclarationSyntax classDeclaration,
@@ -495,7 +495,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         if (delegateCount > 0)
         {
             sb.AppendLine(
-                $"            var tickerFunctionDelegateDict = new Dictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate, int)>({delegateCount});"
+                $"            var jobFunctionDelegateDict = new Dictionary<string, (string, TickerTaskPriority, JobFunctionDelegate, int)>({delegateCount});"
             );
 
             foreach (var delegateCode in delegateList)
@@ -504,7 +504,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             }
 
             sb.AppendLine(
-                $"            TickerFunctionProvider.RegisterFunctions(tickerFunctionDelegateDict, {delegateCount});"
+                $"            JobFunctionProvider.RegisterFunctions(jobFunctionDelegateDict, {delegateCount});"
             );
         }
 
@@ -524,7 +524,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         if (delegateCount > 0)
         {
             sb.AppendLine(
-                $"      var tickerFunctionDelegateDict = new Dictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate, int)>({delegateCount});"
+                $"      var jobFunctionDelegateDict = new Dictionary<string, (string, TickerTaskPriority, JobFunctionDelegate, int)>({delegateCount});"
             );
 
             foreach (var delegateCode in delegateList)
@@ -533,7 +533,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             }
 
             sb.AppendLine(
-                $"      TickerFunctionProvider.RegisterFunctions(tickerFunctionDelegateDict, {delegateCount});"
+                $"      JobFunctionProvider.RegisterFunctions(jobFunctionDelegateDict, {delegateCount});"
             );
         }
 
@@ -557,14 +557,14 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     /// </summary>
     private static void _GenerateHelperMethodsWithFullNamespaces(StringBuilder sb)
     {
-        sb.AppendLine("        private static async Task<TickerFunctionContext<T>> ToGenericContextWithRequest<T>(");
-        sb.AppendLine("            TickerFunctionContext context,");
+        sb.AppendLine("        private static async Task<JobFunctionContext<T>> ToGenericContextWithRequest<T>(");
+        sb.AppendLine("            JobFunctionContext context,");
         sb.AppendLine("            CancellationToken cancellationToken)");
         sb.AppendLine("        {");
         sb.AppendLine(
             "            var request = await TickerRequestProvider.GetRequestAsync<T>(context, cancellationToken);"
         );
-        sb.AppendLine("            return new TickerFunctionContext<T>(context, request);");
+        sb.AppendLine("            return new JobFunctionContext<T>(context, request);");
         sb.AppendLine("        }");
     }
 
@@ -573,14 +573,14 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
     /// </summary>
     private static void _GenerateHelperMethods(StringBuilder sb)
     {
-        sb.AppendLine("    private static async Task<TickerFunctionContext<T>> ToGenericContextWithRequest<T>(");
-        sb.AppendLine("      TickerFunctionContext context,");
+        sb.AppendLine("    private static async Task<JobFunctionContext<T>> ToGenericContextWithRequest<T>(");
+        sb.AppendLine("      JobFunctionContext context,");
         sb.AppendLine("      CancellationToken cancellationToken)");
         sb.AppendLine("    {");
         sb.AppendLine(
             "      var request = await TickerRequestProvider.GetRequestAsync<T>(context, cancellationToken);"
         );
-        sb.AppendLine("      return new TickerFunctionContext<T>(context, request);");
+        sb.AppendLine("      return new JobFunctionContext<T>(context, request);");
         sb.AppendLine("    }");
     }
 
@@ -620,7 +620,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
             }
 
             sb.AppendLine(
-                $"            TickerFunctionProvider.RegisterRequestType(requestTypes, {requestTypesCount});"
+                $"            JobFunctionProvider.RegisterRequestType(requestTypes, {requestTypesCount});"
             );
         }
 
@@ -654,7 +654,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 );
             }
 
-            sb.AppendLine($"      TickerFunctionProvider.RegisterRequestType(requestTypes, {requestTypesCount});");
+            sb.AppendLine($"      JobFunctionProvider.RegisterRequestType(requestTypes, {requestTypesCount});");
         }
 
         sb.AppendLine("    }");

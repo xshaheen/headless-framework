@@ -11,7 +11,7 @@ public class InternalFunctionContext
 
     // Cached function delegate, priority, and max concurrency for performance optimization
     // Eliminates dictionary lookups during execution
-    public TickerFunctionDelegate CachedDelegate { get; set; } = null!;
+    public JobFunctionDelegate CachedDelegate { get; set; } = null!;
     public TickerTaskPriority CachedPriority { get; set; }
     public int CachedMaxConcurrency { get; set; }
 
