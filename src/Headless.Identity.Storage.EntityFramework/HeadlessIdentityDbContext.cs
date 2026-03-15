@@ -1,12 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using Headless.AuditLog;
+using Headless.Abstractions;
 using Headless.Orm.EntityFramework.ChangeTrackers;
 using Headless.Orm.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Orm.EntityFramework;
 
@@ -55,10 +59,16 @@ public abstract class HeadlessIdentityDbContext<
     )
     {
         var report = _entityProcessor.ProcessEntries(this);
+        var auditEntries = await _CaptureAuditEntriesAsync(cancellationToken).ConfigureAwait(false);
 
         // No need to be in transaction if there are no emitters
         if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
         {
+            if (auditEntries is { Count: > 0 })
+            {
+                await _SaveAuditEntriesAsync(auditEntries, cancellationToken).ConfigureAwait(false);
+            }
+
             var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
@@ -68,6 +78,11 @@ public abstract class HeadlessIdentityDbContext<
         // Has current transaction
         if (Database.CurrentTransaction is not null)
         {
+            if (auditEntries is { Count: > 0 })
+            {
+                await _SaveAuditEntriesAsync(auditEntries, cancellationToken).ConfigureAwait(false);
+            }
+
             await PublishMessagesAsync(report.LocalEmitters, Database.CurrentTransaction, cancellationToken);
             var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
             await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken);
@@ -80,15 +95,20 @@ public abstract class HeadlessIdentityDbContext<
         return await Database
             .CreateExecutionStrategy()
             .ExecuteAsync(
-                (this, report, acceptAllChangesOnSuccess, cancellationToken),
+                (this, report, auditEntries, acceptAllChangesOnSuccess, cancellationToken),
                 static async state =>
                 {
-                    var (context, report, acceptAllChangesOnSuccess, cancellationToken) = state;
+                    var (context, report, auditEntries, acceptAllChangesOnSuccess, cancellationToken) = state;
 
                     await using var transaction = await context.Database.BeginTransactionAsync(
                         IsolationLevel.ReadCommitted,
                         cancellationToken
                     );
+
+                    if (auditEntries is { Count: > 0 })
+                    {
+                        await context._SaveAuditEntriesAsync(auditEntries, cancellationToken).ConfigureAwait(false);
+                    }
 
                     await context.PublishMessagesAsync(report.LocalEmitters, transaction, cancellationToken);
                     var result = await context._BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
@@ -106,10 +126,16 @@ public abstract class HeadlessIdentityDbContext<
     protected virtual int CoreSaveChanges(bool acceptAllChangesOnSuccess = true)
     {
         var report = _entityProcessor.ProcessEntries(this);
+        var auditEntries = _CaptureAuditEntries();
 
         // No need to be in transaction if there are no emitters
         if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
         {
+            if (auditEntries is { Count: > 0 })
+            {
+                _SaveAuditEntries(auditEntries);
+            }
+
             var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
@@ -119,6 +145,11 @@ public abstract class HeadlessIdentityDbContext<
         // Has current transaction
         if (Database.CurrentTransaction is not null)
         {
+            if (auditEntries is { Count: > 0 })
+            {
+                _SaveAuditEntries(auditEntries);
+            }
+
             PublishMessages(report.LocalEmitters, Database.CurrentTransaction);
             var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
             PublishMessages(report.DistributedEmitters, Database.CurrentTransaction);
@@ -133,12 +164,17 @@ public abstract class HeadlessIdentityDbContext<
         return Database
             .CreateExecutionStrategy()
             .Execute(
-                (this, report, acceptAllChangesOnSuccess),
+                (this, report, auditEntries, acceptAllChangesOnSuccess),
                 static state =>
                 {
-                    var (context, report, acceptAllChangesOnSuccess) = state;
+                    var (context, report, auditEntries, acceptAllChangesOnSuccess) = state;
 
                     using var transaction = context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
+
+                    if (auditEntries is { Count: > 0 })
+                    {
+                        context._SaveAuditEntries(auditEntries);
+                    }
 
                     context.PublishMessages(report.LocalEmitters, transaction);
                     var result = context._BaseSaveChanges(acceptAllChangesOnSuccess);
@@ -409,6 +445,67 @@ public abstract class HeadlessIdentityDbContext<
                     return result;
                 }
             );
+    }
+
+    #endregion
+
+    #region Audit Capture
+
+    private IReadOnlyList<AuditLogEntryData>? _CaptureAuditEntries()
+    {
+        var auditCapture = this.GetService<IAuditChangeCapture>();
+
+        if (auditCapture is null)
+        {
+            return null;
+        }
+
+        var currentUser = this.GetService<ICurrentUser>();
+        var currentTenant = this.GetService<ICurrentTenant>();
+        var correlationIdProvider = this.GetService<ICorrelationIdProvider>();
+        var clock = this.GetService<IClock>();
+        var timestamp = clock?.UtcNow ?? DateTimeOffset.UtcNow;
+
+        try
+        {
+            return auditCapture.CaptureChanges(
+                ChangeTracker.Entries().Select(static e => (object)e),
+                currentUser?.UserId?.ToString(),
+                currentUser?.AccountId?.ToString(),
+                currentTenant?.Id,
+                correlationIdProvider?.CorrelationId,
+                timestamp
+            );
+        }
+        catch (Exception ex)
+        {
+            var logger = this.GetService<ILoggerFactory>()?.CreateLogger<HeadlessIdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>>();
+            logger?.LogWarning(ex, "Audit change capture failed. Continuing with entity save.");
+
+            return null;
+        }
+    }
+
+    private Task<IReadOnlyList<AuditLogEntryData>?> _CaptureAuditEntriesAsync(CancellationToken cancellationToken)
+    {
+        // Capture is synchronous; wrapping to match async call-sites cleanly.
+        return Task.FromResult(_CaptureAuditEntries());
+    }
+
+    private void _SaveAuditEntries(IReadOnlyList<AuditLogEntryData> entries)
+    {
+        var store = this.GetService<IAuditLogStore>();
+        store?.Save(entries);
+    }
+
+    private async Task _SaveAuditEntriesAsync(IReadOnlyList<AuditLogEntryData> entries, CancellationToken cancellationToken)
+    {
+        var store = this.GetService<IAuditLogStore>();
+
+        if (store is not null)
+        {
+            await store.SaveAsync(entries, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     #endregion
