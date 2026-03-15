@@ -226,22 +226,71 @@ internal sealed class NatsConsumerClient(
 
     public ValueTask CommitAsync(object? sender)
     {
-        if (sender is Msg msg)
+        try
         {
-            msg.Ack();
+            if (sender is Msg msg)
+            {
+                msg.Ack();
+            }
         }
-        _semaphore.Release();
+        catch (Exception ex)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.AsyncErrorEvent,
+                    Reason = $"NATS message ACK failed: {ex}",
+                }
+            );
+        }
+        finally
+        {
+            _ReleaseSemaphore();
+        }
+
         return ValueTask.CompletedTask;
     }
 
     public ValueTask RejectAsync(object? sender)
     {
-        if (sender is Msg msg)
+        try
         {
-            msg.Nak();
+            if (sender is Msg msg)
+            {
+                msg.Nak();
+            }
         }
-        _semaphore.Release();
+        catch (Exception ex)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.AsyncErrorEvent,
+                    Reason = $"NATS message NAK failed: {ex}",
+                }
+            );
+        }
+        finally
+        {
+            _ReleaseSemaphore();
+        }
+
         return ValueTask.CompletedTask;
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        if (groupConcurrent > 0)
+        {
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
+            }
+        }
     }
 
     public ValueTask DisposeAsync()
