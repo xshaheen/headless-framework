@@ -60,11 +60,26 @@ public abstract class HeadlessIdentityDbContext<
         var report = _entityProcessor.ProcessEntries(this);
         var auditEntries = AuditSavePipelineHelper.CaptureAuditEntries(this, _AuditLogger);
 
-        // No need to be in transaction if there are no emitters
+        // No emitters — wrap in transaction only when audit entries need persisting
         if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
         {
-            var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-            await _ResolveAndPersistAuditAsync(auditEntries, cancellationToken).ConfigureAwait(false);
+            int result;
+
+            if (auditEntries is { Count: > 0 })
+            {
+                await using var tx = await Database.BeginTransactionAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken)
+                    .ConfigureAwait(false);
+                await _ResolveAndPersistAuditAsync(auditEntries, cancellationToken).ConfigureAwait(false);
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
             return result;
@@ -123,11 +138,25 @@ public abstract class HeadlessIdentityDbContext<
         var report = _entityProcessor.ProcessEntries(this);
         var auditEntries = AuditSavePipelineHelper.CaptureAuditEntries(this, _AuditLogger);
 
-        // No need to be in transaction if there are no emitters
+        // No emitters — wrap in transaction only when audit entries need persisting
         if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
         {
-            var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
-            _ResolveAndPersistAudit(auditEntries);
+            int result;
+
+            if (auditEntries is { Count: > 0 })
+            {
+#pragma warning disable MA0045
+                using var tx = Database.BeginTransaction();
+#pragma warning restore MA0045
+                result = _BaseSaveChanges(acceptAllChangesOnSuccess);
+                _ResolveAndPersistAudit(auditEntries);
+                tx.Commit();
+            }
+            else
+            {
+                result = _BaseSaveChanges(acceptAllChangesOnSuccess);
+            }
+
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
             return result;
