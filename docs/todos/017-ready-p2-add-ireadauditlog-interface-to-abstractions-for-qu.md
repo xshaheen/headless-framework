@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "017"
 tags: ["code-review","architecture","dotnet","agent-native"]
@@ -48,3 +48,9 @@ Discovered during PR #187 code review. Agent-native reviewer flagged this as a k
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-15 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
