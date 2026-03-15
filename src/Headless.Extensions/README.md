@@ -8,16 +8,46 @@ Eliminates repetitive utility code across projects by providing a comprehensive 
 
 ## Key Features
 
-- **Result Pattern**: `Result<T>`, `DataResult<T>`, `NoDataResult` for exception-free control flow
-- **Error Handling**: `ErrorDescriptor` for standardized error reporting
-- **Domain Value Objects**: `GeoCoordinate`, `Currency`, `Range<T>`
-- **Pagination**: `IndexPageRequest`/`ContinuationPageRequest` and response models
-- **Collections**: `ForEachAsync`, `ParallelForEachAsync`, `Batch`, `DistinctBy`, and more
-- **Dates & Time**: Fluent date manipulation, `TimeProvider` extensions, timezone conversion
-- **Strings**: Humanize integration, manipulation helpers, high-performance toolkit
-- **Reflection**: Fast property accessors, type scanning helpers
-- **ID Generation**: `SnowflakeId`, `SequentialGuid`
+- **Result Pattern**:
+  - `ApiResult` / `ApiResult<T>` - Success/failure with built-in error factories (`NotFound`, `Conflict`, `Forbidden`, `Unauthorized`, `ValidationFailed`)
+  - `Result<TValue, TError>` / `Result<TError>` - Flexible result types with custom error types
+  - `ResultError` hierarchy - `NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `AggregateError`
+  - `ErrorDescriptor` - Standardized error reporting with code, description, severity, and params
+
+- **Primitives** (Source-generated with JSON/TypeConverter support):
+  - `UserId` / `AccountId` - Strongly-typed identifiers
+  - `Money` - Currency-aware decimal with arithmetic operators
+  - `Month` - Month representation
+  - `PhoneNumber` - E.164 phone number
+  - `Image` / `File` - Media metadata
+  - `PageMetadata` - SEO metadata
+  - `TenantInformation` - Tenant data
+
+- **Domain Value Objects**: `Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `OrderBy`, `NameValue<T>`, `ExtraProperties`, `Locales`, `TimeUnit`
+
+- **ID Generation**: `IGuidGenerator` (sequential GUIDs for SQL Server/MySQL/Oracle), `ILongIdGenerator` (`SnowflakeId`)
+
+- **Pagination**: `IndexPageRequest`/`IndexPage<T>` and `ContinuationPageRequest`/`ContinuationPage<T>`
+
+- **Collections**: `ParallelForEachAsync`, `DetectChanges`, `EquatableArray<T>`, `ComparerFactory`, `TypeList`
+
+- **LINQ**: `PredicateBuilder` for composing EF Core expressions (`And`, `Or`, `Not`)
+
+- **Dates & Time**: Fluent date manipulation, `TimeProvider` extensions, timezone conversion, `ChangeableTimezoneTimeProvider`
+
+- **Strings**: Humanize integration, truncation, manipulation helpers
+
+- **Constants**: `RegexPatterns` (email, URL, IP, etc.), `ContentTypes`, `HttpHeaderNames`, `JwtClaimTypes`, `UserClaimTypes`, `LanguageCodes`
+
+- **Reflection**: Fast property accessors, type scanning, IL emit helpers, `AssemblyInformation`
+
+- **HTTP**: `BasicAuthenticationValue`, `HttpStatusCodeExtensions`
+
+- **Exceptions**: `EntityNotFoundException`, `ConflictException`
+
 - **Validation**: `MobilePhoneNumberValidator`, `GeoCoordinateValidator`, `EmailValidator`, `EgyptianNationalIdValidator`
+
+- **Helpers**: `OsHelper`, `DisposableFactory`, `IpAddressHelper`
 
 ## Installation
 
@@ -30,13 +60,13 @@ dotnet add package Headless.Extensions
 ### Result Pattern
 
 ```csharp
-public async Task<DataResult<User>> GetUserAsync(Guid id)
+public async Task<ApiResult<User>> GetUserAsync(Guid id)
 {
     var user = await _repo.GetByIdAsync(id);
     if (user is null)
-        return DataResult<User>.Failure(new ErrorDescriptor("UserNotFound", "User does not exist"));
+        return ApiResult<User>.NotFound();
 
-    return DataResult<User>.Success(user);
+    return ApiResult<User>.Ok(user);
 }
 ```
 
@@ -49,15 +79,23 @@ await users.ParallelForEachAsync(
 );
 ```
 
-### Egyptian National ID Validator
+### Change Detection
 
 ```csharp
-if (EgyptianNationalIdValidator.IsValid("29901011234567"))
-{
-    var info = EgyptianNationalIdValidator.Analyze("29901011234567");
-    var birthDate = info.BirthDate;
-    var governorate = info.Governorate;
-}
+var (added, removed, existing) = oldItems.DetectChanges(
+    newItems,
+    areSameEntity: (old, @new) => old.Id == @new.Id
+);
+```
+
+### Expression Composition
+
+```csharp
+var filter = PredicateBuilder.True<Product>()
+    .And(p => p.Price > 0)
+    .And(p => p.IsActive);
+
+var products = await dbContext.Products.Where(filter).ToListAsync();
 ```
 
 ## Configuration
@@ -67,14 +105,19 @@ No configuration required.
 ## Dependencies
 
 - `Headless.Checks`
+- `Headless.Generator.Primitives` (source generator)
+- `Headless.Generator.Primitives.Abstractions`
 - `CommunityToolkit.HighPerformance`
 - `Humanizer.Core`
 - `IdGen`
 - `libphonenumber-csharp`
+- `Microsoft.Bcl.TimeProvider`
+- `MimeTypes`
 - `morelinq`
 - `Nito.AsyncEx`
 - `Nito.Disposables`
 - `Polly.Core`
+- `System.Reactive`
 - `TimeZoneConverter`
 
 ## Side Effects

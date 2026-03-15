@@ -1,35 +1,32 @@
 # Headless.Core
 
-Core abstractions and primitives for building domain-driven applications with multi-tenancy, user context, and cross-cutting concerns.
+Core abstractions for building applications with multi-tenancy, user context, and cross-cutting concerns.
 
 ## Problem Solved
 
-Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, encryption) and domain primitives (UserId, AccountId, Money, PhoneNumber) enabling consistent patterns across all application layers.
+Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, encryption, timezone conversion) and utilities (retry logic, compression, structured logging) enabling consistent patterns across all application layers.
 
 ## Key Features
 
 - **Abstractions**:
-  - `IClock` - Testable time abstraction
-  - `ICurrentUser` - Current authenticated user context
-  - `ICurrentTenant` - Multi-tenancy support
-  - `ICurrentLocale` - Localization context
+  - `IClock` - Testable time abstraction (wraps `TimeProvider`)
+  - `ICurrentUser` - Current authenticated user context with roles and claims
+  - `ICurrentTenant` - Multi-tenancy support with scoped tenant switching
+  - `ICurrentLocale` - Localization context (language, locale, culture)
   - `ICurrentTimeZone` - Timezone handling
-  - `IGuidGenerator` / `ILongIdGenerator` - ID generation
-  - `IStringEncryptionService` / `IStringHashService` - Security utilities
-  - `IPasswordGenerator` - Secure password generation
-  - `ICancellationTokenProvider` - Cancellation token access
+  - `ICurrentPrincipalAccessor` - Scoped `ClaimsPrincipal` access with temporary switching
+  - `IStringEncryptionService` / `IStringHashService` - AES-256-CBC encryption and PBKDF2 hashing
+  - `IPasswordGenerator` - Configurable secure password generation
+  - `ICancellationTokenProvider` - Cancellation token access with fallback logic
+  - `ITimezoneProvider` - Windows/IANA timezone conversion and listing
+  - `IApplicationInformationAccessor` / `IBuildInformationAccessor` - Application metadata and build info
+  - `IEnumLocaleAccessor` - Localized enum display values
+  - `IHaveLogger` / `IHaveTimeProvider` - Mixin interfaces for logger and time provider access
 
-- **Primitives** (Source-generated with JSON/TypeConverter support):
-  - `UserId` - Strongly-typed user identifier
-  - `AccountId` - Strongly-typed account identifier
-  - `Money` - Currency-aware decimal wrapper
-  - `Month` - Month representation
-  - `PhoneNumber` - E.164 phone number
-  - `Image` / `File` - Media metadata
-  - `PageMetadata` - SEO metadata
-  - `TenantInformation` - Tenant data
-
-- **Constants**: JWT claim types, authentication constants, user claim types
+- **Utilities**:
+  - `Run` - Retry helper with exponential backoff (`WithRetriesAsync`, `DelayedAsync`)
+  - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
+  - `LogState` / `LoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
 
 ## Installation
 
@@ -56,6 +53,26 @@ public sealed class OrderService(IClock clock, ICurrentUser user, ICurrentTenant
 }
 ```
 
+### Structured Logging
+
+```csharp
+logger.LogInformation(
+    s => s.Tag("orders").Property("orderId", orderId),
+    "Order {OrderId} created",
+    orderId
+);
+```
+
+### Retry with Backoff
+
+```csharp
+var result = await Run.WithRetriesAsync(
+    async ct => await httpClient.GetAsync(url, ct),
+    maxAttempts: 3,
+    logger: logger
+);
+```
+
 ## Configuration
 
 No configuration required. Implementations are registered by `Headless.Api` or other host packages.
@@ -64,13 +81,11 @@ No configuration required. Implementations are registered by `Headless.Api` or o
 
 - `Headless.Checks`
 - `Headless.Extensions`
-- `Headless.Domain`
 - `Headless.Serializer.Json`
-- `Headless.Generator.Primitives` (source generator)
 - `FluentValidation`
 - `Microsoft.Extensions.Logging.Abstractions`
 - `Snappier`
 
 ## Side Effects
 
-None. This is an abstractions/primitives package.
+None. This is an abstractions package.
