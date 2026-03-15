@@ -495,7 +495,7 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
         if (delegateCount > 0)
         {
             sb.AppendLine(
-                $"            var tickerFunctionDelegateDict = new Dictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate)>({delegateCount});"
+                $"            var tickerFunctionDelegateDict = new Dictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate, int)>({delegateCount});"
             );
 
             foreach (var delegateCode in delegateList)
@@ -524,7 +524,7 @@ public sealed class TickerQIncrementalSourceGenerator : IIncrementalGenerator
         if (delegateCount > 0)
         {
             sb.AppendLine(
-                $"      var tickerFunctionDelegateDict = new Dictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate)>({delegateCount});"
+                $"      var tickerFunctionDelegateDict = new Dictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate, int)>({delegateCount});"
             );
 
             foreach (var delegateCode in delegateList)
