@@ -62,6 +62,7 @@ public static class OrmEntityFrameworkSetup
             services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
             services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
             services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
+            services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();
             services._ReplaceCompiledQueryCacheKeyGenerator();
         }
 
