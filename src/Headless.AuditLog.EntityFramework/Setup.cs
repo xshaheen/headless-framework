@@ -23,6 +23,7 @@ public static class AuditLogEntityFrameworkSetup
             services.TryAddScoped<IAuditChangeCapture, EfAuditChangeCapture>();
             services.TryAddScoped<IAuditLogStore, EfAuditLogStore>();
             services.TryAddScoped<IAuditLog, EfAuditLog>();
+            services.TryAddScoped<IReadAuditLog, EfReadAuditLog>();
             return services;
         }
     }

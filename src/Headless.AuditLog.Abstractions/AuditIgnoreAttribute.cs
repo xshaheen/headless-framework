@@ -5,7 +5,7 @@ namespace Headless.AuditLog;
 /// <summary>
 /// Excludes a property or entire entity from audit log change tracking.
 /// On a property: excluded from OldValues, NewValues, and ChangedFields.
-/// On a class: the entity is excluded entirely (used in AuditAllEntities mode).
+/// On a class: the entity is excluded entirely when <see cref="AuditLogOptions.AuditByDefault"/> is enabled.
 /// </summary>
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Class)]
 public sealed class AuditIgnoreAttribute : Attribute;

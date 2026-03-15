@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.Logging;
@@ -13,19 +14,9 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
     : IAuditChangeCapture
 {
     private static readonly ConcurrentDictionary<PropertyInfo, AuditPropertyMetadata> _PropertyCache = new();
-
-    private static readonly HashSet<string> _DefaultExcludedProperties = new(StringComparer.Ordinal)
-    {
-        "ConcurrencyStamp",
-        "DateCreated",
-        "DateUpdated",
-        "DateDeleted",
-        "DateSuspended",
-        "CreatedById",
-        "UpdatedById",
-        "DeletedById",
-        "SuspendedById",
-    };
+    private readonly ConcurrentDictionary<Type, bool> _entityFilterCache = new();
+    private readonly ConcurrentDictionary<(Type Type, string PropertyName), bool> _propertyFilterCache = new();
+    private bool _hasLoggedDisabledWarning;
 
     /// <inheritdoc />
     public IReadOnlyList<AuditLogEntryData> CaptureChanges(
@@ -39,9 +30,12 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
     {
         var opts = options.Value;
         if (!opts.IsEnabled)
+        {
+            _LogDisabledWarningOnce();
             return [];
+        }
 
-        var result = new List<AuditLogEntryData>();
+        List<AuditLogEntryData>? result = null;
 
         foreach (var obj in entries)
         {
@@ -59,10 +53,16 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
                 var data = _CaptureEntry(entry, opts, userId, accountId, tenantId, correlationId, timestamp);
 
                 if (data is not null)
+                {
+                    result ??= [];
                     result.Add(data);
+                }
             }
             catch (Exception ex)
             {
+                if (ex is OptionsValidationException)
+                    throw;
+
                 logger.LogWarning(
                     ex,
                     "Audit capture failed for entity {EntityType}. Audit entry skipped; entity save continues.",
@@ -71,10 +71,21 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
             }
         }
 
-        return result;
+        return result ?? [];
     }
 
-    private static bool _ShouldAudit(EntityEntry entry, AuditLogOptions opts)
+    private void _LogDisabledWarningOnce()
+    {
+        if (_hasLoggedDisabledWarning)
+            return;
+
+        _hasLoggedDisabledWarning = true;
+        logger.LogWarning(
+            "Audit logging is disabled. Set AuditLogOptions.IsEnabled = true to enable audit capture."
+        );
+    }
+
+    private bool _ShouldAudit(EntityEntry entry, AuditLogOptions opts)
     {
         var clrType = entry.Metadata.ClrType;
 
@@ -88,9 +99,9 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         return _IsAuditable(clrType, opts);
     }
 
-    private static bool _IsAuditable(Type clrType, AuditLogOptions opts)
+    private bool _IsAuditable(Type clrType, AuditLogOptions opts)
     {
-        if (opts.AuditAllEntities)
+        if (opts.AuditByDefault)
         {
             if (clrType.GetCustomAttribute<AuditIgnoreAttribute>() is not null)
                 return false;
@@ -101,10 +112,30 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
                 return false;
         }
 
-        return opts.EntityFilter?.Invoke(clrType) != true;
+        return !_ShouldExcludeEntity(clrType, opts);
     }
 
-    private static AuditLogEntryData? _CaptureEntry(
+    private bool _ShouldExcludeEntity(Type clrType, AuditLogOptions opts)
+    {
+        if (opts.EntityFilter is null)
+            return false;
+
+        return _entityFilterCache.GetOrAdd(clrType, static (type, filter) => filter(type), opts.EntityFilter);
+    }
+
+    private bool _ShouldExcludeProperty(Type clrType, string propertyName, AuditLogOptions opts)
+    {
+        if (opts.PropertyFilter is null)
+            return false;
+
+        return _propertyFilterCache.GetOrAdd(
+            (clrType, propertyName),
+            static (key, filter) => filter(key.Type, key.PropertyName),
+            opts.PropertyFilter
+        );
+    }
+
+    private AuditLogEntryData? _CaptureEntry(
         EntityEntry entry,
         AuditLogOptions opts,
         string? userId,
@@ -127,11 +158,10 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         if (changeType is null)
             return null;
 
-        var action = _DetermineAction(entry, changeType.Value);
-
         var oldValues = new Dictionary<string, object?>(StringComparer.Ordinal);
         var newValues = new Dictionary<string, object?>(StringComparer.Ordinal);
         var changedFields = new List<string>();
+        var actionContext = new ActionContext();
 
         foreach (var property in entry.Properties)
         {
@@ -141,7 +171,7 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
             var propertyName = property.Metadata.Name;
 
             // Default framework property exclusion
-            if (_DefaultExcludedProperties.Contains(propertyName))
+            if (opts.DefaultExcludedProperties.Contains(propertyName))
                 continue;
 
             var meta = _GetPropertyMetadata(property.Metadata.PropertyInfo);
@@ -151,16 +181,18 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
                 continue;
 
             // Option-based property filter
-            if (opts.PropertyFilter?.Invoke(clrType, propertyName) == true)
+            if (_ShouldExcludeProperty(clrType, propertyName, opts))
                 continue;
+
+            _CaptureActionFlags(actionContext, propertyName, property);
 
             // [AuditSensitive] — apply strategy
             if (meta.IsSensitive)
             {
                 var strategy = meta.SensitiveStrategy ?? opts.SensitiveDataStrategy;
                 _ApplySensitiveValues(
+                    changeType.Value,
                     strategy,
-                    entry,
                     property,
                     opts,
                     clrType,
@@ -189,6 +221,7 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         if (changeType == AuditChangeType.Updated && changedFields.Count == 0)
             return null;
 
+        var action = _DetermineAction(changeType.Value, actionContext);
         var (entityType, entityId) = _GetEntityIdentity(entry);
 
         return new AuditLogEntryData
@@ -208,51 +241,57 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         };
     }
 
-    private static string _DetermineAction(EntityEntry entry, AuditChangeType changeType)
+    private static void _CaptureActionFlags(ActionContext context, string propertyName, PropertyEntry property)
+    {
+        if (!property.IsModified)
+            return;
+
+        if (propertyName == "IsDeleted")
+        {
+            var nowDeleted = property.CurrentValue is true;
+            var wasDeleted = property.OriginalValue is true;
+
+            context.IsSoftDeleted = !wasDeleted && nowDeleted;
+            context.IsRestored = wasDeleted && !nowDeleted;
+            return;
+        }
+
+        if (propertyName == "IsSuspended")
+        {
+            var nowSuspended = property.CurrentValue is true;
+            var wasSuspended = property.OriginalValue is true;
+
+            context.IsSuspended = !wasSuspended && nowSuspended;
+            context.IsUnsuspended = wasSuspended && !nowSuspended;
+        }
+    }
+
+    private static string _DetermineAction(AuditChangeType changeType, ActionContext context)
     {
         if (changeType == AuditChangeType.Updated)
         {
-            // Soft-delete detection: check IsDeleted transition
-            var isDeletedProp = entry.Properties.FirstOrDefault(p => p.Metadata.Name == "IsDeleted");
-
-            if (isDeletedProp is not null && isDeletedProp.IsModified)
-            {
-                var nowDeleted = isDeletedProp.CurrentValue is true;
-                var wasDeleted = isDeletedProp.OriginalValue is true;
-
-                if (!wasDeleted && nowDeleted)
-                    return "entity.soft_deleted";
-                if (wasDeleted && !nowDeleted)
-                    return "entity.restored";
-            }
-
-            // Suspend detection: check IsSuspended transition
-            var isSuspendedProp = entry.Properties.FirstOrDefault(p => p.Metadata.Name == "IsSuspended");
-
-            if (isSuspendedProp is not null && isSuspendedProp.IsModified)
-            {
-                var nowSuspended = isSuspendedProp.CurrentValue is true;
-                var wasSuspended = isSuspendedProp.OriginalValue is true;
-
-                if (!wasSuspended && nowSuspended)
-                    return "entity.suspended";
-                if (wasSuspended && !nowSuspended)
-                    return "entity.unsuspended";
-            }
+            if (context.IsSoftDeleted)
+                return AuditActionNames.SoftDeleted;
+            if (context.IsRestored)
+                return AuditActionNames.Restored;
+            if (context.IsSuspended)
+                return AuditActionNames.Suspended;
+            if (context.IsUnsuspended)
+                return AuditActionNames.Unsuspended;
         }
 
         return changeType switch
         {
-            AuditChangeType.Created => "entity.created",
-            AuditChangeType.Updated => "entity.updated",
-            AuditChangeType.Deleted => "entity.deleted",
-            _ => "entity.unknown",
+            AuditChangeType.Created => AuditActionNames.Created,
+            AuditChangeType.Updated => AuditActionNames.Updated,
+            AuditChangeType.Deleted => AuditActionNames.Deleted,
+            _ => AuditActionNames.Unknown,
         };
     }
 
-    private static void _ApplySensitiveValues(
+    private void _ApplySensitiveValues(
+        AuditChangeType changeType,
         SensitiveDataStrategy strategy,
-        EntityEntry entry,
         PropertyEntry property,
         AuditLogOptions opts,
         Type clrType,
@@ -262,14 +301,6 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         List<string> changedFields
     )
     {
-        AuditChangeType changeType = entry.State switch
-        {
-            EntityState.Added => AuditChangeType.Created,
-            EntityState.Modified => AuditChangeType.Updated,
-            EntityState.Deleted => AuditChangeType.Deleted,
-            _ => AuditChangeType.Updated,
-        };
-
         switch (strategy)
         {
             case SensitiveDataStrategy.Exclude:
@@ -289,62 +320,66 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
                 break;
 
             case SensitiveDataStrategy.Transform:
-                object? transformedNew = null;
-                object? transformedOld = null;
+                var transformer =
+                    opts.SensitiveValueTransformer
+                    ?? throw new OptionsValidationException(
+                        nameof(AuditLogOptions),
+                        typeof(AuditLogOptions),
+                        [
+                            "SensitiveValueTransformer must be configured when SensitiveDataStrategy is Transform."
+                        ]
+                    );
 
-                if (opts.SensitiveValueTransformer is not null)
+                try
                 {
-                    try
-                    {
-                        transformedNew = opts.SensitiveValueTransformer(
-                            new SensitiveValueContext(
-                                clrType.FullName ?? clrType.Name,
-                                propertyName,
-                                property.Metadata.ClrType,
-                                property.CurrentValue
-                            )
-                        );
-                        transformedOld = opts.SensitiveValueTransformer(
-                            new SensitiveValueContext(
-                                clrType.FullName ?? clrType.Name,
-                                propertyName,
-                                property.Metadata.ClrType,
-                                property.OriginalValue
-                            )
-                        );
-                    }
-                    catch (Exception ex) when (_FallbackToRedact(ex))
-                    {
-                        // Transformer threw — fall back to Redact for this property
-                        _ApplyValues(
-                            changeType,
-                            oldValues,
-                            newValues,
-                            changedFields,
+                    var transformedNew = transformer(
+                        new SensitiveValueContext(
+                            clrType.FullName ?? clrType.Name,
                             propertyName,
-                            "***",
-                            "***",
-                            property.IsModified
-                        );
-                        break;
-                    }
-                }
-                else
-                {
-                    transformedNew = "***";
-                    transformedOld = "***";
-                }
+                            property.Metadata.ClrType,
+                            property.CurrentValue
+                        )
+                    );
+                    var transformedOld = transformer(
+                        new SensitiveValueContext(
+                            clrType.FullName ?? clrType.Name,
+                            propertyName,
+                            property.Metadata.ClrType,
+                            property.OriginalValue
+                        )
+                    );
 
-                _ApplyValues(
-                    changeType,
-                    oldValues,
-                    newValues,
-                    changedFields,
-                    propertyName,
-                    transformedOld,
-                    transformedNew,
-                    property.IsModified
-                );
+                    _ApplyValues(
+                        changeType,
+                        oldValues,
+                        newValues,
+                        changedFields,
+                        propertyName,
+                        transformedOld,
+                        transformedNew,
+                        property.IsModified
+                    );
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(
+                        ex,
+                        "Sensitive value transformer threw for {EntityType}.{PropertyName}. Falling back to Redact.",
+                        clrType.FullName ?? clrType.Name,
+                        propertyName
+                    );
+
+                    _ApplyValues(
+                        changeType,
+                        oldValues,
+                        newValues,
+                        changedFields,
+                        propertyName,
+                        "***",
+                        "***",
+                        property.IsModified
+                    );
+                }
                 break;
         }
     }
@@ -389,13 +424,7 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
             var entityType = $"{ownerType.FullName}.{ownedType.Name}";
 
             var ownerKeyValues = ownership.Properties.Select(p => entry.Property(p.Name).CurrentValue).ToArray();
-
-            var entityId =
-                ownerKeyValues.Length == 1
-                    ? ownerKeyValues[0]?.ToString()
-                    : string.Join(",", ownerKeyValues.Select(v => v?.ToString()));
-
-            return (entityType, entityId);
+            return (entityType, _FormatEntityId(ownerKeyValues));
         }
 
         var key = entry.Metadata.FindPrimaryKey();
@@ -405,14 +434,19 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
 
         var values = key.Properties.Select(p => entry.Property(p.Name).CurrentValue).ToArray();
 
-        var id = values.Length == 1 ? values[0]?.ToString() : string.Join(",", values.Select(v => v?.ToString()));
-
-        return (entry.Metadata.ClrType.FullName, id);
+        return (entry.Metadata.ClrType.FullName, _FormatEntityId(values));
     }
 
-    // Returns true so the exception filter always matches — the exception is intentionally
-    // swallowed here; we fall back to Redact rather than propagating transformer errors.
-    private static bool _FallbackToRedact(Exception _) => true;
+    private static string? _FormatEntityId(object?[] values)
+    {
+        if (values.Length == 0)
+            return null;
+
+        if (values.Length == 1)
+            return values[0]?.ToString();
+
+        return JsonSerializer.Serialize(values.Select(static value => value?.ToString()).ToArray());
+    }
 
     private static AuditPropertyMetadata _GetPropertyMetadata(PropertyInfo propInfo) =>
         _PropertyCache.GetOrAdd(
@@ -435,4 +469,27 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         bool IsSensitive,
         SensitiveDataStrategy? SensitiveStrategy
     );
+
+    private sealed class ActionContext
+    {
+        public bool IsSoftDeleted { get; set; }
+
+        public bool IsRestored { get; set; }
+
+        public bool IsSuspended { get; set; }
+
+        public bool IsUnsuspended { get; set; }
+    }
+}
+
+internal static class AuditActionNames
+{
+    public const string SoftDeleted = "entity.soft_deleted";
+    public const string Restored = "entity.restored";
+    public const string Suspended = "entity.suspended";
+    public const string Unsuspended = "entity.unsuspended";
+    public const string Created = "entity.created";
+    public const string Updated = "entity.updated";
+    public const string Deleted = "entity.deleted";
+    public const string Unknown = "entity.unknown";
 }

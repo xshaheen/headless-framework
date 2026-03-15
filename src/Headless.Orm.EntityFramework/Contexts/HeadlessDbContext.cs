@@ -78,23 +78,25 @@ public abstract class HeadlessDbContext : DbContext
             return result;
         }
 
+        // Add audit entries before the execution strategy so they're only added
+        // once, preventing duplicates when the strategy retries on transient failures.
+        if (auditEntries is { Count: > 0 })
+        {
+            await _SaveAuditEntriesAsync(auditEntries, cancellationToken).ConfigureAwait(false);
+        }
+
         return await Database
             .CreateExecutionStrategy()
             .ExecuteAsync(
-                (this, report, auditEntries, acceptAllChangesOnSuccess, cancellationToken),
+                (this, report, acceptAllChangesOnSuccess, cancellationToken),
                 static async state =>
                 {
-                    var (context, report, auditEntries, acceptAllChangesOnSuccess, cancellationToken) = state;
+                    var (context, report, acceptAllChangesOnSuccess, cancellationToken) = state;
 
                     await using var transaction = await context.Database.BeginTransactionAsync(
                         IsolationLevel.ReadCommitted,
                         cancellationToken
                     );
-
-                    if (auditEntries is { Count: > 0 })
-                    {
-                        await context._SaveAuditEntriesAsync(auditEntries, cancellationToken).ConfigureAwait(false);
-                    }
 
                     await context
                         .PublishMessagesAsync(report.LocalEmitters, transaction, cancellationToken)
@@ -152,22 +154,24 @@ public abstract class HeadlessDbContext : DbContext
             return result;
         }
 
+        // Add audit entries before the execution strategy so they're only added
+        // once, preventing duplicates when the strategy retries on transient failures.
+        if (auditEntries is { Count: > 0 })
+        {
+            _SaveAuditEntries(auditEntries);
+        }
+
         // No current transaction, create a new one
 #pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
         return Database
             .CreateExecutionStrategy()
             .Execute(
-                (this, report, auditEntries, acceptAllChangesOnSuccess),
+                (this, report, acceptAllChangesOnSuccess),
                 static state =>
                 {
-                    var (context, report, auditEntries, acceptAllChangesOnSuccess) = state;
+                    var (context, report, acceptAllChangesOnSuccess) = state;
 
                     using var transaction = context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
-
-                    if (auditEntries is { Count: > 0 })
-                    {
-                        context._SaveAuditEntries(auditEntries);
-                    }
 
                     context.PublishMessages(report.LocalEmitters, transaction);
                     var result = context._BaseSaveChanges(acceptAllChangesOnSuccess);

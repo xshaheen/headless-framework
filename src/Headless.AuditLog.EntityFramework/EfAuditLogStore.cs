@@ -34,7 +34,9 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
                     TenantId = entry.TenantId,
                     IpAddress = entry.IpAddress,
                     UserAgent = entry.UserAgent,
-                    CorrelationId = entry.CorrelationId,
+                    CorrelationId = entry.CorrelationId is { Length: > 128 }
+                        ? entry.CorrelationId[..128]
+                        : entry.CorrelationId,
                     Action = entry.Action,
                     ChangeType = entry.ChangeType,
                     EntityType = entry.EntityType,

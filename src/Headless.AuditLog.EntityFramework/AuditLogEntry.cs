@@ -5,7 +5,7 @@ namespace Headless.AuditLog;
 /// <summary>
 /// Persistent audit log entity. Single table with JSON columns for old/new values.
 /// </summary>
-[AuditIgnore] // Prevent recursive capture when AuditAllEntities is enabled
+[AuditIgnore] // Prevent recursive capture when AuditByDefault is enabled
 public sealed class AuditLogEntry
 {
     /// <summary>Auto-generated sequential ID.</summary>
@@ -25,9 +25,19 @@ public sealed class AuditLogEntry
     public string? TenantId { get; init; }
 
     /// <summary>Client IP address (if available).</summary>
+    /// <remarks>
+    /// Not populated by automatic change capture. Consumers must set this
+    /// via explicit <see cref="IAuditLog.LogAsync"/> calls or a custom
+    /// <see cref="IAuditChangeCapture"/> implementation.
+    /// </remarks>
     public string? IpAddress { get; init; }
 
     /// <summary>HTTP User-Agent string (if available).</summary>
+    /// <remarks>
+    /// Not populated by automatic change capture. Consumers must set this
+    /// via explicit <see cref="IAuditLog.LogAsync"/> calls or a custom
+    /// <see cref="IAuditChangeCapture"/> implementation.
+    /// </remarks>
     public string? UserAgent { get; init; }
 
     /// <summary>Correlation ID grouping related operations.</summary>
@@ -44,14 +54,27 @@ public sealed class AuditLogEntry
     /// <summary>Full CLR type name of the affected entity.</summary>
     public string? EntityType { get; init; }
 
-    /// <summary>String representation of the entity's primary key.</summary>
+    /// <summary>
+    /// String representation of the entity's primary key.
+    /// Composite keys are encoded as a JSON array of string values.
+    /// </summary>
     public string? EntityId { get; init; }
 
     // Changes — stored as string columns, serialized via value converters
     /// <summary>Property values before the change. <c>null</c> for Created entries.</summary>
+    /// <remarks>
+    /// Values are serialized as their CLR types on write but deserialize as
+    /// <see cref="System.Text.Json.JsonElement"/> on read. Use <c>GetDecimal()</c>,
+    /// <c>GetInt32()</c>, etc. to extract typed values.
+    /// </remarks>
     public Dictionary<string, object?>? OldValues { get; init; }
 
     /// <summary>Property values after the change. <c>null</c> for Deleted entries.</summary>
+    /// <remarks>
+    /// Values are serialized as their CLR types on write but deserialize as
+    /// <see cref="System.Text.Json.JsonElement"/> on read. Use <c>GetDecimal()</c>,
+    /// <c>GetInt32()</c>, etc. to extract typed values.
+    /// </remarks>
     public Dictionary<string, object?>? NewValues { get; init; }
 
     /// <summary>Names of properties that changed. Non-null for Updated entries.</summary>
