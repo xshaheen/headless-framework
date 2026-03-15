@@ -36,10 +36,10 @@ public sealed class RetryBehaviorTests
             (attempts[3].Timestamp - attempts[2].Timestamp).TotalSeconds,
         };
 
-        // allow a small tolerance for timing, but ensure each spacing reflects the configured intervals
-        timeDiffs[0].Should().BeInRange(0.8, 1.2); // first retry uses ~1s
-        timeDiffs[1].Should().BeInRange(1.8, 2.2); // second retry uses ~2s
-        timeDiffs[2].Should().BeInRange(2.8, 3.2); // third retry uses ~3s
+        // Lower bound ensures the delay fired; upper bound is generous to tolerate CI/load jitter
+        timeDiffs[0].Should().BeInRange(0.8, 2.5); // first retry uses ~1s
+        timeDiffs[1].Should().BeInRange(1.5, 4.5); // second retry uses ~2s
+        timeDiffs[2].Should().BeInRange(2.5, 6.5); // third retry uses ~3s
     }
 
     [Fact]

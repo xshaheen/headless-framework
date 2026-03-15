@@ -50,6 +50,7 @@ internal class TickerExecutionContext
             {
                 context.CachedDelegate = tickerItem.Delegate;
                 context.CachedPriority = tickerItem.Priority;
+                context.CachedMaxConcurrency = tickerItem.MaxConcurrency;
             }
 
             if (context.TimeTickerChildren is { Count: > 0 })

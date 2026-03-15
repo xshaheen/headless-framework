@@ -63,6 +63,7 @@ internal static class DelegateGenerator
         bool isAwaitable,
         string functionName,
         int functionPriority,
+        int maxConcurrency,
         string cronExpression,
         string? assemblyName = null,
         HashSet<string>? classNameConflicts = null,
@@ -95,7 +96,7 @@ internal static class DelegateGenerator
             typeNameConflicts
         );
 
-        sb.AppendLine("            })));");
+        sb.AppendLine($"            }}), {maxConcurrency}));");
 
         return sb.ToString();
     }

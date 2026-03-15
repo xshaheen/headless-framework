@@ -1,3 +1,4 @@
+using Headless.Ticker.Interfaces;
 using Headless.Ticker.Interfaces.Managers;
 using Headless.Ticker.TickerQThreadPool;
 using Microsoft.Extensions.Hosting;
@@ -8,7 +9,8 @@ internal class TickerQFallbackBackgroundService(
     IInternalTickerManager internalTickerManager,
     SchedulerOptionsBuilder schedulerOptions,
     TickerExecutionTaskHandler tickerExecutionTaskHandler,
-    TickerQTaskScheduler tickerQTaskScheduler
+    TickerQTaskScheduler tickerQTaskScheduler,
+    ITickerFunctionConcurrencyGate concurrencyGate
 ) : BackgroundService
 {
     private int _started;
@@ -49,6 +51,7 @@ internal class TickerQFallbackBackgroundService(
                         {
                             function.CachedDelegate = tickerItem.Delegate;
                             function.CachedPriority = tickerItem.Priority;
+                            function.CachedMaxConcurrency = tickerItem.MaxConcurrency;
                         }
 
                         foreach (var child in function.TimeTickerChildren)
@@ -62,6 +65,7 @@ internal class TickerQFallbackBackgroundService(
                             {
                                 child.CachedDelegate = childItem.Delegate;
                                 child.CachedPriority = childItem.Priority;
+                                child.CachedMaxConcurrency = childItem.MaxConcurrency;
                             }
 
                             foreach (var grandChild in child.TimeTickerChildren)
@@ -75,14 +79,35 @@ internal class TickerQFallbackBackgroundService(
                                 {
                                     grandChild.CachedDelegate = grandChildItem.Delegate;
                                     grandChild.CachedPriority = grandChildItem.Priority;
+                                    grandChild.CachedMaxConcurrency = grandChildItem.MaxConcurrency;
                                 }
                             }
                         }
 
+                        var semaphore = concurrencyGate.GetSemaphoreOrNull(
+                            function.FunctionName,
+                            function.CachedMaxConcurrency
+                        );
+
                         try
                         {
                             await tickerQTaskScheduler.QueueAsync(
-                                ct => _tickerExecutionTaskHandler.ExecuteTaskAsync(function, true, ct),
+                                async ct =>
+                                {
+                                    if (semaphore != null)
+                                    {
+                                        await semaphore.WaitAsync(ct).ConfigureAwait(false);
+                                    }
+
+                                    try
+                                    {
+                                        await _tickerExecutionTaskHandler.ExecuteTaskAsync(function, true, ct);
+                                    }
+                                    finally
+                                    {
+                                        semaphore?.Release();
+                                    }
+                                },
                                 function.CachedPriority,
                                 stoppingToken
                             );

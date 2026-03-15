@@ -12,7 +12,7 @@ internal static class AttributeValidator
     /// Validates all aspects of a TickerFunction attribute and its usage.
     /// </summary>
     public static void ValidateTickerFunctionAttribute(
-        (string? functionName, string? cronExpression, int taskPriority) attributeValues,
+        (string? functionName, string? cronExpression, int taskPriority, int maxConcurrency) attributeValues,
         ClassDeclarationSyntax classDeclaration,
         MethodDeclarationSyntax methodDeclaration,
         IMethodSymbol? methodSymbol,

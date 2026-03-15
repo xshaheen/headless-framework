@@ -89,6 +89,7 @@ public static class TickerQServiceExtensions
             services.AddSingleton<ITickerQDispatcher, NoOpTickerQDispatcher>();
         }
 
+        services.AddSingleton<ITickerFunctionConcurrencyGate, TickerFunctionConcurrencyGate>();
         services.AddSingleton<ITickerQInstrumentation, LoggerInstrumentation>();
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);

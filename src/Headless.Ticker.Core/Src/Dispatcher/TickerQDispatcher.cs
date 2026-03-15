@@ -4,13 +4,18 @@ using Headless.Ticker.TickerQThreadPool;
 
 namespace Headless.Ticker.Dispatcher;
 
-internal class TickerQDispatcher(TickerQTaskScheduler taskScheduler, TickerExecutionTaskHandler taskHandler)
-    : ITickerQDispatcher
+internal class TickerQDispatcher(
+    TickerQTaskScheduler taskScheduler,
+    TickerExecutionTaskHandler taskHandler,
+    ITickerFunctionConcurrencyGate concurrencyGate
+) : ITickerQDispatcher
 {
     private readonly TickerQTaskScheduler _taskScheduler =
         taskScheduler ?? throw new ArgumentNullException(nameof(taskScheduler));
     private readonly TickerExecutionTaskHandler _taskHandler =
         taskHandler ?? throw new ArgumentNullException(nameof(taskHandler));
+    private readonly ITickerFunctionConcurrencyGate _concurrencyGate =
+        concurrencyGate ?? throw new ArgumentNullException(nameof(concurrencyGate));
 
     public bool IsEnabled => true;
 
@@ -23,9 +28,26 @@ internal class TickerQDispatcher(TickerQTaskScheduler taskScheduler, TickerExecu
 
         foreach (var context in contexts)
         {
+            var semaphore = _concurrencyGate.GetSemaphoreOrNull(context.FunctionName, context.CachedMaxConcurrency);
+
             await _taskScheduler
                 .QueueAsync(
-                    async ct => await _taskHandler.ExecuteTaskAsync(context, false, ct).ConfigureAwait(false),
+                    async ct =>
+                    {
+                        if (semaphore != null)
+                        {
+                            await semaphore.WaitAsync(ct).ConfigureAwait(false);
+                        }
+
+                        try
+                        {
+                            await _taskHandler.ExecuteTaskAsync(context, false, ct).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            semaphore?.Release();
+                        }
+                    },
                     context.CachedPriority,
                     cancellationToken
                 )

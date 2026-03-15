@@ -22,15 +22,18 @@ public static class TickerFunctionProvider
     // Callback actions to collect registrations
     private static Action<Dictionary<string, (string, Type)>>? _requestTypeRegistrations;
     private static Action<
-        Dictionary<string, (string cronExpression, TickerTaskPriority Priority, TickerFunctionDelegate Delegate)>
+        Dictionary<
+            string,
+            (string cronExpression, TickerTaskPriority Priority, TickerFunctionDelegate Delegate, int MaxConcurrency)
+        >
     >? _functionRegistrations;
 
     // Final frozen dictionaries
     public static FrozenDictionary<
         string,
-        (string cronExpression, TickerTaskPriority Priority, TickerFunctionDelegate Delegate)
+        (string cronExpression, TickerTaskPriority Priority, TickerFunctionDelegate Delegate, int MaxConcurrency)
     > TickerFunctions { get; private set; } =
-        FrozenDictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate)>.Empty;
+        FrozenDictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate, int)>.Empty;
 
     public static FrozenDictionary<string, (string, Type)> TickerFunctionRequestTypes { get; private set; } =
         FrozenDictionary<string, (string, Type)>.Empty;
@@ -42,7 +45,7 @@ public static class TickerFunctionProvider
     /// <param name="functions">The functions to register. Cannot be null.</param>
     /// <exception cref="ArgumentNullException">Thrown when functions parameter is null.</exception>
     public static void RegisterFunctions(
-        IDictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate)> functions
+        IDictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate, int)> functions
     )
     {
         ArgumentNullException.ThrowIfNull(functions);
@@ -69,7 +72,7 @@ public static class TickerFunctionProvider
     /// <param name="_">The total expected capacity (ignored - capacity calculated automatically).</param>
     /// <exception cref="ArgumentNullException">Thrown when functions parameter is null.</exception>
     public static void RegisterFunctions(
-        IDictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate)> functions,
+        IDictionary<string, (string, TickerTaskPriority, TickerFunctionDelegate, int)> functions,
         int _
     )
     {
@@ -133,7 +136,7 @@ public static class TickerFunctionProvider
 
                     if (!string.IsNullOrEmpty(mappedCronExpression))
                     {
-                        dict[key] = (mappedCronExpression, value.Priority, value.Delegate);
+                        dict[key] = (mappedCronExpression, value.Priority, value.Delegate, value.MaxConcurrency);
                     }
                 }
             }
@@ -154,7 +157,12 @@ public static class TickerFunctionProvider
             // Single pass: execute callbacks directly on final dictionary
             var functionsDict = new Dictionary<
                 string,
-                (string cronExpression, TickerTaskPriority Priority, TickerFunctionDelegate Delegate)
+                (
+                    string cronExpression,
+                    TickerTaskPriority Priority,
+                    TickerFunctionDelegate Delegate,
+                    int MaxConcurrency
+                )
             >(StringComparer.Ordinal);
             _functionRegistrations(functionsDict);
             TickerFunctions = functionsDict.ToFrozenDictionary();
@@ -164,7 +172,12 @@ public static class TickerFunctionProvider
         {
             TickerFunctions = new Dictionary<
                 string,
-                (string cronExpression, TickerTaskPriority Priority, TickerFunctionDelegate Delegate)
+                (
+                    string cronExpression,
+                    TickerTaskPriority Priority,
+                    TickerFunctionDelegate Delegate,
+                    int MaxConcurrency
+                )
             >(StringComparer.Ordinal).ToFrozenDictionary();
         }
 

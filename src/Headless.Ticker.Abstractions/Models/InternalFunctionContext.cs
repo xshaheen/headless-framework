@@ -9,10 +9,11 @@ public class InternalFunctionContext
 {
     private HashSet<string> ParametersToUpdate { get; set; } = [];
 
-    // Cached function delegate and priority for performance optimization
+    // Cached function delegate, priority, and max concurrency for performance optimization
     // Eliminates dictionary lookups during execution
     public TickerFunctionDelegate CachedDelegate { get; set; } = null!;
     public TickerTaskPriority CachedPriority { get; set; }
+    public int CachedMaxConcurrency { get; set; }
 
     public required string FunctionName { get; set; }
     public Guid TickerId { get; set; }
