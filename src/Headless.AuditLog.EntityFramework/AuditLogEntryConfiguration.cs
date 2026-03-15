@@ -71,6 +71,14 @@ internal sealed class AuditLogEntryConfiguration(string? schema, string tableNam
             .HasIndex(e => new
             {
                 e.TenantId,
+                e.Action,
+                e.CreatedAt,
+            })
+            .HasDatabaseName("ix_audit_log_tenant_action_time");
+        builder
+            .HasIndex(e => new
+            {
+                e.TenantId,
                 e.EntityType,
                 e.EntityId,
                 e.CreatedAt,
