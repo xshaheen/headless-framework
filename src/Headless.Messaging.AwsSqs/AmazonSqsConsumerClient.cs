@@ -75,7 +75,7 @@ internal sealed class AmazonSqsConsumerClient(
         {
             var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
 
-            if (response.Messages.Count > 0)
+            if (response?.Messages?.Count > 0)
             {
                 foreach (var sqsMessage in response.Messages)
                 {
