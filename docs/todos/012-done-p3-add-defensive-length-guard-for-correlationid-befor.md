@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p3
 issue_id: "012"
 tags: ["code-review","quality","dotnet"]
@@ -48,3 +48,9 @@ Discovered during PR #187 code review. Activity.Current?.Id (W3C format, ~55 cha
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-15 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

@@ -21,6 +21,10 @@ public static class AuditLogModelBuilderExtensions
     /// <c>"json"</c> for SQL Server 2025+). When <c>null</c>, string columns with
     /// value converters are used for universal portability.
     /// </param>
+    /// <remarks>
+    /// This method is idempotent. If the audit log entity is already configured,
+    /// subsequent calls are no-ops.
+    /// </remarks>
     public static ModelBuilder ConfigureAuditLog(
         this ModelBuilder modelBuilder,
         string tableName = "audit_log",
@@ -28,6 +32,10 @@ public static class AuditLogModelBuilderExtensions
         string? jsonColumnType = null
     )
     {
+        // Idempotent: skip if already configured
+        if (modelBuilder.Model.FindEntityType(typeof(AuditLogEntry)) is not null)
+            return modelBuilder;
+
         modelBuilder.ApplyConfiguration(new AuditLogEntryConfiguration(schema, tableName, jsonColumnType));
         return modelBuilder;
     }

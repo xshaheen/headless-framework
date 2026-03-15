@@ -2,7 +2,6 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog;
 
@@ -18,9 +17,9 @@ public static class AuditLogSetup
         /// </summary>
         public IServiceCollection AddHeadlessAuditLog(Action<AuditLogOptions>? configure = null)
         {
-            var options = new AuditLogOptions();
-            configure?.Invoke(options);
-            services.TryAddSingleton(Options.Create(options));
+            services.AddOptions<AuditLogOptions>();
+            if (configure is not null)
+                services.Configure(configure);
             return services;
         }
     }

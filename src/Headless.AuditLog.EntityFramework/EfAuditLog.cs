@@ -38,7 +38,9 @@ internal sealed class EfAuditLog(
                     UserId = currentUser.UserId?.ToString(),
                     AccountId = currentUser.AccountId?.ToString(),
                     TenantId = currentTenant.Id,
-                    CorrelationId = correlationIdProvider.CorrelationId,
+                    CorrelationId = correlationIdProvider.CorrelationId is { Length: > 128 } cid
+                        ? cid[..128]
+                        : correlationIdProvider.CorrelationId,
                     Action = action,
                     ChangeType = null,
                     EntityType = entityType,

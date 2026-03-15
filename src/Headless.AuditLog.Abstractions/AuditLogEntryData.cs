@@ -10,13 +10,13 @@ public sealed record AuditLogEntryData
 {
     // Actor
     /// <summary>ID of the user who triggered the change.</summary>
-    public required string? UserId { get; init; }
+    public string? UserId { get; init; }
 
     /// <summary>Account ID of the user (if applicable).</summary>
-    public required string? AccountId { get; init; }
+    public string? AccountId { get; init; }
 
     /// <summary>Tenant the change belongs to.</summary>
-    public required string? TenantId { get; init; }
+    public string? TenantId { get; init; }
 
     /// <summary>Client IP address (if available).</summary>
     public string? IpAddress { get; init; }
@@ -32,14 +32,14 @@ public sealed record AuditLogEntryData
     public required string Action { get; init; }
 
     /// <summary>EF change type, or <c>null</c> for explicit (non-mutation) events.</summary>
-    public required AuditChangeType? ChangeType { get; init; }
+    public AuditChangeType? ChangeType { get; init; }
 
     // Entity
     /// <summary>Full CLR type name of the affected entity.</summary>
-    public required string? EntityType { get; init; }
+    public string? EntityType { get; init; }
 
     /// <summary>String representation of the entity's primary key.</summary>
-    public required string? EntityId { get; init; }
+    public string? EntityId { get; init; }
 
     // Changes
     /// <summary>Property values before the change. <c>null</c> for Created entries.</summary>
