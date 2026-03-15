@@ -12,6 +12,14 @@ public interface IReadAuditLog
     /// Queries audit log entries matching the specified filters.
     /// All parameters are optional; omitted parameters are not filtered.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Pagination (v1):</b> This method supports limit-only pagination.
+    /// It returns up to <paramref name="limit"/> entries (default 100) ordered by
+    /// most recent first. Cursor-based and offset pagination are planned for a
+    /// future release.
+    /// </para>
+    /// </remarks>
     /// <param name="action">Filter by action name (exact match).</param>
     /// <param name="entityType">Filter by entity type (exact match).</param>
     /// <param name="entityId">Filter by entity ID (exact match).</param>
@@ -19,7 +27,11 @@ public interface IReadAuditLog
     /// <param name="tenantId">Filter by tenant ID.</param>
     /// <param name="from">Include entries created at or after this time.</param>
     /// <param name="to">Include entries created before this time.</param>
-    /// <param name="limit">Maximum entries to return. Default: 100.</param>
+    /// <param name="limit">
+    /// Maximum number of entries to return. Defaults to 100 when not specified.
+    /// This is the only pagination mechanism in v1; cursor-based pagination is
+    /// planned for a future release.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<IReadOnlyList<AuditLogEntryData>> QueryAsync(
         string? action = null,
