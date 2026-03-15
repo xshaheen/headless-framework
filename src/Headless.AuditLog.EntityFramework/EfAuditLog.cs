@@ -35,22 +35,23 @@ internal sealed class EfAuditLog(
                 new AuditLogEntry
                 {
                     CreatedAt = clock.UtcNow,
-                    UserId = currentUser.UserId?.ToString(),
-                    AccountId = currentUser.AccountId?.ToString(),
-                    TenantId = currentTenant.Id,
-                    CorrelationId = correlationIdProvider.CorrelationId is { Length: > 128 } cid
-                        ? cid[..128]
-                        : correlationIdProvider.CorrelationId,
-                    Action = action,
+                    UserId = Truncate(currentUser.UserId?.ToString(), 128),
+                    AccountId = Truncate(currentUser.AccountId?.ToString(), 128),
+                    TenantId = Truncate(currentTenant.Id, 128),
+                    CorrelationId = Truncate(correlationIdProvider.CorrelationId, 128),
+                    Action = Truncate(action, 256)!,
                     ChangeType = null,
-                    EntityType = entityType,
-                    EntityId = entityId,
+                    EntityType = Truncate(entityType, 512),
+                    EntityId = Truncate(entityId, 256),
                     NewValues = data,
                     Success = success,
-                    ErrorCode = errorCode,
+                    ErrorCode = Truncate(errorCode, 256),
                 }
             );
 
         return Task.CompletedTask;
     }
+
+    private static string? Truncate(string? value, int maxLength)
+        => value is { Length: var len } && len > maxLength ? value[..maxLength] : value;
 }

@@ -56,26 +56,27 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
                 new AuditLogEntry
                 {
                     CreatedAt = entry.CreatedAt,
-                    UserId = entry.UserId,
-                    AccountId = entry.AccountId,
-                    TenantId = entry.TenantId,
-                    IpAddress = entry.IpAddress,
-                    UserAgent = entry.UserAgent,
-                    CorrelationId = entry.CorrelationId is { Length: > 128 }
-                        ? entry.CorrelationId[..128]
-                        : entry.CorrelationId,
-                    Action = entry.Action,
+                    UserId = Truncate(entry.UserId, 128),
+                    AccountId = Truncate(entry.AccountId, 128),
+                    TenantId = Truncate(entry.TenantId, 128),
+                    IpAddress = Truncate(entry.IpAddress, 45),
+                    UserAgent = Truncate(entry.UserAgent, 512),
+                    CorrelationId = Truncate(entry.CorrelationId, 128),
+                    Action = Truncate(entry.Action, 256)!,
                     ChangeType = entry.ChangeType,
-                    EntityType = entry.EntityType,
-                    EntityId = entry.EntityId,
+                    EntityType = Truncate(entry.EntityType, 512),
+                    EntityId = Truncate(entry.EntityId, 256),
                     OldValues = entry.OldValues,
                     NewValues = entry.NewValues,
                     ChangedFields = entry.ChangedFields,
                     Success = entry.Success,
-                    ErrorCode = entry.ErrorCode,
+                    ErrorCode = Truncate(entry.ErrorCode, 256),
                 }
             );
         }
         // Do NOT call SaveChanges — entries commit atomically with the entity changes
     }
+
+    private static string? Truncate(string? value, int maxLength)
+        => value is { Length: var len } && len > maxLength ? value[..maxLength] : value;
 }
