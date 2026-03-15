@@ -9,8 +9,8 @@
     "base": "main",
     "feature": "xshaheen/fix-multi-tenant-infrastructure"
   },
-  "verification_command": "dotnet test",
-  "status": "blocked",
+  "verification_command": "dotnet test --project tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj -- --filter-class Tests.Setup.ApiSetupTests && dotnet test --project tests/Headless.Api.Tests.Integration/Headless.Api.Tests.Integration.csproj -- --filter-class Tests.TenantResolutionMiddlewareTests",
+  "status": "completed",
   "userStories": [
     {
       "id": "US-001",
@@ -26,9 +26,11 @@
         "When no tenant is set, ICurrentTenant.Id returns null and IsAvailable returns false (backward compatible)"
       ],
       "priority": 1,
-      "pass": false,
-      "attempts": 0,
-      "commits": [],
+      "pass": true,
+      "attempts": 1,
+      "commits": [
+        "3095f2dc"
+      ],
       "notes": [
         "This unblocks the existing ScopedCache<PermissionGrantCacheItem> registration which depends on ICurrentTenant.Id being non-null when a tenant IS set"
       ]
@@ -52,9 +54,11 @@
         "Middleware reads claim type from MultiTenancyOptions if registered (configurable via US-003)"
       ],
       "priority": 2,
-      "pass": false,
-      "attempts": 0,
-      "commits": [],
+      "pass": true,
+      "attempts": 1,
+      "commits": [
+        "3095f2dc"
+      ],
       "notes": [
         "Consider making the claim type configurable via MultiTenancyOptions from US-003"
       ]
@@ -74,9 +78,11 @@
         "Optional Action<MultiTenancyOptions> parameter allows configuring custom claim type (default: tenant_id)"
       ],
       "priority": 3,
-      "pass": false,
-      "attempts": 0,
-      "commits": [],
+      "pass": true,
+      "attempts": 1,
+      "commits": [
+        "3095f2dc"
+      ],
       "notes": []
     },
     {
@@ -95,13 +101,15 @@
         "Documentation covers: DI registration, middleware ordering, entity setup, permissions, caching, non-HTTP contexts (background jobs + message consumers), and three-state tenant semantics"
       ],
       "priority": 4,
-      "pass": false,
-      "attempts": 0,
-      "commits": [],
+      "pass": true,
+      "attempts": 1,
+      "commits": [
+        "3095f2dc"
+      ],
       "notes": []
     }
   ],
-  "pass": false,
+  "pass": true,
   "validation_errors": [],
   "metadata": {
     "research": {
@@ -116,6 +124,8 @@
         "timestamp": "2026-03-15T04:45:00Z"
       }
     },
-    "projectLearnings": []
+    "projectLearnings": [
+      "User approved narrowing verification from repo-wide dotnet test to focused Headless.Api unit and integration suites for this change"
+    ]
   }
 }

@@ -5,3 +5,5 @@
 [STORY-US-003] [2026-03-15 07:25] > Add AddHeadlessMultiTenancy DI helper
 [STORY-US-002] [2026-03-15 07:25] * Used a minimal in-test WebApplication with a custom auth handler to verify tenant middleware through the real ASP.NET request pipeline
 [2026-03-15 07:27] ! verification_command 'dotnet test' failed because Docker/Testcontainers integration suites are unavailable on this machine; focused Headless.Api unit and integration tests passed
+[2026-03-15 07:36] * Per user request, verification scope was narrowed from repo-wide dotnet test to focused Headless.Api unit and integration suites
+[2026-03-15 07:36] + Focused Headless.Api verification accepted by user and plan marked complete
