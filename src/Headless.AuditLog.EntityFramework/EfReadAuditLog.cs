@@ -37,7 +37,7 @@ internal sealed class EfReadAuditLog(DbContext dbContext) : IReadAuditLog
             query = query.Where(e => e.CreatedAt < to.Value);
 
         var entries = await query
-            .OrderByDescending(e => e.Id)
+            .OrderByDescending(e => e.CreatedAt).ThenByDescending(e => e.Id)
             .Take(limit)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
