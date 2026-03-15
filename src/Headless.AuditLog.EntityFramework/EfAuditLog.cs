@@ -16,6 +16,12 @@ internal sealed class EfAuditLog(
 ) : IAuditLog
 {
     /// <inheritdoc />
+    /// <remarks>
+    /// This implementation is synchronous. It adds the entry to the <c>DbContext</c>
+    /// change tracker and returns <see cref="Task.CompletedTask"/>. The
+    /// <paramref name="cancellationToken"/> is accepted for interface compatibility
+    /// but is not observed.
+    /// </remarks>
     public Task LogAsync(
         string action,
         string? entityType = null,
