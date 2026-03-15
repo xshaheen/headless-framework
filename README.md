@@ -353,6 +353,7 @@ Documentation index: https://raw.githubusercontent.com/xshaheen/headless-framewo
 When working with a Headless domain, fetch the relevant domain doc:
 - API & Web: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/api.txt
 - Core: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/core.txt
+- Multi-Tenancy: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/multi-tenancy.txt
 - Blob Storage: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/blobs.txt
 - Caching: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/caching.txt
 - Email: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/emails.txt
