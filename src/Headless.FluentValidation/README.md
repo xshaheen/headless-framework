@@ -82,7 +82,7 @@ No configuration required.
 
 - `FluentValidation`
 - `libphonenumber-csharp`
-- `Headless.Base`
+- `Headless.Extensions`
 
 ## Side Effects
 

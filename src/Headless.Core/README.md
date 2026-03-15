@@ -1,4 +1,4 @@
-# Headless.BuildingBlocks
+# Headless.Core
 
 Core abstractions and primitives for building domain-driven applications with multi-tenancy, user context, and cross-cutting concerns.
 
@@ -34,7 +34,7 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
 ## Installation
 
 ```bash
-dotnet add package Headless.BuildingBlocks
+dotnet add package Headless.Core
 ```
 
 ## Quick Start
@@ -63,7 +63,7 @@ No configuration required. Implementations are registered by `Headless.Api` or o
 ## Dependencies
 
 - `Headless.Checks`
-- `Headless.Base`
+- `Headless.Extensions`
 - `Headless.Domain`
 - `Headless.Serializer.Json`
 - `Headless.Generator.Primitives` (source generator)

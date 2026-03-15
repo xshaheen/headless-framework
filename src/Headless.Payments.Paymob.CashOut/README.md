@@ -70,7 +70,7 @@ public class DisbursementService(IPaymobCashOutBroker broker)
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 
 ## Side Effects
 

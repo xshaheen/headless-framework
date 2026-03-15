@@ -49,7 +49,7 @@ No configuration required. This package contains interfaces only.
 
 ## Dependencies
 
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 
 ## Side Effects
 

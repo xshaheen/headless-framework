@@ -100,7 +100,7 @@ Place `UseHeadlessTenantResolution()` after authentication and before authorizat
 ## Dependencies
 
 - `Headless.Api.Abstractions`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Headless.Caching.Abstractions`
 - `Headless.FluentValidation`
 - `Headless.Api.FluentValidation`

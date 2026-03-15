@@ -211,7 +211,7 @@ Message ordering guarantees depend on the transport provider and configuration:
 ## Dependencies
 
 - `Headless.Messaging.Abstractions`
-- `Headless.Base`
+- `Headless.Extensions`
 - `Headless.Checks`
 - Transport package (RabbitMQ, Kafka, etc.)
 - Storage package (PostgreSql, SqlServer, etc.)

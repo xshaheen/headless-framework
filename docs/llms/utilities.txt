@@ -118,7 +118,7 @@ No configuration required.
 
 - `FluentValidation`
 - `libphonenumber-csharp`
-- `Headless.Base`
+- `Headless.Extensions`
 
 ## Side Effects
 
@@ -681,7 +681,7 @@ No configuration required.
 
 ## Dependencies
 
-- Headless.Base
+- Headless.Extensions
 
 ## Side Effects
 

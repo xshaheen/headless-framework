@@ -69,7 +69,7 @@ var allProducts = await dbContext.Products
 ## Dependencies
 
 - `Headless.Domain`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects

@@ -109,7 +109,7 @@ app.Run();
 ## Dependencies
 
 - `Headless.Api.Abstractions`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Headless.Caching.Abstractions`
 - `Headless.FluentValidation`
 - `Headless.Api.FluentValidation`
@@ -182,7 +182,7 @@ No configuration required. This package contains interfaces only.
 
 ## Dependencies
 
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 
 ## Side Effects
 
@@ -480,8 +480,8 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher
 
 ## Quick Orientation
 
-- **`Headless.Base`** — utility extensions and primitives: result pattern (`Result<T>`, `DataResult<T>`), collection helpers, date/time extensions, ID generation (`SnowflakeId`, `SequentialGuid`), pagination models, and validators.
-- **`Headless.BuildingBlocks`** — cross-cutting abstractions: `IClock`, `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `IStringEncryptionService`, plus strongly-typed primitives (`UserId`, `AccountId`, `Money`, `PhoneNumber`).
+- **`Headless.Extensions`** — utility extensions and primitives: result pattern (`Result<T>`, `DataResult<T>`), collection helpers, date/time extensions, ID generation (`SnowflakeId`, `SequentialGuid`), pagination models, and validators.
+- **`Headless.Core`** — cross-cutting abstractions: `IClock`, `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `IStringEncryptionService`, plus strongly-typed primitives (`UserId`, `AccountId`, `Money`, `PhoneNumber`).
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
 - **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and local/distributed messaging contracts (`ILocalMessage`, `IDistributedMessage`).
 - **`Headless.Domain.LocalPublisher`** — DI-based `ILocalMessagePublisher` for in-process event handling. Register with `AddLocalMessagePublisher()` and implement `ILocalMessageHandler<T>`.
@@ -490,15 +490,15 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher
 
 - Use `Headless.Checks` (`Argument.IsNotNull`, `Argument.IsNotNullOrEmpty`, `Argument.IsPositive`, etc.) for argument validation instead of raw `ArgumentNullException` or `ArgumentOutOfRangeException`. Use `Ensure` for internal state assertions.
 - Use `Headless.Domain` base classes for DDD: inherit `Entity<T>` for entities, `AggregateRoot<T>` for aggregate roots, `ValueObject` for value objects. Emit domain events via `AddMessage()` on aggregate roots.
-- Use `Headless.BuildingBlocks` for `ICurrentUser`, `ICurrentTenant`, and `IClock` — never use `DateTime.UtcNow` directly; inject `IClock` instead.
-- Use `DataResult<T>` / `NoDataResult` from `Headless.Base` for service return types instead of throwing exceptions for expected failures.
+- Use `Headless.Core` for `ICurrentUser`, `ICurrentTenant`, and `IClock` — never use `DateTime.UtcNow` directly; inject `IClock` instead.
+- Use `DataResult<T>` / `NoDataResult` from `Headless.Extensions` for service return types instead of throwing exceptions for expected failures.
 - For local (in-process) domain events, register `AddLocalMessagePublisher()` and implement `ILocalMessageHandler<T>`. Use `LocalEventHandlerOrderAttribute` to control handler execution order.
-- For strongly-typed IDs, use the primitives from `Headless.BuildingBlocks` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
+- For strongly-typed IDs, use the primitives from `Headless.Core` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
 - Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically.
-- `Headless.Base` has no configuration. `Headless.BuildingBlocks` implementations are registered by `Headless.Api` or other host packages — do not register them manually.
+- `Headless.Extensions` has no configuration. `Headless.Core` implementations are registered by `Headless.Api` or other host packages — do not register them manually.
 
 ---
-# Headless.Base
+# Headless.Extensions
 
 Foundational utility library providing extension methods, primitives, helpers, and common abstractions used throughout the framework.
 
@@ -522,7 +522,7 @@ Eliminates repetitive utility code across projects by providing a comprehensive 
 ## Installation
 
 ```bash
-dotnet add package Headless.Base
+dotnet add package Headless.Extensions
 ```
 
 ## Quick Start
@@ -581,7 +581,7 @@ No configuration required.
 
 None.
 ---
-# Headless.BuildingBlocks
+# Headless.Core
 
 Core abstractions and primitives for building domain-driven applications with multi-tenancy, user context, and cross-cutting concerns.
 
@@ -617,7 +617,7 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
 ## Installation
 
 ```bash
-dotnet add package Headless.BuildingBlocks
+dotnet add package Headless.Core
 ```
 
 ## Quick Start
@@ -646,7 +646,7 @@ No configuration required. Implementations are registered by `Headless.Api` or o
 ## Dependencies
 
 - `Headless.Checks`
-- `Headless.Base`
+- `Headless.Extensions`
 - `Headless.Domain`
 - `Headless.Serializer.Json`
 - `Headless.Generator.Primitives` (source generator)
@@ -999,7 +999,7 @@ No configuration required. This is an abstractions-only package.
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 - `Headless.Serializer.Json`
 
 ## Side Effects
@@ -1075,7 +1075,7 @@ options.BucketName = "my-bucket";
 ## Dependencies
 
 - `Headless.Blobs.Abstractions`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Headless.Hosting`
 - `AWSSDK.S3`
 - `AWSSDK.Extensions.NETCore.Setup`
@@ -1146,7 +1146,7 @@ builder.Services.AddAzureBlobStorage(options =>
 ## Dependencies
 
 - `Headless.Blobs.Abstractions`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Headless.Hosting`
 - `Azure.Storage.Blobs`
 - `Azure.Storage.Blobs.Batch`
@@ -1280,7 +1280,7 @@ builder.Services.AddRedisBlobStorage(options =>
 ## Dependencies
 
 - `Headless.Blobs.Abstractions`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Headless.Hosting`
 - `StackExchange.Redis`
 
@@ -2694,7 +2694,7 @@ builder.Host.UseSerilog((context, services, config) =>
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 - `Serilog`
 - `Serilog.AspNetCore`
 - `Serilog.Enrichers.*`
@@ -2998,7 +2998,7 @@ No configuration required. This is an abstractions package. Implementations are 
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 - `Headless.Checks`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
@@ -3169,7 +3169,7 @@ Message ordering guarantees depend on the transport provider and configuration:
 ## Dependencies
 
 - `Headless.Messaging.Abstractions`
-- `Headless.Base`
+- `Headless.Extensions`
 - `Headless.Checks`
 - Transport package (RabbitMQ, Kafka, etc.)
 - Storage package (PostgreSql, SqlServer, etc.)
@@ -4494,7 +4494,7 @@ var allProducts = await dbContext.Products
 ## Dependencies
 
 - `Headless.Domain`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects
@@ -4558,7 +4558,7 @@ services.AddSingleton<ICouchbaseClusterOptionsProvider, MyClusterOptionsProvider
 ## Dependencies
 
 - `CouchbaseNetClient`
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 
 ## Side Effects
 
@@ -4678,7 +4678,7 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 
 ## Side Effects
 
@@ -4757,7 +4757,7 @@ public class DisbursementService(IPaymobCashOutBroker broker)
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 
 ## Side Effects
 
@@ -4899,7 +4899,7 @@ No configuration required. This is an abstractions-only package.
 
 ## Dependencies
 
-- `Headless.BuildingBlocks`
+- `Headless.Core`
 
 ## Side Effects
 
@@ -7345,7 +7345,7 @@ app.UseTickerQ(TickerQStartMode.Manual);    // Wait for manual trigger
 ## Dependencies
 
 - `Headless.Ticker.Abstractions`
-- `Headless.Base`
+- `Headless.Extensions`
 
 ## Side Effects
 
@@ -8111,7 +8111,7 @@ No configuration required.
 
 - `FluentValidation`
 - `libphonenumber-csharp`
-- `Headless.Base`
+- `Headless.Extensions`
 
 ## Side Effects
 
@@ -8674,7 +8674,7 @@ No configuration required.
 
 ## Dependencies
 
-- Headless.Base
+- Headless.Extensions
 
 ## Side Effects
 

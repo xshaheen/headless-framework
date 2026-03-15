@@ -112,7 +112,7 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 
 ## Side Effects
 
@@ -191,7 +191,7 @@ public class DisbursementService(IPaymobCashOutBroker broker)
 
 ## Dependencies
 
-- `Headless.Base`
+- `Headless.Extensions`
 
 ## Side Effects
 
