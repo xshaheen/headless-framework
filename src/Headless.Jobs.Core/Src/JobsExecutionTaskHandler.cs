@@ -101,7 +101,7 @@ internal class JobsExecutionTaskHandler(
             // Bulk update skipped children
             if (childrenToSkip.Count > 0)
             {
-                await internalJobsManager.UpdateSkipTimeTickersWithUnifiedContextAsync(
+                await internalJobsManager.UpdateSkipTimeJobsWithUnifiedContextAsync(
                     childrenToSkip.ToArray(),
                     cancellationToken
                 );
@@ -150,7 +150,7 @@ internal class JobsExecutionTaskHandler(
         var stopWatch = new Stopwatch();
         var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-        // IMPORTANT: Register the ticker FIRST, before creating the SkipIfAlreadyRunningAction callback
+        // IMPORTANT: Register the job FIRST, before creating the SkipIfAlreadyRunningAction callback
         // This ensures the current occurrence is properly tracked when the callback checks for siblings
         JobsCancellationTokenManager.AddTickerCancellationToken(cancellationTokenSource, context, isDue);
 

@@ -5,9 +5,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
 
-public class JobsOptionsBuilder<TTimeTicker, TCronTicker> : IJobsOptionsSeeding
-    where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-    where TCronTicker : CronJobEntity, new()
+public class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    where TCronJob : CronJobEntity, new()
 {
     private readonly JobsExecutionContext _tickerExecutionContext;
     private readonly SchedulerOptionsBuilder _schedulerOptions;
@@ -30,10 +30,10 @@ public class JobsOptionsBuilder<TTimeTicker, TCronTicker> : IJobsOptionsSeeding
     internal bool RequestGZipCompressionEnabled { get; set; }
 
     /// <summary>
-    /// Controls whether code-defined cron tickers are seeded on startup.
+    /// Controls whether code-defined cron jobs are seeded on startup.
     /// Defaults to true.
     /// </summary>
-    internal bool SeedDefinedCronTickers { get; set; } = true;
+    internal bool SeedDefinedCronJobs { get; set; } = true;
 
     /// <summary>
     /// Controls whether background services (job processors) should be registered.
@@ -42,17 +42,17 @@ public class JobsOptionsBuilder<TTimeTicker, TCronTicker> : IJobsOptionsSeeding
     internal bool RegisterBackgroundServices { get; set; } = true;
 
     /// <summary>
-    /// Seeding delegate for time tickers, executed with the application's service provider.
+    /// Seeding delegate for time jobs, executed with the application's service provider.
     /// </summary>
     internal Func<IServiceProvider, Task>? TimeSeederAction { get; set; }
 
     /// <summary>
-    /// Seeding delegate for cron tickers, executed with the application's service provider.
+    /// Seeding delegate for cron jobs, executed with the application's service provider.
     /// </summary>
     internal Func<IServiceProvider, Task>? CronSeederAction { get; set; }
 
     // Explicit interface implementation for IJobsOptionsSeeding
-    bool IJobsOptionsSeeding.SeedDefinedCronTickers => SeedDefinedCronTickers;
+    bool IJobsOptionsSeeding.SeedDefinedCronJobs => SeedDefinedCronJobs;
     Func<IServiceProvider, Task>? IJobsOptionsSeeding.TimeSeederAction => TimeSeederAction;
     Func<IServiceProvider, Task>? IJobsOptionsSeeding.CronSeederAction => CronSeederAction;
 
@@ -60,7 +60,7 @@ public class JobsOptionsBuilder<TTimeTicker, TCronTicker> : IJobsOptionsSeeding
     internal Action<IServiceCollection>? DashboardServiceAction { get; set; }
     internal Type? JobExceptionHandlerType { get; private set; }
 
-    public JobsOptionsBuilder<TTimeTicker, TCronTicker> ConfigureScheduler(
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureScheduler(
         Action<SchedulerOptionsBuilder> schedulerOptionsBuilder
     )
     {
@@ -69,17 +69,17 @@ public class JobsOptionsBuilder<TTimeTicker, TCronTicker> : IJobsOptionsSeeding
     }
 
     /// <summary>
-    /// JsonSerializerOptions specifically for serializing/deserializing ticker requests.
+    /// JsonSerializerOptions specifically for serializing/deserializing job requests.
     /// If not set, default JsonSerializerOptions will be used.
     /// </summary>
     internal JsonSerializerOptions? RequestJsonSerializerOptions { get; set; }
 
     /// <summary>
-    /// Configures the JSON serialization options specifically for ticker request serialization/deserialization.
+    /// Configures the JSON serialization options specifically for job request serialization/deserialization.
     /// </summary>
-    /// <param name="configure">Action to configure JsonSerializerOptions for ticker requests</param>
+    /// <param name="configure">Action to configure JsonSerializerOptions for job requests</param>
     /// <returns>The JobsOptionsBuilder for method chaining</returns>
-    public JobsOptionsBuilder<TTimeTicker, TCronTicker> ConfigureRequestJsonOptions(
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureRequestJsonOptions(
         Action<JsonSerializerOptions> configure
     )
     {
@@ -89,22 +89,22 @@ public class JobsOptionsBuilder<TTimeTicker, TCronTicker> : IJobsOptionsSeeding
     }
 
     /// <summary>
-    /// Enables GZip compression for ticker request payloads.
+    /// Enables GZip compression for job request payloads.
     /// When not called, requests are stored as plain UTF-8 JSON bytes.
     /// </summary>
     /// <returns>The JobsOptionsBuilder for method chaining</returns>
-    public JobsOptionsBuilder<TTimeTicker, TCronTicker> UseGZipCompression()
+    public JobsOptionsBuilder<TTimeJob, TCronJob> UseGZipCompression()
     {
         RequestGZipCompressionEnabled = true;
         return this;
     }
 
     /// <summary>
-    /// Disable automatic seeding of code-defined cron tickers on startup.
+    /// Disable automatic seeding of code-defined cron jobs on startup.
     /// </summary>
-    public JobsOptionsBuilder<TTimeTicker, TCronTicker> IgnoreSeedDefinedCronTickers()
+    public JobsOptionsBuilder<TTimeJob, TCronJob> IgnoreSeedDefinedCronJobs()
     {
-        SeedDefinedCronTickers = false;
+        SeedDefinedCronJobs = false;
         return this;
     }
 
@@ -113,17 +113,17 @@ public class JobsOptionsBuilder<TTimeTicker, TCronTicker> : IJobsOptionsSeeding
     /// Use this when you only want to queue jobs without processing them in this application.
     /// Only the managers (ITimeJobManager, ICronJobManager) will be available for queuing jobs.
     /// </summary>
-    public JobsOptionsBuilder<TTimeTicker, TCronTicker> DisableBackgroundServices()
+    public JobsOptionsBuilder<TTimeJob, TCronJob> DisableBackgroundServices()
     {
         RegisterBackgroundServices = false;
         return this;
     }
 
     /// <summary>
-    /// Configure a custom seeder for time tickers, executed on application startup.
+    /// Configure a custom seeder for time jobs, executed on application startup.
     /// </summary>
-    public JobsOptionsBuilder<TTimeTicker, TCronTicker> UseJobsSeeder(
-        Func<ITimeJobManager<TTimeTicker>, Task> timeSeeder
+    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(
+        Func<ITimeJobManager<TTimeJob>, Task> timeSeeder
     )
     {
         if (timeSeeder == null)
@@ -133,7 +133,7 @@ public class JobsOptionsBuilder<TTimeTicker, TCronTicker> : IJobsOptionsSeeding
 
         TimeSeederAction = async sp =>
         {
-            var manager = sp.GetRequiredService<ITimeJobManager<TTimeTicker>>();
+            var manager = sp.GetRequiredService<ITimeJobManager<TTimeJob>>();
             await timeSeeder(manager).ConfigureAwait(false);
         };
 
@@ -141,10 +141,10 @@ public class JobsOptionsBuilder<TTimeTicker, TCronTicker> : IJobsOptionsSeeding
     }
 
     /// <summary>
-    /// Configure a custom seeder for cron tickers, executed on application startup.
+    /// Configure a custom seeder for cron jobs, executed on application startup.
     /// </summary>
-    public JobsOptionsBuilder<TTimeTicker, TCronTicker> UseJobsSeeder(
-        Func<ICronJobManager<TCronTicker>, Task> cronSeeder
+    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(
+        Func<ICronJobManager<TCronJob>, Task> cronSeeder
     )
     {
         if (cronSeeder == null)
@@ -154,7 +154,7 @@ public class JobsOptionsBuilder<TTimeTicker, TCronTicker> : IJobsOptionsSeeding
 
         CronSeederAction = async sp =>
         {
-            var manager = sp.GetRequiredService<ICronJobManager<TCronTicker>>();
+            var manager = sp.GetRequiredService<ICronJobManager<TCronJob>>();
             await cronSeeder(manager).ConfigureAwait(false);
         };
 
@@ -162,11 +162,11 @@ public class JobsOptionsBuilder<TTimeTicker, TCronTicker> : IJobsOptionsSeeding
     }
 
     /// <summary>
-    /// Configure custom seeders for both time and cron tickers, executed on application startup.
+    /// Configure custom seeders for both time and cron jobs, executed on application startup.
     /// </summary>
-    public JobsOptionsBuilder<TTimeTicker, TCronTicker> UseJobsSeeder(
-        Func<ITimeJobManager<TTimeTicker>, Task> timeSeeder,
-        Func<ICronJobManager<TCronTicker>, Task> cronSeeder
+    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(
+        Func<ITimeJobManager<TTimeJob>, Task> timeSeeder,
+        Func<ICronJobManager<TCronJob>, Task> cronSeeder
     )
     {
         UseJobsSeeder(timeSeeder);
@@ -174,7 +174,7 @@ public class JobsOptionsBuilder<TTimeTicker, TCronTicker> : IJobsOptionsSeeding
         return this;
     }
 
-    public JobsOptionsBuilder<TTimeTicker, TCronTicker> SetExceptionHandler<THandler>()
+    public JobsOptionsBuilder<TTimeJob, TCronJob> SetExceptionHandler<THandler>()
         where THandler : IJobExceptionHandler
     {
         JobExceptionHandlerType = typeof(THandler);

@@ -49,11 +49,11 @@ public static class CleanupJob
 app.UseJobs();
 
 // Schedule time-based job programmatically
-public sealed class OrderService(ITimeJobManager<TimeJobEntity> ticker)
+public sealed class OrderService(ITimeJobManager<TimeJobEntity> job)
 {
     public async Task SendReminderAsync(string orderId, CancellationToken ct)
     {
-        await ticker.ScheduleAsync(new TimeJobEntity
+        await job.ScheduleAsync(new TimeJobEntity
         {
             TickerKey = $"order-reminder-{orderId}",
             OccurrenceTime = DateTime.UtcNow.AddHours(24),
@@ -74,7 +74,7 @@ builder.Services.AddJobs(options =>
     options.TimeZone(TimeZoneInfo.Utc);
 
     // Seeding options
-    options.SeedDefinedCronTickers = true;
+    options.SeedDefinedCronJobs = true;
     options.CustomTimeSeeder = async sp =>
     {
         // Seed initial jobs

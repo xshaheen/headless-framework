@@ -39,19 +39,19 @@ use([
 ])
 
 // Use paginated service instead of regular one
-const getTimeTickersPaginated = timeJobService.getTimeTickersPaginated()
-const deleteTimeTicker = timeJobService.deleteTimeTicker()
-const deleteTimeTickersBatch = timeJobService.deleteTimeTickersBatch()
+const getTimeJobsPaginated = timeJobService.getTimeJobsPaginated()
+const deleteTimeJob = timeJobService.deleteTimeJob()
+const deleteTimeJobsBatch = timeJobService.deleteTimeJobsBatch()
 const requestCancelJob = jobsService.requestCancel()
-const getTimeTickersGraphDataRange = timeJobService.getTimeTickersGraphDataRange()
-const getTimeTickersGraphData = timeJobService.getTimeTickersGraphData()
+const getTimeJobsGraphDataRange = timeJobService.getTimeJobsGraphDataRange()
+const getTimeJobsGraphData = timeJobService.getTimeJobsGraphData()
 
 // Pagination state
 const currentPage = ref(1)
 const pageSize = ref(20)
 const totalCount = ref(0)
 
-const crudTimeTickerDialog = useDialog<
+const crudTimeJobDialog = useDialog<
   GetTimeJobResponse & { isFromDuplicate: boolean }
 >().withComponent(
   () => import('@/components/timeJobComponents/CRUDTimeJobDialogComponent.vue'),
@@ -70,7 +70,7 @@ const exceptionDialog = useDialog<ConfirmDialogProps>().withComponent(
 )
 
 const requestMatchType = ref(new Map<string, number>())
-const crudTimeTickerDialogRef = ref(null)
+const crudTimeJobDialogRef = ref(null)
 
 // Chain Jobs Modal
 const chainJobsModal = ref({
@@ -113,7 +113,7 @@ onMounted(async () => {
   try {
     await loadPageData()
   } catch (error) {
-    // Failed to load time tickers
+    // Failed to load time jobs
   }
   
   // Load chart data
@@ -156,7 +156,7 @@ onUnmounted(() => {
 // Load page data with pagination
 const loadPageData = async () => {
   try {
-    const response = await getTimeTickersPaginated.requestAsync(currentPage.value, pageSize.value)
+    const response = await getTimeJobsPaginated.requestAsync(currentPage.value, pageSize.value)
     if (response) {
       totalCount.value = response.totalCount || 0
     }
@@ -182,7 +182,7 @@ const handlePageSizeChange = async (size: number) => {
 const loadTimeSeriesChartData = async (min: number, max: number) => {
   try {
     chartLoading.value = true
-    const res = await getTimeTickersGraphDataRange.requestAsync(min, max)
+    const res = await getTimeJobsGraphDataRange.requestAsync(min, max)
     processTimeSeriesData(res)
   } catch (error: any) {
     if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
@@ -196,7 +196,7 @@ const loadTimeSeriesChartData = async (min: number, max: number) => {
 
 const loadPieChartData = async () => {
   try {
-    const res = await getTimeTickersGraphData.requestAsync()
+    const res = await getTimeJobsGraphData.requestAsync()
     processPieChartData(res)
   } catch (error: any) {
     if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
@@ -536,7 +536,7 @@ const pieChartOption = computed(() => ({
 
 // Process data to create tree table structure with proper hierarchy
 const processedTableData = computed(() => {
-  const paginatedData = getTimeTickersPaginated.response.value
+  const paginatedData = getTimeJobsPaginated.response.value
   const rawData = paginatedData?.items || []
   const result: any[] = []
 
@@ -633,12 +633,12 @@ const deleteSelected = async () => {
 
   const ids = Array.from(selectedItems.value)
   try {
-    await deleteTimeTickersBatch.requestAsync(ids)
+    await deleteTimeJobsBatch.requestAsync(ids)
     clearSelection()
     await loadPageData()
     await loadPieChartData()
   } catch (error) {
-    console.error('Failed to delete selected time tickers:', error)
+    console.error('Failed to delete selected time jobs:', error)
   }
 }
 
@@ -719,8 +719,8 @@ const getTreeIconColor = (item: any) => {
   }
 }
 
-const closeCrudTimeTickerDialog = () => {
-  crudTimeTickerDialog.close()
+const closeCrudTimeJobDialog = () => {
+  crudTimeJobDialog.close()
 }
 
 const hasStatus = (statusItem: string | number, statusEnum: Status) => {
@@ -848,7 +848,7 @@ const requestCancel = async (id: string) => {
 
 const onSubmitConfirmDialog = async () => {
   confirmDialog.close()
-  await deleteTimeTicker.requestAsync(confirmDialog.propData?.id!)
+  await deleteTimeJob.requestAsync(confirmDialog.propData?.id!)
 }
 
 const canBeForceDeleted = ref<string[]>([])
@@ -928,7 +928,7 @@ const canBeForceDeleted = ref<string[]>([])
                 <button
                   class="premium-action-btn primary-action"
                   @click="
-                    crudTimeTickerDialog.open({
+                    crudTimeJobDialog.open({
                       ...({} as GetTimeJobResponse),
                       isFromDuplicate: true,
                     })
@@ -1010,7 +1010,7 @@ const canBeForceDeleted = ref<string[]>([])
               <v-text-field
                 v-model="tableSearch"
                 prepend-inner-icon="mdi-magnify"
-                label="Search tickers..."
+                label="Search jobs..."
                 variant="outlined"
                 density="compact"
                 hide-details
@@ -1019,16 +1019,16 @@ const canBeForceDeleted = ref<string[]>([])
               ></v-text-field>
 
               <v-chip
-                :color="getTimeTickersPaginated.loader.value ? 'warning' : 'success'"
+                :color="getTimeJobsPaginated.loader.value ? 'warning' : 'success'"
                 variant="tonal"
                 size="small"
                 class="status-chip"
               >
                 <v-icon size="small" class="mr-1">
-                  {{ getTimeTickersPaginated.loader.value ? 'mdi-loading' : 'mdi-check' }}
+                  {{ getTimeJobsPaginated.loader.value ? 'mdi-loading' : 'mdi-check' }}
                 </v-icon>
                 {{
-                  getTimeTickersPaginated.loader.value ? 'Loading...' : `${totalCount} total items`
+                  getTimeJobsPaginated.loader.value ? 'Loading...' : `${totalCount} total items`
                 }}
               </v-chip>
             </div>
@@ -1090,7 +1090,7 @@ const canBeForceDeleted = ref<string[]>([])
             density="compact"
             :row-props="getRowProps"
             :headers="headersWithSelection"
-            :loading="getTimeTickersPaginated.loader.value"
+            :loading="getTimeJobsPaginated.loader.value"
             :items="processedTableData"
             item-value="Id"
             :items-per-page="-1"
@@ -1320,7 +1320,7 @@ const canBeForceDeleted = ref<string[]>([])
                           hasStatus(item.status, Status.Idle)
                         "
                         @click="
-                          crudTimeTickerDialog.open({
+                          crudTimeJobDialog.open({
                             ...item,
                             executionTime: item.executionTime,
                             isFromDuplicate: false,
@@ -1334,7 +1334,7 @@ const canBeForceDeleted = ref<string[]>([])
                         v-else
                         v-bind="props"
                         @click="
-                          crudTimeTickerDialog.open({
+                          crudTimeJobDialog.open({
                             ...item,
                             executionTime: item.executionTime,
                             isFromDuplicate: true,
@@ -1524,12 +1524,12 @@ const canBeForceDeleted = ref<string[]>([])
       @close="tickerRequestDialog.close()"
     />
 
-    <crudTimeTickerDialog.Component
-      ref="crudTimeTickerDialogRef"
-      :dialog-props="crudTimeTickerDialog.propData"
-      :is-open="crudTimeTickerDialog.isOpen"
-      @close="closeCrudTimeTickerDialog"
-      @confirm="closeCrudTimeTickerDialog"
+    <crudTimeJobDialog.Component
+      ref="crudTimeJobDialogRef"
+      :dialog-props="crudTimeJobDialog.propData"
+      :is-open="crudTimeJobDialog.isOpen"
+      @close="closeCrudTimeJobDialog"
+      @confirm="closeCrudTimeJobDialog"
     />
 
     <exceptionDialog.Component

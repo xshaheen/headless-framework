@@ -81,7 +81,7 @@ public abstract class JobsBaseLoggerInstrumentation(ILogger logger, string insta
     public virtual void LogRequestDeserializationFailure(
         string requestType,
         string functionName,
-        Guid tickerId,
+        Guid jobId,
         JobType type,
         Exception exception
     )
@@ -89,7 +89,7 @@ public abstract class JobsBaseLoggerInstrumentation(ILogger logger, string insta
         logger.LogError(
             "Failed to deserialize request to {RequestType} - {JobId} - {JobType}: {Exception}",
             requestType,
-            tickerId,
+            jobId,
             type,
             exception
         );

@@ -83,7 +83,7 @@ const initializeServices = async () => {
     const jobsServiceModule = await import('../../http/services/jobsService')
     jobsService = jobsServiceModule.jobsService
 
-    // Initialize ticker services
+    // Initialize job services
     getOptions = jobsService.getOptions()
     getJobHostStatus = jobsService.getJobHostStatus()
     startJobHost = jobsService.startJobHost()

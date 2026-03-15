@@ -3,21 +3,21 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Interfaces.Managers;
 
-public interface ICronJobManager<TCronTicker>
-    where TCronTicker : CronJobEntity
+public interface ICronJobManager<TCronJob>
+    where TCronJob : CronJobEntity
 {
-    Task<JobResult<TCronTicker>> AddAsync(TCronTicker entity, CancellationToken cancellationToken = default);
-    Task<JobResult<TCronTicker>> UpdateAsync(TCronTicker cronTicker, CancellationToken cancellationToken = default);
-    Task<JobResult<TCronTicker>> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<JobResult<TCronJob>> AddAsync(TCronJob entity, CancellationToken cancellationToken = default);
+    Task<JobResult<TCronJob>> UpdateAsync(TCronJob cronJob, CancellationToken cancellationToken = default);
+    Task<JobResult<TCronJob>> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 
     // Batch operations
-    Task<JobResult<List<TCronTicker>>> AddBatchAsync(
-        List<TCronTicker> entities,
+    Task<JobResult<List<TCronJob>>> AddBatchAsync(
+        List<TCronJob> entities,
         CancellationToken cancellationToken = default
     );
-    Task<JobResult<List<TCronTicker>>> UpdateBatchAsync(
-        List<TCronTicker> cronTickers,
+    Task<JobResult<List<TCronJob>>> UpdateBatchAsync(
+        List<TCronJob> cronJobs,
         CancellationToken cancellationToken = default
     );
-    Task<JobResult<TCronTicker>> DeleteBatchAsync(List<Guid> ids, CancellationToken cancellationToken = default);
+    Task<JobResult<TCronJob>> DeleteBatchAsync(List<Guid> ids, CancellationToken cancellationToken = default);
 }

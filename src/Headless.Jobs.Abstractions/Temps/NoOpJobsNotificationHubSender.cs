@@ -6,12 +6,12 @@ namespace Headless.Jobs.Temps;
 
 internal class NoOpJobsNotificationHubSender : IJobsNotificationHubSender
 {
-    public Task AddCronJobNotifyAsync(object cronTicker)
+    public Task AddCronJobNotifyAsync(object cronJob)
     {
         return Task.CompletedTask;
     }
 
-    public Task UpdateCronJobNotifyAsync(object cronTicker)
+    public Task UpdateCronJobNotifyAsync(object cronJob)
     {
         return Task.CompletedTask;
     }
@@ -31,7 +31,7 @@ internal class NoOpJobsNotificationHubSender : IJobsNotificationHubSender
         return Task.CompletedTask;
     }
 
-    public Task UpdateTimeJobNotifyAsync(object timeTicker)
+    public Task UpdateTimeJobNotifyAsync(object timeJob)
     {
         return Task.CompletedTask;
     }

@@ -11,12 +11,12 @@ internal interface IInternalJobManager
     Task ReleaseAcquiredResources(InternalFunctionContext[] context, CancellationToken cancellationToken = default);
     Task SetTickersInProgress(InternalFunctionContext[] context, CancellationToken cancellationToken = default);
     Task UpdateTickerAsync(InternalFunctionContext context, CancellationToken cancellationToken = default);
-    Task<T?> GetRequestAsync<T>(Guid tickerId, JobType type, CancellationToken cancellationToken = default);
+    Task<T?> GetRequestAsync<T>(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task<InternalFunctionContext[]> RunTimedOutTickers(CancellationToken cancellationToken = default);
-    Task MigrateDefinedCronTickers((string, string)[] cronExpressions, CancellationToken cancellationToken = default);
-    Task DeleteJob(Guid tickerId, JobType type, CancellationToken cancellationToken = default);
+    Task MigrateDefinedCronJobs((string, string)[] cronExpressions, CancellationToken cancellationToken = default);
+    Task DeleteJob(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default);
-    Task UpdateSkipTimeTickersWithUnifiedContextAsync(
+    Task UpdateSkipTimeJobsWithUnifiedContextAsync(
         InternalFunctionContext[] context,
         CancellationToken cancellationToken = default
     );

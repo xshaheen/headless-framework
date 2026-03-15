@@ -5,12 +5,12 @@ namespace Headless.Jobs.Interfaces;
 
 internal interface IJobsNotificationHubSender
 {
-    Task AddCronJobNotifyAsync(object cronTicker);
-    Task UpdateCronJobNotifyAsync(object cronTicker);
+    Task AddCronJobNotifyAsync(object cronJob);
+    Task UpdateCronJobNotifyAsync(object cronJob);
     Task RemoveCronJobNotifyAsync(Guid id);
     Task AddTimeJobNotifyAsync(Guid id);
     Task AddTimeJobsBatchNotifyAsync();
-    Task UpdateTimeJobNotifyAsync(object timeTicker);
+    Task UpdateTimeJobNotifyAsync(object timeJob);
     Task RemoveTimeJobNotifyAsync(Guid id);
     void UpdateActiveThreads(object activeThreads);
     void UpdateNextOccurrence(object nextOccurrence);

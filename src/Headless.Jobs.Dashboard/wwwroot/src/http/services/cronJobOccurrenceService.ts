@@ -7,7 +7,7 @@ import { format} from 'timeago.js';
 import { nameof } from '@/utilities/nameof';
 import { useTimeZoneStore } from '@/stores/timeZoneStore';
 
-interface PaginatedCronTickerOccurrenceResponse {
+interface PaginatedCronJobOccurrenceResponse {
     items: GetCronJobOccurrenceResponse[]
     totalCount: number
     pageNumber: number
@@ -66,9 +66,9 @@ const getByCronJobId = () => {
 
 const getByCronJobIdPaginated = () => {
     const timeZoneStore = useTimeZoneStore();
-    const baseHttp = useBaseHttpService<object, PaginatedCronTickerOccurrenceResponse>('single');
+    const baseHttp = useBaseHttpService<object, PaginatedCronJobOccurrenceResponse>('single');
     
-    const processResponse = (response: PaginatedCronTickerOccurrenceResponse): PaginatedCronTickerOccurrenceResponse => {
+    const processResponse = (response: PaginatedCronJobOccurrenceResponse): PaginatedCronJobOccurrenceResponse => {
             // Process items in the paginated response
             if (response && response.items && Array.isArray(response.items)) {
                 response.items = response.items.map((item: GetCronJobOccurrenceResponse) => {
@@ -117,7 +117,7 @@ const getByCronJobIdPaginated = () => {
     };
 }
 
-const deleteCronTickerOccurrence = () => {
+const deleteCronJobOccurrence = () => {
     const baseHttp = useBaseHttpService<object, object>('single');
 
     const requestAsync = async (id: string) => (await baseHttp.sendAsync("DELETE", "cron-job-occurrence/delete", { paramData: { id: id } }));
@@ -128,7 +128,7 @@ const deleteCronTickerOccurrence = () => {
     };
 }
 
-const getCronTickerOccurrenceGraphData = () => {
+const getCronJobOccurrenceGraphData = () => {
     const timeZoneStore = useTimeZoneStore();
     const baseHttp = useBaseHttpService<GetCronJobOccurrenceGraphDataRequest, GetCronJobOccurrenceGraphDataResponse>('array')
         .FixToResponseModel(GetCronJobOccurrenceGraphDataResponse, (item) => {
@@ -151,6 +151,6 @@ const getCronTickerOccurrenceGraphData = () => {
 export const cronJobOccurrenceService = {
     getByCronJobId,
     getByCronJobIdPaginated,
-    deleteCronTickerOccurrence,
-    getCronTickerOccurrenceGraphData
+    deleteCronJobOccurrence,
+    getCronJobOccurrenceGraphData
 };

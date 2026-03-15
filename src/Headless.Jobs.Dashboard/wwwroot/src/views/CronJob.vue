@@ -36,12 +36,12 @@ const getReadableCronExpression = (expression: string): string => {
   }
 }
 
-const getCronTickerRangeGraphData = cronJobService.getTimeTickersGraphDataRange()
-const getCronTickersPaginated = cronJobService.getCronTickersPaginated()
-const getCronTickerRangeGraphDataById = cronJobService.getTimeTickersGraphDataRangeById()
-const getCronTickersGraphDataAndParseToGraph = cronJobService.getTimeTickersGraphData()
-const deleteCronTicker = cronJobService.deleteCronTicker()
-const runCronTickerOnDemand = cronJobService.runCronTickerOnDemand()
+const getCronJobRangeGraphData = cronJobService.getTimeJobsGraphDataRange()
+const getCronJobsPaginated = cronJobService.getCronJobsPaginated()
+const getCronJobRangeGraphDataById = cronJobService.getTimeJobsGraphDataRangeById()
+const getCronJobsGraphDataAndParseToGraph = cronJobService.getTimeJobsGraphData()
+const deleteCronJob = cronJobService.deleteCronJob()
+const runCronJobOnDemand = cronJobService.runCronJobOnDemand()
 
 // Pagination state
 const currentPage = ref(1)
@@ -51,7 +51,7 @@ const totalCount = ref(0)
 // Load page data with pagination
 const loadPageData = async () => {
   try {
-    const response = await getCronTickersPaginated.requestAsync(currentPage.value, pageSize.value)
+    const response = await getCronJobsPaginated.requestAsync(currentPage.value, pageSize.value)
     if (response) {
       totalCount.value = response.totalCount || 0
     }
@@ -82,11 +82,11 @@ const cronOccurrenceDialog = useDialog<{
   retryIntervals: string[]
 }>().withComponent(() => import('@/components/cronJobComponents/CronOccurrenceDialog.vue'))
 
-const crudCronTickerDialog = useDialog<
+const crudCronJobDialog = useDialog<
   GetCronJobResponse & { isFromDuplicate: boolean }
 >().withComponent(() => import('@/components/cronJobComponents/CRUDCronJobDialog.vue'))
 
-const crudCronTickerDialogRef = ref(null)
+const crudCronJobDialogRef = ref(null)
 
 const selectedCronJobGraphData: Ref<string | undefined> = ref(undefined)
 const chartLoading = ref(false)
@@ -103,7 +103,7 @@ const onSubmitConfirmDialog = async () => {
     // Reload page after deletion
     
     // Perform the actual deletion
-    await deleteCronTicker.requestAsync(deletedId)
+    await deleteCronJob.requestAsync(deletedId)
     
     // Update charts to reflect the deletion
     await updateChartsAfterDeletion(deletedId)
@@ -121,24 +121,24 @@ const onSubmitConfirmDialog = async () => {
 const updateChartsAfterDataChange = async (changedId?: string) => {
   try {
     // Update pie chart with overall statistics
-    await getTimeTickersGraphDataAndParseToGraph()
+    await getTimeJobsGraphDataAndParseToGraph()
     
-    // If we have a selected ticker and it's the one that was changed, update its specific chart
+    // If we have a selected job and it's the one that was changed, update its specific chart
     if (selectedCronJobGraphData.value && changedId && selectedCronJobGraphData.value === changedId) {
-      // Update the specific ticker's chart
-      const res = await getCronTickerRangeGraphDataById.requestAsync(selectedCronJobGraphData.value, -3, 3)
-      GetCronTickerRangeGraphData(res)
+      // Update the specific job's chart
+      const res = await getCronJobRangeGraphDataById.requestAsync(selectedCronJobGraphData.value, -3, 3)
+      GetCronJobRangeGraphData(res)
       await updatePieChartForSelectedTicker(selectedCronJobGraphData.value, -3, 3)
     } else if (selectedCronJobGraphData.value) {
-      // If another ticker is selected, update its specific chart
-      const res = await getCronTickerRangeGraphDataById.requestAsync(selectedCronJobGraphData.value, -3, 3)
-      GetCronTickerRangeGraphData(res)
+      // If another job is selected, update its specific chart
+      const res = await getCronJobRangeGraphDataById.requestAsync(selectedCronJobGraphData.value, -3, 3)
+      GetCronJobRangeGraphData(res)
       await updatePieChartForSelectedTicker(selectedCronJobGraphData.value, -3, 3)
     } else {
-      // No specific ticker selected, update overall chart
+      // No specific job selected, update overall chart
       chartData.value.title = 'Job statuses for all Cron Jobs'
-      const res = await getCronTickerRangeGraphData.requestAsync(-3, 3)
-      GetCronTickerRangeGraphData(res)
+      const res = await getCronJobRangeGraphData.requestAsync(-3, 3)
+      GetCronJobRangeGraphData(res)
     }
   } catch (error: any) {
     if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
@@ -152,26 +152,26 @@ const updateChartsAfterDataChange = async (changedId?: string) => {
 const updateChartsAfterDeletion = async (deletedId: string) => {
   try {
     // Update pie chart with overall statistics
-    await getTimeTickersGraphDataAndParseToGraph()
+    await getTimeJobsGraphDataAndParseToGraph()
     
-    // If we have a selected ticker and it's the one that was deleted, reset to overall view
+    // If we have a selected job and it's the one that was deleted, reset to overall view
     if (selectedCronJobGraphData.value === deletedId) {
       selectedCronJobGraphData.value = undefined
       chartData.value.title = 'Job statuses for all Cron Jobs'
       
       // Update the main chart with overall data
-      const res = await getCronTickerRangeGraphData.requestAsync(-3, 3)
-      GetCronTickerRangeGraphData(res)
+      const res = await getCronJobRangeGraphData.requestAsync(-3, 3)
+      GetCronJobRangeGraphData(res)
     } else if (selectedCronJobGraphData.value) {
-      // If another ticker is selected, update its specific chart
-      const res = await getCronTickerRangeGraphDataById.requestAsync(selectedCronJobGraphData.value, -3, 3)
-      GetCronTickerRangeGraphData(res)
+      // If another job is selected, update its specific chart
+      const res = await getCronJobRangeGraphDataById.requestAsync(selectedCronJobGraphData.value, -3, 3)
+      GetCronJobRangeGraphData(res)
       await updatePieChartForSelectedTicker(selectedCronJobGraphData.value, -3, 3)
     } else {
-      // No specific ticker selected, update overall chart
+      // No specific job selected, update overall chart
       chartData.value.title = 'Job statuses for all Cron Jobs'
-      const res = await getCronTickerRangeGraphData.requestAsync(-3, 3)
-      GetCronTickerRangeGraphData(res)
+      const res = await getCronJobRangeGraphData.requestAsync(-3, 3)
+      GetCronJobRangeGraphData(res)
     }
   } catch (error: any) {
     if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
@@ -181,9 +181,9 @@ const updateChartsAfterDeletion = async (deletedId: string) => {
   }
 }
 
-const getTimeTickersGraphDataAndParseToGraph = async () => {
+const getTimeJobsGraphDataAndParseToGraph = async () => {
   try {
-    const res = await getCronTickersGraphDataAndParseToGraph.requestAsync()
+    const res = await getCronJobsGraphDataAndParseToGraph.requestAsync()
     
     if (!res || !Array.isArray(res)) {
       pieChartData.value = [{ value: 1, name: 'No Data Available', itemStyle: { color: '#9e9e9e' } }]
@@ -218,10 +218,10 @@ const getTimeTickersGraphDataAndParseToGraph = async () => {
   }
 }
 
-const updatePieChartForSelectedTicker = async (tickerId: string, min: number, max: number) => {
+const updatePieChartForSelectedTicker = async (jobId: string, min: number, max: number) => {
   try {
-    // Get the specific ticker's data for the selected range
-    const res = await getCronTickerRangeGraphDataById.requestAsync(tickerId, min, max)
+    // Get the specific job's data for the selected range
+    const res = await getCronJobRangeGraphDataById.requestAsync(jobId, min, max)
     
     if (!res || !Array.isArray(res)) {
       pieChartData.value = [{ value: 1, name: 'No Data Available', itemStyle: { color: '#9e9e9e' } }]
@@ -279,7 +279,7 @@ const updatePieChartForSelectedTicker = async (tickerId: string, min: number, ma
   }
 }
 
-const GetCronTickerRangeGraphData = (res: GetCronJobGraphDataRangeResponse[]) => {
+const GetCronJobRangeGraphData = (res: GetCronJobGraphDataRangeResponse[]) => {
   try {
     if (!res || !Array.isArray(res)) {
       return
@@ -411,36 +411,36 @@ const GetCronTickerRangeGraphData = (res: GetCronJobGraphDataRangeResponse[]) =>
   }
 }
 
-const ShowCronTickerOccurrenceGraphData = async (functionName: string, id: string, min: number, max: number) => {
+const ShowCronJobOccurrenceGraphData = async (functionName: string, id: string, min: number, max: number) => {
   try {
     chartLoading.value = true
     
     if (selectedCronJobGraphData.value === id) {
-      // Deselect current ticker and show all data
+      // Deselect current job and show all data
       selectedCronJobGraphData.value = undefined
       chartData.value.title = 'Job statuses for all Cron Jobs'
       
       try {
-        const res = await getCronTickerRangeGraphData.requestAsync(min, max)
-        GetCronTickerRangeGraphData(res)
+        const res = await getCronJobRangeGraphData.requestAsync(min, max)
+        GetCronJobRangeGraphData(res)
         
-        // Refresh pie chart with all tickers data
-        await getTimeTickersGraphDataAndParseToGraph()
+        // Refresh pie chart with all jobs data
+        await getTimeJobsGraphDataAndParseToGraph()
       } catch (error: any) {
         if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
           return
         }
       }
     } else {
-      // Select specific ticker and show its data
+      // Select specific job and show its data
       selectedCronJobGraphData.value = id
       chartData.value.title = `Job statuses for ${functionName}`
       
       try {
-        const res = await getCronTickerRangeGraphDataById.requestAsync(id, min, max)
-        GetCronTickerRangeGraphData(res)
+        const res = await getCronJobRangeGraphDataById.requestAsync(id, min, max)
+        GetCronJobRangeGraphData(res)
         
-        // Update pie chart with selected ticker's data
+        // Update pie chart with selected job's data
         await updatePieChartForSelectedTicker(id, min, max)
       } catch (error: any) {
         if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
@@ -462,8 +462,8 @@ const ShowCronTickerOccurrenceGraphData = async (functionName: string, id: strin
   }
 }
 
-const RunCronTickerOnDemand = async (id: string) => {
-  await runCronTickerOnDemand.requestAsync(id)
+const RunCronJobOnDemand = async (id: string) => {
+  await runCronJobOnDemand.requestAsync(id)
   await sleep(1000)
   await loadPageData()
 }
@@ -483,7 +483,7 @@ onMounted(async () => {
     // Check if still mounted before continuing
     if (!isMounted.value) return
     
-    // Load cron tickers data
+    // Load cron jobs data
     try {
       await loadPageData()
     } catch (error: any) {
@@ -494,8 +494,8 @@ onMounted(async () => {
     
     // Load graph data range
     try {
-      const res = await getCronTickerRangeGraphData.requestAsync(-3, 3)
-      GetCronTickerRangeGraphData(res)
+      const res = await getCronJobRangeGraphData.requestAsync(-3, 3)
+      GetCronJobRangeGraphData(res)
     } catch (error: any) {
       if (error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED') {
         return
@@ -507,7 +507,7 @@ onMounted(async () => {
     
     // Load status distribution data
     try {
-      await getTimeTickersGraphDataAndParseToGraph()
+      await getTimeJobsGraphDataAndParseToGraph()
     } catch (error: any) {
     }
     
@@ -534,18 +534,18 @@ watch(
       await loadPageData()
 
       // Reload main range chart and pie distribution
-      const range = await getCronTickerRangeGraphData.requestAsync(-3, 3)
-      GetCronTickerRangeGraphData(range)
-      await getTimeTickersGraphDataAndParseToGraph()
+      const range = await getCronJobRangeGraphData.requestAsync(-3, 3)
+      GetCronJobRangeGraphData(range)
+      await getTimeJobsGraphDataAndParseToGraph()
 
-      // If a specific ticker is selected, update its view
+      // If a specific job is selected, update its view
       if (selectedCronJobGraphData.value) {
-        const res = await getCronTickerRangeGraphDataById.requestAsync(
+        const res = await getCronJobRangeGraphDataById.requestAsync(
           selectedCronJobGraphData.value,
           -3,
           3
         )
-        GetCronTickerRangeGraphData(res)
+        GetCronJobRangeGraphData(res)
         await updatePieChartForSelectedTicker(selectedCronJobGraphData.value, -3, 3)
       }
     } catch {
@@ -567,7 +567,7 @@ const addHubListeners = async () => {
     // Reload current page when new item is added
     loadPageData()
     
-    // Update charts to reflect the new ticker
+    // Update charts to reflect the new job
     updateChartsAfterDataChange(response.id)
   })
 
@@ -575,7 +575,7 @@ const addHubListeners = async () => {
     // For paginated data, we need to refresh the current page
     loadPageData()
     
-    // Update charts to reflect the updated ticker
+    // Update charts to reflect the updated job
     updateChartsAfterDataChange(response.id)
   })
 
@@ -724,8 +724,8 @@ const totalOption = computed(() => ({
   backgroundColor: 'transparent',
   title: {
     text: selectedCronJobGraphData.value 
-      ? 'Status Distribution - Selected Ticker'
-      : 'Status Distribution - All Tickers',
+      ? 'Status Distribution - Selected Job'
+      : 'Status Distribution - All Jobs',
     left: 'center',
     top: '3%',
     textStyle: {
@@ -916,13 +916,13 @@ function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
 const fetchGraphData = debounce(async ([min, max]: number[]) => {
   try {
     if (selectedCronJobGraphData.value == undefined) {
-      const res = await getCronTickerRangeGraphData.requestAsync(min, max)
-      GetCronTickerRangeGraphData(res)
+      const res = await getCronJobRangeGraphData.requestAsync(min, max)
+      GetCronJobRangeGraphData(res)
     } else {
-      const res = await getCronTickerRangeGraphDataById.requestAsync(selectedCronJobGraphData.value!, min, max)
-      GetCronTickerRangeGraphData(res)
+      const res = await getCronJobRangeGraphDataById.requestAsync(selectedCronJobGraphData.value!, min, max)
+      GetCronJobRangeGraphData(res)
       
-      // Also update the pie chart for the selected ticker
+      // Also update the pie chart for the selected job
       await updatePieChartForSelectedTicker(selectedCronJobGraphData.value!, min, max)
     }
   } catch (error: any) {
@@ -986,7 +986,7 @@ const resetRange = () => {
 const refreshData = async () => {
   try {
     await loadPageData()
-    // Reset to all tickers view when refreshing
+    // Reset to all jobs view when refreshing
     selectedCronJobGraphData.value = undefined
     chartData.value.title = 'Job statuses for all Cron Jobs'
     
@@ -1092,7 +1092,7 @@ const refreshData = async () => {
               <v-icon class="title-icon" color="primary">mdi-chart-pie</v-icon>
               Status Distribution
             </h2>
-            <p class="card-subtitle">Real-time cron ticker status breakdown</p>
+            <p class="card-subtitle">Real-time cron job status breakdown</p>
 
             <!-- Action Buttons -->
             <div class="chart-actions">
@@ -1101,7 +1101,7 @@ const refreshData = async () => {
                 size="small"
                 variant="text"
                 color="primary"
-                @click="getTimeTickersGraphDataAndParseToGraph"
+                @click="getTimeJobsGraphDataAndParseToGraph"
                 class="refresh-chart-btn"
               >
                 <v-icon size="small">mdi-refresh</v-icon>
@@ -1134,7 +1134,7 @@ const refreshData = async () => {
                 <button
                   class="premium-action-btn primary-action"
                   @click="
-                    crudCronTickerDialog.open({
+                    crudCronJobDialog.open({
                       ...({} as GetCronJobResponse),
                       isFromDuplicate: true,
                     })
@@ -1152,16 +1152,16 @@ const refreshData = async () => {
             <!-- Search and Info Group -->
             <div class="search-info-group">
               <v-chip
-                :color="getCronTickersPaginated.loader.value ? 'warning' : 'success'"
+                :color="getCronJobsPaginated.loader.value ? 'warning' : 'success'"
                 variant="tonal"
                 size="small"
                 class="status-chip"
               >
                 <v-icon size="small" class="mr-1">
-                  {{ getCronTickersPaginated.loader.value ? 'mdi-loading' : 'mdi-check' }}
+                  {{ getCronJobsPaginated.loader.value ? 'mdi-loading' : 'mdi-check' }}
                 </v-icon>
                 {{
-                  getCronTickersPaginated.loader.value ? 'Loading...' : `${totalCount} total items`
+                  getCronJobsPaginated.loader.value ? 'Loading...' : `${totalCount} total items`
                 }}
               </v-chip>
             </div>
@@ -1186,8 +1186,8 @@ const refreshData = async () => {
           <v-data-table
             density="compact"
             :headers="headersWithoutReadable"
-            :loading="getCronTickersPaginated.loader.value"
-            :items="getCronTickersPaginated.response.value?.items || []"
+            :loading="getCronJobsPaginated.loader.value"
+            :items="getCronJobsPaginated.response.value?.items || []"
             item-value="id"
             :items-per-page="-1"
             hide-default-footer
@@ -1227,7 +1227,7 @@ const refreshData = async () => {
                     <template v-slot:activator="{ props }">
                       <button
                         v-bind="props"
-                        @click="ShowCronTickerOccurrenceGraphData(item.function, item.id, -3, 3)"
+                        @click="ShowCronJobOccurrenceGraphData(item.function, item.id, -3, 3)"
                         class="modern-action-btn chart-btn"
                         :class="{ active: selectedCronJobGraphData === item.id }"
                         :disabled="chartLoading"
@@ -1270,7 +1270,7 @@ const refreshData = async () => {
                     <template v-slot:activator="{ props }">
                       <button
                         v-bind="props"
-                        @click="crudCronTickerDialog.open({ ...item, isFromDuplicate: false })"
+                        @click="crudCronJobDialog.open({ ...item, isFromDuplicate: false })"
                         class="modern-action-btn edit-btn"
                       >
                         <v-icon size="16">mdi-pencil</v-icon>
@@ -1286,7 +1286,7 @@ const refreshData = async () => {
                     <template v-slot:activator="{ props }">
                       <button
                         v-bind="props"
-                        @click="RunCronTickerOnDemand(item.id)"
+                        @click="RunCronJobOnDemand(item.id)"
                         class="modern-action-btn run-btn"
                       >
                         <v-icon size="16">mdi-play-outline</v-icon>
@@ -1308,7 +1308,7 @@ const refreshData = async () => {
                             id: item.id,
                             showWarningAlert: item.initIdentifier != undefined ? true : false,
                             warningAlertMessage:
-                              'System-seeded ticker. To remove permanently, delete its cron expression from code.',
+                              'System-seeded job. To remove permanently, delete its cron expression from code.',
                           })
                         "
                         class="modern-action-btn delete-btn"
@@ -1342,11 +1342,11 @@ const refreshData = async () => {
       @close="cronOccurrenceDialog.close()"
       :is-open="cronOccurrenceDialog.isOpen"
     />
-    <crudCronTickerDialog.Component
-      ref="crudCronTickerDialogRef"
-      :dialog-props="crudCronTickerDialog.propData"
-      @close="crudCronTickerDialog.close()"
-      :is-open="crudCronTickerDialog.isOpen"
+    <crudCronJobDialog.Component
+      ref="crudCronJobDialogRef"
+      :dialog-props="crudCronJobDialog.propData"
+      @close="crudCronJobDialog.close()"
+      :is-open="crudCronJobDialog.isOpen"
     />
     <confirmDialog.Component
       :is-open="confirmDialog.isOpen"

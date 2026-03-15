@@ -20,7 +20,7 @@ internal interface IJobsInstrumentation
     void LogRequestDeserializationFailure(
         string requestType,
         string functionName,
-        Guid tickerId,
+        Guid jobId,
         JobType type,
         Exception exception
     );

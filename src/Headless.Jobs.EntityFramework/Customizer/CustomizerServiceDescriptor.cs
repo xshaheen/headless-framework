@@ -11,13 +11,13 @@ namespace Headless.Jobs.Customizer;
 
 public static class ServiceBuilder
 {
-    internal static void UseApplicationDbContext<TContext, TTimeTicker, TCronTicker>(
-        JobsEfCoreOptionBuilder<TTimeTicker, TCronTicker> builder,
+    internal static void UseApplicationDbContext<TContext, TTimeJob, TCronJob>(
+        JobsEfCoreOptionBuilder<TTimeJob, TCronJob> builder,
         ConfigurationType configurationType
     )
         where TContext : DbContext
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         builder.ConfigureServices = (services) =>
         {
@@ -30,21 +30,21 @@ public static class ServiceBuilder
                 if (originalDescriptor == null)
                 {
                     throw new InvalidOperationException(
-                        $"Ticker: Cannot use UseModelCustomizer with empty {typeof(TContext).Name} configurations"
+                        $"Job: Cannot use UseModelCustomizer with empty {typeof(TContext).Name} configurations"
                     );
                 }
 
                 if (originalDescriptor.ImplementationFactory == null)
                 {
                     throw new InvalidOperationException(
-                        $"Ticker: DbContextOptions<{typeof(TContext).Name}> must be registered with an ImplementationFactory"
+                        $"Job: DbContextOptions<{typeof(TContext).Name}> must be registered with an ImplementationFactory"
                     );
                 }
 
                 var newDescriptor = new ServiceDescriptor(
                     typeof(DbContextOptions<TContext>),
                     provider =>
-                        _UpdateDbContextOptionsService<TContext, TTimeTicker, TCronTicker>(
+                        _UpdateDbContextOptionsService<TContext, TTimeJob, TCronJob>(
                             provider,
                             originalDescriptor.ImplementationFactory
                         ),
@@ -72,19 +72,19 @@ public static class ServiceBuilder
             });
 
             services.AddSingleton<
-                IJobPersistenceProvider<TTimeTicker, TCronTicker>,
-                JobsEfCorePersistenceProvider<TContext, TTimeTicker, TCronTicker>
+                IJobPersistenceProvider<TTimeJob, TCronJob>,
+                JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>
             >();
         };
     }
 
-    internal static void UseJobsDbContext<TContext, TTimeTicker, TCronTicker>(
-        JobsEfCoreOptionBuilder<TTimeTicker, TCronTicker> builder,
+    internal static void UseJobsDbContext<TContext, TTimeJob, TCronJob>(
+        JobsEfCoreOptionBuilder<TTimeJob, TCronJob> builder,
         Action<DbContextOptionsBuilder> optionsAction
     )
-        where TContext : JobsDbContext<TTimeTicker, TCronTicker>
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TContext : JobsDbContext<TTimeJob, TCronJob>
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         builder.ConfigureServices = services =>
         {
@@ -97,24 +97,24 @@ public static class ServiceBuilder
                 return new PooledDbContextFactory<TContext>(optionsBuilder.Options, builder.PoolSize);
             });
             services.AddSingleton<
-                IJobPersistenceProvider<TTimeTicker, TCronTicker>,
-                JobsEfCorePersistenceProvider<TContext, TTimeTicker, TCronTicker>
+                IJobPersistenceProvider<TTimeJob, TCronJob>,
+                JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>
             >();
         };
     }
 
-    private static DbContextOptions<TContext> _UpdateDbContextOptionsService<TContext, TTimeTicker, TCronTicker>(
+    private static DbContextOptions<TContext> _UpdateDbContextOptionsService<TContext, TTimeJob, TCronJob>(
         IServiceProvider serviceProvider,
         Func<IServiceProvider, object> oldFactory
     )
         where TContext : DbContext
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         var factory = (DbContextOptions<TContext>)oldFactory(serviceProvider);
 
         return new DbContextOptionsBuilder<TContext>(factory)
-            .ReplaceService<IModelCustomizer, JobsModelCustomizer<TTimeTicker, TCronTicker>>()
+            .ReplaceService<IModelCustomizer, JobsModelCustomizer<TTimeJob, TCronJob>>()
             .Options;
     }
 }

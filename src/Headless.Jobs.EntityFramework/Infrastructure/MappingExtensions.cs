@@ -8,8 +8,8 @@ namespace Headless.Jobs.Infrastructure;
 
 internal static class MappingExtensions
 {
-    public static Expression<Func<TCronTicker, CronJobEntity>> ForCronTickerExpressions<TCronTicker>()
-        where TCronTicker : CronJobEntity, new() =>
+    public static Expression<Func<TCronJob, CronJobEntity>> ForCronJobExpressions<TCronJob>()
+        where TCronJob : CronJobEntity, new() =>
         e => new CronJobEntity
         {
             Id = e.Id,
@@ -19,8 +19,8 @@ internal static class MappingExtensions
             Retries = e.Retries,
         };
 
-    internal static Expression<Func<TTimeTicker, TimeJobEntity>> ForQueueTimeTickers<TTimeTicker>()
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new() =>
+    internal static Expression<Func<TTimeJob, TimeJobEntity>> ForQueueTimeJobs<TTimeJob>()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new() =>
         e => new TimeJobEntity
         {
             Id = e.Id,
@@ -53,50 +53,50 @@ internal static class MappingExtensions
         };
 
     internal static Expression<
-        Func<TCronTickerOccurrence, CronJobOccurrenceEntity<TCronTicker>>
-    > ForQueueCronTickerOccurrence<TCronTickerOccurrence, TCronTicker>()
-        where TCronTicker : CronJobEntity, new()
-        where TCronTickerOccurrence : CronJobOccurrenceEntity<TCronTicker>, new() =>
-        e => new CronJobOccurrenceEntity<TCronTicker>
+        Func<TCronJobOccurrence, CronJobOccurrenceEntity<TCronJob>>
+    > ForQueueCronJobOccurrence<TCronJobOccurrence, TCronJob>()
+        where TCronJob : CronJobEntity, new()
+        where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new() =>
+        e => new CronJobOccurrenceEntity<TCronJob>
         {
             Id = e.Id,
             UpdatedAt = e.UpdatedAt,
             CronJobId = e.CronJobId,
-            CronTicker = new TCronTicker
+            CronJob = new TCronJob
             {
-                Id = e.CronTicker.Id,
-                Function = e.CronTicker.Function,
-                RetryIntervals = e.CronTicker.RetryIntervals,
-                Retries = e.CronTicker.Retries,
+                Id = e.CronJob.Id,
+                Function = e.CronJob.Function,
+                RetryIntervals = e.CronJob.RetryIntervals,
+                Retries = e.CronJob.Retries,
             },
         };
 
     internal static Expression<
-        Func<TCronTickerOccurrence, CronJobOccurrenceEntity<TCronTicker>>
-    > ForLatestQueuedCronTickerOccurrence<TCronTickerOccurrence, TCronTicker>()
-        where TCronTicker : CronJobEntity, new()
-        where TCronTickerOccurrence : CronJobOccurrenceEntity<TCronTicker>, new() =>
-        e => new CronJobOccurrenceEntity<TCronTicker>
+        Func<TCronJobOccurrence, CronJobOccurrenceEntity<TCronJob>>
+    > ForLatestQueuedCronJobOccurrence<TCronJobOccurrence, TCronJob>()
+        where TCronJob : CronJobEntity, new()
+        where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new() =>
+        e => new CronJobOccurrenceEntity<TCronJob>
         {
             Id = e.Id,
             CreatedAt = e.CreatedAt,
             CronJobId = e.CronJobId,
             ExecutionTime = e.ExecutionTime,
-            CronTicker = new TCronTicker
+            CronJob = new TCronJob
             {
-                Id = e.CronTicker.Id,
-                Function = e.CronTicker.Function,
-                Expression = e.CronTicker.Expression,
-                RetryIntervals = e.CronTicker.RetryIntervals,
-                Retries = e.CronTicker.Retries,
+                Id = e.CronJob.Id,
+                Function = e.CronJob.Function,
+                Expression = e.CronJob.Expression,
+                RetryIntervals = e.CronJob.RetryIntervals,
+                Retries = e.CronJob.Retries,
             },
         };
 
-    internal static void UpdateCronTickerOccurrence<TCronTicker>(
-        this UpdateSettersBuilder<CronJobOccurrenceEntity<TCronTicker>> setters,
+    internal static void UpdateCronJobOccurrence<TCronJob>(
+        this UpdateSettersBuilder<CronJobOccurrenceEntity<TCronJob>> setters,
         InternalFunctionContext functionContext
     )
-        where TCronTicker : CronJobEntity, new()
+        where TCronJob : CronJobEntity, new()
     {
         var propsToUpdate = functionContext.GetPropsToUpdate();
 
@@ -155,12 +155,12 @@ internal static class MappingExtensions
         }
     }
 
-    internal static void UpdateTimeTicker<TTimeTicker>(
-        this UpdateSettersBuilder<TTimeTicker> setters,
+    internal static void UpdateTimeJob<TTimeJob>(
+        this UpdateSettersBuilder<TTimeJob> setters,
         InternalFunctionContext functionContext,
         DateTime updatedAt
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
         var propsToUpdate = functionContext.GetPropsToUpdate();
 

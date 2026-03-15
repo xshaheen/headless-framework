@@ -10,12 +10,12 @@ public static class JobsDiscoveryExtension
     /// <summary>
     /// Loads the assemblies to initialize the source generated code.
     /// </summary>
-    public static JobsOptionsBuilder<TTimeTicker, TCronTicker> AddJobsDiscovery<TTimeTicker, TCronTicker>(
-        this JobsOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
+    public static JobsOptionsBuilder<TTimeJob, TCronJob> AddJobsDiscovery<TTimeJob, TCronJob>(
+        this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration,
         Assembly[] assemblies
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         var assembliesToLoad = assemblies ?? [];
 
@@ -27,6 +27,6 @@ public static class JobsDiscoveryExtension
             }
         }
 
-        return tickerConfiguration;
+        return jobsConfiguration;
     }
 }

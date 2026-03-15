@@ -4,23 +4,23 @@ using Headless.Jobs.Enums;
 namespace Headless.Jobs.Managers;
 
 /// <summary>
-/// Fluent chain ticker builder with lambda configuration and duplicate prevention
+/// Fluent chain job builder with lambda configuration and duplicate prevention
 /// </summary>
-public class FluentChainJobBuilder<TTimeTicker>
-    where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+public class FluentChainJobBuilder<TTimeJob>
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
-    private readonly TTimeTicker _rootTicker;
+    private readonly TTimeJob _rootTicker;
     private readonly bool[] _childrenUsed = new bool[5]; // Track which children are used
     private readonly bool[][] _grandChildrenUsed = new bool[5][]; // Track which grandchildren are used per child
 
     private FluentChainJobBuilder()
     {
-        _rootTicker = new TTimeTicker
+        _rootTicker = new TTimeJob
         {
             Id = Guid.NewGuid(),
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
-            Children = new List<TTimeTicker>(),
+            Children = new List<TTimeJob>(),
         };
 
         // Initialize grandchildren tracking
@@ -31,12 +31,12 @@ public class FluentChainJobBuilder<TTimeTicker>
     }
 
     /// <summary>
-    /// Start building by configuring the parent ticker
+    /// Start building by configuring the parent job
     /// </summary>
-    public static FluentChainJobBuilder<TTimeTicker> BeginWith(Action<ParentBuilder<TTimeTicker>> configure)
+    public static FluentChainJobBuilder<TTimeJob> BeginWith(Action<ParentBuilder<TTimeJob>> configure)
     {
-        var builder = new FluentChainJobBuilder<TTimeTicker>();
-        var parentBuilder = new ParentBuilder<TTimeTicker>(builder._rootTicker);
+        var builder = new FluentChainJobBuilder<TTimeJob>();
+        var parentBuilder = new ParentBuilder<TTimeJob>(builder._rootTicker);
         configure(parentBuilder);
         return builder;
     }
@@ -44,7 +44,7 @@ public class FluentChainJobBuilder<TTimeTicker>
     /// <summary>
     /// Configure the first child (1/5)
     /// </summary>
-    public FirstChildBuilder WithFirstChild(Action<ChildBuilder<TTimeTicker>> configure)
+    public FirstChildBuilder WithFirstChild(Action<ChildBuilder<TTimeJob>> configure)
     {
         if (_childrenUsed[0])
         {
@@ -53,7 +53,7 @@ public class FluentChainJobBuilder<TTimeTicker>
 
         _childrenUsed[0] = true;
         var child = _CreateChild();
-        var childBuilder = new ChildBuilder<TTimeTicker>(child);
+        var childBuilder = new ChildBuilder<TTimeJob>(child);
         configure(childBuilder);
         _rootTicker.Children.Add(child);
 
@@ -63,7 +63,7 @@ public class FluentChainJobBuilder<TTimeTicker>
     /// <summary>
     /// Configure the second child (2/5)
     /// </summary>
-    public SecondChildBuilder WithSecondChild(Action<ChildBuilder<TTimeTicker>> configure)
+    public SecondChildBuilder WithSecondChild(Action<ChildBuilder<TTimeJob>> configure)
     {
         if (_childrenUsed[1])
         {
@@ -72,7 +72,7 @@ public class FluentChainJobBuilder<TTimeTicker>
 
         _childrenUsed[1] = true;
         var child = _CreateChild();
-        var childBuilder = new ChildBuilder<TTimeTicker>(child);
+        var childBuilder = new ChildBuilder<TTimeJob>(child);
         configure(childBuilder);
         _rootTicker.Children.Add(child);
 
@@ -82,7 +82,7 @@ public class FluentChainJobBuilder<TTimeTicker>
     /// <summary>
     /// Configure the third child (3/5)
     /// </summary>
-    public ThirdChildBuilder WithThirdChild(Action<ChildBuilder<TTimeTicker>> configure)
+    public ThirdChildBuilder WithThirdChild(Action<ChildBuilder<TTimeJob>> configure)
     {
         if (_childrenUsed[2])
         {
@@ -91,7 +91,7 @@ public class FluentChainJobBuilder<TTimeTicker>
 
         _childrenUsed[2] = true;
         var child = _CreateChild();
-        var childBuilder = new ChildBuilder<TTimeTicker>(child);
+        var childBuilder = new ChildBuilder<TTimeJob>(child);
         configure(childBuilder);
         _rootTicker.Children.Add(child);
 
@@ -101,7 +101,7 @@ public class FluentChainJobBuilder<TTimeTicker>
     /// <summary>
     /// Configure the fourth child (4/5)
     /// </summary>
-    public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeTicker>> configure)
+    public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeJob>> configure)
     {
         if (_childrenUsed[3])
         {
@@ -110,7 +110,7 @@ public class FluentChainJobBuilder<TTimeTicker>
 
         _childrenUsed[3] = true;
         var child = _CreateChild();
-        var childBuilder = new ChildBuilder<TTimeTicker>(child);
+        var childBuilder = new ChildBuilder<TTimeJob>(child);
         configure(childBuilder);
         _rootTicker.Children.Add(child);
 
@@ -120,7 +120,7 @@ public class FluentChainJobBuilder<TTimeTicker>
     /// <summary>
     /// Configure the fifth child (5/5)
     /// </summary>
-    public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeTicker>> configure)
+    public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure)
     {
         if (_childrenUsed[4])
         {
@@ -129,28 +129,28 @@ public class FluentChainJobBuilder<TTimeTicker>
 
         _childrenUsed[4] = true;
         var child = _CreateChild();
-        var childBuilder = new ChildBuilder<TTimeTicker>(child);
+        var childBuilder = new ChildBuilder<TTimeJob>(child);
         configure(childBuilder);
         _rootTicker.Children.Add(child);
 
         return new FifthChildBuilder(this, child, 4);
     }
 
-    private TTimeTicker _CreateChild()
+    private TTimeJob _CreateChild()
     {
-        return new TTimeTicker
+        return new TTimeJob
         {
             Id = Guid.NewGuid(),
             ParentId = _rootTicker.Id,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
-            Children = new List<TTimeTicker>(),
+            Children = new List<TTimeJob>(),
         };
     }
 
-    private static TTimeTicker _CreateGrandChild(TTimeTicker parent)
+    private static TTimeJob _CreateGrandChild(TTimeJob parent)
     {
-        return new TTimeTicker
+        return new TTimeJob
         {
             Id = Guid.NewGuid(),
             ParentId = parent.Id,
@@ -161,30 +161,30 @@ public class FluentChainJobBuilder<TTimeTicker>
     }
 
     /// <summary>
-    /// Build the final ticker entity
+    /// Build the final job entity
     /// </summary>
-    public TTimeTicker Build() => _rootTicker;
+    public TTimeJob Build() => _rootTicker;
 
     /// <summary>
     /// Implicit conversion to entity
     /// </summary>
-    public static implicit operator TTimeTicker(FluentChainJobBuilder<TTimeTicker> builder) => builder.Build();
+    public static implicit operator TTimeJob(FluentChainJobBuilder<TTimeJob> builder) => builder.Build();
 
     // Individual child builders to prevent duplicate configuration
     public class FirstChildBuilder
     {
-        private readonly FluentChainJobBuilder<TTimeTicker> _mainBuilder;
-        private readonly TTimeTicker _child;
+        private readonly FluentChainJobBuilder<TTimeJob> _mainBuilder;
+        private readonly TTimeJob _child;
         private readonly int _childIndex;
 
-        internal FirstChildBuilder(FluentChainJobBuilder<TTimeTicker> mainBuilder, TTimeTicker child, int childIndex)
+        internal FirstChildBuilder(FluentChainJobBuilder<TTimeJob> mainBuilder, TTimeJob child, int childIndex)
         {
             _mainBuilder = mainBuilder;
             _child = child;
             _childIndex = childIndex;
         }
 
-        public FirstChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FirstChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][0])
             {
@@ -193,13 +193,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FirstChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FirstChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][1])
             {
@@ -208,13 +208,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FirstChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FirstChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][2])
             {
@@ -223,13 +223,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FirstChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FirstChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][3])
             {
@@ -238,13 +238,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FirstChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FirstChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][4])
             {
@@ -253,40 +253,40 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public SecondChildBuilder WithSecondChild(Action<ChildBuilder<TTimeTicker>> configure) =>
+        public SecondChildBuilder WithSecondChild(Action<ChildBuilder<TTimeJob>> configure) =>
             _mainBuilder.WithSecondChild(configure);
 
-        public ThirdChildBuilder WithThirdChild(Action<ChildBuilder<TTimeTicker>> configure) =>
+        public ThirdChildBuilder WithThirdChild(Action<ChildBuilder<TTimeJob>> configure) =>
             _mainBuilder.WithThirdChild(configure);
 
-        public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeTicker>> configure) =>
+        public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeJob>> configure) =>
             _mainBuilder.WithFourthChild(configure);
 
-        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeTicker>> configure) =>
+        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure) =>
             _mainBuilder.WithFifthChild(configure);
 
-        public TTimeTicker Build() => _mainBuilder.Build();
+        public TTimeJob Build() => _mainBuilder.Build();
 
-        public static implicit operator TTimeTicker(FirstChildBuilder builder) => builder.Build();
+        public static implicit operator TTimeJob(FirstChildBuilder builder) => builder.Build();
 
-        public TTimeTicker ToTTimeTicker() => Build();
+        public TTimeJob ToTTimeJob() => Build();
     }
 
     public class SecondChildBuilder
     {
-        private readonly FluentChainJobBuilder<TTimeTicker> _mainBuilder;
-        private readonly TTimeTicker _child;
+        private readonly FluentChainJobBuilder<TTimeJob> _mainBuilder;
+        private readonly TTimeJob _child;
         private readonly int _childIndex;
 
         internal SecondChildBuilder(
-            FluentChainJobBuilder<TTimeTicker> mainBuilder,
-            TTimeTicker child,
+            FluentChainJobBuilder<TTimeJob> mainBuilder,
+            TTimeJob child,
             int childIndex
         )
         {
@@ -295,7 +295,7 @@ public class FluentChainJobBuilder<TTimeTicker>
             _childIndex = childIndex;
         }
 
-        public SecondChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public SecondChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][0])
             {
@@ -304,13 +304,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public SecondChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public SecondChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][1])
             {
@@ -319,13 +319,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public SecondChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public SecondChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][2])
             {
@@ -334,13 +334,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public SecondChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public SecondChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][3])
             {
@@ -349,13 +349,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public SecondChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public SecondChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][4])
             {
@@ -364,42 +364,42 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public ThirdChildBuilder WithThirdChild(Action<ChildBuilder<TTimeTicker>> configure) =>
+        public ThirdChildBuilder WithThirdChild(Action<ChildBuilder<TTimeJob>> configure) =>
             _mainBuilder.WithThirdChild(configure);
 
-        public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeTicker>> configure) =>
+        public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeJob>> configure) =>
             _mainBuilder.WithFourthChild(configure);
 
-        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeTicker>> configure) =>
+        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure) =>
             _mainBuilder.WithFifthChild(configure);
 
-        public TTimeTicker Build() => _mainBuilder.Build();
+        public TTimeJob Build() => _mainBuilder.Build();
 
-        public static implicit operator TTimeTicker(SecondChildBuilder builder) => builder.Build();
+        public static implicit operator TTimeJob(SecondChildBuilder builder) => builder.Build();
 
-        public TTimeTicker ToTTimeTicker() => Build();
+        public TTimeJob ToTTimeJob() => Build();
     }
 
     public class ThirdChildBuilder
     {
-        private readonly FluentChainJobBuilder<TTimeTicker> _mainBuilder;
-        private readonly TTimeTicker _child;
+        private readonly FluentChainJobBuilder<TTimeJob> _mainBuilder;
+        private readonly TTimeJob _child;
         private readonly int _childIndex;
 
-        internal ThirdChildBuilder(FluentChainJobBuilder<TTimeTicker> mainBuilder, TTimeTicker child, int childIndex)
+        internal ThirdChildBuilder(FluentChainJobBuilder<TTimeJob> mainBuilder, TTimeJob child, int childIndex)
         {
             _mainBuilder = mainBuilder;
             _child = child;
             _childIndex = childIndex;
         }
 
-        public ThirdChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public ThirdChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][0])
             {
@@ -408,13 +408,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public ThirdChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public ThirdChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][1])
             {
@@ -423,13 +423,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public ThirdChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public ThirdChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][2])
             {
@@ -438,13 +438,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public ThirdChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public ThirdChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][3])
             {
@@ -453,13 +453,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public ThirdChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public ThirdChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][4])
             {
@@ -468,34 +468,34 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeTicker>> configure) =>
+        public FourthChildBuilder WithFourthChild(Action<ChildBuilder<TTimeJob>> configure) =>
             _mainBuilder.WithFourthChild(configure);
 
-        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeTicker>> configure) =>
+        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure) =>
             _mainBuilder.WithFifthChild(configure);
 
-        public TTimeTicker Build() => _mainBuilder.Build();
+        public TTimeJob Build() => _mainBuilder.Build();
 
-        public static implicit operator TTimeTicker(ThirdChildBuilder builder) => builder.Build();
+        public static implicit operator TTimeJob(ThirdChildBuilder builder) => builder.Build();
 
-        public TTimeTicker ToTTimeTicker() => Build();
+        public TTimeJob ToTTimeJob() => Build();
     }
 
     public class FourthChildBuilder
     {
-        private readonly FluentChainJobBuilder<TTimeTicker> _mainBuilder;
-        private readonly TTimeTicker _child;
+        private readonly FluentChainJobBuilder<TTimeJob> _mainBuilder;
+        private readonly TTimeJob _child;
         private readonly int _childIndex;
 
         internal FourthChildBuilder(
-            FluentChainJobBuilder<TTimeTicker> mainBuilder,
-            TTimeTicker child,
+            FluentChainJobBuilder<TTimeJob> mainBuilder,
+            TTimeJob child,
             int childIndex
         )
         {
@@ -504,7 +504,7 @@ public class FluentChainJobBuilder<TTimeTicker>
             _childIndex = childIndex;
         }
 
-        public FourthChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FourthChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][0])
             {
@@ -513,13 +513,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FourthChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FourthChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][1])
             {
@@ -528,13 +528,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FourthChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FourthChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][2])
             {
@@ -543,13 +543,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FourthChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FourthChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][3])
             {
@@ -558,13 +558,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FourthChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FourthChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][4])
             {
@@ -573,36 +573,36 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeTicker>> configure) =>
+        public FifthChildBuilder WithFifthChild(Action<ChildBuilder<TTimeJob>> configure) =>
             _mainBuilder.WithFifthChild(configure);
 
-        public TTimeTicker Build() => _mainBuilder.Build();
+        public TTimeJob Build() => _mainBuilder.Build();
 
-        public static implicit operator TTimeTicker(FourthChildBuilder builder) => builder.Build();
+        public static implicit operator TTimeJob(FourthChildBuilder builder) => builder.Build();
 
-        public TTimeTicker ToTTimeTicker() => Build();
+        public TTimeJob ToTTimeJob() => Build();
     }
 
     public class FifthChildBuilder
     {
-        private readonly FluentChainJobBuilder<TTimeTicker> _mainBuilder;
-        private readonly TTimeTicker _child;
+        private readonly FluentChainJobBuilder<TTimeJob> _mainBuilder;
+        private readonly TTimeJob _child;
         private readonly int _childIndex;
 
-        internal FifthChildBuilder(FluentChainJobBuilder<TTimeTicker> mainBuilder, TTimeTicker child, int childIndex)
+        internal FifthChildBuilder(FluentChainJobBuilder<TTimeJob> mainBuilder, TTimeJob child, int childIndex)
         {
             _mainBuilder = mainBuilder;
             _child = child;
             _childIndex = childIndex;
         }
 
-        public FifthChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FifthChildBuilder WithFirstGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][0])
             {
@@ -611,13 +611,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][0] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FifthChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FifthChildBuilder WithSecondGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][1])
             {
@@ -626,13 +626,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][1] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FifthChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FifthChildBuilder WithThirdGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][2])
             {
@@ -641,13 +641,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][2] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FifthChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FifthChildBuilder WithFourthGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][3])
             {
@@ -656,13 +656,13 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][3] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public FifthChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeTicker>> configure)
+        public FifthChildBuilder WithFifthGrandChild(Action<GrandChildBuilder<TTimeJob>> configure)
         {
             if (_mainBuilder._grandChildrenUsed[_childIndex][4])
             {
@@ -671,60 +671,60 @@ public class FluentChainJobBuilder<TTimeTicker>
 
             _mainBuilder._grandChildrenUsed[_childIndex][4] = true;
             var grandChild = _CreateGrandChild(_child);
-            var grandChildBuilder = new GrandChildBuilder<TTimeTicker>(grandChild);
+            var grandChildBuilder = new GrandChildBuilder<TTimeJob>(grandChild);
             configure(grandChildBuilder);
             _child.Children.Add(grandChild);
             return this;
         }
 
-        public TTimeTicker Build() => _mainBuilder.Build();
+        public TTimeJob Build() => _mainBuilder.Build();
 
-        public static implicit operator TTimeTicker(FifthChildBuilder builder) => builder.Build();
+        public static implicit operator TTimeJob(FifthChildBuilder builder) => builder.Build();
 
-        public TTimeTicker ToTTimeTicker() => Build();
+        public TTimeJob ToTTimeJob() => Build();
     }
 
-    public TTimeTicker ToTTimeTicker() => Build();
+    public TTimeJob ToTTimeJob() => Build();
 }
 
 /// <summary>
-/// Parent builder for configuring the root ticker
+/// Parent builder for configuring the root job
 /// </summary>
-public class ParentBuilder<TTimeTicker>
-    where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+public class ParentBuilder<TTimeJob>
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
-    private readonly TTimeTicker _parent;
+    private readonly TTimeJob _parent;
 
-    internal ParentBuilder(TTimeTicker parent)
+    internal ParentBuilder(TTimeJob parent)
     {
         _parent = parent;
     }
 
-    public ParentBuilder<TTimeTicker> SetFunction(string functionName)
+    public ParentBuilder<TTimeJob> SetFunction(string functionName)
     {
         _parent.Function = functionName;
         return this;
     }
 
-    public ParentBuilder<TTimeTicker> SetDescription(string description)
+    public ParentBuilder<TTimeJob> SetDescription(string description)
     {
         _parent.Description = description;
         return this;
     }
 
-    public ParentBuilder<TTimeTicker> SetExecutionTime(DateTime executionTime)
+    public ParentBuilder<TTimeJob> SetExecutionTime(DateTime executionTime)
     {
         _parent.ExecutionTime = executionTime;
         return this;
     }
 
-    public ParentBuilder<TTimeTicker> SetRequest<T>(T request)
+    public ParentBuilder<TTimeJob> SetRequest<T>(T request)
     {
         _parent.Request = JobsHelper.CreateJobRequest(request);
         return this;
     }
 
-    public ParentBuilder<TTimeTicker> SetRetries(int retries, params int[] intervals)
+    public ParentBuilder<TTimeJob> SetRetries(int retries, params int[] intervals)
     {
         _parent.Retries = retries;
         _parent.RetryIntervals = intervals;
@@ -735,47 +735,47 @@ public class ParentBuilder<TTimeTicker>
 /// <summary>
 /// Child builder for configuring individual children
 /// </summary>
-public class ChildBuilder<TTimeTicker>
-    where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+public class ChildBuilder<TTimeJob>
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
-    private readonly TTimeTicker _child;
+    private readonly TTimeJob _child;
 
-    internal ChildBuilder(TTimeTicker child)
+    internal ChildBuilder(TTimeJob child)
     {
         _child = child;
     }
 
-    public ChildBuilder<TTimeTicker> SetFunction(string functionName)
+    public ChildBuilder<TTimeJob> SetFunction(string functionName)
     {
         _child.Function = functionName;
         return this;
     }
 
-    public ChildBuilder<TTimeTicker> SetDescription(string description)
+    public ChildBuilder<TTimeJob> SetDescription(string description)
     {
         _child.Description = description;
         return this;
     }
 
-    public ChildBuilder<TTimeTicker> SetRunCondition(RunCondition condition)
+    public ChildBuilder<TTimeJob> SetRunCondition(RunCondition condition)
     {
         _child.RunCondition = condition;
         return this;
     }
 
-    public ChildBuilder<TTimeTicker> SetExecutionTime(DateTime executionTime)
+    public ChildBuilder<TTimeJob> SetExecutionTime(DateTime executionTime)
     {
         _child.ExecutionTime = executionTime;
         return this;
     }
 
-    public ChildBuilder<TTimeTicker> SetRequest<T>(T request)
+    public ChildBuilder<TTimeJob> SetRequest<T>(T request)
     {
         _child.Request = JobsHelper.CreateJobRequest(request);
         return this;
     }
 
-    public ChildBuilder<TTimeTicker> SetRetries(int retries, params int[] intervals)
+    public ChildBuilder<TTimeJob> SetRetries(int retries, params int[] intervals)
     {
         _child.Retries = retries;
         _child.RetryIntervals = intervals;
@@ -786,47 +786,47 @@ public class ChildBuilder<TTimeTicker>
 /// <summary>
 /// Grandchild builder for configuring individual grandchildren
 /// </summary>
-public class GrandChildBuilder<TTimeTicker>
-    where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+public class GrandChildBuilder<TTimeJob>
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
-    private readonly TTimeTicker _grandChild;
+    private readonly TTimeJob _grandChild;
 
-    internal GrandChildBuilder(TTimeTicker grandChild)
+    internal GrandChildBuilder(TTimeJob grandChild)
     {
         _grandChild = grandChild;
     }
 
-    public GrandChildBuilder<TTimeTicker> SetFunction(string functionName)
+    public GrandChildBuilder<TTimeJob> SetFunction(string functionName)
     {
         _grandChild.Function = functionName;
         return this;
     }
 
-    public GrandChildBuilder<TTimeTicker> SetDescription(string description)
+    public GrandChildBuilder<TTimeJob> SetDescription(string description)
     {
         _grandChild.Description = description;
         return this;
     }
 
-    public GrandChildBuilder<TTimeTicker> SetRunCondition(RunCondition condition)
+    public GrandChildBuilder<TTimeJob> SetRunCondition(RunCondition condition)
     {
         _grandChild.RunCondition = condition;
         return this;
     }
 
-    public GrandChildBuilder<TTimeTicker> SetExecutionTime(DateTime executionTime)
+    public GrandChildBuilder<TTimeJob> SetExecutionTime(DateTime executionTime)
     {
         _grandChild.ExecutionTime = executionTime;
         return this;
     }
 
-    public GrandChildBuilder<TTimeTicker> SetRequest<T>(T request)
+    public GrandChildBuilder<TTimeJob> SetRequest<T>(T request)
     {
         _grandChild.Request = JobsHelper.CreateJobRequest(request);
         return this;
     }
 
-    public GrandChildBuilder<TTimeTicker> SetRetries(int retries, params int[] intervals)
+    public GrandChildBuilder<TTimeJob> SetRetries(int retries, params int[] intervals)
     {
         _grandChild.Retries = retries;
         _grandChild.RetryIntervals = intervals;
@@ -840,11 +840,11 @@ public class GrandChildBuilder<TTimeTicker>
 public static class FluentChainJobBuilderExtensions
 {
     /// <summary>
-    /// Start building a fluent chain ticker by configuring the parent
+    /// Start building a fluent chain job by configuring the parent
     /// </summary>
-    public static FluentChainJobBuilder<TTimeTicker> BeginWith<TTimeTicker>(
-        Action<ParentBuilder<TTimeTicker>> configure
+    public static FluentChainJobBuilder<TTimeJob> BeginWith<TTimeJob>(
+        Action<ParentBuilder<TTimeJob>> configure
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new() =>
-        FluentChainJobBuilder<TTimeTicker>.BeginWith(configure);
+        where TTimeJob : TimeJobEntity<TTimeJob>, new() =>
+        FluentChainJobBuilder<TTimeJob>.BeginWith(configure);
 }

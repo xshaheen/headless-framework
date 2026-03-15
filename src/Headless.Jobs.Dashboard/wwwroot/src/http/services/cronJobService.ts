@@ -6,14 +6,14 @@ import { nameof } from '@/utilities/nameof';
 import { useFunctionNameStore } from '@/stores/functionNames';
 import { useTimeZoneStore } from '@/stores/timeZoneStore';
 
-interface PaginatedCronTickerResponse {
+interface PaginatedCronJobResponse {
     items: GetCronJobResponse[]
     totalCount: number
     pageNumber: number
     pageSize: number
 }
 
-const getCronTickers = () => {
+const getCronJobs = () => {
     const functionNamesStore = useFunctionNameStore();
     const timeZoneStore = useTimeZoneStore();
 
@@ -50,13 +50,13 @@ const getCronTickers = () => {
     };
 }
 
-const getCronTickersPaginated = () => {
+const getCronJobsPaginated = () => {
     const functionNamesStore = useFunctionNameStore();
     const timeZoneStore = useTimeZoneStore();
     
-    const baseHttp = useBaseHttpService<object, PaginatedCronTickerResponse>('single');
+    const baseHttp = useBaseHttpService<object, PaginatedCronJobResponse>('single');
     
-    const processResponse = (response: PaginatedCronTickerResponse): PaginatedCronTickerResponse => {
+    const processResponse = (response: PaginatedCronJobResponse): PaginatedCronJobResponse => {
             // Process items in the paginated response
             if (response && response.items && Array.isArray(response.items)) {
                 response.items = response.items.map((item: GetCronJobResponse) => {
@@ -91,7 +91,7 @@ const getCronTickersPaginated = () => {
     };
 }
 
-const updateCronTicker = () => {
+const updateCronJob = () => {
     const baseHttp = useBaseHttpService<UpdateCronJobRequest, object>('single')
     const requestAsync = async (id: string, request: UpdateCronJobRequest) => (await baseHttp.sendAsync("PUT", "cron-job/update", { bodyData: request, paramData: { id } }));
 
@@ -101,7 +101,7 @@ const updateCronTicker = () => {
     };
 }
 
-const addCronTicker = () => {
+const addCronJob = () => {
     const baseHttp = useBaseHttpService<AddCronJobRequest, object>('single')
     const requestAsync = async (request: AddCronJobRequest) => (await baseHttp.sendAsync("POST", "cron-job/add", { bodyData: request }));
 
@@ -111,7 +111,7 @@ const addCronTicker = () => {
     };
 }
 
-const deleteCronTicker = () => {
+const deleteCronJob = () => {
     const baseHttp = useBaseHttpService<object, object>('single')
     const requestAsync = async (id: string) => (await baseHttp.sendAsync("DELETE", "cron-job/delete", { paramData: { id } }));
 
@@ -121,7 +121,7 @@ const deleteCronTicker = () => {
     };
 }
 
-const runCronTickerOnDemand = () => {
+const runCronJobOnDemand = () => {
     const baseHttp = useBaseHttpService<object, object>('single')
     const requestAsync = async (id: string) => (await baseHttp.sendAsync("POST", "cron-job/run", { paramData: { id } }));
 
@@ -131,7 +131,7 @@ const runCronTickerOnDemand = () => {
     };
 }
 
-const getTimeTickersGraphDataRange = () => {
+const getTimeJobsGraphDataRange = () => {
     const baseHttp = useBaseHttpService<object, GetCronJobGraphDataRangeResponse>('array')
         .FixToResponseModel(GetCronJobGraphDataRangeResponse, (item) => {
             return {
@@ -148,7 +148,7 @@ const getTimeTickersGraphDataRange = () => {
     };
 }
 
-const getTimeTickersGraphDataRangeById = () => {
+const getTimeJobsGraphDataRangeById = () => {
     const baseHttp = useBaseHttpService<object, GetCronJobGraphDataRangeResponse>('array')
         .FixToResponseModel(GetCronJobGraphDataRangeResponse, (item) => {
             return {
@@ -165,7 +165,7 @@ const getTimeTickersGraphDataRangeById = () => {
     };
 }
 
-const getTimeTickersGraphData = () => {
+const getTimeJobsGraphData = () => {
     const baseHttp = useBaseHttpService<object, GetCronJobGraphDataResponse>('array');
 
     const requestAsync = async () => (await baseHttp.sendAsync("GET", "cron-jobs/graph-data"));
@@ -177,13 +177,13 @@ const getTimeTickersGraphData = () => {
 }
 
 export const cronJobService = {
-    getCronTickers,
-    getCronTickersPaginated,
-    updateCronTicker,
-    addCronTicker,
-    deleteCronTicker,
-    runCronTickerOnDemand,
-    getTimeTickersGraphDataRange,
-    getTimeTickersGraphDataRangeById,
-    getTimeTickersGraphData
+    getCronJobs,
+    getCronJobsPaginated,
+    updateCronJob,
+    addCronJob,
+    deleteCronJob,
+    runCronJobOnDemand,
+    getTimeJobsGraphDataRange,
+    getTimeJobsGraphDataRangeById,
+    getTimeJobsGraphData
 };

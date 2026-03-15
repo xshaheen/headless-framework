@@ -68,7 +68,7 @@
       <div class="chart-wrapper">
         <VChart 
           :option="lineChartOptions" 
-          :loading="getTimeTickersGraphDataRangeAndParseToGraph?.loading?.value || false"
+          :loading="getTimeJobsGraphDataRangeAndParseToGraph?.loading?.value || false"
           class="chart"
         />
       </div>
@@ -79,7 +79,7 @@
       <div class="chart-wrapper">
         <VChart 
           :option="pieChartOptions" 
-          :loading="getTimeTickersGraphData?.loading?.value || false"
+          :loading="getTimeJobsGraphData?.loading?.value || false"
           class="chart"
         />
       </div>
@@ -117,8 +117,8 @@ use([
 
 // Props
 interface Props {
-  getTimeTickersGraphDataRangeAndParseToGraph: any
-  getTimeTickersGraphData: any
+  getTimeJobsGraphDataRangeAndParseToGraph: any
+  getTimeJobsGraphData: any
   range: number[]
 }
 
@@ -182,7 +182,7 @@ const lineChartOptions = computed(() => ({
   },
   xAxis: {
     type: 'category',
-    data: props.getTimeTickersGraphDataRangeAndParseToGraph?.response?.value?.map((item: any) => item.date) || [],
+    data: props.getTimeJobsGraphDataRangeAndParseToGraph?.response?.value?.map((item: any) => item.date) || [],
     axisLabel: {
       color: '#ffffff',
       rotate: 45
@@ -213,7 +213,7 @@ const lineChartOptions = computed(() => ({
     {
       name: 'Executions',
       type: 'line',
-      data: props.getTimeTickersGraphDataRangeAndParseToGraph?.response?.value?.map((item: any) => item.count) || [],
+      data: props.getTimeJobsGraphDataRangeAndParseToGraph?.response?.value?.map((item: any) => item.count) || [],
       smooth: true,
       lineStyle: {
         color: '#64b5f6',
@@ -269,7 +269,7 @@ const pieChartOptions = computed(() => ({
     {
       type: 'pie',
       radius: '50%',
-      data: props.getTimeTickersGraphData?.response?.value || [],
+      data: props.getTimeJobsGraphData?.response?.value || [],
       emphasis: {
         itemStyle: {
           shadowBlur: 10,
@@ -297,7 +297,7 @@ function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
 
 // Debounced API call
 const fetchGraphData = debounce(async ([min, max]: number[]) => {
-  await props.getTimeTickersGraphDataRangeAndParseToGraph?.requestAsync?.(min, max)
+  await props.getTimeJobsGraphDataRangeAndParseToGraph?.requestAsync?.(min, max)
 }, 200)
 
 // Watch range changes

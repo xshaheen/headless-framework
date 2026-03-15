@@ -61,7 +61,7 @@ class JobNotificationHub extends BaseHub {
     });
   }
 
-  // Batch add time tickers (used as a lightweight signal to refresh data)
+  // Batch add time jobs (used as a lightweight signal to refresh data)
   onReceiveAddTimeJobsBatch(callback: () => void): void {
     this.connection.on(methodName.onReceiveAddTimeJobsBatch, () => {
       callback();

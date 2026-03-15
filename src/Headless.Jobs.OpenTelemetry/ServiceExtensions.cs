@@ -10,19 +10,19 @@ public static class ServiceExtensions
     /// Adds OpenTelemetry instrumentation with activity tracing for Jobs jobs.
     /// Also includes standard logging through ILogger.
     /// </summary>
-    public static JobsOptionsBuilder<TTimeTicker, TCronTicker> AddOpenTelemetryInstrumentation<
-        TTimeTicker,
-        TCronTicker
-    >(this JobsOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration)
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+    public static JobsOptionsBuilder<TTimeJob, TCronJob> AddOpenTelemetryInstrumentation<
+        TTimeJob,
+        TCronJob
+    >(this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration)
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        tickerConfiguration.ExternalProviderConfigServiceAction += services =>
+        jobsConfiguration.ExternalProviderConfigServiceAction += services =>
         {
             // Replace any existing instrumentation with OpenTelemetry version
             services.AddSingleton<IJobsInstrumentation, OpenTelemetryInstrumentation>();
         };
 
-        return tickerConfiguration;
+        return jobsConfiguration;
     }
 }

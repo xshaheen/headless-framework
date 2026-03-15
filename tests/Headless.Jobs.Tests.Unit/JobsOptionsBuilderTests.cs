@@ -70,18 +70,18 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void IgnoreSeedDefinedCronTickers_Disables_Seeding_Flag()
+    public void IgnoreSeedDefinedCronJobs_Disables_Seeding_Flag()
     {
         var executionContext = new JobsExecutionContext();
         var schedulerOptions = new SchedulerOptionsBuilder();
 
         var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(executionContext, schedulerOptions);
 
-        builder.IgnoreSeedDefinedCronTickers();
+        builder.IgnoreSeedDefinedCronJobs();
 
         var flag = typeof(JobsOptionsBuilder<FakeTimeJob, FakeCronJob>)
             .GetProperty(
-                nameof(JobsOptionsBuilder<,>.SeedDefinedCronTickers),
+                nameof(JobsOptionsBuilder<,>.SeedDefinedCronJobs),
                 BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
             )!
             .GetValue(builder);

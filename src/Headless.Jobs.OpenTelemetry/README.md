@@ -38,7 +38,7 @@ builder.Services.AddOpenTelemetry()
     });
 
 // Add Jobs with OpenTelemetry instrumentation
-builder.Services.AddJobs<MyTimeTicker, MyCronTicker>(options => { })
+builder.Services.AddJobs<MyTimeJob, MyCronJob>(options => { })
     .AddOperationalStore(ef => { })
     .AddOpenTelemetryInstrumentation(); // 👈 Enable tracing
 
@@ -90,7 +90,7 @@ headless.jobs.job.execute.timeticker (main job execution span)
 | Tag | Description | Example |
 |-----|-------------|---------|
 | `headless.jobs.job.id` | Unique job identifier | `123e4567-e89b-12d3-a456-426614174000` |
-| `headless.jobs.job.type` | Type of ticker | `TimeTicker`, `CronTicker` |
+| `headless.jobs.job.type` | Type of job | `TimeJob`, `CronJob` |
 | `headless.jobs.job.function` | Function name being executed | `ProcessEmails` |
 | `headless.jobs.job.priority` | Job priority | `Normal`, `High`, `LongRunning` |
 | `headless.jobs.job.machine` | Machine executing the job | `web-server-01` |
@@ -115,14 +115,14 @@ headless.jobs.job.execute.timeticker (main job execution span)
 The instrumentation provides structured logging for all job events:
 
 ```
-[INF] Jobs Job enqueued: TimeTicker - ProcessEmails (123e4567-e89b-12d3-a456-426614174000) from ExecutionTaskHandler
+[INF] Jobs Job enqueued: TimeJob - ProcessEmails (123e4567-e89b-12d3-a456-426614174000) from ExecutionTaskHandler
 [INF] Jobs Job completed: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) in 1250ms - Success: True
 [ERR] Jobs Job failed: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) - Retry 1 - Connection timeout
 [INF] Jobs Job completed: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) in 2500ms - Success: False
 [WRN] Jobs Job cancelled: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) - Task was cancelled
 [INF] Jobs Job skipped: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) - Another CronOccurrence is already running!
-[INF] Jobs start seeding data: TimeTicker (production-node-01)
-[INF] Jobs completed seeding data: TimeTicker (production-node-01)
+[INF] Jobs start seeding data: TimeJob (production-node-01)
+[INF] Jobs completed seeding data: TimeJob (production-node-01)
 ```
 
 ## Integration with Logging Frameworks

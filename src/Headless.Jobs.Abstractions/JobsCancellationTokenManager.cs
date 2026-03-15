@@ -47,9 +47,9 @@ public static class JobsCancellationTokenManager
         }
     }
 
-    internal static bool RemoveTickerCancellationToken(Guid tickerId)
+    internal static bool RemoveTickerCancellationToken(Guid jobId)
     {
-        var removed = _TickerCancellationTokens.TryRemove(tickerId, out var details);
+        var removed = _TickerCancellationTokens.TryRemove(jobId, out var details);
 
         if (removed && details != null)
         {
@@ -70,7 +70,7 @@ public static class JobsCancellationTokenManager
             {
                 if (_ParentIdIndex.TryGetValue(details.ParentId, out var set))
                 {
-                    set.Remove(tickerId);
+                    set.Remove(jobId);
                     // Clean up empty sets
                     if (set.IsEmpty)
                     {
@@ -125,9 +125,9 @@ public static class JobsCancellationTokenManager
         _ParentIdIndex.Clear();
     }
 
-    public static bool RequestTickerCancellationById(Guid tickerId)
+    public static bool RequestTickerCancellationById(Guid jobId)
     {
-        if (!_TickerCancellationTokens.TryRemove(tickerId, out var tickerCancellationToken))
+        if (!_TickerCancellationTokens.TryRemove(jobId, out var tickerCancellationToken))
         {
             return false;
         }
@@ -147,7 +147,7 @@ public static class JobsCancellationTokenManager
         {
             if (_ParentIdIndex.TryGetValue(tickerCancellationToken.ParentId, out var set))
             {
-                set.Remove(tickerId);
+                set.Remove(jobId);
                 if (set.IsEmpty)
                 {
                     if (_ParentIdIndex.TryRemove(tickerCancellationToken.ParentId, out var removedSet))
@@ -163,23 +163,23 @@ public static class JobsCancellationTokenManager
     }
 
     /// <summary>
-    /// Fast O(1) lookup to check if any tickers are running for a given parent ID.
+    /// Fast O(1) lookup to check if any jobs are running for a given parent ID.
     /// This replaces the expensive LINQ Any() operation with a direct dictionary lookup.
     /// </summary>
     /// <param name="parentId">The parent ID to check</param>
-    /// <returns>True if any tickers are running for this parent ID</returns>
+    /// <returns>True if any jobs are running for this parent ID</returns>
     public static bool IsParentRunning(Guid parentId)
     {
         return _ParentIdIndex.ContainsKey(parentId);
     }
 
     /// <summary>
-    /// Checks if any OTHER tickers (excluding the current one) are running for a given parent ID.
+    /// Checks if any OTHER jobs (excluding the current one) are running for a given parent ID.
     /// Used to prevent false positives when checking if a sibling occurrence is already running.
     /// </summary>
     /// <param name="parentId">The parent ID to check</param>
-    /// <param name="excludeJobId">The ticker ID to exclude from the check (usually the current ticker)</param>
-    /// <returns>True if any other tickers are running for this parent ID</returns>
+    /// <param name="excludeJobId">The job ID to exclude from the check (usually the current job)</param>
+    /// <returns>True if any other jobs are running for this parent ID</returns>
     public static bool IsParentRunningExcludingSelf(Guid parentId, Guid excludeJobId)
     {
         if (!_ParentIdIndex.TryGetValue(parentId, out var tickerSet))

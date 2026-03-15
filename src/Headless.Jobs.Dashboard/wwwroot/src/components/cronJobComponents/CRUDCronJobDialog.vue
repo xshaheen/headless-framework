@@ -9,8 +9,8 @@ import { formatTime } from '@/utilities/dateTimeParser'
 import cronstrue from 'cronstrue'
 const functionNamesStore = useFunctionNameStore()
 const getJobRequestData = jobsService.getRequestData()
-const updateCronTicker = cronJobService.updateCronTicker()
-const addCronTicker = cronJobService.addCronTicker()
+const updateCronJob = cronJobService.updateCronJob()
+const addCronJob = cronJobService.addCronJob()
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -163,7 +163,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
     if (!errors) {
       var originalRequestData = values.requestData
       if (!props.dialogProps.isFromDuplicate) {
-        await updateCronTicker
+        await updateCronJob
           .requestAsync(props.dialogProps.id, {
             function: values.functionName,
             expression: values.expression,
@@ -177,7 +177,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
             emit('confirm')
           })
       } else {
-        await addCronTicker
+        await addCronJob
           .requestAsync({
             function: values.functionName,
             expression: values.expression,
@@ -320,7 +320,7 @@ defineExpose({
                 class="mb-4"
                 icon="mdi-alert-circle-outline"
                 color="warning"
-                text="This ticker is system-seeded. Changes will reset on app restart."
+                text="This job is system-seeded. Changes will reset on app restart."
               ></v-alert>
             </v-card-subtitle>
 

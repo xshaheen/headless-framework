@@ -24,12 +24,12 @@ internal static partial class ServiceCollectionExtensions
     [GeneratedRegex(@"(?is)<head\b[^>]*>", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex _HeadOpenRegex();
 
-    internal static void AddDashboardService<TTimeTicker, TCronTicker>(
+    internal static void AddDashboardService<TTimeJob, TCronJob>(
         this IServiceCollection services,
         DashboardOptionsBuilder config
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         // Configure default Dashboard JSON options if not already configured
         if (config.DashboardJsonOptions == null)
@@ -70,12 +70,12 @@ internal static partial class ServiceCollectionExtensions
         });
     }
 
-    internal static void UseDashboardWithEndpoints<TTimeTicker, TCronTicker>(
+    internal static void UseDashboardWithEndpoints<TTimeJob, TCronJob>(
         this IApplicationBuilder app,
         DashboardOptionsBuilder config
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         // Get the assembly and set up the embedded file provider
         var assembly = Assembly.GetExecutingAssembly();
@@ -130,7 +130,7 @@ internal static partial class ServiceCollectionExtensions
                 // Map Minimal API endpoints and SignalR hub
                 dashboardApp.UseEndpoints(endpoints =>
                 {
-                    endpoints.MapDashboardEndpoints<TTimeTicker, TCronTicker>(config);
+                    endpoints.MapDashboardEndpoints<TTimeJob, TCronJob>(config);
                 });
 
                 // Execute post-dashboard middleware

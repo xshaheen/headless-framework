@@ -10,11 +10,11 @@ namespace Tests;
 
 public sealed class RetryBehaviorTests
 {
-    // End-to-end unit tests that call the public ExecuteTaskAsync with a CronTickerOccurrence
+    // End-to-end unit tests that call the public ExecuteTaskAsync with a CronJobOccurrence
     // so RunContextFunctionAsync + retry logic is exercised. Tests use short intervals (1..3s).
 
     [Fact()]
-    public async Task ExecuteTaskAsync_CronTickerOccurrence_AppliesRetryIntervals_AndUpdatesRetryCount()
+    public async Task ExecuteTaskAsync_CronJobOccurrence_AppliesRetryIntervals_AndUpdatesRetryCount()
     {
         // given: cron occurrence -> RunContextFunctionAsync path
         // Use three distinct short intervals so we can verify mapping without overly long waits
@@ -43,7 +43,7 @@ public sealed class RetryBehaviorTests
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_CronTickerOccurrence_UsesLastInterval_WhenRetriesExceedArrayLength()
+    public async Task ExecuteTaskAsync_CronJobOccurrence_UsesLastInterval_WhenRetriesExceedArrayLength()
     {
         // Use zero intervals for speed
         var (handler, context, _, attempts) = _SetupRetryTestFixture([0, 0], retries: 4);
@@ -58,7 +58,7 @@ public sealed class RetryBehaviorTests
     }
 
     [Fact]
-    public async Task ExecuteTaskAsync_CronTickerOccurrence_StopsRetrying_WhenFunctionSucceeds()
+    public async Task ExecuteTaskAsync_CronJobOccurrence_StopsRetrying_WhenFunctionSucceeds()
     {
         // given: succeed on RetryCount==2
         // Use zero intervals for speed; succeed at retry=2

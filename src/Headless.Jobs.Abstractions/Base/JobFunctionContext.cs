@@ -31,8 +31,8 @@ public class JobFunctionContext
     public bool IsDue { get; internal set; }
 
     /// <summary>
-    /// The time this ticker was scheduled to run (UTC).
-    /// For time tickers, this is the ExecutionTime; for cron, the occurrence ExecutionTime.
+    /// The time this job was scheduled to run (UTC).
+    /// For time jobs, this is the ExecutionTime; for cron, the occurrence ExecutionTime.
     /// </summary>
     public DateTime ScheduledFor { get; internal set; }
     public required string FunctionName { get; init; }

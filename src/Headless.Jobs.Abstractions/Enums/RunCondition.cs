@@ -1,7 +1,7 @@
 namespace Headless.Jobs.Enums;
 
 /// <summary>
-/// Defines under what conditions a dependent ticker/job should run
+/// Defines under what conditions a dependent job/job should run
 /// based on the final status of its parent.
 /// </summary>
 public enum RunCondition

@@ -3,21 +3,21 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Interfaces.Managers;
 
-public interface ITimeJobManager<TTimeTicker>
-    where TTimeTicker : TimeJobEntity<TTimeTicker>
+public interface ITimeJobManager<TTimeJob>
+    where TTimeJob : TimeJobEntity<TTimeJob>
 {
-    Task<JobResult<TTimeTicker>> AddAsync(TTimeTicker entity, CancellationToken cancellationToken = default);
-    Task<JobResult<TTimeTicker>> UpdateAsync(TTimeTicker timeTicker, CancellationToken cancellationToken = default);
-    Task<JobResult<TTimeTicker>> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<JobResult<TTimeJob>> AddAsync(TTimeJob entity, CancellationToken cancellationToken = default);
+    Task<JobResult<TTimeJob>> UpdateAsync(TTimeJob timeJob, CancellationToken cancellationToken = default);
+    Task<JobResult<TTimeJob>> DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 
     // Batch operations
-    Task<JobResult<List<TTimeTicker>>> AddBatchAsync(
-        List<TTimeTicker> entities,
+    Task<JobResult<List<TTimeJob>>> AddBatchAsync(
+        List<TTimeJob> entities,
         CancellationToken cancellationToken = default
     );
-    Task<JobResult<List<TTimeTicker>>> UpdateBatchAsync(
-        List<TTimeTicker> timeTickers,
+    Task<JobResult<List<TTimeJob>>> UpdateBatchAsync(
+        List<TTimeJob> timeJobs,
         CancellationToken cancellationToken = default
     );
-    Task<JobResult<TTimeTicker>> DeleteBatchAsync(List<Guid> ids, CancellationToken cancellationToken = default);
+    Task<JobResult<TTimeJob>> DeleteBatchAsync(List<Guid> ids, CancellationToken cancellationToken = default);
 }

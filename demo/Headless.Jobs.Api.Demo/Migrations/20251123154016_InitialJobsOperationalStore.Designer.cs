@@ -20,7 +20,7 @@ namespace Headless.Jobs.Sample.WebApi.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
 
-            modelBuilder.Entity("Headless.Jobs.Entities.CronTickerEntity", b =>
+            modelBuilder.Entity("Headless.Jobs.Entities.CronJobEntity", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
@@ -55,15 +55,15 @@ namespace Headless.Jobs.Sample.WebApi.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Expression")
-                        .HasDatabaseName("IX_CronTickers_Expression");
+                        .HasDatabaseName("IX_CronJobs_Expression");
 
                     b.HasIndex("Function", "Expression")
                         .HasDatabaseName("IX_Function_Expression");
 
-                    b.ToTable("CronTickers", "ticker");
+                    b.ToTable("CronJobs", "jobs");
                 });
 
-            modelBuilder.Entity("Headless.Jobs.Entities.CronTickerOccurrenceEntity<Headless.Jobs.Entities.CronTickerEntity>", b =>
+            modelBuilder.Entity("Headless.Jobs.Entities.CronJobOccurrenceEntity<Headless.Jobs.Entities.CronJobEntity>", b =>
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
@@ -71,7 +71,7 @@ namespace Headless.Jobs.Sample.WebApi.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("CronTickerId")
+                    b.Property<Guid>("CronJobId")
                         .HasColumnType("TEXT");
 
                     b.Property<long>("ElapsedTime")
@@ -106,23 +106,23 @@ namespace Headless.Jobs.Sample.WebApi.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("CronTickerId")
-                        .HasDatabaseName("IX_CronTickerOccurrence_CronTickerId");
+                    b.HasIndex("CronJobId")
+                        .HasDatabaseName("IX_CronJobOccurrence_CronJobId");
 
                     b.HasIndex("ExecutionTime")
-                        .HasDatabaseName("IX_CronTickerOccurrence_ExecutionTime");
+                        .HasDatabaseName("IX_CronJobOccurrence_ExecutionTime");
 
-                    b.HasIndex("CronTickerId", "ExecutionTime")
+                    b.HasIndex("CronJobId", "ExecutionTime")
                         .IsUnique()
-                        .HasDatabaseName("UQ_CronTickerId_ExecutionTime");
+                        .HasDatabaseName("UQ_CronJobId_ExecutionTime");
 
                     b.HasIndex("Status", "ExecutionTime")
-                        .HasDatabaseName("IX_CronTickerOccurrence_Status_ExecutionTime");
+                        .HasDatabaseName("IX_CronJobOccurrence_Status_ExecutionTime");
 
-                    b.ToTable("CronTickerOccurrences", "ticker");
+                    b.ToTable("CronJobOccurrences", "jobs");
                 });
 
-            modelBuilder.Entity("Headless.Jobs.Entities.TimeTickerEntity", b =>
+            modelBuilder.Entity("Headless.Jobs.Entities.TimeJobEntity", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -188,30 +188,30 @@ namespace Headless.Jobs.Sample.WebApi.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ExecutionTime")
-                        .HasDatabaseName("IX_TimeTicker_ExecutionTime");
+                        .HasDatabaseName("IX_TimeJob_ExecutionTime");
 
                     b.HasIndex("ParentId");
 
                     b.HasIndex("Status", "ExecutionTime")
-                        .HasDatabaseName("IX_TimeTicker_Status_ExecutionTime");
+                        .HasDatabaseName("IX_TimeJob_Status_ExecutionTime");
 
-                    b.ToTable("TimeTickers", "ticker");
+                    b.ToTable("TimeJobs", "jobs");
                 });
 
-            modelBuilder.Entity("Headless.Jobs.Entities.CronTickerOccurrenceEntity<Headless.Jobs.Entities.CronTickerEntity>", b =>
+            modelBuilder.Entity("Headless.Jobs.Entities.CronJobOccurrenceEntity<Headless.Jobs.Entities.CronJobEntity>", b =>
                 {
-                    b.HasOne("Headless.Jobs.Entities.CronTickerEntity", "CronTicker")
+                    b.HasOne("Headless.Jobs.Entities.CronJobEntity", "CronJob")
                         .WithMany()
-                        .HasForeignKey("CronTickerId")
+                        .HasForeignKey("CronJobId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("CronTicker");
+                    b.Navigation("CronJob");
                 });
 
-            modelBuilder.Entity("Headless.Jobs.Entities.TimeTickerEntity", b =>
+            modelBuilder.Entity("Headless.Jobs.Entities.TimeJobEntity", b =>
                 {
-                    b.HasOne("Headless.Jobs.Entities.TimeTickerEntity", "Parent")
+                    b.HasOne("Headless.Jobs.Entities.TimeJobEntity", "Parent")
                         .WithMany("Children")
                         .HasForeignKey("ParentId")
                         .OnDelete(DeleteBehavior.NoAction);
@@ -219,7 +219,7 @@ namespace Headless.Jobs.Sample.WebApi.Migrations
                     b.Navigation("Parent");
                 });
 
-            modelBuilder.Entity("Headless.Jobs.Entities.TimeTickerEntity", b =>
+            modelBuilder.Entity("Headless.Jobs.Entities.TimeJobEntity", b =>
                 {
                     b.Navigation("Children");
                 });

@@ -5,16 +5,16 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace Headless.Jobs.Customizer;
 
-internal sealed class JobsModelCustomizer<TTimeTicker, TCronTicker>(ModelCustomizerDependencies dependencies)
+internal sealed class JobsModelCustomizer<TTimeJob, TCronJob>(ModelCustomizerDependencies dependencies)
     : RelationalModelCustomizer(dependencies)
-    where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-    where TCronTicker : CronJobEntity, new()
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    where TCronJob : CronJobEntity, new()
 {
     public override void Customize(ModelBuilder builder, DbContext context)
     {
-        builder.ApplyConfiguration(new TimeJobConfigurations<TTimeTicker>());
-        builder.ApplyConfiguration(new CronJobConfigurations<TCronTicker>());
-        builder.ApplyConfiguration(new CronJobOccurrenceConfigurations<TCronTicker>());
+        builder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>());
+        builder.ApplyConfiguration(new CronJobConfigurations<TCronJob>());
+        builder.ApplyConfiguration(new CronJobOccurrenceConfigurations<TCronJob>());
 
         base.Customize(builder, context);
     }

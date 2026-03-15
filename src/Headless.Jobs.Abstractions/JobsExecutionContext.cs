@@ -6,7 +6,7 @@ namespace Headless.Jobs;
 
 internal interface IJobsOptionsSeeding
 {
-    bool SeedDefinedCronTickers { get; }
+    bool SeedDefinedCronJobs { get; }
     Func<IServiceProvider, Task>? TimeSeederAction { get; }
     Func<IServiceProvider, Task>? CronSeederAction { get; }
 }

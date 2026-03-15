@@ -4,11 +4,11 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.Jobs.Configurations;
 
-public class TimeJobConfigurations<TTimeTicker>(string schema = Constants.DefaultSchema)
-    : IEntityTypeConfiguration<TTimeTicker>
-    where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+public class TimeJobConfigurations<TTimeJob>(string schema = Constants.DefaultSchema)
+    : IEntityTypeConfiguration<TTimeJob>
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
 {
-    public void Configure(EntityTypeBuilder<TTimeTicker> builder)
+    public void Configure(EntityTypeBuilder<TTimeJob> builder)
     {
         builder.HasKey(x => x.Id);
 
@@ -22,11 +22,11 @@ public class TimeJobConfigurations<TTimeTicker>(string schema = Constants.Defaul
             .HasForeignKey(x => x.ParentId)
             .OnDelete(DeleteBehavior.NoAction);
 
-        builder.HasIndex("ExecutionTime").HasDatabaseName("IX_TimeTicker_ExecutionTime");
+        builder.HasIndex("ExecutionTime").HasDatabaseName("IX_TimeJob_ExecutionTime");
 
-        // Index for scheduler queries: many tickers can share the same status/time
-        builder.HasIndex("Status", "ExecutionTime").HasDatabaseName("IX_TimeTicker_Status_ExecutionTime");
+        // Index for scheduler queries: many jobs can share the same status/time
+        builder.HasIndex("Status", "ExecutionTime").HasDatabaseName("IX_TimeJob_Status_ExecutionTime");
 
-        builder.ToTable("TimeTickers", schema);
+        builder.ToTable("TimeJobs", schema);
     }
 }

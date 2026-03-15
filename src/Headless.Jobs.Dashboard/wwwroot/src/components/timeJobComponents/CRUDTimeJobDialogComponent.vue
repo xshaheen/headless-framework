@@ -11,8 +11,8 @@ import { useTimeZoneStore } from '@/stores/timeZoneStore'
 const functionNamesStore = useFunctionNameStore()
 const timeZoneStore = useTimeZoneStore()
 const getJobRequestData = jobsService.getRequestData()
-const addTimeTicker = timeJobService.addTimeTicker()
-const updateTimeTicker = timeJobService.updateTimeTicker()
+const addTimeJob = timeJobService.addTimeJob()
+const updateTimeJob = timeJobService.updateTimeJob()
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -262,7 +262,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
         timeZoneStore.schedulerTimeZone || timeZoneStore.effectiveTimeZone
 
       if (props.dialogProps.isFromDuplicate) {
-        addTimeTicker
+        addTimeJob
           .requestAsync({
             function: values.functionName,
             request: values.requestData,
@@ -275,7 +275,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
             emit('confirm')
           })
       } else {
-        updateTimeTicker
+        updateTimeJob
           .requestAsync(props.dialogProps.id, {
             function: values.functionName,
             request: values.requestData,

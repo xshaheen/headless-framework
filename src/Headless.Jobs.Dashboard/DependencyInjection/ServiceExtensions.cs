@@ -10,12 +10,12 @@ namespace Headless.Jobs.DependencyInjection;
 
 public static class ServiceExtensions
 {
-    public static JobsOptionsBuilder<TTimeTicker, TCronTicker> AddDashboard<TTimeTicker, TCronTicker>(
-        this JobsOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
+    public static JobsOptionsBuilder<TTimeJob, TCronJob> AddDashboard<TTimeJob, TCronJob>(
+        this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration,
         Action<DashboardOptionsBuilder>? configureDashboard = null
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         var dashboardConfig = new DashboardOptionsBuilder
         {
@@ -24,11 +24,11 @@ public static class ServiceExtensions
 
         configureDashboard?.Invoke(dashboardConfig);
 
-        tickerConfiguration.DashboardServiceAction = (services) =>
+        jobsConfiguration.DashboardServiceAction = (services) =>
         {
             services.AddScoped<
-                IJobsDashboardRepository<TTimeTicker, TCronTicker>,
-                JobsDashboardRepository<TTimeTicker, TCronTicker>
+                IJobsDashboardRepository<TTimeJob, TCronJob>,
+                JobsDashboardRepository<TTimeJob, TCronJob>
             >();
 
             services.Replace(
@@ -61,28 +61,28 @@ public static class ServiceExtensions
                 }
             }
 
-            services.AddDashboardService<TTimeTicker, TCronTicker>(dashboardConfig);
+            services.AddDashboardService<TTimeJob, TCronJob>(dashboardConfig);
             services.AddSingleton<DashboardOptionsBuilder>(_ => dashboardConfig);
         };
 
-        tickerConfiguration._UseDashboardDelegate(dashboardConfig);
+        jobsConfiguration._UseDashboardDelegate(dashboardConfig);
 
-        return tickerConfiguration;
+        return jobsConfiguration;
     }
 
-    private static void _UseDashboardDelegate<TTimeTicker, TCronTicker>(
-        this JobsOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
+    private static void _UseDashboardDelegate<TTimeJob, TCronJob>(
+        this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration,
         DashboardOptionsBuilder dashboardConfig
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        tickerConfiguration.UseDashboardApplication(
+        jobsConfiguration.UseDashboardApplication(
             (appObj) =>
             {
                 // Configure static files and middleware with endpoints
                 var app = (Microsoft.AspNetCore.Builder.IApplicationBuilder)appObj;
-                app.UseDashboardWithEndpoints<TTimeTicker, TCronTicker>(dashboardConfig);
+                app.UseDashboardWithEndpoints<TTimeJob, TCronJob>(dashboardConfig);
             }
         );
     }

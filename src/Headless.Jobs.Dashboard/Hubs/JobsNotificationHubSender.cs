@@ -8,29 +8,29 @@ namespace Headless.Jobs.Hubs;
 internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, IDisposable
 {
     private readonly IHubContext<JobsNotificationHub> _hubContext;
-    private readonly Timer _timeTickerUpdateTimer;
-    private int _hasPendingTimeTickerUpdate;
-    private static readonly TimeSpan _TimeTickerUpdateDebounce = TimeSpan.FromMilliseconds(100);
+    private readonly Timer _timeJobUpdateTimer;
+    private int _hasPendingTimeJobUpdate;
+    private static readonly TimeSpan _TimeJobUpdateDebounce = TimeSpan.FromMilliseconds(100);
 
     public JobsNotificationHubSender(IHubContext<JobsNotificationHub> hubContext)
     {
         _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
-        _timeTickerUpdateTimer = new Timer(
-            _TimeTickerUpdateCallback,
+        _timeJobUpdateTimer = new Timer(
+            _TimeJobUpdateCallback,
             null,
             Timeout.InfiniteTimeSpan,
             Timeout.InfiniteTimeSpan
         );
     }
 
-    public async Task AddCronJobNotifyAsync(object cronTicker)
+    public async Task AddCronJobNotifyAsync(object cronJob)
     {
-        await _hubContext.Clients.All.SendAsync("AddCronJobNotification", cronTicker);
+        await _hubContext.Clients.All.SendAsync("AddCronJobNotification", cronJob);
     }
 
-    public async Task UpdateCronJobNotifyAsync(object cronTicker)
+    public async Task UpdateCronJobNotifyAsync(object cronJob)
     {
-        await _hubContext.Clients.All.SendAsync("UpdateCronJobNotification", cronTicker);
+        await _hubContext.Clients.All.SendAsync("UpdateCronJobNotification", cronJob);
     }
 
     public async Task RemoveCronJobNotifyAsync(Guid id)
@@ -48,9 +48,9 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         await _hubContext.Clients.All.SendAsync("AddTimeJobsBatchNotification");
     }
 
-    public async Task UpdateTimeJobNotifyAsync(object timeTicker)
+    public async Task UpdateTimeJobNotifyAsync(object timeJob)
     {
-        await _hubContext.Clients.All.SendAsync("UpdateTimeJobNotification", timeTicker);
+        await _hubContext.Clients.All.SendAsync("UpdateTimeJobNotification", timeJob);
     }
 
     public async Task RemoveTimeJobNotifyAsync(Guid id)
@@ -96,23 +96,23 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         await _hubContext.Clients.Group(groupId.ToString()).SendAsync("UpdateCronOccurrenceNotification", occurrence);
     }
 
-    public Task UpdateTimeJobFromInternalFunctionContext<TTimeTicker>(
+    public Task UpdateTimeJobFromInternalFunctionContext<TTimeJob>(
         InternalFunctionContext internalFunctionContext
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
         // Debounce high-frequency updates into a single notification
-        if (Interlocked.Exchange(ref _hasPendingTimeTickerUpdate, 1) == 0)
+        if (Interlocked.Exchange(ref _hasPendingTimeJobUpdate, 1) == 0)
         {
-            _timeTickerUpdateTimer.Change(_TimeTickerUpdateDebounce, Timeout.InfiniteTimeSpan);
+            _timeJobUpdateTimer.Change(_TimeJobUpdateDebounce, Timeout.InfiniteTimeSpan);
         }
 
         return Task.CompletedTask;
     }
 
-    private void _TimeTickerUpdateCallback(object? _)
+    private void _TimeJobUpdateCallback(object? _)
     {
-        if (Interlocked.Exchange(ref _hasPendingTimeTickerUpdate, 0) == 0)
+        if (Interlocked.Exchange(ref _hasPendingTimeJobUpdate, 0) == 0)
         {
             return;
         }
@@ -120,10 +120,10 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         var __ = _hubContext.Clients.All.SendAsync("UpdateTimeJobNotification");
     }
 
-    public Task UpdateCronOccurrenceFromInternalFunctionContext<TCronTicker>(
+    public Task UpdateCronOccurrenceFromInternalFunctionContext<TCronJob>(
         InternalFunctionContext internalFunctionContext
     )
-        where TCronTicker : CronJobEntity, new()
+        where TCronJob : CronJobEntity, new()
     {
         var updatePayload = new
         {
@@ -150,6 +150,6 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
 
     public void Dispose()
     {
-        _timeTickerUpdateTimer.Dispose();
+        _timeJobUpdateTimer.Dispose();
     }
 }

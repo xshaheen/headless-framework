@@ -4,59 +4,59 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Interfaces;
 
-public interface IJobPersistenceProvider<TTimeTicker, TCronTicker>
-    where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-    where TCronTicker : CronJobEntity, new()
+public interface IJobPersistenceProvider<TTimeJob, TCronJob>
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    where TCronJob : CronJobEntity, new()
 {
     #region Time_Ticker_Core_Methods
-    IAsyncEnumerable<TimeJobEntity> QueueTimeTickers(
-        TimeJobEntity[] timeTickers,
+    IAsyncEnumerable<TimeJobEntity> QueueTimeJobs(
+        TimeJobEntity[] timeJobs,
         CancellationToken cancellationToken = default
     );
-    IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeTickers(CancellationToken cancellationToken = default);
-    Task ReleaseAcquiredTimeTickers(Guid[] timeJobIds, CancellationToken cancellationToken = default);
-    Task<TimeJobEntity[]> GetEarliestTimeTickers(CancellationToken cancellationToken = default);
-    Task<int> UpdateTimeTicker(InternalFunctionContext functionContext, CancellationToken cancellationToken = default);
-    Task<byte[]> GetTimeTickerRequest(Guid id, CancellationToken cancellationToken);
-    Task UpdateTimeTickersWithUnifiedContext(
+    IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobs(CancellationToken cancellationToken = default);
+    Task ReleaseAcquiredTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken = default);
+    Task<TimeJobEntity[]> GetEarliestTimeJobs(CancellationToken cancellationToken = default);
+    Task<int> UpdateTimeJob(InternalFunctionContext functionContext, CancellationToken cancellationToken = default);
+    Task<byte[]> GetTimeJobRequest(Guid id, CancellationToken cancellationToken);
+    Task UpdateTimeJobsWithUnifiedContext(
         Guid[] timeJobIds,
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
     );
-    Task<TimeJobEntity[]> AcquireImmediateTimeTickersAsync(
+    Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(
         Guid[] ids,
         CancellationToken cancellationToken = default
     );
     #endregion
 
     #region Cron_Ticker_Core_Methods
-    Task MigrateDefinedCronTickers(
-        (string Function, string Expression)[] cronTickers,
+    Task MigrateDefinedCronJobs(
+        (string Function, string Expression)[] cronJobs,
         CancellationToken cancellationToken = default
     );
-    Task<CronJobEntity[]> GetAllCronTickerExpressions(CancellationToken cancellationToken);
-    Task ReleaseDeadNodeTimeTickerResources(string instanceIdentifier, CancellationToken cancellationToken = default);
+    Task<CronJobEntity[]> GetAllCronJobExpressions(CancellationToken cancellationToken);
+    Task ReleaseDeadNodeTimeJobResources(string instanceIdentifier, CancellationToken cancellationToken = default);
     #endregion
 
     #region Cron_TickerOccurrence_Core_Methods
-    Task<CronJobOccurrenceEntity<TCronTicker>> GetEarliestAvailableCronOccurrence(
+    Task<CronJobOccurrenceEntity<TCronJob>> GetEarliestAvailableCronOccurrence(
         Guid[] ids,
         CancellationToken cancellationToken = default
     );
-    IAsyncEnumerable<CronJobOccurrenceEntity<TCronTicker>> QueueCronTickerOccurrences(
-        (DateTime Key, InternalManagerContext[] Items) cronTickerOccurrences,
+    IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrences(
+        (DateTime Key, InternalManagerContext[] Items) cronJobOccurrences,
         CancellationToken cancellationToken = default
     );
-    IAsyncEnumerable<CronJobOccurrenceEntity<TCronTicker>> QueueTimedOutCronTickerOccurrences(
+    IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueTimedOutCronJobOccurrences(
         CancellationToken cancellationToken = default
     );
-    Task UpdateCronTickerOccurrence(
+    Task UpdateCronJobOccurrence(
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
     );
-    Task ReleaseAcquiredCronTickerOccurrences(Guid[] occurrenceIds, CancellationToken cancellationToken = default);
-    Task<byte[]> GetCronJobOccurrenceRequest(Guid tickerId, CancellationToken cancellationToken = default);
-    Task UpdateCronTickerOccurrencesWithUnifiedContext(
+    Task ReleaseAcquiredCronJobOccurrences(Guid[] occurrenceIds, CancellationToken cancellationToken = default);
+    Task<byte[]> GetCronJobOccurrenceRequest(Guid jobId, CancellationToken cancellationToken = default);
+    Task UpdateCronJobOccurrencesWithUnifiedContext(
         Guid[] timeJobIds,
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
@@ -65,57 +65,57 @@ public interface IJobPersistenceProvider<TTimeTicker, TCronTicker>
     #endregion
 
     #region Time_Ticker_Shared_Methods
-    Task<TTimeTicker?> GetTimeTickerById(Guid id, CancellationToken cancellationToken = default);
+    Task<TTimeJob?> GetTimeJobById(Guid id, CancellationToken cancellationToken = default);
 
-    Task<TTimeTicker[]> GetTimeTickers(
-        Expression<Func<TTimeTicker, bool>>? predicate,
+    Task<TTimeJob[]> GetTimeJobs(
+        Expression<Func<TTimeJob, bool>>? predicate,
         CancellationToken cancellationToken = default
     );
-    Task<PaginationResult<TTimeTicker>> GetTimeTickersPaginated(
-        Expression<Func<TTimeTicker, bool>>? predicate,
+    Task<PaginationResult<TTimeJob>> GetTimeJobsPaginated(
+        Expression<Func<TTimeJob, bool>>? predicate,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
     );
-    Task<int> AddTimeTickers(TTimeTicker[] tickers, CancellationToken cancellationToken = default);
-    Task<int> UpdateTimeTickers(TTimeTicker[] tickers, CancellationToken cancellationToken = default);
-    Task<int> RemoveTimeTickers(Guid[] tickerIds, CancellationToken cancellationToken = default);
+    Task<int> AddTimeJobs(TTimeJob[] jobs, CancellationToken cancellationToken = default);
+    Task<int> UpdateTimeJobs(TTimeJob[] jobs, CancellationToken cancellationToken = default);
+    Task<int> RemoveTimeJobs(Guid[] jobIds, CancellationToken cancellationToken = default);
     #endregion
 
     #region Cron_Ticker_Shared_Methods
-    Task<TCronTicker?> GetCronTickerById(Guid id, CancellationToken cancellationToken);
-    Task<TCronTicker[]> GetCronTickers(
-        Expression<Func<TCronTicker, bool>>? predicate,
+    Task<TCronJob?> GetCronJobById(Guid id, CancellationToken cancellationToken);
+    Task<TCronJob[]> GetCronJobs(
+        Expression<Func<TCronJob, bool>>? predicate,
         CancellationToken cancellationToken
     );
-    Task<PaginationResult<TCronTicker>> GetCronTickersPaginated(
-        Expression<Func<TCronTicker, bool>>? predicate,
+    Task<PaginationResult<TCronJob>> GetCronJobsPaginated(
+        Expression<Func<TCronJob, bool>>? predicate,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
     );
-    Task<int> InsertCronTickers(TCronTicker[] tickers, CancellationToken cancellationToken);
-    Task<int> UpdateCronTickers(TCronTicker[] cronTicker, CancellationToken cancellationToken);
-    Task<int> RemoveCronTickers(Guid[] cronJobIds, CancellationToken cancellationToken);
+    Task<int> InsertCronJobs(TCronJob[] jobs, CancellationToken cancellationToken);
+    Task<int> UpdateCronJobs(TCronJob[] cronJob, CancellationToken cancellationToken);
+    Task<int> RemoveCronJobs(Guid[] cronJobIds, CancellationToken cancellationToken);
     #endregion
 
     #region Cron_TickerOccurrence_Shared_Methods
-    Task<CronJobOccurrenceEntity<TCronTicker>[]> GetAllCronTickerOccurrences(
-        Expression<Func<CronJobOccurrenceEntity<TCronTicker>, bool>>? predicate,
+    Task<CronJobOccurrenceEntity<TCronJob>[]> GetAllCronJobOccurrences(
+        Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         CancellationToken cancellationToken = default
     );
-    Task<PaginationResult<CronJobOccurrenceEntity<TCronTicker>>> GetAllCronTickerOccurrencesPaginated(
-        Expression<Func<CronJobOccurrenceEntity<TCronTicker>, bool>> predicate,
+    Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginated(
+        Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>> predicate,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
     );
-    Task<int> InsertCronTickerOccurrences(
-        CronJobOccurrenceEntity<TCronTicker>[] cronTickerOccurrences,
+    Task<int> InsertCronJobOccurrences(
+        CronJobOccurrenceEntity<TCronJob>[] cronJobOccurrences,
         CancellationToken cancellationToken
     );
-    Task<int> RemoveCronTickerOccurrences(Guid[] cronTickerOccurrences, CancellationToken cancellationToken);
-    Task<CronJobOccurrenceEntity<TCronTicker>[]> AcquireImmediateCronOccurrencesAsync(
+    Task<int> RemoveCronJobOccurrences(Guid[] cronJobOccurrences, CancellationToken cancellationToken);
+    Task<CronJobOccurrenceEntity<TCronJob>[]> AcquireImmediateCronOccurrencesAsync(
         Guid[] occurrenceIds,
         CancellationToken cancellationToken = default
     );

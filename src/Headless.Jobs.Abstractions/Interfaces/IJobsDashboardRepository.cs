@@ -5,60 +5,60 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Interfaces;
 
-internal interface IJobsDashboardRepository<TTimeTicker, TCronTicker>
-    where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-    where TCronTicker : CronJobEntity, new()
+internal interface IJobsDashboardRepository<TTimeJob, TCronJob>
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    where TCronJob : CronJobEntity, new()
 {
-    Task<TTimeTicker[]> GetTimeTickersAsync(CancellationToken cancellationToken = default);
-    Task<PaginationResult<TTimeTicker>> GetTimeTickersPaginatedAsync(
+    Task<TTimeJob[]> GetTimeJobsAsync(CancellationToken cancellationToken = default);
+    Task<PaginationResult<TTimeJob>> GetTimeJobsPaginatedAsync(
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
     );
-    Task<IList<Tuple<JobStatus, int>>> GetTimeTickerFullDataAsync(CancellationToken cancellationToken);
-    Task<IList<JobGraphData>> GetTimeTickersGraphSpecificDataAsync(
+    Task<IList<Tuple<JobStatus, int>>> GetTimeJobFullDataAsync(CancellationToken cancellationToken);
+    Task<IList<JobGraphData>> GetTimeJobsGraphSpecificDataAsync(
         int pastDays,
         int futureDays,
         CancellationToken cancellationToken
     );
-    Task<IList<JobGraphData>> GetCronTickersGraphSpecificDataAsync(
+    Task<IList<JobGraphData>> GetCronJobsGraphSpecificDataAsync(
         int pastDays,
         int futureDays,
         CancellationToken cancellationToken
     );
-    Task<IList<JobGraphData>> GetCronTickersGraphSpecificDataByIdAsync(
+    Task<IList<JobGraphData>> GetCronJobsGraphSpecificDataByIdAsync(
         Guid id,
         int pastDays,
         int futureDays,
         CancellationToken cancellationToken
     );
-    Task<IList<Tuple<JobStatus, int>>> GetCronTickerFullDataAsync(CancellationToken cancellationToken);
-    Task<CronJobEntity[]> GetCronTickersAsync(CancellationToken cancellationToken = default);
-    Task<PaginationResult<CronJobEntity>> GetCronTickersPaginatedAsync(
+    Task<IList<Tuple<JobStatus, int>>> GetCronJobFullDataAsync(CancellationToken cancellationToken);
+    Task<CronJobEntity[]> GetCronJobsAsync(CancellationToken cancellationToken = default);
+    Task<PaginationResult<CronJobEntity>> GetCronJobsPaginatedAsync(
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
     );
-    Task AddOnDemandCronTickerOccurrenceAsync(Guid id, CancellationToken cancellationToken = default);
-    Task<CronJobOccurrenceEntity<TCronTicker>[]> GetCronTickersOccurrencesAsync(
+    Task AddOnDemandCronJobOccurrenceAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<CronJobOccurrenceEntity<TCronJob>[]> GetCronJobsOccurrencesAsync(
         Guid guid,
         CancellationToken cancellationToken = default
     );
-    Task<PaginationResult<CronJobOccurrenceEntity<TCronTicker>>> GetCronTickersOccurrencesPaginatedAsync(
+    Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetCronJobsOccurrencesPaginatedAsync(
         Guid guid,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
     );
-    Task<IList<CronOccurrenceJobGraphData>> GetCronTickersOccurrencesGraphDataAsync(
+    Task<IList<CronOccurrenceJobGraphData>> GetCronJobsOccurrencesGraphDataAsync(
         Guid guid,
         CancellationToken cancellationToken = default
     );
-    bool CancelJobById(Guid tickerId);
-    Task DeleteCronTickerOccurrenceByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    bool CancelJobById(Guid jobId);
+    Task DeleteCronJobOccurrenceByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<(string, int)> GetJobRequestByIdAsync(
-        Guid tickerId,
-        JobType tickerType,
+        Guid jobId,
+        JobType jobType,
         CancellationToken cancellationToken = default
     );
     IEnumerable<(string, (string, string, JobPriority))> GetJobFunctions();

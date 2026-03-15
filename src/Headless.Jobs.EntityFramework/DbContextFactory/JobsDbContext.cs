@@ -5,11 +5,11 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace Headless.Jobs.DbContextFactory;
 
-public class JobsDbContext<TTimeTicker, TCronTicker> : DbContext
-    where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-    where TCronTicker : CronJobEntity, new()
+public class JobsDbContext<TTimeJob, TCronJob> : DbContext
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    where TCronJob : CronJobEntity, new()
 {
-    public JobsDbContext(DbContextOptions<JobsDbContext<TTimeTicker, TCronTicker>> options)
+    public JobsDbContext(DbContextOptions<JobsDbContext<TTimeJob, TCronJob>> options)
         : base(options) { }
 
     protected JobsDbContext(DbContextOptions options)
@@ -17,11 +17,11 @@ public class JobsDbContext<TTimeTicker, TCronTicker> : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        var schema = this.GetService<JobsEfCoreOptionBuilder<TTimeTicker, TCronTicker>>().Schema;
+        var schema = this.GetService<JobsEfCoreOptionBuilder<TTimeJob, TCronJob>>().Schema;
 
-        modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TTimeTicker>(schema));
-        modelBuilder.ApplyConfiguration(new CronJobConfigurations<TCronTicker>(schema));
-        modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<TCronTicker>(schema));
+        modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TTimeJob>(schema));
+        modelBuilder.ApplyConfiguration(new CronJobConfigurations<TCronJob>(schema));
+        modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<TCronJob>(schema));
         base.OnModelCreating(modelBuilder);
     }
 }

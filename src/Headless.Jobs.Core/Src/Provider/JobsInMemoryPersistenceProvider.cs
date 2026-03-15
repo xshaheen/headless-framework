@@ -9,13 +9,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs.Provider;
 
-internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
-    : IJobPersistenceProvider<TTimeTicker, TCronTicker>
-    where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-    where TCronTicker : CronJobEntity, new()
+internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
+    : IJobPersistenceProvider<TTimeJob, TCronJob>
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    where TCronJob : CronJobEntity, new()
 {
-    private static readonly ConcurrentDictionary<Guid, TTimeTicker> _TimeTickers = new(
-        new Dictionary<Guid, TTimeTicker>()
+    private static readonly ConcurrentDictionary<Guid, TTimeJob> _TimeJobs = new(
+        new Dictionary<Guid, TTimeJob>()
     );
 
     // Index of parent -> child ids for fast hierarchy lookup in memory
@@ -23,12 +23,12 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         new Dictionary<Guid, ConcurrentDictionary<Guid, byte>>()
     );
 
-    private static readonly ConcurrentDictionary<Guid, TCronTicker> _CronTickers = new(
-        new Dictionary<Guid, TCronTicker>()
+    private static readonly ConcurrentDictionary<Guid, TCronJob> _CronJobs = new(
+        new Dictionary<Guid, TCronJob>()
     );
 
-    private static readonly ConcurrentDictionary<Guid, CronJobOccurrenceEntity<TCronTicker>> _CronOccurrences = new(
-        new Dictionary<Guid, CronJobOccurrenceEntity<TCronTicker>>()
+    private static readonly ConcurrentDictionary<Guid, CronJobOccurrenceEntity<TCronJob>> _CronOccurrences = new(
+        new Dictionary<Guid, CronJobOccurrenceEntity<TCronJob>>()
     );
 
     private readonly IJobClock _clock;
@@ -43,37 +43,37 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
 
     #region Time Job Methods
 
-    public async IAsyncEnumerable<TimeJobEntity> QueueTimeTickers(
-        TimeJobEntity[] timeTickers,
+    public async IAsyncEnumerable<TimeJobEntity> QueueTimeJobs(
+        TimeJobEntity[] timeJobs,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
         var now = _clock.UtcNow;
 
-        foreach (var timeTicker in timeTickers)
+        foreach (var timeJob in timeJobs)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (_TimeTickers.TryGetValue(timeTicker.Id, out var existingTicker))
+            if (_TimeJobs.TryGetValue(timeJob.Id, out var existingTicker))
             {
                 // Check if we can update (similar to optimistic concurrency)
-                if (existingTicker.UpdatedAt == timeTicker.UpdatedAt)
+                if (existingTicker.UpdatedAt == timeJob.UpdatedAt)
                 {
-                    // Update the ticker
+                    // Update the job
                     var updatedTicker = _CloneTicker(existingTicker);
                     updatedTicker.LockHolder = _lockHolder;
                     updatedTicker.LockedAt = now;
                     updatedTicker.UpdatedAt = now;
                     updatedTicker.Status = JobStatus.Queued;
 
-                    if (_TimeTickers.TryUpdate(timeTicker.Id, updatedTicker, existingTicker))
+                    if (_TimeJobs.TryUpdate(timeJob.Id, updatedTicker, existingTicker))
                     {
-                        timeTicker.UpdatedAt = now;
-                        timeTicker.LockHolder = _lockHolder;
-                        timeTicker.LockedAt = now;
-                        timeTicker.Status = JobStatus.Queued;
+                        timeJob.UpdatedAt = now;
+                        timeJob.LockHolder = _lockHolder;
+                        timeJob.LockedAt = now;
+                        timeJob.Status = JobStatus.Queued;
 
-                        yield return timeTicker;
+                        yield return timeJob;
                     }
                 }
             }
@@ -82,31 +82,31 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         await Task.CompletedTask;
     }
 
-    public async IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeTickers(
+    public async IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobs(
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
         var now = _clock.UtcNow;
         var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
-        // First, get the time tickers that need to be updated (matching EF query)
-        // NOTE: we project to the raw ticker here and only build the full
+        // First, get the time jobs that need to be updated (matching EF query)
+        // NOTE: we project to the raw job here and only build the full
         //       TimeJobEntity graph after we successfully acquire the lock.
-        var timeTickersToUpdate = _TimeTickers
+        var timeJobsToUpdate = _TimeJobs
             .Values.Where(x => x.ExecutionTime != null)
             .Where(x => x.Status is JobStatus.Idle or JobStatus.Queued)
             .Where(x => x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
             .ToArray();
 
-        foreach (var ticker in timeTickersToUpdate)
+        foreach (var job in timeJobsToUpdate)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Now update the actual ticker in storage
-            if (_TimeTickers.TryGetValue(ticker.Id, out var existingTicker))
+            // Now update the actual job in storage
+            if (_TimeJobs.TryGetValue(job.Id, out var existingTicker))
             {
                 // Check if we can update (matching EF's Where condition)
-                if (existingTicker.UpdatedAt <= ticker.UpdatedAt)
+                if (existingTicker.UpdatedAt <= job.UpdatedAt)
                 {
                     var updatedTicker = _CloneTicker(existingTicker);
                     updatedTicker.LockHolder = _lockHolder;
@@ -114,10 +114,10 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
                     updatedTicker.UpdatedAt = now;
                     updatedTicker.Status = JobStatus.InProgress;
 
-                    if (_TimeTickers.TryUpdate(ticker.Id, updatedTicker, existingTicker))
+                    if (_TimeJobs.TryUpdate(job.Id, updatedTicker, existingTicker))
                     {
-                        // Only build the full hierarchy for successfully acquired tickers
-                        yield return _ForQueueTimeTickers(ticker);
+                        // Only build the full hierarchy for successfully acquired jobs
+                        yield return _ForQueueTimeJobs(job);
                     }
                 }
             }
@@ -126,25 +126,25 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         await Task.CompletedTask;
     }
 
-    public Task ReleaseAcquiredTimeTickers(Guid[] timeJobIds, CancellationToken cancellationToken = default)
+    public Task ReleaseAcquiredTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken = default)
     {
         var now = _clock.UtcNow;
-        var idsToRelease = timeJobIds.Length == 0 ? _TimeTickers.Keys.ToArray() : timeJobIds;
+        var idsToRelease = timeJobIds.Length == 0 ? _TimeJobs.Keys.ToArray() : timeJobIds;
 
         foreach (var id in idsToRelease)
         {
-            if (_TimeTickers.TryGetValue(id, out var ticker))
+            if (_TimeJobs.TryGetValue(id, out var job))
             {
                 // Check if we can release (similar to WhereCanAcquire)
-                if (_CanAcquire(ticker))
+                if (_CanAcquire(job))
                 {
-                    var updatedTicker = _CloneTicker(ticker);
+                    var updatedTicker = _CloneTicker(job);
                     updatedTicker.LockHolder = null;
                     updatedTicker.LockedAt = null;
                     updatedTicker.Status = JobStatus.Idle;
                     updatedTicker.UpdatedAt = now;
 
-                    _TimeTickers.TryUpdate(id, updatedTicker, ticker);
+                    _TimeJobs.TryUpdate(id, updatedTicker, job);
                 }
             }
         }
@@ -152,13 +152,13 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.CompletedTask;
     }
 
-    public Task<TimeJobEntity[]> GetEarliestTimeTickers(CancellationToken cancellationToken = default)
+    public Task<TimeJobEntity[]> GetEarliestTimeJobs(CancellationToken cancellationToken = default)
     {
         var now = _clock.UtcNow;
         var oneSecondAgo = now.AddSeconds(-1);
 
         // Base query: same filter as EF provider, but over the snapshot
-        var baseQuery = _TimeTickers
+        var baseQuery = _TimeJobs
             .Values.Where(x => x.ExecutionTime != null)
             .Where(_CanAcquire)
             .Where(x => x.ExecutionTime >= oneSecondAgo)
@@ -185,27 +185,27 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
 
         var maxExecutionTime = minSecond.AddSeconds(1);
 
-        // Fetch all tickers within that complete second and map using the children lookup
+        // Fetch all jobs within that complete second and map using the children lookup
         var result = baseQuery
             .Where(x => x.ExecutionTime >= minSecond && x.ExecutionTime < maxExecutionTime)
             .OrderBy(x => x.ExecutionTime)
-            .Select(_ForQueueTimeTickers)
+            .Select(_ForQueueTimeJobs)
             .ToArray();
 
         return Task.FromResult(result);
     }
 
-    public Task<int> UpdateTimeTicker(
+    public Task<int> UpdateTimeJob(
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
     )
     {
-        if (_TimeTickers.TryGetValue(functionContext.JobId, out var ticker))
+        if (_TimeJobs.TryGetValue(functionContext.JobId, out var job))
         {
-            var updatedTicker = _CloneTicker(ticker);
+            var updatedTicker = _CloneTicker(job);
             _ApplyFunctionContextToTicker(updatedTicker, functionContext);
 
-            if (_TimeTickers.TryUpdate(functionContext.JobId, updatedTicker, ticker))
+            if (_TimeJobs.TryUpdate(functionContext.JobId, updatedTicker, job))
             {
                 return Task.FromResult(1);
             }
@@ -214,17 +214,17 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.FromResult(0);
     }
 
-    public Task<byte[]> GetTimeTickerRequest(Guid id, CancellationToken cancellationToken)
+    public Task<byte[]> GetTimeJobRequest(Guid id, CancellationToken cancellationToken)
     {
-        if (_TimeTickers.TryGetValue(id, out var ticker))
+        if (_TimeJobs.TryGetValue(id, out var job))
         {
-            return Task.FromResult(ticker.Request ?? Array.Empty<byte>());
+            return Task.FromResult(job.Request ?? Array.Empty<byte>());
         }
 
         return Task.FromResult(Array.Empty<byte>());
     }
 
-    public Task UpdateTimeTickersWithUnifiedContext(
+    public Task UpdateTimeJobsWithUnifiedContext(
         Guid[] timeJobIds,
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
@@ -232,18 +232,18 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
     {
         foreach (var id in timeJobIds)
         {
-            if (_TimeTickers.TryGetValue(id, out var ticker))
+            if (_TimeJobs.TryGetValue(id, out var job))
             {
-                var updatedTicker = _CloneTicker(ticker);
+                var updatedTicker = _CloneTicker(job);
                 _ApplyFunctionContextToTicker(updatedTicker, functionContext);
-                _TimeTickers.TryUpdate(id, updatedTicker, ticker);
+                _TimeJobs.TryUpdate(id, updatedTicker, job);
             }
         }
 
         return Task.CompletedTask;
     }
 
-    public Task<TimeJobEntity[]> AcquireImmediateTimeTickersAsync(
+    public Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(
         Guid[] ids,
         CancellationToken cancellationToken = default
     )
@@ -260,49 +260,49 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!_TimeTickers.TryGetValue(id, out var ticker))
+            if (!_TimeJobs.TryGetValue(id, out var job))
             {
                 continue;
             }
 
-            if (!_CanAcquire(ticker))
+            if (!_CanAcquire(job))
             {
                 continue;
             }
 
-            var updatedTicker = _CloneTicker(ticker);
+            var updatedTicker = _CloneTicker(job);
             updatedTicker.LockHolder = _lockHolder;
             updatedTicker.LockedAt = now;
             updatedTicker.Status = JobStatus.InProgress;
             updatedTicker.UpdatedAt = now;
 
-            if (_TimeTickers.TryUpdate(id, updatedTicker, ticker))
+            if (_TimeJobs.TryUpdate(id, updatedTicker, job))
             {
-                acquired.Add(_ForQueueTimeTickers(updatedTicker));
+                acquired.Add(_ForQueueTimeJobs(updatedTicker));
             }
         }
 
         return Task.FromResult(acquired.ToArray());
     }
 
-    public Task<TTimeTicker?> GetTimeTickerById(Guid id, CancellationToken cancellationToken = default)
+    public Task<TTimeJob?> GetTimeJobById(Guid id, CancellationToken cancellationToken = default)
     {
-        if (_TimeTickers.TryGetValue(id, out var ticker))
+        if (_TimeJobs.TryGetValue(id, out var job))
         {
-            var result = _BuildTickerHierarchy(ticker);
-            return Task.FromResult<TTimeTicker?>(result);
+            var result = _BuildTickerHierarchy(job);
+            return Task.FromResult<TTimeJob?>(result);
         }
 
-        return Task.FromResult<TTimeTicker?>(null);
+        return Task.FromResult<TTimeJob?>(null);
     }
 
-    public Task<TTimeTicker[]> GetTimeTickers(
-        Expression<Func<TTimeTicker, bool>>? predicate,
+    public Task<TTimeJob[]> GetTimeJobs(
+        Expression<Func<TTimeJob, bool>>? predicate,
         CancellationToken cancellationToken = default
     )
     {
         var compiledPredicate = predicate?.Compile();
-        var query = _TimeTickers.Values.AsEnumerable();
+        var query = _TimeJobs.Values.AsEnumerable();
 
         if (compiledPredicate != null)
         {
@@ -319,15 +319,15 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.FromResult(results);
     }
 
-    public Task<PaginationResult<TTimeTicker>> GetTimeTickersPaginated(
-        Expression<Func<TTimeTicker, bool>>? predicate,
+    public Task<PaginationResult<TTimeJob>> GetTimeJobsPaginated(
+        Expression<Func<TTimeJob, bool>>? predicate,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
     )
     {
         var compiledPredicate = predicate?.Compile();
-        var query = _TimeTickers.Values.AsEnumerable();
+        var query = _TimeJobs.Values.AsEnumerable();
 
         if (compiledPredicate != null)
         {
@@ -347,7 +347,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             .ToArray();
 
         return Task.FromResult(
-            new PaginationResult<TTimeTicker>
+            new PaginationResult<TTimeJob>
             {
                 Items = items,
                 TotalCount = totalCount,
@@ -357,47 +357,47 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         );
     }
 
-    public Task<int> AddTimeTickers(TTimeTicker[] tickers, CancellationToken cancellationToken = default)
+    public Task<int> AddTimeJobs(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
         var count = 0;
-        foreach (var ticker in tickers)
+        foreach (var job in jobs)
         {
-            count += _AddTickerWithChildren(ticker);
+            count += _AddTickerWithChildren(job);
         }
 
         return Task.FromResult(count);
     }
 
-    private static int _AddTickerWithChildren(TTimeTicker ticker, Guid? parentId = null)
+    private static int _AddTickerWithChildren(TTimeJob job, Guid? parentId = null)
     {
         var count = 0;
 
         // Set the parent ID if this is a child
         if (parentId.HasValue)
         {
-            ticker.ParentId = parentId.Value;
+            job.ParentId = parentId.Value;
         }
 
-        // Add the ticker itself
-        if (_TimeTickers.TryAdd(ticker.Id, ticker))
+        // Add the job itself
+        if (_TimeJobs.TryAdd(job.Id, job))
         {
             // Maintain children index
-            if (ticker.ParentId.HasValue)
+            if (job.ParentId.HasValue)
             {
-                _AddChildIndex(ticker.ParentId.Value, ticker.Id);
+                _AddChildIndex(job.ParentId.Value, job.Id);
             }
 
             count++;
 
             // Recursively add all children
-            if (ticker.Children != null && ticker.Children.Count > 0)
+            if (job.Children != null && job.Children.Count > 0)
             {
-                foreach (var child in ticker.Children)
+                foreach (var child in job.Children)
                 {
-                    // Cast to TTimeTicker since Children is ICollection<TTimeTicker>
-                    if (child is TTimeTicker childTicker)
+                    // Cast to TTimeJob since Children is ICollection<TTimeJob>
+                    if (child is TTimeJob childTicker)
                     {
-                        count += _AddTickerWithChildren(childTicker, ticker.Id);
+                        count += _AddTickerWithChildren(childTicker, job.Id);
                     }
                 }
             }
@@ -406,57 +406,57 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return count;
     }
 
-    public Task<int> UpdateTimeTickers(TTimeTicker[] tickers, CancellationToken cancellationToken = default)
+    public Task<int> UpdateTimeJobs(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
         var count = 0;
-        foreach (var ticker in tickers)
+        foreach (var job in jobs)
         {
-            count += _UpdateTickerWithChildren(ticker);
+            count += _UpdateTickerWithChildren(job);
         }
 
         return Task.FromResult(count);
     }
 
-    private static int _UpdateTickerWithChildren(TTimeTicker ticker, Guid? parentId = null)
+    private static int _UpdateTickerWithChildren(TTimeJob job, Guid? parentId = null)
     {
         var count = 0;
 
         // Set the parent ID if this is a child
         if (parentId.HasValue)
         {
-            ticker.ParentId = parentId.Value;
+            job.ParentId = parentId.Value;
         }
 
-        // Update the ticker itself
-        if (_TimeTickers.TryGetValue(ticker.Id, out var existing))
+        // Update the job itself
+        if (_TimeJobs.TryGetValue(job.Id, out var existing))
         {
-            if (_TimeTickers.TryUpdate(ticker.Id, ticker, existing))
+            if (_TimeJobs.TryUpdate(job.Id, job, existing))
             {
                 // Maintain children index for parent changes
-                if (existing.ParentId != ticker.ParentId)
+                if (existing.ParentId != job.ParentId)
                 {
                     if (existing.ParentId.HasValue)
                     {
-                        _RemoveChildIndex(existing.ParentId.Value, ticker.Id);
+                        _RemoveChildIndex(existing.ParentId.Value, job.Id);
                     }
 
-                    if (ticker.ParentId.HasValue)
+                    if (job.ParentId.HasValue)
                     {
-                        _AddChildIndex(ticker.ParentId.Value, ticker.Id);
+                        _AddChildIndex(job.ParentId.Value, job.Id);
                     }
                 }
 
                 count++;
 
                 // Recursively update all children
-                if (ticker.Children != null && ticker.Children.Count > 0)
+                if (job.Children != null && job.Children.Count > 0)
                 {
-                    foreach (var child in ticker.Children)
+                    foreach (var child in job.Children)
                     {
-                        // Cast to TTimeTicker since Children is ICollection<TTimeTicker>
-                        if (child is TTimeTicker childTicker)
+                        // Cast to TTimeJob since Children is ICollection<TTimeJob>
+                        if (child is TTimeJob childTicker)
                         {
-                            count += _UpdateTickerWithChildren(childTicker, ticker.Id);
+                            count += _UpdateTickerWithChildren(childTicker, job.Id);
                         }
                     }
                 }
@@ -465,19 +465,19 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         else
         {
             // If it doesn't exist, add it (this can happen for new children)
-            count += _AddTickerWithChildren(ticker, parentId);
+            count += _AddTickerWithChildren(job, parentId);
         }
 
         return count;
     }
 
-    public Task<int> RemoveTimeTickers(Guid[] tickerIds, CancellationToken cancellationToken = default)
+    public Task<int> RemoveTimeJobs(Guid[] jobIds, CancellationToken cancellationToken = default)
     {
         var count = 0;
-        foreach (var id in tickerIds)
+        foreach (var id in jobIds)
         {
-            // Remove ticker and all its children (cascade delete)
-            if (_TimeTickers.TryRemove(id, out var removed))
+            // Remove job and all its children (cascade delete)
+            if (_TimeJobs.TryRemove(id, out var removed))
             {
                 count++;
 
@@ -492,7 +492,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
 
                 foreach (var childId in childrenIds)
                 {
-                    if (_TimeTickers.TryRemove(childId, out var child))
+                    if (_TimeJobs.TryRemove(childId, out var child))
                     {
                         count++;
                         if (child.ParentId.HasValue)
@@ -507,24 +507,24 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.FromResult(count);
     }
 
-    public Task ReleaseDeadNodeTimeTickerResources(
+    public Task ReleaseDeadNodeTimeJobResources(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
     {
         var now = _clock.UtcNow;
 
-        // Phase 1: release acquirable tickers for the dead node (match EF WhereCanAcquire(instanceIdentifier))
-        var releasable = _TimeTickers
+        // Phase 1: release acquirable jobs for the dead node (match EF WhereCanAcquire(instanceIdentifier))
+        var releasable = _TimeJobs
             .Values.Where(x =>
                 (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
                 && (x.LockHolder == instanceIdentifier || x.LockedAt == null)
             )
             .ToArray();
 
-        foreach (var ticker in releasable)
+        foreach (var job in releasable)
         {
-            if (!_TimeTickers.TryGetValue(ticker.Id, out var currentTicker))
+            if (!_TimeJobs.TryGetValue(job.Id, out var currentTicker))
             {
                 continue;
             }
@@ -535,17 +535,17 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             updatedTicker.Status = JobStatus.Idle;
             updatedTicker.UpdatedAt = now;
 
-            _TimeTickers.TryUpdate(ticker.Id, updatedTicker, currentTicker);
+            _TimeJobs.TryUpdate(job.Id, updatedTicker, currentTicker);
         }
 
-        // Phase 2: mark in-progress tickers for that node as skipped
-        var inProgress = _TimeTickers
+        // Phase 2: mark in-progress jobs for that node as skipped
+        var inProgress = _TimeJobs
             .Values.Where(x => x.LockHolder == instanceIdentifier && x.Status == JobStatus.InProgress)
             .ToArray();
 
-        foreach (var ticker in inProgress)
+        foreach (var job in inProgress)
         {
-            if (!_TimeTickers.TryGetValue(ticker.Id, out var currentTicker))
+            if (!_TimeJobs.TryGetValue(job.Id, out var currentTicker))
             {
                 continue;
             }
@@ -556,7 +556,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             updatedTicker.ExecutedAt = now;
             updatedTicker.UpdatedAt = now;
 
-            _TimeTickers.TryUpdate(ticker.Id, updatedTicker, currentTicker);
+            _TimeJobs.TryUpdate(job.Id, updatedTicker, currentTicker);
         }
 
         return Task.CompletedTask;
@@ -566,21 +566,21 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
 
     #region Cron Job Methods
 
-    public Task MigrateDefinedCronTickers(
-        (string Function, string Expression)[] cronTickers,
+    public Task MigrateDefinedCronJobs(
+        (string Function, string Expression)[] cronJobs,
         CancellationToken cancellationToken = default
     )
     {
         var now = _clock.UtcNow;
 
-        foreach (var (function, expression) in cronTickers)
+        foreach (var (function, expression) in cronJobs)
         {
             // Check if already exists (take snapshot for thread safety)
-            var exists = _CronTickers.Values.ToArray().Any(x => x.Function == function && x.Expression == expression);
+            var exists = _CronJobs.Values.ToArray().Any(x => x.Function == function && x.Expression == expression);
             if (!exists)
             {
                 var id = Guid.NewGuid();
-                var cronTicker = new TCronTicker
+                var cronJob = new TCronJob
                 {
                     Id = id,
                     Function = function,
@@ -591,34 +591,34 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
                     Request = Array.Empty<byte>(),
                 };
 
-                _CronTickers.TryAdd(id, cronTicker);
+                _CronJobs.TryAdd(id, cronJob);
             }
         }
 
         return Task.CompletedTask;
     }
 
-    public Task<CronJobEntity[]> GetAllCronTickerExpressions(CancellationToken cancellationToken)
+    public Task<CronJobEntity[]> GetAllCronJobExpressions(CancellationToken cancellationToken)
     {
-        var result = _CronTickers.Values.Cast<CronJobEntity>().ToArray();
+        var result = _CronJobs.Values.Cast<CronJobEntity>().ToArray();
 
         return Task.FromResult(result);
     }
 
-    public Task<TCronTicker?> GetCronTickerById(Guid id, CancellationToken cancellationToken)
+    public Task<TCronJob?> GetCronJobById(Guid id, CancellationToken cancellationToken)
     {
-        _CronTickers.TryGetValue(id, out var ticker);
+        _CronJobs.TryGetValue(id, out var job);
 
-        return Task.FromResult(ticker);
+        return Task.FromResult(job);
     }
 
-    public Task<TCronTicker[]> GetCronTickers(
-        Expression<Func<TCronTicker, bool>>? predicate,
+    public Task<TCronJob[]> GetCronJobs(
+        Expression<Func<TCronJob, bool>>? predicate,
         CancellationToken cancellationToken
     )
     {
         var compiledPredicate = predicate?.Compile();
-        var query = _CronTickers.Values.AsEnumerable();
+        var query = _CronJobs.Values.AsEnumerable();
 
         if (compiledPredicate != null)
         {
@@ -630,15 +630,15 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.FromResult(results);
     }
 
-    public Task<PaginationResult<TCronTicker>> GetCronTickersPaginated(
-        Expression<Func<TCronTicker, bool>>? predicate,
+    public Task<PaginationResult<TCronJob>> GetCronJobsPaginated(
+        Expression<Func<TCronJob, bool>>? predicate,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
     )
     {
         var compiledPredicate = predicate?.Compile();
-        var query = _CronTickers.Values.AsEnumerable();
+        var query = _CronJobs.Values.AsEnumerable();
 
         if (compiledPredicate != null)
         {
@@ -654,7 +654,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             .ToArray();
 
         return Task.FromResult(
-            new PaginationResult<TCronTicker>
+            new PaginationResult<TCronJob>
             {
                 Items = items,
                 TotalCount = totalCount,
@@ -664,12 +664,12 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         );
     }
 
-    public Task<int> InsertCronTickers(TCronTicker[] tickers, CancellationToken cancellationToken)
+    public Task<int> InsertCronJobs(TCronJob[] jobs, CancellationToken cancellationToken)
     {
         var count = 0;
-        foreach (var ticker in tickers)
+        foreach (var job in jobs)
         {
-            if (_CronTickers.TryAdd(ticker.Id, ticker))
+            if (_CronJobs.TryAdd(job.Id, job))
             {
                 count++;
             }
@@ -678,14 +678,14 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.FromResult(count);
     }
 
-    public Task<int> UpdateCronTickers(TCronTicker[] cronTicker, CancellationToken cancellationToken)
+    public Task<int> UpdateCronJobs(TCronJob[] cronJob, CancellationToken cancellationToken)
     {
         var count = 0;
-        foreach (var ticker in cronTicker)
+        foreach (var job in cronJob)
         {
-            if (_CronTickers.TryGetValue(ticker.Id, out var existing))
+            if (_CronJobs.TryGetValue(job.Id, out var existing))
             {
-                if (_CronTickers.TryUpdate(ticker.Id, ticker, existing))
+                if (_CronJobs.TryUpdate(job.Id, job, existing))
                 {
                     count++;
                 }
@@ -695,12 +695,12 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.FromResult(count);
     }
 
-    public Task<int> RemoveCronTickers(Guid[] cronJobIds, CancellationToken cancellationToken)
+    public Task<int> RemoveCronJobs(Guid[] cronJobIds, CancellationToken cancellationToken)
     {
         var count = 0;
         foreach (var id in cronJobIds)
         {
-            if (_CronTickers.TryRemove(id, out _))
+            if (_CronJobs.TryRemove(id, out _))
             {
                 count++;
             }
@@ -713,7 +713,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
 
     #region Cron Occurrence Methods
 
-    public Task<CronJobOccurrenceEntity<TCronTicker>> GetEarliestAvailableCronOccurrence(
+    public Task<CronJobOccurrenceEntity<TCronJob>> GetEarliestAvailableCronOccurrence(
         Guid[] ids,
         CancellationToken cancellationToken = default
     )
@@ -737,14 +737,14 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.FromResult(occurrence!);
     }
 
-    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronTicker>> QueueCronTickerOccurrences(
-        (DateTime Key, InternalManagerContext[] Items) cronTickerOccurrences,
+    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueCronJobOccurrences(
+        (DateTime Key, InternalManagerContext[] Items) cronJobOccurrences,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
         var now = _clock.UtcNow;
 
-        foreach (var context in cronTickerOccurrences.Items)
+        foreach (var context in cronJobOccurrences.Items)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -769,11 +769,11 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             else
             {
                 // Create new occurrence (normal case - each execution time gets its own occurrence)
-                var newOccurrence = new CronJobOccurrenceEntity<TCronTicker>
+                var newOccurrence = new CronJobOccurrenceEntity<TCronJob>
                 {
                     Id = occurrenceId,
                     CronJobId = context.Id,
-                    ExecutionTime = cronTickerOccurrences.Key,
+                    ExecutionTime = cronJobOccurrences.Key,
                     Status = JobStatus.Queued,
                     LockHolder = _lockHolder,
                     LockedAt = now,
@@ -782,10 +782,10 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
                     RetryCount = 0,
                 };
 
-                // Try to get the cron ticker
-                if (_CronTickers.TryGetValue(context.Id, out var cronTicker))
+                // Try to get the cron job
+                if (_CronJobs.TryGetValue(context.Id, out var cronJob))
                 {
-                    newOccurrence.CronTicker = cronTicker;
+                    newOccurrence.CronJob = cronJob;
                 }
 
                 if (_CronOccurrences.TryAdd(newOccurrence.Id, newOccurrence))
@@ -796,7 +796,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         }
     }
 
-    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronTicker>> QueueTimedOutCronTickerOccurrences(
+    public async IAsyncEnumerable<CronJobOccurrenceEntity<TCronJob>> QueueTimedOutCronJobOccurrences(
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
@@ -831,7 +831,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         }
     }
 
-    public Task UpdateCronTickerOccurrence(
+    public Task UpdateCronJobOccurrence(
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
     )
@@ -847,7 +847,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.CompletedTask;
     }
 
-    public Task ReleaseAcquiredCronTickerOccurrences(
+    public Task ReleaseAcquiredCronJobOccurrences(
         Guid[] occurrenceIds,
         CancellationToken cancellationToken = default
     )
@@ -875,26 +875,26 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.CompletedTask;
     }
 
-    public Task<byte[]> GetCronJobOccurrenceRequest(Guid tickerId, CancellationToken cancellationToken = default)
+    public Task<byte[]> GetCronJobOccurrenceRequest(Guid jobId, CancellationToken cancellationToken = default)
     {
-        // Cron ticker occurrences don't have their own request, get it from the cron ticker
-        if (_CronOccurrences.TryGetValue(tickerId, out var occurrence))
+        // Cron job occurrences don't have their own request, get it from the cron job
+        if (_CronOccurrences.TryGetValue(jobId, out var occurrence))
         {
-            if (occurrence.CronTicker != null)
+            if (occurrence.CronJob != null)
             {
-                return Task.FromResult(occurrence.CronTicker.Request ?? Array.Empty<byte>());
+                return Task.FromResult(occurrence.CronJob.Request ?? Array.Empty<byte>());
             }
 
-            if (_CronTickers.TryGetValue(occurrence.CronJobId, out var cronTicker))
+            if (_CronJobs.TryGetValue(occurrence.CronJobId, out var cronJob))
             {
-                return Task.FromResult(cronTicker.Request ?? Array.Empty<byte>());
+                return Task.FromResult(cronJob.Request ?? Array.Empty<byte>());
             }
         }
 
         return Task.FromResult(Array.Empty<byte>());
     }
 
-    public Task UpdateCronTickerOccurrencesWithUnifiedContext(
+    public Task UpdateCronJobOccurrencesWithUnifiedContext(
         Guid[] timeJobIds,
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
@@ -968,8 +968,8 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.CompletedTask;
     }
 
-    public Task<CronJobOccurrenceEntity<TCronTicker>[]> GetAllCronTickerOccurrences(
-        Expression<Func<CronJobOccurrenceEntity<TCronTicker>, bool>>? predicate,
+    public Task<CronJobOccurrenceEntity<TCronJob>[]> GetAllCronJobOccurrences(
+        Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         CancellationToken cancellationToken = default
     )
     {
@@ -986,8 +986,8 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.FromResult(results);
     }
 
-    public Task<PaginationResult<CronJobOccurrenceEntity<TCronTicker>>> GetAllCronTickerOccurrencesPaginated(
-        Expression<Func<CronJobOccurrenceEntity<TCronTicker>, bool>> predicate,
+    public Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginated(
+        Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>> predicate,
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
@@ -1010,7 +1010,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             .ToArray();
 
         return Task.FromResult(
-            new PaginationResult<CronJobOccurrenceEntity<TCronTicker>>
+            new PaginationResult<CronJobOccurrenceEntity<TCronJob>>
             {
                 Items = items,
                 TotalCount = totalCount,
@@ -1020,18 +1020,18 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         );
     }
 
-    public Task<int> InsertCronTickerOccurrences(
-        CronJobOccurrenceEntity<TCronTicker>[] cronTickerOccurrences,
+    public Task<int> InsertCronJobOccurrences(
+        CronJobOccurrenceEntity<TCronJob>[] cronJobOccurrences,
         CancellationToken cancellationToken
     )
     {
         var count = 0;
-        foreach (var occurrence in cronTickerOccurrences)
+        foreach (var occurrence in cronJobOccurrences)
         {
             // Ensure navigation is populated for in-memory usage
-            if (occurrence.CronTicker == null && _CronTickers.TryGetValue(occurrence.CronJobId, out var cronTicker))
+            if (occurrence.CronJob == null && _CronJobs.TryGetValue(occurrence.CronJobId, out var cronJob))
             {
-                occurrence.CronTicker = cronTicker;
+                occurrence.CronJob = cronJob;
             }
 
             if (_CronOccurrences.TryAdd(occurrence.Id, occurrence))
@@ -1043,10 +1043,10 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.FromResult(count);
     }
 
-    public Task<int> RemoveCronTickerOccurrences(Guid[] cronTickerOccurrences, CancellationToken cancellationToken)
+    public Task<int> RemoveCronJobOccurrences(Guid[] cronJobOccurrences, CancellationToken cancellationToken)
     {
         var count = 0;
-        foreach (var id in cronTickerOccurrences)
+        foreach (var id in cronJobOccurrences)
         {
             if (_CronOccurrences.TryRemove(id, out _))
             {
@@ -1057,18 +1057,18 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return Task.FromResult(count);
     }
 
-    public Task<CronJobOccurrenceEntity<TCronTicker>[]> AcquireImmediateCronOccurrencesAsync(
+    public Task<CronJobOccurrenceEntity<TCronJob>[]> AcquireImmediateCronOccurrencesAsync(
         Guid[] occurrenceIds,
         CancellationToken cancellationToken = default
     )
     {
         if (occurrenceIds == null || occurrenceIds.Length == 0)
         {
-            return Task.FromResult(Array.Empty<CronJobOccurrenceEntity<TCronTicker>>());
+            return Task.FromResult(Array.Empty<CronJobOccurrenceEntity<TCronJob>>());
         }
 
         var now = _clock.UtcNow;
-        var acquired = new List<CronJobOccurrenceEntity<TCronTicker>>();
+        var acquired = new List<CronJobOccurrenceEntity<TCronJob>>();
 
         foreach (var id in occurrenceIds)
         {
@@ -1103,25 +1103,25 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
 
     #region Helper Methods
 
-    private TTimeTicker _BuildTickerHierarchy(TTimeTicker ticker)
+    private TTimeJob _BuildTickerHierarchy(TTimeJob job)
     {
-        var root = _CloneTicker(ticker);
-        root.Children = _BuildChildrenHierarchy(ticker.Id);
+        var root = _CloneTicker(job);
+        root.Children = _BuildChildrenHierarchy(job.Id);
         return root;
     }
 
-    private static List<TTimeTicker> _BuildChildrenHierarchy(Guid parentId)
+    private static List<TTimeJob> _BuildChildrenHierarchy(Guid parentId)
     {
         if (!_ChildrenIndex.TryGetValue(parentId, out var children) || children.IsEmpty)
         {
-            return new List<TTimeTicker>();
+            return new List<TTimeJob>();
         }
 
-        var results = new List<TTimeTicker>(children.Count);
+        var results = new List<TTimeJob>(children.Count);
 
         foreach (var childId in children.Keys)
         {
-            if (!_TimeTickers.TryGetValue(childId, out var child))
+            if (!_TimeJobs.TryGetValue(childId, out var child))
             {
                 continue;
             }
@@ -1134,29 +1134,29 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return results;
     }
 
-    // Matches EF Core's MappingExtensions.ForQueueTimeTickers but uses an in-memory children index
-    private static TimeJobEntity _ForQueueTimeTickers(TTimeTicker ticker)
+    // Matches EF Core's MappingExtensions.ForQueueTimeJobs but uses an in-memory children index
+    private static TimeJobEntity _ForQueueTimeJobs(TTimeJob job)
     {
         var root = new TimeJobEntity
         {
-            Id = ticker.Id,
-            Function = ticker.Function,
-            Retries = ticker.Retries,
-            RetryIntervals = ticker.RetryIntervals,
-            UpdatedAt = ticker.UpdatedAt,
-            ParentId = ticker.ParentId,
-            ExecutionTime = ticker.ExecutionTime,
+            Id = job.Id,
+            Function = job.Function,
+            Retries = job.Retries,
+            RetryIntervals = job.RetryIntervals,
+            UpdatedAt = job.UpdatedAt,
+            ParentId = job.ParentId,
+            ExecutionTime = job.ExecutionTime,
             Children = new List<TimeJobEntity>(),
         };
 
-        if (_ChildrenIndex.TryGetValue(ticker.Id, out var directChildren) && !directChildren.IsEmpty)
+        if (_ChildrenIndex.TryGetValue(job.Id, out var directChildren) && !directChildren.IsEmpty)
         {
             // Pre-size children collection to avoid repeated growth
             var children = new List<TimeJobEntity>(directChildren.Count);
 
             foreach (var childId in directChildren.Keys)
             {
-                if (!_TimeTickers.TryGetValue(childId, out var ch))
+                if (!_TimeJobs.TryGetValue(childId, out var ch))
                 {
                     continue;
                 }
@@ -1184,7 +1184,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
 
                     foreach (var grandChildId in grandChildren.Keys)
                     {
-                        if (!_TimeTickers.TryGetValue(grandChildId, out var gch))
+                        if (!_TimeJobs.TryGetValue(grandChildId, out var gch))
                         {
                             continue;
                         }
@@ -1245,20 +1245,20 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         return children.Keys.ToArray();
     }
 
-    private bool _CanAcquire(TTimeTicker ticker)
+    private bool _CanAcquire(TTimeJob job)
     {
         // Match EF provider logic: WhereCanAcquire
         // Can acquire if: (Status is Idle OR Queued) AND (LockHolder matches current OR LockedAt is null)
         return (
-                (ticker.Status == JobStatus.Idle || ticker.Status == JobStatus.Queued)
-                && ticker.LockHolder == _lockHolder
+                (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
+                && job.LockHolder == _lockHolder
             )
             || (
-                (ticker.Status == JobStatus.Idle || ticker.Status == JobStatus.Queued) && ticker.LockedAt == null
+                (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued) && job.LockedAt == null
             );
     }
 
-    private bool _CanAcquireCronOccurrence(CronJobOccurrenceEntity<TCronTicker> occurrence)
+    private bool _CanAcquireCronOccurrence(CronJobOccurrenceEntity<TCronJob> occurrence)
     {
         // Match EF provider logic: WhereCanAcquire
         // Can acquire if: (Status is Idle OR Queued) AND (LockHolder matches current OR LockedAt is null)
@@ -1272,44 +1272,44 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             );
     }
 
-    private static TTimeTicker _CloneTicker(TTimeTicker ticker)
+    private static TTimeJob _CloneTicker(TTimeJob job)
     {
-        var cloned = new TTimeTicker
+        var cloned = new TTimeJob
         {
-            Id = ticker.Id,
-            Function = ticker.Function,
-            Status = ticker.Status,
-            Retries = ticker.Retries,
-            RetryCount = ticker.RetryCount,
-            ExecutionTime = ticker.ExecutionTime,
-            InitIdentifier = ticker.InitIdentifier,
-            LockHolder = ticker.LockHolder,
-            LockedAt = ticker.LockedAt,
-            ParentId = ticker.ParentId,
-            Request = ticker.Request,
-            ExceptionMessage = ticker.ExceptionMessage,
-            SkippedReason = ticker.SkippedReason,
-            ElapsedTime = ticker.ElapsedTime,
-            RetryIntervals = ticker.RetryIntervals,
-            RunCondition = ticker.RunCondition,
-            ExecutedAt = ticker.ExecutedAt,
-            CreatedAt = ticker.CreatedAt,
-            UpdatedAt = ticker.UpdatedAt,
-            Description = ticker.Description,
-            Children = new List<TTimeTicker>(),
+            Id = job.Id,
+            Function = job.Function,
+            Status = job.Status,
+            Retries = job.Retries,
+            RetryCount = job.RetryCount,
+            ExecutionTime = job.ExecutionTime,
+            InitIdentifier = job.InitIdentifier,
+            LockHolder = job.LockHolder,
+            LockedAt = job.LockedAt,
+            ParentId = job.ParentId,
+            Request = job.Request,
+            ExceptionMessage = job.ExceptionMessage,
+            SkippedReason = job.SkippedReason,
+            ElapsedTime = job.ElapsedTime,
+            RetryIntervals = job.RetryIntervals,
+            RunCondition = job.RunCondition,
+            ExecutedAt = job.ExecutedAt,
+            CreatedAt = job.CreatedAt,
+            UpdatedAt = job.UpdatedAt,
+            Description = job.Description,
+            Children = new List<TTimeJob>(),
         };
 
         return cloned;
     }
 
-    private static CronJobOccurrenceEntity<TCronTicker> _CloneCronOccurrence(
-        CronJobOccurrenceEntity<TCronTicker> occurrence
+    private static CronJobOccurrenceEntity<TCronJob> _CloneCronOccurrence(
+        CronJobOccurrenceEntity<TCronJob> occurrence
     )
     {
-        return new CronJobOccurrenceEntity<TCronTicker>
+        return new CronJobOccurrenceEntity<TCronJob>
         {
             Id = occurrence.Id,
-            CronTicker = occurrence.CronTicker,
+            CronJob = occurrence.CronJob,
             CronJobId = occurrence.CronJobId,
             Status = occurrence.Status,
             RetryCount = occurrence.RetryCount,
@@ -1325,25 +1325,25 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
         };
     }
 
-    private void _ApplyFunctionContextToTicker(TTimeTicker ticker, InternalFunctionContext context)
+    private void _ApplyFunctionContextToTicker(TTimeJob job, InternalFunctionContext context)
     {
         var propsToUpdate = context.GetPropsToUpdate();
 
         // STATUS / SKIPPED
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.Status)) && context.Status != JobStatus.Skipped)
         {
-            ticker.Status = context.Status;
+            job.Status = context.Status;
         }
         else if (propsToUpdate.Contains(nameof(InternalFunctionContext.Status)))
         {
-            ticker.Status = context.Status;
-            ticker.SkippedReason = context.ExceptionDetails;
+            job.Status = context.Status;
+            job.SkippedReason = context.ExceptionDetails;
         }
 
         // EXECUTED_AT
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.ExecutedAt)))
         {
-            ticker.ExecutedAt = context.ExecutedAt;
+            job.ExecutedAt = context.ExecutedAt;
         }
 
         // EXCEPTION DETAILS
@@ -1352,34 +1352,34 @@ internal class JobsInMemoryPersistenceProvider<TTimeTicker, TCronTicker>
             && context.Status != JobStatus.Skipped
         )
         {
-            ticker.ExceptionMessage = context.ExceptionDetails;
+            job.ExceptionMessage = context.ExceptionDetails;
         }
 
         // ELAPSED_TIME
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.ElapsedTime)))
         {
-            ticker.ElapsedTime = context.ElapsedTime;
+            job.ElapsedTime = context.ElapsedTime;
         }
 
         // RETRY COUNT
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.RetryCount)))
         {
-            ticker.RetryCount = context.RetryCount;
+            job.RetryCount = context.RetryCount;
         }
 
         // RELEASE LOCK
         if (propsToUpdate.Contains(nameof(InternalFunctionContext.ReleaseLock)))
         {
-            ticker.LockHolder = null;
-            ticker.LockedAt = null;
+            job.LockHolder = null;
+            job.LockedAt = null;
         }
 
         // UPDATED_AT ALWAYS
-        ticker.UpdatedAt = _clock.UtcNow;
+        job.UpdatedAt = _clock.UtcNow;
     }
 
     private void _ApplyFunctionContextToCronOccurrence(
-        CronJobOccurrenceEntity<TCronTicker> occurrence,
+        CronJobOccurrenceEntity<TCronJob> occurrence,
         InternalFunctionContext context
     )
     {

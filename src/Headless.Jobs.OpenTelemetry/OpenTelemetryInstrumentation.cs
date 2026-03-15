@@ -145,15 +145,15 @@ internal class OpenTelemetryInstrumentation(
     public override void LogRequestDeserializationFailure(
         string requestType,
         string functionName,
-        Guid tickerId,
+        Guid jobId,
         JobType type,
         Exception exception
     )
     {
         using var activity = _ActivitySource.StartActivity("Headless.Jobs.job_request_serialization.failed");
-        activity?.SetTag("Headless.Jobs.job.id", tickerId.ToString());
+        activity?.SetTag("Headless.Jobs.job.id", jobId.ToString());
         activity?.SetTag("Headless.Jobs.job.function", functionName);
         activity?.SetTag("Headless.Jobs.job.cancellation_reason", exception.Message);
-        base.LogRequestDeserializationFailure(requestType, functionName, tickerId, type, exception);
+        base.LogRequestDeserializationFailure(requestType, functionName, jobId, type, exception);
     }
 }

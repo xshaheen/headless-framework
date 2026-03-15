@@ -11,11 +11,11 @@ public partial class InitialJobsOperationalStore : Migration
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.EnsureSchema(name: "ticker");
+        migrationBuilder.EnsureSchema(name: "jobs");
 
         migrationBuilder.CreateTable(
-            name: "CronTickers",
-            schema: "ticker",
+            name: "CronJobs",
+            schema: "jobs",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "TEXT", nullable: false),
@@ -31,13 +31,13 @@ public partial class InitialJobsOperationalStore : Migration
             },
             constraints: table =>
             {
-                table.PrimaryKey("PK_CronTickers", x => x.Id);
+                table.PrimaryKey("PK_CronJobs", x => x.Id);
             }
         );
 
         migrationBuilder.CreateTable(
-            name: "TimeTickers",
-            schema: "ticker",
+            name: "TimeJobs",
+            schema: "jobs",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "TEXT", nullable: false),
@@ -63,27 +63,27 @@ public partial class InitialJobsOperationalStore : Migration
             },
             constraints: table =>
             {
-                table.PrimaryKey("PK_TimeTickers", x => x.Id);
+                table.PrimaryKey("PK_TimeJobs", x => x.Id);
                 table.ForeignKey(
-                    name: "FK_TimeTickers_TimeTickers_ParentId",
+                    name: "FK_TimeJobs_TimeJobs_ParentId",
                     column: x => x.ParentId,
-                    principalSchema: "ticker",
-                    principalTable: "TimeTickers",
+                    principalSchema: "jobs",
+                    principalTable: "TimeJobs",
                     principalColumn: "Id"
                 );
             }
         );
 
         migrationBuilder.CreateTable(
-            name: "CronTickerOccurrences",
-            schema: "ticker",
+            name: "CronJobOccurrences",
+            schema: "jobs",
             columns: table => new
             {
                 Id = table.Column<Guid>(type: "TEXT", nullable: false),
                 Status = table.Column<int>(type: "INTEGER", nullable: false),
                 LockHolder = table.Column<string>(type: "TEXT", nullable: true),
                 ExecutionTime = table.Column<DateTime>(type: "TEXT", nullable: false),
-                CronTickerId = table.Column<Guid>(type: "TEXT", nullable: false),
+                CronJobId = table.Column<Guid>(type: "TEXT", nullable: false),
                 LockedAt = table.Column<DateTime>(type: "TEXT", nullable: true),
                 ExecutedAt = table.Column<DateTime>(type: "TEXT", nullable: true),
                 ExceptionMessage = table.Column<string>(type: "TEXT", nullable: true),
@@ -95,12 +95,12 @@ public partial class InitialJobsOperationalStore : Migration
             },
             constraints: table =>
             {
-                table.PrimaryKey("PK_CronTickerOccurrences", x => x.Id);
+                table.PrimaryKey("PK_CronJobOccurrences", x => x.Id);
                 table.ForeignKey(
-                    name: "FK_CronTickerOccurrences_CronTickers_CronTickerId",
-                    column: x => x.CronTickerId,
-                    principalSchema: "ticker",
-                    principalTable: "CronTickers",
+                    name: "FK_CronJobOccurrences_CronJobs_CronJobId",
+                    column: x => x.CronJobId,
+                    principalSchema: "jobs",
+                    principalTable: "CronJobs",
                     principalColumn: "Id",
                     onDelete: ReferentialAction.Cascade
                 );
@@ -108,66 +108,66 @@ public partial class InitialJobsOperationalStore : Migration
         );
 
         migrationBuilder.CreateIndex(
-            name: "IX_CronTickerOccurrence_CronTickerId",
-            schema: "ticker",
-            table: "CronTickerOccurrences",
-            column: "CronTickerId"
+            name: "IX_CronJobOccurrence_CronJobId",
+            schema: "jobs",
+            table: "CronJobOccurrences",
+            column: "CronJobId"
         );
 
         migrationBuilder.CreateIndex(
-            name: "IX_CronTickerOccurrence_ExecutionTime",
-            schema: "ticker",
-            table: "CronTickerOccurrences",
+            name: "IX_CronJobOccurrence_ExecutionTime",
+            schema: "jobs",
+            table: "CronJobOccurrences",
             column: "ExecutionTime"
         );
 
         migrationBuilder.CreateIndex(
-            name: "IX_CronTickerOccurrence_Status_ExecutionTime",
-            schema: "ticker",
-            table: "CronTickerOccurrences",
+            name: "IX_CronJobOccurrence_Status_ExecutionTime",
+            schema: "jobs",
+            table: "CronJobOccurrences",
             columns: new[] { "Status", "ExecutionTime" }
         );
 
         migrationBuilder.CreateIndex(
-            name: "UQ_CronTickerId_ExecutionTime",
-            schema: "ticker",
-            table: "CronTickerOccurrences",
-            columns: new[] { "CronTickerId", "ExecutionTime" },
+            name: "UQ_CronJobId_ExecutionTime",
+            schema: "jobs",
+            table: "CronJobOccurrences",
+            columns: new[] { "CronJobId", "ExecutionTime" },
             unique: true
         );
 
         migrationBuilder.CreateIndex(
-            name: "IX_CronTickers_Expression",
-            schema: "ticker",
-            table: "CronTickers",
+            name: "IX_CronJobs_Expression",
+            schema: "jobs",
+            table: "CronJobs",
             column: "Expression"
         );
 
         migrationBuilder.CreateIndex(
             name: "IX_Function_Expression",
-            schema: "ticker",
-            table: "CronTickers",
+            schema: "jobs",
+            table: "CronJobs",
             columns: new[] { "Function", "Expression" }
         );
 
         migrationBuilder.CreateIndex(
-            name: "IX_TimeTicker_ExecutionTime",
-            schema: "ticker",
-            table: "TimeTickers",
+            name: "IX_TimeJob_ExecutionTime",
+            schema: "jobs",
+            table: "TimeJobs",
             column: "ExecutionTime"
         );
 
         migrationBuilder.CreateIndex(
-            name: "IX_TimeTicker_Status_ExecutionTime",
-            schema: "ticker",
-            table: "TimeTickers",
+            name: "IX_TimeJob_Status_ExecutionTime",
+            schema: "jobs",
+            table: "TimeJobs",
             columns: new[] { "Status", "ExecutionTime" }
         );
 
         migrationBuilder.CreateIndex(
-            name: "IX_TimeTickers_ParentId",
-            schema: "ticker",
-            table: "TimeTickers",
+            name: "IX_TimeJobs_ParentId",
+            schema: "jobs",
+            table: "TimeJobs",
             column: "ParentId"
         );
     }
@@ -175,10 +175,10 @@ public partial class InitialJobsOperationalStore : Migration
     /// <inheritdoc />
     protected override void Down(MigrationBuilder migrationBuilder)
     {
-        migrationBuilder.DropTable(name: "CronTickerOccurrences", schema: "ticker");
+        migrationBuilder.DropTable(name: "CronJobOccurrences", schema: "jobs");
 
-        migrationBuilder.DropTable(name: "TimeTickers", schema: "ticker");
+        migrationBuilder.DropTable(name: "TimeJobs", schema: "jobs");
 
-        migrationBuilder.DropTable(name: "CronTickers", schema: "ticker");
+        migrationBuilder.DropTable(name: "CronJobs", schema: "jobs");
     }
 }

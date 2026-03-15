@@ -8,14 +8,14 @@ namespace Headless.Jobs.DependencyInjection;
 
 public static class ServiceExtension
 {
-    public static JobsOptionsBuilder<TTimeTicker, TCronTicker> AddOperationalStore<TTimeTicker, TCronTicker>(
-        this JobsOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
-        Action<JobsEfCoreOptionBuilder<TTimeTicker, TCronTicker>>? efConfiguration = null
+    public static JobsOptionsBuilder<TTimeJob, TCronJob> AddOperationalStore<TTimeJob, TCronJob>(
+        this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration,
+        Action<JobsEfCoreOptionBuilder<TTimeJob, TCronJob>>? efConfiguration = null
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var efCoreOptionBuilder = new JobsEfCoreOptionBuilder<TTimeTicker, TCronTicker>();
+        var efCoreOptionBuilder = new JobsEfCoreOptionBuilder<TTimeJob, TCronJob>();
 
         efConfiguration?.Invoke(efCoreOptionBuilder);
 
@@ -28,24 +28,24 @@ public static class ServiceExtension
             );
         }
 
-        tickerConfiguration.ExternalProviderConfigServiceAction += (services) =>
+        jobsConfiguration.ExternalProviderConfigServiceAction += (services) =>
             services.AddSingleton(_ => efCoreOptionBuilder);
 
-        tickerConfiguration.ExternalProviderConfigServiceAction += efCoreOptionBuilder.ConfigureServices;
+        jobsConfiguration.ExternalProviderConfigServiceAction += efCoreOptionBuilder.ConfigureServices;
 
-        _UseApplicationService(tickerConfiguration, efCoreOptionBuilder);
+        _UseApplicationService(jobsConfiguration, efCoreOptionBuilder);
 
-        return tickerConfiguration;
+        return jobsConfiguration;
     }
 
-    private static void _UseApplicationService<TTimeTicker, TCronTicker>(
-        JobsOptionsBuilder<TTimeTicker, TCronTicker> tickerConfiguration,
-        JobsEfCoreOptionBuilder<TTimeTicker, TCronTicker> options
+    private static void _UseApplicationService<TTimeJob, TCronJob>(
+        JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration,
+        JobsEfCoreOptionBuilder<TTimeJob, TCronJob> options
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        tickerConfiguration.UseExternalProviderApplication(
+        jobsConfiguration.UseExternalProviderApplication(
             (serviceProvider) =>
             {
                 var internalJobsManager = serviceProvider.GetRequiredService<IInternalJobManager>();
@@ -61,7 +61,7 @@ public static class ServiceExtension
                         await internalJobsManager.ReleaseDeadNodeResources(schedulerOptions.NodeIdentifier);
 
                         // After cleanup, restart the host scheduler so it immediately
-                        // picks up newly seeded cron tickers and jobs configured via the core pipeline.
+                        // picks up newly seeded cron jobs and jobs configured via the core pipeline.
                         if (hostScheduler is { IsRunning: true })
                         {
                             hostScheduler.Restart();

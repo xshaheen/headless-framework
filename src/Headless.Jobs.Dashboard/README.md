@@ -6,7 +6,7 @@ Simple, clean authentication for your Jobs Dashboard.
 
 ### No Authentication (Public Dashboard)
 ```csharp
-services.AddJobs<MyTimeTicker, MyCronTicker>(config =>
+services.AddJobs<MyTimeJob, MyCronJob>(config =>
 {
     config.AddDashboard(dashboard =>
     {
@@ -17,7 +17,7 @@ services.AddJobs<MyTimeTicker, MyCronTicker>(config =>
 
 ### Basic Authentication
 ```csharp
-services.AddJobs<MyTimeTicker, MyCronTicker>(config =>
+services.AddJobs<MyTimeJob, MyCronJob>(config =>
 {
     config.AddDashboard(dashboard =>
     {
@@ -28,7 +28,7 @@ services.AddJobs<MyTimeTicker, MyCronTicker>(config =>
 
 ### API Key Authentication
 ```csharp
-services.AddJobs<MyTimeTicker, MyCronTicker>(config =>
+services.AddJobs<MyTimeJob, MyCronJob>(config =>
 {
     config.AddDashboard(dashboard =>
     {
@@ -39,7 +39,7 @@ services.AddJobs<MyTimeTicker, MyCronTicker>(config =>
 
 ### Use Host Application's Authentication
 ```csharp
-services.AddJobs<MyTimeTicker, MyCronTicker>(config =>
+services.AddJobs<MyTimeJob, MyCronJob>(config =>
 {
     config.AddDashboard(dashboard =>
     {
@@ -50,7 +50,7 @@ services.AddJobs<MyTimeTicker, MyCronTicker>(config =>
 
 ### Use Host Authentication with Custom Policy
 ```csharp
-services.AddJobs<MyTimeTicker, MyCronTicker>(config =>
+services.AddJobs<MyTimeJob, MyCronJob>(config =>
 {
     config.AddDashboard(dashboard =>
     {

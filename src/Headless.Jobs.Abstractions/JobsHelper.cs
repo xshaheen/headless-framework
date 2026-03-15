@@ -7,13 +7,13 @@ public static class JobsHelper
     private static readonly byte[] _GZipSignature = [0x1f, 0x8b, 0x08, 0x00];
 
     /// <summary>
-    /// JsonSerializerOptions specifically for ticker request serialization/deserialization.
+    /// JsonSerializerOptions specifically for job request serialization/deserialization.
     /// Can be configured during application startup via JobsOptionsBuilder.
     /// </summary>
     public static JsonSerializerOptions RequestJsonSerializerOptions { get; set; } = new();
 
     /// <summary>
-    /// Controls whether ticker requests are GZip-compressed.
+    /// Controls whether job requests are GZip-compressed.
     /// When false (default), requests are stored as plain UTF-8 JSON bytes without compression.
     /// </summary>
     public static bool UseGZipCompression { get; set; }

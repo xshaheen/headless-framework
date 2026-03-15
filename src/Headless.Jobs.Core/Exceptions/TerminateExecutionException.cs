@@ -9,14 +9,14 @@ public class TerminateExecutionException : Exception
     public TerminateExecutionException(string message)
         : base(message) { }
 
-    public TerminateExecutionException(JobStatus tickerType, string message)
-        : base(message) => Status = tickerType;
+    public TerminateExecutionException(JobStatus jobType, string message)
+        : base(message) => Status = jobType;
 
     public TerminateExecutionException(string message, Exception innerException)
         : base(message, innerException) { }
 
-    public TerminateExecutionException(JobStatus tickerType, string message, Exception innerException)
-        : base(message, innerException) => Status = tickerType;
+    public TerminateExecutionException(JobStatus jobType, string message, Exception innerException)
+        : base(message, innerException) => Status = jobType;
 }
 
 internal class ExceptionDetailClassForSerialization

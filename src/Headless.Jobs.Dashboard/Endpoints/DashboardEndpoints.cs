@@ -13,12 +13,12 @@ namespace Headless.Jobs.Endpoints;
 
 public static class DashboardEndpoints
 {
-    public static void MapDashboardEndpoints<TTimeTicker, TCronTicker>(
+    public static void MapDashboardEndpoints<TTimeJob, TCronJob>(
         this IEndpointRouteBuilder endpoints,
         DashboardOptionsBuilder config
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         // New authentication endpoints
         endpoints
@@ -57,178 +57,178 @@ public static class DashboardEndpoints
 
         // Options endpoint
         apiGroup
-            .MapGet("/options", _GetOptions<TTimeTicker, TCronTicker>)
+            .MapGet("/options", _GetOptions<TTimeJob, TCronJob>)
             .WithName("GetOptions")
             .WithSummary("Get dashboard options and status");
 
         // Time Jobs endpoints
         apiGroup
-            .MapGet("/time-jobs", _GetTimeTickers<TTimeTicker, TCronTicker>)
-            .WithName("GetTimeTickers")
+            .MapGet("/time-jobs", _GetTimeJobs<TTimeJob, TCronJob>)
+            .WithName("GetTimeJobs")
             .WithSummary("Get all time jobs");
 
         apiGroup
-            .MapGet("/time-jobs/paginated", _GetTimeTickersPaginated<TTimeTicker, TCronTicker>)
-            .WithName("GetTimeTickersPaginated")
+            .MapGet("/time-jobs/paginated", _GetTimeJobsPaginated<TTimeJob, TCronJob>)
+            .WithName("GetTimeJobsPaginated")
             .WithSummary("Get paginated time jobs");
 
         apiGroup
-            .MapGet("/time-jobs/graph-data-range", _GetTimeTickersGraphDataRange<TTimeTicker, TCronTicker>)
-            .WithName("GetTimeTickersGraphDataRange")
+            .MapGet("/time-jobs/graph-data-range", _GetTimeJobsGraphDataRange<TTimeJob, TCronJob>)
+            .WithName("GetTimeJobsGraphDataRange")
             .WithSummary("Get time jobs graph data for specific date range");
 
         apiGroup
-            .MapGet("/time-jobs/graph-data", _GetTimeTickersGraphData<TTimeTicker, TCronTicker>)
-            .WithName("GetTimeTickersGraphData")
+            .MapGet("/time-jobs/graph-data", _GetTimeJobsGraphData<TTimeJob, TCronJob>)
+            .WithName("GetTimeJobsGraphData")
             .WithSummary("Get time jobs graph data");
 
         apiGroup
-            .MapPost("/time-job/add", _CreateChainJobs<TTimeTicker, TCronTicker>)
+            .MapPost("/time-job/add", _CreateChainJobs<TTimeJob, TCronJob>)
             .WithName("CreateChainJobs")
             .WithSummary("Create chain jobs");
 
         apiGroup
-            .MapPut("/time-job/update", _UpdateTimeTicker<TTimeTicker, TCronTicker>)
-            .WithName("UpdateTimeTicker")
+            .MapPut("/time-job/update", _UpdateTimeJob<TTimeJob, TCronJob>)
+            .WithName("UpdateTimeJob")
             .WithSummary("Update time job");
 
         apiGroup
-            .MapDelete("/time-job/delete", _DeleteTimeTicker<TTimeTicker, TCronTicker>)
-            .WithName("DeleteTimeTicker")
+            .MapDelete("/time-job/delete", _DeleteTimeJob<TTimeJob, TCronJob>)
+            .WithName("DeleteTimeJob")
             .WithSummary("Delete time job");
 
         apiGroup
-            .MapDelete("/time-job/delete-batch", _DeleteTimeTickersBatch<TTimeTicker, TCronTicker>)
-            .WithName("DeleteTimeTickersBatch")
-            .WithSummary("Delete multiple time tickers");
+            .MapDelete("/time-job/delete-batch", _DeleteTimeJobsBatch<TTimeJob, TCronJob>)
+            .WithName("DeleteTimeJobsBatch")
+            .WithSummary("Delete multiple time jobs");
 
         // Cron Jobs endpoints
         apiGroup
-            .MapGet("/cron-jobs", _GetCronTickers<TTimeTicker, TCronTicker>)
-            .WithName("GetCronTickers")
+            .MapGet("/cron-jobs", _GetCronJobs<TTimeJob, TCronJob>)
+            .WithName("GetCronJobs")
             .WithSummary("Get all cron jobs");
 
         apiGroup
-            .MapGet("/cron-jobs/paginated", _GetCronTickersPaginated<TTimeTicker, TCronTicker>)
-            .WithName("GetCronTickersPaginated")
+            .MapGet("/cron-jobs/paginated", _GetCronJobsPaginated<TTimeJob, TCronJob>)
+            .WithName("GetCronJobsPaginated")
             .WithSummary("Get paginated cron jobs");
 
         apiGroup
-            .MapGet("/cron-jobs/graph-data-range", _GetCronTickersGraphDataRange<TTimeTicker, TCronTicker>)
-            .WithName("GetCronTickersGraphDataRange")
+            .MapGet("/cron-jobs/graph-data-range", _GetCronJobsGraphDataRange<TTimeJob, TCronJob>)
+            .WithName("GetCronJobsGraphDataRange")
             .WithSummary("Get cron jobs graph data for specific date range");
 
         apiGroup
-            .MapGet("/cron-jobs/graph-data-range-id", _GetCronTickersByIdGraphDataRange<TTimeTicker, TCronTicker>)
-            .WithName("GetCronTickersByIdGraphDataRange")
+            .MapGet("/cron-jobs/graph-data-range-id", _GetCronJobsByIdGraphDataRange<TTimeJob, TCronJob>)
+            .WithName("GetCronJobsByIdGraphDataRange")
             .WithSummary("Get cron job graph data by ID for specific date range");
 
         apiGroup
-            .MapGet("/cron-jobs/graph-data", _GetCronTickersGraphData<TTimeTicker, TCronTicker>)
-            .WithName("GetCronTickersGraphData")
+            .MapGet("/cron-jobs/graph-data", _GetCronJobsGraphData<TTimeJob, TCronJob>)
+            .WithName("GetCronJobsGraphData")
             .WithSummary("Get cron jobs graph data");
 
         apiGroup
-            .MapGet("/cron-job-occurrences/{cronJobId}", _GetCronTickerOccurrences<TTimeTicker, TCronTicker>)
-            .WithName("GetCronTickerOccurrences")
+            .MapGet("/cron-job-occurrences/{cronJobId}", _GetCronJobOccurrences<TTimeJob, TCronJob>)
+            .WithName("GetCronJobOccurrences")
             .WithSummary("Get cron job occurrences");
 
         apiGroup
             .MapGet(
                 "/cron-job-occurrences/{cronJobId}/paginated",
-                _GetCronTickerOccurrencesPaginated<TTimeTicker, TCronTicker>
+                _GetCronJobOccurrencesPaginated<TTimeJob, TCronJob>
             )
-            .WithName("GetCronTickerOccurrencesPaginated")
+            .WithName("GetCronJobOccurrencesPaginated")
             .WithSummary("Get paginated cron job occurrences");
 
         apiGroup
             .MapGet(
                 "/cron-job-occurrences/{cronJobId}/graph-data",
-                _GetCronTickerOccurrencesGraphData<TTimeTicker, TCronTicker>
+                _GetCronJobOccurrencesGraphData<TTimeJob, TCronJob>
             )
-            .WithName("GetCronTickerOccurrencesGraphData")
+            .WithName("GetCronJobOccurrencesGraphData")
             .WithSummary("Get cron job occurrences graph data");
 
         apiGroup
-            .MapPost("/cron-job/add", _AddCronTicker<TTimeTicker, TCronTicker>)
-            .WithName("AddCronTicker")
+            .MapPost("/cron-job/add", _AddCronJob<TTimeJob, TCronJob>)
+            .WithName("AddCronJob")
             .WithSummary("Add cron job");
 
         apiGroup
-            .MapPut("/cron-job/update", _UpdateCronTicker<TTimeTicker, TCronTicker>)
-            .WithName("UpdateCronTicker")
+            .MapPut("/cron-job/update", _UpdateCronJob<TTimeJob, TCronJob>)
+            .WithName("UpdateCronJob")
             .WithSummary("Update cron job");
 
         apiGroup
-            .MapPost("/cron-job/run", RunCronTickerOnDemand<TTimeTicker, TCronTicker>)
-            .WithName("RunCronTickerOnDemand")
+            .MapPost("/cron-job/run", RunCronJobOnDemand<TTimeJob, TCronJob>)
+            .WithName("RunCronJobOnDemand")
             .WithSummary("Run cron job on demand");
 
         apiGroup
-            .MapDelete("/cron-job/delete", _DeleteCronTicker<TTimeTicker, TCronTicker>)
-            .WithName("DeleteCronTicker")
+            .MapDelete("/cron-job/delete", _DeleteCronJob<TTimeJob, TCronJob>)
+            .WithName("DeleteCronJob")
             .WithSummary("Delete cron job");
 
         apiGroup
-            .MapDelete("/cron-job-occurrence/delete", _DeleteCronTickerOccurrence<TTimeTicker, TCronTicker>)
-            .WithName("DeleteCronTickerOccurrence")
+            .MapDelete("/cron-job-occurrence/delete", _DeleteCronJobOccurrence<TTimeJob, TCronJob>)
+            .WithName("DeleteCronJobOccurrence")
             .WithSummary("Delete cron job occurrence");
 
         // Job operations
         apiGroup
-            .MapPost("/job/cancel", _CancelJob<TTimeTicker, TCronTicker>)
+            .MapPost("/job/cancel", _CancelJob<TTimeJob, TCronJob>)
             .WithName("CancelJob")
             .WithSummary("Cancel job by ID");
 
         apiGroup
-            .MapGet("/job-request/{id}", _GetJobRequest<TTimeTicker, TCronTicker>)
+            .MapGet("/job-request/{id}", _GetJobRequest<TTimeJob, TCronJob>)
             .WithName("GetJobRequest")
             .WithSummary("Get job request by ID");
 
         apiGroup
-            .MapGet("/job-functions", _GetJobFunctions<TTimeTicker, TCronTicker>)
+            .MapGet("/job-functions", _GetJobFunctions<TTimeJob, TCronJob>)
             .WithName("GetJobFunctions")
             .WithSummary("Get available job functions");
 
         // Host operations
         apiGroup
-            .MapGet("/job-host/next-job", _GetNextJob<TTimeTicker, TCronTicker>)
+            .MapGet("/job-host/next-job", _GetNextJob<TTimeJob, TCronJob>)
             .WithName("GetNextJob")
             .WithSummary("Get next planned job");
 
         apiGroup
-            .MapPost("/job-host/stop", _StopJobHost<TTimeTicker, TCronTicker>)
+            .MapPost("/job-host/stop", _StopJobHost<TTimeJob, TCronJob>)
             .WithName("StopJobHost")
             .WithSummary("Stop job host");
 
         apiGroup
-            .MapPost("/job-host/start", _StartJobHost<TTimeTicker, TCronTicker>)
+            .MapPost("/job-host/start", _StartJobHost<TTimeJob, TCronJob>)
             .WithName("StartJobHost")
             .WithSummary("Start job host");
 
         apiGroup
-            .MapPost("/job-host/restart", _RestartJobHost<TTimeTicker, TCronTicker>)
+            .MapPost("/job-host/restart", _RestartJobHost<TTimeJob, TCronJob>)
             .WithName("RestartJobHost")
             .WithSummary("Restart job host");
 
         apiGroup
-            .MapGet("/job-host/status", _GetJobHostStatus<TTimeTicker, TCronTicker>)
+            .MapGet("/job-host/status", _GetJobHostStatus<TTimeJob, TCronJob>)
             .WithName("GetJobHostStatus")
             .WithSummary("Get job host status");
 
         // Statistics endpoints
         apiGroup
-            .MapGet("/job/statuses/get-last-week", _GetLastWeekJobStatus<TTimeTicker, TCronTicker>)
+            .MapGet("/job/statuses/get-last-week", _GetLastWeekJobStatus<TTimeJob, TCronJob>)
             .WithName("GetLastWeekJobStatus")
             .WithSummary("Get last week job statuses");
 
         apiGroup
-            .MapGet("/job/statuses/get", _GetJobStatuses<TTimeTicker, TCronTicker>)
+            .MapGet("/job/statuses/get", _GetJobStatuses<TTimeJob, TCronJob>)
             .WithName("GetJobStatuses")
             .WithSummary("Get overall job statuses");
 
         apiGroup
-            .MapGet("/job/machine/jobs", _GetMachineJobs<TTimeTicker, TCronTicker>)
+            .MapGet("/job/machine/jobs", _GetMachineJobs<TTimeJob, TCronJob>)
             .WithName("GetMachineJobs")
             .WithSummary("Get machine jobs");
 
@@ -277,13 +277,13 @@ public static class DashboardEndpoints
         return Results.Unauthorized();
     }
 
-    private static IResult _GetOptions<TTimeTicker, TCronTicker>(
+    private static IResult _GetOptions<TTimeJob, TCronJob>(
         JobsExecutionContext executionContext,
         SchedulerOptionsBuilder schedulerOptions,
         DashboardOptionsBuilder dashboardOptions
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         return Results.Json(
             new
@@ -298,74 +298,74 @@ public static class DashboardEndpoints
         );
     }
 
-    private static async Task<IResult> _GetTimeTickers<TTimeTicker, TCronTicker>(
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+    private static async Task<IResult> _GetTimeJobs<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetTimeTickersAsync(cancellationToken);
+        var result = await repository.GetTimeJobsAsync(cancellationToken);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _GetTimeTickersPaginated<TTimeTicker, TCronTicker>(
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+    private static async Task<IResult> _GetTimeJobsPaginated<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         int pageNumber = 1,
         int pageSize = 20,
         CancellationToken cancellationToken = default
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetTimeTickersPaginatedAsync(pageNumber, pageSize, cancellationToken);
+        var result = await repository.GetTimeJobsPaginatedAsync(pageNumber, pageSize, cancellationToken);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _GetTimeTickersGraphDataRange<TTimeTicker, TCronTicker>(
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+    private static async Task<IResult> _GetTimeJobsGraphDataRange<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         int pastDays = 3,
         int futureDays = 3,
         CancellationToken cancellationToken = default
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetTimeTickersGraphSpecificDataAsync(pastDays, futureDays, cancellationToken);
+        var result = await repository.GetTimeJobsGraphSpecificDataAsync(pastDays, futureDays, cancellationToken);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _GetTimeTickersGraphData<TTimeTicker, TCronTicker>(
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+    private static async Task<IResult> _GetTimeJobsGraphData<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetTimeTickerFullDataAsync(cancellationToken);
+        var result = await repository.GetTimeJobFullDataAsync(cancellationToken);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _CreateChainJobs<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _CreateChainJobs<TTimeJob, TCronJob>(
         HttpContext context,
-        ITimeJobManager<TTimeTicker> timeJobsManager,
+        ITimeJobManager<TTimeJob> timeJobsManager,
         DashboardOptionsBuilder dashboardOptions,
         string timeZoneId,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         // Read the raw JSON from request body
         using var reader = new StreamReader(context.Request.Body);
         var jsonString = await reader.ReadToEndAsync(cancellationToken);
 
         // Use Dashboard-specific JSON options
-        var chainRoot = JsonSerializer.Deserialize<TTimeTicker>(jsonString, dashboardOptions.DashboardJsonOptions);
+        var chainRoot = JsonSerializer.Deserialize<TTimeJob>(jsonString, dashboardOptions.DashboardJsonOptions);
 
         if (chainRoot?.ExecutionTime is { } executionTime && !string.IsNullOrEmpty(timeZoneId))
         {
@@ -382,42 +382,42 @@ public static class DashboardEndpoints
             {
                 success = result.IsSucceeded,
                 message = result.IsSucceeded ? "Chain jobs created successfully" : "Failed to create chain jobs",
-                tickerId = result.Result?.Id,
+                jobId = result.Result?.Id,
             },
             dashboardOptions.DashboardJsonOptions
         );
     }
 
-    private static async Task<IResult> _UpdateTimeTicker<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _UpdateTimeJob<TTimeJob, TCronJob>(
         Guid id,
         HttpContext context,
-        ITimeJobManager<TTimeTicker> timeJobsManager,
+        ITimeJobManager<TTimeJob> timeJobsManager,
         DashboardOptionsBuilder dashboardOptions,
         string timeZoneId,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         // Read the raw JSON from request body
         using var reader = new StreamReader(context.Request.Body);
         var jsonString = await reader.ReadToEndAsync(cancellationToken);
 
         // Use Dashboard-specific JSON options
-        var timeTicker = JsonSerializer.Deserialize<TTimeTicker>(jsonString, dashboardOptions.DashboardJsonOptions)!;
+        var timeJob = JsonSerializer.Deserialize<TTimeJob>(jsonString, dashboardOptions.DashboardJsonOptions)!;
 
         // Ensure the ID matches
-        timeTicker.Id = id;
+        timeJob.Id = id;
 
-        if (timeTicker.ExecutionTime is { } executionTime && !string.IsNullOrEmpty(timeZoneId))
+        if (timeJob.ExecutionTime is { } executionTime && !string.IsNullOrEmpty(timeZoneId))
         {
             var tz = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
             var unspecified = DateTime.SpecifyKind(executionTime, DateTimeKind.Unspecified);
             var utc = TimeZoneInfo.ConvertTimeToUtc(unspecified, tz);
-            timeTicker.ExecutionTime = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+            timeJob.ExecutionTime = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
         }
 
-        var result = await timeJobsManager.UpdateAsync(timeTicker, cancellationToken);
+        var result = await timeJobsManager.UpdateAsync(timeJob, cancellationToken);
 
         return Results.Json(
             new
@@ -429,14 +429,14 @@ public static class DashboardEndpoints
         );
     }
 
-    private static async Task<IResult> _DeleteTimeTicker<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _DeleteTimeJob<TTimeJob, TCronJob>(
         Guid id,
-        ITimeJobManager<TTimeTicker> timeJobsManager,
+        ITimeJobManager<TTimeJob> timeJobsManager,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         var result = await timeJobsManager.DeleteAsync(id, cancellationToken);
 
@@ -450,14 +450,14 @@ public static class DashboardEndpoints
         );
     }
 
-    private static async Task<IResult> _DeleteTimeTickersBatch<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _DeleteTimeJobsBatch<TTimeJob, TCronJob>(
         [FromBody] Guid[] ids,
-        ITimeJobManager<TTimeTicker> timeJobsManager,
+        ITimeJobManager<TTimeJob> timeJobsManager,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         var idList = ids is { Length: > 0 } ? new List<Guid>(ids) : new List<Guid>();
         var result = await timeJobsManager.DeleteBatchAsync(idList, cancellationToken);
@@ -466,64 +466,64 @@ public static class DashboardEndpoints
             new
             {
                 success = result.IsSucceeded,
-                message = result.IsSucceeded ? "Time tickers deleted successfully" : "Failed to delete time jobs",
+                message = result.IsSucceeded ? "Time jobs deleted successfully" : "Failed to delete time jobs",
             },
             dashboardOptions.DashboardJsonOptions
         );
     }
 
-    private static async Task<IResult> _GetCronTickers<TTimeTicker, TCronTicker>(
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+    private static async Task<IResult> _GetCronJobs<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronTickersAsync(cancellationToken);
+        var result = await repository.GetCronJobsAsync(cancellationToken);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _GetCronTickersPaginated<TTimeTicker, TCronTicker>(
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+    private static async Task<IResult> _GetCronJobsPaginated<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         int pageNumber = 1,
         int pageSize = 20,
         CancellationToken cancellationToken = default
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronTickersPaginatedAsync(pageNumber, pageSize, cancellationToken);
+        var result = await repository.GetCronJobsPaginatedAsync(pageNumber, pageSize, cancellationToken);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _GetCronTickersGraphDataRange<TTimeTicker, TCronTicker>(
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+    private static async Task<IResult> _GetCronJobsGraphDataRange<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         int pastDays = 3,
         int futureDays = 3,
         CancellationToken cancellationToken = default
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronTickersGraphSpecificDataAsync(pastDays, futureDays, cancellationToken);
+        var result = await repository.GetCronJobsGraphSpecificDataAsync(pastDays, futureDays, cancellationToken);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _GetCronTickersByIdGraphDataRange<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _GetCronJobsByIdGraphDataRange<TTimeJob, TCronJob>(
         Guid id,
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         int pastDays = 3,
         int futureDays = 3,
         CancellationToken cancellationToken = default
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronTickersGraphSpecificDataByIdAsync(
+        var result = await repository.GetCronJobsGraphSpecificDataByIdAsync(
             id,
             pastDays,
             futureDays,
@@ -532,43 +532,43 @@ public static class DashboardEndpoints
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _GetCronTickersGraphData<TTimeTicker, TCronTicker>(
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+    private static async Task<IResult> _GetCronJobsGraphData<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronTickerFullDataAsync(cancellationToken);
+        var result = await repository.GetCronJobFullDataAsync(cancellationToken);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _GetCronTickerOccurrences<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _GetCronJobOccurrences<TTimeJob, TCronJob>(
         Guid cronJobId,
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronTickersOccurrencesAsync(cronJobId, cancellationToken);
+        var result = await repository.GetCronJobsOccurrencesAsync(cronJobId, cancellationToken);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _GetCronTickerOccurrencesPaginated<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _GetCronJobOccurrencesPaginated<TTimeJob, TCronJob>(
         Guid cronJobId,
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         int pageNumber = 1,
         int pageSize = 20,
         CancellationToken cancellationToken = default
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronTickersOccurrencesPaginatedAsync(
+        var result = await repository.GetCronJobsOccurrencesPaginatedAsync(
             cronJobId,
             pageNumber,
             pageSize,
@@ -577,69 +577,69 @@ public static class DashboardEndpoints
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _GetCronTickerOccurrencesGraphData<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _GetCronJobOccurrencesGraphData<TTimeJob, TCronJob>(
         Guid cronJobId,
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        var result = await repository.GetCronTickersOccurrencesGraphDataAsync(cronJobId, cancellationToken);
+        var result = await repository.GetCronJobsOccurrencesGraphDataAsync(cronJobId, cancellationToken);
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _AddCronTicker<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _AddCronJob<TTimeJob, TCronJob>(
         HttpContext context,
-        ICronJobManager<TCronTicker> cronJobsManager,
+        ICronJobManager<TCronJob> cronJobsManager,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         // Read the raw JSON from request body
         using var reader = new StreamReader(context.Request.Body);
         var jsonString = await reader.ReadToEndAsync(cancellationToken);
 
         // Use Dashboard-specific JSON options
-        var cronTicker = JsonSerializer.Deserialize<TCronTicker>(jsonString, dashboardOptions.DashboardJsonOptions)!;
+        var cronJob = JsonSerializer.Deserialize<TCronJob>(jsonString, dashboardOptions.DashboardJsonOptions)!;
 
-        var result = await cronJobsManager.AddAsync(cronTicker, cancellationToken);
+        var result = await cronJobsManager.AddAsync(cronJob, cancellationToken);
 
         return Results.Json(
             new
             {
                 success = result.IsSucceeded,
                 message = result.IsSucceeded ? "Cron job added successfully" : "Failed to add cron job",
-                tickerId = result.Result?.Id,
+                jobId = result.Result?.Id,
             },
             dashboardOptions.DashboardJsonOptions
         );
     }
 
-    private static async Task<IResult> _UpdateCronTicker<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _UpdateCronJob<TTimeJob, TCronJob>(
         Guid id,
         HttpContext context,
-        ICronJobManager<TCronTicker> cronJobsManager,
+        ICronJobManager<TCronJob> cronJobsManager,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         // Read the raw JSON from request body
         using var reader = new StreamReader(context.Request.Body);
         var jsonString = await reader.ReadToEndAsync(cancellationToken);
 
         // Use Dashboard-specific JSON options
-        var cronTicker = JsonSerializer.Deserialize<TCronTicker>(jsonString, dashboardOptions.DashboardJsonOptions)!;
+        var cronJob = JsonSerializer.Deserialize<TCronJob>(jsonString, dashboardOptions.DashboardJsonOptions)!;
 
         // Ensure the ID matches
-        cronTicker.Id = id;
+        cronJob.Id = id;
 
-        var result = await cronJobsManager.UpdateAsync(cronTicker, cancellationToken);
+        var result = await cronJobsManager.UpdateAsync(cronJob, cancellationToken);
 
         return Results.Json(
             new
@@ -651,26 +651,26 @@ public static class DashboardEndpoints
         );
     }
 
-    private static async Task<IResult> RunCronTickerOnDemand<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> RunCronJobOnDemand<TTimeJob, TCronJob>(
         Guid id,
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        await repository.AddOnDemandCronTickerOccurrenceAsync(id, cancellationToken);
+        await repository.AddOnDemandCronJobOccurrenceAsync(id, cancellationToken);
         return Results.Ok();
     }
 
-    private static async Task<IResult> _DeleteCronTicker<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _DeleteCronJob<TTimeJob, TCronJob>(
         Guid id,
-        ICronJobManager<TCronTicker> cronJobsManager,
+        ICronJobManager<TCronJob> cronJobsManager,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         var result = await cronJobsManager.DeleteAsync(id, cancellationToken);
 
@@ -684,25 +684,25 @@ public static class DashboardEndpoints
         );
     }
 
-    private static async Task<IResult> _DeleteCronTickerOccurrence<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _DeleteCronJobOccurrence<TTimeJob, TCronJob>(
         Guid id,
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
-        await repository.DeleteCronTickerOccurrenceByIdAsync(id, cancellationToken);
+        await repository.DeleteCronJobOccurrenceByIdAsync(id, cancellationToken);
         return Results.Ok();
     }
 
-    private static IResult _CancelJob<TTimeTicker, TCronTicker>(
+    private static IResult _CancelJob<TTimeJob, TCronJob>(
         Guid id,
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         if (repository.CancelJobById(id))
         {
@@ -712,15 +712,15 @@ public static class DashboardEndpoints
         return Results.BadRequest();
     }
 
-    private static async Task<IResult> _GetJobRequest<TTimeTicker, TCronTicker>(
+    private static async Task<IResult> _GetJobRequest<TTimeJob, TCronJob>(
         Guid jobId,
         JobType jobType,
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         var resultData = await repository.GetJobRequestByIdAsync(jobId, jobType, cancellationToken);
 
@@ -728,12 +728,12 @@ public static class DashboardEndpoints
         return Results.Json(response, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static IResult _GetJobFunctions<TTimeTicker, TCronTicker>(
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+    private static IResult _GetJobFunctions<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         var result = repository
             .GetJobFunctions()
@@ -748,55 +748,55 @@ public static class DashboardEndpoints
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static IResult _GetNextJob<TTimeTicker, TCronTicker>(
+    private static IResult _GetNextJob<TTimeJob, TCronJob>(
         JobsExecutionContext executionContext,
         DashboardOptionsBuilder dashboardOptions
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         var result = new { NextOccurrence = executionContext.GetNextPlannedOccurrence() };
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _StopJobHost<TTimeTicker, TCronTicker>(IJobsHostScheduler scheduler)
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+    private static async Task<IResult> _StopJobHost<TTimeJob, TCronJob>(IJobsHostScheduler scheduler)
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         await scheduler.StopAsync();
         return Results.Ok();
     }
 
-    private static async Task<IResult> _StartJobHost<TTimeTicker, TCronTicker>(IJobsHostScheduler scheduler)
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+    private static async Task<IResult> _StartJobHost<TTimeJob, TCronJob>(IJobsHostScheduler scheduler)
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         await scheduler.StartAsync();
         return Results.Ok();
     }
 
-    private static IResult _RestartJobHost<TTimeTicker, TCronTicker>(IJobsHostScheduler scheduler)
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+    private static IResult _RestartJobHost<TTimeJob, TCronJob>(IJobsHostScheduler scheduler)
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         scheduler.Restart();
         return Results.Ok();
     }
 
-    private static IResult _GetJobHostStatus<TTimeTicker, TCronTicker>(IJobsHostScheduler scheduler)
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+    private static IResult _GetJobHostStatus<TTimeJob, TCronJob>(IJobsHostScheduler scheduler)
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         return Results.Ok(new { scheduler.IsRunning });
     }
 
-    private static async Task<IResult> _GetLastWeekJobStatus<TTimeTicker, TCronTicker>(
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+    private static async Task<IResult> _GetLastWeekJobStatus<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         var jobStatuses = await repository.GetLastWeekJobStatusesAsync(cancellationToken);
         return Results.Json(
@@ -805,13 +805,13 @@ public static class DashboardEndpoints
         );
     }
 
-    private static async Task<IResult> _GetJobStatuses<TTimeTicker, TCronTicker>(
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+    private static async Task<IResult> _GetJobStatuses<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         var jobStatuses = await repository.GetOverallJobStatusesAsync(cancellationToken);
         return Results.Json(
@@ -820,13 +820,13 @@ public static class DashboardEndpoints
         );
     }
 
-    private static async Task<IResult> _GetMachineJobs<TTimeTicker, TCronTicker>(
-        IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
+    private static async Task<IResult> _GetMachineJobs<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
     )
-        where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
-        where TCronTicker : CronJobEntity, new()
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
     {
         var machineJobs = await repository.GetMachineJobsAsync(cancellationToken);
         return Results.Json(

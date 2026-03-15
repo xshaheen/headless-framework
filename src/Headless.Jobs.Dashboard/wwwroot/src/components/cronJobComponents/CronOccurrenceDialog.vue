@@ -23,7 +23,7 @@ const exceptionDialog = useDialog<ConfirmDialogProps>().withComponent(
 // Use paginated service
 const getByCronJobIdPaginated = cronJobOccurrenceService.getByCronJobIdPaginated()
 const requestCancelJob = jobsService.requestCancel()
-const deleteCronOccurrence = cronJobOccurrenceService.deleteCronTickerOccurrence()
+const deleteCronOccurrence = cronJobOccurrenceService.deleteCronJobOccurrence()
 
 // Pagination state
 const currentPage = ref(1)
@@ -292,7 +292,7 @@ const setRowProp = (propContext: any) => {
         <div v-else-if="!getByCronJobIdPaginated.response.value || getByCronJobIdPaginated.response.value?.items?.length === 0" class="empty-state">
           <v-icon size="64" color="grey-lighten-1">mdi-calendar-remove</v-icon>
           <h3 class="empty-title">No Occurrences Found</h3>
-          <p class="empty-subtitle">This cron ticker hasn't been executed yet.</p>
+          <p class="empty-subtitle">This cron job hasn't been executed yet.</p>
         </div>
 
         <div v-else class="table-container">

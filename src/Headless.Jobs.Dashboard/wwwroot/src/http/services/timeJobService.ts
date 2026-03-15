@@ -15,14 +15,14 @@ import { format} from 'timeago.js';
 import { useFunctionNameStore } from '@/stores/functionNames';
 import { useTimeZoneStore } from '@/stores/timeZoneStore';
 
-interface PaginatedTimeTickerResponse {
+interface PaginatedTimeJobResponse {
     items: GetTimeJobResponse[]
     totalCount: number
     pageNumber: number
     pageSize: number
 }
 
-const getTimeTickers = () => {
+const getTimeJobs = () => {
     const functionNamesStore = useFunctionNameStore();
     const timeZoneStore = useTimeZoneStore();
 
@@ -97,13 +97,13 @@ const getTimeTickers = () => {
     };
 }
 
-const getTimeTickersPaginated = () => {
+const getTimeJobsPaginated = () => {
     const functionNamesStore = useFunctionNameStore();
     const timeZoneStore = useTimeZoneStore();
     
-    const baseHttp = useBaseHttpService<object, PaginatedTimeTickerResponse>('single');
+    const baseHttp = useBaseHttpService<object, PaginatedTimeJobResponse>('single');
     
-    const processResponse = (response: PaginatedTimeTickerResponse): PaginatedTimeTickerResponse => {
+    const processResponse = (response: PaginatedTimeJobResponse): PaginatedTimeJobResponse => {
             // Process items in the paginated response
             if (response && response.items && Array.isArray(response.items)) {
                 response.items = response.items.map((item: GetTimeJobResponse) => {
@@ -157,7 +157,7 @@ const getTimeTickersPaginated = () => {
     };
 }
 
-const getTimeTickersGraphDataRange = () => {
+const getTimeJobsGraphDataRange = () => {
     const baseHttp = useBaseHttpService<object, GetTimeJobGraphDataRangeResponse>('array')
         .FixToResponseModel(GetTimeJobGraphDataRangeResponse, (item) => {
             return {
@@ -174,7 +174,7 @@ const getTimeTickersGraphDataRange = () => {
     };
 }
 
-const getTimeTickersGraphData = () => {
+const getTimeJobsGraphData = () => {
     const baseHttp = useBaseHttpService<object, GetTimeJobGraphDataResponse>('array');
 
     const requestAsync = async () => (await baseHttp.sendAsync("GET", "time-jobs/graph-data"));
@@ -186,7 +186,7 @@ const getTimeTickersGraphData = () => {
 }
 
 
-const deleteTimeTicker = () => {
+const deleteTimeJob = () => {
     const baseHttp = useBaseHttpService<object, object>('single');
 
     const requestAsync = async (id: string) => (await baseHttp.sendAsync("DELETE", "time-job/delete", { paramData: { id: id } }));
@@ -197,7 +197,7 @@ const deleteTimeTicker = () => {
     };
 }
 
-const deleteTimeTickersBatch = () => {
+const deleteTimeJobsBatch = () => {
     const baseHttp = useBaseHttpService<object, object>('single');
 
     const requestAsync = async (ids: string[]) =>
@@ -209,7 +209,7 @@ const deleteTimeTickersBatch = () => {
     };
 }
 
-const addTimeTicker = () => {
+const addTimeJob = () => {
     const baseHttp = useBaseHttpService<AddTimeJobRequest, object>('single');
 
     const requestAsync = async (data: AddTimeJobRequest, timeZoneId?: string | null) => {
@@ -226,7 +226,7 @@ const addTimeTicker = () => {
     };
 }
 
-const updateTimeTicker = () => {
+const updateTimeJob = () => {
     const baseHttp = useBaseHttpService<UpdateTimeJobRequest, object>('single');
 
     const requestAsync = async (id: string, data: UpdateTimeJobRequest, timeZoneId?: string | null) => {
@@ -257,13 +257,13 @@ const addChainJobs = () => {
 
 
 export const timeJobService = {
-    getTimeTickers,
-    getTimeTickersPaginated,
-    deleteTimeTicker,
-    deleteTimeTickersBatch,
-    getTimeTickersGraphDataRange,
-    getTimeTickersGraphData,
-    addTimeTicker,
-    updateTimeTicker,
+    getTimeJobs,
+    getTimeJobsPaginated,
+    deleteTimeJob,
+    deleteTimeJobsBatch,
+    getTimeJobsGraphDataRange,
+    getTimeJobsGraphData,
+    addTimeJob,
+    updateTimeJob,
     addChainJobs
 };

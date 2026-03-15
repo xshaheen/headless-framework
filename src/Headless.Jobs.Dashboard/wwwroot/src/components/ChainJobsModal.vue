@@ -830,7 +830,7 @@ const children = ref([] as Array<{
 
 // Computed properties
 const functionNames = computed(() => {
-  // Use function names from store if available (same as AddTimeTicker)
+  // Use function names from store if available (same as AddTimeJob)
   return functionNamesStore.data || []
 })
 
@@ -1029,7 +1029,7 @@ const onFunctionChange = (level: string, functionName: string, childIndex?: numb
   }
 }
 
-// Format JSON for display (similar to AddTimeTicker)
+// Format JSON for display (similar to AddTimeJob)
 const formatJsonForDisplay = (json: string | null, isHtml: boolean = false) => {
   if (!json) return ''
   try {
