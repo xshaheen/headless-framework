@@ -11,7 +11,7 @@ packages: Api, Core, Orm.EntityFramework, Permissions.Core
 
 Headless multi-tenancy is built from four pieces:
 
-- `ICurrentTenant` and `ICurrentTenantAccessor` from `Headless.BuildingBlocks` hold the current tenant in an `AsyncLocal` scope.
+- `ICurrentTenant` and `ICurrentTenantAccessor` live in the `Headless.Abstractions` namespace (implemented in `src/Headless.Core/Abstractions`) and hold the current tenant in an `AsyncLocal` scope.
 - `Headless.Api` resolves tenant context for HTTP requests via `UseHeadlessTenantResolution()`.
 - `Headless.Orm.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities.
 - `Headless.Permissions.Core` scopes permission grant cache keys by tenant via `ScopedCache<PermissionGrantCacheItem>`.
@@ -61,7 +61,7 @@ app.UseAuthorization();
 
 - Uses `tenant_id` by default
 - Uses `MultiTenancyOptions.ClaimType` when configured
-- Calls `currentTenant.Change(tenantId)` only when a tenant claim exists
+- Calls `currentTenant.Change(tenantId)` only when the principal is authenticated and the tenant claim is not blank
 - Restores the previous tenant automatically when the request finishes
 
 ## Tenant Semantics

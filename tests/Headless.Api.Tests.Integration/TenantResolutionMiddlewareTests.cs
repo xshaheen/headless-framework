@@ -25,6 +25,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
     private const string _UserHeader = "X-Test-User";
     private const string _TenantHeader = "X-Test-Tenant";
     private const string _CustomTenantHeader = "X-Test-Custom-Tenant";
+    private const string _UnauthenticatedHeader = "X-Test-Unauthenticated";
 
     [Fact]
     public async Task should_resolve_default_tenant_claim_and_not_bleed_between_requests()
@@ -53,6 +54,42 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         var tenant = await _GetTenantAsync(client, user: "alice", customTenantId: "TENANT-42");
 
         tenant.Id.Should().Be("TENANT-42");
+        tenant.IsAvailable.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_skip_resolution_for_unauthenticated_principal_even_when_tenant_claim_exists()
+    {
+        await using var app = await _CreateAppAsync();
+        using var client = _CreateClient(app);
+
+        var tenant = await _GetTenantAsync(client, user: "alice", tenantId: "TENANT-1", unauthenticated: true);
+
+        tenant.Id.Should().BeNull();
+        tenant.IsAvailable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_skip_resolution_for_whitespace_tenant_claim()
+    {
+        await using var app = await _CreateAppAsync();
+        using var client = _CreateClient(app);
+
+        var tenant = await _GetTenantAsync(client, user: "alice", tenantId: "   ");
+
+        tenant.Id.Should().BeNull();
+        tenant.IsAvailable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_fall_back_to_default_claim_type_when_custom_claim_type_is_blank()
+    {
+        await using var app = await _CreateAppAsync(options => options.ClaimType = " ");
+        using var client = _CreateClient(app);
+
+        var tenant = await _GetTenantAsync(client, user: "alice", tenantId: "TENANT-1");
+
+        tenant.Id.Should().Be("TENANT-1");
         tenant.IsAvailable.Should().BeTrue();
     }
 
@@ -100,7 +137,8 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         HttpClient client,
         string? user = null,
         string? tenantId = null,
-        string? customTenantId = null
+        string? customTenantId = null,
+        bool unauthenticated = false
     )
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/tenant");
@@ -118,6 +156,11 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         if (customTenantId is not null)
         {
             request.Headers.Add(_CustomTenantHeader, customTenantId);
+        }
+
+        if (unauthenticated)
+        {
+            request.Headers.Add(_UnauthenticatedHeader, "true");
         }
 
         using var response = await client.SendAsync(request, AbortToken);
@@ -148,6 +191,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
                 return Task.FromResult(AuthenticateResult.NoResult());
             }
 
+            var isUnauthenticated = Request.Headers.ContainsKey(_UnauthenticatedHeader);
             var claims = new List<Claim> { new(UserClaimTypes.Name, userValues.ToString()) };
 
             if (Request.Headers.TryGetValue(_TenantHeader, out var tenantValues))
@@ -160,7 +204,8 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
                 claims.Add(new Claim("custom_tenant_id", customTenantValues.ToString()));
             }
 
-            var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, authenticationType: Scheme.Name));
+            var identity = new ClaimsIdentity(claims, authenticationType: isUnauthenticated ? null : Scheme.Name);
+            var principal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
             return Task.FromResult(AuthenticateResult.Success(ticket));

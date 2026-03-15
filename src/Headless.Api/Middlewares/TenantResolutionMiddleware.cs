@@ -2,6 +2,7 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
+using Headless.Checks;
 using Headless.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
@@ -16,12 +17,18 @@ public sealed class TenantResolutionMiddleware(RequestDelegate next, IOptions<Mu
     /// <param name="currentTenant">The current tenant accessor.</param>
     public async Task InvokeAsync(HttpContext context, ICurrentTenant currentTenant)
     {
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(currentTenant);
+        Argument.IsNotNull(context);
+        Argument.IsNotNull(currentTenant);
+
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            await next(context);
+            return;
+        }
 
         var tenantId = _GetTenantId(context.User);
 
-        if (tenantId is null)
+        if (string.IsNullOrWhiteSpace(tenantId))
         {
             await next(context);
             return;
@@ -33,7 +40,11 @@ public sealed class TenantResolutionMiddleware(RequestDelegate next, IOptions<Mu
 
     private string? _GetTenantId(ClaimsPrincipal principal)
     {
-        var claimType = options.Value.ClaimType;
+        Argument.IsNotNull(principal);
+
+        var claimType = string.IsNullOrWhiteSpace(options.Value.ClaimType)
+            ? UserClaimTypes.TenantId
+            : options.Value.ClaimType;
 
         return string.Equals(claimType, UserClaimTypes.TenantId, StringComparison.Ordinal)
             ? principal.GetTenantId()
