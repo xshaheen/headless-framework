@@ -71,7 +71,9 @@ public abstract class HeadlessIdentityDbContext<
                     .ConfigureAwait(false);
                 result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken)
                     .ConfigureAwait(false);
-                await _ResolveAndPersistAuditAsync(auditEntries, cancellationToken).ConfigureAwait(false);
+                await AuditSavePipelineHelper
+                    .ResolveAndPersistAuditAsync(this, auditEntries, _BaseSaveChangesAsync, cancellationToken)
+                    .ConfigureAwait(false);
                 await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
             else
@@ -90,7 +92,9 @@ public abstract class HeadlessIdentityDbContext<
         {
             await PublishMessagesAsync(report.LocalEmitters, Database.CurrentTransaction, cancellationToken);
             var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-            await _ResolveAndPersistAuditAsync(auditEntries, cancellationToken).ConfigureAwait(false);
+            await AuditSavePipelineHelper
+                .ResolveAndPersistAuditAsync(this, auditEntries, _BaseSaveChangesAsync, cancellationToken)
+                .ConfigureAwait(false);
             await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
             report.ClearEmitterMessages();
@@ -119,8 +123,13 @@ public abstract class HeadlessIdentityDbContext<
 
                     await context.PublishMessagesAsync(report.LocalEmitters, transaction, cancellationToken);
                     var result = await context._BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-                    await context
-                        ._ResolveAndPersistAuditAsync(auditEntries, cancellationToken)
+                    await AuditSavePipelineHelper
+                        .ResolveAndPersistAuditAsync(
+                            context,
+                            auditEntries,
+                            context._BaseSaveChangesAsync,
+                            cancellationToken
+                        )
                         .ConfigureAwait(false);
                     await context.PublishMessagesAsync(report.DistributedEmitters, transaction, cancellationToken);
 
@@ -149,7 +158,7 @@ public abstract class HeadlessIdentityDbContext<
                 using var tx = Database.BeginTransaction();
 #pragma warning restore MA0045
                 result = _BaseSaveChanges(acceptAllChangesOnSuccess);
-                _ResolveAndPersistAudit(auditEntries);
+                AuditSavePipelineHelper.ResolveAndPersistAudit(this, auditEntries, _BaseSaveChanges);
                 tx.Commit();
             }
             else
@@ -167,7 +176,7 @@ public abstract class HeadlessIdentityDbContext<
         {
             PublishMessages(report.LocalEmitters, Database.CurrentTransaction);
             var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
-            _ResolveAndPersistAudit(auditEntries);
+            AuditSavePipelineHelper.ResolveAndPersistAudit(this, auditEntries, _BaseSaveChanges);
             PublishMessages(report.DistributedEmitters, Database.CurrentTransaction);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
             report.ClearEmitterMessages();
@@ -191,7 +200,7 @@ public abstract class HeadlessIdentityDbContext<
 
                     context.PublishMessages(report.LocalEmitters, transaction);
                     var result = context._BaseSaveChanges(acceptAllChangesOnSuccess);
-                    context._ResolveAndPersistAudit(auditEntries);
+                    AuditSavePipelineHelper.ResolveAndPersistAudit(context, auditEntries, context._BaseSaveChanges);
                     context.PublishMessages(report.DistributedEmitters, transaction);
 
                     transaction.Commit();
@@ -481,36 +490,6 @@ public abstract class HeadlessIdentityDbContext<
                     >
                 )
             );
-
-    /// <summary>
-    /// Two-phase audit persist: resolves deferred entity IDs (store-generated keys for
-    /// Added entities) then adds audit entries to the context and saves them.
-    /// </summary>
-    private async Task _ResolveAndPersistAuditAsync(
-        IReadOnlyList<AuditLogEntryData>? entries,
-        CancellationToken cancellationToken
-    )
-    {
-        if (entries is not { Count: > 0 })
-            return;
-
-        AuditSavePipelineHelper.ResolveEntityIds(this, entries);
-        await AuditSavePipelineHelper.SaveAuditEntriesAsync(this, entries, cancellationToken)
-            .ConfigureAwait(false);
-        await _BaseSaveChangesAsync(true, cancellationToken).ConfigureAwait(false);
-    }
-
-    private void _ResolveAndPersistAudit(IReadOnlyList<AuditLogEntryData>? entries)
-    {
-        if (entries is not { Count: > 0 })
-            return;
-
-        AuditSavePipelineHelper.ResolveEntityIds(this, entries);
-        AuditSavePipelineHelper.SaveAuditEntries(this, entries);
-#pragma warning disable MA0045
-        _BaseSaveChanges(true);
-#pragma warning restore MA0045
-    }
 
     #endregion
 

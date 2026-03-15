@@ -92,4 +92,45 @@ internal static class AuditSavePipelineHelper
         if (store is not null)
             await store.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Two-phase audit persist (async): resolves deferred entity IDs (store-generated keys
+    /// for Added entities) then adds audit entries to the context and saves them via
+    /// <paramref name="baseSaveChangesAsync"/>.
+    /// </summary>
+    public static async Task ResolveAndPersistAuditAsync(
+        DbContext context,
+        IReadOnlyList<AuditLogEntryData>? entries,
+        Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
+        CancellationToken cancellationToken
+    )
+    {
+        if (entries is not { Count: > 0 })
+            return;
+
+        ResolveEntityIds(context, entries);
+        await SaveAuditEntriesAsync(context, entries, cancellationToken).ConfigureAwait(false);
+        await baseSaveChangesAsync(true, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Two-phase audit persist (sync): resolves deferred entity IDs (store-generated keys
+    /// for Added entities) then adds audit entries to the context and saves them via
+    /// <paramref name="baseSaveChanges"/>.
+    /// </summary>
+    public static void ResolveAndPersistAudit(
+        DbContext context,
+        IReadOnlyList<AuditLogEntryData>? entries,
+        Func<bool, int> baseSaveChanges
+    )
+    {
+        if (entries is not { Count: > 0 })
+            return;
+
+        ResolveEntityIds(context, entries);
+        SaveAuditEntries(context, entries);
+#pragma warning disable MA0045
+        baseSaveChanges(true);
+#pragma warning restore MA0045
+    }
 }
