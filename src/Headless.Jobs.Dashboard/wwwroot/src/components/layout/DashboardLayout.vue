@@ -40,14 +40,14 @@ const isTimeZoneMenuOpen = ref(false)
 const router = useRouter()
 
 // Lazy-loaded stores and services
-let tickerService: any = null
+let jobsService: any = null
 
 // Lazy-loaded service functions
 let getOptions: any = null
-let getTickerHostStatus: any = null
-let startTicker: any = null
-let restartTicker: any = null
-let stopTicker: any = null
+let getJobHostStatus: any = null
+let startJobHost: any = null
+let restartJobHost: any = null
+let stopJobHost: any = null
 
 
 
@@ -80,15 +80,15 @@ const initializeServices = async () => {
       // Failed to initialize WebSocket connection
     }
 
-    const tickerServiceModule = await import('../../http/services/tickerService')
-    tickerService = tickerServiceModule.tickerService
+    const jobsServiceModule = await import('../../http/services/jobsService')
+    jobsService = jobsServiceModule.jobsService
 
     // Initialize ticker services
-    getOptions = tickerService.getOptions()
-    getTickerHostStatus = tickerService.getTickerHostStatus()
-    startTicker = tickerService.startTicker()
-    restartTicker = tickerService.restartTicker()
-    stopTicker = tickerService.stopTicker()
+    getOptions = jobsService.getOptions()
+    getJobHostStatus = jobsService.getJobHostStatus()
+    startJobHost = jobsService.startJobHost()
+    restartJobHost = jobsService.restartJobHost()
+    stopJobHost = jobsService.stopJobHost()
 
     // Load initial data
     await loadInitialData()
@@ -104,7 +104,7 @@ const initializeServices = async () => {
 
 // Load initial data
 const loadInitialData = async () => {
-  if (!getOptions || !getTickerHostStatus) return
+  if (!getOptions || !getJobHostStatus) return
 
   try {
     // Wait for options to be loaded
@@ -126,11 +126,11 @@ const loadInitialData = async () => {
     }
 
     // Wait for host status to be loaded
-    await getTickerHostStatus.requestAsync()
+    await getJobHostStatus.requestAsync()
 
     // Check if response is available before accessing it
-    if (getTickerHostStatus.response?.value) {
-      tickerHostStatus.value = getTickerHostStatus.response.value.isRunning
+    if (getJobHostStatus.response?.value) {
+      tickerHostStatus.value = getJobHostStatus.response.value.isRunning
     }
   } catch (error) {
     // Failed to load initial data
@@ -170,11 +170,11 @@ onMounted(async () => {
 
 // Restart handler ensures at least 1s animation and until request completes
 async function handleRestart() {
-  if (!restartTicker) return
+  if (!restartJobHost) return
   restartIsAnimating.value = true
   try {
     await Promise.all([
-      restartTicker.requestAsync(),
+      restartJobHost.requestAsync(),
       sleep(1000)
     ])
   } finally {
@@ -448,16 +448,16 @@ const handleForceUIUpdate = () => {
                 variant="elevated"
                 size="small"
                 prepend-icon="mdi-play-circle"
-                  @click="startTicker?.requestAsync().then(() => {
+                  @click="startJobHost?.requestAsync().then(() => {
                     // Reset forced state when starting system
                     dashboardStore.resetForceState();
-                    startTicker.loader.value = true;
+                    startJobHost.loader.value = true;
                     sleep(1000).then(() => {
                       loadInitialData();
-                      startTicker.loader.value = false;
+                      startJobHost.loader.value = false;
                     })
                   })"
-                  :loading="startTicker?.loader?.value"
+                  :loading="startJobHost?.loader?.value"
                 class="action-btn start-btn"
               >
                 Start System
@@ -469,7 +469,7 @@ const handleForceUIUpdate = () => {
                   variant="elevated"
                   size="small"
                   @click="handleRestart"
-                  :loading="restartTicker?.loader?.value"
+                  :loading="restartJobHost?.loader?.value"
                   class="action-btn restart-btn"
                   :disabled="restartIsAnimating"
                   :class="{ 'restart-animating': restartIsAnimating }"
@@ -496,7 +496,7 @@ const handleForceUIUpdate = () => {
                   size="small"
                   prepend-icon="mdi-stop-circle"
                   @click="confirmDialog?.open({...new ConfirmDialogProps(), confirmText: 'Stop' })"
-                  :loading="stopTicker?.loader?.value"
+                  :loading="stopJobHost?.loader?.value"
                   class="action-btn stop-btn"
                 >
                   Stop System
@@ -540,14 +540,14 @@ const handleForceUIUpdate = () => {
       @close="confirmDialog.close()"
       :dialog-props="confirmDialog.propData"
       @confirm="
-        stopTicker.requestAsync().then(() => {
+        stopJobHost.requestAsync().then(() => {
           confirmDialog.close();
           // Force next occurrence to show 'Not Scheduled'
           dashboardStore.forceNotScheduled();
-          stopTicker.loader.value = true;
+          stopJobHost.loader.value = true;
           sleep(1000).then(() => {
             loadInitialData();
-            stopTicker.loader.value = false;
+            stopJobHost.loader.value = false;
           })
         })
       "

@@ -750,8 +750,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useFunctionNameStore } from '@/stores/functionNames'
-import { tickerService } from '@/http/services/tickerService'
-import { timeTickerService } from '@/http/services/timeTickerService'
+import { jobsService } from '@/http/services/jobsService'
+import { timeJobService } from '@/http/services/timeJobService'
 
 // Props
 interface Props {
@@ -773,8 +773,8 @@ const emit = defineEmits<Emits>()
 
 // Store
 const functionNamesStore = useFunctionNameStore()
-const getTickerRequestData = tickerService.getRequestData()
-const addChainJobs = timeTickerService.addChainJobs()
+const getJobRequestData = jobsService.getRequestData()
+const addChainJobs = timeJobService.addChainJobs()
 
 // Reactive state
 const isOpen = computed({
@@ -1216,7 +1216,7 @@ const createChainJobs = async () => {
       }
     })
 
-    const addChainJobs = timeTickerService.addChainJobs()
+    const addChainJobs = timeJobService.addChainJobs()
     addChainJobs.requestAsync(chainRoot)
         .then((result) => {
             emit('created', result)

@@ -65,22 +65,22 @@ public static class DashboardEndpoints
         apiGroup
             .MapGet("/time-jobs", _GetTimeTickers<TTimeTicker, TCronTicker>)
             .WithName("GetTimeTickers")
-            .WithSummary("Get all time tickers");
+            .WithSummary("Get all time jobs");
 
         apiGroup
             .MapGet("/time-jobs/paginated", _GetTimeTickersPaginated<TTimeTicker, TCronTicker>)
             .WithName("GetTimeTickersPaginated")
-            .WithSummary("Get paginated time tickers");
+            .WithSummary("Get paginated time jobs");
 
         apiGroup
             .MapGet("/time-jobs/graph-data-range", _GetTimeTickersGraphDataRange<TTimeTicker, TCronTicker>)
             .WithName("GetTimeTickersGraphDataRange")
-            .WithSummary("Get time tickers graph data for specific date range");
+            .WithSummary("Get time jobs graph data for specific date range");
 
         apiGroup
             .MapGet("/time-jobs/graph-data", _GetTimeTickersGraphData<TTimeTicker, TCronTicker>)
             .WithName("GetTimeTickersGraphData")
-            .WithSummary("Get time tickers graph data");
+            .WithSummary("Get time jobs graph data");
 
         apiGroup
             .MapPost("/time-job/add", _CreateChainJobs<TTimeTicker, TCronTicker>)
@@ -90,12 +90,12 @@ public static class DashboardEndpoints
         apiGroup
             .MapPut("/time-job/update", _UpdateTimeTicker<TTimeTicker, TCronTicker>)
             .WithName("UpdateTimeTicker")
-            .WithSummary("Update time ticker");
+            .WithSummary("Update time job");
 
         apiGroup
             .MapDelete("/time-job/delete", _DeleteTimeTicker<TTimeTicker, TCronTicker>)
             .WithName("DeleteTimeTicker")
-            .WithSummary("Delete time ticker");
+            .WithSummary("Delete time job");
 
         apiGroup
             .MapDelete("/time-job/delete-batch", _DeleteTimeTickersBatch<TTimeTicker, TCronTicker>)
@@ -106,32 +106,32 @@ public static class DashboardEndpoints
         apiGroup
             .MapGet("/cron-jobs", _GetCronTickers<TTimeTicker, TCronTicker>)
             .WithName("GetCronTickers")
-            .WithSummary("Get all cron tickers");
+            .WithSummary("Get all cron jobs");
 
         apiGroup
             .MapGet("/cron-jobs/paginated", _GetCronTickersPaginated<TTimeTicker, TCronTicker>)
             .WithName("GetCronTickersPaginated")
-            .WithSummary("Get paginated cron tickers");
+            .WithSummary("Get paginated cron jobs");
 
         apiGroup
             .MapGet("/cron-jobs/graph-data-range", _GetCronTickersGraphDataRange<TTimeTicker, TCronTicker>)
             .WithName("GetCronTickersGraphDataRange")
-            .WithSummary("Get cron tickers graph data for specific date range");
+            .WithSummary("Get cron jobs graph data for specific date range");
 
         apiGroup
             .MapGet("/cron-jobs/graph-data-range-id", _GetCronTickersByIdGraphDataRange<TTimeTicker, TCronTicker>)
             .WithName("GetCronTickersByIdGraphDataRange")
-            .WithSummary("Get cron ticker graph data by ID for specific date range");
+            .WithSummary("Get cron job graph data by ID for specific date range");
 
         apiGroup
             .MapGet("/cron-jobs/graph-data", _GetCronTickersGraphData<TTimeTicker, TCronTicker>)
             .WithName("GetCronTickersGraphData")
-            .WithSummary("Get cron tickers graph data");
+            .WithSummary("Get cron jobs graph data");
 
         apiGroup
             .MapGet("/cron-job-occurrences/{cronJobId}", _GetCronTickerOccurrences<TTimeTicker, TCronTicker>)
             .WithName("GetCronTickerOccurrences")
-            .WithSummary("Get cron ticker occurrences");
+            .WithSummary("Get cron job occurrences");
 
         apiGroup
             .MapGet(
@@ -139,7 +139,7 @@ public static class DashboardEndpoints
                 _GetCronTickerOccurrencesPaginated<TTimeTicker, TCronTicker>
             )
             .WithName("GetCronTickerOccurrencesPaginated")
-            .WithSummary("Get paginated cron ticker occurrences");
+            .WithSummary("Get paginated cron job occurrences");
 
         apiGroup
             .MapGet(
@@ -147,43 +147,43 @@ public static class DashboardEndpoints
                 _GetCronTickerOccurrencesGraphData<TTimeTicker, TCronTicker>
             )
             .WithName("GetCronTickerOccurrencesGraphData")
-            .WithSummary("Get cron ticker occurrences graph data");
+            .WithSummary("Get cron job occurrences graph data");
 
         apiGroup
             .MapPost("/cron-job/add", _AddCronTicker<TTimeTicker, TCronTicker>)
             .WithName("AddCronTicker")
-            .WithSummary("Add cron ticker");
+            .WithSummary("Add cron job");
 
         apiGroup
             .MapPut("/cron-job/update", _UpdateCronTicker<TTimeTicker, TCronTicker>)
             .WithName("UpdateCronTicker")
-            .WithSummary("Update cron ticker");
+            .WithSummary("Update cron job");
 
         apiGroup
             .MapPost("/cron-job/run", RunCronTickerOnDemand<TTimeTicker, TCronTicker>)
             .WithName("RunCronTickerOnDemand")
-            .WithSummary("Run cron ticker on demand");
+            .WithSummary("Run cron job on demand");
 
         apiGroup
             .MapDelete("/cron-job/delete", _DeleteCronTicker<TTimeTicker, TCronTicker>)
             .WithName("DeleteCronTicker")
-            .WithSummary("Delete cron ticker");
+            .WithSummary("Delete cron job");
 
         apiGroup
             .MapDelete("/cron-job-occurrence/delete", _DeleteCronTickerOccurrence<TTimeTicker, TCronTicker>)
             .WithName("DeleteCronTickerOccurrence")
-            .WithSummary("Delete cron ticker occurrence");
+            .WithSummary("Delete cron job occurrence");
 
         // Job operations
         apiGroup
-            .MapPost("/job/cancel", _CancelTicker<TTimeTicker, TCronTicker>)
-            .WithName("CancelTicker")
-            .WithSummary("Cancel ticker by ID");
+            .MapPost("/job/cancel", _CancelJob<TTimeTicker, TCronTicker>)
+            .WithName("CancelJob")
+            .WithSummary("Cancel job by ID");
 
         apiGroup
-            .MapGet("/job-request/{id}", _GetTickerRequest<TTimeTicker, TCronTicker>)
-            .WithName("GetTickerRequest")
-            .WithSummary("Get ticker request by ID");
+            .MapGet("/job-request/{id}", _GetJobRequest<TTimeTicker, TCronTicker>)
+            .WithName("GetJobRequest")
+            .WithSummary("Get job request by ID");
 
         apiGroup
             .MapGet("/job-functions", _GetJobFunctions<TTimeTicker, TCronTicker>)
@@ -192,43 +192,43 @@ public static class DashboardEndpoints
 
         // Host operations
         apiGroup
-            .MapGet("/job-host/next-ticker", _GetNextTicker<TTimeTicker, TCronTicker>)
-            .WithName("GetNextTicker")
-            .WithSummary("Get next planned ticker");
+            .MapGet("/job-host/next-job", _GetNextJob<TTimeTicker, TCronTicker>)
+            .WithName("GetNextJob")
+            .WithSummary("Get next planned job");
 
         apiGroup
-            .MapPost("/job-host/stop", _StopTickerHost<TTimeTicker, TCronTicker>)
-            .WithName("StopTickerHost")
-            .WithSummary("Stop ticker host");
+            .MapPost("/job-host/stop", _StopJobHost<TTimeTicker, TCronTicker>)
+            .WithName("StopJobHost")
+            .WithSummary("Stop job host");
 
         apiGroup
-            .MapPost("/job-host/start", _StartTickerHost<TTimeTicker, TCronTicker>)
-            .WithName("StartTickerHost")
-            .WithSummary("Start ticker host");
+            .MapPost("/job-host/start", _StartJobHost<TTimeTicker, TCronTicker>)
+            .WithName("StartJobHost")
+            .WithSummary("Start job host");
 
         apiGroup
-            .MapPost("/job-host/restart", _RestartTickerHost<TTimeTicker, TCronTicker>)
-            .WithName("RestartTickerHost")
-            .WithSummary("Restart ticker host");
+            .MapPost("/job-host/restart", _RestartJobHost<TTimeTicker, TCronTicker>)
+            .WithName("RestartJobHost")
+            .WithSummary("Restart job host");
 
         apiGroup
-            .MapGet("/job-host/status", _GetTickerHostStatus<TTimeTicker, TCronTicker>)
-            .WithName("GetTickerHostStatus")
-            .WithSummary("Get ticker host status");
+            .MapGet("/job-host/status", _GetJobHostStatus<TTimeTicker, TCronTicker>)
+            .WithName("GetJobHostStatus")
+            .WithSummary("Get job host status");
 
         // Statistics endpoints
         apiGroup
-            .MapGet("/ticker/statuses/get-last-week", _GetLastWeekJobStatus<TTimeTicker, TCronTicker>)
+            .MapGet("/job/statuses/get-last-week", _GetLastWeekJobStatus<TTimeTicker, TCronTicker>)
             .WithName("GetLastWeekJobStatus")
             .WithSummary("Get last week job statuses");
 
         apiGroup
-            .MapGet("/ticker/statuses/get", _GetJobStatuses<TTimeTicker, TCronTicker>)
+            .MapGet("/job/statuses/get", _GetJobStatuses<TTimeTicker, TCronTicker>)
             .WithName("GetJobStatuses")
             .WithSummary("Get overall job statuses");
 
         apiGroup
-            .MapGet("/ticker/machine/jobs", _GetMachineJobs<TTimeTicker, TCronTicker>)
+            .MapGet("/job/machine/jobs", _GetMachineJobs<TTimeTicker, TCronTicker>)
             .WithName("GetMachineJobs")
             .WithSummary("Get machine jobs");
 
@@ -423,7 +423,7 @@ public static class DashboardEndpoints
             new
             {
                 success = result.IsSucceeded,
-                message = result.IsSucceeded ? "Time ticker updated successfully" : "Failed to update time ticker",
+                message = result.IsSucceeded ? "Time job updated successfully" : "Failed to update time job",
             },
             dashboardOptions.DashboardJsonOptions
         );
@@ -444,7 +444,7 @@ public static class DashboardEndpoints
             new
             {
                 success = result.IsSucceeded,
-                message = result.IsSucceeded ? "Time ticker deleted successfully" : "Failed to delete time ticker",
+                message = result.IsSucceeded ? "Time job deleted successfully" : "Failed to delete time job",
             },
             dashboardOptions.DashboardJsonOptions
         );
@@ -466,7 +466,7 @@ public static class DashboardEndpoints
             new
             {
                 success = result.IsSucceeded,
-                message = result.IsSucceeded ? "Time tickers deleted successfully" : "Failed to delete time tickers",
+                message = result.IsSucceeded ? "Time tickers deleted successfully" : "Failed to delete time jobs",
             },
             dashboardOptions.DashboardJsonOptions
         );
@@ -612,7 +612,7 @@ public static class DashboardEndpoints
             new
             {
                 success = result.IsSucceeded,
-                message = result.IsSucceeded ? "Cron ticker added successfully" : "Failed to add cron ticker",
+                message = result.IsSucceeded ? "Cron job added successfully" : "Failed to add cron job",
                 tickerId = result.Result?.Id,
             },
             dashboardOptions.DashboardJsonOptions
@@ -645,7 +645,7 @@ public static class DashboardEndpoints
             new
             {
                 success = result.IsSucceeded,
-                message = result.IsSucceeded ? "Cron ticker updated successfully" : "Failed to update cron ticker",
+                message = result.IsSucceeded ? "Cron job updated successfully" : "Failed to update cron job",
             },
             dashboardOptions.DashboardJsonOptions
         );
@@ -678,7 +678,7 @@ public static class DashboardEndpoints
             new
             {
                 success = result.IsSucceeded,
-                message = result.IsSucceeded ? "Cron ticker deleted successfully" : "Failed to delete cron ticker",
+                message = result.IsSucceeded ? "Cron job deleted successfully" : "Failed to delete cron job",
             },
             dashboardOptions.DashboardJsonOptions
         );
@@ -697,7 +697,7 @@ public static class DashboardEndpoints
         return Results.Ok();
     }
 
-    private static IResult _CancelTicker<TTimeTicker, TCronTicker>(
+    private static IResult _CancelJob<TTimeTicker, TCronTicker>(
         Guid id,
         IJobsDashboardRepository<TTimeTicker, TCronTicker> repository
     )
@@ -712,9 +712,9 @@ public static class DashboardEndpoints
         return Results.BadRequest();
     }
 
-    private static async Task<IResult> _GetTickerRequest<TTimeTicker, TCronTicker>(
-        Guid tickerId,
-        JobType tickerType,
+    private static async Task<IResult> _GetJobRequest<TTimeTicker, TCronTicker>(
+        Guid jobId,
+        JobType jobType,
         IJobsDashboardRepository<TTimeTicker, TCronTicker> repository,
         DashboardOptionsBuilder dashboardOptions,
         CancellationToken cancellationToken
@@ -722,7 +722,7 @@ public static class DashboardEndpoints
         where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
         where TCronTicker : CronJobEntity, new()
     {
-        var resultData = await repository.GetJobRequestByIdAsync(tickerId, tickerType, cancellationToken);
+        var resultData = await repository.GetJobRequestByIdAsync(jobId, jobType, cancellationToken);
 
         var response = new { Result = resultData.Item1, MatchType = resultData.Item2 };
         return Results.Json(response, dashboardOptions.DashboardJsonOptions);
@@ -748,7 +748,7 @@ public static class DashboardEndpoints
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static IResult _GetNextTicker<TTimeTicker, TCronTicker>(
+    private static IResult _GetNextJob<TTimeTicker, TCronTicker>(
         JobsExecutionContext executionContext,
         DashboardOptionsBuilder dashboardOptions
     )
@@ -759,7 +759,7 @@ public static class DashboardEndpoints
         return Results.Json(result, dashboardOptions.DashboardJsonOptions);
     }
 
-    private static async Task<IResult> _StopTickerHost<TTimeTicker, TCronTicker>(IJobsHostScheduler scheduler)
+    private static async Task<IResult> _StopJobHost<TTimeTicker, TCronTicker>(IJobsHostScheduler scheduler)
         where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
         where TCronTicker : CronJobEntity, new()
     {
@@ -767,7 +767,7 @@ public static class DashboardEndpoints
         return Results.Ok();
     }
 
-    private static async Task<IResult> _StartTickerHost<TTimeTicker, TCronTicker>(IJobsHostScheduler scheduler)
+    private static async Task<IResult> _StartJobHost<TTimeTicker, TCronTicker>(IJobsHostScheduler scheduler)
         where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
         where TCronTicker : CronJobEntity, new()
     {
@@ -775,7 +775,7 @@ public static class DashboardEndpoints
         return Results.Ok();
     }
 
-    private static IResult _RestartTickerHost<TTimeTicker, TCronTicker>(IJobsHostScheduler scheduler)
+    private static IResult _RestartJobHost<TTimeTicker, TCronTicker>(IJobsHostScheduler scheduler)
         where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
         where TCronTicker : CronJobEntity, new()
     {
@@ -783,7 +783,7 @@ public static class DashboardEndpoints
         return Results.Ok();
     }
 
-    private static IResult _GetTickerHostStatus<TTimeTicker, TCronTicker>(IJobsHostScheduler scheduler)
+    private static IResult _GetJobHostStatus<TTimeTicker, TCronTicker>(IJobsHostScheduler scheduler)
         where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
         where TCronTicker : CronJobEntity, new()
     {

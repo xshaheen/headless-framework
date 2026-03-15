@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 
 export const useTimeZoneStore = defineStore('timeZone', () => {
-  const STORAGE_KEY = 'tickerq:dashboard:timezone'
+  const STORAGE_KEY = 'jobs:dashboard:timezone'
 
   const schedulerTimeZone = ref<string | null>(null)
   const selectedTimeZone = ref<string | null>(null)

@@ -6,37 +6,37 @@ namespace Headless.Jobs.Temps;
 
 internal class NoOpJobsNotificationHubSender : IJobsNotificationHubSender
 {
-    public Task AddCronTickerNotifyAsync(object cronTicker)
+    public Task AddCronJobNotifyAsync(object cronTicker)
     {
         return Task.CompletedTask;
     }
 
-    public Task UpdateCronTickerNotifyAsync(object cronTicker)
+    public Task UpdateCronJobNotifyAsync(object cronTicker)
     {
         return Task.CompletedTask;
     }
 
-    public Task RemoveCronTickerNotifyAsync(Guid id)
+    public Task RemoveCronJobNotifyAsync(Guid id)
     {
         return Task.CompletedTask;
     }
 
-    public Task AddTimeTickerNotifyAsync(Guid id)
+    public Task AddTimeJobNotifyAsync(Guid id)
     {
         return Task.CompletedTask;
     }
 
-    public Task AddTimeTickersBatchNotifyAsync()
+    public Task AddTimeJobsBatchNotifyAsync()
     {
         return Task.CompletedTask;
     }
 
-    public Task UpdateTimeTickerNotifyAsync(object timeTicker)
+    public Task UpdateTimeJobNotifyAsync(object timeTicker)
     {
         return Task.CompletedTask;
     }
 
-    public Task RemoveTimeTickerNotifyAsync(Guid id)
+    public Task RemoveTimeJobNotifyAsync(Guid id)
     {
         return Task.CompletedTask;
     }
@@ -64,7 +64,7 @@ internal class NoOpJobsNotificationHubSender : IJobsNotificationHubSender
         return Task.CompletedTask;
     }
 
-    public Task UpdateTimeTickerFromInternalFunctionContext<TTimeJobEntity>(
+    public Task UpdateTimeJobFromInternalFunctionContext<TTimeJobEntity>(
         InternalFunctionContext internalFunctionContext
     )
         where TTimeJobEntity : TimeJobEntity<TTimeJobEntity>, new()
@@ -80,7 +80,7 @@ internal class NoOpJobsNotificationHubSender : IJobsNotificationHubSender
         return Task.CompletedTask;
     }
 
-    public Task CanceledTickerNotifyAsync(Guid id)
+    public Task CanceledJobNotifyAsync(Guid id)
     {
         return Task.CompletedTask;
     }

@@ -149,7 +149,7 @@ internal class JobsManager<TTimeTicker, TCronTicker>
                 _tickerQHostScheduler.RestartIfNeeded(executionTime);
             }
 
-            await _notificationHubSender.AddTimeTickerNotifyAsync(entity.Id).ConfigureAwait(false);
+            await _notificationHubSender.AddTimeJobNotifyAsync(entity.Id).ConfigureAwait(false);
 
             return new JobResult<TTimeTicker>(entity);
         }
@@ -192,7 +192,7 @@ internal class JobsManager<TTimeTicker, TCronTicker>
 
             _tickerQHostScheduler.RestartIfNeeded(nextOccurrence);
 
-            await _notificationHubSender.AddCronTickerNotifyAsync(entity);
+            await _notificationHubSender.AddCronJobNotifyAsync(entity);
 
             return new JobResult<TCronTicker>(entity);
         }
@@ -441,7 +441,7 @@ internal class JobsManager<TTimeTicker, TCronTicker>
         {
             await _persistenceProvider.AddTimeTickers(entities.ToArray(), cancellationToken: cancellationToken);
 
-            await _notificationHubSender.AddTimeTickersBatchNotifyAsync().ConfigureAwait(false);
+            await _notificationHubSender.AddTimeJobsBatchNotifyAsync().ConfigureAwait(false);
 
             // Only try to dispatch immediately if dispatcher is enabled (background services running)
             if (_dispatcher.IsEnabled && immediateTickers.Count > 0)
@@ -526,7 +526,7 @@ internal class JobsManager<TTimeTicker, TCronTicker>
                 // Send notifications for all
                 foreach (var entity in validEntities)
                 {
-                    await _notificationHubSender.AddCronTickerNotifyAsync(entity);
+                    await _notificationHubSender.AddCronJobNotifyAsync(entity);
                 }
             }
 

@@ -6,7 +6,7 @@ namespace Headless.Jobs;
 
 public class DashboardOptionsBuilder
 {
-    internal string BasePath { get; set; } = "/tickerq/dashboard";
+    internal string BasePath { get; set; } = "/jobs/dashboard";
     internal Action<CorsPolicyBuilder>? CorsPolicyBuilder { get; set; }
     internal string? BackendDomain { get; set; }
 

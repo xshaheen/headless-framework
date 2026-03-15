@@ -17,12 +17,12 @@ public static class ServiceExtension
     {
         tickerConfiguration.ExternalProviderConfigServiceAction += services =>
         {
-            var options = new JobsRedisOptionBuilder { InstanceName = "tickerq:" };
+            var options = new JobsRedisOptionBuilder { InstanceName = "jobs:" };
 
             setupAction?.Invoke(options);
             services.AddHostedService<NodeHeartBeatBackgroundService>();
             services.AddSingleton<IJobsRedisContext, JobsRedisContext>();
-            services.AddKeyedSingleton<IDistributedCache>("tickerq", (sp, key) => new RedisCache(options));
+            services.AddKeyedSingleton<IDistributedCache>("jobs", (sp, key) => new RedisCache(options));
             services.AddSingleton(_ => options);
         };
 

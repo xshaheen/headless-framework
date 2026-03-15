@@ -9,7 +9,7 @@ class HttpService {
 
   constructor() {
     const config = window.JobsConfig;
-    this.baseUrl = config?.backendDomain || config?.basePath || '/tickerq/dashboard';
+    this.baseUrl = config?.backendDomain || config?.basePath || '/jobs/dashboard';
   }
 
   /**

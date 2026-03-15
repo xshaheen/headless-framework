@@ -98,8 +98,8 @@ Each domain has its own documentation file with package READMEs, Quick Orientati
 ### Testing
 - [docs/llms/testing.txt](docs/llms/testing.txt): xUnit base classes and Testcontainers fixtures for integration tests.
 
-### Ticker (Background Jobs)
-- [docs/llms/ticker.txt](docs/llms/ticker.txt): Distributed background job scheduling with cron, monitoring, and source generation.
+### Jobs (Background Jobs)
+- [docs/llms/jobs.txt](docs/llms/jobs.txt): Distributed background job scheduling with cron, monitoring, and source generation.
 
 ### TUS (Resumable Uploads)
 - [docs/llms/tus.txt](docs/llms/tus.txt): TUS protocol for resumable file uploads with Azure and distributed lock support.
@@ -267,7 +267,7 @@ Each domain has its own documentation file with package READMEs, Quick Orientati
 - [Headless.Testing](./src/Headless.Testing/README.md): Core testing utilities and base classes for xUnit tests.
 - [Headless.Testing.Testcontainers](./src/Headless.Testing.Testcontainers/README.md): Testcontainers fixtures for integration testing.
 
-### Ticker (Background Jobs)
+### Jobs (Background Jobs)
 
 - [Headless.Jobs.Abstractions](./src/Headless.Jobs.Abstractions/README.md): Simple utilities for queuing and executing cron/time-based jobs in the background.
 - [Headless.Jobs.Core](./src/Headless.Jobs.Core/README.md): Reliable distributed background job scheduling with cron expressions, delayed execution, and monitoring.

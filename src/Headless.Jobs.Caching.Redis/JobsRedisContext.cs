@@ -16,7 +16,7 @@ internal class JobsRedisContext : IJobsRedisContext
     public bool HasRedisConnection => true;
 
     public JobsRedisContext(
-        [FromKeyedServices("tickerq")] IDistributedCache cache,
+        [FromKeyedServices("jobs")] IDistributedCache cache,
         SchedulerOptionsBuilder schedulerOptions,
         ServiceExtension.JobsRedisOptionBuilder tickerQRedisOptionBuilder,
         IJobsNotificationHubSender notificationHubSender

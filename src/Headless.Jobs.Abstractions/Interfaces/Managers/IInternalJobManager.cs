@@ -5,7 +5,7 @@ namespace Headless.Jobs.Interfaces.Managers;
 
 internal interface IInternalJobManager
 {
-    Task<(TimeSpan TimeRemaining, InternalFunctionContext[] Functions)> GetNextTickers(
+    Task<(TimeSpan TimeRemaining, InternalFunctionContext[] Functions)> GetNextJobs(
         CancellationToken cancellationToken = default
     );
     Task ReleaseAcquiredResources(InternalFunctionContext[] context, CancellationToken cancellationToken = default);

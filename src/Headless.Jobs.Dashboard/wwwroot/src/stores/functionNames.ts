@@ -1,9 +1,9 @@
 import { defineStore } from 'pinia'
-import { tickerService } from '@/http/services/tickerService';
+import { jobsService } from '@/http/services/jobsService';
 import { computed } from 'vue';
 
 export const useFunctionNameStore = defineStore('functionNames', () => {
-    const getFunctionData = tickerService.getFunctionData();
+    const getFunctionData = jobsService.getFunctionData();
 
     const loadData = async () => {
         if (getFunctionData.response.value == undefined) {

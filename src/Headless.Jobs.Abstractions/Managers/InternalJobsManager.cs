@@ -25,7 +25,7 @@ internal class InternalJobsManager<TTimeTicker, TCronTicker> : IInternalJobManag
         _notificationHubSender = notificationHubSender;
     }
 
-    public async Task<(TimeSpan TimeRemaining, InternalFunctionContext[] Functions)> GetNextTickers(
+    public async Task<(TimeSpan TimeRemaining, InternalFunctionContext[] Functions)> GetNextJobs(
         CancellationToken cancellationToken = default
     )
     {
@@ -194,7 +194,7 @@ internal class InternalJobsManager<TTimeTicker, TCronTicker> : IInternalJobManag
                 }
             );
 
-            await _notificationHubSender.UpdateTimeTickerNotifyAsync(updatedTimeTicker);
+            await _notificationHubSender.UpdateTimeJobNotifyAsync(updatedTimeTicker);
         }
 
         return results.ToArray();
@@ -422,7 +422,7 @@ internal class InternalJobsManager<TTimeTicker, TCronTicker> : IInternalJobManag
             if (resource.Type == JobType.TimeJob)
             {
                 await _notificationHubSender
-                    .UpdateTimeTickerFromInternalFunctionContext<TTimeTicker>(resource)
+                    .UpdateTimeJobFromInternalFunctionContext<TTimeTicker>(resource)
                     .ConfigureAwait(false);
             }
             else
@@ -491,7 +491,7 @@ internal class InternalJobsManager<TTimeTicker, TCronTicker> : IInternalJobManag
         {
             await _persistenceProvider.UpdateTimeTicker(functionContext, cancellationToken).ConfigureAwait(false);
             await _notificationHubSender
-                .UpdateTimeTickerFromInternalFunctionContext<TTimeTicker>(functionContext)
+                .UpdateTimeJobFromInternalFunctionContext<TTimeTicker>(functionContext)
                 .ConfigureAwait(false);
         }
     }
@@ -525,7 +525,7 @@ internal class InternalJobsManager<TTimeTicker, TCronTicker> : IInternalJobManag
             if (resource.Type == JobType.TimeJob)
             {
                 await _notificationHubSender
-                    .UpdateTimeTickerFromInternalFunctionContext<TTimeTicker>(resource)
+                    .UpdateTimeJobFromInternalFunctionContext<TTimeTicker>(resource)
                     .ConfigureAwait(false);
             }
             else
@@ -602,7 +602,7 @@ internal class InternalJobsManager<TTimeTicker, TCronTicker> : IInternalJobManag
                 }
             );
 
-            await _notificationHubSender.UpdateTimeTickerNotifyAsync(timedOutTimeTicker).ConfigureAwait(false);
+            await _notificationHubSender.UpdateTimeJobNotifyAsync(timedOutTimeTicker).ConfigureAwait(false);
         }
 
         await foreach (

@@ -1,18 +1,18 @@
 <script lang="ts" setup>
-import { tickerService } from '@/http/services/tickerService'
+import { jobsService } from '@/http/services/jobsService'
 import { formatDate } from '@/utilities/dateTimeParser'
 import { computed, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
-import JobNotificationHub, { methodName } from '@/hub/tickerNotificationHub'
+import JobNotificationHub, { methodName } from '@/hub/jobNotificationHub'
 import { useFunctionNameStore } from '@/stores/functionNames'
 import { useDashboardStore } from '@/stores/dashboardStore'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
 import { Status } from '@/http/services/types/base/baseHttpResponse.types'
 
-const getNextPlannedTicker = tickerService.getNextPlannedTicker()
-const getOptions = tickerService.getOptions()
-const getMachineJobs = tickerService.getMachineJobs()
-const getJobStatusesPastWeek = tickerService.getJobStatusesPastWeek()
-const getJobStatusesOverall = tickerService.getJobStatusesOverall()
+const getNextPlannedJob = jobsService.getNextPlannedJob()
+const getOptions = jobsService.getOptions()
+const getMachineJobs = jobsService.getMachineJobs()
+const getJobStatusesPastWeek = jobsService.getJobStatusesPastWeek()
+const getJobStatusesOverall = jobsService.getJobStatusesOverall()
 const functionNamesStore = useFunctionNameStore()
 const dashboardStore = useDashboardStore()
 const timeZoneStore = useTimeZoneStore()
@@ -20,10 +20,10 @@ const timeZoneStore = useTimeZoneStore()
 const activeThreads = ref(0)
 
 onMounted(async () => {
-  await getNextPlannedTicker.requestAsync()
+  await getNextPlannedJob.requestAsync()
   // Initialize dashboard store with the fetched data
-  if (getNextPlannedTicker.response.value?.nextOccurrence) {
-    dashboardStore.setNextOccurrence(getNextPlannedTicker.response.value.nextOccurrence)
+  if (getNextPlannedJob.response.value?.nextOccurrence) {
+    dashboardStore.setNextOccurrence(getNextPlannedJob.response.value.nextOccurrence)
   }
   await getOptions.requestAsync()
 
@@ -76,7 +76,7 @@ onMounted(async () => {
   })
 
   JobNotificationHub.onReceiveNextOccurrence((nextOccurrence: string) => {
-    getNextPlannedTicker.updateProperty('nextOccurrence', nextOccurrence)
+    getNextPlannedJob.updateProperty('nextOccurrence', nextOccurrence)
     dashboardStore.setNextOccurrence(nextOccurrence)
   })
 
@@ -268,7 +268,7 @@ const getVisiblePageNumbers = () => {
             <h3 class="metric-label">Next Execution</h3>
             <p
               class="metric-value primary-text"
-              v-if="getNextPlannedTicker.response.value !== undefined"
+              v-if="getNextPlannedJob.response.value !== undefined"
             >
               {{
                 dashboardStore.displayNextOccurrence === 'Not Scheduled' ||

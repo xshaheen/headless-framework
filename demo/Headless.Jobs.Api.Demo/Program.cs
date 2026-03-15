@@ -14,7 +14,7 @@ builder.Services.AddJobs(options =>
     {
         efOptions.UseJobsDbContext<JobsDbContext>(dbOptions =>
         {
-            dbOptions.UseSqlite("Data Source=tickerq-webapi.db", b => b.MigrationsAssembly("Headless.Jobs.Api.Demo"));
+            dbOptions.UseSqlite("Data Source=jobs-webapi.db", b => b.MigrationsAssembly("Headless.Jobs.Api.Demo"));
         });
     });
 });

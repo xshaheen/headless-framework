@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import JobNotificationHub from '../hub/tickerNotificationHub'
+import JobNotificationHub from '../hub/jobNotificationHub'
 
 export const useConnectionStore = defineStore('connection', () => {
   // State

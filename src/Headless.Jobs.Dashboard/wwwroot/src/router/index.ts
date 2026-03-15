@@ -19,14 +19,14 @@ const router = createRouter({
     },
     {
       path: '/cron-jobs',
-      name: 'CronTicker',
-      component: () => import('../views/CronTicker.vue'),
+      name: 'CronJob',
+      component: () => import('../views/CronJob.vue'),
       meta: { requiresAuth: true }
     },
     {
       path: '/time-jobs',
-      name: 'TimeTicker',
-      component: () => import('../views/TimeTicker.vue'),
+      name: 'TimeJob',
+      component: () => import('../views/TimeJob.vue'),
       meta: { requiresAuth: true }
     },
   ],

@@ -20,7 +20,7 @@ class BaseHub {
                 const config = window.JobsConfig;
                 
                 if (config?.auth?.mode === 'bearer') {
-                    const bearerToken = localStorage.getItem('tickerq_bearer_token');
+                    const bearerToken = localStorage.getItem('jobs_bearer_token');
                     if (bearerToken) {
                         return {
                             type: 'Bearer',
@@ -30,7 +30,7 @@ class BaseHub {
                 }
                 
                 if (config?.auth?.mode === 'basic') {
-                    const basicAuth = localStorage.getItem('tickerq_basic_auth');
+                    const basicAuth = localStorage.getItem('jobs_basic_auth');
                     if (basicAuth) {
                         return {
                             type: 'Basic',

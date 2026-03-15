@@ -40,9 +40,9 @@ export function useAuth() {
   const authToken = computed(() => {
     try {
       // Return the stored token based on auth mode
-      const apiKey = localStorage.getItem('tickerq_api_key')
-      const basicAuth = localStorage.getItem('tickerq_basic_auth')
-      const hostAccessKey = localStorage.getItem('tickerq_host_access_key')
+      const apiKey = localStorage.getItem('jobs_api_key')
+      const basicAuth = localStorage.getItem('jobs_basic_auth')
+      const hostAccessKey = localStorage.getItem('jobs_host_access_key')
       return apiKey || basicAuth || hostAccessKey || ''
     } catch {
       return ''

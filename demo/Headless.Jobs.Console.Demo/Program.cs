@@ -21,7 +21,7 @@ var host = Host.CreateDefaultBuilder(args)
                     efOptions.UseJobsDbContext<JobsDbContext>(dbOptions =>
                     {
                         dbOptions.UseSqlite(
-                            "Data Source=tickerq-console.db",
+                            "Data Source=jobs-console.db",
                             b => b.MigrationsAssembly("Headless.Jobs.Console.Demo")
                         );
                     });

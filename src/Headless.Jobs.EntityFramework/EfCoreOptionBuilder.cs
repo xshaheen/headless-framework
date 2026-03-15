@@ -12,7 +12,7 @@ public class JobsEfCoreOptionBuilder<TTimeTicker, TCronTicker>
 {
     internal Action<IServiceCollection> ConfigureServices { get; set; } = _ => { };
     internal int PoolSize { get; set; } = 1024;
-    internal string Schema { get; set; } = "ticker";
+    internal string Schema { get; set; } = "jobs";
 
     public JobsEfCoreOptionBuilder<TTimeTicker, TCronTicker> UseApplicationDbContext<TDbContext>(
         ConfigurationType configurationType

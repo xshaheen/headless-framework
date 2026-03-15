@@ -23,39 +23,39 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         );
     }
 
-    public async Task AddCronTickerNotifyAsync(object cronTicker)
+    public async Task AddCronJobNotifyAsync(object cronTicker)
     {
-        await _hubContext.Clients.All.SendAsync("AddCronTickerNotification", cronTicker);
+        await _hubContext.Clients.All.SendAsync("AddCronJobNotification", cronTicker);
     }
 
-    public async Task UpdateCronTickerNotifyAsync(object cronTicker)
+    public async Task UpdateCronJobNotifyAsync(object cronTicker)
     {
-        await _hubContext.Clients.All.SendAsync("UpdateCronTickerNotification", cronTicker);
+        await _hubContext.Clients.All.SendAsync("UpdateCronJobNotification", cronTicker);
     }
 
-    public async Task RemoveCronTickerNotifyAsync(Guid id)
+    public async Task RemoveCronJobNotifyAsync(Guid id)
     {
-        await _hubContext.Clients.All.SendAsync("RemoveCronTickerNotification", id);
+        await _hubContext.Clients.All.SendAsync("RemoveCronJobNotification", id);
     }
 
-    public async Task AddTimeTickerNotifyAsync(Guid id)
+    public async Task AddTimeJobNotifyAsync(Guid id)
     {
-        await _hubContext.Clients.All.SendAsync("AddTimeTickerNotification", id);
+        await _hubContext.Clients.All.SendAsync("AddTimeJobNotification", id);
     }
 
-    public async Task AddTimeTickersBatchNotifyAsync()
+    public async Task AddTimeJobsBatchNotifyAsync()
     {
-        await _hubContext.Clients.All.SendAsync("AddTimeTickersBatchNotification");
+        await _hubContext.Clients.All.SendAsync("AddTimeJobsBatchNotification");
     }
 
-    public async Task UpdateTimeTickerNotifyAsync(object timeTicker)
+    public async Task UpdateTimeJobNotifyAsync(object timeTicker)
     {
-        await _hubContext.Clients.All.SendAsync("UpdateTimeTickerNotification", timeTicker);
+        await _hubContext.Clients.All.SendAsync("UpdateTimeJobNotification", timeTicker);
     }
 
-    public async Task RemoveTimeTickerNotifyAsync(Guid id)
+    public async Task RemoveTimeJobNotifyAsync(Guid id)
     {
-        await _hubContext.Clients.All.SendAsync("RemoveTimeTickerNotification", id);
+        await _hubContext.Clients.All.SendAsync("RemoveTimeJobNotification", id);
     }
 
     public void UpdateActiveThreads(object activeThreads)
@@ -96,7 +96,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         await _hubContext.Clients.Group(groupId.ToString()).SendAsync("UpdateCronOccurrenceNotification", occurrence);
     }
 
-    public Task UpdateTimeTickerFromInternalFunctionContext<TTimeTicker>(
+    public Task UpdateTimeJobFromInternalFunctionContext<TTimeTicker>(
         InternalFunctionContext internalFunctionContext
     )
         where TTimeTicker : TimeJobEntity<TTimeTicker>, new()
@@ -117,7 +117,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
             return;
         }
 
-        var __ = _hubContext.Clients.All.SendAsync("UpdateTimeTickerNotification");
+        var __ = _hubContext.Clients.All.SendAsync("UpdateTimeJobNotification");
     }
 
     public Task UpdateCronOccurrenceFromInternalFunctionContext<TCronTicker>(
@@ -143,9 +143,9 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         return Task.CompletedTask;
     }
 
-    public async Task CanceledTickerNotifyAsync(Guid id)
+    public async Task CanceledJobNotifyAsync(Guid id)
     {
-        await _hubContext.Clients.All.SendAsync("CanceledTickerNotification", id);
+        await _hubContext.Clients.All.SendAsync("CanceledJobNotification", id);
     }
 
     public void Dispose()

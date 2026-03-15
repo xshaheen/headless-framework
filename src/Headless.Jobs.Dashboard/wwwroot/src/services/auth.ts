@@ -150,15 +150,15 @@ class AuthService {
 
     switch (this.config.mode) {
       case 'basic':
-        const basicAuth = localStorage.getItem('tickerq_basic_auth');
+        const basicAuth = localStorage.getItem('jobs_basic_auth');
         return basicAuth ? `Basic ${basicAuth}` : null;
       
       case 'apikey':
-        const apiKey = localStorage.getItem('tickerq_api_key');
+        const apiKey = localStorage.getItem('jobs_api_key');
         return apiKey ? `Bearer ${apiKey}` : null;
       
       case 'host':
-        const hostAccessKey = localStorage.getItem('tickerq_host_access_key');
+        const hostAccessKey = localStorage.getItem('jobs_host_access_key');
         return hostAccessKey || null;
       
       default:
@@ -176,14 +176,14 @@ class AuthService {
 
     switch (this.config.mode) {
       case 'basic':
-        return localStorage.getItem('tickerq_basic_auth');
+        return localStorage.getItem('jobs_basic_auth');
       
       case 'apikey':
-        const token = localStorage.getItem('tickerq_api_key');
+        const token = localStorage.getItem('jobs_api_key');
         return token ? `Bearer:${token}` : null;
       
       case 'host':
-        const hostToken = localStorage.getItem('tickerq_host_access_key');
+        const hostToken = localStorage.getItem('jobs_host_access_key');
         return hostToken || null;
       
       default:
@@ -198,7 +198,7 @@ class AuthService {
       
       // Get the correct base URL with base path
       const config = window.JobsConfig;
-      const baseUrl = config?.backendDomain || config?.basePath || '/tickerq/dashboard';
+      const baseUrl = config?.backendDomain || config?.basePath || '/jobs/dashboard';
       const url = `${baseUrl}/api/auth/validate`;
       
       // Add timeout to prevent hanging
@@ -242,13 +242,13 @@ class AuthService {
   }
 
   private hasStoredCredentials(): boolean {
-    return !!(localStorage.getItem('tickerq_basic_auth') || 
-              localStorage.getItem('tickerq_api_key') ||
-              localStorage.getItem('tickerq_host_access_key'));
+    return !!(localStorage.getItem('jobs_basic_auth') || 
+              localStorage.getItem('jobs_api_key') ||
+              localStorage.getItem('jobs_host_access_key'));
   }
 
   private getStoredUsername(): string | null {
-    const basicAuth = localStorage.getItem('tickerq_basic_auth');
+    const basicAuth = localStorage.getItem('jobs_basic_auth');
     if (basicAuth) {
       try {
         const decoded = atob(basicAuth);
@@ -267,28 +267,28 @@ class AuthService {
       case 'basic':
         if (credentials.username && credentials.password) {
           const encoded = btoa(`${credentials.username}:${credentials.password}`);
-          localStorage.setItem('tickerq_basic_auth', encoded);
+          localStorage.setItem('jobs_basic_auth', encoded);
         }
         break;
       
       case 'apikey':
         if (credentials.apiKey) {
-          localStorage.setItem('tickerq_api_key', credentials.apiKey);
+          localStorage.setItem('jobs_api_key', credentials.apiKey);
         }
         break;
       
       case 'host':
         if (credentials.hostAccessKey) {
-          localStorage.setItem('tickerq_host_access_key', credentials.hostAccessKey);
+          localStorage.setItem('jobs_host_access_key', credentials.hostAccessKey);
         }
         break;
     }
   }
 
   private clearCredentials(): void {
-    localStorage.removeItem('tickerq_basic_auth');
-    localStorage.removeItem('tickerq_api_key');
-    localStorage.removeItem('tickerq_host_access_key');
+    localStorage.removeItem('jobs_basic_auth');
+    localStorage.removeItem('jobs_api_key');
+    localStorage.removeItem('jobs_host_access_key');
   }
 }
 

@@ -141,7 +141,7 @@ class SignalRService {
 
   private createConnection(): signalR.HubConnection {
     const config = window.JobsConfig;
-    const basePath = config?.basePath || '/tickerq/dashboard';
+    const basePath = config?.basePath || '/jobs/dashboard';
     const backendDomain = config?.backendDomain;
     
     // Build hub URL

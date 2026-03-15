@@ -134,7 +134,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                 _executionContext.SetFunctions(null);
             }
 
-            var (timeRemaining, functions) = await _internalJobsManager.GetNextTickers(cancellationToken);
+            var (timeRemaining, functions) = await _internalJobsManager.GetNextJobs(cancellationToken);
 
             _executionContext.SetFunctions(functions);
 

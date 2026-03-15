@@ -11,9 +11,9 @@ const axiosInstance: AxiosInstance = axios.create({
 axiosInstance.interceptors.request.use(
   (config: any) => {
     // Get auth headers from localStorage (using correct keys)
-    const apiKey = localStorage.getItem('tickerq_api_key');
-    const basicAuth = localStorage.getItem('tickerq_basic_auth');
-    const hostAccessKey = localStorage.getItem('tickerq_host_access_key');
+    const apiKey = localStorage.getItem('jobs_api_key');
+    const basicAuth = localStorage.getItem('jobs_basic_auth');
+    const hostAccessKey = localStorage.getItem('jobs_host_access_key');
     
     if (apiKey) {
       config.headers = config.headers || {};
