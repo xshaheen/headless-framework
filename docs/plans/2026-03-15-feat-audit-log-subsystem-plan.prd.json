@@ -1,0 +1,311 @@
+{
+  "name": "feat-audit-log-subsystem",
+  "title": "Add property-level audit log subsystem",
+  "type": "feat",
+  "date": "2026-03-15",
+  "description": "Add property-level entity change tracking via EF Core ChangeTracker for opted-in entities + explicit IAuditLog for non-mutation events. Two packages: Headless.AuditLog.Abstractions (contracts) + Headless.AuditLog.EntityFramework (EF Core implementation). Integrates with existing HeadlessEntityModelProcessor pipeline.",
+  "created_at": "2026-03-15T02:30:00Z",
+  "branches": {
+    "base": "main",
+    "feature": "worktree-xshaheen/audit"
+  },
+  "verification_command": "dotnet build src/Headless.AuditLog.Abstractions && dotnet build src/Headless.AuditLog.EntityFramework && dotnet build src/Headless.Orm.EntityFramework && dotnet test tests/Headless.AuditLog.Tests.Unit",
+  "status": "pending",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add ICorrelationIdProvider to Headless.Core [XS]",
+      "size": "XS",
+      "description": "Sequential: create ICorrelationIdProvider interface + ActivityCorrelationIdProvider implementation in Headless.Core/Abstractions → register as default singleton in OrmEntityFrameworkSetup.AddHeadlessDbContextServices()",
+      "filesToStudy": [
+        "src/Headless.Core/Abstractions/ICurrentTenant.cs",
+        "src/Headless.Core/Abstractions/ICurrentUser.cs",
+        "src/Headless.Orm.EntityFramework/Setup.cs"
+      ],
+      "acceptanceCriteria": [
+        "ICorrelationIdProvider interface exists in Headless.Abstractions namespace with string? CorrelationId property",
+        "ActivityCorrelationIdProvider reads from System.Diagnostics.Activity.Current?.Id",
+        "Registered as TryAddSingleton in AddHeadlessDbContextServices() following ICurrentTenant/NullCurrentTenant pattern",
+        "dotnet build src/Headless.Core succeeds"
+      ],
+      "priority": 1,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": [
+        "Follow ICurrentTenant → NullCurrentTenant pattern: interface + default implementation",
+        "No new package dependencies — Activity is in System.Diagnostics (BCL)"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Create Headless.AuditLog.Abstractions package [S]",
+      "size": "S",
+      "description": "Sequential: create .csproj → create all types (marker, attributes, enums, options, DTOs, contracts) → create Setup.cs with DI extension → verify build",
+      "filesToStudy": [
+        "src/Headless.Caching.Abstractions/Headless.Caching.Abstractions.csproj",
+        "src/Headless.Orm.EntityFramework/Setup.cs"
+      ],
+      "acceptanceCriteria": [
+        "Package builds with only Microsoft.Extensions.Options and Microsoft.Extensions.DependencyInjection.Abstractions dependencies (no Headless.Domain or Headless.Core references)",
+        "Contains: IAuditTracked, AuditIgnoreAttribute, AuditSensitiveAttribute, SensitiveDataStrategy, AuditChangeType, AuditLogOptions, SensitiveValueContext, IAuditLog, IAuditLogStore, AuditLogEntryData, IAuditChangeCapture",
+        "IAuditLogStore.Save/SaveAsync takes (object context, IReadOnlyList<AuditLogEntryData>) — context parameter for DbContext passthrough",
+        "AddHeadlessAuditLog() extension uses C# 14 extension block syntax",
+        "All public types have XML docs"
+      ],
+      "priority": 2,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": [
+        "Namespace: Headless.AuditLog for all types",
+        "IAuditChangeCapture.CaptureChanges takes IEnumerable<object> (not EntityEntry) to avoid EF Core dependency",
+        "AuditLogEntryData uses string? for UserId/AccountId/TenantId (conversion from primitives happens in EF layer)"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Create AuditLogEntry entity and configuration [S]",
+      "size": "S",
+      "description": "TDD order: write entity configuration test (verify table name, column types, indexes) → create AuditLogEntry entity + AuditLogEntryConfiguration → create ModelBuilder extension → verify PASS",
+      "filesToStudy": [
+        "src/Headless.Settings.Storage.EntityFramework/SettingsModelBuilderExtensions.cs",
+        "src/Headless.Orm.EntityFramework/Headless.Orm.EntityFramework.csproj"
+      ],
+      "acceptanceCriteria": [
+        "AuditLogEntry entity has [AuditIgnore] attribute to prevent recursive capture",
+        "Composite PK (CreatedAt, Id) for time-range partitioning readiness",
+        "JSON columns (OldValues, NewValues, ChangedFields) use string-based value converters with shared JsonSerializerOptions singleton",
+        "ConfigureAuditLog() ModelBuilder extension accepts tableName, schema, and optional jsonColumnType for native JSON override",
+        "4 indexes created: tenant+time, tenant+entity+time, tenant+actor+time, correlation",
+        "ModelBuilder extension uses traditional 'this' parameter style (not extension block)"
+      ],
+      "priority": 3,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": [
+        "Follow Headless.Settings.Storage.EntityFramework pattern for ModelBuilder extensions",
+        "Id is long with ValueGeneratedOnAdd",
+        "AuditChangeType enum stored as default (int) — no string conversion needed"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Implement EfAuditChangeCapture [L]",
+      "size": "L",
+      "description": "TDD order: write capture tests for Created/Updated/Deleted entities → implement EfAuditChangeCapture → add AuditIgnore/AuditSensitive handling → add owned entity support → verify all PASS",
+      "filesToStudy": [
+        "src/Headless.Orm.EntityFramework/Contexts/HeadlessEntityModelProcessor.cs",
+        "src/Headless.AuditLog.Abstractions/IAuditChangeCapture.cs",
+        "src/Headless.AuditLog.Abstractions/AuditLogOptions.cs"
+      ],
+      "acceptanceCriteria": [
+        "Created entity: captures all property values in NewValues, OldValues is null",
+        "Updated entity: captures only IsModified properties in ChangedFields with OldValues and NewValues",
+        "Deleted entity: captures all property values in OldValues, NewValues is null",
+        "Updated with no real changes: no entry produced (empty ChangedFields → skip)",
+        "[AuditIgnore] property excluded from all dictionaries",
+        "[AuditSensitive] Redact: value is '***', Exclude: property omitted, Transform: SensitiveValueTransformer called",
+        "Non-IAuditTracked entity skipped in default mode; included in AuditAllEntities mode unless [AuditIgnore] on class",
+        "EntityFilter and PropertyFilter predicates respected",
+        "Owned entity inherits auditability from owner, EntityType='Owner.OwnedType', EntityId=owner's PK",
+        "Shadow properties (PropertyInfo is null) skipped",
+        "Property attribute metadata cached in static ConcurrentDictionary per PropertyInfo",
+        "ConcurrencyStamp property excluded by default (framework-managed, not domain data)",
+        "SensitiveValueTransformer exceptions caught — fallback to Redact strategy with logged warning"
+      ],
+      "priority": 4,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": [
+        "This is the core logic — most complex piece. Cast IEnumerable<object> to EntityEntry internally.",
+        "Action format: 'entity.created', 'entity.updated', 'entity.deleted'",
+        "Use currentUser.UserId?.ToString() (not .Value) for string conversion",
+        "Soft-delete (IDeleteAudit.IsDeleted toggle) produces Modified state — consider mapping to 'entity.soft_deleted'/'entity.restored' actions"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "Implement EfAuditLogStore and EfAuditLog [S]",
+      "size": "S",
+      "description": "TDD order: write store tests (entries added to DbContext) → implement EfAuditLogStore → write explicit log tests → implement EfAuditLog → verify PASS",
+      "filesToStudy": [
+        "src/Headless.AuditLog.EntityFramework/AuditLogEntry.cs",
+        "src/Headless.Core/Abstractions/ICurrentUser.cs",
+        "src/Headless.Core/Abstractions/IClock.cs"
+      ],
+      "acceptanceCriteria": [
+        "EfAuditLogStore casts object context to DbContext, calls Set<AuditLogEntry>().Add() for each entry",
+        "EfAuditLogStore does NOT call SaveChanges — entries persist with consumer's next SaveChanges",
+        "EfAuditLog checks options.IsEnabled before adding entries",
+        "EfAuditLog uses IClock.UtcNow for CreatedAt, currentUser.UserId?.ToString() for actor",
+        "EfAuditLog sets ChangeType=null for explicit events, stores data dict in NewValues"
+      ],
+      "priority": 5,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": [
+        "EfAuditLog needs DbContext — resolve via TryAddScoped<DbContext>(sp => sp.GetRequiredService<TDbContext>()) in AddHeadlessDbContext, or use IServiceProvider",
+        "EfAuditLog also needs ICurrentUser, ICurrentTenant, ICorrelationIdProvider, IClock, IOptions<AuditLogOptions>"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Integrate with HeadlessEntityModelProcessor and HeadlessDbContext [M]",
+      "size": "M",
+      "description": "Sequential: add AuditEntries to ProcessBeforeSaveReport → add optional IAuditChangeCapture? + ICorrelationIdProvider? to processor constructor → add capture call after foreach loop → add store call in CoreSaveChangesAsync/CoreSaveChanges in BOTH HeadlessDbContext AND HeadlessIdentityDbContext → verify existing tests still pass",
+      "filesToStudy": [
+        "src/Headless.Orm.EntityFramework/Contexts/HeadlessEntityModelProcessor.cs",
+        "src/Headless.Orm.EntityFramework/Contexts/HeadlessDbContext.cs",
+        "src/Headless.Orm.EntityFramework/Contexts/ProcessBeforeSaveReport.cs",
+        "src/Headless.Identity.Storage.EntityFramework/HeadlessIdentityDbContext.cs"
+      ],
+      "acceptanceCriteria": [
+        "ProcessBeforeSaveReport gains IReadOnlyList<AuditLogEntryData>? AuditEntries property",
+        "HeadlessEntityModelProcessor takes IAuditChangeCapture? and ICorrelationIdProvider? as optional constructor params (null when audit not registered)",
+        "CaptureChanges called after existing foreach loop in ProcessEntries, using db.ChangeTracker.Entries().Select(e => (object)e)",
+        "CoreSaveChangesAsync: after ProcessEntries, before transaction/emitter logic, calls store.SaveAsync(this, entries) if entries exist",
+        "CoreSaveChanges: same pattern with synchronous store.Save(this, entries)",
+        "BOTH HeadlessDbContext AND HeadlessIdentityDbContext updated with audit store call (HeadlessIdentityDbContext has duplicated SaveChanges pipeline)",
+        "Store resolved via this.GetService<IAuditLogStore>() from EF Core's hybrid service provider",
+        "Capture wrapped in try-catch — exceptions logged, audit skipped, domain save proceeds",
+        "When audit not registered: _auditChangeCapture is null → skip capture, GetService returns null → skip store. Zero overhead.",
+        "All existing HeadlessDbContext/Processor tests still pass"
+      ],
+      "priority": 6,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": [
+        "Critical: the store call must go AFTER ProcessEntries but BEFORE the transaction/emitter branching logic in CoreSaveChangesAsync",
+        "Audit entries are just added to the DbContext (not saved) — they persist with the same base.SaveChanges call regardless of transaction path",
+        "ProcessBeforeSaveReport is a record — adding a property with default null is backward-compatible"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "DI registration and Setup.cs for both packages [S]",
+      "size": "S",
+      "description": "Sequential: create Setup.cs for abstractions (AddHeadlessAuditLog) → create Setup.cs for EF package (AddHeadlessAuditLogEntityFramework) → create .csproj files → add to solution → verify build",
+      "filesToStudy": [
+        "src/Headless.Orm.EntityFramework/Setup.cs",
+        "src/Headless.Settings.Storage.EntityFramework/Setup.cs",
+        "src/Headless.Caching.Abstractions/Headless.Caching.Abstractions.csproj",
+        "Directory.Packages.props"
+      ],
+      "acceptanceCriteria": [
+        "AddHeadlessAuditLog registers IOptions<AuditLogOptions> via TryAddSingleton",
+        "AddHeadlessAuditLogEntityFramework registers IAuditChangeCapture, IAuditLogStore, IAuditLog as scoped services",
+        "Both Setup.cs use C# 14 extension block syntax",
+        ".csproj files follow conventions: net10.0, no Version attributes, correct ProjectReferences",
+        "Headless.AuditLog.Abstractions.csproj references only Microsoft.Extensions.Options and Microsoft.Extensions.DependencyInjection.Abstractions",
+        "Headless.AuditLog.EntityFramework.csproj references Headless.AuditLog.Abstractions and Headless.Orm.EntityFramework",
+        "Both projects added to solution file",
+        "dotnet build succeeds for both packages"
+      ],
+      "priority": 7,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": [
+        "Check if Microsoft.Extensions.Options and DI.Abstractions need to be added to Directory.Packages.props — they may already be there as transitive deps"
+      ]
+    },
+    {
+      "id": "US-008",
+      "title": "Unit tests for EfAuditChangeCapture [L]",
+      "size": "L",
+      "description": "TDD order: tests written alongside US-004 implementation. This story covers the comprehensive test suite: Created/Updated/Deleted entities, AuditIgnore, AuditSensitive (all 3 strategies), AuditAllEntities mode, filters, owned entities, composite PK, no-op updates.",
+      "filesToStudy": [
+        "tests/Headless.Orm.EntityFramework.Tests.Integration/Headless.Orm.EntityFramework.Tests.Integration.csproj",
+        "tests/Directory.Build.props"
+      ],
+      "acceptanceCriteria": [
+        "Test project created: Headless.AuditLog.Tests.Unit with RootNamespace=Tests, OutputType=Exe, xunit.v3.mtp-v2",
+        "Uses in-memory or SQLite DbContext for unit testing (no external deps)",
+        "Tests use snake_case method names following project convention",
+        "All 15+ test cases from spec covered: create, update, delete, AuditIgnore property, AuditSensitive Redact/Exclude/Transform, non-IAuditTracked skip, AuditAllEntities, EntityFilter, PropertyFilter, no-op update skip, composite PK, owned entity, AuditIgnore on class",
+        "AuditLogOptions defaults tested separately",
+        "dotnet test tests/Headless.AuditLog.Tests.Unit passes"
+      ],
+      "priority": 4,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": [
+        "This story runs concurrently with US-004 (TDD cycle)",
+        "Use Microsoft.EntityFrameworkCore.Sqlite for in-memory testing (already in Directory.Packages.props)"
+      ]
+    },
+    {
+      "id": "US-009",
+      "title": "Integration tests for full round-trip [M]",
+      "size": "M",
+      "description": "TDD order: write round-trip tests → verify against real DB (SQLite for CI, optionally PostgreSQL via Testcontainers)",
+      "filesToStudy": [
+        "tests/Headless.Orm.EntityFramework.Tests.Integration/Headless.Orm.EntityFramework.Tests.Integration.csproj"
+      ],
+      "acceptanceCriteria": [
+        "Test project created: Headless.AuditLog.EntityFramework.Tests.Integration",
+        "Full round-trip: create entity → SaveChanges → query AuditLogEntry → verify NewValues",
+        "Update entity → verify OldValues/NewValues/ChangedFields",
+        "Delete entity → verify OldValues only",
+        "Transaction atomicity: SaveChanges fails → no AuditLogEntry rows",
+        "IAuditLog.LogAsync explicit event → persisted with next SaveChanges",
+        "Owned entity round-trip: update owned property → audit entry with correct EntityType/EntityId"
+      ],
+      "priority": 8,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": [
+        "Use SQLite for simplicity — it supports all the needed features",
+        "Testcontainers PostgreSQL optional (for jsonb column type verification)"
+      ]
+    },
+    {
+      "id": "US-010",
+      "title": "README.md files for both packages [S]",
+      "size": "S",
+      "description": "Sequential: write README.md for Headless.AuditLog.Abstractions → write README.md for Headless.AuditLog.EntityFramework → include consumer usage example",
+      "filesToStudy": [
+        "src/Headless.Caching.Abstractions/README.md",
+        "src/Headless.Caching.Redis/README.md"
+      ],
+      "acceptanceCriteria": [
+        "README.md exists in both src/Headless.AuditLog.Abstractions/ and src/Headless.AuditLog.EntityFramework/",
+        "Abstractions README documents: IAuditTracked, attributes, options, IAuditLog interface, SensitiveDataStrategy",
+        "EntityFramework README documents: registration, ConfigureAuditLog(), consumer entity example, explicit logging example",
+        "Consumer usage example matches the one in the original spec (Patient entity with IAuditTracked + AuditSensitive)"
+      ],
+      "priority": 9,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    }
+  ],
+  "pass": false,
+  "validation_errors": [],
+  "metadata": {
+    "research": {
+      "local": {
+        "findings": [
+          "HeadlessEntityModelProcessor.ProcessEntries iterates ChangeTracker.Entries() in a foreach loop — audit capture hooks after this loop (src/Headless.Orm.EntityFramework/Contexts/HeadlessEntityModelProcessor.cs:163-196)",
+          "ProcessBeforeSaveReport is a sealed record with DistributedEmitters and LocalEmitters — adding AuditEntries property is backward-compatible",
+          "CoreSaveChangesAsync has complex transaction handling with execution strategies — audit entries must be added BEFORE the branching logic (src/Headless.Orm.EntityFramework/Contexts/HeadlessDbContext.cs:34-97)",
+          "DI uses C# 14 extension blocks for IServiceCollection, traditional 'this' for ModelBuilder extensions",
+          "UserId/AccountId are IPrimitive<string> wrappers — use .ToString() not .Value for string conversion",
+          "Existing AddHeadlessDbContextServices() registers ICurrentTenant, ICurrentUser, IClock, IGuidGenerator via TryAddSingleton — ICorrelationIdProvider follows same pattern",
+          "Test projects use RootNamespace=Tests, OutputType=Exe, xunit.v3.mtp-v2, snake_case methods",
+          "No prior audit log patterns exist in docs/solutions/ — greenfield implementation"
+        ],
+        "timestamp": "2026-03-15T02:30:00Z"
+      }
+    },
+    "projectLearnings": []
+  }
+}
