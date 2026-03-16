@@ -3,8 +3,6 @@ using System.Security.Claims;
 using Demo.Data;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Persistence;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
@@ -60,15 +58,15 @@ builder.Services.AddAuthorization(options =>
 
 builder.Services.AddMessaging(options =>
 {
+    options.SubscribeFromAssembly(typeof(Program).Assembly);
     options.UseInMemoryStorage();
     options.UseInMemoryMessageQueue();
     options.UseDashboard(d => d.WithHostAuthentication(dashboardPolicy));
 });
 
-var app = builder.Build();
+builder.Services.AddHostedService<DemoMessagePublisher>();
 
-// Seed demo data so the dashboard has content to display
-await seedDemoData(app.Services);
+var app = builder.Build();
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
@@ -114,92 +112,250 @@ app.UseAuthorization();
 
 await app.RunAsync();
 
-return;
+// ---------------------------------------------------------------------------
+// Demo message types
+// ---------------------------------------------------------------------------
 
-static async Task seedDemoData(IServiceProvider services)
+public sealed record OrderCreated
 {
-    using var scope = services.CreateScope();
-    var dataStorage = scope.ServiceProvider.GetRequiredService<IDataStorage>();
-    var now = DateTime.UtcNow;
+    public required int OrderId { get; init; }
+    public required string CustomerName { get; init; }
+    public required decimal Amount { get; init; }
+}
 
-    // Published messages — mix of statuses
-    string[][] publishedTopics =
-    [
-        ["Orders.Created", "OrderCreatedEvent"],
-        ["Orders.Shipped", "OrderShippedEvent"],
-        ["Payments.Processed", "PaymentProcessedEvent"],
-        ["Users.Registered", "UserRegisteredEvent"],
-        ["Inventory.Updated", "InventoryUpdatedEvent"],
-        ["Notifications.Sent", "NotificationSentEvent"],
-        ["Reports.Generated", "ReportGeneratedEvent"],
-    ];
+public sealed record PaymentProcessed
+{
+    public required string PaymentId { get; init; }
+    public required int OrderId { get; init; }
+    public required decimal Amount { get; init; }
+    public required string Currency { get; init; }
+}
 
-    for (var i = 0; i < 25; i++)
+public sealed record UserRegistered
+{
+    public required string UserId { get; init; }
+    public required string Email { get; init; }
+    public required string Plan { get; init; }
+}
+
+public sealed record InventoryUpdated
+{
+    public required string ProductId { get; init; }
+    public required int Quantity { get; init; }
+    public required string Warehouse { get; init; }
+}
+
+// ---------------------------------------------------------------------------
+// Demo consumers — some intentionally fail to populate the dashboard with
+// failed messages and exception stack traces.
+// ---------------------------------------------------------------------------
+
+public sealed class OrderCreatedConsumer(ILogger<OrderCreatedConsumer> logger) : IConsume<OrderCreated>
+{
+    public async ValueTask Consume(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)
     {
-        var topic = publishedTopics[i % publishedTopics.Length];
-        var msgId = Guid.NewGuid().ToString();
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [Headers.MessageId] = msgId,
-            [Headers.MessageName] = topic[0],
-            [Headers.Type] = topic[1],
-            [Headers.SentTime] = now.AddMinutes(-Random.Shared.Next(1, 1440)).ToString("O"),
-        };
+        logger.LogInformation(
+            "Processing order #{OrderId} from {Customer} — ${Amount}",
+            context.Message.OrderId,
+            context.Message.CustomerName,
+            context.Message.Amount
+        );
+        await Task.Delay(Random.Shared.Next(30, 150), cancellationToken);
+    }
+}
 
-        var payload = new
+public sealed class OrderNotificationConsumer(ILogger<OrderNotificationConsumer> logger) : IConsume<OrderCreated>
+{
+    public async ValueTask Consume(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)
+    {
+        // ~25% failure rate — simulates notification gateway flakiness
+        if (Random.Shared.Next(4) == 0)
         {
-            Id = i + 1,
-            Topic = topic[0],
-            Data = $"Sample payload #{i + 1}",
-        };
-        var message = new Message(headers, payload);
-        var medium = await dataStorage.StoreMessageAsync(topic[0], message);
-
-        // ~60% succeeded, ~20% failed, ~20% remain scheduled
-        if (i % 5 < 3)
-        {
-            await dataStorage.ChangePublishStateAsync(medium, Headless.Messaging.Internal.StatusName.Succeeded);
+            throw new InvalidOperationException(
+                $"Notification gateway timeout while sending order confirmation for Order #{context.Message.OrderId} " +
+                $"to customer {context.Message.CustomerName}. The SMTP server at smtp.example.com:587 did not respond within 30 seconds."
+            );
         }
-        else if (i % 5 == 3)
+
+        logger.LogInformation(
+            "Sent order notification for #{OrderId} to {Customer}",
+            context.Message.OrderId,
+            context.Message.CustomerName
+        );
+        await Task.Delay(Random.Shared.Next(50, 200), cancellationToken);
+    }
+}
+
+public sealed class PaymentProcessedConsumer(ILogger<PaymentProcessedConsumer> logger) : IConsume<PaymentProcessed>
+{
+    public async ValueTask Consume(ConsumeContext<PaymentProcessed> context, CancellationToken cancellationToken)
+    {
+        // ~20% failure rate — simulates payment reconciliation issues
+        if (Random.Shared.Next(5) == 0)
         {
-            message.AddOrUpdateException(new InvalidOperationException($"Processing failed for message #{i + 1}"));
-            medium.Origin = message;
-            await dataStorage.ChangePublishStateAsync(medium, Headless.Messaging.Internal.StatusName.Failed);
+            throw new AggregateException(
+                $"Payment reconciliation failed for {context.Message.PaymentId}",
+                new InvalidOperationException(
+                    $"Ledger entry mismatch: expected {context.Message.Amount:C} {context.Message.Currency} " +
+                    $"but settlement reported {context.Message.Amount * 0.99m:C} {context.Message.Currency}. " +
+                    "This may indicate a currency conversion rounding error."
+                ),
+                new TimeoutException(
+                    "Accounting service at https://accounting.internal/api/reconcile " +
+                    "did not respond within the configured 15-second timeout."
+                )
+            );
+        }
+
+        logger.LogInformation(
+            "Reconciled payment {PaymentId} for order #{OrderId}",
+            context.Message.PaymentId,
+            context.Message.OrderId
+        );
+        await Task.Delay(Random.Shared.Next(100, 400), cancellationToken);
+    }
+}
+
+public sealed class UserRegisteredConsumer(ILogger<UserRegisteredConsumer> logger) : IConsume<UserRegistered>
+{
+    public async ValueTask Consume(ConsumeContext<UserRegistered> context, CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "Welcome email queued for {Email} (plan: {Plan})",
+            context.Message.Email,
+            context.Message.Plan
+        );
+        // Simulate slow email rendering
+        await Task.Delay(Random.Shared.Next(200, 600), cancellationToken);
+    }
+}
+
+public sealed class InventoryUpdatedConsumer(ILogger<InventoryUpdatedConsumer> logger) : IConsume<InventoryUpdated>
+{
+    public async ValueTask Consume(ConsumeContext<InventoryUpdated> context, CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "Stock updated: {ProductId} now {Quantity} units at {Warehouse}",
+            context.Message.ProductId,
+            context.Message.Quantity,
+            context.Message.Warehouse
+        );
+        await Task.Delay(Random.Shared.Next(20, 80), cancellationToken);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Background publisher — seeds initial data then publishes every 30 seconds
+// ---------------------------------------------------------------------------
+
+public sealed class DemoMessagePublisher(
+    IServiceScopeFactory scopeFactory,
+    ILogger<DemoMessagePublisher> logger
+) : BackgroundService
+{
+    private static readonly string[] CustomerNames =
+        ["Alice Johnson", "Bob Smith", "Carol Davis", "Dave Wilson", "Eve Martinez", "Frank Lee", "Grace Chen"];
+
+    private static readonly string[] Products =
+        ["SKU-1001", "SKU-2042", "SKU-3099", "SKU-4010", "SKU-5077", "SKU-6023"];
+
+    private static readonly string[] Warehouses = ["US-East", "US-West", "EU-Central", "APAC-South"];
+    private static readonly string[] Currencies = ["USD", "EUR", "GBP"];
+    private static readonly string[] Plans = ["Free", "Starter", "Pro", "Enterprise"];
+
+    private int _counter;
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        // Wait for the messaging bootstrapper to register subscriber groups
+        await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
+
+        // Initial burst — populate dashboard with some history
+        logger.LogInformation("Seeding initial demo messages...");
+        await PublishBatch(15, stoppingToken);
+        logger.LogInformation("Initial seed complete — switching to 30s interval");
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+
+            try
+            {
+                var count = Random.Shared.Next(2, 6);
+                await PublishBatch(count, stoppingToken);
+                logger.LogInformation("Published {Count} demo messages (cycle #{Cycle})", count, _counter);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Error publishing demo messages");
+            }
         }
     }
 
-    // Received messages — mix of groups
-    string[][] receivedTopics =
-    [
-        ["Orders.Created", "order-service", "OrderCreatedHandler"],
-        ["Orders.Created", "notification-service", "OrderNotificationHandler"],
-        ["Orders.Shipped", "tracking-service", "ShipmentTrackingHandler"],
-        ["Payments.Processed", "accounting-service", "PaymentReconciliationHandler"],
-        ["Users.Registered", "email-service", "WelcomeEmailHandler"],
-        ["Inventory.Updated", "warehouse-service", "StockUpdateHandler"],
-    ];
-
-    for (var i = 0; i < 30; i++)
+    private async Task PublishBatch(int count, CancellationToken ct)
     {
-        var topic = receivedTopics[i % receivedTopics.Length];
-        var msgId = Guid.NewGuid().ToString();
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [Headers.MessageId] = msgId,
-            [Headers.MessageName] = topic[0],
-            [Headers.Group] = topic[1],
-            [Headers.Type] = topic[2],
-            [Headers.SentTime] = now.AddMinutes(-Random.Shared.Next(1, 1440)).ToString("O"),
-        };
+        using var scope = scopeFactory.CreateScope();
+        var publisher = scope.ServiceProvider.GetRequiredService<IOutboxPublisher>();
 
-        var payload = new
+        for (var i = 0; i < count; i++)
         {
-            Id = i + 1,
-            Topic = topic[0],
-            Group = topic[1],
-            Data = $"Received payload #{i + 1}",
-        };
-        var message = new Message(headers, payload);
-        await dataStorage.StoreReceivedMessageAsync(topic[0], topic[1], message);
+            _counter++;
+            await PublishRandomMessage(publisher, ct);
+        }
+    }
+
+    private async Task PublishRandomMessage(IOutboxPublisher publisher, CancellationToken ct)
+    {
+        switch (Random.Shared.Next(4))
+        {
+            case 0:
+                await publisher.PublishAsync(
+                    new OrderCreated
+                    {
+                        OrderId = _counter,
+                        CustomerName = CustomerNames[Random.Shared.Next(CustomerNames.Length)],
+                        Amount = Math.Round((decimal)(Random.Shared.NextDouble() * 500 + 10), 2),
+                    },
+                    cancellationToken: ct
+                );
+                break;
+
+            case 1:
+                await publisher.PublishAsync(
+                    new PaymentProcessed
+                    {
+                        PaymentId = $"PAY-{_counter:D6}",
+                        OrderId = Random.Shared.Next(1, _counter + 1),
+                        Amount = Math.Round((decimal)(Random.Shared.NextDouble() * 500 + 10), 2),
+                        Currency = Currencies[Random.Shared.Next(Currencies.Length)],
+                    },
+                    cancellationToken: ct
+                );
+                break;
+
+            case 2:
+                await publisher.PublishAsync(
+                    new UserRegistered
+                    {
+                        UserId = Guid.NewGuid().ToString()[..8],
+                        Email = $"user{_counter}@example.com",
+                        Plan = Plans[Random.Shared.Next(Plans.Length)],
+                    },
+                    cancellationToken: ct
+                );
+                break;
+
+            case 3:
+                await publisher.PublishAsync(
+                    new InventoryUpdated
+                    {
+                        ProductId = Products[Random.Shared.Next(Products.Length)],
+                        Quantity = Random.Shared.Next(0, 500),
+                        Warehouse = Warehouses[Random.Shared.Next(Warehouses.Length)],
+                    },
+                    cancellationToken: ct
+                );
+                break;
+        }
     }
 }
