@@ -74,7 +74,7 @@ function handleAuthLogout() {
     </v-app-bar>
 
     <!-- Main Content -->
-    <v-main>
+    <v-main class="main-content">
       <slot />
     </v-main>
 
@@ -235,6 +235,10 @@ function handleAuthLogout() {
 .nav-link.v-btn--active {
   color: var(--v-theme-primary) !important;
   background: rgba(var(--v-theme-primary), 0.1) !important;
+}
+
+.main-content {
+  flex: 1 0 auto;
 }
 
 .main-footer {

@@ -231,9 +231,20 @@ const clearError = () => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (authStore.isLoggedIn) {
     router.push('/')
+    return
+  }
+
+  // Auto-fill from ?access_token= query param (useful for host auth with JWT)
+  const token = router.currentRoute.value.query.access_token as string
+  if (token && authMode.value === 'host') {
+    authStore.credentials.hostAccessKey = token.startsWith('Bearer ') ? token : `Bearer ${token}`
+    const success = await authStore.login()
+    if (success) {
+      router.push('/')
+    }
   }
 })
 </script>

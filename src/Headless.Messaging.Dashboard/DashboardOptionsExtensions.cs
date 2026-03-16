@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Dashboard.GatewayProxy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,9 +23,6 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
         services.AddSingleton(Builder.Auth);
         services.AddScoped<IAuthService, AuthService>();
         services.AddSingleton<MessagingMetricsEventListener>();
-
-        // Register GatewayProxyEndpointFilter (agent may or may not be registered by Consul/K8s extensions)
-        services.AddScoped(sp => new GatewayProxyEndpointFilter(sp.GetService<GatewayProxyAgent>()));
 
         services.AddRouting();
         services.AddAuthorization();
