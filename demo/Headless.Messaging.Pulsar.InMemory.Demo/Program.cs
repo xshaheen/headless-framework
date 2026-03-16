@@ -9,7 +9,7 @@ builder.Services.AddMessaging(x =>
     x.SubscribeFromAssembly(typeof(Program).Assembly);
     x.UseInMemoryStorage();
     x.UsePulsar(pulsarUri);
-    x.UseDashboard(d => d.AllowAnonymousExplicit = true);
+    x.UseDashboard(d => d.WithNoAuth());
 });
 
 builder.Services.AddControllers();

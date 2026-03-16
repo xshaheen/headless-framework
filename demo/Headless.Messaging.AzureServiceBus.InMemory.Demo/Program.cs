@@ -42,7 +42,7 @@ builder.Services.AddMessaging(c =>
         );
     });
 
-    c.UseDashboard(d => d.AllowAnonymousExplicit = true);
+    c.UseDashboard(d => d.WithNoAuth());
 });
 
 var app = builder.Build();

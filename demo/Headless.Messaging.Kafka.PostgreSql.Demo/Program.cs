@@ -42,7 +42,7 @@ builder.Services.AddMessaging(x =>
         apache/kafka:3.7.0
     */
     x.UseKafka("127.0.0.1:9092");
-    x.UseDashboard(d => d.AllowAnonymousExplicit = true);
+    x.UseDashboard(d => d.WithNoAuth());
 });
 
 builder.Services.AddControllers();

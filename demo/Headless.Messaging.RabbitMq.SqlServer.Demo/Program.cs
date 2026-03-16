@@ -38,7 +38,7 @@ builder.Services.AddMessaging(x =>
 
     x.UseEntityFramework<AppDbContext>();
     x.UseRabbitMq("127.0.0.1");
-    x.UseDashboard(d => d.AllowAnonymousExplicit = true);
+    x.UseDashboard(d => d.WithNoAuth());
 
     //x.EnablePublishParallelSend = true;
 

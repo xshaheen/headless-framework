@@ -11,6 +11,7 @@
     <PackageReference Include="Consul" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Dashboard.Authentication\Headless.Dashboard.Authentication.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
   </ItemGroup>
   <ItemGroup>

@@ -60,11 +60,7 @@ builder.Services.AddAuthorization(options =>
 });
 
 builder.Services.AddMessagingDashboardStandalone(
-    option =>
-    {
-        option.AllowAnonymousExplicit = false;
-        option.AuthorizationPolicy = dashboardPolicy;
-    }
+    option => option.WithHostAuthentication(dashboardPolicy)
 );
 
 var app = builder.Build();

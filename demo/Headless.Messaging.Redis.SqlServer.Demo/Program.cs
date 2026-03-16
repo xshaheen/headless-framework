@@ -22,7 +22,7 @@ builder.Services.AddMessaging(x =>
 
     x.UseSqlServer("Server=db;Database=master;User=sa;Password=P@ssw0rd;Encrypt=False");
 
-    x.UseDashboard(d => d.AllowAnonymousExplicit = true);
+    x.UseDashboard(d => d.WithNoAuth());
 });
 
 var app = builder.Build();

@@ -1,6 +1,5 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.K8s;
 
@@ -16,16 +15,16 @@ public static class MessagesK8sDashboardSetup
     /// Run only messaging dashboard to view data based on the nodes discovered in Kubernetes.
     /// </summary>
     /// <param name="services">The services available in the application.</param>
-    /// <param name="option">An action to configure the <see cref="DashboardOptions" />.</param>
+    /// <param name="configure">An action to configure the <see cref="MessagingDashboardOptionsBuilder" />.</param>
     /// <param name="k8SOption">An action to configure the <see cref="K8sDiscoveryOptions" />.</param>
-    /// <returns>An <see cref="MessagingBuilder" /> for application services.</returns>
+    /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddMessagingDashboardStandalone(
         this IServiceCollection services,
-        Action<DashboardOptions>? option = null,
+        Action<MessagingDashboardOptionsBuilder>? configure = null,
         Action<K8sDiscoveryOptions>? k8SOption = null
     )
     {
-        new DashboardOptionsExtension(option ?? (_ => { })).AddServices(services);
+        new DashboardOptionsExtension(configure ?? (_ => { })).AddServices(services);
         new K8sDiscoveryOptionsExtension(k8SOption).AddServices(services);
         return services;
     }
