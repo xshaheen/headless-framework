@@ -1,6 +1,6 @@
 namespace Headless.Jobs.Infrastructure;
 
-public class StringToByteArrayConverter : JsonConverter<byte[]>
+public sealed class StringToByteArrayConverter : JsonConverter<byte[]>
 {
     public override byte[]? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {

@@ -24,11 +24,20 @@ public class DashboardOptionsBuilder
     /// </summary>
     internal JsonSerializerOptions? DashboardJsonOptions { get; set; }
 
-    public void SetCorsPolicy(Action<CorsPolicyBuilder> corsPolicyBuilder) => CorsPolicyBuilder = corsPolicyBuilder;
+    public void SetCorsPolicy(Action<CorsPolicyBuilder> corsPolicyBuilder)
+    {
+        CorsPolicyBuilder = corsPolicyBuilder;
+    }
 
-    public void SetBasePath(string basePath) => BasePath = basePath;
+    public void SetBasePath(string basePath)
+    {
+        BasePath = basePath;
+    }
 
-    public void SetBackendDomain(string backendDomain) => BackendDomain = backendDomain;
+    public void SetBackendDomain(string backendDomain)
+    {
+        BackendDomain = backendDomain;
+    }
 
     /// <summary>Configure no authentication (public dashboard)</summary>
     public DashboardOptionsBuilder WithNoAuth()

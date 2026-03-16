@@ -291,6 +291,8 @@ internal static partial class ServiceCollectionExtensions
     /// <summary>
     /// Prevents &lt;/script&gt; in JSON strings from prematurely closing the inline script.
     /// </summary>
-    private static string _SanitizeForInlineScript(string json) =>
-        json.Replace("</script", "<\\/script", StringComparison.OrdinalIgnoreCase);
+    private static string _SanitizeForInlineScript(string json)
+    {
+        return json.Replace("</script", "<\\/script", StringComparison.OrdinalIgnoreCase);
+    }
 }

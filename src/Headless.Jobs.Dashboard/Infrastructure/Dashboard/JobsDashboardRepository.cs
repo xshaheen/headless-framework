@@ -1,3 +1,4 @@
+using Headless.Checks;
 using Headless.Jobs.DashboardDtos;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
@@ -6,44 +7,39 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Infrastructure.Dashboard;
 
-internal class JobsDashboardRepository<TTimeJob, TCronJob>
-    : IJobsDashboardRepository<TTimeJob, TCronJob>
+internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
+    JobsExecutionContext executionContext,
+    IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
+    IJobsHostScheduler tickerQHostScheduler,
+    IJobsNotificationHubSender notificationHubSender,
+    DashboardOptionsBuilder dashboardOptions,
+    IJobsDispatcher dispatcher
+) : IJobsDashboardRepository<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    private readonly IJobPersistenceProvider<TTimeJob, TCronJob> _persistenceProvider;
-    private readonly IJobsHostScheduler _tickerQHostScheduler;
-    private readonly IJobsDispatcher _dispatcher;
-    private readonly IJobsNotificationHubSender _notificationHubSender;
-    private readonly JobsExecutionContext _executionContext;
-    private readonly DashboardOptionsBuilder _dashboardOptions;
+    private readonly IJobPersistenceProvider<TTimeJob, TCronJob> _persistenceProvider = Argument.IsNotNull(
+        persistenceProvider
+    );
+    private readonly IJobsHostScheduler _tickerQHostScheduler = Argument.IsNotNull(tickerQHostScheduler);
+    private readonly IJobsDispatcher _dispatcher = Argument.IsNotNull(dispatcher);
+    private readonly IJobsNotificationHubSender _notificationHubSender = Argument.IsNotNull(notificationHubSender);
+    private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
+    private readonly DashboardOptionsBuilder _dashboardOptions = Argument.IsNotNull(dashboardOptions);
 
-    public JobsDashboardRepository(
-        JobsExecutionContext executionContext,
-        IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
-        IJobsHostScheduler tickerQHostScheduler,
-        IJobsNotificationHubSender notificationHubSender,
-        DashboardOptionsBuilder dashboardOptions,
-        IJobsDispatcher dispatcher
-    )
+    public async Task<TTimeJob[]> GetTimeJobsAsync(CancellationToken cancellationToken = default)
     {
-        _persistenceProvider = persistenceProvider ?? throw new ArgumentNullException(nameof(persistenceProvider));
-        _tickerQHostScheduler = tickerQHostScheduler ?? throw new ArgumentNullException(nameof(tickerQHostScheduler));
-        _notificationHubSender =
-            notificationHubSender ?? throw new ArgumentNullException(nameof(notificationHubSender));
-        _executionContext = executionContext ?? throw new ArgumentNullException(nameof(executionContext));
-        _dashboardOptions = dashboardOptions ?? throw new ArgumentNullException(nameof(dashboardOptions));
-        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        return await _persistenceProvider.GetTimeJobs(null, cancellationToken);
     }
-
-    public async Task<TTimeJob[]> GetTimeJobsAsync(CancellationToken cancellationToken = default) =>
-        await _persistenceProvider.GetTimeJobs(null, cancellationToken);
 
     public async Task<PaginationResult<TTimeJob>> GetTimeJobsPaginatedAsync(
         int pageNumber,
         int pageSize,
         CancellationToken cancellationToken = default
-    ) => await _persistenceProvider.GetTimeJobsPaginated(null, pageNumber, pageSize, cancellationToken);
+    )
+    {
+        return await _persistenceProvider.GetTimeJobsPaginated(null, pageNumber, pageSize, cancellationToken);
+    }
 
     public async Task<IList<Tuple<JobStatus, int>>> GetTimeJobFullDataAsync(CancellationToken cancellationToken)
     {
@@ -52,10 +48,7 @@ internal class JobsDashboardRepository<TTimeJob, TCronJob>
         var allStatuses = Enum.GetValues<JobStatus>();
 
         // Group by status and get counts
-        var rawData = timeJobs
-            .GroupBy(x => x.Status)
-            .Select(g => new { Status = g.Key, Count = g.Count() })
-            .ToList();
+        var rawData = timeJobs.GroupBy(x => x.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToList();
 
         // Create a dictionary for quick lookup
         var statusCounts = rawData.ToDictionary(x => x.Status, x => x.Count);
@@ -288,9 +281,7 @@ internal class JobsDashboardRepository<TTimeJob, TCronJob>
         return new List<(int, int)> { (0, doneOrDueDoneCount), (1, failedCount), (2, totalCount) };
     }
 
-    public async Task<IList<(JobStatus, int)>> GetOverallJobStatusesAsync(
-        CancellationToken cancellationToken = default
-    )
+    public async Task<IList<(JobStatus, int)>> GetOverallJobStatusesAsync(CancellationToken cancellationToken = default)
     {
         var timeJobs = await _persistenceProvider.GetTimeJobs(null, cancellationToken);
         var timeStatusCounts = timeJobs
@@ -396,8 +387,10 @@ internal class JobsDashboardRepository<TTimeJob, TCronJob>
             .ToList();
     }
 
-    public async Task<CronJobEntity[]> GetCronJobsAsync(CancellationToken cancellationToken = default) =>
-        await _persistenceProvider.GetCronJobs(null, cancellationToken);
+    public async Task<CronJobEntity[]> GetCronJobsAsync(CancellationToken cancellationToken = default)
+    {
+        return await _persistenceProvider.GetCronJobs(null, cancellationToken);
+    }
 
     public async Task<PaginationResult<CronJobEntity>> GetCronJobsPaginatedAsync(
         int pageNumber,
@@ -407,12 +400,7 @@ internal class JobsDashboardRepository<TTimeJob, TCronJob>
     {
         // We need to cast TCronJob[] to CronJobEntity[] for the pagination result
         var result = await _persistenceProvider.GetCronJobsPaginated(null, pageNumber, pageSize, cancellationToken);
-        return new PaginationResult<CronJobEntity>(
-            result.Items.Cast<CronJobEntity>(),
-            result.TotalCount,
-            result.PageNumber,
-            result.PageSize
-        );
+        return new PaginationResult<CronJobEntity>(result.Items, result.TotalCount, result.PageNumber, result.PageSize);
     }
 
     public async Task AddOnDemandCronJobOccurrenceAsync(Guid id, CancellationToken cancellationToken = default)
@@ -473,15 +461,10 @@ internal class JobsDashboardRepository<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     )
     {
-        return await _persistenceProvider.GetAllCronJobOccurrences(
-            x => x.CronJobId == cronJobId,
-            cancellationToken
-        );
+        return await _persistenceProvider.GetAllCronJobOccurrences(x => x.CronJobId == cronJobId, cancellationToken);
     }
 
-    public async Task<
-        PaginationResult<CronJobOccurrenceEntity<TCronJob>>
-    > GetCronJobsOccurrencesPaginatedAsync(
+    public async Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetCronJobsOccurrencesPaginatedAsync(
         Guid cronJobId,
         int pageNumber,
         int pageSize,
@@ -580,9 +563,7 @@ internal class JobsDashboardRepository<TTimeJob, TCronJob>
             var lastFutureDate = futureData.LastOrDefault()?.Date ?? today.AddDays(1);
             for (int i = 1; i <= emptyFutureSlots; i++)
             {
-                emptyFutureDays.Add(
-                    new CronOccurrenceJobGraphData { Date = lastFutureDate.AddDays(i), Results = [] }
-                );
+                emptyFutureDays.Add(new CronOccurrenceJobGraphData { Date = lastFutureDate.AddDays(i), Results = [] });
             }
         }
 
@@ -612,8 +593,10 @@ internal class JobsDashboardRepository<TTimeJob, TCronJob>
         return finalData;
     }
 
-    public bool CancelJobById(Guid jobId) =>
-        JobsCancellationTokenManager.RequestTickerCancellationById(jobId);
+    public bool CancelJobById(Guid jobId)
+    {
+        return JobsCancellationTokenManager.RequestTickerCancellationById(jobId);
+    }
 
     public async Task DeleteCronJobOccurrenceByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
@@ -688,12 +671,7 @@ internal class JobsDashboardRepository<TTimeJob, TCronJob>
     {
         foreach (var jobFunction in JobFunctionProvider.JobFunctions.Select(x => new { x.Key, x.Value.Priority }))
         {
-            if (
-                JobFunctionProvider.JobFunctionRequestTypes.TryGetValue(
-                    jobFunction.Key,
-                    out var functionTypeContext
-                )
-            )
+            if (JobFunctionProvider.JobFunctionRequestTypes.TryGetValue(jobFunction.Key, out var functionTypeContext))
             {
                 JsonExampleGenerator.TryGenerateExampleJson(functionTypeContext.Item2, out var exampleJson);
                 yield return (jobFunction.Key, (functionTypeContext.Item1, exampleJson, jobFunction.Priority));
