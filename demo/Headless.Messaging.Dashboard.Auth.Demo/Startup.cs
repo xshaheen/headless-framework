@@ -113,6 +113,7 @@ public class Startup
 
             x.UseDashboard(d =>
             {
+                d.AllowAnonymousExplicit = false;
                 d.AuthorizationPolicy = myDashboardAuthenticationPolicy;
             });
         });

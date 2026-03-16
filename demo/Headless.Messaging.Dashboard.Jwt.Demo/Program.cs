@@ -49,9 +49,23 @@ builder
             },
         };
     });
-builder.Services.AddAuthorization();
+const string dashboardPolicy = "DashboardPolicy";
 
-builder.Services.AddMessagingDashboardStandalone();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(
+        dashboardPolicy,
+        policy => policy.RequireAuthenticatedUser()
+    );
+});
+
+builder.Services.AddMessagingDashboardStandalone(
+    option =>
+    {
+        option.AllowAnonymousExplicit = false;
+        option.AuthorizationPolicy = dashboardPolicy;
+    }
+);
 
 var app = builder.Build();
 

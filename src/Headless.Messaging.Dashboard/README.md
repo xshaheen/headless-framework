@@ -23,33 +23,55 @@ dotnet add package Headless.Messaging.Dashboard
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 
     options.UseDashboard(dashboard =>
     {
-        dashboard.PathMatch = "/messages";
-        dashboard.StatsPollingInterval = 2000;
+        dashboard.AllowAnonymousExplicit = false;
+        dashboard.AuthorizationPolicy = "DashboardPolicy";
     });
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 
-// Access dashboard at: http://localhost:5000/messages
+// Access dashboard at: http://localhost:5000/messaging
 ```
 
 ## Configuration
 
+You **must** explicitly choose an auth mode — either allow anonymous or set a policy. Omitting both throws at startup.
+
+### With Authorization Policy
+
 ```csharp
 options.UseDashboard(dashboard =>
 {
-    dashboard.PathMatch = "/messages";
-    dashboard.StatsPollingInterval = 2000;
-    dashboard.Authorization = new[] { new CustomDashboardAuthFilter() };
+    dashboard.AllowAnonymousExplicit = false;
+    dashboard.AuthorizationPolicy = "DashboardPolicy";
 });
 ```
+
+### Anonymous Access (Dev/Testing Only)
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.AllowAnonymousExplicit = true;
+});
+```
+
+### All Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `PathMatch` | `/messaging` | URL path for the dashboard |
+| `PathBase` | `""` | Base path when behind a reverse proxy |
+| `StatsPollingInterval` | `2000` | Stats endpoint polling interval (ms) |
+| `AllowAnonymousExplicit` | `false` | Allow unauthenticated access. Must be set to `true` or `AuthorizationPolicy` must be configured |
+| `AuthorizationPolicy` | `null` | ASP.NET Core authorization policy name. Required when `AllowAnonymousExplicit` is `false` |
 
 ## Dependencies
 
@@ -60,4 +82,4 @@ options.UseDashboard(dashboard =>
 
 - Exposes web endpoint at configured path (default: `/messaging`)
 - Periodically polls message storage for statistics
-- Requires authentication configuration for production use
+- Anonymous by default — configure `AuthorizationPolicy` for production use

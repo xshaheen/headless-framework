@@ -23,12 +23,13 @@ public class DashboardOptions
     public int StatsPollingInterval { get; set; } = 2000;
 
     /// <summary>
-    /// Explicitly allows anonymous access for the messaging dashboard API, passing AllowAnonymous to the ASP.NET Core global authorization filter.
+    /// Allows anonymous access to the messaging dashboard. Defaults to <c>false</c>.
+    /// Must be set to <see langword="true"/> explicitly or <see cref="AuthorizationPolicy"/> must be configured.
     /// </summary>
-    public bool AllowAnonymousExplicit { get; set; } = false;
+    public bool AllowAnonymousExplicit { get; set; }
 
     /// <summary>
-    /// Authorization policy for the Dashboard. Required if <see cref="AllowAnonymousExplicit"/> is false.
+    /// Authorization policy name for the dashboard. Required when <see cref="AllowAnonymousExplicit"/> is <see langword="false"/>.
     /// </summary>
     public string? AuthorizationPolicy { get; set; }
 }

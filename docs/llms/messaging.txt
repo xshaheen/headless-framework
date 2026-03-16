@@ -54,7 +54,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Install pattern**: Always install `Messaging.Abstractions` + `Messaging.Core` + exactly one transport + exactly one storage. Missing any of these causes runtime failures.
 - **Use `InMemoryQueue` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
-- **Add `Messaging.Dashboard`** when monitoring UI is needed; secure it with authorization filters in production.
+- **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to anonymous access — set `AllowAnonymousExplicit = false` and `AuthorizationPolicy` for production.
 - **Messages are type-safe**: Define message types as classes/records. Register consumers implementing `IConsume<TMessage>`. Use `SubscribeFromAssemblyContaining<TMarker>()` or `SubscribeFromAssembly(assembly)` for automatic registration.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, filters, diagnostics, retry, and correlation semantics with class handlers.
 - **Two publisher modes**: Use `IOutboxPublisher` for reliable at-least-once delivery (transactional outbox). Use `IDirectPublisher` for fire-and-forget low-latency scenarios (metrics, cache invalidation).
@@ -374,26 +374,48 @@ builder.Services.AddMessaging(options =>
 
     options.UseDashboard(dashboard =>
     {
-        dashboard.PathMatch = "/messages";
-        dashboard.StatsPollingInterval = 2000;
+        dashboard.AllowAnonymousExplicit = false;
+        dashboard.AuthorizationPolicy = "DashboardPolicy";
     });
 
     options.SubscribeFromAssemblyContaining<Program>();
 });
 
-// Access dashboard at: http://localhost:5000/messages
+// Access dashboard at: http://localhost:5000/messaging
 ```
 
 ## Configuration
 
+You **must** explicitly choose an auth mode — either allow anonymous or set a policy. Omitting both throws at startup.
+
+### With Authorization Policy
+
 ```csharp
 options.UseDashboard(dashboard =>
 {
-    dashboard.PathMatch = "/messages";
-    dashboard.StatsPollingInterval = 2000;
-    dashboard.Authorization = new[] { new CustomDashboardAuthFilter() };
+    dashboard.AllowAnonymousExplicit = false;
+    dashboard.AuthorizationPolicy = "DashboardPolicy";
 });
 ```
+
+### Anonymous Access (Dev/Testing Only)
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.AllowAnonymousExplicit = true;
+});
+```
+
+### All Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `PathMatch` | `/messaging` | URL path for the dashboard |
+| `PathBase` | `""` | Base path when behind a reverse proxy |
+| `StatsPollingInterval` | `2000` | Stats endpoint polling interval (ms) |
+| `AllowAnonymousExplicit` | `false` | Allow unauthenticated access. Must be set to `true` or `AuthorizationPolicy` must be configured |
+| `AuthorizationPolicy` | `null` | ASP.NET Core authorization policy name. Required when `AllowAnonymousExplicit` is `false` |
 
 ## Dependencies
 
@@ -404,7 +426,7 @@ options.UseDashboard(dashboard =>
 
 - Exposes web endpoint at configured path (default: `/messaging`)
 - Periodically polls message storage for statistics
-- Requires authentication configuration for production use
+- Anonymous by default — configure `AuthorizationPolicy` for production use
 ---
 # Headless.Messaging.Dashboard.K8s
 
