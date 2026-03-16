@@ -11,13 +11,7 @@
     <ProjectReference Include="..\Headless.Jobs.Abstractions\Headless.Jobs.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
   </ItemGroup>
-  <ItemGroup Label="Embedded Resources">
-    <EmbeddedResource Include="wwwroot\dist\**\*" />
-    <None Remove="wwwroot\src\**\*" />
-    <None Remove="wwwroot\node_modules\**\*" />
-    <None Remove="wwwroot\**\.vite\**\*" />
-    <None Remove="wwwroot\**\*.map" />
-    <None Remove="wwwroot\*" />
-    <None Remove="wwwroot\public\*" />
+  <ItemGroup>
+    <EmbeddedResource Include="wwwroot/dist/**/*" Exclude="**/*/*.map" />
   </ItemGroup>
 </Project>

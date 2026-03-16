@@ -15,6 +15,8 @@ namespace Headless.Jobs.DependencyInjection;
 
 internal static partial class ServiceCollectionExtensions
 {
+    private const string _EmbeddedFileNamespace = "Headless.Jobs.wwwroot.dist";
+
     private static readonly JsonSerializerOptions _JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -79,7 +81,7 @@ internal static partial class ServiceCollectionExtensions
     {
         // Get the assembly and set up the embedded file provider
         var assembly = Assembly.GetExecutingAssembly();
-        var embeddedFileProvider = new EmbeddedFileProvider(assembly, "Headless.Jobs.wwwroot.dist");
+        var embeddedFileProvider = new EmbeddedFileProvider(assembly, _EmbeddedFileNamespace);
 
         // Validate and normalize base path
         var basePath = _NormalizeBasePath(config.BasePath);
@@ -118,11 +120,13 @@ internal static partial class ServiceCollectionExtensions
                 dashboardApp.UseRouting();
                 dashboardApp.UseCors("Jobs_Dashboard_CORS");
 
-                // Add authentication middleware (only protects API endpoints)
+                // Add authentication + authorization middleware
                 if (config.Auth.IsEnabled)
                 {
                     dashboardApp.UseMiddleware<AuthMiddleware>();
                 }
+
+                dashboardApp.UseAuthorization();
 
                 // Execute custom middleware if provided
                 config.CustomMiddleware?.Invoke(dashboardApp);
