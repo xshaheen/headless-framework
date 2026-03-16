@@ -3,12 +3,40 @@
     <div class="page-content">
       <div class="page-header">
         <h2 class="page-title">Published Messages</h2>
+        <v-btn
+          size="small"
+          variant="outlined"
+          color="primary"
+          prepend-icon="mdi-refresh"
+          :loading="isLoading"
+          @click="loadMessages()"
+        >
+          Refresh
+        </v-btn>
       </div>
 
       <!-- Status Tabs -->
       <v-tabs v-model="activeStatus" class="status-tabs mb-4">
         <v-tab v-for="status in statusTabs" :key="status.value" :value="status.value">
-          {{ status.label }}
+          <span class="tab-label-with-badge">
+            {{ status.label }}
+            <v-chip
+              v-if="status.badgeCount !== undefined"
+              :color="status.badgeColor"
+              size="x-small"
+              variant="tonal"
+              class="ml-1"
+            >{{ status.badgeCount }}</v-chip>
+            <v-tooltip
+              v-if="status.value === 'Delayed'"
+              activator="parent"
+              location="bottom"
+              max-width="300"
+            >
+              Only shows messages with delay time &gt; 1 minute. Messages with shorter delays have
+              status "Queued" — check them in the database.
+            </v-tooltip>
+          </span>
         </v-tab>
       </v-tabs>
 
@@ -45,7 +73,7 @@
           class="mr-2"
           @click="handleBatchRequeue"
         >
-          Requeue Selected
+          {{ isDelayedTab ? 'Immediately Publish Selected' : 'Requeue Selected' }}
         </v-btn>
         <v-btn
           size="small"
@@ -77,7 +105,7 @@
               <th>Name</th>
               <th>Content</th>
               <th>Added</th>
-              <th>Expires At</th>
+              <th>{{ isDelayedTab ? 'Delayed Publish Time' : 'Expires At' }}</th>
               <th>Retries</th>
               <th>Actions</th>
             </tr>
@@ -111,13 +139,18 @@
                   color="primary"
                   @click="viewMessage(msg.id)"
                 />
-                <v-btn
-                  size="x-small"
-                  variant="text"
-                  icon="mdi-refresh"
-                  color="warning"
-                  @click="requeueMessage(msg.id)"
-                />
+                <v-tooltip :text="isDelayedTab ? 'Immediately Publish' : 'Requeue'" location="top">
+                  <template #activator="{ props: tooltipProps }">
+                    <v-btn
+                      v-bind="tooltipProps"
+                      size="x-small"
+                      variant="text"
+                      icon="mdi-refresh"
+                      color="warning"
+                      @click="requeueMessage(msg.id)"
+                    />
+                  </template>
+                </v-tooltip>
                 <v-btn
                   size="x-small"
                   variant="text"
@@ -158,9 +191,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { httpService } from '@/services/http'
 import { useAlertStore } from '@/stores/alertStore'
+import { useMessagingStore } from '@/stores/messagingStore'
 import { usePagination } from '@/composables/usePagination'
 import { useDialog } from '@/composables/useDialog'
 import { ConfirmDialogProps } from '@/components/common/ConfirmDialog.vue'
@@ -180,16 +215,20 @@ interface Message {
 }
 
 const alertStore = useAlertStore()
-
-const statusTabs = [
-  { label: 'Succeeded', value: 'Succeeded' },
-  { label: 'Failed', value: 'Failed' },
-  { label: 'Delayed', value: 'Delayed' },
-  { label: 'Scheduled', value: 'Scheduled' },
-  { label: 'Queued', value: 'Queued' },
-]
+const messagingStore = useMessagingStore()
+const { stats } = storeToRefs(messagingStore)
 
 const activeStatus = ref('Succeeded')
+
+const statusTabs = computed(() => [
+  { label: 'Succeeded', value: 'Succeeded', badgeCount: stats.value.publishedSucceeded, badgeColor: 'success' },
+  { label: 'Failed', value: 'Failed', badgeCount: stats.value.publishedFailed, badgeColor: 'error' },
+  { label: 'Delayed', value: 'Delayed', badgeCount: stats.value.publishedDelayed, badgeColor: 'warning' },
+  { label: 'Scheduled', value: 'Scheduled' },
+  { label: 'Queued', value: 'Queued' },
+])
+
+const isDelayedTab = computed(() => activeStatus.value === 'Delayed')
 const nameFilter = ref('')
 const contentFilter = ref('')
 const isLoading = ref(false)
@@ -383,7 +422,15 @@ loadMessages()
 }
 
 .page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 16px;
+}
+
+.tab-label-with-badge {
+  display: flex;
+  align-items: center;
 }
 
 .page-title {

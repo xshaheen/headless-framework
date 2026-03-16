@@ -28,7 +28,7 @@ export function usePagination(
   const {
     initialPage = 1,
     initialPageSize = 20,
-    pageSizeOptions = [10, 20, 50, 100],
+    pageSizeOptions = [10, 20, 50, 100, 500],
   } = options
 
   const currentPage = ref(initialPage)

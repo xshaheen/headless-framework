@@ -3,12 +3,31 @@
     <div class="page-content">
       <div class="page-header">
         <h2 class="page-title">Received Messages</h2>
+        <v-btn
+          size="small"
+          variant="outlined"
+          color="primary"
+          prepend-icon="mdi-refresh"
+          :loading="isLoading"
+          @click="loadMessages()"
+        >
+          Refresh
+        </v-btn>
       </div>
 
       <!-- Status Tabs -->
       <v-tabs v-model="activeStatus" class="status-tabs mb-4">
         <v-tab v-for="status in statusTabs" :key="status.value" :value="status.value">
-          {{ status.label }}
+          <span class="tab-label-with-badge">
+            {{ status.label }}
+            <v-chip
+              v-if="status.badgeCount !== undefined"
+              :color="status.badgeColor"
+              size="x-small"
+              variant="tonal"
+              class="ml-1"
+            >{{ status.badgeCount }}</v-chip>
+          </span>
         </v-tab>
       </v-tabs>
 
@@ -168,9 +187,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { httpService } from '@/services/http'
 import { useAlertStore } from '@/stores/alertStore'
+import { useMessagingStore } from '@/stores/messagingStore'
 import { usePagination } from '@/composables/usePagination'
 import { useDialog } from '@/composables/useDialog'
 import { ConfirmDialogProps } from '@/components/common/ConfirmDialog.vue'
@@ -191,14 +212,16 @@ interface ReceivedMessage {
 }
 
 const alertStore = useAlertStore()
+const messagingStore = useMessagingStore()
+const { stats } = storeToRefs(messagingStore)
 
-const statusTabs = [
-  { label: 'Succeeded', value: 'Succeeded' },
-  { label: 'Failed', value: 'Failed' },
+const statusTabs = computed(() => [
+  { label: 'Succeeded', value: 'Succeeded', badgeCount: stats.value.receivedSucceeded, badgeColor: 'success' },
+  { label: 'Failed', value: 'Failed', badgeCount: stats.value.receivedFailed, badgeColor: 'error' },
   { label: 'Delayed', value: 'Delayed' },
   { label: 'Scheduled', value: 'Scheduled' },
   { label: 'Queued', value: 'Queued' },
-]
+])
 
 const activeStatus = ref('Succeeded')
 const nameFilter = ref('')
@@ -396,7 +419,15 @@ loadMessages()
 }
 
 .page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 16px;
+}
+
+.tab-label-with-badge {
+  display: flex;
+  align-items: center;
 }
 
 .page-title {
