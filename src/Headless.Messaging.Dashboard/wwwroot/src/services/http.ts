@@ -94,23 +94,3 @@ class HttpService {
 
 // Export singleton instance
 export const httpService = new HttpService()
-
-// Export types for convenience
-export interface ApiResponse<T> {
-  data: T
-  message?: string
-  timestamp?: string
-}
-
-export interface PaginatedResponse<T> {
-  data: T[]
-  total: number
-  page: number
-  pageSize: number
-}
-
-export interface ErrorResponse {
-  error: string
-  message: string
-  timestamp: string
-}

@@ -223,7 +223,15 @@ public static class MessagingDashboardEndpoints
             return Results.NotFound();
         }
 
-        return Results.Json(message.Content);
+        return Results.Json(new
+        {
+            Id = message.DbId,
+            Name = message.Origin.GetName(),
+            Content = message.Content,
+            Added = message.Added,
+            ExpiresAt = message.ExpiresAt,
+            Retries = message.Retries,
+        });
     }
 
     private static async Task<IResult> _ReceivedMessageDetails(long id, IServiceProvider sp)
@@ -237,7 +245,16 @@ public static class MessagingDashboardEndpoints
             return Results.NotFound();
         }
 
-        return Results.Json(message.Content);
+        return Results.Json(new
+        {
+            Id = message.DbId,
+            Name = message.Origin.GetName(),
+            Group = message.Origin.GetGroup(),
+            Content = message.Content,
+            Added = message.Added,
+            ExpiresAt = message.ExpiresAt,
+            Retries = message.Retries,
+        });
     }
 
     private static async Task<IResult> _PublishedRequeue(HttpContext httpContext, IServiceProvider sp)

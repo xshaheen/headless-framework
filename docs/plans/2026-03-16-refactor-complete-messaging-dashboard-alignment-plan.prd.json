@@ -10,7 +10,7 @@
     "feature": "xshaheen/align-messaging-dashboard"
   },
   "verification_command": "cd src/Headless.Messaging.Dashboard/wwwroot && npm run build",
-  "status": "pending",
+  "status": "in_progress",
   "userStories": [
     {
       "id": "US-001",
@@ -33,7 +33,7 @@
         "Frontend builds with zero errors"
       ],
       "priority": 1,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": [
@@ -78,7 +78,7 @@
         "User is redirected to Dashboard or shown a 'Page not found' message"
       ],
       "priority": 3,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -179,7 +179,7 @@
         "Existing list endpoint response shape unchanged (non-breaking)"
       ],
       "priority": 7,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -327,7 +327,7 @@
         "Method display matches old dashboard pattern (multi-line: ImplTypeName on first line, method signature on second)"
       ],
       "priority": 13,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": [

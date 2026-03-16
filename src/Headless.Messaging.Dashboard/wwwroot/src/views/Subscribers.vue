@@ -54,7 +54,7 @@
                     <td>{{ sub.topic }}</td>
                     <td class="text-caption">{{ sub.implName }}</td>
                     <td>
-                      <code class="method-name">{{ sub.methodEscaped }}</code>
+                      <code class="method-name" v-html="sub.methodEscaped"></code>
                     </td>
                   </tr>
                 </tbody>
@@ -184,12 +184,15 @@ onMounted(() => {
 }
 
 .method-name {
-  background: rgba(33, 150, 243, 0.1);
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 0.8rem;
-  color: #64b5f6;
 }
+
+:deep(.cs-type) { color: rgb(43, 145, 175); }
+:deep(.cs-keyword) { color: rgb(0, 0, 255); }
+:deep(.cs-string) { color: rgb(163, 21, 21); }
+:deep(.cs-comment) { color: rgb(0, 128, 0); }
 
 @media (max-width: 768px) {
   .subscribers-page {

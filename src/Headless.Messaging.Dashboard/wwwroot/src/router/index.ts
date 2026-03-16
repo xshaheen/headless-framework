@@ -9,7 +9,7 @@ const router = createRouter({
       path: '/login',
       name: 'Login',
       component: () => import('../views/Login.vue'),
-      meta: { requiresAuth: false, hideForAuthenticated: true },
+      meta: { requiresAuth: false },
     },
     {
       path: '/',
@@ -40,6 +40,10 @@ const router = createRouter({
       name: 'Nodes',
       component: () => import('../views/Nodes.vue'),
       meta: { requiresAuth: true },
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      redirect: '/',
     },
   ],
 })
