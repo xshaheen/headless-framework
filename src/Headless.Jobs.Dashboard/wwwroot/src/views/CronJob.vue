@@ -1434,11 +1434,11 @@ const refreshData = async () => {
   border: 1px solid rgba(100, 181, 246, 0.4);
   box-shadow: 0 8px 32px rgba(100, 181, 246, 0.2);
   overflow: hidden;
-  padding: 6px;
+  padding: 4px;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .toggle-label {
@@ -1455,19 +1455,19 @@ const refreshData = async () => {
 
 .chart-btn-vertical {
   min-width: 112px;
-  min-height: 44px;
+  min-height: 36px;
   font-weight: 600;
   text-transform: none;
   letter-spacing: 0.5px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 12px;
-  padding: 8px 14px;
+  padding: 4px 12px;
   font-size: 0.75rem;
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   margin: 0;
@@ -1497,9 +1497,17 @@ const refreshData = async () => {
 }
 
 .chart-icon {
+  font-size: 18px;
+  margin-bottom: 0 !important;
   color: #64b5f6;
   filter: drop-shadow(0 2px 4px rgba(100, 181, 246, 0.3));
   transition: all 0.3s ease;
+}
+
+.chart-btn-vertical :deep(.v-btn__content) {
+  gap: 6px;
+  align-items: center;
+  line-height: 1;
 }
 
 .chart-btn-vertical:hover .chart-icon {

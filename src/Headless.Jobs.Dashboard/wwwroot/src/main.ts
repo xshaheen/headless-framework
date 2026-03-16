@@ -33,11 +33,11 @@ const vuetify = createVuetify({
   directives,
   defaults: {
     VBtn: {
-      density: 'comfortable',
+      density: 'compact',
       rounded: 'lg',
     },
     VBtnGroup: {
-      density: 'comfortable',
+      density: 'compact',
     },
     VChip: {
       density: 'comfortable',

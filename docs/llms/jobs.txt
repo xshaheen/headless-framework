@@ -21,8 +21,11 @@ Wiring:
 ```csharp
 builder.Services.AddJobs(options =>
 {
-    options.MaxConcurrency(10);
-    options.TimeZone(TimeZoneInfo.Utc);
+    options.ConfigureScheduler(scheduler =>
+    {
+        scheduler.MaxConcurrency = 10;
+        scheduler.SchedulerTimeZone = TimeZoneInfo.Utc;
+    });
 });
 app.UseJobs();
 ```
@@ -36,13 +39,167 @@ Mark job classes with `[Jobs("cron-expression")]` and add the SourceGenerator pa
 - Use `Jobs.EntityFramework` for job persistence. Without it, jobs are in-memory only and lost on restart.
 - Use `Jobs.Caching.Redis` for multi-instance deployments -- it provides node heartbeat, dead node detection, and distributed coordination.
 - Call `app.UseJobs()` after `builder.Build()` to start the scheduler. Use `JobsStartMode.Manual` if you need delayed startup.
-- For time-based (one-off) jobs, inject `ITimeJobManager<TimeJobEntity>` and call `ScheduleAsync()`.
+- For time-based (one-off) jobs, inject `ITimeJobManager<TimeJobEntity>` and call `AddAsync()`.
 - For cron jobs, the `[Jobs]` attribute takes a cron expression and optional `Priority` parameter (`JobPriority.High`, `Normal`, `LongRunning`).
 - Use `[JobsConstructor]` attribute on constructors when you need custom DI injection in job classes.
 - Dashboard authentication: call `dashboard.WithBasicAuth()`, `WithApiKey()`, or `WithHostAuthentication()` inside `config.AddDashboard()`.
 - OpenTelemetry: call `.AddOpenTelemetryInstrumentation()` on the Jobs builder and add `"Jobs"` as a source to your tracing config.
-- Exception handling: register a custom handler via `options.UseExceptionHandler<CustomTickerExceptionHandler>()`.
+- Exception handling: register a custom handler via `options.SetExceptionHandler<CustomJobExceptionHandler>()`.
 - For testing, call `options.DisableBackgroundServices()` to prevent the scheduler from running.
+
+## Error Handling and Retries
+
+Headless.Jobs ports the same error-handling concepts from TickerQ into Jobs-native APIs.
+
+### Retry Configuration
+
+Configure retries when creating jobs:
+
+```csharp
+await timeJobs.AddAsync(new TimeJobEntity
+{
+    Function = "ProcessPayment",
+    Description = "Process payment for order #A-1024",
+    ExecutionTime = DateTime.UtcNow,
+    Request = JobsHelper.SerializeRequest(new { PaymentId = "pay_123" }),
+    Retries = 3,                           // Total retry attempts after first failure
+    RetryIntervals = [30, 60, 120],        // Seconds between retries
+}, cancellationToken);
+```
+
+Retry behavior:
+- Retries run automatically when a job throws an exception.
+- Job status stays `InProgress` while retrying.
+- After retries are exhausted, status becomes `Failed`.
+- `JobFunctionContext.RetryCount` tracks the current attempt.
+
+Retry interval strategies:
+- Fixed delay: `RetryIntervals = [60, 60, 60]`
+- Exponential backoff: `RetryIntervals = [1, 2, 4, 8, 16, 32]`
+- Progressive backoff: `RetryIntervals = [30, 60, 300, 900, 3600]`
+- Immediate retry: `RetryIntervals = [0, 0, 0]`
+
+Default behavior:
+- If `RetryIntervals` is null/empty, Jobs defaults to `30` seconds.
+- If `RetryIntervals` is shorter than `Retries`, the last interval is reused.
+
+### Global Exception Handler
+
+Implement `IJobExceptionHandler`:
+
+```csharp
+using Headless.Jobs.Enums;
+using Headless.Jobs.Interfaces;
+
+public sealed class CustomJobExceptionHandler(ILogger<CustomJobExceptionHandler> logger)
+    : IJobExceptionHandler
+{
+    public Task HandleExceptionAsync(Exception exception, Guid jobId, JobType jobType)
+    {
+        logger.LogError(exception, "Job {JobId} ({JobType}) failed", jobId, jobType);
+        return Task.CompletedTask;
+    }
+
+    public Task HandleCanceledExceptionAsync(Exception exception, Guid jobId, JobType jobType)
+    {
+        logger.LogWarning("Job {JobId} ({JobType}) cancelled", jobId, jobType);
+        return Task.CompletedTask;
+    }
+}
+```
+
+Register it:
+
+```csharp
+builder.Services.AddJobs(options =>
+{
+    options.SetExceptionHandler<CustomJobExceptionHandler>();
+});
+```
+
+### Job-Level Error Handling
+
+Use `try/catch` in job methods and choose whether to retry:
+
+```csharp
+[Jobs("ProcessOrder")]
+public sealed class ProcessOrderJob(ILogger<ProcessOrderJob> logger)
+{
+    public async Task ExecuteAsync(JobFunctionContext<OrderRequest> context, CancellationToken ct)
+    {
+        try
+        {
+            await ProcessOrderAsync(context.Request, ct);
+        }
+        catch (HttpRequestException ex) when (context.RetryCount < 3)
+        {
+            logger.LogWarning(ex, "Transient failure. Attempt {Attempt}", context.RetryCount + 1);
+            throw; // Retry
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Permanent validation failure. No retry.");
+            return; // Complete without retry
+        }
+    }
+
+    private static Task ProcessOrderAsync(OrderRequest request, CancellationToken ct) => Task.CompletedTask;
+}
+```
+
+### TerminateExecutionException and Status Control
+
+Use `TerminateExecutionException` to stop execution without retries and optionally set final status:
+
+```csharp
+using Headless.Jobs.Enums;
+using Headless.Jobs.Exceptions;
+
+if (!IsConfigurationValid())
+{
+    throw new TerminateExecutionException(
+        JobStatus.Failed,
+        "Configuration is invalid for this job"
+    );
+}
+```
+
+Available patterns:
+- `new TerminateExecutionException("message")` -> `Skipped`
+- `new TerminateExecutionException(JobStatus status, "message")` -> explicit status
+- `new TerminateExecutionException("message", innerException)` -> `Skipped` + inner exception details
+- `new TerminateExecutionException(JobStatus status, "message", innerException)` -> explicit status + inner details
+
+### Cron Occurrence Skipping
+
+Prevent overlapping cron runs:
+
+```csharp
+[Jobs("0 * * * *")]
+public sealed class LongRunningCronJob
+{
+    public async Task ExecuteAsync(JobFunctionContext context, CancellationToken ct)
+    {
+        context.CronOccurrenceOperations.SkipIfAlreadyRunning();
+        await RunLongTaskAsync(ct);
+    }
+
+    private static Task RunLongTaskAsync(CancellationToken ct) => Task.CompletedTask;
+}
+```
+
+### Job Status After Errors
+
+- `Failed`: retries exhausted or unhandled exception.
+- `Cancelled`: cancellation requested via token or `context.RequestCancellation()`.
+- `Skipped`: terminated explicitly (`TerminateExecutionException`) or overlapping cron occurrence skipped.
+
+### Best Practices
+
+- Treat transient and permanent failures differently.
+- Use retry intervals that match dependency behavior.
+- Log `FunctionName`, `Id`, and `RetryCount` for every failure.
+- Monitor failed/cancelled/skipped jobs through Dashboard and OpenTelemetry.
 
 ---
 # Headless.Jobs.Abstractions
@@ -87,8 +244,11 @@ dotnet add package Headless.Jobs.Core
 // Register Jobs
 builder.Services.AddJobs(options =>
 {
-    options.MaxConcurrency(10);
-    options.TimeZone(TimeZoneInfo.FindSystemTimeZoneById("America/New_York"));
+    options.ConfigureScheduler(scheduler =>
+    {
+        scheduler.MaxConcurrency = 10;
+        scheduler.SchedulerTimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+    });
 });
 
 // Define cron job
@@ -112,11 +272,12 @@ public sealed class OrderService(ITimeJobManager<TimeJobEntity> job)
 {
     public async Task SendReminderAsync(string orderId, CancellationToken ct)
     {
-        await job.ScheduleAsync(new TimeJobEntity
+        await job.AddAsync(new TimeJobEntity
         {
-            TickerKey = $"order-reminder-{orderId}",
-            OccurrenceTime = DateTime.UtcNow.AddHours(24),
-            Request = new { OrderId = orderId }
+            Function = "SendOrderReminder",
+            Description = $"order-reminder-{orderId}",
+            ExecutionTime = DateTime.UtcNow.AddHours(24),
+            Request = JobsHelper.SerializeRequest(new { OrderId = orderId })
         }, ct);
     }
 }
@@ -127,20 +288,15 @@ public sealed class OrderService(ITimeJobManager<TimeJobEntity> job)
 ```csharp
 builder.Services.AddJobs(options =>
 {
-    // Scheduler options
-    options.MaxConcurrency(10);
-    options.IdleWorkerTimeout(TimeSpan.FromMinutes(5));
-    options.TimeZone(TimeZoneInfo.Utc);
-
-    // Seeding options
-    options.SeedDefinedCronJobs = true;
-    options.CustomTimeSeeder = async sp =>
+    options.ConfigureScheduler(scheduler =>
     {
-        // Seed initial jobs
-    };
+        scheduler.MaxConcurrency = 10;
+        scheduler.IdleWorkerTimeOut = TimeSpan.FromMinutes(5);
+        scheduler.SchedulerTimeZone = TimeZoneInfo.Utc;
+    });
 
     // Exception handling
-    options.UseExceptionHandler<CustomTickerExceptionHandler>();
+    options.SetExceptionHandler<CustomJobExceptionHandler>();
 
     // Disable background services (for testing)
     options.DisableBackgroundServices();
@@ -163,9 +319,29 @@ app.UseJobs(JobsStartMode.Manual);    // Wait for manual trigger
 - Runs custom thread pool for job execution
 - Periodically scans for due jobs and executes them
 ---
-# Jobs Dashboard Authentication
+# Headless.Jobs.Dashboard
 
-Simple, clean authentication for your Jobs Dashboard.
+Monitoring dashboard for Headless.Jobs with built-in authentication options and real-time updates.
+
+## Installation
+
+```bash
+dotnet add package Headless.Jobs.Dashboard
+```
+
+## Minimal Setup
+
+```csharp
+builder.Services
+    .AddJobs()
+    .AddDashboard(dashboard =>
+    {
+        dashboard.SetBasePath("/jobs-dashboard");
+        dashboard.WithHostAuthentication();
+    });
+
+app.UseJobs();
+```
 
 ## 🚀 Quick Examples
 
@@ -344,7 +520,7 @@ Generates `JobsInstanceFactoryExtensions.g.cs` at compile time with:
 - Constructor factory methods
 - Request type registrations
 ---
-# Headless.Jobs.Instrumentation.OpenTelemetry
+# Headless.Jobs.OpenTelemetry
 
 OpenTelemetry instrumentation package for Jobs job scheduler with distributed tracing support.
 
@@ -361,7 +537,7 @@ OpenTelemetry instrumentation package for Jobs job scheduler with distributed tr
 ## Installation
 
 ```bash
-dotnet add package Headless.Jobs.Instrumentation.OpenTelemetry
+dotnet add package Headless.Jobs.OpenTelemetry
 ```
 
 ## Usage
@@ -369,7 +545,7 @@ dotnet add package Headless.Jobs.Instrumentation.OpenTelemetry
 ### Basic Setup
 
 ```csharp
-using Headless.Jobs.Instrumentation.OpenTelemetry;
+using Headless.Jobs;
 using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -528,17 +704,16 @@ dotnet add package Headless.Jobs.Caching.Redis
 ## Quick Start
 
 ```csharp
-builder.Services.AddJobs(options =>
-{
-    options.MaxConcurrency(10);
-
-    // Enable Redis coordination
-    options.UseRedisCoordination(redis =>
+builder.Services
+    .AddJobs(options =>
     {
-        redis.ConnectionString = "localhost:6379";
+        options.ConfigureScheduler(scheduler => scheduler.MaxConcurrency = 10);
+    })
+    .AddStackExchangeRedis(redis =>
+    {
+        redis.Configuration = "localhost:6379";
         redis.NodeHeartbeatInterval = TimeSpan.FromSeconds(30);
     });
-});
 
 app.UseJobs();
 ```
@@ -546,11 +721,21 @@ app.UseJobs();
 ## Configuration
 
 ```csharp
-options.UseRedisCoordination(redis =>
+builder.Services
+    .AddJobs()
+    .AddStackExchangeRedis(redis =>
 {
-    redis.ConnectionString = "localhost:6379,ssl=true,password=secret";
+    redis.Configuration = "localhost:6379,ssl=true,password=secret";
+    redis.InstanceName = "jobs:";
     redis.NodeHeartbeatInterval = TimeSpan.FromSeconds(30);
-    redis.NodeIdentifier = "instance-1"; // Auto-generated if not set
+});
+
+builder.Services.AddJobs(options =>
+{
+    options.ConfigureScheduler(scheduler =>
+    {
+        scheduler.NodeIdentifier = "instance-1";
+    });
 });
 ```
 

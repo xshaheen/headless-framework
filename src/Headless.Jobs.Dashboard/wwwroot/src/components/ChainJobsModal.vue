@@ -1323,18 +1323,18 @@ onMounted(async () => {
 .progress-tracker {
   background: rgba(0, 0, 0, 0.2);
   border-radius: 8px;
-  padding: 16px;
+  padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .tracker-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 16px;
+  gap: 6px;
+  font-size: 15px;
   font-weight: 600;
   color: #ffffff;
-  margin: 0 0 12px 0;
+  margin: 0 0 10px 0;
 }
 
 .tracker-icon {
@@ -1343,7 +1343,7 @@ onMounted(async () => {
 
 /* Progress Bar Section */
 .progress-bar-section {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .progress-bar {
@@ -1352,18 +1352,18 @@ onMounted(async () => {
 
 .steps-container {
   position: relative;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }
 
 .step-item {
   display: flex;
   align-items: center;
-  padding: 8px;
+  padding: 6px 8px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .step-item:hover.step-clickable {
@@ -1387,20 +1387,20 @@ onMounted(async () => {
 }
 
 .step-indicator {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 8px;
+  margin-right: 6px;
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .step-number {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
   color: #ffffff;
 }
@@ -1412,16 +1412,16 @@ onMounted(async () => {
 
 .step-title {
   font-weight: 500;
-  font-size: 13px;
+  font-size: 12px;
   color: #ffffff;
 }
 
 .step-connector {
   position: absolute;
-  left: 20px;
-  top: 32px;
+  left: 17px;
+  top: 26px;
   width: 2px;
-  height: 12px;
+  height: 10px;
   background: rgba(255, 255, 255, 0.2);
 }
 

@@ -12,6 +12,29 @@
   --dashboard-card-padding-tight: 14px;
   --dashboard-grid-gap: 14px;
   --dashboard-control-gap: 12px;
+  --dashboard-button-height: 36px;
+  --dashboard-button-padding-x: 14px;
+  --dashboard-button-padding-y: 4px;
+  --dashboard-button-icon-size: 18px;
+}
+
+.dashboard-wrapper .v-btn:not(.v-btn--icon) {
+  min-height: var(--dashboard-button-height);
+  padding: var(--dashboard-button-padding-y) var(--dashboard-button-padding-x);
+}
+
+.dashboard-wrapper .v-btn:not(.v-btn--icon) .v-btn__content {
+  gap: 6px;
+  line-height: 1;
+}
+
+.dashboard-wrapper .v-btn .v-icon {
+  font-size: var(--dashboard-button-icon-size);
+}
+
+.dashboard-wrapper .v-btn--icon {
+  width: 34px;
+  height: 34px;
 }
 
 .dashboard-wrapper .v-field {

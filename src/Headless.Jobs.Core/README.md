@@ -28,8 +28,11 @@ dotnet add package Headless.Jobs.Core
 // Register Jobs
 builder.Services.AddJobs(options =>
 {
-    options.MaxConcurrency(10);
-    options.TimeZone(TimeZoneInfo.FindSystemTimeZoneById("America/New_York"));
+    options.ConfigureScheduler(scheduler =>
+    {
+        scheduler.MaxConcurrency = 10;
+        scheduler.SchedulerTimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+    });
 });
 
 // Define cron job
@@ -53,11 +56,12 @@ public sealed class OrderService(ITimeJobManager<TimeJobEntity> job)
 {
     public async Task SendReminderAsync(string orderId, CancellationToken ct)
     {
-        await job.ScheduleAsync(new TimeJobEntity
+        await job.AddAsync(new TimeJobEntity
         {
-            TickerKey = $"order-reminder-{orderId}",
-            OccurrenceTime = DateTime.UtcNow.AddHours(24),
-            Request = new { OrderId = orderId }
+            Function = "SendOrderReminder",
+            Description = $"order-reminder-{orderId}",
+            ExecutionTime = DateTime.UtcNow.AddHours(24),
+            Request = JobsHelper.SerializeRequest(new { OrderId = orderId })
         }, ct);
     }
 }
@@ -68,20 +72,15 @@ public sealed class OrderService(ITimeJobManager<TimeJobEntity> job)
 ```csharp
 builder.Services.AddJobs(options =>
 {
-    // Scheduler options
-    options.MaxConcurrency(10);
-    options.IdleWorkerTimeout(TimeSpan.FromMinutes(5));
-    options.TimeZone(TimeZoneInfo.Utc);
-
-    // Seeding options
-    options.SeedDefinedCronJobs = true;
-    options.CustomTimeSeeder = async sp =>
+    options.ConfigureScheduler(scheduler =>
     {
-        // Seed initial jobs
-    };
+        scheduler.MaxConcurrency = 10;
+        scheduler.IdleWorkerTimeOut = TimeSpan.FromMinutes(5);
+        scheduler.SchedulerTimeZone = TimeZoneInfo.Utc;
+    });
 
     // Exception handling
-    options.UseExceptionHandler<CustomTickerExceptionHandler>();
+    options.SetExceptionHandler<CustomJobExceptionHandler>();
 
     // Disable background services (for testing)
     options.DisableBackgroundServices();
@@ -91,6 +90,79 @@ builder.Services.AddJobs(options =>
 app.UseJobs(JobsStartMode.Immediate); // Start immediately (default)
 app.UseJobs(JobsStartMode.Manual);    // Wait for manual trigger
 ```
+
+## Error Handling and Retries
+
+Headless.Jobs supports the same error-handling model as TickerQ, using Jobs-native APIs.
+
+### Retry Configuration
+
+```csharp
+await timeJobs.AddAsync(new TimeJobEntity
+{
+    Function = "ProcessPayment",
+    Description = "payment-processing",
+    ExecutionTime = DateTime.UtcNow,
+    Request = JobsHelper.SerializeRequest(new { PaymentId = "pay_123" }),
+    Retries = 3,
+    RetryIntervals = [30, 60, 120],
+}, cancellationToken);
+```
+
+- Retries are automatic when job execution throws.
+- Status remains `InProgress` during retries.
+- After retries are exhausted, final status becomes `Failed`.
+- If `RetryIntervals` is null/empty, default interval is 30 seconds.
+- If fewer intervals are provided than retries, the last interval is reused.
+
+### Global Exception Handler
+
+```csharp
+public sealed class CustomJobExceptionHandler(ILogger<CustomJobExceptionHandler> logger)
+    : IJobExceptionHandler
+{
+    public Task HandleExceptionAsync(Exception exception, Guid jobId, JobType jobType)
+    {
+        logger.LogError(exception, "Job {JobId} ({JobType}) failed", jobId, jobType);
+        return Task.CompletedTask;
+    }
+
+    public Task HandleCanceledExceptionAsync(Exception exception, Guid jobId, JobType jobType)
+    {
+        logger.LogWarning("Job {JobId} ({JobType}) cancelled", jobId, jobType);
+        return Task.CompletedTask;
+    }
+}
+```
+
+Register it with:
+
+```csharp
+builder.Services.AddJobs(options =>
+{
+    options.SetExceptionHandler<CustomJobExceptionHandler>();
+});
+```
+
+### Job-Level Controls
+
+- Throw to trigger retry.
+- Catch and return to stop retry for permanent failures.
+- Use `context.RetryCount` from `JobFunctionContext` for attempt-aware behavior.
+- Call `context.RequestCancellation()` to mark as `Cancelled`.
+- Call `context.CronOccurrenceOperations.SkipIfAlreadyRunning()` for overlap-safe cron jobs.
+
+### TerminateExecutionException
+
+Use `TerminateExecutionException` to stop execution without retries and optionally set final status:
+
+```csharp
+throw new TerminateExecutionException(JobStatus.Failed, "Configuration is invalid for this job");
+```
+
+- `TerminateExecutionException("message")` -> `Skipped`
+- `TerminateExecutionException(JobStatus status, "message")` -> explicit status
+- Overloads with `innerException` keep details for diagnostics
 
 ## Dependencies
 

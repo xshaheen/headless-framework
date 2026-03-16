@@ -2690,11 +2690,11 @@ const canBeForceDeleted = ref<string[]>([])
   border: 1px solid rgba(100, 181, 246, 0.4);
   box-shadow: 0 8px 32px rgba(100, 181, 246, 0.2);
   overflow: hidden;
-  padding: 6px;
+  padding: 4px;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .chart-switch-vertical .toggle-label {
@@ -2710,13 +2710,13 @@ const canBeForceDeleted = ref<string[]>([])
 
 .chart-btn-vertical {
   min-width: 112px;
-  min-height: 44px;
+  min-height: 36px;
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 6px;
+  padding: 4px 12px;
   font-size: 0.75rem;
   text-transform: none;
   background: rgba(255, 255, 255, 0.05);
@@ -2737,14 +2737,21 @@ const canBeForceDeleted = ref<string[]>([])
 }
 
 .chart-btn-vertical .chart-icon {
-  font-size: 20px;
-  margin-bottom: 0;
+  font-size: 18px;
+  margin-bottom: 0 !important;
 }
 
 .chart-btn-vertical .btn-text {
   font-size: 0.7rem;
   font-weight: 500;
   white-space: nowrap;
+  line-height: 1;
+}
+
+.chart-btn-vertical :deep(.v-btn__content) {
+  gap: 6px;
+  align-items: center;
+  line-height: 1;
 }
 
 .chart-section {

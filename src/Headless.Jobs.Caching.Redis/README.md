@@ -23,17 +23,16 @@ dotnet add package Headless.Jobs.Caching.Redis
 ## Quick Start
 
 ```csharp
-builder.Services.AddJobs(options =>
-{
-    options.MaxConcurrency(10);
-
-    // Enable Redis coordination
-    options.UseRedisCoordination(redis =>
+builder.Services
+    .AddJobs(options =>
     {
-        redis.ConnectionString = "localhost:6379";
+        options.ConfigureScheduler(scheduler => scheduler.MaxConcurrency = 10);
+    })
+    .AddStackExchangeRedis(redis =>
+    {
+        redis.Configuration = "localhost:6379";
         redis.NodeHeartbeatInterval = TimeSpan.FromSeconds(30);
     });
-});
 
 app.UseJobs();
 ```
@@ -41,11 +40,21 @@ app.UseJobs();
 ## Configuration
 
 ```csharp
-options.UseRedisCoordination(redis =>
+builder.Services
+    .AddJobs()
+    .AddStackExchangeRedis(redis =>
 {
-    redis.ConnectionString = "localhost:6379,ssl=true,password=secret";
+    redis.Configuration = "localhost:6379,ssl=true,password=secret";
+    redis.InstanceName = "jobs:";
     redis.NodeHeartbeatInterval = TimeSpan.FromSeconds(30);
-    redis.NodeIdentifier = "instance-1"; // Auto-generated if not set
+});
+
+builder.Services.AddJobs(options =>
+{
+    options.ConfigureScheduler(scheduler =>
+    {
+        scheduler.NodeIdentifier = "instance-1";
+    });
 });
 ```
 
@@ -60,3 +69,8 @@ options.UseRedisCoordination(redis =>
 - Background service sends periodic heartbeats
 - Periodically scans for and removes dead nodes
 - Creates Redis keys: `nodes:registry`, `hb:{nodeId}`
+
+## Error Handling Behavior in Clusters
+
+When a node is detected as dead, Jobs releases orphaned locks and marks affected in-progress work as skipped with a reason.
+This prevents stuck jobs and allows healthy nodes to continue processing safely.

@@ -35,6 +35,7 @@ const timeZoneStore = useTimeZoneStore()
 
 // Time zone menu state
 const isTimeZoneMenuOpen = ref(false)
+const isAuthEnabled = computed(() => window.JobsConfig?.auth?.enabled ?? false)
 
 // Router
 const router = useRouter()
@@ -369,7 +370,7 @@ const handleForceUIUpdate = () => {
             </div>
 
             <!-- Auth Header Component -->
-            <div class="auth-container">
+            <div v-if="isAuthEnabled" class="auth-container">
               <AuthHeader
                 :show-login-form="true"
                 :show-user-info="true"

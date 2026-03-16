@@ -511,7 +511,18 @@ const getVisiblePageNumbers = () => {
           </div>
 
           <div class="machines-list">
-            <template v-if="machineItems.length > 0">
+            <template v-if="getMachineJobs.loader.value">
+              <div v-for="i in 3" :key="i" class="machine-item">
+                <div class="machine-indicator">
+                  <div class="skeleton-circle machine-dot-skeleton"></div>
+                </div>
+                <div class="machine-info">
+                  <div class="skeleton-text machine-name-skeleton"></div>
+                  <div class="skeleton-text machine-jobs-skeleton"></div>
+                </div>
+              </div>
+            </template>
+            <template v-else-if="machineItems.length > 0">
               <div
                 v-for="machine in pagedMachineItems"
                 :key="machine.machine"
@@ -553,14 +564,12 @@ const getVisiblePageNumbers = () => {
               </div>
             </template>
             <template v-else>
-              <div v-for="i in 3" :key="i" class="machine-item">
-                <div class="machine-indicator">
-                  <div class="skeleton-circle machine-dot-skeleton"></div>
-                </div>
-                <div class="machine-info">
-                  <div class="skeleton-text machine-name-skeleton"></div>
-                  <div class="skeleton-text machine-jobs-skeleton"></div>
-                </div>
+              <div class="machines-empty-state">
+                <v-icon class="machines-empty-icon" color="primary">mdi-server-off</v-icon>
+                <span class="machines-empty-title">No active machines</span>
+                <span class="machines-empty-copy">
+                  Machine activity appears here when jobs are currently locked or executing.
+                </span>
               </div>
             </template>
           </div>
@@ -1071,6 +1080,37 @@ const getVisiblePageNumbers = () => {
   font-size: 0.75rem;
   color: #bdbdbd;
   font-weight: 500;
+}
+
+.machines-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 180px;
+  padding: 20px 16px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
+}
+
+.machines-empty-icon {
+  font-size: 28px;
+}
+
+.machines-empty-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.machines-empty-copy {
+  max-width: 320px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #9e9e9e;
 }
 
 /* Alerts */

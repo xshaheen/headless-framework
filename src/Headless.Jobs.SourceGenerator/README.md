@@ -90,3 +90,11 @@ Generates `JobsInstanceFactoryExtensions.g.cs` at compile time with:
 - Job execution delegates
 - Constructor factory methods
 - Request type registrations
+
+## Error Handling Notes
+
+Generated delegates fully support Jobs runtime error handling:
+
+- `JobFunctionContext`/`JobFunctionContext<TRequest>` are passed through to job methods.
+- `RetryCount` reflects the current attempt.
+- Exceptions flow into retry logic and `IJobExceptionHandler` when configured.

@@ -1,4 +1,4 @@
-# Headless.Jobs.Instrumentation.OpenTelemetry
+# Headless.Jobs.OpenTelemetry
 
 OpenTelemetry instrumentation package for Jobs job scheduler with distributed tracing support.
 
@@ -15,7 +15,7 @@ OpenTelemetry instrumentation package for Jobs job scheduler with distributed tr
 ## Installation
 
 ```bash
-dotnet add package Headless.Jobs.Instrumentation.OpenTelemetry
+dotnet add package Headless.Jobs.OpenTelemetry
 ```
 
 ## Usage
@@ -23,7 +23,7 @@ dotnet add package Headless.Jobs.Instrumentation.OpenTelemetry
 ### Basic Setup
 
 ```csharp
-using Headless.Jobs.Instrumentation.OpenTelemetry;
+using Headless.Jobs;
 using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -124,6 +124,17 @@ The instrumentation provides structured logging for all job events:
 [INF] Jobs start seeding data: TimeJob (production-node-01)
 [INF] Jobs completed seeding data: TimeJob (production-node-01)
 ```
+
+## Error Handling Observability
+
+This package maps Jobs error/retry behavior into traces and logs:
+
+- Retry attempts include attempt metadata (`retry_count`, `current_attempt`).
+- Final outcomes map to status tags (`Failed`, `Cancelled`, `Skipped`, `Done`).
+- `TerminateExecutionException` outcomes are visible as skipped/final status telemetry.
+- Exception message/type/stack are emitted for failed executions.
+
+Pair this package with `SetExceptionHandler<THandler>()` in Jobs Core for full operational diagnostics.
 
 ## Integration with Logging Frameworks
 
