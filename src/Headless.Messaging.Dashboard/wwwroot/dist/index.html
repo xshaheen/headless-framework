@@ -1,23 +1,39 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-    <link rel="icon" href="./logo.svg">
-    <title>Messaging Dashboard</title>
-  <script type="module" crossorigin src="./assets/index.909977fe.js"></script>
-  <link rel="stylesheet" href="./assets/index.856c0890.css">
+<!doctype html>
+<html lang="">
+  <head>
+    <meta charset="UTF-8" >
+    <link rel="icon" href="./logo.svg" >
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" >
+    <title>Messaging</title>
+    
+    
+    <script>
+(function(){
+var preloads = [{"parentTagName":"head","tagName":"script","attrs":{"type":"module","crossorigin":"","src":"/assets/index-DzMBDdeJ.js"}},{"parentTagName":"head","tagName":"link","attrs":{"rel":"stylesheet","crossorigin":"","href":"/assets/index-CwmY5-4a.css"}}];
+function setAttribute(target, attrs) {
+for (var key in attrs) {
+  target.setAttribute(key, attrs[key]);
+}
+return target;
+};
+for(var i = 0; i < preloads.length; i++){
+var item = preloads[i]
+var childNode = document.createElement(item.tagName);
+setAttribute(childNode, item.attrs)
+if( window.__dynamic_base__) {
+  if(item.tagName == 'link') {
+    setAttribute(childNode, { href:  window.__dynamic_base__ + item.attrs.href })
+  } else if (item.tagName == 'script') {
+    setAttribute(childNode, { src:  window.__dynamic_base__ + item.attrs.src })
+  }
+}
+document.getElementsByTagName('head')[0].appendChild(childNode);
+}
+})();
+</script>
 </head>
 
-<body>
-<div id="app"></div>
-
-<!-- built files will be auto injected -->
-<script>
-    window.serverUrl = window.location.origin + "%(servicePrefix)";
-    window.pollingInterval = "%(pollingInterval)";
-  </script>
-</body>
-
+  <body>
+    <div id="app"></div>
+  </body>
 </html>

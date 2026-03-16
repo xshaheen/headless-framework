@@ -1,106 +1,46 @@
 <template>
-  <div id="app">
-    <Navigation />
-    <b-container class="mt-4">
-      <router-view />
-    </b-container>
-    <Footer />
+  <div class="app-container">
+    <div v-if="showDashboardLayout" class="dashboard-wrapper">
+      <DashboardLayout>
+        <template #default>
+          <RouterView />
+        </template>
+      </DashboardLayout>
+      <GlobalAlerts />
+    </div>
+
+    <div v-else class="standalone-wrapper">
+      <RouterView />
+    </div>
   </div>
 </template>
 
-<script>
-import Navigation from "@/components/Navigation.vue";
-import Footer from "@/components/Footer.vue";
-import axios from "axios";
+<script setup lang="ts">
+import { computed, defineAsyncComponent } from 'vue'
+import { useRoute } from 'vue-router'
+import DashboardLayout from './components/layout/DashboardLayout.vue'
 
+const GlobalAlerts = defineAsyncComponent(() => import('./components/common/GlobalAlerts.vue'))
 
-export default {
-  name: "App",
-  components: {
-    Navigation,
-    Footer
-  },
-  data() {
-    return { timer: '' }
-  },
-  methods: {
-    getData() {
-      if (window.pollingInterval == "%(pollingInterval)") {
-        window.pollingInterval = 2000;
-      }
+const route = useRoute()
 
-      axios.get('/stats').then(response => {
-        this.$store.dispatch("pollingMertic", response.data);
-        setTimeout(() => {
-          this.getData()
-        }, window.pollingInterval);
-      });
-    }
-  },
-  mounted() {
-    axios.interceptors.response.use(
-      res => {
-        if (res.status === 500) {
-          this.$bvToast.toast("request failed", {
-            title: "Request Error",
-            variant: "danger",
-            autoHideDelay: 1000,
-            appendToast: true,
-            solid: true
-          });
-        }
-        return res;
-      }
-    );
-
-    this.getData();
-  },
-  beforeDestroy() {
-    clearInterval(this.timer);
-  }
-};
-
-Date.prototype.format = function (fmt) {
-  var o = {
-    "M+": this.getMonth() + 1,
-    "d+": this.getDate(),
-    "h+": this.getHours(),
-    "m+": this.getMinutes(),
-    "s+": this.getSeconds(),
-    "q+": Math.floor((this.getMonth() + 3) / 3),
-    S: this.getMilliseconds(),
-  };
-  if (/(y+)/.test(fmt)) {
-    fmt = fmt.replace(
-      RegExp.$1,
-      (this.getFullYear() + "").substr(4 - RegExp.$1.length)
-    );
-  }
-  for (var k in o) {
-    if (new RegExp("(" + k + ")").test(fmt)) {
-      fmt = fmt.replace(
-        RegExp.$1,
-        RegExp.$1.length == 1 ? o[k] : ("00" + o[k]).substr(("" + o[k]).length)
-      );
-    }
-  }
-  return fmt;
-};
+const showDashboardLayout = computed(() => {
+  return route.name !== 'Login'
+})
 </script>
-<style>
-#app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
-  padding-bottom: 50px;
+
+<style scoped>
+.app-container {
+  min-height: 100vh;
 }
 
-.page-line {
-  text-align: left;
-  line-height: 38px;
-  padding-bottom: 9px;
-  border-bottom: 1px solid #eee;
+.dashboard-wrapper,
+.standalone-wrapper {
+  min-height: 100vh;
+}
+
+.standalone-wrapper {
+  display: flex;
+  flex-direction: column;
 }
 </style>
