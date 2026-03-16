@@ -1,0 +1,239 @@
+{
+  "name": "refactor-complete-messaging-dashboard-alignment",
+  "title": "Complete Messaging Dashboard alignment with Jobs Dashboard",
+  "type": "refactor",
+  "date": "2026-03-16",
+  "description": "Complete the Messaging Dashboard alignment: add ECharts charts, enhance message detail dialog, redesign footer with system info, remove i18n, add missing stat cards, refresh controls, and 404 route",
+  "created_at": "2026-03-16T00:00:00Z",
+  "branches": {
+    "base": "main",
+    "feature": "xshaheen/align-messaging-dashboard"
+  },
+  "verification_command": "cd src/Headless.Messaging.Dashboard/wwwroot && npm run build",
+  "status": "pending",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Remove i18n/localization — English only [S]",
+      "size": "S",
+      "description": "Sequential: remove vue-i18n plugin from main.ts -> remove i18n/ directory and assets/language/ files -> replace all $t() / t() calls with plain English strings -> uninstall vue-i18n from package.json -> verify build",
+      "filesToStudy": [
+        "src/Headless.Messaging.Dashboard/wwwroot/src/main.ts",
+        "src/Headless.Messaging.Dashboard/wwwroot/src/i18n/index.ts",
+        "src/Headless.Messaging.Dashboard/wwwroot/package.json"
+      ],
+      "acceptanceCriteria": [
+        "No vue-i18n dependency in package.json",
+        "No i18n/ directory or assets/language/ files remain",
+        "All UI text rendered as plain English strings (no $t() or t() calls)",
+        "Frontend builds with zero errors"
+      ],
+      "priority": 1,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-002",
+      "title": "Redesign footer — system info + fixed height [S]",
+      "size": "S",
+      "description": "TDD order: write failing test -> implement minimal code -> verify PASS. Move system/meta info (messaging version, broker type, storage type from /api/meta) out of Dashboard.vue main content into a fixed-height footer visible on all pages. Footer should show meta info inline (e.g. 'Messaging: RabbitMQ | Storage: PostgreSQL | v1.2.3'). Make footer fixed height (~40px) and always visible at bottom of DashboardLayout.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Dashboard/wwwroot/src/components/layout/DashboardLayout.vue",
+        "src/Headless.Messaging.Dashboard/wwwroot/src/views/Dashboard.vue",
+        "src/Headless.Jobs.Dashboard/wwwroot/src/views/Dashboard.vue"
+      ],
+      "acceptanceCriteria": [
+        "System info (messaging type, broker, storage) displayed in the footer on all pages",
+        "Footer has a fixed height and is always visible at the bottom of the layout",
+        "System info section removed from Dashboard.vue main content area",
+        "Meta data fetched once and cached (not re-fetched on every page navigation)"
+      ],
+      "priority": 2,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-003",
+      "title": "Add 404 catch-all route [XS]",
+      "size": "XS",
+      "description": "Sequential: add /:pathMatch(.*)*  catch-all route to router -> create simple NotFound view or redirect to Dashboard",
+      "filesToStudy": [
+        "src/Headless.Messaging.Dashboard/wwwroot/src/router/index.ts"
+      ],
+      "acceptanceCriteria": [
+        "Navigating to an unknown path (e.g. /nonexistent) does not render a blank page",
+        "User is redirected to Dashboard or shown a 'Page not found' message"
+      ],
+      "priority": 3,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-004",
+      "title": "Create messagingStore (Pinia) for dashboard state [S]",
+      "size": "S",
+      "description": "TDD order: write failing test -> implement minimal code -> verify PASS. Create a Pinia store to manage dashboard metrics, stats, meta, and history data. Move all local reactive state from Dashboard.vue into this store. The store should manage polling lifecycle (start/stop), cache data across page navigations, and expose computed properties for chart-ready data.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Dashboard/wwwroot/src/views/Dashboard.vue",
+        "src/Headless.Messaging.Dashboard/wwwroot/src/stores/authStore.ts",
+        "src/Headless.Messaging.Dashboard/wwwroot/src/services/http.ts",
+        "src/Headless.Messaging.Dashboard/wwwroot/src/utilities/pathResolver.ts"
+      ],
+      "acceptanceCriteria": [
+        "messagingStore.ts created in stores/ with stats, meta, realtimeMetrics, and metricsHistory state",
+        "Polling lifecycle managed by the store (startPolling/stopPolling actions)",
+        "Dashboard.vue uses the store instead of local reactive state",
+        "Navigating away from Dashboard and back does not trigger a full re-fetch (cached data shown immediately, polling resumes)"
+      ],
+      "priority": 4,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-005",
+      "title": "Add ECharts dashboard charts (line + pie) [L]",
+      "size": "L",
+      "description": "TDD order: write failing test -> implement minimal code -> verify PASS. Add echarts + vue-echarts dependencies. Create chart components for the Dashboard page: (1) Real-time metrics line chart — 3 series: published/sec, subscribed/sec, subscriber latency over last 5 minutes from /api/metrics-realtime. (2) Hourly history line chart — 4 series: publish succeeded/failed, subscribe succeeded/failed over 24h from /api/metrics-history. (3) Success/failure pie chart — from /api/stats showing distribution of succeeded vs failed for published and received. Match Jobs Dashboard dark theme: transparent bg, #e0e0e0 text, dashed grid lines rgba(255,255,255,0.05), dark tooltips rgba(42,42,42,0.95). Use tree-shaking imports (CanvasRenderer, LineChart, PieChart, required components only). Charts auto-update via polling interval from messagingStore.",
+      "filesToStudy": [
+        "src/Headless.Jobs.Dashboard/wwwroot/src/components/TimeJobCharts.vue",
+        "src/Headless.Messaging.Dashboard/wwwroot/src/views/Dashboard.vue",
+        "src/Headless.Messaging.Dashboard/wwwroot/package.json",
+        "src/Headless.Messaging.Dashboard/Endpoints/MessagingDashboardEndpoints.cs"
+      ],
+      "acceptanceCriteria": [
+        "echarts and vue-echarts added to package.json with tree-shaking imports",
+        "Real-time metrics line chart renders 3 series from /api/metrics-realtime data",
+        "Hourly history line chart renders 4 series from /api/metrics-history data",
+        "Success/failure pie chart renders from /api/stats data",
+        "Charts use dark theme matching Jobs Dashboard palette",
+        "Raw JSON metrics dump and flat history table removed from Dashboard.vue",
+        "Charts auto-update when polling refreshes data in messagingStore"
+      ],
+      "priority": 5,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": [
+        "Jobs Dashboard ECharts setup pattern in TimeJobCharts.vue lines 92-116",
+        "Status color palette from Jobs: {0:'#A9A9A9', 1:'#00CED1', 2:'#6495ED', 3:'#32CD32', 4:'#008000', 5:'#FF0000', 6:'#FFD700', 7:'#BA68C8'}"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "Enrich message detail backend endpoint [S]",
+      "size": "S",
+      "description": "TDD order: write failing test -> implement minimal code -> verify PASS. Modify GET /api/published/message/{id} and GET /api/received/message/{id} endpoints to return a DTO with message metadata alongside content. Currently returns message.Content (string). Should return: { id, name, content, added, expiresAt, retries, statusName, version }. This enables the frontend MessageDetailDialog to show metadata fields.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Dashboard/Endpoints/MessagingDashboardEndpoints.cs"
+      ],
+      "acceptanceCriteria": [
+        "GET /api/published/message/{id} returns a DTO with id, name, content, added, expiresAt, retries, statusName, version",
+        "GET /api/received/message/{id} returns the same DTO shape (plus group field for received)",
+        "Existing frontend code that reads .content still works (field name preserved)"
+      ],
+      "priority": 6,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-007",
+      "title": "Enhance MessageDetailDialog with metadata + exceptions [M]",
+      "size": "M",
+      "description": "TDD order: write failing test -> implement minimal code -> verify PASS. Expand MessageDetailDialog to accept the full message DTO (from US-006). Display metadata fields (name, status, timestamps, retries, version) in a structured header section. Add structured exception rendering for failed messages — port the isException pattern from Jobs Dashboard ConfirmDialog (parse JSON exception into message, stack trace, source, help link, data sections with collapsible sections). Add copy-to-clipboard button for message content. Handle non-JSON content gracefully (display as plain text).",
+      "filesToStudy": [
+        "src/Headless.Messaging.Dashboard/wwwroot/src/components/MessageDetailDialog.vue",
+        "src/Headless.Jobs.Dashboard/wwwroot/src/components/common/ConfirmDialog.vue",
+        "src/Headless.Messaging.Dashboard/wwwroot/src/views/Published.vue",
+        "src/Headless.Messaging.Dashboard/wwwroot/src/views/Received.vue"
+      ],
+      "acceptanceCriteria": [
+        "Dialog shows message metadata header: name, status chip, added date, expires at, retries count, version",
+        "Message content displayed with JSON formatting (or plain text for non-JSON)",
+        "Failed messages show structured exception rendering with collapsible stack trace, source, help link sections",
+        "Copy-to-clipboard button copies message content",
+        "Published.vue and Received.vue pass the full message DTO to the dialog"
+      ],
+      "priority": 7,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": [
+        "Jobs ConfirmDialog exception rendering: lines 77-195 for parsing, 198-305 for template, 307-648 for styles"
+      ]
+    },
+    {
+      "id": "US-008",
+      "title": "Add missing stat cards (Subscribers, PublishedDelayed) [S]",
+      "size": "S",
+      "description": "Sequential: map Subscribers and PublishedDelayed from /api/stats response -> add stat cards to Dashboard.vue -> verify rendering",
+      "filesToStudy": [
+        "src/Headless.Messaging.Dashboard/wwwroot/src/views/Dashboard.vue",
+        "src/Headless.Messaging.Dashboard/Endpoints/MessagingDashboardEndpoints.cs"
+      ],
+      "acceptanceCriteria": [
+        "Subscribers count stat card displayed on Dashboard page",
+        "PublishedDelayed count stat card displayed on Dashboard page",
+        "Values sourced from /api/stats response (already returned by backend but not surfaced)"
+      ],
+      "priority": 8,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-009",
+      "title": "Add refresh controls to Published/Received pages [S]",
+      "size": "S",
+      "description": "Sequential: add manual refresh button to Published.vue toolbar -> add same to Received.vue -> optionally add auto-refresh toggle (30s interval) -> verify consistency with Subscribers and Nodes page patterns",
+      "filesToStudy": [
+        "src/Headless.Messaging.Dashboard/wwwroot/src/views/Published.vue",
+        "src/Headless.Messaging.Dashboard/wwwroot/src/views/Received.vue",
+        "src/Headless.Messaging.Dashboard/wwwroot/src/views/Subscribers.vue",
+        "src/Headless.Messaging.Dashboard/wwwroot/src/views/Nodes.vue"
+      ],
+      "acceptanceCriteria": [
+        "Published.vue has a manual refresh button that re-fetches the current message list",
+        "Received.vue has a manual refresh button that re-fetches the current message list",
+        "Refresh button placement and style consistent with Subscribers/Nodes pages"
+      ],
+      "priority": 9,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    }
+  ],
+  "pass": false,
+  "validation_errors": [],
+  "metadata": {
+    "research": {
+      "local": {
+        "findings": [
+          "Jobs Dashboard uses echarts + vue-echarts with tree-shaking imports (CanvasRenderer, LineChart, PieChart + components) — see TimeJobCharts.vue:92-116",
+          "Jobs Dashboard dark theme chart palette: transparent bg, #e0e0e0 text, rgba(42,42,42,0.95) tooltip bg, rgba(255,255,255,0.05) grid lines, DataZoom slider",
+          "Messaging /api/metrics-realtime returns CircularBuffer<int?>[4]: timestamps, published/s, subscribed/s, latency — 300 data points at 1s granularity",
+          "Messaging /api/metrics-history returns {DayHour[], PublishSuccessed[], PublishFailed[], SubscribeSuccessed[], SubscribeFailed[]} — hourly aggregates, 10min cached",
+          "Jobs ConfirmDialog has structured exception rendering: parses JSON exception into message, stack trace, source, help link, data, inner exception with collapsible sections (lines 77-305)",
+          "Messaging MessageDetailDialog only accepts messageContent:string and renders JSON.parse or raw — no metadata, no exception rendering",
+          "Messaging Dashboard.vue shows realtimeMetrics as JSON.stringify() in <pre> tag (line 114) and history as flat table (lines 133-160)",
+          "Messaging has vue-i18n installed with en/ar locales — only English needed",
+          "Backend /api/stats returns Subscribers and PublishedDelayed counts but frontend drops them",
+          "No 404 catch-all route in messaging router — unknown paths render blank"
+        ],
+        "timestamp": "2026-03-16T00:00:00Z"
+      }
+    },
+    "projectLearnings": []
+  }
+}
