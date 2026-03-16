@@ -143,10 +143,12 @@ public static class Setup
         // requires Services/Registry to be initialized - which only happens in AddHeadlessMessaging.
         services.Configure<MessagingOptions>(opt =>
         {
-            setupAction?.Invoke(opt);
-            // Copy internal state for consumer registration methods
+            // Set internal state BEFORE invoking setupAction, because
+            // SubscribeFromAssembly requires Services/Registry to be initialized.
             opt.Services = services;
             opt.Registry = options.Registry;
+
+            setupAction?.Invoke(opt);
 
             // Copy public properties
             opt.DefaultGroupName = options.DefaultGroupName;
