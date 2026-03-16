@@ -12,6 +12,7 @@
     <Company>Mahmoud Shaheen</Company>
     <Copyright>Copyright (c) Mahmoud Shaheen. All rights Reserved</Copyright>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>logo.png</PackageIcon>
   </PropertyGroup>
   <PropertyGroup Label="Repository">
     <RepositoryUrl>https://github.com/xshaheen/headless-framework.git</RepositoryUrl>
@@ -34,5 +35,8 @@
   </ItemGroup>
   <ItemGroup Label="README Files">
     <None Condition="!Exists('README.md')" Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+  <ItemGroup Label="Package Icon">
+    <None Include="..\..\logo.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>
