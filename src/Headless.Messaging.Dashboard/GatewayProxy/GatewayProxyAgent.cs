@@ -21,8 +21,8 @@ public class GatewayProxyAgent(
     public const string CookieNodeName = "messaging.node";
     public const string CookieNodeNsName = "messaging.node.ns";
 
-    private readonly ConsulDiscoveryOptions _consulDiscoveryOptions =
-        serviceProvider.GetRequiredService<ConsulDiscoveryOptions>();
+    private readonly ConsulDiscoveryOptions? _consulDiscoveryOptions =
+        serviceProvider.GetService<ConsulDiscoveryOptions>();
     private readonly ILogger _logger = loggerFactory.CreateLogger<GatewayProxyAgent>();
 
     protected HttpRequestMessage? DownstreamRequest { get; set; }

@@ -8,7 +8,7 @@ builder.Services.AddMessaging(x =>
     x.SubscribeFromAssembly(typeof(Program).Assembly);
     x.UseInMemoryStorage();
     x.UseAmazonSqs(RegionEndpoint.CNNorthWest1);
-    x.UseDashboard();
+    x.UseDashboard(d => d.AllowAnonymousExplicit = true);
 });
 
 builder.Services.AddControllers();

@@ -37,11 +37,6 @@ public static class MessagingOptionsExtensions
 {
     extension(MessagingOptions messagingOptions)
     {
-        public MessagingOptions UseDashboard()
-        {
-            return messagingOptions.UseDashboard(_ => { });
-        }
-
         public MessagingOptions UseDashboard(Action<DashboardOptions> options)
         {
             Argument.IsNotNull(options);
