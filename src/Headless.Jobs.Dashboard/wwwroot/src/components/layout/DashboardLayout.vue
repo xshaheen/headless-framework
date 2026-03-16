@@ -387,7 +387,7 @@ const handleForceUIUpdate = () => {
     <v-main>
       <!-- Global Status Header -->
       <div class="status-header">
-        <div class="header-content">
+        <div class="status-header-content">
           <div class="status-section">
             <div class="status-indicator">
               <div
@@ -556,6 +556,11 @@ const handleForceUIUpdate = () => {
 </template>
 
 <style scoped>
+#inspire {
+  --dashboard-shell-max-width: 1280px;
+  --dashboard-shell-padding-x: clamp(20px, 3vw, 40px);
+}
+
 /* Main Header */
 .main-header {
   background: rgba(33, 33, 33, 0.95) !important;
@@ -573,9 +578,9 @@ const handleForceUIUpdate = () => {
 
 .header-container {
   width: 100%;
-  max-width: 1400px;
+  max-width: var(--dashboard-shell-max-width);
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 var(--dashboard-shell-padding-x);
 }
 
 .header-content {
@@ -727,7 +732,7 @@ const handleForceUIUpdate = () => {
   background: rgba(33, 33, 33, 0.95);
   backdrop-filter: blur(20px);
   border-radius: 0;
-  padding: 0px 20px;
+  padding: 0;
   margin: 0;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
   border: none;
@@ -740,14 +745,17 @@ const handleForceUIUpdate = () => {
   box-shadow: 0 6px 25px rgba(0, 0, 0, 0.4);
 }
 
-.header-content {
-  max-width: 1400px;
+.status-header-content {
+  max-width: var(--dashboard-shell-max-width);
   margin: 0 auto;
+  padding: 0 var(--dashboard-shell-padding-x);
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 16px;
+  width: 100%;
+  min-height: 72px;
 }
 
 /* Status Section */
@@ -1053,25 +1061,29 @@ const handleForceUIUpdate = () => {
 /* Responsive Design */
 @media (max-width: 1400px) {
   .header-container {
-    padding: 0 32px;
+    padding: 0 var(--dashboard-shell-padding-x);
   }
 }
 
 @media (max-width: 1024px) {
   .header-container {
-    padding: 0 24px;
+    padding: 0 var(--dashboard-shell-padding-x);
   }
 }
 
 @media (max-width: 768px) {
   .header-container {
-    padding: 0 16px;
+    padding: 0 var(--dashboard-shell-padding-x);
   }
 
   .header-content {
     height: auto;
     min-height: 64px;
     padding: 12px 0;
+  }
+
+  .status-header-content {
+    padding: 12px var(--dashboard-shell-padding-x);
   }
 
   .header-left {

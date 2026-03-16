@@ -624,7 +624,7 @@ const option = computed(() => ({
     text: 'Time Series Analysis',
     subtext: chartData.value.title,
     left: 'center',
-    top: '2%',
+    top: '3%',
     textStyle: {
       color: '#ffffff',
       fontSize: 14,
@@ -653,12 +653,27 @@ const option = computed(() => ({
       },
     },
   },
-  legend: chartData.value.legend,
+  legend: {
+    ...chartData.value.legend,
+    type: 'scroll',
+    top: '12%',
+    left: '6%',
+    right: '6%',
+    itemGap: 14,
+    textStyle: {
+      color: '#bdbdbd',
+      fontSize: 11,
+    },
+    pageIconColor: '#64b5f6',
+    pageTextStyle: {
+      color: '#bdbdbd',
+    },
+  },
   grid: {
     left: '8%',
     right: '8%',
     bottom: '15%',
-    top: '25%',
+    top: '28%',
     containLabel: true,
   },
   xAxis: {
@@ -1373,9 +1388,12 @@ const refreshData = async () => {
 
 /* Content Section */
 .dashboard-content {
-  max-width: 1400px;
+  max-width: var(--dashboard-shell-max-width, 1280px);
   margin: 0 auto;
-  padding: 32px 24px 16px 24px;
+  padding: 32px var(--dashboard-shell-padding-x, 32px) 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 /* Analytics Overview Card */
@@ -1387,8 +1405,12 @@ const refreshData = async () => {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.1);
   transition: all 0.3s ease;
-  margin-bottom: 20px;
+  margin-bottom: 0;
   position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .analytics-overview:hover {
@@ -1397,13 +1419,11 @@ const refreshData = async () => {
 }
 
 .chart-toggle-vertical {
-  position: absolute;
-  top: 20px;
-  left: -70px;
-  z-index: 10;
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 20px;
-  padding: 8px;
+  position: static;
+  z-index: 1;
+  align-self: flex-start;
+  background: transparent;
+  padding: 0;
 }
 
 .chart-switch-vertical {
@@ -1413,9 +1433,10 @@ const refreshData = async () => {
   border: 1px solid rgba(100, 181, 246, 0.4);
   box-shadow: 0 8px 32px rgba(100, 181, 246, 0.2);
   overflow: hidden;
-  padding: 8px 4px;
+  padding: 6px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   gap: 6px;
 }
 
@@ -1424,34 +1445,35 @@ const refreshData = async () => {
   font-size: 0.7rem;
   font-weight: 600;
   text-align: center;
-  padding: 4px 0;
+  padding: 0 10px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  margin-bottom: 4px;
+  border-bottom: none;
+  margin-bottom: 0;
+  white-space: nowrap;
 }
 
 .chart-btn-vertical {
-  min-width: 56px;
-  min-height: 64px;
+  min-width: 112px;
+  min-height: 44px;
   font-weight: 600;
   text-transform: none;
   letter-spacing: 0.5px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 12px;
-  padding: 10px 6px;
+  padding: 8px 14px;
   font-size: 0.75rem;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   margin: 0;
 }
 
 .chart-btn-vertical:hover {
-  transform: translateX(-3px) scale(1.05);
+  transform: scale(1.03);
   background: rgba(100, 181, 246, 0.2);
   border-color: rgba(100, 181, 246, 0.6);
   box-shadow: 0 8px 25px rgba(100, 181, 246, 0.3);
@@ -1462,7 +1484,7 @@ const refreshData = async () => {
   background: linear-gradient(135deg, rgba(100, 181, 246, 0.3) 0%, rgba(100, 181, 246, 0.15) 100%);
   border-color: rgba(100, 181, 246, 0.8);
   box-shadow: 0 4px 20px rgba(100, 181, 246, 0.4);
-  transform: translateX(-2px);
+  transform: scale(1.01);
 }
 
 .btn-text {
@@ -2137,14 +2159,9 @@ const refreshData = async () => {
 }
 
 @media (max-width: 1024px) {
-  .chart-toggle-vertical {
-    top: 16px;
-    left: -52px;
-  }
-
   .chart-btn-vertical {
-    min-width: 50px;
-    min-height: 60px;
+    min-width: 96px;
+    min-height: 42px;
     font-size: 0.7rem;
   }
 
@@ -2173,15 +2190,26 @@ const refreshData = async () => {
   }
 
   .chart-toggle-vertical {
-    top: 12px;
-    left: -45px;
+    align-self: stretch;
+  }
+
+  .chart-switch-vertical {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .toggle-label {
+    width: 100%;
+    text-align: left;
+    padding: 0 4px 6px;
   }
 
   .chart-btn-vertical {
-    min-width: 40px;
-    min-height: 50px;
+    min-width: calc(50% - 3px);
+    min-height: 42px;
     font-size: 0.65rem;
-    padding: 6px 3px;
+    padding: 6px 10px;
   }
 
   .btn-text {

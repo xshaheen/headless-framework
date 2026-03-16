@@ -373,7 +373,7 @@ const lineChartOption = computed(() => ({
     text: 'Time Series Analysis',
     subtext: chartData.value.title,
     left: 'center',
-    top: '2%',
+    top: '3%',
     textStyle: {
       color: '#e0e0e0',
       fontSize: 14,
@@ -397,12 +397,27 @@ const lineChartOption = computed(() => ({
       },
     },
   },
-  legend: chartData.value.legend,
+  legend: {
+    ...chartData.value.legend,
+    type: 'scroll',
+    top: '12%',
+    left: '6%',
+    right: '6%',
+    itemGap: 14,
+    textStyle: {
+      color: '#bdbdbd',
+      fontSize: 11,
+    },
+    pageIconColor: '#64b5f6',
+    pageTextStyle: {
+      color: '#bdbdbd',
+    },
+  },
   grid: {
     left: '8%',
     right: '8%',
     bottom: '10%',
-    top: '18%',
+    top: '26%',
     containLabel: true,
   },
   xAxis: {
@@ -1760,9 +1775,12 @@ const canBeForceDeleted = ref<string[]>([])
 
 /* Content Section */
 .dashboard-content {
-  max-width: 1400px;
+  max-width: var(--dashboard-shell-max-width, 1280px);
   margin: 0 auto;
-  padding: 32px 24px 16px 24px;
+  padding: 32px var(--dashboard-shell-padding-x, 32px) 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 /* Table Section */
@@ -2643,7 +2661,7 @@ const canBeForceDeleted = ref<string[]>([])
   overflow: hidden;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
-  margin-top: 24px;
+  margin-top: 0;
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -2742,7 +2760,7 @@ const canBeForceDeleted = ref<string[]>([])
   height: 420px;
   width: 100%;
   max-width: 100%;
-  margin: 0;
+  margin: 0 0 8px;
   position: relative;
   overflow: hidden;
   border-radius: 12px;
