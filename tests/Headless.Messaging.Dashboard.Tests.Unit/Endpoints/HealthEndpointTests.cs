@@ -1,10 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
+using Headless.Messaging.Dashboard.GatewayProxy;
+using Headless.Messaging.Dashboard.GatewayProxy.Requester;
+using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Tests.Endpoints;
 
@@ -14,46 +19,62 @@ public sealed class HealthEndpointTests : TestBase
     public async Task Health_should_return_OK()
     {
         // given
-        var context = _CreateHttpContext();
-        var builder = Substitute.For<IEndpointRouteBuilder>();
-        builder.ServiceProvider.Returns(context.RequestServices);
+        await using var app = _CreateTestApp();
+        await app.StartAsync();
+        using var client = app.GetTestClient();
 
         // when
-        await RouteActionProvider.Health(context);
+        var response = await client.GetAsync("/api/health");
 
         // then
-        context.Response.Body.Position = 0;
-        using var reader = new StreamReader(context.Response.Body);
-        var response = await reader.ReadToEndAsync(AbortToken);
-        response.Should().Be("OK");
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Be("OK");
     }
 
     [Fact]
     public async Task Health_should_not_require_authentication()
     {
-        // given
-        var context = _CreateHttpContext();
-        // No user/identity set - simulating anonymous request
+        // given - no auth header set
+        await using var app = _CreateTestApp();
+        await app.StartAsync();
+        using var client = app.GetTestClient();
 
-        var builder = Substitute.For<IEndpointRouteBuilder>();
-        builder.ServiceProvider.Returns(context.RequestServices);
+        // when
+        var response = await client.GetAsync("/api/health");
 
-        // when - health endpoint works without auth
-        await RouteActionProvider.Health(context);
-
-        // then
-        context.Response.Body.Position = 0;
-        using var reader = new StreamReader(context.Response.Body);
-        var response = await reader.ReadToEndAsync(AbortToken);
-        response.Should().Be("OK");
+        // then - should succeed without auth
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Be("OK");
     }
 
-    private static DefaultHttpContext _CreateHttpContext()
+    private static WebApplication _CreateTestApp()
     {
-        var services = new ServiceCollection().AddLogging().BuildServiceProvider();
+        var config = new MessagingDashboardOptionsBuilder().WithNoAuth();
 
-        var context = new DefaultHttpContext { RequestServices = services, Response = { Body = new MemoryStream() } };
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseTestServer();
 
-        return context;
+        builder.Services.AddSingleton(config);
+        builder.Services.AddSingleton(config.Auth);
+        builder.Services.AddScoped<IAuthService, AuthService>();
+        // Gateway proxy deps for ActivatorUtilities resolution
+        builder.Services.AddSingleton(Substitute.For<IRequestMapper>());
+        builder.Services.AddSingleton(Substitute.For<IHttpRequester>());
+        builder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
+        builder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
+        builder.Services.AddSingleton<GatewayProxyAgent>();
+
+        builder.Services.AddRouting();
+        builder.Services.AddAuthorization();
+        builder.Services.AddCors(o => o.AddPolicy("Messaging_Dashboard_CORS", p => p.AllowAnyOrigin()));
+
+        var app = builder.Build();
+        app.UseRouting();
+        app.UseCors("Messaging_Dashboard_CORS");
+        app.MapMessagingDashboardEndpoints(config);
+
+        return app;
     }
 }
