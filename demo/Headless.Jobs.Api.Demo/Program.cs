@@ -17,6 +17,11 @@ builder.Services.AddJobs(options =>
             dbOptions.UseSqlite("Data Source=jobs-webapi.db", b => b.MigrationsAssembly("Headless.Jobs.Api.Demo"));
         });
     });
+
+    options.AddDashboard(dashboard =>
+    {
+        dashboard.WithNoAuth();
+    });
 });
 
 var app = builder.Build();
@@ -29,7 +34,7 @@ await using (var scope = app.Services.CreateAsyncScope())
 }
 
 // Activate Jobs job processor (mirrors docs' minimal setup)
-app.UseJobs();
+Headless.Jobs.DependencyInjection.AspNetCoreExtensions.UseJobs(app);
 
 // Minimal endpoint to schedule the sample job
 app.MapPost(
@@ -37,12 +42,20 @@ app.MapPost(
     async (ITimeJobManager<TimeJobEntity> manager) =>
     {
         var result = await manager.AddAsync(
-            new TimeJobEntity { Function = "WebApiSample_HelloWorld", ExecutionTime = DateTime.UtcNow.AddSeconds(5) }
+            new TimeJobEntity
+            {
+                Function = "WebApiSample_HelloWorld",
+                Description = "Sample API demo job",
+                ExecutionTime = DateTime.UtcNow.AddSeconds(5),
+            }
         );
 
-        return Results.Ok(new { result.Result!.Id, ScheduledFor = result.Result.ExecutionTime });
+        if (!result.IsSucceeded || result.Result is null)
+        {
+            return Results.Problem(result.Exception?.Message ?? "Failed to schedule sample job.");
+        }
+
+        return Results.Ok(new { result.Result.Id, ScheduledFor = result.Result.ExecutionTime });
     }
 );
 await app.RunAsync();
-
-// Simple sample job
