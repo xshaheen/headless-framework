@@ -70,11 +70,13 @@ public static partial class MessagingDashboardSetup
                 dashboardApp.UseRouting();
                 dashboardApp.UseCors("Messaging_Dashboard_CORS");
 
-                // Add authentication middleware (only protects API endpoints)
+                // Add authentication + authorization middleware
                 if (config.Auth.IsEnabled)
                 {
                     dashboardApp.UseMiddleware<AuthMiddleware>();
                 }
+
+                dashboardApp.UseAuthorization();
 
                 // Execute custom middleware if provided
                 config.CustomMiddleware?.Invoke(dashboardApp);
