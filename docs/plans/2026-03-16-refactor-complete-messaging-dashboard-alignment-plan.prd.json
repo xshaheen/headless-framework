@@ -230,7 +230,7 @@
         "Published.vue and Received.vue pass full message DTO to dialog (not just content string)"
       ],
       "priority": 9,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": [
