@@ -4,19 +4,31 @@ import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import AuthHeader from '../common/AuthHeader.vue'
 import { useMessagingStore } from '@/stores/messagingStore'
+import type { Stats } from '@/stores/messagingStore'
 
-const navigationLinks = [
+type BadgeColor = 'error' | 'info' | 'secondary'
+
+interface NavLink {
+  icon: string
+  text: string
+  path: string
+  badgeKey?: keyof Stats
+  badgeColor?: BadgeColor
+  badgeHideWhenZero?: boolean
+}
+
+const navigationLinks: NavLink[] = [
   { icon: 'mdi-view-dashboard', text: 'Dashboard', path: '/' },
-  { icon: 'mdi-send', text: 'Published', path: '/published' },
-  { icon: 'mdi-inbox-arrow-down', text: 'Received', path: '/received' },
-  { icon: 'mdi-account-group', text: 'Subscribers', path: '/subscribers' },
-  { icon: 'mdi-server-network', text: 'Nodes', path: '/nodes' },
+  { icon: 'mdi-send', text: 'Published', path: '/published', badgeKey: 'publishedFailed', badgeColor: 'error', badgeHideWhenZero: true },
+  { icon: 'mdi-inbox-arrow-down', text: 'Received', path: '/received', badgeKey: 'receivedFailed', badgeColor: 'error', badgeHideWhenZero: true },
+  { icon: 'mdi-account-group', text: 'Subscribers', path: '/subscribers', badgeKey: 'subscribers', badgeColor: 'info' },
+  { icon: 'mdi-server-network', text: 'Nodes', path: '/nodes', badgeKey: 'servers', badgeColor: 'secondary' },
 ]
 
 const isAuthEnabled = computed(() => window.MessagingConfig?.auth?.enabled ?? false)
 
 const messagingStore = useMessagingStore()
-const { meta } = storeToRefs(messagingStore)
+const { meta, stats } = storeToRefs(messagingStore)
 
 function getNodeCookie(): string | null {
   const m = document.cookie.match(/(?:^|;\s*)messaging\.node=([^;]*)/)
@@ -61,15 +73,23 @@ function handleAuthLogout() {
 
           <div class="header-right">
             <div class="navigation-links">
-              <v-btn
+              <v-badge
                 v-for="link in navigationLinks"
                 :key="link.path"
-                :text="link.text"
-                :to="link.path"
-                variant="text"
-                class="nav-link"
-                :prepend-icon="link.icon"
-              />
+                :model-value="link.badgeKey != null && !(link.badgeHideWhenZero && stats[link.badgeKey] === 0)"
+                :content="link.badgeKey != null ? stats[link.badgeKey] : undefined"
+                :color="link.badgeColor ?? 'secondary'"
+                size="x-small"
+                class="nav-badge"
+              >
+                <v-btn
+                  :text="link.text"
+                  :to="link.path"
+                  variant="text"
+                  class="nav-link"
+                  :prepend-icon="link.icon"
+                />
+              </v-badge>
             </div>
 
             <div v-if="isAuthEnabled" class="auth-container">

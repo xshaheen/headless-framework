@@ -100,7 +100,7 @@
         "Badge counts update automatically when polling refreshes stats"
       ],
       "priority": 4,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": [
@@ -304,7 +304,7 @@
         "Node switch sets both messaging.node and messaging.node.ns cookies"
       ],
       "priority": 12,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": [

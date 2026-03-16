@@ -3,16 +3,40 @@
     <div class="page-content">
       <div class="page-header">
         <h2 class="page-title">Nodes</h2>
-        <v-btn
-          size="small"
-          variant="outlined"
-          color="primary"
-          prepend-icon="mdi-refresh"
-          :loading="isLoading"
-          @click="loadNodes"
-        >
-          Refresh
-        </v-btn>
+        <div class="header-actions">
+          <v-select
+            v-if="namespaces.length > 0"
+            v-model="selectedNamespace"
+            :items="namespaces"
+            label="Namespace"
+            density="compact"
+            variant="outlined"
+            hide-details
+            class="ns-select"
+            @update:model-value="onNamespaceChange"
+          />
+          <v-btn
+            size="small"
+            variant="outlined"
+            color="secondary"
+            prepend-icon="mdi-speedometer"
+            :loading="isPingingAll"
+            :disabled="nodes.length === 0 || isLoading"
+            @click="pingAll"
+          >
+            Ping All
+          </v-btn>
+          <v-btn
+            size="small"
+            variant="outlined"
+            color="primary"
+            prepend-icon="mdi-refresh"
+            :loading="isLoading"
+            @click="loadNodes"
+          >
+            Refresh
+          </v-btn>
+        </div>
       </div>
 
       <TableSkeleton v-if="isLoading" :rows="4" :columns="5" />
@@ -35,10 +59,23 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="node in nodes" :key="node.name">
+            <tr
+              v-for="node in nodes"
+              :key="node.name"
+              :class="{ 'active-node': isActiveNode(node) }"
+            >
               <td class="node-name">
                 <v-icon size="small" class="mr-2" color="primary">mdi-server</v-icon>
                 {{ node.name }}
+                <v-chip
+                  v-if="isActiveNode(node)"
+                  size="x-small"
+                  color="primary"
+                  variant="flat"
+                  class="ml-2"
+                >
+                  active
+                </v-chip>
               </td>
               <td>{{ node.address }}</td>
               <td>{{ node.port }}</td>
@@ -105,13 +142,75 @@ interface NodeInfo {
   tags: string
 }
 
+// --- Cookie helpers ---
+const getCookie = (name: string): string | null => {
+  const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name.replace('.', '\\.') + '=([^;]*)'))
+  return m ? decodeURIComponent(m[1]) : null
+}
+
+const setCookie = (name: string, value: string) => {
+  document.cookie = `${name}=${encodeURIComponent(value)};path=/`
+}
+
+// --- State ---
 const alertStore = useAlertStore()
 const isLoading = ref(false)
 const nodes = ref<NodeInfo[]>([])
 const pingResults = reactive<Record<string, number>>({})
 const pingingNodes = reactive(new Set<string>())
+const isPingingAll = ref(false)
 
+const namespaces = ref<string[]>([])
+const selectedNamespace = ref<string | null>(getCookie('messaging.node.ns'))
+
+// --- Active node ---
+function getActiveNodeEndpoint(): string | null {
+  return getCookie('messaging.node')
+}
+
+function isActiveNode(node: NodeInfo): boolean {
+  const active = getActiveNodeEndpoint()
+  if (!active) return false
+  const nodeEndpoint = `${node.address}:${node.port}`
+  return active === nodeEndpoint
+}
+
+// --- Namespace loading ---
+async function loadNamespaces() {
+  try {
+    const data = await httpService.get<string[]>('/list-ns')
+    namespaces.value = data || []
+  } catch {
+    namespaces.value = []
+  }
+}
+
+async function onNamespaceChange(ns: string) {
+  selectedNamespace.value = ns
+  setCookie('messaging.node.ns', ns)
+  await loadNodesByNamespace(ns)
+}
+
+async function loadNodesByNamespace(ns: string) {
+  isLoading.value = true
+  try {
+    const data = await httpService.get<NodeInfo[]>(`/list-svc/${encodeURIComponent(ns)}`)
+    nodes.value = data || []
+  } catch (error) {
+    console.error('Failed to load nodes for namespace:', error)
+    alertStore.showError('Failed to load nodes for namespace')
+  } finally {
+    isLoading.value = false
+  }
+}
+
+// --- Node loading ---
 async function loadNodes() {
+  if (namespaces.value.length > 0 && selectedNamespace.value) {
+    await loadNodesByNamespace(selectedNamespace.value)
+    return
+  }
+
   isLoading.value = true
   try {
     const data = await httpService.get<NodeInfo[]>('/nodes')
@@ -124,6 +223,7 @@ async function loadNodes() {
   }
 }
 
+// --- Helpers ---
 function parseTags(tags: string): string[] {
   if (!tags) return []
   try {
@@ -138,6 +238,7 @@ function parseTags(tags: string): string[] {
   }
 }
 
+// --- Ping ---
 async function pingNode(node: NodeInfo) {
   pingingNodes.add(node.name)
   try {
@@ -153,9 +254,25 @@ async function pingNode(node: NodeInfo) {
   }
 }
 
+async function pingAll() {
+  if (nodes.value.length === 0) return
+  isPingingAll.value = true
+  try {
+    for (const node of nodes.value) {
+      await pingNode(node)
+    }
+  } finally {
+    isPingingAll.value = false
+  }
+}
+
+// --- Switch node ---
 function switchToNode(node: NodeInfo) {
   const endpoint = `${node.address}:${node.port}`
-  document.cookie = `messaging.currentnode=${encodeURIComponent(endpoint)};path=/;max-age=86400`
+  setCookie('messaging.node', endpoint)
+  if (selectedNamespace.value) {
+    setCookie('messaging.node.ns', selectedNamespace.value)
+  }
   alertStore.showSuccess(`Switched to node: ${node.name}`)
 }
 
@@ -165,8 +282,20 @@ function getLatencyColor(latency: number): string {
   return 'error'
 }
 
-onMounted(() => {
-  loadNodes()
+// --- Init ---
+onMounted(async () => {
+  await loadNamespaces()
+
+  if (namespaces.value.length > 0) {
+    // Restore previously selected namespace or default to first
+    if (!selectedNamespace.value || !namespaces.value.includes(selectedNamespace.value)) {
+      selectedNamespace.value = namespaces.value[0]
+      setCookie('messaging.node.ns', selectedNamespace.value)
+    }
+    await loadNodesByNamespace(selectedNamespace.value)
+  } else {
+    await loadNodes()
+  }
 })
 </script>
 
@@ -185,6 +314,17 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 20px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ns-select {
+  min-width: 160px;
+  max-width: 240px;
 }
 
 .page-title {
@@ -219,9 +359,22 @@ onMounted(() => {
   color: #f44336 !important;
 }
 
+.active-node {
+  background: rgba(var(--v-theme-primary), 0.1);
+  border-left: 3px solid rgb(var(--v-theme-primary));
+}
+
 @media (max-width: 768px) {
   .nodes-page {
     padding: 12px;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+  }
+
+  .ns-select {
+    min-width: 120px;
   }
 }
 </style>
