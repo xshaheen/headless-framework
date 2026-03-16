@@ -79,15 +79,15 @@
             <div v-else class="meta-grid">
               <div v-if="meta.messaging" class="meta-item">
                 <div class="meta-item-label">Messaging</div>
-                <div class="meta-item-value">{{ meta.messaging }}</div>
+                <div class="meta-item-value">{{ meta.messaging.name }} {{ meta.messaging.version }}</div>
               </div>
               <div v-if="meta.broker" class="meta-item">
                 <div class="meta-item-label">Broker</div>
-                <div class="meta-item-value">{{ meta.broker }}</div>
+                <div class="meta-item-value">{{ meta.broker.name }}</div>
               </div>
               <div v-if="meta.storage" class="meta-item">
                 <div class="meta-item-label">Storage</div>
-                <div class="meta-item-value">{{ meta.storage }}</div>
+                <div class="meta-item-value">{{ meta.storage.name }}</div>
               </div>
             </div>
           </v-card-text>
@@ -167,113 +167,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
-import { httpService } from '@/services/http'
-import { getStatsPollingInterval } from '@/utilities/pathResolver'
-import { useAlertStore } from '@/stores/alertStore'
+import { onMounted, onUnmounted } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useMessagingStore } from '@/stores/messagingStore'
 
-const alertStore = useAlertStore()
-const isLoading = ref(true)
-const pollingInterval = getStatsPollingInterval()
-let pollTimer: ReturnType<typeof setInterval> | null = null
+const store = useMessagingStore()
+const { stats, meta, realtimeMetrics, metricsHistory, isLoading } = storeToRefs(store)
 
-const stats = reactive({
-  publishedSucceeded: 0,
-  publishedFailed: 0,
-  receivedSucceeded: 0,
-  receivedFailed: 0,
-  servers: 0,
-})
-
-const meta = reactive({
-  messaging: '',
-  broker: '',
-  storage: '',
-})
-
-const realtimeMetrics = ref<Record<string, unknown> | null>(null)
-
-const metricsHistory = reactive({
-  dayHour: [] as string[],
-  publishSucceeded: [] as number[],
-  publishFailed: [] as number[],
-  subscribeSucceeded: [] as number[],
-  subscribeFailed: [] as number[],
-})
-
-async function fetchStats() {
-  try {
-    const data = await httpService.get<Record<string, unknown>>('/stats')
-    stats.publishedSucceeded = (data.publishedSucceeded as number) || 0
-    stats.publishedFailed = (data.publishedFailed as number) || 0
-    stats.receivedSucceeded = (data.receivedSucceeded as number) || 0
-    stats.receivedFailed = (data.receivedFailed as number) || 0
-    stats.servers = (data.servers as number) || 0
-  } catch (error) {
-    console.error('Failed to fetch stats:', error)
-  }
-}
-
-async function fetchMeta() {
-  try {
-    const data = await httpService.get<Record<string, string>>('/meta')
-    meta.messaging = data.messaging || ''
-    meta.broker = data.broker || ''
-    meta.storage = data.storage || ''
-  } catch (error) {
-    console.error('Failed to fetch meta:', error)
-  }
-}
-
-async function fetchRealtimeMetrics() {
-  try {
-    const data = await httpService.get<Record<string, unknown>>('/metrics-realtime')
-    realtimeMetrics.value = data
-  } catch (error) {
-    console.error('Failed to fetch realtime metrics:', error)
-  }
-}
-
-async function fetchMetricsHistory() {
-  try {
-    const data = await httpService.get<Record<string, unknown[]>>('/metrics-history')
-    metricsHistory.dayHour = (data.DayHour || data.dayHour || []) as string[]
-    metricsHistory.publishSucceeded = (data.PublishSuccessed || data.publishSuccessed || []) as number[]
-    metricsHistory.publishFailed = (data.PublishFailed || data.publishFailed || []) as number[]
-    metricsHistory.subscribeSucceeded = (data.SubscribeSuccessed || data.subscribeSuccessed || []) as number[]
-    metricsHistory.subscribeFailed = (data.SubscribeFailed || data.subscribeFailed || []) as number[]
-  } catch (error) {
-    console.error('Failed to fetch metrics history:', error)
-  }
-}
-
-async function loadAll() {
-  isLoading.value = true
-  try {
-    await Promise.all([fetchStats(), fetchMeta(), fetchRealtimeMetrics(), fetchMetricsHistory()])
-  } catch (error) {
-    alertStore.showError('Failed to load dashboard data')
-  } finally {
-    isLoading.value = false
-  }
-}
-
-function startPolling() {
-  pollTimer = setInterval(async () => {
-    await Promise.all([fetchStats(), fetchRealtimeMetrics()])
-  }, pollingInterval)
-}
+const pollingInterval = 2000
 
 onMounted(async () => {
-  await loadAll()
-  startPolling()
+  await store.startPolling()
 })
 
 onUnmounted(() => {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
+  store.stopPolling()
 })
 </script>
 
