@@ -5,6 +5,17 @@
     <link rel="icon" href="./logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Headless Messaging</title>
+    <script type="module">
+      // Dev-mode config — in production this is injected by .NET middleware
+      if (import.meta.env.DEV && !window.MessagingConfig) {
+        window.MessagingConfig = {
+          basePath: '/messaging',
+          auth: { mode: 'none', enabled: false, sessionTimeout: 30 },
+          statsPollingInterval: 2000,
+        }
+        window.__dynamic_base__ = '/'
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>

@@ -1,8 +1,8 @@
+using System.Text.Json;
 using Headless.AuditLog;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using System.Text.Json;
 using Tests.Fixture;
 
 namespace Tests;
@@ -15,7 +15,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         // given
         var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
         await using var _ = conn;
-        await using var _sp = sp;
+        await using var __ = sp;
         await using var scope = sp.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
 
@@ -63,7 +63,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         // given
         var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
         await using var _ = conn;
-        await using var _sp = sp;
+        await using var __ = sp;
         await using var scope = sp.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
         var readAuditLog = scope.ServiceProvider.GetRequiredService<IReadAuditLog>();
@@ -102,7 +102,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         // given
         var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
         await using var _ = conn;
-        await using var _sp = sp;
+        await using var __ = sp;
         await using var scope = sp.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
 
@@ -141,7 +141,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         // given
         var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
         await using var _ = conn;
-        await using var _sp = sp;
+        await using var __ = sp;
         await using var scope = sp.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
 
@@ -179,7 +179,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         // given
         var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
         await using var _ = conn;
-        await using var _sp = sp;
+        await using var __ = sp;
         await using var scope = sp.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
         var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog>();
@@ -211,7 +211,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         // given
         var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
         await using var _ = conn;
-        await using var _sp = sp;
+        await using var __ = sp;
         await using var scope = sp.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
 
@@ -242,7 +242,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         // given
         var (sp, conn) = await AuditIntegrationFixture.CreateAsync(opts => opts.IsEnabled = false);
         await using var _ = conn;
-        await using var _sp = sp;
+        await using var __ = sp;
         await using var scope = sp.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
 

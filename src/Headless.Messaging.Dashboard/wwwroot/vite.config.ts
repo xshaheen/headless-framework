@@ -62,5 +62,15 @@ export default defineConfig(async ({ command, mode }) => {
     resolve: {
       alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
     },
+
+    server: {
+      proxy: {
+        // Proxy API calls to the .NET demo backend
+        '/messaging/api': {
+          target: 'http://localhost:5000',
+          changeOrigin: true,
+        },
+      },
+    },
   }
 })
