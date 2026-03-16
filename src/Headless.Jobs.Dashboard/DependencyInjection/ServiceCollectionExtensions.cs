@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Headless.Jobs.Authentication;
+using Headless.Dashboard.Authentication;
 using Headless.Jobs.Endpoints;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure;

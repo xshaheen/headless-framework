@@ -1,4 +1,4 @@
-using Headless.Jobs.Authentication;
+using Headless.Dashboard.Authentication;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Hubs;
 using Headless.Jobs.Infrastructure.Dashboard;

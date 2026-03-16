@@ -1,4 +1,4 @@
-using Headless.Jobs.Authentication;
+using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 

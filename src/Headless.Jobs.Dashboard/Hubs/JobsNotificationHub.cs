@@ -1,4 +1,4 @@
-using Headless.Jobs.Authentication;
+using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 
