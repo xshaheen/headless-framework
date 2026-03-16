@@ -34,7 +34,7 @@ await using (var scope = app.Services.CreateAsyncScope())
 }
 
 // Activate Jobs job processor (mirrors docs' minimal setup)
-Headless.Jobs.DependencyInjection.AspNetCoreExtensions.UseJobs(app);
+AspNetCoreExtensions.UseJobs(app);
 
 // Minimal endpoint to schedule the sample job
 app.MapPost(

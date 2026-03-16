@@ -1,8 +1,4 @@
 {
-  "iisSettings": {
-    "windowsAuthentication": false,
-    "anonymousAuthentication": true
-  },
   "profiles": {
     "Sample.Dashboard.Auth": {
       "commandName": "Project",
