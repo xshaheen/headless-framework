@@ -1,0 +1,27 @@
+using System.Diagnostics;
+using Headless.Jobs.Enums;
+using Headless.Jobs.Models;
+
+namespace Headless.Jobs.Instrumentation;
+
+/// <summary>
+/// Simple placeholder interface for Jobs instrumentation
+/// </summary>
+internal interface IJobsInstrumentation
+{
+    Activity? StartJobActivity(string activityName, InternalFunctionContext context);
+    void LogJobEnqueued(string jobType, string functionName, Guid jobId, string? enqueuedFrom = null);
+    void LogJobCompleted(Guid jobId, string functionName, long executionTimeMs, bool success);
+    void LogJobFailed(Guid jobId, string functionName, Exception exception, int retryCount);
+    void LogJobCancelled(Guid jobId, string functionName, string reason);
+    void LogJobSkipped(Guid jobId, string functionName, string reason);
+    void LogSeedingDataStarted(string seedingDataType);
+    void LogSeedingDataCompleted(string seedingDataType);
+    void LogRequestDeserializationFailure(
+        string requestType,
+        string functionName,
+        Guid jobId,
+        JobType type,
+        Exception exception
+    );
+}

@@ -7190,67 +7190,67 @@ No configuration required. Containers use sensible defaults.
 - Starts Docker containers during test execution
 - Containers are automatically stopped after tests complete
 ---
-domain: Ticker (Background Jobs)
-packages: Ticker.Abstractions, Ticker.Core, Ticker.Dashboard, Ticker.SourceGenerator, Ticker.OpenTelemetry, Ticker.Caching.Redis, Ticker.EntityFramework
+domain: Jobs (Background Jobs)
+packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.OpenTelemetry, Jobs.Caching.Redis, Jobs.EntityFramework
 ---
 
-# Ticker (Background Jobs)
+# Jobs (Background Jobs)
 
 > High-performance background job scheduler for .NET with cron expressions, time-based scheduling, source-generated registration, and distributed coordination.
 
 ## Quick Orientation
 
-Minimum setup: `Ticker.Core` + `Ticker.EntityFramework` (for persistence) + `Ticker.SourceGenerator` (for compile-time job registration).
+Minimum setup: `Jobs.Core` + `Jobs.EntityFramework` (for persistence) + `Jobs.SourceGenerator` (for compile-time job registration).
 
 Additional packages:
-- `Ticker.Dashboard` -- monitoring UI with authentication (basic, API key, host auth)
-- `Ticker.Caching.Redis` -- multi-instance coordination via Redis (node registry, heartbeat, dead node detection)
-- `Ticker.OpenTelemetry` -- distributed tracing and structured logging
-- `Ticker.Abstractions` -- interfaces only (pulled in transitively by Core)
+- `Jobs.Dashboard` -- monitoring UI with authentication (basic, API key, host auth)
+- `Jobs.Caching.Redis` -- multi-instance coordination via Redis (node registry, heartbeat, dead node detection)
+- `Jobs.OpenTelemetry` -- distributed tracing and structured logging
+- `Jobs.Abstractions` -- interfaces only (pulled in transitively by Core)
 
 Wiring:
 ```csharp
-builder.Services.AddTickerQ(options =>
+builder.Services.AddJobs(options =>
 {
     options.MaxConcurrency(10);
     options.TimeZone(TimeZoneInfo.Utc);
 });
-app.UseTickerQ();
+app.UseJobs();
 ```
 
-Mark job classes with `[TickerQ("cron-expression")]` and add the SourceGenerator package for zero-reflection auto-discovery.
+Mark job classes with `[Jobs("cron-expression")]` and add the SourceGenerator package for zero-reflection auto-discovery.
 
 ## Agent Instructions
 
-- Do NOT use Hangfire or Quartz -- use Headless.Ticker (TickerQ) for all background jobs in this framework.
-- Mark job methods with `[TickerQ("cron-expression")]` attribute. Add `Headless.Ticker.SourceGenerator` to the project for compile-time job registration (eliminates reflection).
-- Use `Ticker.EntityFramework` for job persistence. Without it, jobs are in-memory only and lost on restart.
-- Use `Ticker.Caching.Redis` for multi-instance deployments -- it provides node heartbeat, dead node detection, and distributed coordination.
-- Call `app.UseTickerQ()` after `builder.Build()` to start the scheduler. Use `TickerQStartMode.Manual` if you need delayed startup.
-- For time-based (one-off) jobs, inject `ITimeTickerManager<TimeTickerEntity>` and call `ScheduleAsync()`.
-- For cron jobs, the `[TickerQ]` attribute takes a cron expression and optional `Priority` parameter (`TickerTaskPriority.High`, `Normal`, `LongRunning`).
-- Use `[TickerQConstructor]` attribute on constructors when you need custom DI injection in job classes.
+- Do NOT use Hangfire or Quartz -- use Headless.Jobs (Jobs) for all background jobs in this framework.
+- Mark job methods with `[Jobs("cron-expression")]` attribute. Add `Headless.Jobs.SourceGenerator` to the project for compile-time job registration (eliminates reflection).
+- Use `Jobs.EntityFramework` for job persistence. Without it, jobs are in-memory only and lost on restart.
+- Use `Jobs.Caching.Redis` for multi-instance deployments -- it provides node heartbeat, dead node detection, and distributed coordination.
+- Call `app.UseJobs()` after `builder.Build()` to start the scheduler. Use `JobsStartMode.Manual` if you need delayed startup.
+- For time-based (one-off) jobs, inject `ITimeJobManager<TimeJobEntity>` and call `ScheduleAsync()`.
+- For cron jobs, the `[Jobs]` attribute takes a cron expression and optional `Priority` parameter (`JobPriority.High`, `Normal`, `LongRunning`).
+- Use `[JobsConstructor]` attribute on constructors when you need custom DI injection in job classes.
 - Dashboard authentication: call `dashboard.WithBasicAuth()`, `WithApiKey()`, or `WithHostAuthentication()` inside `config.AddDashboard()`.
-- OpenTelemetry: call `.AddOpenTelemetryInstrumentation()` on the TickerQ builder and add `"TickerQ"` as a source to your tracing config.
+- OpenTelemetry: call `.AddOpenTelemetryInstrumentation()` on the Jobs builder and add `"Jobs"` as a source to your tracing config.
 - Exception handling: register a custom handler via `options.UseExceptionHandler<CustomTickerExceptionHandler>()`.
 - For testing, call `options.DisableBackgroundServices()` to prevent the scheduler from running.
 
 ---
-# Headless.Ticker.Abstractions
+# Headless.Jobs.Abstractions
 
 Simple utilities for queuing and executing cron/time-based jobs in the background.
 
 ---
 
 ## Installation
-[Headless.Ticker.Abstractions.csproj](Headless.Ticker.Abstractions.csproj)
+[Headless.Jobs.Abstractions.csproj](Headless.Jobs.Abstractions.csproj)
 ```bash
-dotnet add package Headless.Ticker.Abstractions
+dotnet add package Headless.Jobs.Abstractions
 ```
 ---
-# Headless.Ticker.Core
+# Headless.Jobs.Core
 
-Core implementation of TickerQ, a high-performance background job scheduler for .NET with cron expressions and time-based scheduling.
+Core implementation of Jobs, a high-performance background job scheduler for .NET with cron expressions and time-based scheduling.
 
 ## Problem Solved
 
@@ -7269,21 +7269,21 @@ Provides reliable, distributed background job scheduling with cron expressions, 
 ## Installation
 
 ```bash
-dotnet add package Headless.Ticker.Core
+dotnet add package Headless.Jobs.Core
 ```
 
 ## Quick Start
 
 ```csharp
-// Register TickerQ
-builder.Services.AddTickerQ(options =>
+// Register Jobs
+builder.Services.AddJobs(options =>
 {
     options.MaxConcurrency(10);
     options.TimeZone(TimeZoneInfo.FindSystemTimeZoneById("America/New_York"));
 });
 
 // Define cron job
-[TickerQ("*/5 * * * *")] // Every 5 minutes
+[Jobs("*/5 * * * *")] // Every 5 minutes
 public static class CleanupJob
 {
     public static async Task ExecuteAsync(IServiceProvider sp, CancellationToken ct)
@@ -7295,15 +7295,15 @@ public static class CleanupJob
     }
 }
 
-// Initialize TickerQ
-app.UseTickerQ();
+// Initialize Jobs
+app.UseJobs();
 
 // Schedule time-based job programmatically
-public sealed class OrderService(ITimeTickerManager<TimeTickerEntity> ticker)
+public sealed class OrderService(ITimeJobManager<TimeJobEntity> job)
 {
     public async Task SendReminderAsync(string orderId, CancellationToken ct)
     {
-        await ticker.ScheduleAsync(new TimeTickerEntity
+        await job.ScheduleAsync(new TimeJobEntity
         {
             TickerKey = $"order-reminder-{orderId}",
             OccurrenceTime = DateTime.UtcNow.AddHours(24),
@@ -7316,7 +7316,7 @@ public sealed class OrderService(ITimeTickerManager<TimeTickerEntity> ticker)
 ## Configuration
 
 ```csharp
-builder.Services.AddTickerQ(options =>
+builder.Services.AddJobs(options =>
 {
     // Scheduler options
     options.MaxConcurrency(10);
@@ -7324,7 +7324,7 @@ builder.Services.AddTickerQ(options =>
     options.TimeZone(TimeZoneInfo.Utc);
 
     // Seeding options
-    options.SeedDefinedCronTickers = true;
+    options.SeedDefinedCronJobs = true;
     options.CustomTimeSeeder = async sp =>
     {
         // Seed initial jobs
@@ -7338,13 +7338,13 @@ builder.Services.AddTickerQ(options =>
 });
 
 // Start modes
-app.UseTickerQ(TickerQStartMode.Immediate); // Start immediately (default)
-app.UseTickerQ(TickerQStartMode.Manual);    // Wait for manual trigger
+app.UseJobs(JobsStartMode.Immediate); // Start immediately (default)
+app.UseJobs(JobsStartMode.Manual);    // Wait for manual trigger
 ```
 
 ## Dependencies
 
-- `Headless.Ticker.Abstractions`
+- `Headless.Jobs.Abstractions`
 - `Headless.Extensions`
 
 ## Side Effects
@@ -7354,15 +7354,15 @@ app.UseTickerQ(TickerQStartMode.Manual);    // Wait for manual trigger
 - Runs custom thread pool for job execution
 - Periodically scans for due jobs and executes them
 ---
-# TickerQ Dashboard Authentication
+# Jobs Dashboard Authentication
 
-Simple, clean authentication for your TickerQ Dashboard.
+Simple, clean authentication for your Jobs Dashboard.
 
 ## 🚀 Quick Examples
 
 ### No Authentication (Public Dashboard)
 ```csharp
-services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
+services.AddJobs<MyTimeJob, MyCronJob>(config =>
 {
     config.AddDashboard(dashboard =>
     {
@@ -7373,7 +7373,7 @@ services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
 
 ### Basic Authentication
 ```csharp
-services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
+services.AddJobs<MyTimeJob, MyCronJob>(config =>
 {
     config.AddDashboard(dashboard =>
     {
@@ -7384,7 +7384,7 @@ services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
 
 ### API Key Authentication
 ```csharp
-services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
+services.AddJobs<MyTimeJob, MyCronJob>(config =>
 {
     config.AddDashboard(dashboard =>
     {
@@ -7395,7 +7395,7 @@ services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
 
 ### Use Host Application's Authentication
 ```csharp
-services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
+services.AddJobs<MyTimeJob, MyCronJob>(config =>
 {
     config.AddDashboard(dashboard =>
     {
@@ -7406,7 +7406,7 @@ services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
 
 ### Use Host Authentication with Custom Policy
 ```csharp
-services.AddTickerQ<MyTimeTicker, MyCronTicker>(config =>
+services.AddJobs<MyTimeJob, MyCronJob>(config =>
 {
     config.AddDashboard(dashboard =>
     {
@@ -7442,13 +7442,13 @@ The frontend automatically adapts based on your backend configuration:
 
 That's it! Simple and clean. 🎉
 ---
-# Headless.Ticker.SourceGenerator
+# Headless.Jobs.SourceGenerator
 
-C# source generator for TickerQ that generates boilerplate code for background job registration and execution.
+C# source generator for Jobs that generates boilerplate code for background job registration and execution.
 
 ## Problem Solved
 
-Eliminates reflection overhead and manual job registration by generating compile-time code for TickerQ job functions marked with `[TickerQ]` attribute.
+Eliminates reflection overhead and manual job registration by generating compile-time code for Jobs job functions marked with `[Jobs]` attribute.
 
 ## Key Features
 
@@ -7462,14 +7462,14 @@ Eliminates reflection overhead and manual job registration by generating compile
 ## Installation
 
 ```bash
-dotnet add package Headless.Ticker.SourceGenerator
+dotnet add package Headless.Jobs.SourceGenerator
 ```
 
 ## Quick Start
 
 ```csharp
 // Define job with attribute
-[TickerQ("*/5 * * * *")] // Every 5 minutes
+[Jobs("*/5 * * * *")] // Every 5 minutes
 public static class CleanupJob
 {
     public static async Task ExecuteAsync(IServiceProvider sp, CancellationToken ct)
@@ -7494,15 +7494,15 @@ No runtime configuration. Uses attributes:
 
 ```csharp
 // Cron job
-[TickerQ("0 0 * * *", Priority = TickerTaskPriority.High)]
+[Jobs("0 0 * * *", Priority = JobPriority.High)]
 public static class DailyReport { /* ... */ }
 
 // Job with request payload
-[TickerQ("ProcessOrder")]
+[Jobs("ProcessOrder")]
 public sealed class OrderProcessor(IOrderService orders)
 {
     public async Task ExecuteAsync(
-        TickerFunctionContext<OrderRequest> context,
+        JobFunctionContext<OrderRequest> context,
         CancellationToken ct)
     {
         await orders.ProcessAsync(context.Request, ct);
@@ -7512,13 +7512,13 @@ public sealed class OrderProcessor(IOrderService orders)
 // Custom constructor
 public sealed class ComplexJob
 {
-    [TickerQConstructor]
+    [JobsConstructor]
     public ComplexJob(ILogger<ComplexJob> logger, IConfiguration config)
     {
         // Custom initialization
     }
 
-    [TickerQ("ComplexTask")]
+    [Jobs("ComplexTask")]
     public async Task ExecuteAsync(/* ... */) { }
 }
 ```
@@ -7529,15 +7529,15 @@ public sealed class ComplexJob
 
 ## Side Effects
 
-Generates `TickerQInstanceFactoryExtensions.g.cs` at compile time with:
+Generates `JobsInstanceFactoryExtensions.g.cs` at compile time with:
 - Module initializer for auto-registration
 - Job execution delegates
 - Constructor factory methods
 - Request type registrations
 ---
-# Headless.Ticker.Instrumentation.OpenTelemetry
+# Headless.Jobs.Instrumentation.OpenTelemetry
 
-OpenTelemetry instrumentation package for TickerQ job scheduler with distributed tracing support.
+OpenTelemetry instrumentation package for Jobs job scheduler with distributed tracing support.
 
 ## Features
 
@@ -7552,7 +7552,7 @@ OpenTelemetry instrumentation package for TickerQ job scheduler with distributed
 ## Installation
 
 ```bash
-dotnet add package Headless.Ticker.Instrumentation.OpenTelemetry
+dotnet add package Headless.Jobs.Instrumentation.OpenTelemetry
 ```
 
 ## Usage
@@ -7560,22 +7560,22 @@ dotnet add package Headless.Ticker.Instrumentation.OpenTelemetry
 ### Basic Setup
 
 ```csharp
-using Headless.Ticker.Instrumentation.OpenTelemetry;
+using Headless.Jobs.Instrumentation.OpenTelemetry;
 using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure OpenTelemetry with TickerQ ActivitySource
+// Configure OpenTelemetry with Jobs ActivitySource
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {
-        tracing.AddSource("TickerQ") // Add TickerQ ActivitySource
+        tracing.AddSource("Jobs") // Add Jobs ActivitySource
                .AddConsoleExporter()
                .AddJaegerExporter();
     });
 
-// Add TickerQ with OpenTelemetry instrumentation
-builder.Services.AddTickerQ<MyTimeTicker, MyCronTicker>(options => { })
+// Add Jobs with OpenTelemetry instrumentation
+builder.Services.AddJobs<MyTimeJob, MyCronJob>(options => { })
     .AddOperationalStore(ef => { })
     .AddOpenTelemetryInstrumentation(); // Enable tracing
 
@@ -7589,7 +7589,7 @@ app.Run();
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {
-        tracing.AddTickerQInstrumentation()
+        tracing.AddJobsInstrumentation()
                .AddJaegerExporter(options =>
                {
                    options.Endpoint = new Uri("http://localhost:14268/api/traces");
@@ -7603,7 +7603,7 @@ builder.Services.AddOpenTelemetry()
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {
-        tracing.AddTickerQInstrumentation()
+        tracing.AddJobsInstrumentation()
                .AddAzureMonitorTraceExporter();
     });
 ```
@@ -7612,54 +7612,54 @@ builder.Services.AddOpenTelemetry()
 
 ### Job Execution Activities
 ```
-headless.ticker.job.execute.timeticker (main job execution span)
-├── headless.ticker.job.enqueued (when job starts execution)
-├── headless.ticker.job.completed (on successful completion)
-├── headless.ticker.job.failed (on failure)
-├── headless.ticker.job.cancelled (on cancellation)
-├── headless.ticker.job.skipped (when skipped)
-├── headless.ticker.seeding.started (for data seeding)
-└── headless.ticker.seeding.completed (seeding completion)
+headless.jobs.job.execute.timeticker (main job execution span)
+├── headless.jobs.job.enqueued (when job starts execution)
+├── headless.jobs.job.completed (on successful completion)
+├── headless.jobs.job.failed (on failure)
+├── headless.jobs.job.cancelled (on cancellation)
+├── headless.jobs.job.skipped (when skipped)
+├── headless.jobs.seeding.started (for data seeding)
+└── headless.jobs.seeding.completed (seeding completion)
 ```
 
 ### Tags Added to Activities
 
 | Tag | Description | Example |
 |-----|-------------|---------|
-| `headless.ticker.job.id` | Unique job identifier | `123e4567-e89b-12d3-a456-426614174000` |
-| `headless.ticker.job.type` | Type of ticker | `TimeTicker`, `CronTicker` |
-| `headless.ticker.job.function` | Function name being executed | `ProcessEmails` |
-| `headless.ticker.job.priority` | Job priority | `Normal`, `High`, `LongRunning` |
-| `headless.ticker.job.machine` | Machine executing the job | `web-server-01` |
-| `headless.ticker.job.parent_id` | Parent job ID (for child jobs) | `parent-job-guid` |
-| `headless.ticker.job.enqueued_from` | Where the job was enqueued from | `UserController.CreateUser (Program.cs:42)` |
-| `headless.ticker.job.is_due` | Whether the job was due | `true`, `false` |
-| `headless.ticker.job.is_child` | Whether this is a child job | `true`, `false` |
-| `headless.ticker.job.retries` | Maximum retry attempts | `3` |
-| `headless.ticker.job.current_attempt` | Current retry attempt | `1`, `2`, `3` |
-| `headless.ticker.job.final_status` | Final execution status | `Done`, `Failed`, `Cancelled`, `Skipped` |
-| `headless.ticker.job.final_retry_count` | Final retry count reached | `2` |
-| `headless.ticker.job.execution_time_ms` | Execution time in milliseconds | `1250` |
-| `headless.ticker.job.success` | Whether execution was successful | `true`, `false` |
-| `headless.ticker.job.error_type` | Exception type for failures | `SqlException`, `TimeoutException` |
-| `headless.ticker.job.error_message` | Error message | `Connection timeout` |
-| `headless.ticker.job.error_stack_trace` | Full stack trace | `at MyService.ProcessData()...` |
-| `headless.ticker.job.cancellation_reason` | Reason for cancellation | `Task was cancelled` |
-| `headless.ticker.job.skip_reason` | Reason for skipping | `Another instance is already running` |
+| `headless.jobs.job.id` | Unique job identifier | `123e4567-e89b-12d3-a456-426614174000` |
+| `headless.jobs.job.type` | Type of job | `TimeJob`, `CronJob` |
+| `headless.jobs.job.function` | Function name being executed | `ProcessEmails` |
+| `headless.jobs.job.priority` | Job priority | `Normal`, `High`, `LongRunning` |
+| `headless.jobs.job.machine` | Machine executing the job | `web-server-01` |
+| `headless.jobs.job.parent_id` | Parent job ID (for child jobs) | `parent-job-guid` |
+| `headless.jobs.job.enqueued_from` | Where the job was enqueued from | `UserController.CreateUser (Program.cs:42)` |
+| `headless.jobs.job.is_due` | Whether the job was due | `true`, `false` |
+| `headless.jobs.job.is_child` | Whether this is a child job | `true`, `false` |
+| `headless.jobs.job.retries` | Maximum retry attempts | `3` |
+| `headless.jobs.job.current_attempt` | Current retry attempt | `1`, `2`, `3` |
+| `headless.jobs.job.final_status` | Final execution status | `Done`, `Failed`, `Cancelled`, `Skipped` |
+| `headless.jobs.job.final_retry_count` | Final retry count reached | `2` |
+| `headless.jobs.job.execution_time_ms` | Execution time in milliseconds | `1250` |
+| `headless.jobs.job.success` | Whether execution was successful | `true`, `false` |
+| `headless.jobs.job.error_type` | Exception type for failures | `SqlException`, `TimeoutException` |
+| `headless.jobs.job.error_message` | Error message | `Connection timeout` |
+| `headless.jobs.job.error_stack_trace` | Full stack trace | `at MyService.ProcessData()...` |
+| `headless.jobs.job.cancellation_reason` | Reason for cancellation | `Task was cancelled` |
+| `headless.jobs.job.skip_reason` | Reason for skipping | `Another instance is already running` |
 
 ## Logging Output
 
 The instrumentation provides structured logging for all job events:
 
 ```
-[INF] TickerQ Job enqueued: TimeTicker - ProcessEmails (123e4567-e89b-12d3-a456-426614174000) from ExecutionTaskHandler
-[INF] TickerQ Job completed: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) in 1250ms - Success: True
-[ERR] TickerQ Job failed: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) - Retry 1 - Connection timeout
-[INF] TickerQ Job completed: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) in 2500ms - Success: False
-[WRN] TickerQ Job cancelled: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) - Task was cancelled
-[INF] TickerQ Job skipped: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) - Another CronOccurrence is already running!
-[INF] TickerQ start seeding data: TimeTicker (production-node-01)
-[INF] TickerQ completed seeding data: TimeTicker (production-node-01)
+[INF] Jobs Job enqueued: TimeJob - ProcessEmails (123e4567-e89b-12d3-a456-426614174000) from ExecutionTaskHandler
+[INF] Jobs Job completed: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) in 1250ms - Success: True
+[ERR] Jobs Job failed: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) - Retry 1 - Connection timeout
+[INF] Jobs Job completed: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) in 2500ms - Success: False
+[WRN] Jobs Job cancelled: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) - Task was cancelled
+[INF] Jobs Job skipped: ProcessEmails (123e4567-e89b-12d3-a456-426614174000) - Another CronOccurrence is already running!
+[INF] Jobs start seeding data: TimeJob (production-node-01)
+[INF] Jobs completed seeding data: TimeJob (production-node-01)
 ```
 
 ## Integration with Logging Frameworks
@@ -7671,7 +7671,7 @@ This package works seamlessly with any logging framework that integrates with `I
 builder.Host.UseSerilog((context, config) =>
 {
     config.WriteTo.Console()
-          .WriteTo.File("logs/tickerq-.txt", rollingInterval: RollingInterval.Day)
+          .WriteTo.File("logs/jobs-.txt", rollingInterval: RollingInterval.Day)
           .Enrich.FromLogContext();
 });
 ```
@@ -7692,34 +7692,34 @@ builder.Logging.AddNLog();
 
 - .NET 8.0 or later
 - OpenTelemetry 1.7.0 or later
-- Headless.Ticker.Abstractions (automatically included)
+- Headless.Jobs.Abstractions (automatically included)
 ---
-# Headless.Ticker.Caching.Redis
+# Headless.Jobs.Caching.Redis
 
-Redis-backed distributed coordination for TickerQ with node heartbeat monitoring and dead node detection.
+Redis-backed distributed coordination for Jobs with node heartbeat monitoring and dead node detection.
 
 ## Problem Solved
 
-Enables multi-instance TickerQ deployments with Redis-based node registry, heartbeat monitoring, and automatic dead node cleanup for high availability job scheduling.
+Enables multi-instance Jobs deployments with Redis-based node registry, heartbeat monitoring, and automatic dead node cleanup for high availability job scheduling.
 
 ## Key Features
 
-- **Node Registry**: Track all TickerQ nodes in Redis
+- **Node Registry**: Track all Jobs nodes in Redis
 - **Heartbeat Monitoring**: Periodic node liveness checks
 - **Dead Node Detection**: Automatic cleanup of failed nodes
-- **Distributed Coordination**: Shared state across TickerQ instances
+- **Distributed Coordination**: Shared state across Jobs instances
 - **Dashboard Integration**: Real-time cluster visibility
 
 ## Installation
 
 ```bash
-dotnet add package Headless.Ticker.Caching.Redis
+dotnet add package Headless.Jobs.Caching.Redis
 ```
 
 ## Quick Start
 
 ```csharp
-builder.Services.AddTickerQ(options =>
+builder.Services.AddJobs(options =>
 {
     options.MaxConcurrency(10);
 
@@ -7731,7 +7731,7 @@ builder.Services.AddTickerQ(options =>
     });
 });
 
-app.UseTickerQ();
+app.UseJobs();
 ```
 
 ## Configuration
@@ -7747,7 +7747,7 @@ options.UseRedisCoordination(redis =>
 
 ## Dependencies
 
-- `Headless.Ticker.Abstractions`
+- `Headless.Jobs.Abstractions`
 - `Microsoft.Extensions.Caching.StackExchangeRedis`
 
 ## Side Effects
@@ -7757,9 +7757,9 @@ options.UseRedisCoordination(redis =>
 - Periodically scans for and removes dead nodes
 - Creates Redis keys: `nodes:registry`, `hb:{nodeId}`
 ---
-# Headless.Ticker.EntityFramework
+# Headless.Jobs.EntityFramework
 
-Entity Framework Core integration for [TickerQ](https://github.com/arcenox/TickerQ), a high-performance background job scheduler for .NET.
+Entity Framework Core integration for Jobs, a high-performance background job scheduler for .NET.
 
 This package enables persistence of time-based and cron-based jobs using EF Core, allowing for robust tracking, retry logic, and job state management.
 
@@ -7768,7 +7768,7 @@ This package enables persistence of time-based and cron-based jobs using EF Core
 ## 📦 Installation
 
 ```bash
-dotnet add package Headless.Ticker.EntityFramework
+dotnet add package Headless.Jobs.EntityFramework
 ```
 ---
 domain: TUS (Resumable Uploads)

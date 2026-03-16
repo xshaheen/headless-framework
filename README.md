@@ -374,7 +374,7 @@ When working with a Headless domain, fetch the relevant domain doc:
 - SMS: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/sms.txt
 - SQL: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/sql.txt
 - Testing: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/testing.txt
-- Ticker (Background Jobs): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/ticker.txt
+- Jobs (Background Jobs): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/jobs.txt
 - TUS (Resumable Uploads): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/tus.txt
 - Utilities: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/utilities.txt
 

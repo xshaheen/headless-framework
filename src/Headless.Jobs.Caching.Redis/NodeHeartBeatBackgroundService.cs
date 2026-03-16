@@ -1,0 +1,78 @@
+using Headless.Jobs.DependencyInjection;
+using Headless.Jobs.Interfaces;
+using Headless.Jobs.Interfaces.Managers;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace Headless.Jobs;
+
+internal class NodeHeartBeatBackgroundService : BackgroundService
+{
+    private int _started;
+    private readonly IJobsRedisContext _context;
+    private readonly PeriodicTimer _tickerHeartBeatPeriodicTimer;
+    private readonly IInternalJobManager _internalJobsManager;
+    private readonly ILogger<NodeHeartBeatBackgroundService> _logger;
+
+    public NodeHeartBeatBackgroundService(
+        ServiceExtension.JobsRedisOptionBuilder schedulerOptionsBuilder,
+        IJobsRedisContext context,
+        IInternalJobManager internalJobsManager,
+        ILogger<NodeHeartBeatBackgroundService> logger
+    )
+    {
+        _context = context;
+        _internalJobsManager = internalJobsManager;
+        _logger = logger;
+        _tickerHeartBeatPeriodicTimer = new PeriodicTimer(schedulerOptionsBuilder.NodeHeartbeatInterval);
+    }
+
+    public override Task StartAsync(CancellationToken ct)
+    {
+        return Interlocked.CompareExchange(ref _started, 1, 0) != 0 ? Task.CompletedTask : base.StartAsync(ct);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await _RunJobsFallbackAsync(stoppingToken);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError("Heartbeat background service failed: {Exception}", e);
+        }
+    }
+
+    private async Task _RunJobsFallbackAsync(CancellationToken stoppingToken)
+    {
+        await _context.NotifyNodeAliveAsync();
+
+        while (await _tickerHeartBeatPeriodicTimer.WaitForNextTickAsync(stoppingToken))
+        {
+            var deadNodes = await _context.GetDeadNodesAsync();
+
+            if (deadNodes.Length != 0)
+            {
+                foreach (var deadNode in deadNodes)
+                {
+                    await _internalJobsManager.ReleaseDeadNodeResources(deadNode, stoppingToken);
+                }
+            }
+
+            await _context.NotifyNodeAliveAsync();
+        }
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Exchange(ref _started, 0);
+        await base.StopAsync(cancellationToken);
+    }
+
+    public override void Dispose()
+    {
+        _tickerHeartBeatPeriodicTimer.Dispose();
+        base.Dispose();
+    }
+}

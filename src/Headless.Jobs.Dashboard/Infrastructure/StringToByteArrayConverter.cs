@@ -1,0 +1,58 @@
+namespace Headless.Jobs.Infrastructure;
+
+public class StringToByteArrayConverter : JsonConverter<byte[]>
+{
+    public override byte[]? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var stringValue = reader.GetString();
+            if (string.IsNullOrEmpty(stringValue))
+            {
+                return null;
+            }
+
+            var dataToObject = JsonSerializer.Deserialize<object>(stringValue);
+            // Use JobsHelper to convert string to bytes (same logic as backend)
+            return JobsHelper.CreateJobRequest(dataToObject);
+        }
+
+        if (reader.TokenType == JsonTokenType.StartArray)
+        {
+            // Handle if it's already a byte array (number array from frontend)
+            // Don't double-compress - just deserialize the byte array directly
+            var bytes = JsonSerializer.Deserialize<byte[]>(ref reader, options);
+            return bytes;
+        }
+
+        return null;
+    }
+
+    public override void Write(Utf8JsonWriter writer, byte[] value, JsonSerializerOptions options)
+    {
+        // For serialization, convert bytes back to string if needed
+        if (value == null || value.Length == 0)
+        {
+            writer.WriteStringValue(string.Empty);
+            return;
+        }
+
+        try
+        {
+            var stringValue = JobsHelper.ReadJobRequestAsString(value);
+            writer.WriteStringValue(stringValue);
+        }
+#pragma warning disable ERP022  // Fallback to raw byte array when string deserialization fails.
+        catch
+        {
+            // If can't deserialize, write as byte array
+            JsonSerializer.Serialize(writer, value, options);
+        }
+#pragma warning restore ERP022
+    }
+}
