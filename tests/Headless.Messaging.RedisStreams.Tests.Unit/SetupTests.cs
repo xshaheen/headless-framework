@@ -21,7 +21,7 @@ public sealed class SetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(opt => opt.UseRedis("localhost:6379"));
+        services.AddHeadlessMessaging(opt => opt.UseRedis("localhost:6379"));
 
         // when
         await using var provider = services.BuildServiceProvider();
@@ -39,7 +39,7 @@ public sealed class SetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(opt =>
+        services.AddHeadlessMessaging(opt =>
             opt.UseRedis(redisOpt =>
             {
                 redisOpt.Configuration = ConfigurationOptions.Parse("redis.example.com:6380");
@@ -63,7 +63,7 @@ public sealed class SetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(opt => opt.UseRedis(_ => { }));
+        services.AddHeadlessMessaging(opt => opt.UseRedis(_ => { }));
 
         // when
         await using var provider = services.BuildServiceProvider();
@@ -82,7 +82,7 @@ public sealed class SetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(opt => opt.UseRedis());
+        services.AddHeadlessMessaging(opt => opt.UseRedis());
 
         // when
         await using var provider = services.BuildServiceProvider();
@@ -101,7 +101,7 @@ public sealed class SetupTests : TestBase
         Action<MessagingRedisOptions>? nullAction = null;
 
         // when & then
-        var action = () => services.AddMessaging(opt => opt.UseRedis(nullAction!));
+        var action = () => services.AddHeadlessMessaging(opt => opt.UseRedis(nullAction!));
         action.Should().ThrowExactly<ArgumentNullException>();
     }
 
@@ -111,7 +111,7 @@ public sealed class SetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(opt =>
+        services.AddHeadlessMessaging(opt =>
             opt.UseRedis(redisOpt =>
             {
                 redisOpt.Configuration = ConfigurationOptions.Parse("custom-host:1234");

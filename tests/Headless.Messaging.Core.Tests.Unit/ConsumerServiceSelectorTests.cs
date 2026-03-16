@@ -17,7 +17,7 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
@@ -47,7 +47,7 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.UseConventions(conventions =>
             {
@@ -74,7 +74,7 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.UseConventions(conventions =>
             {
@@ -106,7 +106,7 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.TopicNamePrefix = "my-app";
             messaging.DefaultGroupName = "default";
@@ -131,7 +131,7 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
@@ -158,7 +158,7 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
@@ -182,7 +182,7 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
@@ -207,7 +207,7 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
@@ -233,7 +233,7 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
@@ -284,7 +284,7 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
@@ -308,7 +308,7 @@ public sealed class ConsumerServiceSelectorTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";

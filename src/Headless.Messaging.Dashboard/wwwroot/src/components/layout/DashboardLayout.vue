@@ -130,7 +130,7 @@ function handleAuthLogout() {
             color="secondary"
             class="footer-chip"
           >
-            {{ meta.broker.name }}
+            Broker: {{ meta.broker.name }}
           </v-chip>
           <v-chip
             v-if="meta.storage && meta.storage.name"
@@ -139,7 +139,7 @@ function handleAuthLogout() {
             color="surface-variant"
             class="footer-chip"
           >
-            {{ meta.storage.name }}
+            Storage: {{ meta.storage.name }}
           </v-chip>
           <v-chip
             v-if="switchedNode"
@@ -151,7 +151,7 @@ function handleAuthLogout() {
             &#x26A1; Switched Node: {{ switchedNode }}
           </v-chip>
         </div>
-        <div class="footer-copyright">2025 — <strong>Headless Framework</strong></div>
+        <div class="footer-copyright">2026 — <strong>Headless Framework</strong></div>
       </div>
     </v-footer>
   </v-app>

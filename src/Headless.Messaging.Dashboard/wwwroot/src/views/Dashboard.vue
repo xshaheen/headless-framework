@@ -118,7 +118,7 @@ onUnmounted(() => {
 
 <style scoped>
 .dashboard-page {
-  padding: 20px;
+  padding: 20px 12px;
 }
 
 .page-content {

@@ -386,30 +386,31 @@ const handleForceUIUpdate = () => {
 
     <!-- Main Content Area -->
     <v-main>
-      <!-- Global Status Header -->
-      <div class="status-header">
-        <div class="status-header-content">
-          <div class="status-section">
+      <!-- Main Content Slot -->
+      <slot />
+    </v-main>
+
+    <!-- Footer with Status -->
+    <v-footer class="main-footer">
+      <div class="footer-content">
+        <div class="footer-status-row">
+          <div class="footer-status-left">
             <div class="status-indicator">
               <div
                 class="status-pulse"
                 :class="{ 'pulse-active': tickerHostStatus, 'pulse-inactive': !tickerHostStatus }"
               ></div>
-              <div class="status-info">
-                <div class="system-details">
-                  <span class="machine-name">{{ currentMachine }}</span>
-                  <span class="status-divider">•</span>
-                  <span
-                    class="status-text"
-                    :class="{ 'status-online': tickerHostStatus, 'status-offline': !tickerHostStatus }"
-                  >
-                    {{ tickerHostStatus ? 'Online' : 'Offline' }}
-                  </span>
-                </div>
-              </div>
+              <span class="machine-name">{{ currentMachine }}</span>
+              <span class="status-divider">•</span>
+              <span
+                class="status-text"
+                :class="{ 'status-online': tickerHostStatus, 'status-offline': !tickerHostStatus }"
+              >
+                {{ tickerHostStatus ? 'Online' : 'Offline' }}
+              </span>
             </div>
 
-            <!-- WebSocket Connection Status -->
+            <!-- WebSocket Status -->
             <div v-if="isServicesReady" class="websocket-status">
               <div
                 class="websocket-indicator"
@@ -419,9 +420,7 @@ const handleForceUIUpdate = () => {
                   'websocket-disconnected': !connectionStore.isWebSocketConnected && !connectionStore.isConnecting
                 }"
               ></div>
-              <span class="websocket-text">
-                {{ getWebSocketStatusText() }}
-              </span>
+              <span class="websocket-text">{{ getWebSocketStatusText() }}</span>
               <v-btn
                 v-if="!connectionStore.isWebSocketConnected"
                 size="x-small"
@@ -431,99 +430,81 @@ const handleForceUIUpdate = () => {
               >
                 Reconnect
               </v-btn>
-
             </div>
-
-            <!-- Loading State for WebSocket -->
             <div v-else class="websocket-status">
               <div class="websocket-indicator websocket-connecting"></div>
               <span class="websocket-text">Initializing...</span>
             </div>
           </div>
 
-          <div class="action-section">
-            <div class="action-buttons">
-                <v-btn
-                v-if="!tickerHostStatus && isServicesReady"
-                  color="success"
+          <div class="footer-status-right">
+            <v-btn
+              v-if="!tickerHostStatus && isServicesReady"
+              color="success"
+              variant="elevated"
+              size="small"
+              prepend-icon="mdi-play-circle"
+              @click="startJobHost?.requestAsync().then(() => {
+                dashboardStore.resetForceState();
+                startJobHost.loader.value = true;
+                sleep(1000).then(() => {
+                  loadInitialData();
+                  startJobHost.loader.value = false;
+                })
+              })"
+              :loading="startJobHost?.loader?.value"
+              class="action-btn start-btn"
+            >
+              Start System
+            </v-btn>
+
+            <template v-if="tickerHostStatus && isServicesReady">
+              <v-btn
+                color="warning"
                 variant="elevated"
                 size="small"
-                prepend-icon="mdi-play-circle"
-                  @click="startJobHost?.requestAsync().then(() => {
-                    // Reset forced state when starting system
-                    dashboardStore.resetForceState();
-                    startJobHost.loader.value = true;
-                    sleep(1000).then(() => {
-                      loadInitialData();
-                      startJobHost.loader.value = false;
-                    })
-                  })"
-                  :loading="startJobHost?.loader?.value"
-                class="action-btn start-btn"
+                @click="handleRestart"
+                :loading="restartJobHost?.loader?.value"
+                class="action-btn restart-btn"
+                :disabled="restartIsAnimating"
+                :class="{ 'restart-animating': restartIsAnimating }"
               >
-                Start System
+                <span class="btn-content">
+                  <v-icon
+                    class="restart-icon"
+                    :class="{ 'rotating': restartIsAnimating }"
+                  >
+                    mdi-restart
+                  </v-icon>
+                  <span class="btn-text">Restart</span>
+                </span>
+                <div class="ripple-container">
+                  <div class="ripple" v-if="restartIsAnimating"></div>
+                </div>
               </v-btn>
 
-              <template v-if="tickerHostStatus && isServicesReady">
-                <v-btn
-                  color="warning"
-                  variant="elevated"
-                  size="small"
-                  @click="handleRestart"
-                  :loading="restartJobHost?.loader?.value"
-                  class="action-btn restart-btn"
-                  :disabled="restartIsAnimating"
-                  :class="{ 'restart-animating': restartIsAnimating }"
-                >
-                  <span class="btn-content">
-                    <v-icon
-                      class="restart-icon"
-                      :class="{ 'rotating': restartIsAnimating }"
-                    >
-                      mdi-restart
-                    </v-icon>
-                    <span class="btn-text">Restart</span>
-                  </span>
-
-                  <!-- Ripple Effect -->
-                  <div class="ripple-container">
-                    <div class="ripple" v-if="restartIsAnimating"></div>
-                  </div>
-                </v-btn>
-
-                <v-btn
-                  color="error"
-                  variant="elevated"
-                  size="small"
-                  prepend-icon="mdi-stop-circle"
-                  @click="confirmDialog?.open({...new ConfirmDialogProps(), confirmText: 'Stop' })"
-                  :loading="stopJobHost?.loader?.value"
-                  class="action-btn stop-btn"
-                >
-                  Stop System
-                </v-btn>
+              <v-btn
+                color="error"
+                variant="elevated"
+                size="small"
+                prepend-icon="mdi-stop-circle"
+                @click="confirmDialog?.open({...new ConfirmDialogProps(), confirmText: 'Stop' })"
+                :loading="stopJobHost?.loader?.value"
+                class="action-btn stop-btn"
+              >
+                Stop System
+              </v-btn>
             </template>
 
-            <!-- Loading State for Actions -->
             <div v-if="!isServicesReady" class="action-loading">
               <v-progress-circular indeterminate size="20" color="primary"></v-progress-circular>
               <span class="loading-text">Loading...</span>
             </div>
-            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Main Content Slot -->
-      <slot />
-    </v-main>
-
-    <!-- Footer -->
-    <v-footer class="main-footer">
-      <div class="footer-content">
-        <v-divider class="footer-divider" thickness="2" width="50"></v-divider>
-        <div class="footer-text">
-          2025 — <strong>Headless Framework</strong>
+        <div class="footer-bottom">
+          2026 — <strong>Headless Framework</strong>
         </div>
       </div>
     </v-footer>
@@ -559,7 +540,7 @@ const handleForceUIUpdate = () => {
 <style scoped>
 #inspire {
   --dashboard-shell-max-width: 1240px;
-  --dashboard-shell-padding-x: clamp(16px, 2.4vw, 28px);
+  --dashboard-shell-padding-x: clamp(8px, 1.2vw, 16px);
   --dashboard-card-padding: 16px;
   --dashboard-control-gap: 12px;
 }
@@ -706,66 +687,37 @@ const handleForceUIUpdate = () => {
   background: rgba(var(--v-theme-primary), 0.1) !important;
 }
 
-/* Dashboard Header (Legacy) */
-.dashboard-header {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background: rgba(33, 33, 33, 0.95);
-  backdrop-filter: blur(20px);
-  border-radius: 0;
-  padding: 12px 20px;
-  margin: 0;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
-  border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all 0.3s ease;
-}
-
-.dashboard-header:hover {
-  background: rgba(33, 33, 33, 0.98);
-  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.4);
-}
-
-/* Status Header */
-.status-header {
-  position: sticky;
-  top: 60px; /* Account for the app bar height */
-  z-index: 99;
-  background: rgba(33, 33, 33, 0.95);
-  backdrop-filter: blur(20px);
-  border-radius: 0;
-  padding: 0;
-  margin: 0;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
-  border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  transition: all 0.3s ease;
-}
-
-.status-header:hover {
-  background: rgba(33, 33, 33, 0.98);
-  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.4);
-}
-
-.status-header-content {
-  max-width: var(--dashboard-shell-max-width);
-  margin: 0 auto;
-  padding: 0 var(--dashboard-shell-padding-x);
+/* Footer Status Row */
+.footer-status-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
   width: 100%;
-  min-height: 64px;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-/* Status Section */
-.status-section {
+.footer-status-left {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.footer-status-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.footer-bottom {
+  color: #9e9e9e;
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.footer-bottom strong {
+  color: #bdbdbd;
+  font-weight: 600;
 }
 
 .status-indicator {
@@ -1085,10 +1037,6 @@ const handleForceUIUpdate = () => {
     padding: 10px 0;
   }
 
-  .status-header-content {
-    padding: 10px var(--dashboard-shell-padding-x);
-  }
-
   .header-left {
     flex-direction: column;
     gap: 12px;
@@ -1141,44 +1089,33 @@ const handleForceUIUpdate = () => {
   backdrop-filter: blur(20px) !important;
   border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
   box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3) !important;
-  padding: 16px 0 !important;
+  padding: 10px 0 !important;
 }
 
 .footer-content {
-  max-width: 1400px;
+  max-width: var(--dashboard-shell-max-width);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 0 24px;
-}
-
-.footer-divider {
-  border-color: rgba(255, 255, 255, 0.2) !important;
-  opacity: 0.6;
-}
-
-.footer-text {
-  color: #bdbdbd !important;
-  font-size: 0.875rem !important;
-  font-weight: 500 !important;
-  text-align: center;
-}
-
-.footer-text strong {
-  color: #e0e0e0 !important;
-  font-weight: 600 !important;
+  gap: 8px;
+  padding: 0 var(--dashboard-shell-padding-x);
+  width: 100%;
 }
 
 /* Responsive Footer */
 @media (max-width: 768px) {
-  .footer-content {
-    padding: 0 16px;
+  .footer-status-row {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
-  .main-footer {
-    padding: 20px 0 !important;
+  .footer-status-left {
+    flex-wrap: wrap;
+  }
+
+  .footer-status-right {
+    flex-wrap: wrap;
   }
 }
 </style>

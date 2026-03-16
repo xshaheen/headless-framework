@@ -56,7 +56,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(dashboardPolicy, policy => policy.RequireAuthenticatedUser());
 });
 
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.SubscribeFromAssembly(typeof(Program).Assembly);
     options.UseInMemoryStorage();

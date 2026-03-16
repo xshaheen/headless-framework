@@ -17,7 +17,7 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
@@ -49,7 +49,7 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
@@ -88,7 +88,7 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
@@ -119,7 +119,7 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
@@ -149,7 +149,7 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
@@ -182,7 +182,7 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed");
         });
@@ -205,7 +205,7 @@ public sealed class IConsumeIntegrationTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed");
 

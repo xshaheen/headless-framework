@@ -86,7 +86,7 @@
       </div>
 
       <!-- Table -->
-      <TableSkeleton v-if="isLoading" :rows="5" :columns="8" />
+      <TableSkeleton v-if="isLoading" :rows="5" :columns="7" />
 
       <v-card v-else class="messages-card">
         <v-table density="comfortable" class="messages-table">
@@ -103,16 +103,14 @@
               <th>ID</th>
               <th>Name</th>
               <th>Group</th>
-              <th>Content</th>
               <th>Added</th>
               <th>Expires At</th>
               <th>Retries</th>
-              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="messages.length === 0">
-              <td colspan="9" class="text-center pa-6 text-medium-emphasis">No messages found</td>
+              <td colspan="7" class="text-center pa-6 text-medium-emphasis">No messages found</td>
             </tr>
             <tr v-for="msg in messages" :key="msg.id">
               <td>
@@ -123,12 +121,11 @@
                   @update:model-value="toggleSelect(msg.id)"
                 />
               </td>
-              <td class="text-caption">{{ msg.id }}</td>
+              <td class="text-caption">
+                <a class="id-link" @click="viewMessage(msg.id)">{{ msg.id }}</a>
+              </td>
               <td>{{ msg.name }}</td>
               <td>{{ msg.group }}</td>
-              <td class="content-cell">
-                <span class="content-truncated">{{ truncate(msg.content, 50) }}</span>
-              </td>
               <td class="text-caption">
                 <v-tooltip :text="timeAgo(msg.added)" location="top">
                   <template #activator="{ props: tp }">
@@ -144,29 +141,6 @@
                 </v-tooltip>
               </td>
               <td>{{ msg.retries }}</td>
-              <td>
-                <v-btn
-                  size="x-small"
-                  variant="text"
-                  icon="mdi-eye"
-                  color="primary"
-                  @click="viewMessage(msg.id)"
-                />
-                <v-btn
-                  size="x-small"
-                  variant="text"
-                  icon="mdi-replay"
-                  color="warning"
-                  @click="reexecuteMessage(msg.id)"
-                />
-                <v-btn
-                  size="x-small"
-                  variant="text"
-                  icon="mdi-delete"
-                  color="error"
-                  @click="deleteMessage(msg.id)"
-                />
-              </td>
             </tr>
           </tbody>
         </v-table>
@@ -216,7 +190,6 @@ interface ReceivedMessage {
   id: number
   name: string
   group: string
-  content: string
   added: string
   expiresAt: string
   retries: number
@@ -301,11 +274,6 @@ watch(activeStatus, () => {
   loadMessages()
 })
 
-function truncate(text: string, max: number): string {
-  if (!text) return ''
-  return text.length > max ? text.substring(0, max) + '...' : text
-}
-
 function toggleSelectAll(checked: boolean | null) {
   if (checked) {
     selectedIds.value = messages.value.map((m) => m.id)
@@ -332,43 +300,6 @@ async function viewMessage(id: number) {
   } catch (error) {
     alertStore.showError('Failed to load message detail')
   }
-}
-
-function reexecuteMessage(id: number) {
-  pendingAction = async () => {
-    try {
-      await httpService.post('/received/reexecute', [id])
-      alertStore.showSuccess('Message re-executed')
-      await loadMessages()
-    } catch (error) {
-      alertStore.showError('Failed to re-execute message')
-    }
-  }
-  const props = new ConfirmDialogProps()
-  props.title = 'Re-execute Message'
-  props.text = 'Are you sure you want to re-execute this message?'
-  props.confirmText = 'Re-execute'
-  props.confirmColor = '#ff9800'
-  props.icon = 'mdi-replay'
-  props.iconColor = '#ff9800'
-  confirmDialog.open(props)
-}
-
-function deleteMessage(id: number) {
-  pendingAction = async () => {
-    try {
-      await httpService.post('/received/delete', [id])
-      alertStore.showSuccess('Message deleted')
-      await loadMessages()
-    } catch (error) {
-      alertStore.showError('Failed to delete message')
-    }
-  }
-  const props = new ConfirmDialogProps()
-  props.title = 'Delete Message'
-  props.text = 'Are you sure you want to delete this message? This action cannot be undone.'
-  props.confirmText = 'Delete'
-  confirmDialog.open(props)
 }
 
 function handleBatchReexecute() {
@@ -422,7 +353,7 @@ loadMessages()
 
 <style scoped>
 .received-page {
-  padding: 20px;
+  padding: 20px 12px;
 }
 
 .page-content {
@@ -476,17 +407,14 @@ loadMessages()
   background: transparent !important;
 }
 
-.content-cell {
-  max-width: 200px;
+.id-link {
+  color: #90caf9;
+  cursor: pointer;
+  text-decoration: none;
 }
 
-.content-truncated {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: #bdbdbd;
-  font-size: 0.8rem;
+.id-link:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 768px) {

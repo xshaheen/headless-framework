@@ -3,7 +3,7 @@ using Headless.Messaging.Dashboard;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddMessaging(x =>
+builder.Services.AddHeadlessMessaging(x =>
 {
     x.SubscribeFromAssembly(typeof(Program).Assembly);
     x.UseInMemoryStorage();

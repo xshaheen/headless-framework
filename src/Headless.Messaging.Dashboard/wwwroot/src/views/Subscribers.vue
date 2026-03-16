@@ -120,7 +120,7 @@ onMounted(() => {
 
 <style scoped>
 .subscribers-page {
-  padding: 20px;
+  padding: 20px 12px;
 }
 
 .page-content {

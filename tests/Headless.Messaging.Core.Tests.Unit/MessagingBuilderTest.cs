@@ -28,7 +28,7 @@ public sealed class MessagingBuilderTest
     public void CanAddMessagingService()
     {
         var services = new ServiceCollection();
-        services.AddMessaging(_ => { });
+        services.AddHeadlessMessaging(_ => { });
         using var builder = services.BuildServiceProvider();
 
         var markService = builder.GetService<MessagingMarkerService>();
@@ -39,7 +39,7 @@ public sealed class MessagingBuilderTest
     public void CanResolveMessagingOptions()
     {
         var services = new ServiceCollection();
-        services.AddMessaging(_ => { });
+        services.AddHeadlessMessaging(_ => { });
         using var builder = services.BuildServiceProvider();
         var messagingOptions = builder.GetRequiredService<IOptions<MessagingOptions>>().Value;
         messagingOptions.Should().NotBeNull();
@@ -50,7 +50,7 @@ public sealed class MessagingBuilderTest
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(options =>
+        services.AddHeadlessMessaging(options =>
         {
             options.UseInMemoryMessageQueue();
             options.UseInMemoryStorage();

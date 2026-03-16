@@ -117,7 +117,7 @@ public sealed class OrderPlacedHandler(
 }
 
 // Register consumers
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.SubscribeFromAssemblyContaining<Program>();
     options.WithTopicMapping<OrderPlacedEvent>("orders.placed");
@@ -196,7 +196,7 @@ dotnet add package Headless.Messaging.Core
 
 ```csharp
 // Register messaging with storage and transport
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     // Core configuration
     options.SucceedMessageExpiredAfter = 24 * 3600;
@@ -292,7 +292,7 @@ public sealed class MetricsPublisher(IDirectPublisher publisher)
 Register in `Program.cs`:
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.FailedRetryCount = 50;
     options.SucceedMessageExpiredAfter = 24 * 3600;
@@ -367,7 +367,7 @@ dotnet add package Headless.Messaging.Dashboard
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
@@ -453,7 +453,7 @@ dotnet add package Headless.Messaging.Dashboard.K8s
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
@@ -522,7 +522,7 @@ builder.Services.AddOpenTelemetry()
         .AddSource("Headless.Messaging")
         .AddJaegerExporter());
 
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
@@ -586,7 +586,7 @@ dotnet add package Headless.Messaging.AwsSqs
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
@@ -649,7 +649,7 @@ dotnet add package Headless.Messaging.AzureServiceBus
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseSqlServer("connection_string");
 
@@ -759,7 +759,7 @@ dotnet add package Headless.Messaging.Kafka
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
@@ -868,7 +868,7 @@ dotnet add package Headless.Messaging.NATS
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
@@ -928,7 +928,7 @@ dotnet add package Headless.Messaging.Pulsar
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
@@ -989,7 +989,7 @@ dotnet add package Headless.Messaging.RabbitMQ
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
@@ -1098,7 +1098,7 @@ dotnet add package Headless.Messaging.RedisStreams
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
@@ -1159,7 +1159,7 @@ dotnet add package Headless.Messaging.InMemoryQueue
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseInMemoryStorage();
     options.UseInMemoryQueue();
@@ -1205,7 +1205,7 @@ dotnet add package Headless.Messaging.PostgreSql
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql(config =>
     {
@@ -1269,7 +1269,7 @@ dotnet add package Headless.Messaging.SqlServer
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseSqlServer(config =>
     {
@@ -1333,7 +1333,7 @@ dotnet add package Headless.Messaging.InMemoryStorage
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseInMemoryStorage();
     options.UseRabbitMQ(config);

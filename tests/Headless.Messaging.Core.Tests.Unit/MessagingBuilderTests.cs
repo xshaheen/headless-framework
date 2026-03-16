@@ -14,7 +14,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
         });
@@ -36,7 +36,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
         });
@@ -56,7 +56,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<TestOrderConsumer>(consumer =>
                 consumer.Topic("orders.placed").Group("order-service").Concurrency(5)
@@ -84,7 +84,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
             messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
@@ -105,7 +105,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
             messaging.Subscribe<TestOrderConsumer>().Topic("custom.orders");
@@ -126,7 +126,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
         });
@@ -147,7 +147,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed").Group("order-service");
 
@@ -174,7 +174,7 @@ public sealed class MessagingBuilderTests
 
         // when
         var act = () =>
-            services.AddMessaging(messaging =>
+            services.AddHeadlessMessaging(messaging =>
             {
                 messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed").Group("billing");
                 messaging.Subscribe<AnotherOrderConsumer>().Topic("orders.placed").Group("billing");
@@ -197,7 +197,7 @@ public sealed class MessagingBuilderTests
 
         // when
         var act = () =>
-            services.AddMessaging(messaging =>
+            services.AddHeadlessMessaging(messaging =>
             {
                 messaging.UseInMemoryMessageQueue();
                 messaging.UseInMemoryStorage();
@@ -227,7 +227,7 @@ public sealed class MessagingBuilderTests
 
         // when
         var act = () =>
-            services.AddMessaging(messaging =>
+            services.AddHeadlessMessaging(messaging =>
             {
                 messaging.Subscribe<InvalidConsumer>().Topic("test");
             });
@@ -244,7 +244,7 @@ public sealed class MessagingBuilderTests
 
         // when
         var act = () =>
-            services.AddMessaging(messaging =>
+            services.AddHeadlessMessaging(messaging =>
             {
                 messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
                 messaging.WithTopicMapping<TestOrderMessage>("orders.created");
@@ -262,7 +262,7 @@ public sealed class MessagingBuilderTests
 
         // when
         var act = () =>
-            services.AddMessaging(messaging =>
+            services.AddHeadlessMessaging(messaging =>
             {
                 messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
                 messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
@@ -279,7 +279,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
         });
@@ -301,7 +301,7 @@ public sealed class MessagingBuilderTests
         // when
         var act = () =>
         {
-            return services.AddMessaging(messaging =>
+            return services.AddHeadlessMessaging(messaging =>
             {
                 messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed").Concurrency(0);
             });
@@ -318,7 +318,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
         });
@@ -342,7 +342,7 @@ public sealed class MessagingBuilderTests
 
         // when
         var act = () =>
-            services.AddMessaging(messaging =>
+            services.AddHeadlessMessaging(messaging =>
             {
                 messaging.Subscribe<MultiMessageConsumer>();
             });
@@ -359,7 +359,7 @@ public sealed class MessagingBuilderTests
 
         // when
         var act = () =>
-            services.AddMessaging(messaging =>
+            services.AddHeadlessMessaging(messaging =>
             {
                 messaging.Subscribe<MultiMessageConsumer>("orders.placed");
             });
@@ -376,7 +376,7 @@ public sealed class MessagingBuilderTests
 
         // when
         var act = () =>
-            services.AddMessaging(messaging =>
+            services.AddHeadlessMessaging(messaging =>
             {
                 messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
                 messaging.Subscribe<TestOrderConsumer>(consumer =>
@@ -401,7 +401,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<TestOrderConsumer>("orders.placed");
         });
@@ -422,7 +422,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             // Old way (still supported):
             // messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
@@ -447,7 +447,7 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<TestOrderConsumer>("orders.placed").Concurrency(5).Group("order-service");
         });

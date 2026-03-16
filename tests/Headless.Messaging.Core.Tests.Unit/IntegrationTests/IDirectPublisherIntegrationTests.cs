@@ -36,7 +36,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // given - Test the dispatcher directly to verify consumer registration works
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "test-group";
             messaging.Version = "v1";
@@ -76,7 +76,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "test-group";
             messaging.Version = "v1";
@@ -110,7 +110,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "test-group";
             messaging.Version = "v1";
@@ -143,7 +143,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "test-group";
             messaging.Version = "v1";
@@ -179,7 +179,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "test-group";
             messaging.Version = "v1";
@@ -212,7 +212,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "test-group";
             messaging.Version = "v1";
@@ -259,7 +259,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging(x => x.AddProvider(LoggerProvider));
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.DefaultGroupName = "test-group";
             messaging.Version = "v1";

@@ -301,7 +301,7 @@ onMounted(async () => {
 
 <style scoped>
 .nodes-page {
-  padding: 20px;
+  padding: 20px 12px;
 }
 
 .page-content {

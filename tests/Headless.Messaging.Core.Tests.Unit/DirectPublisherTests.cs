@@ -300,7 +300,7 @@ public sealed class DirectPublisherTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(opt =>
+        services.AddHeadlessMessaging(opt =>
         {
             opt.UseInMemoryMessageQueue();
             opt.UseInMemoryStorage();
@@ -321,7 +321,7 @@ public sealed class DirectPublisherTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(opt =>
+        services.AddHeadlessMessaging(opt =>
         {
             opt.UseInMemoryMessageQueue();
             opt.UseInMemoryStorage();

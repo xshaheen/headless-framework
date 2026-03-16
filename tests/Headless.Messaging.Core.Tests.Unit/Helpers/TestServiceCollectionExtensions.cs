@@ -12,7 +12,7 @@ public static class TestServiceCollectionExtensions
         public void AddTestSetup(ITestOutputHelper testOutput)
         {
             services.AddLogging(x => x.AddTestLogging(testOutput));
-            services.AddMessaging(x =>
+            services.AddHeadlessMessaging(x =>
             {
                 x.SubscribeFromAssembly(typeof(TestServiceCollectionExtensions).Assembly);
                 x.DefaultGroupName = TestGroupName;

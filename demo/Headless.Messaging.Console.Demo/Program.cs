@@ -9,7 +9,7 @@ var container = new ServiceCollection();
 container.AddLogging(x => x.AddConsole());
 
 container
-    .AddMessaging(x =>
+    .AddHeadlessMessaging(x =>
     {
         x.Subscribe<EventConsumer>().Topic("sample.console.showtime");
         // Console app does not support dashboard

@@ -25,7 +25,7 @@ dotnet add package Headless.Messaging.Dashboard.K8s
 ### With Full Messaging Stack
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
