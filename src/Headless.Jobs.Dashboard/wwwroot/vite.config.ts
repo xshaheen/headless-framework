@@ -1,5 +1,5 @@
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, type PluginOption } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { dynamicBase } from 'vite-plugin-dynamic-base'
 
@@ -33,7 +33,7 @@ function ensureNodeLocalStorage() {
 }
 
 export default defineConfig(async ({ command, mode }) => {
-  const plugins = [
+  const plugins: PluginOption[] = [
     vue(),
     dynamicBase({
       // keep a single runtime variable; we'll set it in index.html
@@ -45,7 +45,7 @@ export default defineConfig(async ({ command, mode }) => {
   if (command === 'serve') {
     ensureNodeLocalStorage()
     const { default: vueDevTools } = await import('vite-plugin-vue-devtools')
-    plugins.splice(1, 0, vueDevTools({ launchEditor: undefined }))
+    plugins.splice(1, 0, vueDevTools({ launchEditor: undefined }) as PluginOption)
   }
 
   return {

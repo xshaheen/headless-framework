@@ -2640,10 +2640,14 @@ const canBeForceDeleted = ref<string[]>([])
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.05);
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-  overflow: visible;
+  overflow: hidden;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   margin-top: 24px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .analytics-overview:hover {
@@ -2653,13 +2657,11 @@ const canBeForceDeleted = ref<string[]>([])
 
 /* Chart Styles */
 .chart-toggle-vertical {
-  position: absolute;
-  top: 20px;
-  left: -70px;
-  z-index: 10;
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 20px;
-  padding: 8px;
+  position: static;
+  z-index: 1;
+  align-self: flex-start;
+  background: transparent;
+  padding: 0;
 }
 
 .chart-switch-vertical {
@@ -2669,9 +2671,10 @@ const canBeForceDeleted = ref<string[]>([])
   border: 1px solid rgba(100, 181, 246, 0.4);
   box-shadow: 0 8px 32px rgba(100, 181, 246, 0.2);
   overflow: hidden;
-  padding: 8px 4px;
+  padding: 6px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   gap: 6px;
 }
 
@@ -2681,18 +2684,20 @@ const canBeForceDeleted = ref<string[]>([])
   color: #bdbdbd;
   text-transform: uppercase;
   letter-spacing: 1px;
-  padding: 4px 0;
+  padding: 0 10px;
   text-align: center;
+  white-space: nowrap;
 }
 
 .chart-btn-vertical {
-  min-width: 60px;
-  min-height: 70px;
+  min-width: 112px;
+  min-height: 44px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  padding: 8px 4px;
+  gap: 8px;
+  padding: 8px 14px;
   font-size: 0.75rem;
   text-transform: none;
   background: rgba(255, 255, 255, 0.05);
@@ -2714,7 +2719,7 @@ const canBeForceDeleted = ref<string[]>([])
 
 .chart-btn-vertical .chart-icon {
   font-size: 20px;
-  margin-bottom: 4px;
+  margin-bottom: 0;
 }
 
 .chart-btn-vertical .btn-text {
@@ -2763,14 +2768,9 @@ const canBeForceDeleted = ref<string[]>([])
 
 /* Responsive Chart Styles */
 @media (max-width: 1400px) {
-  .chart-toggle-vertical {
-    top: 16px;
-    left: -52px;
-  }
-
   .chart-btn-vertical {
-    min-width: 50px;
-    min-height: 60px;
+    min-width: 96px;
+    min-height: 42px;
     font-size: 0.7rem;
   }
 
@@ -2781,15 +2781,26 @@ const canBeForceDeleted = ref<string[]>([])
 
 @media (max-width: 768px) {
   .chart-toggle-vertical {
-    top: 12px;
-    left: -45px;
+    align-self: stretch;
+  }
+
+  .chart-switch-vertical {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .chart-switch-vertical .toggle-label {
+    width: 100%;
+    text-align: left;
+    padding: 0 4px 6px;
   }
 
   .chart-btn-vertical {
-    min-width: 40px;
-    min-height: 50px;
+    min-width: calc(50% - 3px);
+    min-height: 42px;
     font-size: 0.65rem;
-    padding: 6px 3px;
+    padding: 6px 10px;
   }
 
   .btn-text {
