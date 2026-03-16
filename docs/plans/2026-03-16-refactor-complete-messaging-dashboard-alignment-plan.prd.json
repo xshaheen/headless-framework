@@ -10,7 +10,7 @@
     "feature": "xshaheen/align-messaging-dashboard"
   },
   "verification_command": "cd src/Headless.Messaging.Dashboard/wwwroot && npm run build",
-  "status": "in_progress",
+  "status": "completed",
   "userStories": [
     {
       "id": "US-001",
@@ -278,7 +278,7 @@
         "Page size options include 500"
       ],
       "priority": 11,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": [
@@ -348,13 +348,13 @@
         "Built dist/ contains only current build artifacts (no stale files from old builds)"
       ],
       "priority": 14,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
     }
   ],
-  "pass": false,
+  "pass": true,
   "validation_errors": [],
   "metadata": {
     "research": {
