@@ -123,6 +123,10 @@
         <Project Path="src\Headless.Imaging.ImageSharp\Headless.Imaging.ImageSharp.csproj" />
         <Project Path="tests\Headless.Imaging.ImageSharp.Tests.Unit\Headless.Imaging.ImageSharp.Tests.Unit.csproj" />
     </Folder>
+    <Folder Name="/Dashboard/">
+        <Project Path="src/Headless.Dashboard.Authentication/Headless.Dashboard.Authentication.csproj" />
+        <Project Path="tests/Headless.Dashboard.Authentication.Tests.Unit/Headless.Dashboard.Authentication.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Jobs/">
         <Project Path="demo/Headless.Jobs.Api.Demo/Headless.Jobs.Api.Demo.csproj" />
         <Project Path="demo/Headless.Jobs.Console.Demo/Headless.Jobs.Console.Demo.csproj" />
