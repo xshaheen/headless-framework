@@ -286,8 +286,8 @@ const handleForceUIUpdate = () => {
             <div class="header-left">
             <div class="logo-container clickable" @click="navigateToDashboard">
               <img
-                src="@/assets/arcenox-logo.svg"
-                alt="Arcenox"
+                src="@/assets/logo.svg"
+                alt="Headless Framework"
                 class="logo-image"
               />
             </div>
@@ -522,7 +522,7 @@ const handleForceUIUpdate = () => {
       <div class="footer-content">
         <v-divider class="footer-divider" thickness="2" width="50"></v-divider>
         <div class="footer-text">
-          2025 — <strong>Arcenox</strong>
+          2025 — <strong>Headless Framework</strong>
         </div>
       </div>
     </v-footer>

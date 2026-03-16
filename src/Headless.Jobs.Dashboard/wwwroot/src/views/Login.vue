@@ -3,7 +3,7 @@
     <div class="login-card">
       <div class="login-header">
         <div class="logo-section">
-          <img src="@/assets/arcenox-logo.svg" alt="Jobs" class="logo" />
+          <img src="@/assets/logo.svg" alt="Jobs" class="logo" />
           <h1 class="app-title">Jobs Dashboard</h1>
         </div>
         <p class="login-subtitle">Please authenticate to access the dashboard</p>
