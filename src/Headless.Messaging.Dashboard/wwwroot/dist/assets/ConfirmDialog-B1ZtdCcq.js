@@ -1,0 +1,1 @@
+import{_ as o}from"./MessageDetailDialog-BXDZQhTm.js";import{C as i}from"./MessageDetailDialog-BXDZQhTm.js";import{s as a}from"./index-D8895op7.js";const f=a(o,[["__scopeId","data-v-f55babd4"]]);export{i as ConfirmDialogProps,f as default};

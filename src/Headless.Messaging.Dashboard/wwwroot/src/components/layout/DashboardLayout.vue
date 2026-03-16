@@ -318,7 +318,8 @@ function handleAuthLogout() {
   padding: 0 !important;
   height: 40px !important;
   min-height: 40px !important;
-  flex-shrink: 0;
+  max-height: 40px !important;
+  flex: 0 0 40px !important;
 }
 
 .footer-content {
