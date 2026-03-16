@@ -58,7 +58,7 @@
         "Meta data fetched once and cached (not re-fetched on every page navigation)"
       ],
       "priority": 2,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": [
@@ -127,7 +127,7 @@
         "Navigating away and back shows cached data immediately, polling resumes"
       ],
       "priority": 5,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": [
@@ -202,7 +202,7 @@
         "Styles match Jobs dark theme (section headers with colored left borders, gradient backgrounds)"
       ],
       "priority": 8,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": [
