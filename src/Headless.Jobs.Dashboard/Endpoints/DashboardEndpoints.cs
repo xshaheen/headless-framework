@@ -11,9 +11,9 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Headless.Jobs.Endpoints;
 
-public static class DashboardEndpoints
+internal static class DashboardEndpoints
 {
-    public static void MapDashboardEndpoints<TTimeJob, TCronJob>(
+    internal static void MapDashboardEndpoints<TTimeJob, TCronJob>(
         this IEndpointRouteBuilder endpoints,
         DashboardOptionsBuilder config
     )

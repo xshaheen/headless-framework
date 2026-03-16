@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Cors.Infrastructure;
 
 namespace Headless.Jobs;
 
-public class DashboardOptionsBuilder
+public sealed class DashboardOptionsBuilder
 {
     internal string BasePath { get; set; } = "/jobs/dashboard";
     internal Action<CorsPolicyBuilder>? CorsPolicyBuilder { get; set; }
@@ -24,19 +24,22 @@ public class DashboardOptionsBuilder
     /// </summary>
     internal JsonSerializerOptions? DashboardJsonOptions { get; set; }
 
-    public void SetCorsPolicy(Action<CorsPolicyBuilder> corsPolicyBuilder)
+    public DashboardOptionsBuilder SetCorsPolicy(Action<CorsPolicyBuilder> corsPolicyBuilder)
     {
         CorsPolicyBuilder = corsPolicyBuilder;
+        return this;
     }
 
-    public void SetBasePath(string basePath)
+    public DashboardOptionsBuilder SetBasePath(string basePath)
     {
         BasePath = basePath;
+        return this;
     }
 
-    public void SetBackendDomain(string backendDomain)
+    public DashboardOptionsBuilder SetBackendDomain(string backendDomain)
     {
         BackendDomain = backendDomain;
+        return this;
     }
 
     /// <summary>Configure no authentication (public dashboard)</summary>

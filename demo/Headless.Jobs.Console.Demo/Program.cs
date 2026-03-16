@@ -1,4 +1,3 @@
-using Headless.Jobs;
 using Headless.Jobs.Console.Demo;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.DependencyInjection;
@@ -11,7 +10,7 @@ var host = Host.CreateDefaultBuilder(args)
         (_, services) =>
         {
             // Configure Jobs with SQLite operational store (file-based)
-            services.AddJobs(options =>
+            services.AddHeadlessJobs(options =>
             {
                 options.AddOperationalStore(efOptions =>
                 {
@@ -36,8 +35,5 @@ await using (var scope = host.Services.CreateAsyncScope())
     var db = scope.ServiceProvider.GetRequiredService<JobsDbContext>();
     await db.Database.MigrateAsync();
 }
-
-// Build function metadata so JobFunctionProvider.JobFunctions is initialized
-JobFunctionProvider.Build();
 
 await host.RunAsync();
