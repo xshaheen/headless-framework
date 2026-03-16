@@ -281,14 +281,16 @@ public sealed class SqlServerDataStorage(
 
         return await connection
             .ExecuteNonQueryAsync(
-                $@"DELETE FROM {table}
-               WHERE Id IN (
-                   SELECT TOP (@batchCount) Id
-                   FROM {table} WITH (READPAST)
-                   WHERE ExpiresAt < @timeout
-                   AND StatusName IN('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
-               );",
-                null,
+                $"""
+                DELETE FROM {table}
+                 WHERE Id IN (
+                     SELECT TOP (@batchCount) Id
+                     FROM {table} WITH (READPAST)
+                     WHERE ExpiresAt < @timeout
+                     AND StatusName IN('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
+                 );
+                """,
+                transaction: null,
                 cancellationToken,
                 new SqlParameter("@timeout", timeout),
                 new SqlParameter("@batchCount", batchCount)
@@ -317,9 +319,11 @@ public sealed class SqlServerDataStorage(
         var sql = $"DELETE FROM {_recName} WHERE Id=@Id";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
+
         var affectedRowCount = await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new SqlParameter("@Id", id))
             .ConfigureAwait(false);
+
         return affectedRowCount;
     }
 
@@ -328,9 +332,11 @@ public sealed class SqlServerDataStorage(
         var sql = $"DELETE FROM {_pubName} WHERE Id=@Id";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
+
         var affectedRowCount = await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new SqlParameter("@Id", id))
             .ConfigureAwait(false);
+
         return affectedRowCount;
     }
 
@@ -339,13 +345,13 @@ public sealed class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var sql =
-            $@"
+        var sql = $"""
             SELECT TOP (@BatchSize) Id, Content, Retries, Added, ExpiresAt FROM {_pubName} WITH (UPDLOCK, READPAST)
-                WHERE Version = @Version AND StatusName = '{nameof(StatusName.Delayed)}' AND ExpiresAt < @TwoMinutesLater
+            WHERE Version = @Version AND StatusName = '{nameof(StatusName.Delayed)}' AND ExpiresAt < @TwoMinutesLater
             UNION ALL
             SELECT TOP (@BatchSize) Id, Content, Retries, Added, ExpiresAt FROM {_pubName} WITH (UPDLOCK, READPAST)
-                WHERE Version = @Version AND StatusName = '{nameof(StatusName.Queued)}' AND ExpiresAt < @OneMinutesAgo;";
+            WHERE Version = @Version AND StatusName = '{nameof(StatusName.Queued)}' AND ExpiresAt < @OneMinutesAgo;
+            """;
 
         object[] sqlParams =
         [

@@ -18,7 +18,7 @@ internal class RedisConsumerClient(
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
-    private string[] _topics = default!;
+    private string[] _topics = null!;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -30,12 +30,14 @@ internal class RedisConsumerClient(
     {
         Argument.IsNotNull(topics);
 
-        foreach (var topic in topics)
+        var arr = topics.ToArray();
+
+        foreach (var topic in arr)
         {
             await redis.CreateStreamWithConsumerGroupAsync(topic, groupId);
         }
 
-        _topics = topics.ToArray();
+        _topics = arr;
     }
 
     public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)

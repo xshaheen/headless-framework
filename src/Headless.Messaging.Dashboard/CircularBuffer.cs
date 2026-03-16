@@ -9,7 +9,7 @@ namespace Headless.Messaging.Dashboard;
 /// A generic circular buffer.
 /// </summary>
 /// <typeparam name="T">The type of items that are buffered.</typeparam>
-internal class CircularBuffer<T> : ICollection<T>
+internal sealed class CircularBuffer<T> : ICollection<T>
 {
     // Ring of items
     private readonly T[] _items;

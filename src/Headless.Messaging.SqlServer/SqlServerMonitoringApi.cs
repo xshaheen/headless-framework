@@ -26,21 +26,11 @@ internal class SqlServerMonitoringApi(
     {
         var sql = $"""
             SELECT
-            (
-                SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Succeeded'
-            ) AS PublishedSucceeded,
-            (
-                SELECT COUNT(Id) FROM {_recName} WHERE StatusName = N'Succeeded'
-            ) AS ReceivedSucceeded,
-            (
-                SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Failed'
-            ) AS PublishedFailed,
-            (
-                SELECT COUNT(Id) FROM {_recName} WHERE StatusName = N'Failed'
-            ) AS ReceivedFailed,
-            (
-                SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Delayed'
-            ) AS PublishedDelayed;
+                (SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Succeeded') AS PublishedSucceeded,
+                (SELECT COUNT(Id) FROM {_recName} WHERE StatusName = N'Succeeded') AS ReceivedSucceeded,
+                (SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Failed') AS PublishedFailed,
+                (SELECT COUNT(Id) FROM {_recName} WHERE StatusName = N'Failed') AS ReceivedFailed,
+                (SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Delayed') AS PublishedDelayed;
             """;
 
         await using var connection = new SqlConnection(_options.ConnectionString);

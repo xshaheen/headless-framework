@@ -4,6 +4,7 @@ using System.Data.Common;
 using Headless.Messaging;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 
+#pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore.Storage;
 

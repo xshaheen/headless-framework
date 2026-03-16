@@ -8,86 +8,86 @@ namespace Headless.Messaging.SqlServer;
 #pragma warning disable CA2100
 internal static class DbConnectionExtensions
 {
-    public static async Task<int> ExecuteNonQueryAsync(
-        this DbConnection connection,
-        string sql,
-        DbTransaction? transaction = null,
-        CancellationToken cancellationToken = default,
-        params object[] sqlParams
-    )
+    extension(DbConnection connection)
     {
-        if (connection.State == ConnectionState.Closed)
+        public async Task<int> ExecuteNonQueryAsync(
+            string sql,
+            DbTransaction? transaction = null,
+            CancellationToken cancellationToken = default,
+            params object[] sqlParams
+        )
         {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            if (connection.State == ConnectionState.Closed)
+            {
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandType = CommandType.Text;
+            command.CommandText = sql;
+            command.Parameters.AddRange(sqlParams);
+
+            if (transaction != null)
+            {
+                command.Transaction = transaction;
+            }
+
+            return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await using var command = connection.CreateCommand();
-        command.CommandType = CommandType.Text;
-        command.CommandText = sql;
-        command.Parameters.AddRange(sqlParams);
-
-        if (transaction != null)
+        public async Task<T> ExecuteReaderAsync<T>(
+            string sql,
+            Func<DbDataReader, CancellationToken, Task<T>>? readerFunc,
+            DbTransaction? transaction = null,
+            CancellationToken cancellationToken = default,
+            params object[] sqlParams
+        )
         {
-            command.Transaction = transaction;
+            if (connection.State == ConnectionState.Closed)
+            {
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandType = CommandType.Text;
+            command.CommandText = sql;
+            command.Parameters.AddRange(sqlParams);
+
+            if (transaction != null)
+            {
+                command.Transaction = transaction;
+            }
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            T result = default!;
+            if (readerFunc != null)
+            {
+                result = await readerFunc(reader, cancellationToken).ConfigureAwait(false);
+            }
+
+            return result;
         }
 
-        return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    public static async Task<T> ExecuteReaderAsync<T>(
-        this DbConnection connection,
-        string sql,
-        Func<DbDataReader, CancellationToken, Task<T>>? readerFunc,
-        DbTransaction? transaction = null,
-        CancellationToken cancellationToken = default,
-        params object[] sqlParams
-    )
-    {
-        if (connection.State == ConnectionState.Closed)
+        public async Task<int> ExecuteScalarAsync(
+            string sql,
+            CancellationToken cancellationToken = default,
+            params object[] sqlParams
+        )
         {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            if (connection.State == ConnectionState.Closed)
+            {
+                await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandType = CommandType.Text;
+            command.CommandText = sql;
+            command.Parameters.AddRange(sqlParams);
+
+            var objValue = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+            return Convert.ToInt32(objValue, CultureInfo.InvariantCulture);
         }
-
-        await using var command = connection.CreateCommand();
-        command.CommandType = CommandType.Text;
-        command.CommandText = sql;
-        command.Parameters.AddRange(sqlParams);
-
-        if (transaction != null)
-        {
-            command.Transaction = transaction;
-        }
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-
-        T result = default!;
-        if (readerFunc != null)
-        {
-            result = await readerFunc(reader, cancellationToken).ConfigureAwait(false);
-        }
-
-        return result;
-    }
-
-    public static async Task<int> ExecuteScalarAsync(
-        this DbConnection connection,
-        string sql,
-        CancellationToken cancellationToken = default,
-        params object[] sqlParams
-    )
-    {
-        if (connection.State == ConnectionState.Closed)
-        {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        await using var command = connection.CreateCommand();
-        command.CommandType = CommandType.Text;
-        command.CommandText = sql;
-        command.Parameters.AddRange(sqlParams);
-
-        var objValue = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-
-        return Convert.ToInt32(objValue, CultureInfo.InvariantCulture);
     }
 }

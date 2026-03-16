@@ -12,31 +12,32 @@ namespace Headless.Messaging.SqlServer;
 /// </summary>
 internal static class EntityFrameworkTransactionExtensions
 {
-    public static IDbContextTransaction BeginEntityFrameworkOutboxTransaction(
-        this DatabaseFacade database,
-        IsolationLevel isolationLevel,
-        IOutboxTransaction transaction,
-        bool autoCommit
-    )
+    extension(DatabaseFacade database)
     {
-        transaction.DbTransaction = database.BeginTransaction(isolationLevel);
-        transaction.AutoCommit = autoCommit;
-        return new SqlServerEntityFrameworkDbTransaction(transaction);
-    }
+        public IDbContextTransaction BeginEntityFrameworkOutboxTransaction(
+            IsolationLevel isolationLevel,
+            IOutboxTransaction transaction,
+            bool autoCommit
+        )
+        {
+            transaction.DbTransaction = database.BeginTransaction(isolationLevel);
+            transaction.AutoCommit = autoCommit;
+            return new SqlServerEntityFrameworkDbTransaction(transaction);
+        }
 
-    public static async Task<IDbContextTransaction> BeginEntityFrameworkOutboxTransactionAsync(
-        this DatabaseFacade database,
-        IsolationLevel isolationLevel,
-        IOutboxTransaction transaction,
-        bool autoCommit,
-        CancellationToken cancellationToken
-    )
-    {
-        transaction.DbTransaction = await database
-            .BeginTransactionAsync(isolationLevel, cancellationToken)
-            .ConfigureAwait(false);
-        transaction.AutoCommit = autoCommit;
+        public async Task<IDbContextTransaction> BeginEntityFrameworkOutboxTransactionAsync(
+            IsolationLevel isolationLevel,
+            IOutboxTransaction transaction,
+            bool autoCommit,
+            CancellationToken cancellationToken
+        )
+        {
+            transaction.DbTransaction = await database
+                .BeginTransactionAsync(isolationLevel, cancellationToken)
+                .ConfigureAwait(false);
+            transaction.AutoCommit = autoCommit;
 
-        return new SqlServerEntityFrameworkDbTransaction(transaction);
+            return new SqlServerEntityFrameworkDbTransaction(transaction);
+        }
     }
 }

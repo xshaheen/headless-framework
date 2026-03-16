@@ -85,13 +85,17 @@ public static class MessagingDashboardEndpoints
         apiGroup.MapGet("/metrics-history", _MetricsHistory).WithName("Messaging_MetricsHistory");
 
         // Published messages
-        apiGroup.MapGet("/published/message/{id:long}", _PublishedMessageDetails).WithName("Messaging_PublishedMessageDetails");
+        apiGroup
+            .MapGet("/published/message/{id:long}", _PublishedMessageDetails)
+            .WithName("Messaging_PublishedMessageDetails");
         apiGroup.MapPost("/published/requeue", _PublishedRequeue).WithName("Messaging_PublishedRequeue");
         apiGroup.MapPost("/published/delete", _PublishedDelete).WithName("Messaging_PublishedDelete");
         apiGroup.MapGet("/published/{status}", _PublishedList).WithName("Messaging_PublishedList");
 
         // Received messages
-        apiGroup.MapGet("/received/message/{id:long}", _ReceivedMessageDetails).WithName("Messaging_ReceivedMessageDetails");
+        apiGroup
+            .MapGet("/received/message/{id:long}", _ReceivedMessageDetails)
+            .WithName("Messaging_ReceivedMessageDetails");
         apiGroup.MapPost("/received/reexecute", _ReceivedRequeue).WithName("Messaging_ReceivedRequeue");
         apiGroup.MapPost("/received/delete", _ReceivedDelete).WithName("Messaging_ReceivedDelete");
         apiGroup.MapGet("/received/{status}", _ReceivedList).WithName("Messaging_ReceivedList");
@@ -110,12 +114,14 @@ public static class MessagingDashboardEndpoints
     private static IResult _GetAuthInfo(IAuthService authService)
     {
         var authInfo = authService.GetAuthInfo();
-        return Results.Json(new
-        {
-            mode = authInfo.Mode.ToString().ToLower(CultureInfo.InvariantCulture),
-            enabled = authInfo.IsEnabled,
-            sessionTimeout = authInfo.SessionTimeoutMinutes,
-        });
+        return Results.Json(
+            new
+            {
+                mode = authInfo.Mode.ToString().ToLower(CultureInfo.InvariantCulture),
+                enabled = authInfo.IsEnabled,
+                sessionTimeout = authInfo.SessionTimeoutMinutes,
+            }
+        );
     }
 
     private static async Task<IResult> _ValidateAuth(HttpContext context, IAuthService authService)
@@ -124,12 +130,14 @@ public static class MessagingDashboardEndpoints
 
         if (authResult.IsAuthenticated)
         {
-            return Results.Json(new
-            {
-                authenticated = true,
-                username = authResult.Username,
-                message = "Authentication successful",
-            });
+            return Results.Json(
+                new
+                {
+                    authenticated = true,
+                    username = authResult.Username,
+                    message = "Authentication successful",
+                }
+            );
         }
 
         return Results.Unauthorized();
@@ -152,7 +160,14 @@ public static class MessagingDashboardEndpoints
         var broker = sp.GetService<MessageQueueMarkerService>();
         var storage = sp.GetService<MessageStorageMarkerService>();
 
-        return Results.Json(new { messaging, broker, storage });
+        return Results.Json(
+            new
+            {
+                messaging,
+                broker,
+                storage,
+            }
+        );
     }
 
     private static async Task<IResult> _Stats(IServiceProvider sp)
@@ -164,9 +179,7 @@ public static class MessagingDashboardEndpoints
 
         // Set subscriber count
         var subscriberCache = sp.GetRequiredService<MethodMatcherCache>();
-        result.Subscribers = subscriberCache
-            .GetCandidatesMethodsOfGroupNameGrouped()
-            .Sum(g => g.Value.Count);
+        result.Subscribers = subscriberCache.GetCandidatesMethodsOfGroupNameGrouped().Sum(g => g.Value.Count);
 
         // Try to set server count from cache or discovery
         if (MessagingCache.Global.TryGet("messaging.nodes.count", out var count))
@@ -229,15 +242,17 @@ public static class MessagingDashboardEndpoints
             return Results.NotFound();
         }
 
-        return Results.Json(new
-        {
-            Id = message.DbId,
-            Name = message.Origin.GetName(),
-            Content = message.Content,
-            Added = message.Added,
-            ExpiresAt = message.ExpiresAt,
-            Retries = message.Retries,
-        });
+        return Results.Json(
+            new
+            {
+                Id = message.DbId,
+                Name = message.Origin.GetName(),
+                message.Content,
+                message.Added,
+                message.ExpiresAt,
+                message.Retries,
+            }
+        );
     }
 
     private static async Task<IResult> _ReceivedMessageDetails(long id, IServiceProvider sp)
@@ -251,16 +266,18 @@ public static class MessagingDashboardEndpoints
             return Results.NotFound();
         }
 
-        return Results.Json(new
-        {
-            Id = message.DbId,
-            Name = message.Origin.GetName(),
-            Group = message.Origin.GetGroup(),
-            Content = message.Content,
-            Added = message.Added,
-            ExpiresAt = message.ExpiresAt,
-            Retries = message.Retries,
-        });
+        return Results.Json(
+            new
+            {
+                Id = message.DbId,
+                Name = message.Origin.GetName(),
+                Group = message.Origin.GetGroup(),
+                message.Content,
+                message.Added,
+                message.ExpiresAt,
+                message.Retries,
+            }
+        );
     }
 
     private static async Task<IResult> _PublishedRequeue(HttpContext httpContext, IServiceProvider sp)
