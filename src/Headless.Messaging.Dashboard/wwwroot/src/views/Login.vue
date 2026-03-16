@@ -34,7 +34,7 @@
           prepend-inner-icon="mdi-account-circle"
           :rules="rules.username"
           variant="outlined"
-          class="mb-4"
+          class="mb-2"
           :disabled="authStore.isLoading"
           autofocus
           @input="clearError"
@@ -49,7 +49,7 @@
           :append-inner-icon="showPassword ? 'mdi-eye' : 'mdi-eye-off'"
           :rules="rules.password"
           variant="outlined"
-          class="mb-6"
+          class="mb-4"
           :disabled="authStore.isLoading"
           @click:append-inner="showPassword = !showPassword"
           @input="clearError"
@@ -59,7 +59,7 @@
         <v-btn
           type="submit"
           color="primary"
-          size="x-large"
+          size="large"
           block
           :loading="authStore.isLoading"
           :disabled="!isFormValid"
@@ -90,7 +90,7 @@
           prepend-inner-icon="mdi-key-variant"
           :rules="rules.apiKey"
           variant="outlined"
-          class="mb-6"
+          class="mb-4"
           :disabled="authStore.isLoading"
           autofocus
           @input="clearError"
@@ -100,7 +100,7 @@
         <v-btn
           type="submit"
           color="primary"
-          size="x-large"
+          size="large"
           block
           :loading="authStore.isLoading"
           :disabled="!isFormValid"
@@ -267,38 +267,38 @@ onMounted(() => {
   background: rgba(30, 30, 46, 0.95);
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 48px;
+  border-radius: 16px;
+  padding: 32px;
   box-shadow:
-    0 32px 64px rgba(0, 0, 0, 0.4),
+    0 24px 48px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
   width: 100%;
-  max-width: 420px;
+  max-width: 400px;
   position: relative;
   z-index: 1;
 }
 
 .login-header {
   text-align: center;
-  margin-bottom: 40px;
+  margin-bottom: 24px;
 }
 
 .logo-section {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .logo {
-  width: 72px;
-  height: 72px;
-  margin-bottom: 20px;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 12px;
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
 }
 
 .app-title {
-  font-size: 32px;
+  font-size: 26px;
   font-weight: 700;
   background: linear-gradient(135deg, #64b5f6 0%, #42a5f5 50%, #2196f3 100%);
   -webkit-background-clip: text;
@@ -310,16 +310,16 @@ onMounted(() => {
 .login-subtitle {
   color: rgba(255, 255, 255, 0.7);
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 400;
 }
 
 .login-form {
-  margin-bottom: 32px;
+  margin-bottom: 0;
 }
 
 .login-btn {
-  height: 52px;
+  height: 44px;
   font-weight: 600;
   text-transform: none;
   letter-spacing: 0.5px;
@@ -335,13 +335,13 @@ onMounted(() => {
 
 .auth-help-text {
   text-align: center;
-  margin-top: 16px;
-  padding: 12px;
+  margin-top: 12px;
+  padding: 8px 12px;
   background: rgba(33, 150, 243, 0.1);
   border: 1px solid rgba(33, 150, 243, 0.2);
   border-radius: 8px;
   color: rgba(255, 255, 255, 0.8);
-  font-size: 14px;
+  font-size: 13px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -350,13 +350,13 @@ onMounted(() => {
 .host-auth-message,
 .no-auth-message {
   text-align: center;
-  padding: 40px 0;
+  padding: 24px 0;
   color: rgba(255, 255, 255, 0.9);
 }
 
 .host-auth-message h3,
 .no-auth-message h3 {
-  margin: 20px 0 12px 0;
+  margin: 12px 0 8px 0;
   color: rgba(255, 255, 255, 0.95);
   font-weight: 600;
 }
@@ -397,16 +397,16 @@ onMounted(() => {
   }
 
   .login-card {
-    padding: 32px 24px;
+    padding: 24px 20px;
   }
 
   .app-title {
-    font-size: 28px;
+    font-size: 22px;
   }
 
   .logo {
-    width: 64px;
-    height: 64px;
+    width: 48px;
+    height: 48px;
   }
 }
 </style>
