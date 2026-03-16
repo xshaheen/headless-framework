@@ -128,8 +128,20 @@
               <td class="content-cell">
                 <span class="content-truncated">{{ truncate(msg.content, 60) }}</span>
               </td>
-              <td class="text-caption">{{ formatDateTime(msg.added) }}</td>
-              <td class="text-caption">{{ formatDateTime(msg.expiresAt) }}</td>
+              <td class="text-caption">
+                <v-tooltip :text="timeAgo(msg.added)" location="top">
+                  <template #activator="{ props: tp }">
+                    <span v-bind="tp">{{ formatDateTime(msg.added) }}</span>
+                  </template>
+                </v-tooltip>
+              </td>
+              <td class="text-caption">
+                <v-tooltip :text="timeAgo(msg.expiresAt)" location="top">
+                  <template #activator="{ props: tp }">
+                    <span v-bind="tp">{{ formatDateTime(msg.expiresAt) }}</span>
+                  </template>
+                </v-tooltip>
+              </td>
               <td>{{ msg.retries }}</td>
               <td>
                 <v-btn
@@ -199,7 +211,7 @@ import { useMessagingStore } from '@/stores/messagingStore'
 import { usePagination } from '@/composables/usePagination'
 import { useDialog } from '@/composables/useDialog'
 import { ConfirmDialogProps } from '@/components/common/ConfirmDialog.vue'
-import { formatDateTime } from '@/utilities/dateTimeParser'
+import { formatDateTime, timeAgo } from '@/utilities/dateTimeParser'
 import TableSkeleton from '@/components/common/TableSkeleton.vue'
 import PaginationFooter from '@/components/common/PaginationFooter.vue'
 import MessageDetailDialog, { type MessageDetail } from '@/components/MessageDetailDialog.vue'

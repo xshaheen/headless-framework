@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import JSONBig from 'json-bigint'
-import { formatDateTime } from '@/utilities/dateTimeParser'
+import { formatDateTime, timeAgo } from '@/utilities/dateTimeParser'
 
 export interface MessageDetail {
   id: string
@@ -119,12 +119,33 @@ const contentKind = computed((): ContentKind | null => {
 const isException = computed(() => contentKind.value?.type === 'structured')
 const isPlain = computed(() => contentKind.value?.type === 'plain')
 
-const formattedJson = computed(() => {
+function highlightJson(jsonStr: string): string {
+  const html = jsonStr
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  return html.replace(
+    /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
+    (match) => {
+      let cls = 'json-number'
+      if (match.startsWith('"')) {
+        cls = match.endsWith(':') ? 'json-key' : 'json-string'
+      } else if (/true|false/.test(match)) {
+        cls = 'json-boolean'
+      } else if (match === 'null') {
+        cls = 'json-null'
+      }
+      return `<span class="${cls}">${match}</span>`
+    },
+  )
+}
+
+const formattedJsonHtml = computed(() => {
   if (!props.message?.content) return ''
   const { parsed, isJson } = parseContent(props.message.content)
   if (!isJson) return props.message.content
   try {
-    return JSON.stringify(parsed, null, 2)
+    return highlightJson(JSON.stringify(parsed, null, 2))
   } catch {
     return props.message.content
   }
@@ -215,11 +236,19 @@ async function copyContent() {
         <div class="metadata-fields mt-2">
           <div class="meta-item">
             <span class="meta-label">Added</span>
-            <span class="meta-value">{{ formatDateTime(message.added) }}</span>
+            <v-tooltip :text="timeAgo(message.added)" location="top">
+              <template #activator="{ props: tp }">
+                <span v-bind="tp" class="meta-value">{{ formatDateTime(message.added) }}</span>
+              </template>
+            </v-tooltip>
           </div>
           <div v-if="message.expiresAt" class="meta-item">
             <span class="meta-label">Expires At</span>
-            <span class="meta-value">{{ formatDateTime(message.expiresAt) }}</span>
+            <v-tooltip :text="timeAgo(message.expiresAt)" location="top">
+              <template #activator="{ props: tp }">
+                <span v-bind="tp" class="meta-value">{{ formatDateTime(message.expiresAt) }}</span>
+              </template>
+            </v-tooltip>
           </div>
           <div class="meta-item">
             <span class="meta-label">Retries</span>
@@ -320,7 +349,7 @@ async function copyContent() {
         </div>
 
         <!-- JSON / Generic -->
-        <pre v-else class="message-content">{{ formattedJson }}</pre>
+        <pre v-else class="message-content" v-html="formattedJsonHtml"></pre>
       </v-card-text>
 
       <v-card-actions>
@@ -565,5 +594,27 @@ async function copyContent() {
   border: 1px solid rgba(255, 255, 255, 0.06);
   color: #e0e0e0;
   flex: 1;
+}
+
+/* JSON syntax highlighting */
+.message-content :deep(.json-key) {
+  color: #9cdcfe;
+}
+
+.message-content :deep(.json-string) {
+  color: #ce9178;
+}
+
+.message-content :deep(.json-number) {
+  color: #b5cea8;
+}
+
+.message-content :deep(.json-boolean) {
+  color: #569cd6;
+}
+
+.message-content :deep(.json-null) {
+  color: #569cd6;
+  font-style: italic;
 }
 </style>

@@ -162,6 +162,12 @@ public static class MessagingDashboardEndpoints
 
         var result = await monitoringApi.GetStatisticsAsync();
 
+        // Set subscriber count
+        var subscriberCache = sp.GetRequiredService<MethodMatcherCache>();
+        result.Subscribers = subscriberCache
+            .GetCandidatesMethodsOfGroupNameGrouped()
+            .Sum(g => g.Value.Count);
+
         // Try to set server count from cache or discovery
         if (MessagingCache.Global.TryGet("messaging.nodes.count", out var count))
         {
