@@ -7,7 +7,7 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4)](https://dotnet.microsoft.com)
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 
-90+ NuGet packages &bull; Abstraction + Provider pattern &bull; Zero lock-in
+116+ NuGet packages &bull; Abstraction + Provider pattern &bull; Zero lock-in
 
 [Quick Start](#quick-start) &bull; [Packages](#packages) &bull; [Architecture](#architecture) &bull; [LLM Context](#llm-context) &bull; [Contributing](#contributing)
 
@@ -21,7 +21,7 @@ Most .NET frameworks force opinions on you — folder structures, ORM choices, m
 
 Every feature ships as a pair: a thin **abstraction** package (interfaces and contracts) and one or more **provider** packages (concrete implementations). You pick the pieces you need, wire them up, and own the result.
 
-- **Composable** — 90+ standalone packages. Use one or use fifty.
+- **Composable** — 116+ standalone packages. Use one or use fifty.
 - **Swappable** — Switch from Redis to in-memory caching, or AWS to Azure blob storage, by changing one line.
 - **Explicit** — No hidden conventions, no magic. Every behavior is visible in your code.
 - **Testable** — Every abstraction is mockable. Every provider is integration-tested with Testcontainers.
@@ -86,6 +86,16 @@ Foundational building blocks shared across the framework — domain primitives, 
 | [Headless.Core](src/Headless.Core/README.md) | Domain-Driven Design building blocks |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
+| [Headless.Domain.LocalPublisher](src/Headless.Domain.LocalPublisher/README.md) | In-process domain event publishing |
+
+### Audit Log
+
+Property-level audit logging for tracking entity mutations and explicit business events. Records what changed, who changed it, and when — with EF Core persistence.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.AuditLog.Abstractions](src/Headless.AuditLog.Abstractions/README.md) | Audit log contracts and interfaces |
+| [Headless.AuditLog.EntityFramework](src/Headless.AuditLog.EntityFramework/README.md) | EF Core audit log persistence |
 
 ### Blob Storage
 
@@ -170,11 +180,50 @@ Content indexing and metadata extraction for media files — images, video, and 
 
 ### Messaging
 
-In-process domain event publishing for decoupled, event-driven architectures within a single service boundary.
+Reliable distributed message bus with transactional outbox, automatic retries, delayed delivery, and type-safe consumers. 7 transport providers and 3 storage backends — swap the underlying infrastructure without changing application code.
 
 | Package | Description |
 |---------|-------------|
-| [Headless.Domain.LocalPublisher](src/Headless.Domain.LocalPublisher/README.md) | In-process domain event publishing |
+| [Headless.Messaging.Abstractions](src/Headless.Messaging.Abstractions/README.md) | Core messaging interfaces and contracts |
+| [Headless.Messaging.Core](src/Headless.Messaging.Core/README.md) | Runtime engine: outbox, retries, delayed delivery, consumer orchestration |
+| [Headless.Messaging.Dashboard](src/Headless.Messaging.Dashboard/README.md) | Web UI for monitoring messages, failures, and system health |
+| [Headless.Messaging.Dashboard.K8s](src/Headless.Messaging.Dashboard.K8s/README.md) | Kubernetes node auto-discovery for the dashboard |
+| [Headless.Messaging.OpenTelemetry](src/Headless.Messaging.OpenTelemetry/README.md) | Tracing, metrics, and context propagation |
+
+**Transports:**
+
+| Package | Description |
+|---------|-------------|
+| [Headless.Messaging.RabbitMq](src/Headless.Messaging.RabbitMq/README.md) | RabbitMQ (AMQP) |
+| [Headless.Messaging.Kafka](src/Headless.Messaging.Kafka/README.md) | Apache Kafka |
+| [Headless.Messaging.AwsSqs](src/Headless.Messaging.AwsSqs/README.md) | AWS SQS + SNS |
+| [Headless.Messaging.AzureServiceBus](src/Headless.Messaging.AzureServiceBus/README.md) | Azure Service Bus |
+| [Headless.Messaging.Nats](src/Headless.Messaging.Nats/README.md) | NATS with JetStream |
+| [Headless.Messaging.Pulsar](src/Headless.Messaging.Pulsar/README.md) | Apache Pulsar |
+| [Headless.Messaging.RedisStreams](src/Headless.Messaging.RedisStreams/README.md) | Redis Streams |
+| [Headless.Messaging.InMemoryQueue](src/Headless.Messaging.InMemoryQueue/README.md) | In-memory (dev/testing) |
+
+**Storage backends:**
+
+| Package | Description |
+|---------|-------------|
+| [Headless.Messaging.PostgreSql](src/Headless.Messaging.PostgreSql/README.md) | PostgreSQL message persistence |
+| [Headless.Messaging.SqlServer](src/Headless.Messaging.SqlServer/README.md) | SQL Server message persistence |
+| [Headless.Messaging.InMemoryStorage](src/Headless.Messaging.InMemoryStorage/README.md) | Ephemeral storage (dev/testing) |
+
+### Jobs
+
+Distributed background job scheduling with cron expressions, delayed execution, monitoring dashboard, and OpenTelemetry observability. Source-generated for compile-time safety.
+
+| Package | Description |
+|---------|-------------|
+| [Headless.Jobs.Abstractions](src/Headless.Jobs.Abstractions/README.md) | Job scheduling interfaces |
+| [Headless.Jobs.Core](src/Headless.Jobs.Core/README.md) | Job engine: cron, delays, retries, monitoring |
+| [Headless.Jobs.SourceGenerator](src/Headless.Jobs.SourceGenerator/README.md) | Compile-time code gen for `[Jobs]`-marked jobs |
+| [Headless.Jobs.Dashboard](src/Headless.Jobs.Dashboard/README.md) | Web UI for job monitoring |
+| [Headless.Jobs.OpenTelemetry](src/Headless.Jobs.OpenTelemetry/README.md) | Tracing and metrics for job execution |
+| [Headless.Jobs.EntityFramework](src/Headless.Jobs.EntityFramework/README.md) | EF Core job state persistence |
+| [Headless.Jobs.Caching.Redis](src/Headless.Jobs.Caching.Redis/README.md) | Redis node registry and heartbeats |
 
 ### OpenAPI
 
@@ -362,7 +411,8 @@ When working with a Headless domain, fetch the relevant domain doc:
 - Imaging: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/imaging.txt
 - Logging: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/logging.txt
 - Media: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/media.txt
-- Messaging: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/messaging.txt
+- Messaging (Distributed Bus): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/messaging.txt
+- Audit Log: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/audit-log.txt
 - OpenAPI: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/openapi.txt
 - ORM: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/orm.txt
 - Payments: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/payments.txt
@@ -381,6 +431,8 @@ When working with a Headless domain, fetch the relevant domain doc:
 Key rules:
 - Use `ICache` from `Headless.Caching.Abstractions`, NOT `Microsoft.Extensions.Caching.Distributed.IDistributedCache`
 - Use `IBlobStorage` from `Headless.Blobs.Abstractions`, not cloud SDK clients directly
+- Use `Headless.Messaging` for distributed messaging, not raw transport clients (`RabbitMQ.Client`, `Confluent.Kafka`)
+- Use `Headless.Jobs` for background jobs with `[Jobs]` attribute + source generator, not Hangfire/Quartz
 - Use `*.Dev` packages (Emails.Dev, Sms.Dev, PushNotifications.Dev) in development
 - Always depend on `*.Abstractions` packages for interfaces, add one provider for implementation
 ```
