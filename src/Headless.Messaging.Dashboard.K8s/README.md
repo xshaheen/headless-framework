@@ -22,33 +22,42 @@ dotnet add package Headless.Messaging.Dashboard.K8s
 
 ## Quick Start
 
+### With Full Messaging Stack
+
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 
-    options.UseDashboard();
+    options.UseDashboard(dashboard =>
+    {
+        dashboard.WithBasicAuth("admin", "secret");
+    });
 
     options.UseK8sDiscovery(k8s =>
     {
-        k8s.Namespace = "production";
-        k8s.ServiceName = "messaging-service";
+        k8s.ShowOnlyExplicitVisibleNodes = true;
     });
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
-## Configuration
+### Standalone Dashboard (View-Only)
 
 ```csharp
-options.UseK8sDiscovery(k8s =>
-{
-    k8s.Namespace = "production";
-    k8s.ServiceName = "messaging-service";
-    k8s.Port = 8080;
-});
+builder.Services.AddMessagingDashboardStandalone(
+    configure: dashboard =>
+    {
+        dashboard.WithNoAuth();
+        dashboard.SetBasePath("/messaging");
+    },
+    k8SOption: k8s =>
+    {
+        k8s.ShowOnlyExplicitVisibleNodes = true;
+    }
+);
 ```
 
 ## Dependencies

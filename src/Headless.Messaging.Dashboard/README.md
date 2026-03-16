@@ -13,6 +13,7 @@ Provides real-time visibility into message processing, failures, retries, and sy
 - **Failure Management**: View and retry failed messages
 - **Node Discovery**: Multi-instance cluster visibility
 - **Performance Metrics**: Consumer processing stats and bottlenecks
+- **5-Mode Auth**: None, Basic, API Key, Host, Custom (shared with Jobs Dashboard)
 
 ## Installation
 
@@ -30,8 +31,7 @@ builder.Services.AddMessaging(options =>
 
     options.UseDashboard(dashboard =>
     {
-        dashboard.AllowAnonymousExplicit = false;
-        dashboard.AuthorizationPolicy = "DashboardPolicy";
+        dashboard.WithBasicAuth("admin", "secret123");
     });
 
     options.SubscribeFromAssemblyContaining<Program>();
@@ -40,46 +40,92 @@ builder.Services.AddMessaging(options =>
 // Access dashboard at: http://localhost:5000/messaging
 ```
 
+## Authentication Modes
+
+### No Authentication (Dev/Testing Only)
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.WithNoAuth();
+});
+```
+
+### Basic Authentication
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.WithBasicAuth("admin", "secret123");
+});
+```
+
+### API Key Authentication
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.WithApiKey("my-secret-api-key");
+});
+```
+
+### Use Host Application's Authentication
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.WithHostAuthentication();
+});
+```
+
+### Use Host Authentication with Custom Policy
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.WithHostAuthentication("DashboardPolicy");
+});
+```
+
+### Custom Authentication
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.WithCustomAuth(token => ValidateToken(token));
+});
+```
+
+## Fluent API Methods
+
+- `WithNoAuth()` - Public dashboard (no authentication)
+- `WithBasicAuth(username, password)` - Enable username/password authentication
+- `WithApiKey(apiKey)` - Enable API key authentication
+- `WithHostAuthentication(policy?)` - Use your app's existing auth with optional policy
+- `WithCustomAuth(validator)` - Custom authentication with validation function
+- `WithSessionTimeout(minutes)` - Set session timeout (default: 60 minutes)
+- `SetBasePath(path)` - Set dashboard URL path (default: `/messaging`)
+- `SetStatsPollingInterval(ms)` - Stats polling interval (default: 2000ms)
+- `SetCorsPolicy(policy)` - Configure CORS
+
 ## Configuration
 
-You **must** explicitly choose an auth mode — either allow anonymous or set a policy. Omitting both throws at startup.
-
-### With Authorization Policy
-
-```csharp
-options.UseDashboard(dashboard =>
-{
-    dashboard.AllowAnonymousExplicit = false;
-    dashboard.AuthorizationPolicy = "DashboardPolicy";
-});
-```
-
-### Anonymous Access (Dev/Testing Only)
-
-```csharp
-options.UseDashboard(dashboard =>
-{
-    dashboard.AllowAnonymousExplicit = true;
-});
-```
-
-### All Options
-
-| Option | Default | Description |
+| Method | Default | Description |
 |--------|---------|-------------|
-| `PathMatch` | `/messaging` | URL path for the dashboard |
-| `PathBase` | `""` | Base path when behind a reverse proxy |
-| `StatsPollingInterval` | `2000` | Stats endpoint polling interval (ms) |
-| `AllowAnonymousExplicit` | `false` | Allow unauthenticated access. Must be set to `true` or `AuthorizationPolicy` must be configured |
-| `AuthorizationPolicy` | `null` | ASP.NET Core authorization policy name. Required when `AllowAnonymousExplicit` is `false` |
+| `SetBasePath` | `/messaging` | URL path for the dashboard |
+| `SetStatsPollingInterval` | `2000` | Stats endpoint polling interval (ms) |
+| `WithNoAuth` | (default) | No authentication — public dashboard |
+| `SetCorsPolicy` | `null` | CORS policy for cross-origin requests |
+| `WithSessionTimeout` | `60` | Session timeout in minutes |
 
 ## Dependencies
 
 - `Headless.Messaging.Core`
+- `Headless.Dashboard.Authentication` (shared auth with Jobs Dashboard)
 - Embedded web UI assets
 
 ## Side Effects
 
 - Exposes web endpoint at configured path (default: `/messaging`)
 - Periodically polls message storage for statistics
-- Anonymous by default — configure `AuthorizationPolicy` for production use
+- No authentication by default — configure auth for production use

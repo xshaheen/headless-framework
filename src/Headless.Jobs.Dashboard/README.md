@@ -120,4 +120,9 @@ Dashboard tracks runtime outcomes from the scheduler, including:
 
 Use Dashboard for operational triage, then combine with `Headless.Jobs.OpenTelemetry` for trace-level diagnostics.
 
-That's it! Simple and clean. 🎉
+## Dependencies
+
+- `Headless.Jobs.Abstractions`
+- `Headless.Jobs.Core`
+- `Headless.Dashboard.Authentication` (shared auth with Messaging Dashboard)
+- Embedded web UI assets
