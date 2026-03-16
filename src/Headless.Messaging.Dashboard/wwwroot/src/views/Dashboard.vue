@@ -64,36 +64,6 @@
         </v-card>
       </div>
 
-      <!-- Meta Info -->
-      <div class="meta-section">
-        <v-card class="meta-card">
-          <v-card-title class="meta-title">
-            <v-icon class="mr-2">mdi-information</v-icon>
-            System Information
-          </v-card-title>
-          <v-card-text>
-            <div v-if="isLoading" class="loading-state">
-              <v-progress-circular indeterminate size="24" color="primary" />
-              <span class="ml-3">Loading...</span>
-            </div>
-            <div v-else class="meta-grid">
-              <div v-if="meta.messaging" class="meta-item">
-                <div class="meta-item-label">Messaging</div>
-                <div class="meta-item-value">{{ meta.messaging.name }} {{ meta.messaging.version }}</div>
-              </div>
-              <div v-if="meta.broker" class="meta-item">
-                <div class="meta-item-label">Broker</div>
-                <div class="meta-item-value">{{ meta.broker.name }}</div>
-              </div>
-              <div v-if="meta.storage" class="meta-item">
-                <div class="meta-item-label">Storage</div>
-                <div class="meta-item-value">{{ meta.storage.name }}</div>
-              </div>
-            </div>
-          </v-card-text>
-        </v-card>
-      </div>
-
       <!-- Real-time Metrics -->
       <div class="metrics-section">
         <v-card class="metrics-card">
@@ -172,7 +142,7 @@ import { storeToRefs } from 'pinia'
 import { useMessagingStore } from '@/stores/messagingStore'
 
 const store = useMessagingStore()
-const { stats, meta, realtimeMetrics, metricsHistory, isLoading } = storeToRefs(store)
+const { stats, realtimeMetrics, metricsHistory, isLoading } = storeToRefs(store)
 
 const pollingInterval = 2000
 
@@ -274,20 +244,17 @@ onUnmounted(() => {
   margin-top: 2px;
 }
 
-.meta-section,
 .metrics-section,
 .history-section {
   margin-bottom: 24px;
 }
 
-.meta-card,
 .metrics-card,
 .history-card {
   background: rgba(30, 30, 30, 0.8) !important;
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.meta-title,
 .metrics-title,
 .history-title {
   display: flex;
@@ -295,34 +262,6 @@ onUnmounted(() => {
   font-size: 1rem !important;
   font-weight: 600 !important;
   color: #e0e0e0;
-}
-
-.meta-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-}
-
-.meta-item {
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.meta-item-label {
-  font-size: 0.75rem;
-  color: #9e9e9e;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-}
-
-.meta-item-value {
-  font-size: 0.9rem;
-  color: #e0e0e0;
-  font-weight: 500;
 }
 
 .loading-state {

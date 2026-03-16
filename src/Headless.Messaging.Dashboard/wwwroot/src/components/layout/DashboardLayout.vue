@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
 import AuthHeader from '../common/AuthHeader.vue'
+import { useMessagingStore } from '@/stores/messagingStore'
 
 const navigationLinks = [
   { icon: 'mdi-view-dashboard', text: 'Dashboard', path: '/' },
@@ -12,6 +14,16 @@ const navigationLinks = [
 ]
 
 const isAuthEnabled = computed(() => window.MessagingConfig?.auth?.enabled ?? false)
+
+const messagingStore = useMessagingStore()
+const { meta } = storeToRefs(messagingStore)
+
+function getNodeCookie(): string | null {
+  const m = document.cookie.match(/(?:^|;\s*)messaging\.node=([^;]*)/)
+  return m ? decodeURIComponent(m[1]) : null
+}
+
+const switchedNode = computed(() => getNodeCookie())
 
 const router = useRouter()
 
@@ -81,8 +93,45 @@ function handleAuthLogout() {
     <!-- Footer -->
     <v-footer class="main-footer">
       <div class="footer-content">
-        <v-divider class="footer-divider" thickness="2" width="50" />
-        <div class="footer-text">2025 — <strong>Headless Framework</strong></div>
+        <div class="footer-badges">
+          <v-chip
+            v-if="meta.messaging && meta.messaging.name"
+            size="x-small"
+            variant="tonal"
+            color="primary"
+            class="footer-chip"
+          >
+            {{ meta.messaging.name }} v{{ meta.messaging.version }}
+          </v-chip>
+          <v-chip
+            v-if="meta.broker && meta.broker.name"
+            size="x-small"
+            variant="tonal"
+            color="secondary"
+            class="footer-chip"
+          >
+            {{ meta.broker.name }}
+          </v-chip>
+          <v-chip
+            v-if="meta.storage && meta.storage.name"
+            size="x-small"
+            variant="tonal"
+            color="surface-variant"
+            class="footer-chip"
+          >
+            {{ meta.storage.name }}
+          </v-chip>
+          <v-chip
+            v-if="switchedNode"
+            size="x-small"
+            variant="tonal"
+            color="warning"
+            class="footer-chip"
+          >
+            &#x26A1; Switched Node: {{ switchedNode }}
+          </v-chip>
+        </div>
+        <div class="footer-copyright">2025 — <strong>Headless Framework</strong></div>
       </div>
     </v-footer>
   </v-app>
@@ -246,32 +295,47 @@ function handleAuthLogout() {
   backdrop-filter: blur(20px) !important;
   border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
   box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3) !important;
-  padding: 16px 0 !important;
+  padding: 0 !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  flex-shrink: 0;
 }
 
 .footer-content {
-  max-width: 1400px;
+  max-width: var(--dashboard-shell-max-width);
   margin: 0 auto;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 var(--dashboard-shell-padding-x);
   gap: 12px;
-  padding: 0 24px;
 }
 
-.footer-divider {
-  border-color: rgba(255, 255, 255, 0.2) !important;
-  opacity: 0.6;
+.footer-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 
-.footer-text {
+.footer-chip {
+  font-size: 0.7rem !important;
+  height: 20px !important;
+  white-space: nowrap;
+}
+
+.footer-copyright {
   color: #bdbdbd !important;
-  font-size: 0.875rem !important;
+  font-size: 0.8rem !important;
   font-weight: 500 !important;
-  text-align: center;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.footer-text strong {
+.footer-copyright strong {
   color: #e0e0e0 !important;
   font-weight: 600 !important;
 }
