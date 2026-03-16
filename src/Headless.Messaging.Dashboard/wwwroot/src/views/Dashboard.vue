@@ -29,6 +29,18 @@
 
         <v-card class="stat-card">
           <v-card-text class="stat-content">
+            <div class="stat-icon-wrapper warning">
+              <v-icon>mdi-clock-outline</v-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.publishedDelayed }}</div>
+              <div class="stat-label">Published Delayed</div>
+            </div>
+          </v-card-text>
+        </v-card>
+
+        <v-card class="stat-card">
+          <v-card-text class="stat-content">
             <div class="stat-icon-wrapper info">
               <v-icon>mdi-inbox-arrow-down</v-icon>
             </div>
@@ -41,12 +53,24 @@
 
         <v-card class="stat-card">
           <v-card-text class="stat-content">
-            <div class="stat-icon-wrapper warning">
+            <div class="stat-icon-wrapper error">
               <v-icon>mdi-message-alert</v-icon>
             </div>
             <div class="stat-info">
               <div class="stat-value">{{ stats.receivedFailed }}</div>
               <div class="stat-label">Received Failed</div>
+            </div>
+          </v-card-text>
+        </v-card>
+
+        <v-card class="stat-card">
+          <v-card-text class="stat-content">
+            <div class="stat-icon-wrapper accent">
+              <v-icon>mdi-account-multiple</v-icon>
+            </div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.subscribers }}</div>
+              <div class="stat-label">Subscribers</div>
             </div>
           </v-card-text>
         </v-card>
@@ -64,74 +88,12 @@
         </v-card>
       </div>
 
-      <!-- Real-time Metrics -->
-      <div class="metrics-section">
-        <v-card class="metrics-card">
-          <v-card-title class="metrics-title">
-            <v-icon class="mr-2">mdi-chart-line</v-icon>
-            Real-time Metrics
-            <v-spacer />
-            <v-chip size="x-small" color="primary" variant="tonal">
-              {{ pollingInterval / 1000 }}s refresh
-            </v-chip>
-          </v-card-title>
-          <v-card-text>
-            <div v-if="isLoading" class="loading-state">
-              <v-progress-circular indeterminate size="24" color="primary" />
-              <span class="ml-3">Loading metrics...</span>
-            </div>
-            <div v-else-if="realtimeMetrics" class="realtime-content">
-              <pre class="metrics-json">{{ JSON.stringify(realtimeMetrics, null, 2) }}</pre>
-            </div>
-            <div v-else class="no-data">No metrics data available</div>
-          </v-card-text>
-        </v-card>
+      <!-- Charts -->
+      <div v-if="isLoading" class="loading-state">
+        <v-progress-circular indeterminate size="24" color="primary" />
+        <span class="ml-3">Loading metrics...</span>
       </div>
-
-      <!-- Hourly History -->
-      <div class="history-section">
-        <v-card class="history-card">
-          <v-card-title class="history-title">
-            <v-icon class="mr-2">mdi-history</v-icon>
-            Hourly History (24h)
-          </v-card-title>
-          <v-card-text>
-            <div v-if="isLoading" class="loading-state">
-              <v-progress-circular indeterminate size="24" color="primary" />
-              <span class="ml-3">Loading history...</span>
-            </div>
-            <v-table v-else-if="metricsHistory.dayHour.length > 0" density="compact" class="history-table">
-              <thead>
-                <tr>
-                  <th>Hour</th>
-                  <th class="text-right">Publish OK</th>
-                  <th class="text-right">Publish Fail</th>
-                  <th class="text-right">Subscribe OK</th>
-                  <th class="text-right">Subscribe Fail</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(hour, index) in metricsHistory.dayHour" :key="index">
-                  <td>{{ hour }}</td>
-                  <td class="text-right text-success">
-                    {{ metricsHistory.publishSucceeded[index] || 0 }}
-                  </td>
-                  <td class="text-right text-error">
-                    {{ metricsHistory.publishFailed[index] || 0 }}
-                  </td>
-                  <td class="text-right text-info">
-                    {{ metricsHistory.subscribeSucceeded[index] || 0 }}
-                  </td>
-                  <td class="text-right text-warning">
-                    {{ metricsHistory.subscribeFailed[index] || 0 }}
-                  </td>
-                </tr>
-              </tbody>
-            </v-table>
-            <div v-else class="no-data">No history data available</div>
-          </v-card-text>
-        </v-card>
-      </div>
+      <MessagingCharts v-else />
     </div>
   </div>
 </template>
@@ -140,11 +102,10 @@
 import { onMounted, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useMessagingStore } from '@/stores/messagingStore'
+import MessagingCharts from '@/components/MessagingCharts.vue'
 
 const store = useMessagingStore()
-const { stats, realtimeMetrics, metricsHistory, isLoading } = storeToRefs(store)
-
-const pollingInterval = 2000
+const { stats, isLoading } = storeToRefs(store)
 
 onMounted(async () => {
   await store.startPolling()
@@ -226,6 +187,11 @@ onUnmounted(() => {
   color: #7c4dff;
 }
 
+.stat-icon-wrapper.accent {
+  background: rgba(0, 188, 212, 0.15);
+  color: #00bcd4;
+}
+
 .stat-info {
   flex: 1;
 }
@@ -244,76 +210,11 @@ onUnmounted(() => {
   margin-top: 2px;
 }
 
-.metrics-section,
-.history-section {
-  margin-bottom: 24px;
-}
-
-.metrics-card,
-.history-card {
-  background: rgba(30, 30, 30, 0.8) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.metrics-title,
-.history-title {
-  display: flex;
-  align-items: center;
-  font-size: 1rem !important;
-  font-weight: 600 !important;
-  color: #e0e0e0;
-}
-
 .loading-state {
   display: flex;
   align-items: center;
   padding: 24px;
   color: #9e9e9e;
-}
-
-.no-data {
-  padding: 24px;
-  text-align: center;
-  color: #757575;
-  font-size: 0.875rem;
-}
-
-.realtime-content {
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.metrics-json {
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  background: rgba(0, 0, 0, 0.2);
-  padding: 16px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  font-family: 'JetBrains Mono', 'Monaco', 'Consolas', monospace;
-  font-size: 0.8rem;
-  line-height: 1.5;
-  color: #e0e0e0;
-}
-
-.history-table {
-  background: transparent !important;
-}
-
-.text-success {
-  color: #4caf50 !important;
-}
-
-.text-error {
-  color: #f44336 !important;
-}
-
-.text-info {
-  color: #2196f3 !important;
-}
-
-.text-warning {
-  color: #ff9800 !important;
 }
 
 @media (max-width: 768px) {

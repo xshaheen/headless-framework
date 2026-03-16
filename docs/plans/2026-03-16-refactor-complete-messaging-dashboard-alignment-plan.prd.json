@@ -156,7 +156,7 @@
         "Charts auto-update when polling refreshes data in messagingStore"
       ],
       "priority": 6,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": [
@@ -253,7 +253,7 @@
         "Values sourced from /api/stats response (already returned by backend)"
       ],
       "priority": 10,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
