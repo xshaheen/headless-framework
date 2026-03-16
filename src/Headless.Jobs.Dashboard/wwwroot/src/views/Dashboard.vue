@@ -634,24 +634,25 @@ const getVisiblePageNumbers = () => {
 
 /* Dashboard Content */
 .dashboard-content {
-  max-width: 1400px;
+  max-width: var(--dashboard-shell-max-width, 1240px);
   margin: 0 auto;
-  padding: 20px 24px 16px 24px;
+  padding: var(--dashboard-page-padding-top, 20px) var(--dashboard-shell-padding-x, 28px)
+    var(--dashboard-page-padding-bottom, 20px);
 }
 
 /* Metrics Grid */
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
+  gap: var(--dashboard-grid-gap, 14px);
+  margin-bottom: 16px;
 }
 
 .metric-card {
   background: rgba(66, 66, 66, 0.9);
   backdrop-filter: blur(20px);
   border-radius: 12px;
-  padding: 16px;
+  padding: 14px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -731,7 +732,7 @@ const getVisiblePageNumbers = () => {
 
 /* Statistics Section */
 .stats-section {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .section-title {
@@ -753,14 +754,14 @@ const getVisiblePageNumbers = () => {
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
+  gap: var(--dashboard-grid-gap, 14px);
 }
 
 .stat-card {
   background: rgba(66, 66, 66, 0.9);
   backdrop-filter: blur(20px);
   border-radius: 12px;
-  padding: 16px;
+  padding: 14px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.1);
   transition: all 0.3s ease;
@@ -819,15 +820,15 @@ const getVisiblePageNumbers = () => {
 .content-grid {
   display: grid;
   grid-template-columns: 1fr 2fr;
-  gap: 20px;
-  margin-bottom: 20px;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
 .content-card {
   background: rgba(66, 66, 66, 0.9);
   backdrop-filter: blur(20px);
   border-radius: 12px;
-  padding: 20px;
+  padding: var(--dashboard-card-padding, 16px);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.1);
   transition: all 0.3s ease;
@@ -1016,7 +1017,7 @@ const getVisiblePageNumbers = () => {
 .bottom-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 20px;
+  gap: 16px;
 }
 
 /* Machines */

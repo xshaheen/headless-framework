@@ -2,6 +2,57 @@
 @tailwind components;
 @tailwind utilities;
 
+.dashboard-wrapper {
+  --dashboard-shell-max-width: 1240px;
+  --dashboard-shell-padding-x: clamp(16px, 2.4vw, 28px);
+  --dashboard-page-padding-top: 20px;
+  --dashboard-page-padding-bottom: 20px;
+  --dashboard-page-gap: 18px;
+  --dashboard-card-padding: 16px;
+  --dashboard-card-padding-tight: 14px;
+  --dashboard-grid-gap: 14px;
+  --dashboard-control-gap: 12px;
+}
+
+.dashboard-wrapper .v-field {
+  --v-input-control-height: 40px;
+}
+
+.dashboard-wrapper .v-field__input {
+  min-height: 40px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.dashboard-wrapper .v-textarea .v-field__input {
+  min-height: 88px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.dashboard-wrapper .v-card-title {
+  padding: 14px 16px 6px;
+}
+
+.dashboard-wrapper .v-card-text {
+  padding: 12px 16px 16px;
+}
+
+.dashboard-wrapper .v-card-actions {
+  padding: 10px 16px 14px;
+  gap: 8px;
+}
+
+.dashboard-wrapper .v-data-table-footer {
+  padding: 8px 12px;
+}
+
+.dashboard-wrapper .v-data-table .v-table__wrapper > table > tbody > tr > td,
+.dashboard-wrapper .v-data-table .v-table__wrapper > table > thead > tr > th {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
 .dot-carousel {
     position: relative;
     left: -9999px;

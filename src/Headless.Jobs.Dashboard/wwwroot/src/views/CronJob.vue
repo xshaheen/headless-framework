@@ -1390,10 +1390,11 @@ const refreshData = async () => {
 .dashboard-content {
   max-width: var(--dashboard-shell-max-width, 1280px);
   margin: 0 auto;
-  padding: 32px var(--dashboard-shell-padding-x, 32px) 24px;
+  padding: var(--dashboard-page-padding-top, 20px) var(--dashboard-shell-padding-x, 28px)
+    var(--dashboard-page-padding-bottom, 20px);
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: var(--dashboard-page-gap, 18px);
 }
 
 /* Analytics Overview Card */
@@ -1401,7 +1402,7 @@ const refreshData = async () => {
   background: rgba(66, 66, 66, 0.9);
   backdrop-filter: blur(20px);
   border-radius: 12px;
-  padding: 20px;
+  padding: var(--dashboard-card-padding, 16px);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.1);
   transition: all 0.3s ease;
@@ -1410,7 +1411,7 @@ const refreshData = async () => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .analytics-overview:hover {
@@ -1594,7 +1595,7 @@ const refreshData = async () => {
   background: rgba(66, 66, 66, 0.9);
   backdrop-filter: blur(20px);
   border-radius: 12px;
-  padding: 20px;
+  padding: var(--dashboard-card-padding, 16px);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.1);
   transition: all 0.3s ease;
@@ -1743,7 +1744,7 @@ const refreshData = async () => {
   background: rgba(66, 66, 66, 0.9);
   backdrop-filter: blur(20px);
   border-radius: 12px;
-  padding: 20px;
+  padding: var(--dashboard-card-padding, 16px);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -1752,7 +1753,7 @@ const refreshData = async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
   gap: 16px;
 }
@@ -1777,7 +1778,7 @@ const refreshData = async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: var(--dashboard-control-gap, 12px);
   flex-wrap: wrap;
   width: 100%;
 }

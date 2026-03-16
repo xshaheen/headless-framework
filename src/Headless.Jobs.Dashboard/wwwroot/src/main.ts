@@ -31,6 +31,56 @@ const vuetify = createVuetify({
     VPullToRefresh
   },
   directives,
+  defaults: {
+    VBtn: {
+      density: 'comfortable',
+      rounded: 'lg',
+    },
+    VBtnGroup: {
+      density: 'comfortable',
+    },
+    VChip: {
+      density: 'comfortable',
+      size: 'small',
+    },
+    VTextField: {
+      density: 'compact',
+      variant: 'outlined',
+      hideDetails: 'auto',
+    },
+    VTextarea: {
+      density: 'compact',
+      variant: 'outlined',
+      hideDetails: 'auto',
+      rows: 3,
+    },
+    VSelect: {
+      density: 'compact',
+      variant: 'outlined',
+      hideDetails: 'auto',
+    },
+    VAutocomplete: {
+      density: 'compact',
+      variant: 'outlined',
+      hideDetails: 'auto',
+    },
+    VCombobox: {
+      density: 'compact',
+      variant: 'outlined',
+      hideDetails: 'auto',
+    },
+    VDateInput: {
+      density: 'compact',
+      variant: 'outlined',
+      hideDetails: 'auto',
+    },
+    VDataTable: {
+      density: 'comfortable',
+    },
+    VCard: {
+      rounded: 'lg',
+    },
+  },
   icons: {
     defaultSet: 'mdi',
     aliases,
@@ -63,4 +113,3 @@ import { useConnectionStore } from './stores/connectionStore'
 // Expose connection store methods globally for debugging
 const connectionStore = useConnectionStore()
 ;(window as any).connectionStore = connectionStore
-

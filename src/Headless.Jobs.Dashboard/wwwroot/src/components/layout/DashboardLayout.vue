@@ -557,8 +557,10 @@ const handleForceUIUpdate = () => {
 
 <style scoped>
 #inspire {
-  --dashboard-shell-max-width: 1280px;
-  --dashboard-shell-padding-x: clamp(20px, 3vw, 40px);
+  --dashboard-shell-max-width: 1240px;
+  --dashboard-shell-padding-x: clamp(16px, 2.4vw, 28px);
+  --dashboard-card-padding: 16px;
+  --dashboard-control-gap: 12px;
 }
 
 /* Main Header */
@@ -588,13 +590,13 @@ const handleForceUIUpdate = () => {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  height: 64px;
+  height: 60px;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
   flex-shrink: 0;
 }
 
@@ -665,7 +667,7 @@ const handleForceUIUpdate = () => {
   align-items: center;
   justify-content: flex-end;
   flex-shrink: 0;
-  gap: 16px;
+  gap: 12px;
 }
 
 .auth-container {
@@ -679,7 +681,7 @@ const handleForceUIUpdate = () => {
 .navigation-links {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .nav-link {
@@ -689,7 +691,7 @@ const handleForceUIUpdate = () => {
   letter-spacing: 0.5px !important;
   border-radius: 8px !important;
   transition: all 0.3s ease !important;
-  padding: 8px 16px !important;
+  padding: 6px 12px !important;
 }
 
 .nav-link:hover {
@@ -727,7 +729,7 @@ const handleForceUIUpdate = () => {
 /* Status Header */
 .status-header {
   position: sticky;
-  top: 64px; /* Account for the app bar height */
+  top: 60px; /* Account for the app bar height */
   z-index: 99;
   background: rgba(33, 33, 33, 0.95);
   backdrop-filter: blur(20px);
@@ -753,16 +755,16 @@ const handleForceUIUpdate = () => {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
-  min-height: 72px;
+  min-height: 64px;
 }
 
 /* Status Section */
 .status-section {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
 }
 
 .status-indicator {
@@ -833,7 +835,7 @@ const handleForceUIUpdate = () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  padding: 5px 10px;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -898,14 +900,14 @@ const handleForceUIUpdate = () => {
 
 .action-buttons {
   display: flex;
-  gap: 12px;
+  gap: 10px;
 }
 
 .action-btn {
   font-weight: 600;
   text-transform: none;
   letter-spacing: 0.5px;
-  border-radius: 12px;
+  border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   transition: all 0.3s ease;
 }
@@ -1078,12 +1080,12 @@ const handleForceUIUpdate = () => {
 
   .header-content {
     height: auto;
-    min-height: 64px;
-    padding: 12px 0;
+    min-height: 60px;
+    padding: 10px 0;
   }
 
   .status-header-content {
-    padding: 12px var(--dashboard-shell-padding-x);
+    padding: 10px var(--dashboard-shell-padding-x);
   }
 
   .header-left {
