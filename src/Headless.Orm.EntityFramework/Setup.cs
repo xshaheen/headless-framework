@@ -52,6 +52,15 @@ public static class OrmEntityFrameworkSetup
                 optionsLifetime
             );
 
+            // Forward DbContext → TDbContext so infrastructure services (e.g. audit log store)
+            // can inject DbContext without knowing the concrete type.
+            // ⚠ Multi-context apps: TryAddScoped means only the first registration wins.
+            // If multiple HeadlessDbContext subclasses are registered, consumers resolving
+            // DbContext (including EfAuditLogStore) will be bound to the first one.
+            // For multi-context scenarios, register audit services per-context or use
+            // keyed services.
+            services.TryAddScoped<DbContext>(sp => sp.GetRequiredService<TDbContext>());
+
             return services;
         }
 
@@ -63,6 +72,7 @@ public static class OrmEntityFrameworkSetup
             services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
             services.TryAddSingleton<ICurrentTenant, CurrentTenant>();
             services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
+            services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();
             services._ReplaceCompiledQueryCacheKeyGenerator();
         }
 

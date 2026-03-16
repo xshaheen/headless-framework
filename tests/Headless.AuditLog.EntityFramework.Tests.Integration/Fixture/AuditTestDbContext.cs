@@ -1,0 +1,51 @@
+using Headless.AuditLog;
+using Headless.Orm.EntityFramework.Contexts;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+
+namespace Tests.Fixture;
+
+public sealed class AuditTestDbContext(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
+    : HeadlessDbContext(entityProcessor, options)
+{
+    public DbSet<Order> Orders => Set<Order>();
+
+    public override string DefaultSchema => "";
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<Order>().Property(e => e.Id).ValueGeneratedNever();
+        modelBuilder.ConfigureAuditLog();
+
+        // SQLite doesn't support ValueGeneratedOnAdd on composite-key columns (no sequence support).
+        // Override to use a single-column PK so SQLite ROWID auto-increment works.
+        modelBuilder.Entity<AuditLogEntry>(b =>
+        {
+            b.HasKey(e => e.Id);
+            b.Property(e => e.Id).ValueGeneratedOnAdd();
+        });
+    }
+
+    protected override Task PublishMessagesAsync(
+        List<EmitterDistributedMessages> emitters,
+        IDbContextTransaction currentTransaction,
+        CancellationToken cancellationToken
+    ) => Task.CompletedTask;
+
+    protected override void PublishMessages(
+        List<EmitterDistributedMessages> emitters,
+        IDbContextTransaction currentTransaction
+    ) { }
+
+    protected override Task PublishMessagesAsync(
+        List<EmitterLocalMessages> emitters,
+        IDbContextTransaction currentTransaction,
+        CancellationToken cancellationToken
+    ) => Task.CompletedTask;
+
+    protected override void PublishMessages(
+        List<EmitterLocalMessages> emitters,
+        IDbContextTransaction currentTransaction
+    ) { }
+}

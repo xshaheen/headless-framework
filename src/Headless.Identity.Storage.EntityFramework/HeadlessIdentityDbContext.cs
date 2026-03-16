@@ -1,12 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using Headless.AuditLog;
 using Headless.Orm.EntityFramework.ChangeTrackers;
 using Headless.Orm.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Orm.EntityFramework;
 
@@ -55,11 +58,13 @@ public abstract class HeadlessIdentityDbContext<
     )
     {
         var report = _entityProcessor.ProcessEntries(this);
+        var auditEntries = AuditSavePipelineHelper.CaptureAuditEntries(this, _AuditLogger);
 
         // No need to be in transaction if there are no emitters
         if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
         {
             var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            await _ResolveAndPersistAuditAsync(auditEntries, cancellationToken).ConfigureAwait(false);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
             return result;
@@ -70,6 +75,7 @@ public abstract class HeadlessIdentityDbContext<
         {
             await PublishMessagesAsync(report.LocalEmitters, Database.CurrentTransaction, cancellationToken);
             var result = await _BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            await _ResolveAndPersistAuditAsync(auditEntries, cancellationToken).ConfigureAwait(false);
             await PublishMessagesAsync(report.DistributedEmitters, Database.CurrentTransaction, cancellationToken);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
             report.ClearEmitterMessages();
@@ -77,13 +83,19 @@ public abstract class HeadlessIdentityDbContext<
             return result;
         }
 
+        // No current transaction — use execution strategy with explicit transaction.
+        // Audit entries are captured once above; inside the callback we resolve IDs
+        // (which may differ across retries) and persist. PrepareForRetry detaches
+        // stale AuditLogEntry entities from prior failed attempts.
         return await Database
             .CreateExecutionStrategy()
             .ExecuteAsync(
-                (this, report, acceptAllChangesOnSuccess, cancellationToken),
+                (this, report, auditEntries, acceptAllChangesOnSuccess, cancellationToken),
                 static async state =>
                 {
-                    var (context, report, acceptAllChangesOnSuccess, cancellationToken) = state;
+                    var (context, report, auditEntries, acceptAllChangesOnSuccess, cancellationToken) = state;
+
+                    AuditSavePipelineHelper.PrepareForRetry(context);
 
                     await using var transaction = await context.Database.BeginTransactionAsync(
                         IsolationLevel.ReadCommitted,
@@ -92,6 +104,9 @@ public abstract class HeadlessIdentityDbContext<
 
                     await context.PublishMessagesAsync(report.LocalEmitters, transaction, cancellationToken);
                     var result = await context._BaseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+                    await context
+                        ._ResolveAndPersistAuditAsync(auditEntries, cancellationToken)
+                        .ConfigureAwait(false);
                     await context.PublishMessagesAsync(report.DistributedEmitters, transaction, cancellationToken);
 
                     await transaction.CommitAsync(cancellationToken);
@@ -106,11 +121,13 @@ public abstract class HeadlessIdentityDbContext<
     protected virtual int CoreSaveChanges(bool acceptAllChangesOnSuccess = true)
     {
         var report = _entityProcessor.ProcessEntries(this);
+        var auditEntries = AuditSavePipelineHelper.CaptureAuditEntries(this, _AuditLogger);
 
         // No need to be in transaction if there are no emitters
         if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
         {
             var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
+            _ResolveAndPersistAudit(auditEntries);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
 
             return result;
@@ -121,6 +138,7 @@ public abstract class HeadlessIdentityDbContext<
         {
             PublishMessages(report.LocalEmitters, Database.CurrentTransaction);
             var result = _BaseSaveChanges(acceptAllChangesOnSuccess);
+            _ResolveAndPersistAudit(auditEntries);
             PublishMessages(report.DistributedEmitters, Database.CurrentTransaction);
             _navigationModifiedTracker.RemoveModifiedEntityEntries();
             report.ClearEmitterMessages();
@@ -128,20 +146,23 @@ public abstract class HeadlessIdentityDbContext<
             return result;
         }
 
-        // No current transaction, create a new one
+        // No current transaction — use execution strategy with explicit transaction.
 #pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
         return Database
             .CreateExecutionStrategy()
             .Execute(
-                (this, report, acceptAllChangesOnSuccess),
+                (this, report, auditEntries, acceptAllChangesOnSuccess),
                 static state =>
                 {
-                    var (context, report, acceptAllChangesOnSuccess) = state;
+                    var (context, report, auditEntries, acceptAllChangesOnSuccess) = state;
+
+                    AuditSavePipelineHelper.PrepareForRetry(context);
 
                     using var transaction = context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
 
                     context.PublishMessages(report.LocalEmitters, transaction);
                     var result = context._BaseSaveChanges(acceptAllChangesOnSuccess);
+                    context._ResolveAndPersistAudit(auditEntries);
                     context.PublishMessages(report.DistributedEmitters, transaction);
 
                     transaction.Commit();
@@ -409,6 +430,57 @@ public abstract class HeadlessIdentityDbContext<
                     return result;
                 }
             );
+    }
+
+    #endregion
+
+    #region Audit Pipeline
+
+    private ILogger? _AuditLogger =>
+        field ??= this.GetService<ILoggerFactory>()
+            ?.CreateLogger(
+                typeof(
+                    HeadlessIdentityDbContext<
+                        TUser,
+                        TRole,
+                        TKey,
+                        TUserClaim,
+                        TUserRole,
+                        TUserLogin,
+                        TRoleClaim,
+                        TUserToken
+                    >
+                )
+            );
+
+    /// <summary>
+    /// Two-phase audit persist: resolves deferred entity IDs (store-generated keys for
+    /// Added entities) then adds audit entries to the context and saves them.
+    /// </summary>
+    private async Task _ResolveAndPersistAuditAsync(
+        IReadOnlyList<AuditLogEntryData>? entries,
+        CancellationToken cancellationToken
+    )
+    {
+        if (entries is not { Count: > 0 })
+            return;
+
+        AuditSavePipelineHelper.ResolveEntityIds(this, entries);
+        await AuditSavePipelineHelper.SaveAuditEntriesAsync(this, entries, cancellationToken)
+            .ConfigureAwait(false);
+        await _BaseSaveChangesAsync(true, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void _ResolveAndPersistAudit(IReadOnlyList<AuditLogEntryData>? entries)
+    {
+        if (entries is not { Count: > 0 })
+            return;
+
+        AuditSavePipelineHelper.ResolveEntityIds(this, entries);
+        AuditSavePipelineHelper.SaveAuditEntries(this, entries);
+#pragma warning disable MA0045
+        _BaseSaveChanges(true);
+#pragma warning restore MA0045
     }
 
     #endregion
