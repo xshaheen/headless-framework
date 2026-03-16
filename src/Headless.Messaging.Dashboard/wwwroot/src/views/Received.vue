@@ -150,7 +150,7 @@
       </v-card>
 
       <!-- Message Detail Dialog -->
-      <MessageDetailDialog v-model="detailDialogOpen" :message-content="detailContent" />
+      <MessageDetailDialog v-model="detailDialogOpen" :message="detailMessage" />
 
       <!-- Confirm Dialog -->
       <Teleport to="body">
@@ -177,7 +177,7 @@ import { ConfirmDialogProps } from '@/components/common/ConfirmDialog.vue'
 import { formatDateTime } from '@/utilities/dateTimeParser'
 import TableSkeleton from '@/components/common/TableSkeleton.vue'
 import PaginationFooter from '@/components/common/PaginationFooter.vue'
-import MessageDetailDialog from '@/components/MessageDetailDialog.vue'
+import MessageDetailDialog, { type MessageDetail } from '@/components/MessageDetailDialog.vue'
 
 interface ReceivedMessage {
   id: number
@@ -209,7 +209,7 @@ const messages = ref<ReceivedMessage[]>([])
 const selectedIds = ref<number[]>([])
 const selectAll = ref(false)
 const detailDialogOpen = ref(false)
-const detailContent = ref('')
+const detailMessage = ref<MessageDetail | null>(null)
 let pendingAction: (() => Promise<void>) | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -291,8 +291,8 @@ function toggleSelect(id: number) {
 
 async function viewMessage(id: number) {
   try {
-    const content = await httpService.get<string>(`/received/message/${id}`)
-    detailContent.value = typeof content === 'string' ? content : JSON.stringify(content)
+    const dto = await httpService.get<MessageDetail>(`/received/message/${id}`)
+    detailMessage.value = dto
     detailDialogOpen.value = true
   } catch (error) {
     alertStore.showError('Failed to load message detail')
