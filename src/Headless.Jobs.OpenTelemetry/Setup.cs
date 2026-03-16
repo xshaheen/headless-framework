@@ -4,16 +4,15 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
 
-public static class ServiceExtensions
+public static class OpenTelemetrySetup
 {
     /// <summary>
     /// Adds OpenTelemetry instrumentation with activity tracing for Jobs jobs.
     /// Also includes standard logging through ILogger.
     /// </summary>
-    public static JobsOptionsBuilder<TTimeJob, TCronJob> AddOpenTelemetryInstrumentation<
-        TTimeJob,
-        TCronJob
-    >(this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration)
+    public static JobsOptionsBuilder<TTimeJob, TCronJob> AddOpenTelemetryInstrumentation<TTimeJob, TCronJob>(
+        this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration
+    )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {

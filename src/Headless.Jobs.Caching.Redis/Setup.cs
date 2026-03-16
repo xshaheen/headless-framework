@@ -4,13 +4,13 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Jobs.DependencyInjection;
+namespace Headless.Jobs;
 
 public static class ServiceExtension
 {
     public static JobsOptionsBuilder<TTimeJob, TCronJob> AddStackExchangeRedis<TTimeJob, TCronJob>(
         this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration,
-        Action<JobsRedisOptionBuilder> setupAction
+        Action<JobsRedisOptionBuilder>? setupAction = null
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
@@ -29,7 +29,7 @@ public static class ServiceExtension
         return jobsConfiguration;
     }
 
-    public class JobsRedisOptionBuilder : RedisCacheOptions
+    public sealed class JobsRedisOptionBuilder : RedisCacheOptions
     {
         public TimeSpan NodeHeartbeatInterval { get; set; } = TimeSpan.FromMinutes(1);
     }

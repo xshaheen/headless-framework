@@ -2,7 +2,7 @@ using Headless.Jobs.Enums;
 
 namespace Headless.Jobs.Exceptions;
 
-public class TerminateExecutionException : Exception
+public sealed class TerminateExecutionException : Exception
 {
     internal JobStatus Status { get; } = JobStatus.Skipped;
 
@@ -19,7 +19,7 @@ public class TerminateExecutionException : Exception
         : base(message, innerException) => Status = jobType;
 }
 
-internal class ExceptionDetailClassForSerialization
+internal sealed class ExceptionDetailClassForSerialization
 {
     public required string Message { get; set; }
     public string? StackTrace { get; set; }

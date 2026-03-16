@@ -9,13 +9,13 @@ namespace Headless.Jobs.Infrastructure;
 
 internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
-    IJobClock clock,
+    TimeProvider timeProvider,
     SchedulerOptionsBuilder optionsBuilder,
     IJobsRedisContext redisContext
 )
     : BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         dbContextFactory,
-        clock,
+        timeProvider,
         optionsBuilder,
         redisContext
     ),
@@ -354,7 +354,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
 
         // Only acquire occurrences that are acquirable (Idle/Queued and not locked by another node)
         var query = dbContext

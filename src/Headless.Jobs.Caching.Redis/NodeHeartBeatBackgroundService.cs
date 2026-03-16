@@ -1,4 +1,3 @@
-using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Microsoft.Extensions.Hosting;
@@ -6,26 +5,15 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs;
 
-internal class NodeHeartBeatBackgroundService : BackgroundService
+internal sealed class NodeHeartBeatBackgroundService(
+    ServiceExtension.JobsRedisOptionBuilder schedulerOptionsBuilder,
+    IJobsRedisContext context,
+    IInternalJobManager internalJobsManager,
+    ILogger<NodeHeartBeatBackgroundService> logger
+) : BackgroundService
 {
     private int _started;
-    private readonly IJobsRedisContext _context;
-    private readonly PeriodicTimer _tickerHeartBeatPeriodicTimer;
-    private readonly IInternalJobManager _internalJobsManager;
-    private readonly ILogger<NodeHeartBeatBackgroundService> _logger;
-
-    public NodeHeartBeatBackgroundService(
-        ServiceExtension.JobsRedisOptionBuilder schedulerOptionsBuilder,
-        IJobsRedisContext context,
-        IInternalJobManager internalJobsManager,
-        ILogger<NodeHeartBeatBackgroundService> logger
-    )
-    {
-        _context = context;
-        _internalJobsManager = internalJobsManager;
-        _logger = logger;
-        _tickerHeartBeatPeriodicTimer = new PeriodicTimer(schedulerOptionsBuilder.NodeHeartbeatInterval);
-    }
+    private readonly PeriodicTimer _tickerHeartBeatPeriodicTimer = new(schedulerOptionsBuilder.NodeHeartbeatInterval);
 
     public override Task StartAsync(CancellationToken ct)
     {
@@ -40,27 +28,27 @@ internal class NodeHeartBeatBackgroundService : BackgroundService
         }
         catch (Exception e)
         {
-            _logger.LogError("Heartbeat background service failed: {Exception}", e);
+            logger.LogError("Heartbeat background service failed: {Exception}", e);
         }
     }
 
     private async Task _RunJobsFallbackAsync(CancellationToken stoppingToken)
     {
-        await _context.NotifyNodeAliveAsync();
+        await context.NotifyNodeAliveAsync();
 
         while (await _tickerHeartBeatPeriodicTimer.WaitForNextTickAsync(stoppingToken))
         {
-            var deadNodes = await _context.GetDeadNodesAsync();
+            var deadNodes = await context.GetDeadNodesAsync();
 
             if (deadNodes.Length != 0)
             {
                 foreach (var deadNode in deadNodes)
                 {
-                    await _internalJobsManager.ReleaseDeadNodeResources(deadNode, stoppingToken);
+                    await internalJobsManager.ReleaseDeadNodeResources(deadNode, stoppingToken);
                 }
             }
 
-            await _context.NotifyNodeAliveAsync();
+            await context.NotifyNodeAliveAsync();
         }
     }
 

@@ -1,33 +1,24 @@
 using System.Buffers;
-using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Interfaces;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
 
-internal class JobsRedisContext : IJobsRedisContext
+internal class JobsRedisContext(
+    [FromKeyedServices("jobs")] IDistributedCache cache,
+    SchedulerOptionsBuilder schedulerOptions,
+    ServiceExtension.JobsRedisOptionBuilder tickerQRedisOptionBuilder,
+    IJobsNotificationHubSender notificationHubSender
+) : IJobsRedisContext
 {
-    private readonly IDistributedCache _cache;
-    private readonly SchedulerOptionsBuilder _schedulerOptions;
-    private readonly ServiceExtension.JobsRedisOptionBuilder _tickerQRedisOptionBuilder;
-    private readonly IJobsNotificationHubSender _notificationHubSender;
-    public IDistributedCache DistributedCache { get; }
-    public bool HasRedisConnection => true;
+    private readonly IDistributedCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+    private readonly SchedulerOptionsBuilder _schedulerOptions =
+        schedulerOptions ?? throw new ArgumentNullException(nameof(schedulerOptions));
 
-    public JobsRedisContext(
-        [FromKeyedServices("jobs")] IDistributedCache cache,
-        SchedulerOptionsBuilder schedulerOptions,
-        ServiceExtension.JobsRedisOptionBuilder tickerQRedisOptionBuilder,
-        IJobsNotificationHubSender notificationHubSender
-    )
-    {
-        DistributedCache = cache;
-        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-        _schedulerOptions = schedulerOptions ?? throw new ArgumentNullException(nameof(schedulerOptions));
-        _tickerQRedisOptionBuilder = tickerQRedisOptionBuilder;
-        _notificationHubSender = notificationHubSender;
-    }
+    public IDistributedCache DistributedCache { get; } = cache;
+
+    public bool HasRedisConnection => true;
 
     public async Task NotifyNodeAliveAsync()
     {
@@ -36,9 +27,9 @@ internal class JobsRedisContext : IJobsRedisContext
 
         var payload = new { ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), node };
 
-        await _notificationHubSender.UpdateNodeHeartBeatAsync(payload);
+        await notificationHubSender.UpdateNodeHeartBeatAsync(payload);
 
-        var interval = _tickerQRedisOptionBuilder.NodeHeartbeatInterval;
+        var interval = tickerQRedisOptionBuilder.NodeHeartbeatInterval;
         var ttl = TimeSpan.FromSeconds(interval.TotalSeconds + 20);
 
         await _cache.SetStringAsync(

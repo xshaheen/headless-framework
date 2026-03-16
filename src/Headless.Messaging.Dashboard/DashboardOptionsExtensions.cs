@@ -23,6 +23,7 @@ internal sealed class DashboardOptionsExtension(Action<MessagingDashboardOptions
         services.AddSingleton(Builder.Auth);
         services.AddScoped<IAuthService, AuthService>();
         services.AddSingleton<MessagingMetricsEventListener>();
+        services.AddMemoryCache();
 
         services.AddRouting();
         services.AddAuthorization();

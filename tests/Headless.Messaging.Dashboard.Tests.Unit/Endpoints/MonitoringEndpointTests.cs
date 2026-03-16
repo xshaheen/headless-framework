@@ -3,7 +3,6 @@
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.GatewayProxy;
-using Headless.Messaging.Dashboard.GatewayProxy.Requester;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
@@ -215,7 +214,8 @@ public sealed class MonitoringEndpointTests : TestBase
     private static void _RegisterGatewayProxyDeps(IServiceCollection services)
     {
         services.AddSingleton(Substitute.For<IRequestMapper>());
-        services.AddSingleton(Substitute.For<IHttpRequester>());
+        services.AddSingleton(Substitute.For<IHttpClientFactory>());
+        services.AddMemoryCache();
         services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
         services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
         services.AddSingleton<GatewayProxyAgent>();

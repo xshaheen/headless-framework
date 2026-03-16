@@ -20,8 +20,6 @@ internal class MessagingMetricsEventListener : EventListener
     }
 
     public CircularBuffer<int?> PublishedPerSec { get; } = new(HistorySize);
-
-    //public Queue<double?> ConsumePerSec { get; } = new(HistorySize);
     public CircularBuffer<int?> InvokeSubscriberPerSec { get; } = new(HistorySize);
     public CircularBuffer<int?> InvokeSubscriberElapsedMs { get; } = new(HistorySize);
 
@@ -80,12 +78,6 @@ internal class MessagingMetricsEventListener : EventListener
         {
             PublishedPerSec.Add(Convert.ToInt32(val[3], CultureInfo.InvariantCulture));
         }
-        //else if ((string)val[0] == MessageDiagnosticListenerNames.ConsumePerSec)
-        //{
-        //        ConsumePerSec.Dequeue();
-        //        var v = (double)val[3];
-        //        ConsumePerSec.Enqueue(v);
-        //}
         else if ((string)val[0] == MessageDiagnosticListenerNames.InvokeSubscriberPerSec)
         {
             InvokeSubscriberPerSec.Add(Convert.ToInt32(val[3], CultureInfo.InvariantCulture));

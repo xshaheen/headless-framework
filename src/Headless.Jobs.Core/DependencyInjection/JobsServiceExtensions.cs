@@ -5,12 +5,13 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.JobsThreadPool;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Provider;
 using Headless.Jobs.Temps;
-using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Headless.Jobs.DependencyInjection;
@@ -55,7 +56,7 @@ public static class JobsServiceExtensions
             JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         >();
         services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
-        services.AddSingleton<IJobClock, JobSystemClock>();
+        services.TryAddSingleton(TimeProvider.System);
 
         // Only register background services if enabled (default is true)
         if (optionInstance.RegisterBackgroundServices)

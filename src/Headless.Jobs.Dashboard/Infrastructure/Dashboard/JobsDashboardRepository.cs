@@ -13,7 +13,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     IJobsHostScheduler tickerQHostScheduler,
     IJobsNotificationHubSender notificationHubSender,
     DashboardOptionsBuilder dashboardOptions,
-    IJobsDispatcher dispatcher
+    IJobsDispatcher dispatcher,
+    TimeProvider timeProvider
 ) : IJobsDashboardRepository<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
@@ -26,6 +27,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     private readonly IJobsNotificationHubSender _notificationHubSender = Argument.IsNotNull(notificationHubSender);
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
     private readonly DashboardOptionsBuilder _dashboardOptions = Argument.IsNotNull(dashboardOptions);
+    private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
 
     public async Task<TTimeJob[]> GetTimeJobsAsync(CancellationToken cancellationToken = default)
     {
@@ -67,7 +69,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
-        var today = DateTime.UtcNow.Date;
+        var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
         var startDate = today.AddDays(pastDays);
         var endDate = today.AddDays(futureDays);
 
@@ -125,7 +127,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
-        var today = DateTime.UtcNow.Date;
+        var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
         var startDate = today.AddDays(pastDays);
         var endDate = today.AddDays(futureDays);
 
@@ -201,7 +203,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         CancellationToken cancellationToken
     )
     {
-        var today = DateTime.UtcNow.Date;
+        var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
         var startDate = today.AddDays(pastDays);
         var endDate = today.AddDays(futureDays);
 
@@ -251,7 +253,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
     public async Task<IList<(int, int)>> GetLastWeekJobStatusesAsync(CancellationToken cancellationToken = default)
     {
-        var endDate = DateTime.UtcNow.Date;
+        var endDate = _timeProvider.GetUtcNow().UtcDateTime.Date;
         var startDate = endDate.AddDays(-7);
 
         var timeJobs = await _persistenceProvider.GetTimeJobs(
@@ -405,7 +407,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
     public async Task AddOnDemandCronJobOccurrenceAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var now = DateTime.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var onDemandOccurrence = new CronJobOccurrenceEntity<TCronJob>
         {
             Id = Guid.NewGuid(),
@@ -485,7 +487,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     )
     {
         const int maxTotalDays = 14;
-        var today = DateTime.UtcNow.Date;
+        var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
 
         var cronJobOccurrencesPast = await _persistenceProvider.GetAllCronJobOccurrences(
             x => x.CronJobId == guid && x.ExecutionTime.Date < today,

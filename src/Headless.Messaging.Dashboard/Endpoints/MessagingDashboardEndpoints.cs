@@ -14,6 +14,7 @@ using Headless.Messaging.Transport;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
 
@@ -182,9 +183,10 @@ public static class MessagingDashboardEndpoints
         result.Subscribers = subscriberCache.GetCandidatesMethodsOfGroupNameGrouped().Sum(g => g.Value.Count);
 
         // Try to set server count from cache or discovery
-        if (MessagingCache.Global.TryGet("messaging.nodes.count", out var count))
+        var cache = sp.GetRequiredService<IMemoryCache>();
+        if (cache.TryGetValue("messaging.nodes.count", out int count))
         {
-            result.Servers = (int)count;
+            result.Servers = count;
         }
         else
         {
@@ -202,7 +204,8 @@ public static class MessagingDashboardEndpoints
     private static async Task<IResult> _MetricsHistory(IServiceProvider sp)
     {
         const string cacheKey = "dashboard.metrics.history";
-        if (MessagingCache.Global.TryGet(cacheKey, out var ret))
+        var cache = sp.GetRequiredService<IMemoryCache>();
+        if (cache.TryGetValue(cacheKey, out object? ret))
         {
             return Results.Json(ret);
         }
@@ -226,7 +229,7 @@ public static class MessagingDashboardEndpoints
             SubscribeFailed = sf.Values.Reverse(),
         };
 
-        MessagingCache.Global.AddOrUpdate(cacheKey, result, TimeSpan.FromMinutes(10));
+        cache.Set(cacheKey, result, TimeSpan.FromMinutes(10));
 
         return Results.Json(result);
     }

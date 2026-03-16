@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs;
 
-internal class OpenTelemetryInstrumentation(
+internal sealed class OpenTelemetryInstrumentation(
     ILogger<OpenTelemetryInstrumentation> logger,
     SchedulerOptionsBuilder optionsBuilder
 ) : JobsBaseLoggerInstrumentation(logger, optionsBuilder.NodeIdentifier), IJobsInstrumentation

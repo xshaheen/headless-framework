@@ -2,7 +2,6 @@
 
 using System.Net;
 using Headless.Messaging.Dashboard.GatewayProxy;
-using Headless.Messaging.Dashboard.GatewayProxy.Requester;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
@@ -64,10 +63,11 @@ public sealed class GatewayProxyAgentTests : TestBase
         discoveryProvider.GetNode("node1", null).Returns(Task.FromResult<Node?>(node));
 
         var responseMessage = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("OK") };
-        var requester = Substitute.For<IHttpRequester>();
-        requester.GetResponse(Arg.Any<HttpRequestMessage>()).Returns(Task.FromResult(responseMessage));
+        var httpMessageHandler = new MockHttpMessageHandler(responseMessage);
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("GatewayProxy").Returns(new HttpClient(httpMessageHandler));
 
-        var agent = _CreateAgent(context, discoveryProvider, requester, withConsulOptions: true);
+        var agent = _CreateAgent(context, discoveryProvider, httpClientFactory, withConsulOptions: true);
 
         // when
         var result = await agent.Invoke(context);
@@ -134,12 +134,11 @@ public sealed class GatewayProxyAgentTests : TestBase
         var discoveryProvider = Substitute.For<INodeDiscoveryProvider>();
         discoveryProvider.GetNode("node1", null, Arg.Any<CancellationToken>()).Returns(Task.FromResult<Node?>(node));
 
-        var requester = Substitute.For<IHttpRequester>();
-        requester
-            .GetResponse(Arg.Any<HttpRequestMessage>())
-            .Returns<HttpResponseMessage>(_ => throw new HttpRequestException("Connection failed"));
+        var httpMessageHandler = new MockHttpMessageHandler(new HttpRequestException("Connection failed"));
+        var httpClientFactory = Substitute.For<IHttpClientFactory>();
+        httpClientFactory.CreateClient("GatewayProxy").Returns(new HttpClient(httpMessageHandler));
 
-        var agent = _CreateAgent(context, discoveryProvider, requester, withConsulOptions: true);
+        var agent = _CreateAgent(context, discoveryProvider, httpClientFactory, withConsulOptions: true);
 
         // when
         var result = await agent.Invoke(context);
@@ -173,13 +172,13 @@ public sealed class GatewayProxyAgentTests : TestBase
     private GatewayProxyAgent _CreateAgent(
         HttpContext context,
         INodeDiscoveryProvider? discoveryProvider = null,
-        IHttpRequester? requester = null,
+        IHttpClientFactory? httpClientFactory = null,
         bool withConsulOptions = false,
         string? nodeName = null
     )
     {
         discoveryProvider ??= Substitute.For<INodeDiscoveryProvider>();
-        requester ??= Substitute.For<IHttpRequester>();
+        httpClientFactory ??= Substitute.For<IHttpClientFactory>();
         var requestMapper = Substitute.For<IRequestMapper>();
         requestMapper
             .Map(Arg.Any<HttpRequest>())
@@ -187,8 +186,9 @@ public sealed class GatewayProxyAgentTests : TestBase
 
         var services = new ServiceCollection()
             .AddLogging()
+            .AddMemoryCache()
             .AddSingleton(discoveryProvider)
-            .AddSingleton(requester)
+            .AddSingleton(httpClientFactory)
             .AddSingleton(requestMapper);
 
         // GatewayProxyAgent always uses GetRequiredService<ConsulDiscoveryOptions>() in field initializer
@@ -199,7 +199,24 @@ public sealed class GatewayProxyAgentTests : TestBase
         var sp = services.BuildServiceProvider();
         context.RequestServices = sp;
 
-        return new GatewayProxyAgent(LoggerFactory, requestMapper, requester, sp, discoveryProvider);
+        var cache = sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+        return new GatewayProxyAgent(LoggerFactory, requestMapper, httpClientFactory, cache, sp, discoveryProvider);
+    }
+
+    private sealed class MockHttpMessageHandler : HttpMessageHandler
+    {
+        private readonly HttpResponseMessage? _response;
+        private readonly Exception? _exception;
+
+        public MockHttpMessageHandler(HttpResponseMessage response) => _response = response;
+        public MockHttpMessageHandler(Exception exception) => _exception = exception;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        ) => _exception is not null
+            ? Task.FromException<HttpResponseMessage>(_exception)
+            : Task.FromResult(_response!);
     }
 
     private static DefaultHttpContext _CreateHttpContext()

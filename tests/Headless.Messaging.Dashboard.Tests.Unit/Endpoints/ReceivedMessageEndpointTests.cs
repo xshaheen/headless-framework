@@ -5,7 +5,6 @@ using System.Net.Http.Json;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.GatewayProxy;
-using Headless.Messaging.Dashboard.GatewayProxy.Requester;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
@@ -148,7 +147,8 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         // Gateway proxy deps for ActivatorUtilities resolution
         appBuilder.Services.AddSingleton(Substitute.For<IRequestMapper>());
-        appBuilder.Services.AddSingleton(Substitute.For<IHttpRequester>());
+        appBuilder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
+        appBuilder.Services.AddMemoryCache();
         appBuilder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
         appBuilder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
         appBuilder.Services.AddSingleton<GatewayProxyAgent>();

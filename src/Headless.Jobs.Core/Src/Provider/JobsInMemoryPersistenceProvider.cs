@@ -9,34 +9,29 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs.Provider;
 
-internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
-    : IJobPersistenceProvider<TTimeJob, TCronJob>
+internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJobPersistenceProvider<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    private static readonly ConcurrentDictionary<Guid, TTimeJob> _TimeJobs = new(
-        new Dictionary<Guid, TTimeJob>()
-    );
+    private static readonly ConcurrentDictionary<Guid, TTimeJob> _TimeJobs = new(new Dictionary<Guid, TTimeJob>());
 
     // Index of parent -> child ids for fast hierarchy lookup in memory
     private static readonly ConcurrentDictionary<Guid, ConcurrentDictionary<Guid, byte>> _ChildrenIndex = new(
         new Dictionary<Guid, ConcurrentDictionary<Guid, byte>>()
     );
 
-    private static readonly ConcurrentDictionary<Guid, TCronJob> _CronJobs = new(
-        new Dictionary<Guid, TCronJob>()
-    );
+    private static readonly ConcurrentDictionary<Guid, TCronJob> _CronJobs = new(new Dictionary<Guid, TCronJob>());
 
     private static readonly ConcurrentDictionary<Guid, CronJobOccurrenceEntity<TCronJob>> _CronOccurrences = new(
         new Dictionary<Guid, CronJobOccurrenceEntity<TCronJob>>()
     );
 
-    private readonly IJobClock _clock;
+    private readonly TimeProvider _timeProvider;
     private readonly string _lockHolder;
 
     public JobsInMemoryPersistenceProvider(IServiceProvider serviceProvider)
     {
-        _clock = serviceProvider.GetService<IJobClock>() ?? new JobSystemClock();
+        _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         var optionsBuilder = serviceProvider.GetService<SchedulerOptionsBuilder>();
         _lockHolder = optionsBuilder?.NodeIdentifier ?? Environment.MachineName;
     }
@@ -48,7 +43,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         foreach (var timeJob in timeJobs)
         {
@@ -86,7 +81,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
         // First, get the time jobs that need to be updated (matching EF query)
@@ -128,7 +123,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
 
     public Task ReleaseAcquiredTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken = default)
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var idsToRelease = timeJobIds.Length == 0 ? _TimeJobs.Keys.ToArray() : timeJobIds;
 
         foreach (var id in idsToRelease)
@@ -154,7 +149,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
 
     public Task<TimeJobEntity[]> GetEarliestTimeJobs(CancellationToken cancellationToken = default)
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var oneSecondAgo = now.AddSeconds(-1);
 
         // Base query: same filter as EF provider, but over the snapshot
@@ -253,7 +248,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
             return Task.FromResult(Array.Empty<TimeJobEntity>());
         }
 
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var acquired = new List<TimeJobEntity>();
 
         foreach (var id in ids)
@@ -390,12 +385,12 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
             count++;
 
             // Recursively add all children
-            if (job.Children != null && job.Children.Count > 0)
+            if (job.Children is { Count: > 0 })
             {
                 foreach (var child in job.Children)
                 {
                     // Cast to TTimeJob since Children is ICollection<TTimeJob>
-                    if (child is TTimeJob childTicker)
+                    if (child is { } childTicker)
                     {
                         count += _AddTickerWithChildren(childTicker, job.Id);
                     }
@@ -449,12 +444,12 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
                 count++;
 
                 // Recursively update all children
-                if (job.Children != null && job.Children.Count > 0)
+                if (job.Children is { Count: > 0 })
                 {
                     foreach (var child in job.Children)
                     {
                         // Cast to TTimeJob since Children is ICollection<TTimeJob>
-                        if (child is TTimeJob childTicker)
+                        if (child is { } childTicker)
                         {
                             count += _UpdateTickerWithChildren(childTicker, job.Id);
                         }
@@ -512,7 +507,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     )
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         // Phase 1: release acquirable jobs for the dead node (match EF WhereCanAcquire(instanceIdentifier))
         var releasable = _TimeJobs
@@ -571,7 +566,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     )
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         foreach (var (function, expression) in cronJobs)
         {
@@ -697,14 +692,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
 
     public Task<int> RemoveCronJobs(Guid[] cronJobIds, CancellationToken cancellationToken)
     {
-        var count = 0;
-        foreach (var id in cronJobIds)
-        {
-            if (_CronJobs.TryRemove(id, out _))
-            {
-                count++;
-            }
-        }
+        var count = cronJobIds.Count(id => _CronJobs.TryRemove(id, out _));
 
         return Task.FromResult(count);
     }
@@ -718,18 +706,18 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     )
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var mainSchedulerThreshold = now.AddSeconds(-1); // Main scheduler handles items within the 1-second window
 
         var query = _CronOccurrences.Values.AsEnumerable();
 
-        if (ids != null && ids.Length > 0)
+        if (ids is { Length: > 0 })
         {
             query = query.Where(x => ids.Contains(x.CronJobId));
         }
 
         var occurrence = query
-            .Where(x => _CanAcquireCronOccurrence(x))
+            .Where(_CanAcquireCronOccurrence)
             .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only recent/upcoming tasks (not heavily overdue)
             .OrderBy(x => x.ExecutionTime)
             .FirstOrDefault();
@@ -742,7 +730,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         foreach (var context in cronJobOccurrences.Items)
         {
@@ -800,7 +788,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
         var occurrencesToUpdate = _CronOccurrences
@@ -847,12 +835,9 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         return Task.CompletedTask;
     }
 
-    public Task ReleaseAcquiredCronJobOccurrences(
-        Guid[] occurrenceIds,
-        CancellationToken cancellationToken = default
-    )
+    public Task ReleaseAcquiredCronJobOccurrences(Guid[] occurrenceIds, CancellationToken cancellationToken = default)
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var idsToRelease = occurrenceIds.Length == 0 ? _CronOccurrences.Keys.ToArray() : occurrenceIds;
 
         foreach (var id in idsToRelease)
@@ -918,7 +903,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     )
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         // Phase 1: release acquirable occurrences for the dead node (match EF WhereCanAcquire(instanceIdentifier))
         var releasable = _CronOccurrences
@@ -1067,7 +1052,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
             return Task.FromResult(Array.Empty<CronJobOccurrenceEntity<TCronJob>>());
         }
 
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var acquired = new List<CronJobOccurrenceEntity<TCronJob>>();
 
         foreach (var id in occurrenceIds)
@@ -1249,13 +1234,8 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
     {
         // Match EF provider logic: WhereCanAcquire
         // Can acquire if: (Status is Idle OR Queued) AND (LockHolder matches current OR LockedAt is null)
-        return (
-                (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued)
-                && job.LockHolder == _lockHolder
-            )
-            || (
-                (job.Status == JobStatus.Idle || job.Status == JobStatus.Queued) && job.LockedAt == null
-            );
+        return ((job.Status == JobStatus.Idle || job.Status == JobStatus.Queued) && job.LockHolder == _lockHolder)
+            || ((job.Status == JobStatus.Idle || job.Status == JobStatus.Queued) && job.LockedAt == null);
     }
 
     private bool _CanAcquireCronOccurrence(CronJobOccurrenceEntity<TCronJob> occurrence)
@@ -1302,9 +1282,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         return cloned;
     }
 
-    private static CronJobOccurrenceEntity<TCronJob> _CloneCronOccurrence(
-        CronJobOccurrenceEntity<TCronJob> occurrence
-    )
+    private static CronJobOccurrenceEntity<TCronJob> _CloneCronOccurrence(CronJobOccurrenceEntity<TCronJob> occurrence)
     {
         return new CronJobOccurrenceEntity<TCronJob>
         {
@@ -1375,7 +1353,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         }
 
         // UPDATED_AT ALWAYS
-        job.UpdatedAt = _clock.UtcNow;
+        job.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
     }
 
     private void _ApplyFunctionContextToCronOccurrence(
@@ -1431,7 +1409,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         }
 
         // UPDATED_AT ALWAYS
-        occurrence.UpdatedAt = _clock.UtcNow;
+        occurrence.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
     }
 
     #endregion

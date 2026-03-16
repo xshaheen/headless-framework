@@ -3,7 +3,6 @@
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.GatewayProxy;
-using Headless.Messaging.Dashboard.GatewayProxy.Requester;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
@@ -61,7 +60,8 @@ public sealed class HealthEndpointTests : TestBase
         builder.Services.AddScoped<IAuthService, AuthService>();
         // Gateway proxy deps for ActivatorUtilities resolution
         builder.Services.AddSingleton(Substitute.For<IRequestMapper>());
-        builder.Services.AddSingleton(Substitute.For<IHttpRequester>());
+        builder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
+        builder.Services.AddMemoryCache();
         builder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
         builder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
         builder.Services.AddSingleton<GatewayProxyAgent>();

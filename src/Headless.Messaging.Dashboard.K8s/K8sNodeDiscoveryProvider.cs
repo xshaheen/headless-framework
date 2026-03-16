@@ -3,12 +3,14 @@
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using k8s;
 using k8s.Models;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Dashboard.K8s;
 
 // ReSharper disable once InconsistentNaming
-public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions options) : INodeDiscoveryProvider
+public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache, K8sDiscoveryOptions options)
+    : INodeDiscoveryProvider
 {
     private const string _TagPrefix = "headless.messaging";
     private readonly ILogger<ConsulNodeDiscoveryProvider> _logger = logger.CreateLogger<ConsulNodeDiscoveryProvider>();
@@ -54,13 +56,13 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, K8sDiscoveryOptions
 
             var nodes = await ListServices(ns);
 
-            MessagingCache.Global.AddOrUpdate("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60), true);
+            cache.Set("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60));
 
             return nodes;
         }
         catch (Exception ex)
         {
-            MessagingCache.Global.AddOrUpdate("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
+            cache.Set("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
 
             _logger.LogError(ex, "Get k8s services raised an exception");
 

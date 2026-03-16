@@ -1,9 +1,9 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Headless.Messaging.Dashboard.GatewayProxy.Requester;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
@@ -13,7 +13,8 @@ namespace Headless.Messaging.Dashboard.GatewayProxy;
 public class GatewayProxyAgent(
     ILoggerFactory loggerFactory,
     IRequestMapper requestMapper,
-    IHttpRequester requester,
+    IHttpClientFactory httpClientFactory,
+    IMemoryCache cache,
     IServiceProvider serviceProvider,
     INodeDiscoveryProvider discoveryProvider
 )
@@ -48,14 +49,11 @@ public class GatewayProxyAgent(
         {
             if (request.Cookies.TryGetValue(CookieNodeNsName, out var ns))
             {
-                if (MessagingCache.Global.TryGet(requestNodeName + ns, out var nodeObj))
-                {
-                    node = (Node)nodeObj;
-                }
-                else
+                var cacheKey = requestNodeName + ns;
+                if (!cache.TryGetValue(cacheKey, out node))
                 {
                     node = await discoveryProvider.GetNode(requestNodeName, ns);
-                    MessagingCache.Global.AddOrUpdate(requestNodeName + ns, node);
+                    cache.Set(cacheKey, node);
                 }
             }
             else
@@ -70,14 +68,10 @@ public class GatewayProxyAgent(
                 return false;
             }
 
-            if (MessagingCache.Global.TryGet(requestNodeName, out var nodeObj))
-            {
-                node = (Node)nodeObj;
-            }
-            else
+            if (!cache.TryGetValue(requestNodeName, out node))
             {
                 node = await discoveryProvider.GetNode(requestNodeName);
-                MessagingCache.Global.AddOrUpdate(requestNodeName, node);
+                cache.Set(requestNodeName, node);
             }
         }
 
@@ -93,7 +87,8 @@ public class GatewayProxyAgent(
                     request.QueryString.Value ?? string.Empty
                 );
 
-                var response = await requester.GetResponse(DownstreamRequest);
+                using var client = httpClientFactory.CreateClient("GatewayProxy");
+                var response = await client.SendAsync(DownstreamRequest);
 
                 await _SetResponseOnHttpContext(context, response);
 

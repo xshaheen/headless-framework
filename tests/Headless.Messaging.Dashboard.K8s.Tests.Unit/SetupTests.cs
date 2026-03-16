@@ -2,7 +2,6 @@
 
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.GatewayProxy;
-using Headless.Messaging.Dashboard.GatewayProxy.Requester;
 using Headless.Messaging.Dashboard.K8s;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
@@ -44,8 +43,7 @@ public sealed class SetupTests : TestBase
         // then
         var provider = services.BuildServiceProvider();
 
-        provider.GetService<IHttpRequester>().Should().NotBeNull();
-        provider.GetService<IHttpClientCache>().Should().NotBeNull();
+        provider.GetService<IHttpClientFactory>().Should().NotBeNull();
         provider.GetService<IRequestMapper>().Should().NotBeNull();
         // Note: GatewayProxyAgent requires ConsulDiscoveryOptions which is not registered with K8s-only setup
         // So we just verify the other services are registered
