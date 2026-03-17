@@ -27,14 +27,11 @@
               variant="tonal"
               class="ml-1"
             >{{ status.badgeCount }}</v-chip>
-            <v-tooltip
-              v-if="status.value === 'Delayed'"
-              activator="parent"
-              location="bottom"
-              max-width="300"
-            >
-              Only shows messages with delay time &gt; 1 minute. Messages with shorter delays have
-              status "Queued" — check them in the database.
+            <v-tooltip v-if="status.tooltip" location="bottom" max-width="300">
+              <template #activator="{ props: tp }">
+                <v-icon v-bind="tp" size="14" class="ml-1 status-info-icon">mdi-information-outline</v-icon>
+              </template>
+              {{ status.tooltip }}
             </v-tooltip>
           </span>
         </v-tab>
@@ -201,11 +198,38 @@ const { stats } = storeToRefs(messagingStore)
 const activeStatus = ref('Succeeded')
 
 const statusTabs = computed(() => [
-  { label: 'Succeeded', value: 'Succeeded', badgeCount: stats.value.publishedSucceeded, badgeColor: 'success' },
-  { label: 'Failed', value: 'Failed', badgeCount: stats.value.publishedFailed, badgeColor: 'error' },
-  { label: 'Delayed', value: 'Delayed', badgeCount: stats.value.publishedDelayed, badgeColor: 'warning' },
-  { label: 'Scheduled', value: 'Scheduled' },
-  { label: 'Queued', value: 'Queued' },
+  {
+    label: 'Succeeded',
+    value: 'Succeeded',
+    badgeCount: stats.value.publishedSucceeded,
+    badgeColor: 'success',
+    tooltip: 'Messages successfully delivered to the message broker.',
+  },
+  {
+    label: 'Failed',
+    value: 'Failed',
+    badgeCount: stats.value.publishedFailed,
+    badgeColor: 'error',
+    tooltip: 'Messages that failed to send to the broker after all retry attempts. Can be requeued manually.',
+  },
+  {
+    label: 'Delayed',
+    value: 'Delayed',
+    badgeCount: stats.value.publishedDelayed,
+    badgeColor: 'warning',
+    tooltip:
+      'Messages scheduled for future delivery (delay > 1 min). Shorter delays show as "Queued" — check the database.',
+  },
+  {
+    label: 'Scheduled',
+    value: 'Scheduled',
+    tooltip: 'Messages picked up by the processor and awaiting broker acknowledgement.',
+  },
+  {
+    label: 'Queued',
+    value: 'Queued',
+    tooltip: 'Messages waiting in the outbox to be picked up by the send processor.',
+  },
 ])
 
 const isDelayedTab = computed(() => activeStatus.value === 'Delayed')
@@ -369,6 +393,16 @@ loadMessages()
 .tab-label-with-badge {
   display: flex;
   align-items: center;
+}
+
+.status-info-icon {
+  opacity: 0.45;
+  cursor: help;
+  transition: opacity 0.15s;
+}
+
+.status-info-icon:hover {
+  opacity: 0.85;
 }
 
 .page-title {

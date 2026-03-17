@@ -32,6 +32,39 @@ function ensureNodeLocalStorage() {
   }
 }
 
+// Demo backend URL — change if your demo runs on a different port
+const DEMO_BACKEND = 'https://localhost:5111'
+
+/**
+ * Fetch a JWT from the demo backend's token endpoint.
+ * Returns the token string, or null if the backend isn't reachable.
+ */
+async function fetchDevToken(): Promise<string | null> {
+  // Allow self-signed certs for dev backend
+  const originalTls = process.env.NODE_TLS_REJECT_UNAUTHORIZED
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+  try {
+    const res = await fetch(`${DEMO_BACKEND}/security/createToken`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userName: 'bob', password: 'bob' }),
+    })
+    if (!res.ok) return null
+    // Results.Ok(token) wraps the string in JSON quotes — parse them out
+    const body = await res.text()
+    return body.replace(/^"|"$/g, '')
+  } catch {
+    console.warn('[vite] Could not fetch dev JWT — is the demo backend running?')
+    return null
+  } finally {
+    if (originalTls === undefined) {
+      delete process.env.NODE_TLS_REJECT_UNAUTHORIZED
+    } else {
+      process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalTls
+    }
+  }
+}
+
 export default defineConfig(async ({ command, mode }) => {
   const plugins: PluginOption[] = [
     vue(),
@@ -46,6 +79,15 @@ export default defineConfig(async ({ command, mode }) => {
     ensureNodeLocalStorage()
     const { default: vueDevTools } = await import('vite-plugin-vue-devtools')
     plugins.splice(1, 0, vueDevTools({ launchEditor: undefined }) as PluginOption)
+  }
+
+  // In dev, pre-fetch a JWT so the proxy can inject it into every request
+  let devToken: string | null = null
+  if (command === 'serve') {
+    devToken = await fetchDevToken()
+    if (devToken) {
+      console.log('[vite] Dev JWT acquired — proxy will inject Authorization header')
+    }
   }
 
   return {
@@ -67,8 +109,16 @@ export default defineConfig(async ({ command, mode }) => {
       proxy: {
         // Proxy API calls to the .NET demo backend
         '/messaging/api': {
-          target: 'http://localhost:5000',
+          target: DEMO_BACKEND,
           changeOrigin: true,
+          secure: false,
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq) => {
+              if (devToken) {
+                proxyReq.setHeader('Authorization', `Bearer ${devToken}`)
+              }
+            })
+          },
         },
       },
     },

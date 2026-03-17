@@ -27,6 +27,12 @@
               variant="tonal"
               class="ml-1"
             >{{ status.badgeCount }}</v-chip>
+            <v-tooltip v-if="status.tooltip" location="bottom" max-width="300">
+              <template #activator="{ props: tp }">
+                <v-icon v-bind="tp" size="14" class="ml-1 status-info-icon">mdi-information-outline</v-icon>
+              </template>
+              {{ status.tooltip }}
+            </v-tooltip>
           </span>
         </v-tab>
       </v-tabs>
@@ -201,11 +207,35 @@ const messagingStore = useMessagingStore()
 const { stats } = storeToRefs(messagingStore)
 
 const statusTabs = computed(() => [
-  { label: 'Succeeded', value: 'Succeeded', badgeCount: stats.value.receivedSucceeded, badgeColor: 'success' },
-  { label: 'Failed', value: 'Failed', badgeCount: stats.value.receivedFailed, badgeColor: 'error' },
-  { label: 'Delayed', value: 'Delayed' },
-  { label: 'Scheduled', value: 'Scheduled' },
-  { label: 'Queued', value: 'Queued' },
+  {
+    label: 'Succeeded',
+    value: 'Succeeded',
+    badgeCount: stats.value.receivedSucceeded,
+    badgeColor: 'success',
+    tooltip: 'Messages consumed successfully by their subscriber.',
+  },
+  {
+    label: 'Failed',
+    value: 'Failed',
+    badgeCount: stats.value.receivedFailed,
+    badgeColor: 'error',
+    tooltip: 'Messages whose consumer threw an exception after all retry attempts. Can be re-executed manually.',
+  },
+  {
+    label: 'Delayed',
+    value: 'Delayed',
+    tooltip: 'Messages with deferred consumption (delay > 1 min). Shorter delays show as "Queued".',
+  },
+  {
+    label: 'Scheduled',
+    value: 'Scheduled',
+    tooltip: 'Messages picked up by the processor and awaiting consumer execution.',
+  },
+  {
+    label: 'Queued',
+    value: 'Queued',
+    tooltip: 'Messages waiting to be dispatched to their consumer.',
+  },
 ])
 
 const activeStatus = ref('Succeeded')
@@ -371,6 +401,16 @@ loadMessages()
 .tab-label-with-badge {
   display: flex;
   align-items: center;
+}
+
+.status-info-icon {
+  opacity: 0.45;
+  cursor: help;
+  transition: opacity 0.15s;
+}
+
+.status-info-icon:hover {
+  opacity: 0.85;
 }
 
 .page-title {

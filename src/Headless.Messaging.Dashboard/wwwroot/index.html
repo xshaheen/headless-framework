@@ -5,15 +5,21 @@
     <link rel="icon" href="./logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Headless Messaging</title>
-    <script type="module">
-      // Dev-mode config — in production this is injected by .NET middleware
-      if (import.meta.env.DEV && !window.MessagingConfig) {
+    <!--
+      Dev-mode config — in production this block is absent;
+      the .NET middleware injects window.MessagingConfig at runtime.
+      Uses a classic (non-module) script so it executes synchronously
+      before any module scripts.
+    -->
+    <script>
+      if (!window.MessagingConfig) {
         window.MessagingConfig = {
-          basePath: '/messaging',
+          basePath: '/',
+          backendDomain: '/messaging',
           auth: { mode: 'none', enabled: false, sessionTimeout: 30 },
           statsPollingInterval: 2000,
-        }
-        window.__dynamic_base__ = '/'
+        };
+        window.__dynamic_base__ = '/';
       }
     </script>
   </head>

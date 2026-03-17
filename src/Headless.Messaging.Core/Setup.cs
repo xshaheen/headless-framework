@@ -76,13 +76,12 @@ public static class Setup
         // Discover consumers registered via AddConsumer<TConsumer, TMessage>()
         _DiscoverConsumersFromDI(services, options, registry);
 
-        return _RegisterCoreMessagingServices(services, options, configure);
+        return _RegisterCoreMessagingServices(services, options);
     }
 
     private static MessagingBuilder _RegisterCoreMessagingServices(
         IServiceCollection services,
-        MessagingOptions options,
-        Action<MessagingOptions>? setupAction
+        MessagingOptions options
     )
     {
         services.AddSingleton(_ => services);
@@ -143,12 +142,8 @@ public static class Setup
         // requires Services/Registry to be initialized - which only happens in AddHeadlessMessaging.
         services.Configure<MessagingOptions>(opt =>
         {
-            // Set internal state BEFORE invoking setupAction, because
-            // SubscribeFromAssembly requires Services/Registry to be initialized.
             opt.Services = services;
             opt.Registry = options.Registry;
-
-            setupAction?.Invoke(opt);
 
             // Copy public properties
             opt.DefaultGroupName = options.DefaultGroupName;
