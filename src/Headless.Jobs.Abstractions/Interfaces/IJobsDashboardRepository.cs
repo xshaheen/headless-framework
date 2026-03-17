@@ -15,7 +15,7 @@ internal interface IJobsDashboardRepository<TTimeJob, TCronJob>
         int pageSize,
         CancellationToken cancellationToken = default
     );
-    Task<IList<Tuple<JobStatus, int>>> GetTimeJobFullDataAsync(CancellationToken cancellationToken);
+    Task<IList<(JobStatus Status, int Count)>> GetTimeJobFullDataAsync(CancellationToken cancellationToken);
     Task<IList<JobGraphData>> GetTimeJobsGraphSpecificDataAsync(
         int pastDays,
         int futureDays,
@@ -32,7 +32,7 @@ internal interface IJobsDashboardRepository<TTimeJob, TCronJob>
         int futureDays,
         CancellationToken cancellationToken
     );
-    Task<IList<Tuple<JobStatus, int>>> GetCronJobFullDataAsync(CancellationToken cancellationToken);
+    Task<IList<(JobStatus Status, int Count)>> GetCronJobFullDataAsync(CancellationToken cancellationToken);
     Task<CronJobEntity[]> GetCronJobsAsync(CancellationToken cancellationToken = default);
     Task<PaginationResult<CronJobEntity>> GetCronJobsPaginatedAsync(
         int pageNumber,

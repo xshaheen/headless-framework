@@ -113,16 +113,6 @@ public class GatewayProxyAgent(
             _AddHeaderIfDoesntExist(context, httpResponseHeader);
         }
 
-        var content = await response.Content.ReadAsByteArrayAsync();
-
-        _AddHeaderIfDoesntExist(
-            context,
-            new KeyValuePair<string, IEnumerable<string>>(
-                "Content-Length",
-                [content.Length.ToString(CultureInfo.InvariantCulture)]
-            )
-        );
-
         context.Response.OnStarting(
             state =>
             {
@@ -135,10 +125,9 @@ public class GatewayProxyAgent(
             context
         );
 
-        await using Stream stream = new MemoryStream(content);
         if (response.StatusCode != HttpStatusCode.NotModified)
         {
-            await stream.CopyToAsync(context.Response.Body);
+            await response.Content.CopyToAsync(context.Response.Body);
         }
     }
 

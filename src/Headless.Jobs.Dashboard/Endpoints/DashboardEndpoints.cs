@@ -347,7 +347,10 @@ internal static class DashboardEndpoints
         where TCronJob : CronJobEntity, new()
     {
         var result = await repository.GetTimeJobFullDataAsync(cancellationToken);
-        return Results.Json(result, dashboardOptions.DashboardJsonOptions);
+        return Results.Json(
+            result.Select(x => new { item1 = x.Status, item2 = x.Count }).ToArray(),
+            dashboardOptions.DashboardJsonOptions
+        );
     }
 
     private static async Task<IResult> _CreateChainJobs<TTimeJob, TCronJob>(
@@ -541,7 +544,10 @@ internal static class DashboardEndpoints
         where TCronJob : CronJobEntity, new()
     {
         var result = await repository.GetCronJobFullDataAsync(cancellationToken);
-        return Results.Json(result, dashboardOptions.DashboardJsonOptions);
+        return Results.Json(
+            result.Select(x => new { item1 = x.Status, item2 = x.Count }).ToArray(),
+            dashboardOptions.DashboardJsonOptions
+        );
     }
 
     private static async Task<IResult> _GetCronJobOccurrences<TTimeJob, TCronJob>(

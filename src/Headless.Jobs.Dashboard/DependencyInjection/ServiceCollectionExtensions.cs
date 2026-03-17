@@ -54,9 +54,6 @@ internal static class ServiceCollectionExtensions
         services.AddRouting();
         services.AddSignalR();
 
-        // The new authentication system is registered in ServiceExtensions.cs
-        // This method is kept for backward compatibility with existing middleware pipeline
-
         services.AddAuthorization();
 
         services.AddCors(options =>

@@ -43,7 +43,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         return await _persistenceProvider.GetTimeJobsPaginated(null, pageNumber, pageSize, cancellationToken);
     }
 
-    public async Task<IList<Tuple<JobStatus, int>>> GetTimeJobFullDataAsync(CancellationToken cancellationToken)
+    public async Task<IList<(JobStatus Status, int Count)>> GetTimeJobFullDataAsync(CancellationToken cancellationToken)
     {
         var timeJobs = await _persistenceProvider.GetTimeJobs(null, cancellationToken: cancellationToken);
 
@@ -57,7 +57,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
         // Ensure all statuses are included, even those with 0 count
         var result = allStatuses
-            .Select(status => new Tuple<JobStatus, int>(status, statusCounts.GetValueOrDefault(status, 0)))
+            .Select(status => (Status: status, Count: statusCounts.GetValueOrDefault(status, 0)))
             .ToList();
 
         return result;
@@ -175,7 +175,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         return finalData;
     }
 
-    public async Task<IList<Tuple<JobStatus, int>>> GetCronJobFullDataAsync(CancellationToken cancellationToken)
+    public async Task<IList<(JobStatus Status, int Count)>> GetCronJobFullDataAsync(CancellationToken cancellationToken)
     {
         var cronJobOccurrences = await _persistenceProvider.GetAllCronJobOccurrences(
             null,
@@ -191,7 +191,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         var statusCounts = rawData.ToDictionary(x => x.Status, x => x.Count);
 
         var result = allStatuses
-            .Select(status => new Tuple<JobStatus, int>(status, statusCounts.GetValueOrDefault(status, 0)))
+            .Select(status => (Status: status, Count: statusCounts.GetValueOrDefault(status, 0)))
             .ToList();
 
         return result;
@@ -286,106 +286,35 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     public async Task<IList<(JobStatus, int)>> GetOverallJobStatusesAsync(CancellationToken cancellationToken = default)
     {
         var timeJobs = await _persistenceProvider.GetTimeJobs(null, cancellationToken);
-        var timeStatusCounts = timeJobs
-            .GroupBy(x => x.Status)
-            .Select(g => new { Status = g.Key, Count = g.Count() })
-            .ToList();
-
         var cronJobOccurrences = await _persistenceProvider.GetAllCronJobOccurrences(null, cancellationToken);
-        var cronStatusCounts = cronJobOccurrences
-            .GroupBy(x => x.Status)
-            .Select(g => new { Status = g.Key, Count = g.Count() })
+
+        // Combine counts using LINQ GroupBy across both sources
+        var combined = timeJobs
+            .Select(x => x.Status)
+            .Concat(cronJobOccurrences.Select(x => x.Status))
+            .GroupBy(status => status)
+            .Select(g => (g.Key, g.Count()))
             .ToList();
 
-        // Combine counts into a Dictionary<JobStatus, int>
-        var combined = new Dictionary<JobStatus, int>();
-
-        foreach (var item in timeStatusCounts)
-        {
-            if (combined.ContainsKey(item.Status))
-            {
-                combined[item.Status] += item.Count;
-            }
-            else
-            {
-                combined[item.Status] = item.Count;
-            }
-        }
-
-        foreach (var item in cronStatusCounts)
-        {
-            if (combined.ContainsKey(item.Status))
-            {
-                combined[item.Status] += item.Count;
-            }
-            else
-            {
-                combined[item.Status] = item.Count;
-            }
-        }
-
-        // Return as list of tuples
-        return combined.Select(kvp => (kvp.Key, kvp.Value)).ToList();
+        return combined;
     }
 
     public async Task<IList<(string, int)>> GetMachineJobsAsync(CancellationToken cancellationToken = default)
     {
         var timeJobs = await _persistenceProvider.GetTimeJobs(x => x.LockedAt != null, cancellationToken);
-
-        var timeJobCounts = timeJobs
-            .GroupBy(x => x.LockHolder, StringComparer.Ordinal)
-            .Select(g => new { LockHolder = g.Key, Count = g.Count() })
-            .ToList();
-
         var cronJobOccurrences = await _persistenceProvider.GetAllCronJobOccurrences(
             x => x.LockedAt != null,
             cancellationToken
         );
-        var cronJobCounts = cronJobOccurrences
-            .GroupBy(x => x.LockHolder, StringComparer.Ordinal)
-            .Select(g => new { LockHolder = g.Key, Count = g.Count() })
-            .ToList();
 
-        // Combine results into a single dictionary
-        var combined = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var item in timeJobCounts)
-        {
-            if (item.LockHolder == null)
-            {
-                continue;
-            }
-
-            if (combined.ContainsKey(item.LockHolder))
-            {
-                combined[item.LockHolder] += item.Count;
-            }
-            else
-            {
-                combined[item.LockHolder] = item.Count;
-            }
-        }
-
-        foreach (var item in cronJobCounts)
-        {
-            if (item.LockHolder == null)
-            {
-                continue;
-            }
-
-            if (combined.ContainsKey(item.LockHolder))
-            {
-                combined[item.LockHolder] += item.Count;
-            }
-            else
-            {
-                combined[item.LockHolder] = item.Count;
-            }
-        }
-
-        return combined
-            .Select(x => (x.Key, x.Value))
-            .OrderByDescending(x => x.Value) // Optional: most active machines first
+        // Combine counts using LINQ GroupBy across both sources, filtering out null lock holders
+        return timeJobs
+            .Select(x => x.LockHolder)
+            .Concat(cronJobOccurrences.Select(x => x.LockHolder))
+            .Where(holder => holder is not null)
+            .GroupBy(holder => holder!, StringComparer.OrdinalIgnoreCase)
+            .Select(g => (g.Key, g.Count()))
+            .OrderByDescending(x => x.Item2)
             .ToList();
     }
 
@@ -548,8 +477,13 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             .Take(maxTotalDays)
             .ToList();
 
-        var startDate = completeData.First().Date;
-        var endDate = completeData.Last().Date;
+        if (completeData.Count == 0)
+        {
+            return completeData;
+        }
+
+        var startDate = completeData[0].Date;
+        var endDate = completeData[^1].Date;
         var allDates = Enumerable
             .Range(0, (endDate - startDate).Days + 1)
             .Select(offset => startDate.AddDays(offset))
