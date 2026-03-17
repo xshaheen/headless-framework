@@ -26,7 +26,7 @@ dotnet add package Headless.OpenApi.Scalar
 var builder = WebApplication.CreateBuilder(args);
 
 // Add OpenAPI generation (NSwag or other)
-builder.Services.AddHeadlessNswagOpenApi();
+builder.Services.AddNswagOpenApi();
 
 var app = builder.Build();
 

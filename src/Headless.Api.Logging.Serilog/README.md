@@ -25,12 +25,12 @@ dotnet add package Headless.Api.Logging.Serilog
 var builder = WebApplication.CreateBuilder(args);
 
 // Register enrichers
-builder.Services.AddHeadlessSerilogEnrichers();
+builder.Services.AddSerilogEnrichers();
 
 var app = builder.Build();
 
 // Use enrichers middleware (place early in pipeline)
-app.UseHeadlessSerilogEnrichers();
+app.UseSerilogEnrichers();
 
 app.Run();
 ```

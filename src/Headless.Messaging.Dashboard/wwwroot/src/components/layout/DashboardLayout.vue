@@ -21,8 +21,8 @@ const navigationLinks: NavLink[] = [
   { icon: 'mdi-view-dashboard', text: 'Dashboard', path: '/' },
   { icon: 'mdi-send', text: 'Published', path: '/published', badgeKey: 'publishedFailed', badgeColor: 'error', badgeHideWhenZero: true },
   { icon: 'mdi-inbox-arrow-down', text: 'Received', path: '/received', badgeKey: 'receivedFailed', badgeColor: 'error', badgeHideWhenZero: true },
-  { icon: 'mdi-account-group', text: 'Subscribers', path: '/subscribers', badgeKey: 'subscribers', badgeColor: 'info' },
-  { icon: 'mdi-server-network', text: 'Nodes', path: '/nodes', badgeKey: 'servers', badgeColor: 'secondary' },
+  { icon: 'mdi-account-group', text: 'Subscribers', path: '/subscribers' },
+  { icon: 'mdi-server-network', text: 'Nodes', path: '/nodes' },
 ]
 
 const isAuthEnabled = computed(() => window.MessagingConfig?.auth?.enabled ?? false)

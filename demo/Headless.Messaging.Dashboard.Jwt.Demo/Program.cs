@@ -58,6 +58,7 @@ builder.Services.AddAuthorization(options =>
 
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.FailedRetryCount = 0;
     options.SubscribeFromAssembly(typeof(Program).Assembly);
     options.UseInMemoryStorage();
     options.UseInMemoryMessageQueue();

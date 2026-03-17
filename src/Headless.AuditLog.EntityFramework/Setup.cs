@@ -18,7 +18,7 @@ public static class AuditLogEntityFrameworkSetup
         /// Requires <c>AddHeadlessAuditLog()</c> to be called first for options registration,
         /// and <c>AddHeadlessDbContext&lt;T&gt;()</c> for the <c>DbContext</c> registration.
         /// </summary>
-        public IServiceCollection AddHeadlessAuditLogEntityFramework()
+        public IServiceCollection AddAuditLogEntityFramework()
         {
             services.TryAddScoped<IAuditChangeCapture, EfAuditChangeCapture>();
             services.TryAddScoped<IAuditLogStore, EfAuditLogStore>();

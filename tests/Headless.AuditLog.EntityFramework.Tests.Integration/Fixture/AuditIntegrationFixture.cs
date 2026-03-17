@@ -43,7 +43,7 @@ public static class AuditIntegrationFixture
 
         // Audit services
         services.AddHeadlessAuditLog(configure);
-        services.AddHeadlessAuditLogEntityFramework();
+        services.AddAuditLogEntityFramework();
 
         // Keep connection alive with the provider lifetime
         services.AddSingleton(connection);

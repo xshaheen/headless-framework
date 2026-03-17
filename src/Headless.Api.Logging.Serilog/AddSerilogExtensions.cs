@@ -9,12 +9,12 @@ namespace Headless.Logging;
 public static class AddSerilogExtensions
 {
     /// <summary>Adds the serilog enrichers middleware.</summary>
-    public static IServiceCollection AddHeadlessSerilogEnrichers(this IServiceCollection services)
+    public static IServiceCollection AddSerilogEnrichers(this IServiceCollection services)
     {
         return services.AddScoped<SerilogEnrichersMiddleware>();
     }
 
-    public static IApplicationBuilder UseHeadlessSerilogEnrichers(this IApplicationBuilder builder)
+    public static IApplicationBuilder UseSerilogEnrichers(this IApplicationBuilder builder)
     {
         return builder.UseMiddleware<SerilogEnrichersMiddleware>();
     }

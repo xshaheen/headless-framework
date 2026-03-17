@@ -11,8 +11,8 @@ packages: Api, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.L
 
 The core package is `Headless.Api` — call `AddHeadlessApi()` to register compression, security headers, problem details, JWT, identity, and validation in one shot. Then choose an endpoint style:
 
-- **Minimal API** (recommended for new projects): Add `Headless.Api.MinimalApi` and call `ConfigureHeadlessMinimalApi()` for JSON config, validation filters, and exception handling.
-- **MVC/Controllers**: Add `Headless.Api.Mvc` and call `ConfigureHeadlessMvc()` for base controllers, exception filters, and URL canonicalization.
+- **Minimal API** (recommended for new projects): Add `Headless.Api.MinimalApi` and call `ConfigureMinimalApi()` for JSON config, validation filters, and exception handling.
+- **MVC/Controllers**: Add `Headless.Api.Mvc` and call `ConfigureMvc()` for base controllers, exception filters, and URL canonicalization.
 
 Use `Headless.Api.Abstractions` when you only need interfaces (`IRequestContext`, `IWebClientInfoProvider`) without pulling in the full API stack.
 
@@ -26,10 +26,10 @@ Additional packages:
 - Use `AddHeadlessApi()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, or problem details.
 - Call `ApiRegistration.ConfigureGlobalSettings()` before `AddHeadlessApi()` to set regex timeout, FluentValidation, and JWT defaults.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.WithValidation<T>()` on endpoints for FluentValidation integration.
-- For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureHeadlessMvc()` not manual `MvcOptions` configuration.
+- For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`) for `IFormFile` validation — do not write manual file validation logic.
 - Use `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` to persist Data Protection keys in distributed/containerized environments.
-- For Serilog enrichment, call `AddHeadlessSerilogEnrichers()` on services and `UseHeadlessSerilogEnrichers()` on the app — place the middleware early in the pipeline.
+- For Serilog enrichment, call `AddSerilogEnrichers()` on services and `UseSerilogEnrichers()` on the app — place the middleware early in the pipeline.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
 - Configuration sections `StringHash:Secret` and `StringEncryption:Key` are required by `Headless.Api`.
 
@@ -325,12 +325,12 @@ dotnet add package Headless.Api.Logging.Serilog
 var builder = WebApplication.CreateBuilder(args);
 
 // Register enrichers
-builder.Services.AddHeadlessSerilogEnrichers();
+builder.Services.AddSerilogEnrichers();
 
 var app = builder.Build();
 
 // Use enrichers middleware (place early in pipeline)
-app.UseHeadlessSerilogEnrichers();
+app.UseSerilogEnrichers();
 
 app.Run();
 ```
@@ -378,7 +378,7 @@ dotnet add package Headless.Api.MinimalApi
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi().ConfigureHeadlessMinimalApi();
+builder.AddHeadlessApi().ConfigureMinimalApi();
 
 var app = builder.Build();
 
@@ -430,7 +430,7 @@ dotnet add package Headless.Api.Mvc
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi().ConfigureHeadlessMvc();
+builder.AddHeadlessApi().ConfigureMvc();
 builder.Services.AddControllers();
 
 var app = builder.Build();

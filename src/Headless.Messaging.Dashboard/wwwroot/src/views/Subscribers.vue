@@ -33,7 +33,7 @@
               </v-chip>
               <v-spacer />
               <v-icon :class="{ rotated: expandedGroups.has(group.group) }">
-                mdi-chevron-down
+                mdi-chevron-right
               </v-icon>
             </div>
           </v-card-title>
@@ -95,8 +95,6 @@ async function loadSubscribers() {
   try {
     const data = await httpService.get<SubscriberGroup[]>('/subscriber')
     groups.value = data || []
-    // Expand all groups by default
-    groups.value.forEach((g) => expandedGroups.add(g.group))
   } catch (error) {
     console.error('Failed to load subscribers:', error)
     alertStore.showError('Failed to load subscribers')
@@ -175,7 +173,7 @@ onMounted(() => {
 }
 
 .rotated {
-  transform: rotate(180deg);
+  transform: rotate(90deg);
   transition: transform 0.3s ease;
 }
 

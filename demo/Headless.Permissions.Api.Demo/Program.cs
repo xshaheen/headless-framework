@@ -16,7 +16,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddPermissionsManagementCore();
 
 // Configure OpenAPI documentation
-builder.Services.AddHeadlessNswagOpenApi();
+builder.Services.AddNswagOpenApi();
 
 // Configure authorization policies
 builder.Services.AddAuthentication();
@@ -37,7 +37,7 @@ var app = builder.Build();
 // Configure middleware pipeline
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapHeadlessNswagOpenApi();
+app.MapNswagOpenApi();
 
 // List all permission definitions
 app.MapGet(

@@ -50,14 +50,14 @@ public static class ApiSetup
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddResilienceEnricher();
-        builder.Services.AddHeadlessJsonService();
-        builder.Services.AddHeadlessTimeService();
-        builder.Services.AddHeadlessStringHashService();
-        builder.Services.AddHeadlessStringEncryptionService(configureEncryption);
-        builder.Services.AddHeadlessApiResponseCompression();
+        builder.Services.AddJsonService();
+        builder.Services.AddTimeService();
+        builder.Services.AddStringHashService();
+        builder.Services.AddStringEncryptionService(configureEncryption);
+        builder.Services.AddApiResponseCompression();
         builder.Services.AddHeadlessProblemDetails();
-        builder.Services.AddHeadlessApiConfigurations();
-        builder.Services.ConfigureHeadlessHstsOptions();
+        builder.Services.AddApiConfigurations();
+        builder.Services.ConfigureHstsOptions();
 
         builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
         builder.Services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
@@ -95,7 +95,7 @@ public static class ApiSetup
         return builder;
     }
 
-    public static IServiceCollection AddHeadlessJsonService(this IServiceCollection services)
+    public static IServiceCollection AddJsonService(this IServiceCollection services)
     {
         services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
         services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
@@ -107,7 +107,7 @@ public static class ApiSetup
         return services;
     }
 
-    public static IServiceCollection AddHeadlessTimeService(this IServiceCollection services)
+    public static IServiceCollection AddTimeService(this IServiceCollection services)
     {
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IClock, Clock>();
@@ -116,7 +116,7 @@ public static class ApiSetup
         return services;
     }
 
-    public static IServiceCollection AddHeadlessStringHashService(this IServiceCollection services)
+    public static IServiceCollection AddStringHashService(this IServiceCollection services)
     {
         services.AddOptions<StringHashOptions, StringHashOptionsValidator>();
         services.AddSingletonOptionValue<StringHashOptions>();
@@ -125,7 +125,7 @@ public static class ApiSetup
         return services;
     }
 
-    public static IServiceCollection AddHeadlessStringEncryptionService(
+    public static IServiceCollection AddStringEncryptionService(
         this IServiceCollection services,
         Action<StringEncryptionOptions> configure
     )
@@ -153,7 +153,7 @@ public static class ApiSetup
         return services;
     }
 
-    public static IServiceCollection AddHeadlessApiResponseCompression(this IServiceCollection services)
+    public static IServiceCollection AddApiResponseCompression(this IServiceCollection services)
     {
         services
             .AddResponseCompression(options =>
@@ -173,7 +173,7 @@ public static class ApiSetup
         return services;
     }
 
-    public static IServiceCollection AddHeadlessApiConfigurations(this IServiceCollection services)
+    public static IServiceCollection AddApiConfigurations(this IServiceCollection services)
     {
         services.Configure<RouteOptions>(options =>
         {
@@ -191,7 +191,7 @@ public static class ApiSetup
         return services;
     }
 
-    public static IServiceCollection ConfigureHeadlessHstsOptions(this IServiceCollection services)
+    public static IServiceCollection ConfigureHstsOptions(this IServiceCollection services)
     {
         /*
          * Configures the Strict-Transport-Security HTTP header on responses. This HTTP header is only relevant if you are

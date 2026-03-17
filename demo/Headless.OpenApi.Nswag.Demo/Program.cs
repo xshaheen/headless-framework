@@ -8,7 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddHeadlessNswagOpenApi();
+builder.Services.AddNswagOpenApi();
 
 builder
     .Services.AddAuthentication()
@@ -60,7 +60,7 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapHeadlessNswagOpenApi();
+app.MapNswagOpenApi();
 app.MapHeadlessScalarOpenApi();
 app.MapControllers();
 

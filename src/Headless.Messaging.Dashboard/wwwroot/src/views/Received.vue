@@ -276,9 +276,12 @@ async function loadMessages(page?: number, pageSize?: number) {
     if (groupFilter.value) params.set('group', groupFilter.value)
     if (contentFilter.value) params.set('content', contentFilter.value)
 
-    const data = await httpService.get<{ items: ReceivedMessage[]; totals: number }>(
-      `/received/${activeStatus.value}?${params}`,
-    )
+    const [data] = await Promise.all([
+      httpService.get<{ items: ReceivedMessage[]; totals: number }>(
+        `/received/${activeStatus.value}?${params}`,
+      ),
+      messagingStore.fetchStats(),
+    ])
     messages.value = data.items || []
     pagination.totalCount.value = data.totals || 0
     selectedIds.value = []

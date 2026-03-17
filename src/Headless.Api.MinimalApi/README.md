@@ -25,7 +25,7 @@ dotnet add package Headless.Api.MinimalApi
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi().ConfigureHeadlessMinimalApi();
+builder.AddHeadlessApi().ConfigureMinimalApi();
 
 var app = builder.Build();
 
