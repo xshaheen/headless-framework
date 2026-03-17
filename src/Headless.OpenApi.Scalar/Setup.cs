@@ -7,7 +7,7 @@ namespace Headless.Api;
 
 public static class ScalarSetup
 {
-    public static WebApplication MapHeadlessScalarOpenApi(
+    public static WebApplication MapScalarOpenApi(
         this WebApplication app,
         Action<ScalarOptions>? setupAction = null,
         string endpointPrefix = "/scalar"

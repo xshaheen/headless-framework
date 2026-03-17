@@ -30,7 +30,7 @@ builder.Services.AddNswagOpenApi();
 
 var app = builder.Build();
 
-app.MapHeadlessScalarOpenApi();
+app.MapScalarOpenApi();
 ```
 
 ## Configuration
@@ -38,7 +38,7 @@ app.MapHeadlessScalarOpenApi();
 ### Options
 
 ```csharp
-app.MapHeadlessScalarOpenApi(options =>
+app.MapScalarOpenApi(options =>
 {
     options.DarkMode = true;
     options.Layout = ScalarLayout.Modern;
