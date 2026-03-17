@@ -325,7 +325,7 @@ public sealed class PostgreSqlMonitoringApi(
     )
     {
         var sql =
-            $@"SELECT ""Id"" AS ""DbId"", ""Content"", ""Added"", ""ExpiresAt"", ""Retries"" FROM {tableName} WHERE ""Id""=@Id";
+            $@"SELECT ""Id"" AS ""DbId"", ""Content"", ""Added"", ""ExpiresAt"", ""Retries"", ""ExceptionInfo"" FROM {tableName} WHERE ""Id""=@Id";
 
         await using var connection = _options.CreateConnection();
 
@@ -346,6 +346,7 @@ public sealed class PostgreSqlMonitoringApi(
                             Added = reader.GetDateTime(2),
                             ExpiresAt = reader.GetDateTime(3),
                             Retries = reader.GetInt32(4),
+                            ExceptionInfo = await reader.IsDBNullAsync(5).ConfigureAwait(false) ? null : reader.GetString(5),
                         };
                     }
 

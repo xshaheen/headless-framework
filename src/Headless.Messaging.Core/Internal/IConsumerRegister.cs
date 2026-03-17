@@ -222,6 +222,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 Message message;
 
                 var canFindSubscriber = _selector.TryGetTopicExecutor(name, group, out var executor);
+                string? exceptionInfo = null;
                 try
                 {
                     if (!canFindSubscriber)
@@ -252,6 +253,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 #pragma warning disable EPC12 // Suppress CA2200 warning to rethrow original exception
                     transportMessage.Headers[Headers.Exception] = e.GetType().Name + "-->" + e.Message;
 #pragma warning restore EPC12
+                    exceptionInfo = e.ToString();
 
                     string? dataUri;
                     if (transportMessage.Headers.TryGetValue(Headers.Type, out var val))
@@ -280,7 +282,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                     var content = _serializer.Serialize(message);
 #pragma warning restore VSTHRD103, CA1849
 
-                    await _storage.StoreReceivedExceptionMessageAsync(name, group, content);
+                    await _storage.StoreReceivedExceptionMessageAsync(name, group, content, exceptionInfo);
 
                     await client.CommitAsync(sender);
 

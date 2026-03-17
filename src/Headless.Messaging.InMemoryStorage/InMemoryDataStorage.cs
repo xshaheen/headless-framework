@@ -83,6 +83,7 @@ internal class InMemoryDataStorage(
         ReceivedMessages[message.DbId].StatusName = state;
         ReceivedMessages[message.DbId].ExpiresAt = message.ExpiresAt;
         ReceivedMessages[message.DbId].Content = serializer.Serialize(message.Origin);
+        ReceivedMessages[message.DbId].ExceptionInfo = message.ExceptionInfo;
         return ValueTask.CompletedTask;
     }
 
@@ -123,6 +124,7 @@ internal class InMemoryDataStorage(
         string name,
         string group,
         string content,
+        string? exceptionInfo = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -142,6 +144,7 @@ internal class InMemoryDataStorage(
                 .GetUtcNow()
                 .UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter),
             StatusName = StatusName.Failed,
+            ExceptionInfo = exceptionInfo,
         };
 
         return ValueTask.CompletedTask;

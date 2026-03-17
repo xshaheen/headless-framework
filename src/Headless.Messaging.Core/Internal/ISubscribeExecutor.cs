@@ -182,6 +182,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         var needRetry = _UpdateMessageForRetry(message, ex);
 
         message.Origin.AddOrUpdateException(ex);
+        message.ExceptionInfo = ex.ToString();
         message.ExpiresAt = message.Added.AddSeconds(_options.FailedMessageExpiredAfter);
 
         await _dataStorage.ChangeReceiveStateAsync(message, StatusName.Failed).ConfigureAwait(false);

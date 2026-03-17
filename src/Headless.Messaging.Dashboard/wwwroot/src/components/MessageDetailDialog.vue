@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import JSONBig from 'json-bigint'
 import { formatDateTime, timeAgo } from '@/utilities/dateTimeParser'
 
@@ -11,6 +11,7 @@ export interface MessageDetail {
   expiresAt: string | null
   retries: number
   group?: string
+  exceptionInfo?: string
 }
 
 interface Props {
@@ -110,6 +111,17 @@ const isOpen = computed({
 const showStackTrace = ref(false)
 const showRawData = ref(false)
 const copied = ref(false)
+const activeTab = ref<'content' | 'exception'>('content')
+
+const hasExceptionInfo = computed(() => !!props.message?.exceptionInfo?.trim())
+
+watch(
+  () => props.message,
+  (msg) => {
+    activeTab.value = msg?.exceptionInfo?.trim() ? 'exception' : 'content'
+  },
+  { immediate: true },
+)
 
 const contentKind = computed((): ContentKind | null => {
   if (!props.message?.content) return null
@@ -259,97 +271,118 @@ async function copyContent() {
 
       <v-divider />
 
+      <!-- Tab bar — only shown when there's exception info -->
+      <v-tabs v-if="hasExceptionInfo" v-model="activeTab" density="compact" class="content-tabs">
+        <v-tab value="content">
+          <v-icon start size="small">mdi-code-json</v-icon>
+          Content
+        </v-tab>
+        <v-tab value="exception">
+          <v-icon start size="small" color="error">mdi-alert-circle-outline</v-icon>
+          Exception
+        </v-tab>
+      </v-tabs>
+      <v-divider v-if="hasExceptionInfo" />
+
       <v-card-text class="content-area">
-        <!-- Exception rendering -->
-        <div v-if="isException && structured" class="exception-content">
-          <!-- Main Exception Message -->
-          <div class="exception-message mb-4">
-            <v-icon size="small" color="error" class="mr-2">mdi-alert-circle</v-icon>
-            <span class="exception-text">{{ structured.message }}</span>
-          </div>
-
-          <!-- Stack Trace -->
-          <div v-if="hasStackTrace" class="stack-trace-section mb-4">
-            <div class="section-header stack-trace-header" @click="showStackTrace = !showStackTrace">
-              <v-icon size="small" class="mr-2" color="primary">mdi-code-braces</v-icon>
-              <span class="section-title">Stack Trace</span>
-              <v-chip size="x-small" color="primary" variant="tonal" class="ml-2">
-                {{ showStackTrace ? 'Collapse' : 'Expand' }}
-              </v-chip>
-              <v-icon
-                size="small"
-                class="ml-auto toggle-icon"
-                :class="{ rotated: showStackTrace }"
-              >
-                mdi-chevron-down
-              </v-icon>
-            </div>
-            <div v-show="showStackTrace" class="stack-trace-content">
-              <pre class="stack-trace-code">{{ structured.stackTrace }}</pre>
-            </div>
-          </div>
-
-          <!-- Additional Info -->
-          <div v-if="hasAdditionalInfo" class="additional-info mb-4">
-            <div class="section-header info-header">
-              <v-icon size="small" class="mr-2" color="info">mdi-information</v-icon>
-              <span class="section-title">Additional Information</span>
-            </div>
-            <div class="info-grid">
-              <div v-if="structured.source" class="info-item">
-                <span class="info-label">Source</span>
-                <span class="info-value">{{ structured.source }}</span>
-              </div>
-              <div v-if="structured.helpLink" class="info-item">
-                <span class="info-label">Help Link</span>
-                <a :href="structured.helpLink" target="_blank" class="info-link">
-                  {{ structured.helpLink }}
-                </a>
-              </div>
-              <div v-if="structured.data" class="info-item">
-                <span class="info-label">Data</span>
-                <pre class="info-data">{{ JSON.stringify(structured.data, null, 2) }}</pre>
-              </div>
-              <div v-if="structured.innerException" class="info-item">
-                <span class="info-label">Inner Exception</span>
-                <pre class="info-data">{{ JSON.stringify(structured.innerException, null, 2) }}</pre>
-              </div>
-            </div>
-          </div>
-
-          <!-- Raw Exception Data -->
-          <div class="raw-data-section">
-            <div class="section-header raw-data-header" @click="showRawData = !showRawData">
-              <v-icon size="small" class="mr-2" color="warning">mdi-json</v-icon>
-              <span class="section-title">Raw Exception Data</span>
-              <v-chip size="x-small" color="warning" variant="tonal" class="ml-2">
-                {{ showRawData ? 'Collapse' : 'Expand' }}
-              </v-chip>
-              <v-icon
-                size="small"
-                class="ml-auto toggle-icon"
-                :class="{ rotated: showRawData }"
-              >
-                mdi-chevron-down
-              </v-icon>
-            </div>
-            <div v-show="showRawData" class="raw-data-content">
-              <pre class="raw-data-code">{{ JSON.stringify(structured.details, null, 2) }}</pre>
-            </div>
-          </div>
+        <!-- Exception tab -->
+        <div v-if="hasExceptionInfo && activeTab === 'exception'" class="exception-info-content">
+          <pre class="stack-trace-code exception-info-pre">{{ message?.exceptionInfo }}</pre>
         </div>
 
-        <!-- Plain text -->
-        <div v-else-if="isPlain" class="plain-text-wrapper">
-          <div class="plain-indicator mb-2">
-            <v-icon size="x-small" class="mr-1" color="secondary">mdi-text</v-icon>
-            <span class="text-caption text-medium-emphasis">Text content</span>
-          </div>
-          <pre class="message-content">{{ plainText }}</pre>
-        </div>
+        <!-- Content tab (or always shown when no exception) -->
+        <template v-else>
+          <!-- Exception rendering -->
+          <div v-if="isException && structured" class="exception-content">
+            <!-- Main Exception Message -->
+            <div class="exception-message mb-4">
+              <v-icon size="small" color="error" class="mr-2">mdi-alert-circle</v-icon>
+              <span class="exception-text">{{ structured.message }}</span>
+            </div>
 
-        <!-- JSON / Generic -->
-        <pre v-else class="message-content" v-html="formattedJsonHtml"></pre>
+            <!-- Stack Trace -->
+            <div v-if="hasStackTrace" class="stack-trace-section mb-4">
+              <div class="section-header stack-trace-header" @click="showStackTrace = !showStackTrace">
+                <v-icon size="small" class="mr-2" color="primary">mdi-code-braces</v-icon>
+                <span class="section-title">Stack Trace</span>
+                <v-chip size="x-small" color="primary" variant="tonal" class="ml-2">
+                  {{ showStackTrace ? 'Collapse' : 'Expand' }}
+                </v-chip>
+                <v-icon
+                  size="small"
+                  class="ml-auto toggle-icon"
+                  :class="{ rotated: showStackTrace }"
+                >
+                  mdi-chevron-down
+                </v-icon>
+              </div>
+              <div v-show="showStackTrace" class="stack-trace-content">
+                <pre class="stack-trace-code">{{ structured.stackTrace }}</pre>
+              </div>
+            </div>
+
+            <!-- Additional Info -->
+            <div v-if="hasAdditionalInfo" class="additional-info mb-4">
+              <div class="section-header info-header">
+                <v-icon size="small" class="mr-2" color="info">mdi-information</v-icon>
+                <span class="section-title">Additional Information</span>
+              </div>
+              <div class="info-grid">
+                <div v-if="structured.source" class="info-item">
+                  <span class="info-label">Source</span>
+                  <span class="info-value">{{ structured.source }}</span>
+                </div>
+                <div v-if="structured.helpLink" class="info-item">
+                  <span class="info-label">Help Link</span>
+                  <a :href="structured.helpLink" target="_blank" class="info-link">
+                    {{ structured.helpLink }}
+                  </a>
+                </div>
+                <div v-if="structured.data" class="info-item">
+                  <span class="info-label">Data</span>
+                  <pre class="info-data">{{ JSON.stringify(structured.data, null, 2) }}</pre>
+                </div>
+                <div v-if="structured.innerException" class="info-item">
+                  <span class="info-label">Inner Exception</span>
+                  <pre class="info-data">{{ JSON.stringify(structured.innerException, null, 2) }}</pre>
+                </div>
+              </div>
+            </div>
+
+            <!-- Raw Exception Data -->
+            <div class="raw-data-section">
+              <div class="section-header raw-data-header" @click="showRawData = !showRawData">
+                <v-icon size="small" class="mr-2" color="warning">mdi-json</v-icon>
+                <span class="section-title">Raw Exception Data</span>
+                <v-chip size="x-small" color="warning" variant="tonal" class="ml-2">
+                  {{ showRawData ? 'Collapse' : 'Expand' }}
+                </v-chip>
+                <v-icon
+                  size="small"
+                  class="ml-auto toggle-icon"
+                  :class="{ rotated: showRawData }"
+                >
+                  mdi-chevron-down
+                </v-icon>
+              </div>
+              <div v-show="showRawData" class="raw-data-content">
+                <pre class="raw-data-code">{{ JSON.stringify(structured.details, null, 2) }}</pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- Plain text -->
+          <div v-else-if="isPlain" class="plain-text-wrapper">
+            <div class="plain-indicator mb-2">
+              <v-icon size="x-small" class="mr-1" color="secondary">mdi-text</v-icon>
+              <span class="text-caption text-medium-emphasis">Text content</span>
+            </div>
+            <pre class="message-content">{{ plainText }}</pre>
+          </div>
+
+          <!-- JSON / Generic -->
+          <pre v-else class="message-content" v-html="formattedJsonHtml"></pre>
+        </template>
       </v-card-text>
 
       <v-card-actions>
@@ -594,6 +627,24 @@ async function copyContent() {
   border: 1px solid rgba(255, 255, 255, 0.06);
   color: #e0e0e0;
   flex: 1;
+}
+
+.content-tabs {
+  flex-shrink: 0;
+}
+
+.exception-info-content {
+  height: 100%;
+}
+
+.exception-info-pre {
+  font-family: 'JetBrains Mono', 'Monaco', 'Consolas', monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: #e0e0e0;
 }
 
 /* JSON syntax highlighting */

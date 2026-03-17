@@ -332,6 +332,7 @@ public static class MessagingDashboardEndpoints
                 message.Added,
                 message.ExpiresAt,
                 message.Retries,
+                message.ExceptionInfo,
             }
         );
     }

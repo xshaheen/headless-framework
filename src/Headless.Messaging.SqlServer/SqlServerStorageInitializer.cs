@@ -92,6 +92,7 @@ public sealed class SqlServerStorageInitializer(
                     [ExpiresAt] [datetime2](7) NULL,
                     [StatusName] [nvarchar](50) NOT NULL,
                     [MessageId] [nvarchar](200) NOT NULL,
+                    [ExceptionInfo] [nvarchar](max) NULL,
                     CONSTRAINT [PK_{receivedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
 
@@ -100,6 +101,9 @@ public sealed class SqlServerStorageInitializer(
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_RetryQuery] ON {GetReceivedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC);
             END;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'{GetReceivedTableName()}') AND name = N'ExceptionInfo')
+                ALTER TABLE {GetReceivedTableName()} ADD [ExceptionInfo] nvarchar(max) NULL;
 
             IF OBJECT_ID(N'{GetPublishedTableName()}',N'U') IS NULL
             BEGIN
