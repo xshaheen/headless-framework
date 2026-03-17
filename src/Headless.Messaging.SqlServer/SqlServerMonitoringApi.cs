@@ -221,7 +221,7 @@ internal class SqlServerMonitoringApi(
             .ExecuteScalarAsync(
                 sqlQuery,
                 cancellationToken: cancellationToken,
-                sqlParams: new SqlParameter("@StatusName", statusName)
+                sqlParams: [new SqlParameter("@StatusName", statusName)]
             )
             .ConfigureAwait(false);
     }
@@ -339,7 +339,9 @@ internal class SqlServerMonitoringApi(
                             Added = reader.GetDateTime(2),
                             ExpiresAt = expiresAtIsNull ? null : reader.GetDateTime(3),
                             Retries = reader.GetInt32(4),
-                            ExceptionInfo = await reader.IsDBNullAsync(5, ct).ConfigureAwait(false) ? null : reader.GetString(5),
+                            ExceptionInfo = await reader.IsDBNullAsync(5, ct).ConfigureAwait(false)
+                                ? null
+                                : reader.GetString(5),
                         };
                     }
 

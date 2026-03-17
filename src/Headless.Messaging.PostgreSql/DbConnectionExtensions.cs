@@ -21,7 +21,7 @@ internal static class DbConnectionExtensions
             string sql,
             DbTransaction? transaction = null,
             CancellationToken cancellationToken = default,
-            params object[] sqlParams
+            params object?[] sqlParams
         )
         {
             if (connection.State == ConnectionState.Closed)
@@ -50,7 +50,7 @@ internal static class DbConnectionExtensions
             Func<DbDataReader, CancellationToken, Task<T>>? readerFunc,
             DbTransaction? transaction = null,
             CancellationToken cancellationToken = default,
-            params object[] sqlParams
+            params object?[] sqlParams
         )
         {
             if (connection.State == ConnectionState.Closed)
@@ -86,7 +86,7 @@ internal static class DbConnectionExtensions
         public async Task<int> ExecuteScalarAsync(
             string sql,
             CancellationToken cancellationToken = default,
-            params object[] sqlParams
+            params object?[] sqlParams
         )
         {
             if (connection.State == ConnectionState.Closed)

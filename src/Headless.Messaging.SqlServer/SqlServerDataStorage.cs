@@ -311,8 +311,7 @@ public sealed class SqlServerDataStorage(
                 """,
                 transaction: null,
                 cancellationToken,
-                new SqlParameter("@timeout", timeout),
-                new SqlParameter("@batchCount", batchCount)
+                [new SqlParameter("@timeout", timeout), new SqlParameter("@batchCount", batchCount)]
             )
             .ConfigureAwait(false);
     }
@@ -340,7 +339,7 @@ public sealed class SqlServerDataStorage(
         await using var connection = new SqlConnection(options.Value.ConnectionString);
 
         var affectedRowCount = await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new SqlParameter("@Id", id))
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: [new SqlParameter("@Id", id)])
             .ConfigureAwait(false);
 
         return affectedRowCount;
@@ -353,7 +352,7 @@ public sealed class SqlServerDataStorage(
         await using var connection = new SqlConnection(options.Value.ConnectionString);
 
         var affectedRowCount = await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new SqlParameter("@Id", id))
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: [new SqlParameter("@Id", id)])
             .ConfigureAwait(false);
 
         return affectedRowCount;

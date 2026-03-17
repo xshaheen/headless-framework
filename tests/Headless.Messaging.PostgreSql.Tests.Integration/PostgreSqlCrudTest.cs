@@ -321,7 +321,12 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
 
         // when
-        await _storage.StoreReceivedExceptionMessageAsync("test.topic", "test.group", content, AbortToken);
+        await _storage.StoreReceivedExceptionMessageAsync(
+            "test.topic",
+            "test.group",
+            content,
+            cancellationToken: AbortToken
+        );
 
         // then
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);

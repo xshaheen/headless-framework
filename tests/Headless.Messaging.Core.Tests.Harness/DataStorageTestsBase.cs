@@ -127,7 +127,13 @@ public abstract class DataStorageTestsBase : TestBase
         var content = serializer.Serialize(message);
 
         // when
-        var act = async () => await storage.StoreReceivedExceptionMessageAsync(messageName, group, content, AbortToken);
+        var act = async () =>
+            await storage.StoreReceivedExceptionMessageAsync(
+                messageName,
+                group,
+                content,
+                cancellationToken: AbortToken
+            );
 
         // then
         await act.Should().NotThrowAsync();

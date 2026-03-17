@@ -91,7 +91,12 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
     {
         var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
-        await _storage.StoreReceivedExceptionMessageAsync("test.name", "test.group", content, AbortToken);
+        await _storage.StoreReceivedExceptionMessageAsync(
+            "test.name",
+            "test.group",
+            content,
+            cancellationToken: AbortToken
+        );
     }
 
     [Fact]
