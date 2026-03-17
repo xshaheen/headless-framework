@@ -76,8 +76,6 @@ public sealed class PostgreSqlStorageInitializer(
                 "ExceptionInfo" text NULL
             );
 
-            ALTER TABLE {GetReceivedTableName()} ADD COLUMN IF NOT EXISTS "ExceptionInfo" text NULL;
-
             CREATE UNIQUE INDEX IF NOT EXISTS "idx_received_MessageId_Group" ON {GetReceivedTableName()} ("MessageId","Group");
             CREATE INDEX IF NOT EXISTS "idx_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");

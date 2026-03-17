@@ -102,9 +102,6 @@ public sealed class SqlServerStorageInitializer(
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_RetryQuery] ON {GetReceivedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC);
             END;
 
-            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'{GetReceivedTableName()}') AND name = N'ExceptionInfo')
-                ALTER TABLE {GetReceivedTableName()} ADD [ExceptionInfo] nvarchar(max) NULL;
-
             IF OBJECT_ID(N'{GetPublishedTableName()}',N'U') IS NULL
             BEGIN
                 CREATE TABLE {GetPublishedTableName()}(
