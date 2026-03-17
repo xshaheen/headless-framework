@@ -4208,7 +4208,7 @@ builder.Services.AddNswagOpenApi(options =>
 
 // Middleware
 app.MapNswagOpenApi();         // OpenAPI JSON endpoint
-app.MapHeadlessScalarOpenApi();        // Scalar docs UI
+app.MapScalarOpenApi();        // Scalar docs UI
 ```
 
 For versioned APIs, use `app.MapNswagOpenApiVersions()` instead.
@@ -4219,7 +4219,7 @@ For versioned APIs, use `app.MapNswagOpenApiVersions()` instead.
 - Key processors registered automatically: `FluentValidationSchemaProcessor` (extracts validation rules into schema), `NullabilityAsRequiredSchemaProcessor`, `CamelCaseQueryParameterOperationProcessor`, and response processors for 401/403/ProblemDetails.
 - Framework primitive types (Money, Month, UserId, AccountId) are mapped to OpenAPI types when `AddPrimitiveMappings = true`.
 - For OData support, add `ODataOperationFilter` via `setupGeneratorActions` — only if the API uses OData queries.
-- Use `MapHeadlessScalarOpenApi()` for the docs UI. Configure dark mode, layout, and endpoint prefix via options.
+- Use `MapScalarOpenApi()` for the docs UI. Configure dark mode, layout, and endpoint prefix via options.
 - Scalar depends on `Scalar.AspNetCore` (transitive). NSwag depends on `NSwag.AspNetCore` and `FluentValidation` (transitive).
 - Security: set `AddBearerSecurity = true` for JWT, `AddApiKeySecurity = true` for API key auth. Configure `ApiKeyHeaderName` if non-default.
 - Do NOT add both Swagger UI (from NSwag) and Scalar simultaneously — pick one. Scalar is the recommended choice.
@@ -4371,7 +4371,7 @@ builder.Services.AddNswagOpenApi();
 
 var app = builder.Build();
 
-app.MapHeadlessScalarOpenApi();
+app.MapScalarOpenApi();
 ```
 
 ## Configuration
@@ -4379,7 +4379,7 @@ app.MapHeadlessScalarOpenApi();
 ### Options
 
 ```csharp
-app.MapHeadlessScalarOpenApi(options =>
+app.MapScalarOpenApi(options =>
 {
     options.DarkMode = true;
     options.Layout = ScalarLayout.Modern;
