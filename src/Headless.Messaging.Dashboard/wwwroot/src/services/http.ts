@@ -9,7 +9,7 @@ class HttpService {
 
   constructor() {
     const config = window.MessagingConfig
-    this.baseUrl = config?.backendDomain || config?.basePath || '/messaging/dashboard'
+    this.baseUrl = config?.backendDomain || config?.basePath || '/messaging'
   }
 
   /**

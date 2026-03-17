@@ -43,7 +43,12 @@
 
       <div v-else-if="nodes.length === 0" class="no-data">
         <v-icon size="48" color="grey">mdi-server-network-off</v-icon>
-        <p class="mt-3">No nodes found</p>
+        <p class="mt-3 text-medium-emphasis">No nodes discovered</p>
+        <p class="mt-1 text-caption text-disabled">
+          Node discovery requires a service registry (Consul or Kubernetes).
+          <br />
+          Configure with <code>.UseConsulDiscovery()</code> or <code>.UseK8sDiscovery()</code> in your dashboard setup.
+        </p>
       </div>
 
       <v-card v-else class="nodes-card">
@@ -242,7 +247,8 @@ function parseTags(tags: string): string[] {
 async function pingNode(node: NodeInfo) {
   pingingNodes.add(node.name)
   try {
-    const endpoint = `${node.address}:${node.port}`
+    const hasScheme = node.address.startsWith('http://') || node.address.startsWith('https://')
+    const endpoint = hasScheme ? `${node.address}:${node.port}` : `http://${node.address}:${node.port}`
     const result = await httpService.get<string>(`/ping?endpoint=${encodeURIComponent(endpoint)}`)
     const latency = parseInt(String(result), 10)
     pingResults[node.name] = isNaN(latency) ? -1 : latency

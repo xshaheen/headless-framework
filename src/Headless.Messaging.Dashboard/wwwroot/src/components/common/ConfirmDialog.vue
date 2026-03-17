@@ -43,11 +43,12 @@ type ParsedContent = StructuredException | GenericException | PlainException
 </script>
 
 <script setup lang="ts">
-import { ref, computed, toRef, type PropType } from 'vue'
+import { ref, computed, type PropType } from 'vue'
 
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'confirm'): void
+  (e: 'update:isOpen', value: boolean): void
 }>()
 
 const props = defineProps({
@@ -59,6 +60,11 @@ const props = defineProps({
     type: Boolean,
     required: true,
   },
+})
+
+const dialogOpen = computed({
+  get: () => props.isOpen,
+  set: (value: boolean) => emit('update:isOpen', value),
 })
 
 // Collapsible section state
@@ -168,7 +174,7 @@ const exceptionData = computed(() => {
 
 <template>
   <div class="text-center pa-4">
-    <v-dialog v-model="toRef(props, 'isOpen').value" :max-width="dialogProps.maxWidth" persistent>
+    <v-dialog v-model="dialogOpen" :max-width="dialogProps.maxWidth" persistent>
       <v-card :title="dialogProps.title" class="exception-dialog">
         <template #text>
           <!-- Warning Alert -->
