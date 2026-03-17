@@ -16,7 +16,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Primitives;
 
 namespace Headless.Messaging.Dashboard;
 
@@ -554,7 +553,7 @@ public static class MessagingDashboardEndpoints
     #endregion
 }
 
-public class WarpResult
+internal sealed class WarpResult
 {
     public int ChildCount => Values.Count;
 
@@ -569,16 +568,5 @@ public class WarpResult
         public required string ImplName { get; set; }
 
         public required string MethodEscaped { get; set; }
-    }
-}
-
-/// <summary>
-/// Extension to parse StringValues to int with a default.
-/// </summary>
-public static class IntExtension
-{
-    public static int ToInt32OrDefault(this StringValues value, int defaultValue = 0)
-    {
-        return int.TryParse(value, CultureInfo.InvariantCulture, out var result) ? result : defaultValue;
     }
 }

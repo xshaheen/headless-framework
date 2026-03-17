@@ -164,6 +164,7 @@ const nodes = ref<NodeInfo[]>([])
 const pingResults = reactive<Record<string, number>>({})
 const pingingNodes = reactive(new Set<string>())
 const isPingingAll = ref(false)
+let loadGeneration = 0
 
 const namespaces = ref<string[]>([])
 const selectedNamespace = ref<string | null>(getCookie('messaging.node.ns'))
@@ -197,15 +198,18 @@ async function onNamespaceChange(ns: string) {
 }
 
 async function loadNodesByNamespace(ns: string) {
+  const generation = ++loadGeneration
   isLoading.value = true
   try {
     const data = await httpService.get<NodeInfo[]>(`/list-svc/${encodeURIComponent(ns)}`)
+    if (generation !== loadGeneration) return
     nodes.value = data || []
   } catch (error) {
+    if (generation !== loadGeneration) return
     console.error('Failed to load nodes for namespace:', error)
     alertStore.showError('Failed to load nodes for namespace')
   } finally {
-    isLoading.value = false
+    if (generation === loadGeneration) isLoading.value = false
   }
 }
 
@@ -216,15 +220,18 @@ async function loadNodes() {
     return
   }
 
+  const generation = ++loadGeneration
   isLoading.value = true
   try {
     const data = await httpService.get<NodeInfo[]>('/nodes')
+    if (generation !== loadGeneration) return
     nodes.value = data || []
   } catch (error) {
+    if (generation !== loadGeneration) return
     console.error('Failed to load nodes:', error)
     alertStore.showError('Failed to load nodes')
   } finally {
-    isLoading.value = false
+    if (generation === loadGeneration) isLoading.value = false
   }
 }
 
@@ -245,6 +252,7 @@ function parseTags(tags: string): string[] {
 
 // --- Ping ---
 async function pingNode(node: NodeInfo) {
+  if (pingingNodes.has(node.name)) return
   pingingNodes.add(node.name)
   try {
     const hasScheme = node.address.startsWith('http://') || node.address.startsWith('https://')

@@ -489,11 +489,13 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         const int maxTotalDays = 14;
         var today = _timeProvider.GetUtcNow().UtcDateTime.Date;
 
-        var cronJobOccurrencesPast = await _persistenceProvider.GetAllCronJobOccurrences(
-            x => x.CronJobId == guid && x.ExecutionTime.Date < today,
+        // Single DB query — split into past/today/future in memory
+        var allOccurrences = await _persistenceProvider.GetAllCronJobOccurrences(
+            x => x.CronJobId == guid,
             cancellationToken
         );
-        var pastData = cronJobOccurrencesPast
+
+        var grouped = allOccurrences
             .GroupBy(x => x.ExecutionTime.Date)
             .Select(group => new CronOccurrenceJobGraphData
             {
@@ -503,44 +505,12 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
                     .Select(statusGroup => new Tuple<int, int>((int)statusGroup.Key, statusGroup.Count()))
                     .ToArray(),
             })
-            .OrderBy(d => d.Date)
             .ToList();
 
-        var cronJobOccurrencesToday = await _persistenceProvider.GetAllCronJobOccurrences(
-            x => x.CronJobId == guid && x.ExecutionTime.Date == today,
-            cancellationToken
-        );
-
-        var todayData =
-            cronJobOccurrencesToday
-                .GroupBy(x => x.ExecutionTime.Date)
-                .Select(group => new CronOccurrenceJobGraphData
-                {
-                    Date = group.Key,
-                    Results = group
-                        .GroupBy(x => x.Status)
-                        .Select(statusGroup => new Tuple<int, int>((int)statusGroup.Key, statusGroup.Count()))
-                        .ToArray(),
-                })
-                .FirstOrDefault()
+        var pastData = grouped.Where(d => d.Date < today).OrderBy(d => d.Date).ToList();
+        var todayData = grouped.FirstOrDefault(d => d.Date == today)
             ?? new CronOccurrenceJobGraphData { Date = today, Results = [] };
-
-        var cronJobOccurrencesFuture = await _persistenceProvider.GetAllCronJobOccurrences(
-            x => x.CronJobId == guid && x.ExecutionTime.Date > today,
-            cancellationToken
-        );
-        var futureData = cronJobOccurrencesFuture
-            .GroupBy(x => x.ExecutionTime.Date)
-            .Select(group => new CronOccurrenceJobGraphData
-            {
-                Date = group.Key,
-                Results = group
-                    .GroupBy(x => x.Status)
-                    .Select(statusGroup => new Tuple<int, int>((int)statusGroup.Key, statusGroup.Count()))
-                    .ToArray(),
-            })
-            .OrderBy(d => d.Date)
-            .ToList();
+        var futureData = grouped.Where(d => d.Date > today).OrderBy(d => d.Date).ToList();
 
         int pastDaysWithData = pastData.Count;
         int futureDaysWithData = futureData.Count;

@@ -57,16 +57,17 @@ internal class JobsRedisContext(
             return [];
         }
 
-        var deadNodes = new List<string>();
+        // Check heartbeats concurrently to avoid N+1 sequential Redis reads
+        var nodes = Array.ConvertAll(members, m => m.ToString());
+        var heartbeatTasks = Array.ConvertAll(nodes, node => _cache.GetStringAsync($"hb:{node}"));
+        var heartbeats = await Task.WhenAll(heartbeatTasks);
 
-        // Check which ones are dead
-        foreach (var member in members)
+        var deadNodes = new List<string>();
+        for (var i = 0; i < nodes.Length; i++)
         {
-            var node = member.ToString();
-            var heartbeat = await _cache.GetStringAsync($"hb:{node}");
-            if (string.IsNullOrEmpty(heartbeat))
+            if (string.IsNullOrEmpty(heartbeats[i]))
             {
-                deadNodes.Add(node);
+                deadNodes.Add(nodes[i]);
             }
         }
 

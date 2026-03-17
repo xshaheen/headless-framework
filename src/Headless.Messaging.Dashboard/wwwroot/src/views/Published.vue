@@ -169,7 +169,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { httpService } from '@/services/http'
 import { useAlertStore } from '@/stores/alertStore'
@@ -243,6 +243,8 @@ const detailDialogOpen = ref(false)
 const detailMessage = ref<MessageDetail | null>(null)
 let pendingAction: (() => Promise<void>) | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let isExecuting = false
+let loadGeneration = 0
 
 const confirmDialog = useDialog<ConfirmDialogProps>().withComponent(
   () => import('@/components/common/ConfirmDialog.vue'),
@@ -257,6 +259,7 @@ const pagination = usePagination(
 )
 
 async function loadMessages(page?: number, pageSize?: number) {
+  const generation = ++loadGeneration
   isLoading.value = true
   try {
     const p = page ?? pagination.currentPage.value
@@ -274,15 +277,17 @@ async function loadMessages(page?: number, pageSize?: number) {
       ),
       messagingStore.fetchStats(),
     ])
+    if (generation !== loadGeneration) return
     messages.value = data.items || []
     pagination.totalCount.value = data.totals || 0
     selectedIds.value = []
     selectAll.value = false
   } catch (error) {
+    if (generation !== loadGeneration) return
     console.error('Failed to load published messages:', error)
     alertStore.showError('Failed to load published messages')
   } finally {
-    isLoading.value = false
+    if (generation === loadGeneration) isLoading.value = false
   }
 }
 
@@ -297,6 +302,10 @@ function debouncedLoad() {
 watch(activeStatus, () => {
   pagination.currentPage.value = 1
   loadMessages()
+})
+
+onUnmounted(() => {
+  if (debounceTimer) clearTimeout(debounceTimer)
 })
 
 function toggleSelectAll(checked: boolean | null) {
@@ -365,10 +374,16 @@ function handleBatchDelete() {
 }
 
 async function onConfirmAction() {
+  if (isExecuting) return
+  isExecuting = true
   confirmDialog.close()
-  if (pendingAction) {
-    await pendingAction()
-    pendingAction = null
+  try {
+    if (pendingAction) {
+      await pendingAction()
+      pendingAction = null
+    }
+  } finally {
+    isExecuting = false
   }
 }
 

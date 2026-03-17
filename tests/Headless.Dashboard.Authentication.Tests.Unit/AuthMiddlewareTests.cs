@@ -93,7 +93,7 @@ public sealed class AuthMiddlewareTests : TestBase
         await middleware.InvokeAsync(context);
 
         nextCalled.Should().BeTrue();
-        context.Items["auth.authenticated"].Should().Be(true);
-        context.Items["auth.username"].Should().Be("api-user");
+        context.Items[AuthMiddleware.AuthenticatedKey].Should().Be(true);
+        context.Items[AuthMiddleware.UsernameKey].Should().Be("api-user");
     }
 }

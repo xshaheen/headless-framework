@@ -1,104 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Dashboard;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Primitives;
 
 namespace Tests.Security;
 
 /// <summary>
 /// CRITICAL SECURITY TESTS: Input validation for dashboard endpoints
-/// Documents the unbounded page size vulnerability and input validation issues.
+/// Documents input validation issues.
 /// </summary>
 public sealed class InputValidationTests : TestBase
 {
-    [Fact]
-    public void should_limit_page_size_to_maximum()
-    {
-        // VULNERABILITY: The current implementation does NOT limit page size
-        // An attacker can request perPage=999999999 causing memory exhaustion
-
-        // Document that ToInt32OrDefault parses any valid integer without bounds
-        var hugePageSize = new StringValues("999999999");
-        var result = hugePageSize.ToInt32OrDefault(20);
-
-        // The value is parsed as-is without any maximum limit
-        result.Should().Be(999999999);
-
-        // EXPECTED BEHAVIOR (when fixed):
-        // - Maximum page size should be limited (e.g., 100 or 500)
-        // - Values above max should be clamped to max
-        // - Or validation should reject requests with excessive page sizes
-
-        // Current vulnerable code in RouteActionProvider.PublishedList:
-        // var pageSize = httpContext.Request.Query["perPage"].ToInt32OrDefault(20);
-        // This pageSize is passed directly to MessageQuery.PageSize without validation
-    }
-
-    [Theory]
-    [InlineData("10000", 20)] // Should be clamped to max
-    [InlineData("1000", 20)] // Should be clamped to max
-    [InlineData("500", 20)] // May be acceptable depending on policy
-    public void perPage_should_be_clamped_to_maximum_allowed(string requestedSize, int defaultValue)
-    {
-        // This test documents that large page sizes should be clamped
-        var value = new StringValues(requestedSize);
-        var parsed = value.ToInt32OrDefault(defaultValue);
-
-        // Currently: no clamping occurs
-        parsed.Should().Be(int.Parse(requestedSize, CultureInfo.InvariantCulture));
-
-        // When fixed: should be clamped to reasonable maximum (e.g., 100)
-        // parsed.Should().BeLessOrEqualTo(100);
-    }
-
-    [Theory]
-    [InlineData("-1")]
-    [InlineData("-100")]
-    public void perPage_should_reject_negative_values(string negativeValue)
-    {
-        // Document that negative page sizes should be rejected or normalized
-        var value = new StringValues(negativeValue);
-        var parsed = value.ToInt32OrDefault(20);
-
-        // Currently: negative values are parsed as-is
-        parsed.Should().BeNegative();
-
-        // When fixed: should be rejected or normalized to default
-        // parsed.Should().BePositive();
-    }
-
-    [Theory]
-    [InlineData("0")]
-    public void perPage_with_zero_should_use_default(string zeroValue)
-    {
-        // Zero page size doesn't make sense
-        var value = new StringValues(zeroValue);
-        var parsed = value.ToInt32OrDefault(20);
-
-        // Currently: zero is returned as-is
-        parsed.Should().Be(0);
-
-        // When fixed: zero should be treated as invalid and use default
-        // parsed.Should().Be(20);
-    }
-
-    [Theory]
-    [InlineData("-1")]
-    [InlineData("-100")]
-    public void currentPage_should_reject_negative_values(string negativeValue)
-    {
-        // Document that negative page numbers should be rejected
-        var value = new StringValues(negativeValue);
-        var parsed = value.ToInt32OrDefault(1);
-
-        // Currently: negative values are parsed as-is
-        parsed.Should().BeNegative();
-
-        // When fixed: should be rejected or normalized to 1
-        // parsed.Should().BePositive();
-    }
-
     [Fact]
     public void message_id_should_validate_format()
     {

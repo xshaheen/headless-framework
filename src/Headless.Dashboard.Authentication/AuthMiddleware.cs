@@ -10,6 +10,12 @@ namespace Headless.Dashboard.Authentication;
 /// </summary>
 public sealed class AuthMiddleware
 {
+    /// <summary>Key used to store the authenticated username in <see cref="HttpContext.Items"/>.</summary>
+    public const string UsernameKey = "auth.username";
+
+    /// <summary>Key used to store the authentication flag in <see cref="HttpContext.Items"/>.</summary>
+    public const string AuthenticatedKey = "auth.authenticated";
+
     private readonly RequestDelegate _next;
     private readonly ILogger<AuthMiddleware> _logger;
 
@@ -56,8 +62,8 @@ public sealed class AuthMiddleware
         }
 
         // Set user information for downstream middleware
-        context.Items["auth.username"] = authResult.Username;
-        context.Items["auth.authenticated"] = true;
+        context.Items[UsernameKey] = authResult.Username;
+        context.Items[AuthenticatedKey] = true;
 
         await _next(context);
     }
