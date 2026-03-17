@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "015"
 tags: ["code-review","concurrency","typescript"]
@@ -48,3 +48,15 @@ Also fix overlapping poll cycles (P2): setInterval fires regardless of whether p
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-17 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-17 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

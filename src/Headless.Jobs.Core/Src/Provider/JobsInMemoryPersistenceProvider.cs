@@ -9,22 +9,18 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs.Provider;
 
-internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJobPersistenceProvider<TTimeJob, TCronJob>
+internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJobPersistenceProvider<TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    private static readonly ConcurrentDictionary<Guid, TTimeJob> _TimeJobs = new(new Dictionary<Guid, TTimeJob>());
+    private readonly ConcurrentDictionary<Guid, TTimeJob> _TimeJobs = new();
 
     // Index of parent -> child ids for fast hierarchy lookup in memory
-    private static readonly ConcurrentDictionary<Guid, ConcurrentDictionary<Guid, byte>> _ChildrenIndex = new(
-        new Dictionary<Guid, ConcurrentDictionary<Guid, byte>>()
-    );
+    private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<Guid, byte>> _ChildrenIndex = new();
 
-    private static readonly ConcurrentDictionary<Guid, TCronJob> _CronJobs = new(new Dictionary<Guid, TCronJob>());
+    private readonly ConcurrentDictionary<Guid, TCronJob> _CronJobs = new();
 
-    private static readonly ConcurrentDictionary<Guid, CronJobOccurrenceEntity<TCronJob>> _CronOccurrences = new(
-        new Dictionary<Guid, CronJobOccurrenceEntity<TCronJob>>()
-    );
+    private readonly ConcurrentDictionary<Guid, CronJobOccurrenceEntity<TCronJob>> _CronOccurrences = new();
 
     private readonly TimeProvider _timeProvider;
     private readonly string _lockHolder;
@@ -74,7 +70,6 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJobPersist
             }
         }
 
-        await Task.CompletedTask;
     }
 
     public async IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobs(
@@ -118,7 +113,6 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJobPersist
             }
         }
 
-        await Task.CompletedTask;
     }
 
     public Task ReleaseAcquiredTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken = default)
@@ -363,7 +357,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJobPersist
         return Task.FromResult(count);
     }
 
-    private static int _AddTickerWithChildren(TTimeJob job, Guid? parentId = null)
+    private int _AddTickerWithChildren(TTimeJob job, Guid? parentId = null)
     {
         var count = 0;
 
@@ -412,7 +406,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJobPersist
         return Task.FromResult(count);
     }
 
-    private static int _UpdateTickerWithChildren(TTimeJob job, Guid? parentId = null)
+    private int _UpdateTickerWithChildren(TTimeJob job, Guid? parentId = null)
     {
         var count = 0;
 
@@ -1095,7 +1089,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJobPersist
         return root;
     }
 
-    private static List<TTimeJob> _BuildChildrenHierarchy(Guid parentId)
+    private List<TTimeJob> _BuildChildrenHierarchy(Guid parentId)
     {
         if (!_ChildrenIndex.TryGetValue(parentId, out var children) || children.IsEmpty)
         {
@@ -1120,7 +1114,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJobPersist
     }
 
     // Matches EF Core's MappingExtensions.ForQueueTimeJobs but uses an in-memory children index
-    private static TimeJobEntity _ForQueueTimeJobs(TTimeJob job)
+    private TimeJobEntity _ForQueueTimeJobs(TTimeJob job)
     {
         var root = new TimeJobEntity
         {
@@ -1198,13 +1192,13 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJobPersist
         return root;
     }
 
-    private static void _AddChildIndex(Guid parentId, Guid childId)
+    private void _AddChildIndex(Guid parentId, Guid childId)
     {
         var children = _ChildrenIndex.GetOrAdd(parentId, _ => new ConcurrentDictionary<Guid, byte>());
         children.TryAdd(childId, 0);
     }
 
-    private static void _RemoveChildIndex(Guid parentId, Guid childId)
+    private void _RemoveChildIndex(Guid parentId, Guid childId)
     {
         if (!_ChildrenIndex.TryGetValue(parentId, out var children))
         {
@@ -1220,7 +1214,7 @@ internal class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJobPersist
         }
     }
 
-    private static Guid[] _GetChildrenIds(Guid parentId)
+    private Guid[] _GetChildrenIds(Guid parentId)
     {
         if (!_ChildrenIndex.TryGetValue(parentId, out var children))
         {

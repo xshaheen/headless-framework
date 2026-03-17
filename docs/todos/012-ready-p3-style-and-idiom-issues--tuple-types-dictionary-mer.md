@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "012"
 tags: ["code-review","quality","dotnet"]
@@ -52,3 +52,9 @@ Source: Code review
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-17 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

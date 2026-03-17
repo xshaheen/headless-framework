@@ -164,6 +164,6 @@ internal class JobsRedisContext(
         }
 #pragma warning restore ERP022, RCS1075
 
-        return null;
+        return result;
     }
 }

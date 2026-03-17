@@ -22,13 +22,21 @@ internal sealed class NodeHeartBeatBackgroundService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        try
+        while (!stoppingToken.IsCancellationRequested)
         {
-            await _RunJobsFallbackAsync(stoppingToken);
-        }
-        catch (Exception e)
-        {
-            logger.LogError("Heartbeat background service failed: {Exception}", e);
+            try
+            {
+                await _RunJobsFallbackAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                logger.LogError(e, "Heartbeat background service failed");
+                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+            }
         }
     }
 

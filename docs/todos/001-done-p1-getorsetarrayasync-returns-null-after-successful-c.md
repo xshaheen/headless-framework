@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "001"
 tags: ["code-review","correctness","dotnet"]
@@ -47,3 +47,15 @@ Confirmed by 3 independent reviewers. The catch block comment says 'result alrea
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-17 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-17 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

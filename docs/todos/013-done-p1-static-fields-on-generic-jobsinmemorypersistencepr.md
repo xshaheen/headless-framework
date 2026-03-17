@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "013"
 tags: ["code-review","correctness","dotnet"]
@@ -48,3 +48,15 @@ Also fix: replace new(new Dictionary<>()) with new() on all 4 fields (unnecessar
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-17 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-17 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

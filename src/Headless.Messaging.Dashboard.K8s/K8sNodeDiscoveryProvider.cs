@@ -189,7 +189,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
     /// </summary>
     private static int _GetPortByName(IList<V1ServicePort> servicePorts, string portName)
     {
-        if (!string.IsNullOrEmpty(portName))
+        if (string.IsNullOrEmpty(portName))
         {
             return 0;
         }

@@ -13,6 +13,9 @@ namespace Headless.Jobs.BackgroundServices;
 /// </summary>
 internal sealed class JobsInitializationHostedService(IServiceProvider serviceProvider) : IHostedService
 {
+    private Action<object?, CoreNotifyActionType>? _notifyCoreHandler;
+    private JobsExecutionContext? _executionContext;
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var executionContext = serviceProvider.GetRequiredService<JobsExecutionContext>();
@@ -26,7 +29,8 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
         {
             backgroundScheduler.SkipFirstRun = schedulerOptions.StartMode == JobsStartMode.Manual;
 
-            executionContext.NotifyCoreAction += (value, type) =>
+            _executionContext = executionContext;
+            _notifyCoreHandler = (value, type) =>
             {
                 if (value is null)
                 {
@@ -54,6 +58,7 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
                         break;
                 }
             };
+            executionContext.NotifyCoreAction += _notifyCoreHandler;
         }
 
         // Build function metadata
@@ -86,7 +91,15 @@ internal sealed class JobsInitializationHostedService(IServiceProvider servicePr
         }
     }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        if (_executionContext is not null && _notifyCoreHandler is not null)
+        {
+            _executionContext.NotifyCoreAction -= _notifyCoreHandler;
+        }
+
+        return Task.CompletedTask;
+    }
 
     private static async Task _SeedDefinedCronJobsAsync(IServiceProvider serviceProvider)
     {

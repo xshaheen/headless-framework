@@ -70,6 +70,8 @@ export const useMessagingStore = defineStore('messaging', () => {
   })
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
+  let isStarting = false
+  let isPollRunning = false
 
   // --- Fetch actions ---
 
@@ -121,10 +123,16 @@ export const useMessagingStore = defineStore('messaging', () => {
     try {
       const data = await httpService.get<Record<string, unknown[]>>('/metrics-history')
       metricsHistory.dayHour = (data.DayHour ?? data.dayHour ?? []) as number[]
-      metricsHistory.publishSucceeded = (data.PublishSuccessed ?? data.publishSuccessed ?? []) as number[]
+      metricsHistory.publishSucceeded = (data.PublishSuccessed ??
+        data.publishSuccessed ??
+        []) as number[]
       metricsHistory.publishFailed = (data.PublishFailed ?? data.publishFailed ?? []) as number[]
-      metricsHistory.subscribeSucceeded = (data.SubscribeSuccessed ?? data.subscribeSuccessed ?? []) as number[]
-      metricsHistory.subscribeFailed = (data.SubscribeFailed ?? data.subscribeFailed ?? []) as number[]
+      metricsHistory.subscribeSucceeded = (data.SubscribeSuccessed ??
+        data.subscribeSuccessed ??
+        []) as number[]
+      metricsHistory.subscribeFailed = (data.SubscribeFailed ??
+        data.subscribeFailed ??
+        []) as number[]
     } catch (error) {
       console.error('Failed to fetch metrics history:', error)
     } finally {
@@ -135,30 +143,41 @@ export const useMessagingStore = defineStore('messaging', () => {
   // --- Lifecycle ---
 
   async function startPolling(): Promise<void> {
-    if (pollTimer !== null) return
+    if (pollTimer !== null || isStarting) return
+    isStarting = true
 
-    isLoading.value = true
     try {
-      const initialFetches: Promise<void>[] = [fetchStats(), fetchRealtimeMetrics()]
+      isLoading.value = true
+      try {
+        const initialFetches: Promise<void>[] = [fetchStats(), fetchRealtimeMetrics()]
 
-      if (!isMetaLoaded.value) {
-        initialFetches.push(fetchMeta())
+        if (!isMetaLoaded.value) {
+          initialFetches.push(fetchMeta())
+        }
+
+        if (!isHistoryLoaded.value) {
+          initialFetches.push(fetchMetricsHistory())
+        }
+
+        await Promise.all(initialFetches)
+      } catch {
+        alertStore.showError('Failed to load dashboard data')
+      } finally {
+        isLoading.value = false
       }
 
-      if (!isHistoryLoaded.value) {
-        initialFetches.push(fetchMetricsHistory())
-      }
-
-      await Promise.all(initialFetches)
-    } catch (error) {
-      alertStore.showError('Failed to load dashboard data')
+      pollTimer = setInterval(async () => {
+        if (isPollRunning) return
+        isPollRunning = true
+        try {
+          await Promise.all([fetchStats(), fetchRealtimeMetrics()])
+        } finally {
+          isPollRunning = false
+        }
+      }, POLLING_INTERVAL_MS)
     } finally {
-      isLoading.value = false
+      isStarting = false
     }
-
-    pollTimer = setInterval(async () => {
-      await Promise.all([fetchStats(), fetchRealtimeMetrics()])
-    }, POLLING_INTERVAL_MS)
   }
 
   function stopPolling(): void {

@@ -497,6 +497,7 @@ public static class MessagingDashboardEndpoints
     private static async Task<IResult> _PingServices(
         string? endpoint,
         IServiceProvider sp,
+        IHttpClientFactory httpClientFactory,
         MessagingDashboardOptionsBuilder config
     )
     {
@@ -522,7 +523,7 @@ public static class MessagingDashboardEndpoints
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
-        using var httpClient = new HttpClient();
+        using var httpClient = httpClientFactory.CreateClient();
         var sw = new Stopwatch();
         try
         {

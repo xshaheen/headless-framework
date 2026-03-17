@@ -70,7 +70,7 @@ public class AuthMiddleware
             || path.EndsWith(".png", StringComparison.Ordinal)
             || path.EndsWith(".jpg", StringComparison.Ordinal)
             || path.EndsWith(".svg", StringComparison.Ordinal)
-            || path.Contains("/negotiate", StringComparison.Ordinal)
+            || path.EndsWith("/negotiate", StringComparison.Ordinal)
             || string.Equals(path, "/api/auth/validate", StringComparison.Ordinal)
             || string.Equals(path, "/api/auth/info", StringComparison.Ordinal);
     }

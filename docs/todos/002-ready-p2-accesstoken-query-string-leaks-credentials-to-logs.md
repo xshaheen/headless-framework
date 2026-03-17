@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "002"
 tags: ["code-review","security","dotnet"]
@@ -48,3 +48,9 @@ Combined with the /negotiate Contains bypass (P1), this is a compounding vulnera
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-17 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

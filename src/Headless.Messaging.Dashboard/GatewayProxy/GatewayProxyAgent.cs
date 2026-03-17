@@ -26,8 +26,6 @@ public class GatewayProxyAgent(
         serviceProvider.GetService<ConsulDiscoveryOptions>();
     private readonly ILogger _logger = loggerFactory.CreateLogger<GatewayProxyAgent>();
 
-    protected HttpRequestMessage? DownstreamRequest { get; set; }
-
     public async Task<bool> Invoke(HttpContext context)
     {
         var request = context.Request;
@@ -49,7 +47,7 @@ public class GatewayProxyAgent(
         {
             if (request.Cookies.TryGetValue(CookieNodeNsName, out var ns))
             {
-                var cacheKey = requestNodeName + ns;
+                var cacheKey = $"{requestNodeName}\0{ns}";
                 if (!cache.TryGetValue(cacheKey, out node))
                 {
                     node = await discoveryProvider.GetNode(requestNodeName, ns);
@@ -79,16 +77,17 @@ public class GatewayProxyAgent(
         {
             try
             {
-                DownstreamRequest = await requestMapper.Map(request);
+                var downstreamRequest = await requestMapper.Map(request);
 
                 _SetDownStreamRequestUri(
+                    downstreamRequest,
                     node,
                     request.Path.Value ?? string.Empty,
                     request.QueryString.Value ?? string.Empty
                 );
 
                 using var client = httpClientFactory.CreateClient("GatewayProxy");
-                var response = await client.SendAsync(DownstreamRequest);
+                using var response = await client.SendAsync(downstreamRequest, context.RequestAborted);
 
                 await _SetResponseOnHttpContext(context, response);
 
@@ -143,7 +142,12 @@ public class GatewayProxyAgent(
         }
     }
 
-    private void _SetDownStreamRequestUri(Node node, string requestPath, string queryString)
+    private static void _SetDownStreamRequestUri(
+        HttpRequestMessage downstreamRequest,
+        Node node,
+        string requestPath,
+        string queryString
+    )
     {
         var uriBuilder = !node.Address.StartsWith("http", StringComparison.Ordinal)
             ? new UriBuilder("http://", node.Address, node.Port, requestPath, queryString)
@@ -154,7 +158,7 @@ public class GatewayProxyAgent(
             uriBuilder.Port = node.Port;
         }
 
-        DownstreamRequest?.RequestUri = uriBuilder.Uri;
+        downstreamRequest.RequestUri = uriBuilder.Uri;
     }
 
     private static void _AddHeaderIfDoesntExist(

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "004"
 tags: ["code-review","performance","dotnet"]
@@ -48,3 +48,15 @@ Confirmed by 5 independent reviewers. Also a DoS amplifier since the endpoint is
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-17 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-17 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "010"
 tags: ["code-review","correctness","concurrency","dotnet"]
@@ -54,3 +54,9 @@ The redundant re-read in _RemoveNodesFromRegistryAsync (line 76) compounds the p
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-17 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
