@@ -8,7 +8,7 @@ namespace Headless.Dashboard.Authentication;
 /// Authentication middleware that only protects API endpoints.
 /// Static files, negotiate, and auth endpoints are excluded.
 /// </summary>
-public class AuthMiddleware
+public sealed class AuthMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<AuthMiddleware> _logger;
@@ -48,7 +48,8 @@ public class AuthMiddleware
 
         if (!authResult.IsAuthenticated)
         {
-            _logger.LogWarning("Authentication failed for {Path}: {Error}", path, authResult.ErrorMessage);
+            // Log path only (no query string) — access_token may be in query params.
+            _logger.LogWarning("Authentication failed for {Path}: {Error}", context.Request.Path, authResult.ErrorMessage);
             context.Response.StatusCode = 401;
             await context.Response.WriteAsync("Unauthorized");
             return;

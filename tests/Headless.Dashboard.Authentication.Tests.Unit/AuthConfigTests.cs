@@ -112,7 +112,7 @@ public sealed class AuthConfigTests : TestBase
         var config = new AuthConfig
         {
             Mode = AuthMode.Custom,
-            CustomValidator = _ => true,
+            CustomValidator = (_, _) => true,
         };
 
         var act = () => config.Validate();

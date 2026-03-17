@@ -21,15 +21,15 @@ builder
     })
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false;
+        options.RequireHttpsMetadata = false; // DEMO ONLY — require HTTPS in production
         options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(key),
 #pragma warning disable CA5404
-            ValidateIssuer = false,
-            ValidateAudience = false,
+            ValidateIssuer = false, // DEMO ONLY — validate issuer in production
+            ValidateAudience = false, // DEMO ONLY — validate audience in production
 #pragma warning restore CA5404
             ValidateLifetime = true,
             RequireExpirationTime = true,

@@ -21,11 +21,11 @@ public interface IAuthService
 /// <summary>
 /// Authentication result.
 /// </summary>
-public class AuthResult
+public sealed class AuthResult
 {
-    public bool IsAuthenticated { get; set; }
-    public string? Username { get; set; }
-    public string? ErrorMessage { get; set; }
+    public bool IsAuthenticated { get; init; }
+    public string? Username { get; init; }
+    public string? ErrorMessage { get; init; }
 
     public static AuthResult Success(string? username = null) =>
         new() { IsAuthenticated = true, Username = username ?? "user" };
@@ -37,9 +37,9 @@ public class AuthResult
 /// <summary>
 /// Authentication information for frontend.
 /// </summary>
-public class AuthInfo
+public sealed class AuthInfo
 {
-    public AuthMode Mode { get; set; }
-    public bool IsEnabled { get; set; }
-    public int SessionTimeoutMinutes { get; set; }
+    public AuthMode Mode { get; init; }
+    public bool IsEnabled { get; init; }
+    public int SessionTimeoutMinutes { get; init; }
 }

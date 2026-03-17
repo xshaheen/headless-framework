@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import AuthHeader from '../common/AuthHeader.vue'
@@ -35,7 +35,14 @@ function getNodeCookie(): string | null {
   return m ? decodeURIComponent(m[1]) : null
 }
 
-const switchedNode = computed(() => getNodeCookie())
+const switchedNode = ref<string | null>(getNodeCookie())
+
+function onNodeSwitched() {
+  switchedNode.value = getNodeCookie()
+}
+
+onMounted(() => window.addEventListener('messaging:node-switched', onNodeSwitched))
+onUnmounted(() => window.removeEventListener('messaging:node-switched', onNodeSwitched))
 
 const router = useRouter()
 

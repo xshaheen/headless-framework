@@ -7,7 +7,7 @@ namespace Headless.Dashboard.Authentication;
 /// <summary>
 /// Authentication service supporting 5 modes: None, Basic, ApiKey, Host, Custom.
 /// </summary>
-public class AuthService : IAuthService
+public sealed class AuthService : IAuthService
 {
     private readonly AuthConfig _config;
     private readonly ILogger<AuthService> _logger;
@@ -47,7 +47,7 @@ public class AuthService : IAuthService
             {
                 AuthMode.Basic => await _AuthenticateBasicAsync(authHeader),
                 AuthMode.ApiKey => await _AuthenticateApiKeyAsync(authHeader),
-                AuthMode.Custom => await _AuthenticateCustomAsync(authHeader),
+                AuthMode.Custom => await _AuthenticateCustomAsync(authHeader, context.RequestServices),
                 _ => AuthResult.Failure("Invalid authentication mode"),
             };
         }
@@ -77,11 +77,18 @@ public class AuthService : IAuthService
             return authHeader;
         }
 
-        // Try access_token query parameter (for SignalR WebSocket)
-        var accessToken = context.Request.Query["access_token"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(accessToken))
+        // Try access_token query parameter only for SignalR paths.
+        // Query strings leak to server logs, browser history, and Referer headers,
+        // so we restrict this to SignalR endpoints where WebSocket auth requires it.
+        var path = context.Request.Path.Value ?? "";
+        if (path.Contains("/hub", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/negotiate", StringComparison.OrdinalIgnoreCase))
         {
-            return accessToken;
+            var accessToken = context.Request.Query["access_token"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(accessToken))
+            {
+                return accessToken;
+            }
         }
 
         return null;
@@ -152,11 +159,11 @@ public class AuthService : IAuthService
 #pragma warning restore ERP022
     }
 
-    private Task<AuthResult> _AuthenticateCustomAsync(string authHeader)
+    private Task<AuthResult> _AuthenticateCustomAsync(string authHeader, IServiceProvider serviceProvider)
     {
         try
         {
-            if (_config.CustomValidator?.Invoke(authHeader) == true)
+            if (_config.CustomValidator?.Invoke(authHeader, serviceProvider) == true)
             {
                 return Task.FromResult(AuthResult.Success("custom-user"));
             }

@@ -121,7 +121,7 @@ public sealed class AuthServiceTests : TestBase
         var config = new AuthConfig
         {
             Mode = AuthMode.Custom,
-            CustomValidator = token => token == "valid-token",
+            CustomValidator = (token, _) => token == "valid-token",
         };
         var service = new AuthService(config, _logger);
         var context = new DefaultHttpContext();
@@ -139,7 +139,7 @@ public sealed class AuthServiceTests : TestBase
         var config = new AuthConfig
         {
             Mode = AuthMode.Custom,
-            CustomValidator = token => token == "valid-token",
+            CustomValidator = (token, _) => token == "valid-token",
         };
         var service = new AuthService(config, _logger);
         var context = new DefaultHttpContext();

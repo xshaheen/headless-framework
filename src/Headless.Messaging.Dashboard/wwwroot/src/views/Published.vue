@@ -259,8 +259,8 @@ const pagination = usePagination(
 async function loadMessages(page?: number, pageSize?: number) {
   isLoading.value = true
   try {
-    const p = page || pagination.currentPage.value
-    const ps = pageSize || pagination.pageSize.value
+    const p = page ?? pagination.currentPage.value
+    const ps = pageSize ?? pagination.pageSize.value
     const params = new URLSearchParams({
       currentPage: String(p),
       perPage: String(ps),

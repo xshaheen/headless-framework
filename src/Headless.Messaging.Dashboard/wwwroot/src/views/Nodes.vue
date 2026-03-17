@@ -149,7 +149,7 @@ interface NodeInfo {
 
 // --- Cookie helpers ---
 const getCookie = (name: string): string | null => {
-  const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name.replace('.', '\\.') + '=([^;]*)'))
+  const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name.replaceAll('.', '\\.') + '=([^;]*)'))
   return m ? decodeURIComponent(m[1]) : null
 }
 
@@ -280,6 +280,7 @@ function switchToNode(node: NodeInfo) {
     setCookie('messaging.node.ns', selectedNamespace.value)
   }
   alertStore.showSuccess(`Switched to node: ${node.name}`)
+  window.dispatchEvent(new Event('messaging:node-switched'))
 }
 
 function getLatencyColor(latency: number): string {

@@ -3,7 +3,7 @@ namespace Headless.Dashboard.Authentication;
 /// <summary>
 /// Authentication configuration for dashboards.
 /// </summary>
-public class AuthConfig
+public sealed class AuthConfig
 {
     /// <summary>
     /// Authentication mode.
@@ -21,9 +21,10 @@ public class AuthConfig
     public string? ApiKey { get; set; }
 
     /// <summary>
-    /// Custom authentication function.
+    /// Custom authentication function. Receives the authorization header value and
+    /// an <see cref="IServiceProvider"/> for safe resolution of scoped services.
     /// </summary>
-    public Func<string, bool>? CustomValidator { get; set; }
+    public Func<string, IServiceProvider, bool>? CustomValidator { get; set; }
 
     /// <summary>
     /// Session timeout in minutes (default: 60 minutes).

@@ -90,7 +90,7 @@ public sealed class MessagingDashboardOptionsBuilder
     }
 
     /// <summary>Configure custom authentication with validation function.</summary>
-    public MessagingDashboardOptionsBuilder WithCustomAuth(Func<string, bool> validator)
+    public MessagingDashboardOptionsBuilder WithCustomAuth(Func<string, IServiceProvider, bool> validator)
     {
         Auth.Mode = AuthMode.Custom;
         Auth.CustomValidator = validator;

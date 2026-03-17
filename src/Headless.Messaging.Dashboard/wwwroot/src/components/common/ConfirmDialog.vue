@@ -21,17 +21,17 @@ export class ConfirmDialogProps {
 interface StructuredException {
   type: 'structured'
   message: string
-  details: any
+  details: unknown
   stackTrace?: string
   source?: string
   helpLink?: string
-  data?: any
-  innerException?: any
+  data?: unknown
+  innerException?: unknown
 }
 
 interface GenericException {
   type: 'generic'
-  details: any
+  details: unknown
 }
 
 interface PlainException {

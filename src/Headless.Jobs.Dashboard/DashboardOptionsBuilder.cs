@@ -75,7 +75,7 @@ public sealed class DashboardOptionsBuilder
     }
 
     /// <summary>Configure custom authentication with validation function</summary>
-    public DashboardOptionsBuilder WithCustomAuth(Func<string, bool> validator)
+    public DashboardOptionsBuilder WithCustomAuth(Func<string, IServiceProvider, bool> validator)
     {
         Auth.Mode = AuthMode.Custom;
         Auth.CustomValidator = validator;
