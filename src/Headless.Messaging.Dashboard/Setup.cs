@@ -3,7 +3,6 @@
 using System.Reflection;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -12,7 +11,7 @@ using Microsoft.Extensions.FileProviders;
 
 namespace Headless.Messaging.Dashboard;
 
-public static partial class MessagingDashboardSetup
+public static class MessagingDashboardSetup
 {
     private const string _EmbeddedFileNamespace = "Headless.Messaging.Dashboard.wwwroot.dist";
 
@@ -21,9 +20,6 @@ public static partial class MessagingDashboardSetup
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Encoder = JavaScriptEncoder.Default,
     };
-
-    [GeneratedRegex(@"(?is)<head\b[^>]*>", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex _HeadOpenRegex();
 
     /// <summary>
     /// Configure the Messaging Dashboard middleware pipeline using app.Map branching.
@@ -37,7 +33,7 @@ public static partial class MessagingDashboardSetup
         var assembly = Assembly.GetExecutingAssembly();
         var embeddedFileProvider = new EmbeddedFileProvider(assembly, _EmbeddedFileNamespace);
 
-        var basePath = _NormalizeBasePath(config.BasePath);
+        var basePath = DashboardSpaHelper.NormalizeBasePath(config.BasePath);
 
         app.Map(
             basePath,
@@ -118,21 +114,6 @@ public static partial class MessagingDashboardSetup
         );
     }
 
-    private static string _NormalizeBasePath(string basePath)
-    {
-        if (string.IsNullOrEmpty(basePath))
-        {
-            return "/";
-        }
-
-        if (!basePath.StartsWith('/'))
-        {
-            basePath = "/" + basePath;
-        }
-
-        return basePath.TrimEnd('/');
-    }
-
     private static string _ReplaceBasePath(
         string htmlContent,
         HttpContext httpContext,
@@ -146,7 +127,7 @@ public static partial class MessagingDashboardSetup
         }
 
         var pathBase = httpContext.Request.PathBase.HasValue ? httpContext.Request.PathBase.Value : string.Empty;
-        var frontendBasePath = _CombinePathBase(pathBase, basePath);
+        var frontendBasePath = DashboardSpaHelper.CombinePathBase(pathBase, basePath);
 
         var authInfo = new
         {
@@ -163,7 +144,7 @@ public static partial class MessagingDashboardSetup
         };
 
         var json = JsonSerializer.Serialize(envConfig, _JsonOptions);
-        json = _SanitizeForInlineScript(json);
+        json = DashboardSpaHelper.SanitizeForInlineScript(json);
 
         var baseTag = $"""<base href="{frontendBasePath}/" />""";
 
@@ -179,49 +160,6 @@ public static partial class MessagingDashboardSetup
             """;
 
         var fullInjection = baseTag + script;
-        var headOpen = _HeadOpenRegex().Match(htmlContent);
-        if (headOpen.Success)
-        {
-            return htmlContent.Insert(headOpen.Index + headOpen.Length, fullInjection);
-        }
-
-        var closeIdx = htmlContent.IndexOf("</head>", StringComparison.OrdinalIgnoreCase);
-        if (closeIdx >= 0)
-        {
-            return htmlContent.Insert(closeIdx, fullInjection);
-        }
-
-        return fullInjection + htmlContent;
+        return DashboardSpaHelper.InjectIntoHead(htmlContent, fullInjection);
     }
-
-    private static string _CombinePathBase(string? pathBase, string? basePath)
-    {
-        pathBase ??= string.Empty;
-        basePath ??= "/";
-
-        if (string.IsNullOrEmpty(basePath) || string.Equals(basePath, "/", StringComparison.Ordinal))
-        {
-            return string.IsNullOrEmpty(pathBase) ? "/" : pathBase;
-        }
-
-        if (string.IsNullOrEmpty(pathBase))
-        {
-            return basePath;
-        }
-
-        if (basePath.StartsWith(pathBase, StringComparison.OrdinalIgnoreCase))
-        {
-            return basePath;
-        }
-
-        if (pathBase.EndsWith('/'))
-        {
-            pathBase = pathBase.TrimEnd('/');
-        }
-
-        return pathBase + basePath;
-    }
-
-    private static string _SanitizeForInlineScript(string json) =>
-        json.Replace("</script", "<\\/script", StringComparison.OrdinalIgnoreCase);
 }

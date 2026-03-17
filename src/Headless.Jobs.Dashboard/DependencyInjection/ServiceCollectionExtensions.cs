@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Headless.Dashboard.Authentication;
 using Headless.Jobs.Endpoints;
 using Headless.Jobs.Entities;
@@ -13,7 +12,7 @@ using Microsoft.Extensions.FileProviders;
 
 namespace Headless.Jobs.DependencyInjection;
 
-internal static partial class ServiceCollectionExtensions
+internal static class ServiceCollectionExtensions
 {
     private const string _EmbeddedFileNamespace = "Headless.Jobs.wwwroot.dist";
 
@@ -22,9 +21,6 @@ internal static partial class ServiceCollectionExtensions
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
-
-    [GeneratedRegex(@"(?is)<head\b[^>]*>", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex _HeadOpenRegex();
 
     internal static void AddDashboardService<TTimeJob, TCronJob>(
         this IServiceCollection services,
@@ -84,7 +80,7 @@ internal static partial class ServiceCollectionExtensions
         var embeddedFileProvider = new EmbeddedFileProvider(assembly, _EmbeddedFileNamespace);
 
         // Validate and normalize base path
-        var basePath = _NormalizeBasePath(config.BasePath);
+        var basePath = DashboardSpaHelper.NormalizeBasePath(config.BasePath);
 
         // Map a branch for the basePath to properly isolate dashboard
         app.Map(
@@ -169,21 +165,6 @@ internal static partial class ServiceCollectionExtensions
         );
     }
 
-    private static string _NormalizeBasePath(string basePath)
-    {
-        if (string.IsNullOrEmpty(basePath))
-        {
-            return "/";
-        }
-
-        if (!basePath.StartsWith('/'))
-        {
-            basePath = "/" + basePath;
-        }
-
-        return basePath.TrimEnd('/');
-    }
-
     private static string _ReplaceBasePath(
         string htmlContent,
         HttpContext httpContext,
@@ -200,7 +181,7 @@ internal static partial class ServiceCollectionExtensions
         // This ensures correct URLs when the host app uses UsePathBase.
         var pathBase = httpContext.Request.PathBase.HasValue ? httpContext.Request.PathBase.Value : string.Empty;
 
-        var frontendBasePath = _CombinePathBase(pathBase, basePath);
+        var frontendBasePath = DashboardSpaHelper.CombinePathBase(pathBase, basePath);
 
         // Build the config object
         var authInfo = new
@@ -220,7 +201,7 @@ internal static partial class ServiceCollectionExtensions
         // Serialize without over-escaping, but make sure it won't break </script>
         var json = JsonSerializer.Serialize(envConfig, _JsonOptions);
 
-        json = _SanitizeForInlineScript(json);
+        json = DashboardSpaHelper.SanitizeForInlineScript(json);
 
         // Add base tag for proper asset loading
         var baseTag = $"""<base href="{frontendBasePath}/" />""";
@@ -241,62 +222,6 @@ internal static partial class ServiceCollectionExtensions
             """;
 
         var fullInjection = baseTag + script;
-        // Prefer inject immediately after opening <head ...>
-        var headOpen = _HeadOpenRegex().Match(htmlContent);
-        if (headOpen.Success)
-        {
-            return htmlContent.Insert(headOpen.Index + headOpen.Length, fullInjection);
-        }
-
-        // Fallback: just before </head>
-        var closeIdx = htmlContent.IndexOf("</head>", StringComparison.OrdinalIgnoreCase);
-        if (closeIdx >= 0)
-        {
-            return htmlContent.Insert(closeIdx, fullInjection);
-        }
-
-        // Last resort: prepend (ensures script runs early)
-        return fullInjection + htmlContent;
-    }
-
-    private static string _CombinePathBase(string? pathBase, string? basePath)
-    {
-        pathBase ??= string.Empty;
-        basePath ??= "/";
-
-        if (string.IsNullOrEmpty(basePath) || string.Equals(basePath, "/", StringComparison.Ordinal))
-        {
-            return string.IsNullOrEmpty(pathBase) ? "/" : pathBase;
-        }
-
-        if (string.IsNullOrEmpty(pathBase))
-        {
-            return basePath;
-        }
-
-        // If basePath already includes the pathBase prefix, treat it as the full frontend path
-        // This prevents /cool-app/cool-app/... and similar double-prefix issues when users
-        // configure BasePath with the full URL segment.
-        if (basePath.StartsWith(pathBase, StringComparison.OrdinalIgnoreCase))
-        {
-            return basePath;
-        }
-
-        // Normalize to avoid double slashes
-        if (pathBase.EndsWith('/'))
-        {
-            pathBase = pathBase.TrimEnd('/');
-        }
-
-        // basePath is already normalized to start with '/'
-        return pathBase + basePath;
-    }
-
-    /// <summary>
-    /// Prevents &lt;/script&gt; in JSON strings from prematurely closing the inline script.
-    /// </summary>
-    private static string _SanitizeForInlineScript(string json)
-    {
-        return json.Replace("</script", "<\\/script", StringComparison.OrdinalIgnoreCase);
+        return DashboardSpaHelper.InjectIntoHead(htmlContent, fullInjection);
     }
 }

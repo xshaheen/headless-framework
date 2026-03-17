@@ -32,6 +32,7 @@ public static class MessagingDashboardEndpoints
         endpoints
             .MapGet("/api/auth/info", _GetAuthInfo)
             .WithName("Messaging_GetAuthInfo")
+            .WithSummary("Get authentication configuration")
             .WithTags("Messaging Dashboard")
             .RequireCors("Messaging_Dashboard_CORS")
             .AllowAnonymous();
@@ -39,6 +40,7 @@ public static class MessagingDashboardEndpoints
         endpoints
             .MapPost("/api/auth/validate", _ValidateAuth)
             .WithName("Messaging_ValidateAuth")
+            .WithSummary("Validate authentication credentials")
             .WithTags("Messaging Dashboard")
             .RequireCors("Messaging_Dashboard_CORS")
             .AllowAnonymous();
@@ -47,6 +49,7 @@ public static class MessagingDashboardEndpoints
         endpoints
             .MapGet("/api/health", _Health)
             .WithName("Messaging_Health")
+            .WithSummary("Health check endpoint")
             .WithTags("Messaging Dashboard")
             .RequireCors("Messaging_Dashboard_CORS")
             .AllowAnonymous();
@@ -54,6 +57,7 @@ public static class MessagingDashboardEndpoints
         endpoints
             .MapGet("/api/ping", _PingServices)
             .WithName("Messaging_PingServices")
+            .WithSummary("Ping a registered node to measure latency")
             .WithTags("Messaging Dashboard")
             .RequireCors("Messaging_Dashboard_CORS")
             .AllowAnonymous();
@@ -79,34 +83,84 @@ public static class MessagingDashboardEndpoints
         }
 
         // Metrics & stats
-        apiGroup.MapGet("/metrics-realtime", _Metrics).WithName("Messaging_Metrics");
-        apiGroup.MapGet("/meta", _MetaInfo).WithName("Messaging_MetaInfo");
-        apiGroup.MapGet("/stats", _Stats).WithName("Messaging_Stats");
-        apiGroup.MapGet("/metrics-history", _MetricsHistory).WithName("Messaging_MetricsHistory");
+        apiGroup
+            .MapGet("/metrics-realtime", _Metrics)
+            .WithName("Messaging_Metrics")
+            .WithSummary("Get real-time messaging metrics");
+        apiGroup
+            .MapGet("/meta", _MetaInfo)
+            .WithName("Messaging_MetaInfo")
+            .WithSummary("Get messaging infrastructure metadata");
+        apiGroup
+            .MapGet("/stats", _Stats)
+            .WithName("Messaging_Stats")
+            .WithSummary("Get aggregate message statistics");
+        apiGroup
+            .MapGet("/metrics-history", _MetricsHistory)
+            .WithName("Messaging_MetricsHistory")
+            .WithSummary("Get hourly metrics history for the last 24 hours");
 
         // Published messages
         apiGroup
             .MapGet("/published/message/{id:long}", _PublishedMessageDetails)
-            .WithName("Messaging_PublishedMessageDetails");
-        apiGroup.MapPost("/published/requeue", _PublishedRequeue).WithName("Messaging_PublishedRequeue");
-        apiGroup.MapPost("/published/delete", _PublishedDelete).WithName("Messaging_PublishedDelete");
-        apiGroup.MapGet("/published/{status}", _PublishedList).WithName("Messaging_PublishedList");
+            .WithName("Messaging_PublishedMessageDetails")
+            .WithSummary("Get published message details by ID");
+        apiGroup
+            .MapPost("/published/requeue", _PublishedRequeue)
+            .WithName("Messaging_PublishedRequeue")
+            .WithSummary("Requeue published messages for redelivery")
+            .WithDescription("Accepts a JSON array of message IDs (long[]) in the request body.");
+        apiGroup
+            .MapPost("/published/delete", _PublishedDelete)
+            .WithName("Messaging_PublishedDelete")
+            .WithSummary("Delete published messages")
+            .WithDescription("Accepts a JSON array of message IDs (long[]) in the request body.");
+        apiGroup
+            .MapGet("/published/{status}", _PublishedList)
+            .WithName("Messaging_PublishedList")
+            .WithSummary("List published messages by status")
+            .WithDescription("Valid status values: Succeeded, Failed, Delayed, Scheduled, Queued.");
 
         // Received messages
         apiGroup
             .MapGet("/received/message/{id:long}", _ReceivedMessageDetails)
-            .WithName("Messaging_ReceivedMessageDetails");
-        apiGroup.MapPost("/received/reexecute", _ReceivedRequeue).WithName("Messaging_ReceivedRequeue");
-        apiGroup.MapPost("/received/delete", _ReceivedDelete).WithName("Messaging_ReceivedDelete");
-        apiGroup.MapGet("/received/{status}", _ReceivedList).WithName("Messaging_ReceivedList");
+            .WithName("Messaging_ReceivedMessageDetails")
+            .WithSummary("Get received message details by ID");
+        apiGroup
+            .MapPost("/received/reexecute", _ReceivedRequeue)
+            .WithName("Messaging_ReceivedRequeue")
+            .WithSummary("Re-execute received messages")
+            .WithDescription("Accepts a JSON array of message IDs (long[]) in the request body.");
+        apiGroup
+            .MapPost("/received/delete", _ReceivedDelete)
+            .WithName("Messaging_ReceivedDelete")
+            .WithSummary("Delete received messages")
+            .WithDescription("Accepts a JSON array of message IDs (long[]) in the request body.");
+        apiGroup
+            .MapGet("/received/{status}", _ReceivedList)
+            .WithName("Messaging_ReceivedList")
+            .WithSummary("List received messages by status")
+            .WithDescription("Valid status values: Succeeded, Failed, Delayed, Scheduled, Queued.");
 
         // Subscribers
-        apiGroup.MapGet("/subscriber", _Subscribers).WithName("Messaging_Subscribers");
+        apiGroup
+            .MapGet("/subscriber", _Subscribers)
+            .WithName("Messaging_Subscribers")
+            .WithSummary("Get all registered message subscribers");
 
         // Nodes & discovery
-        apiGroup.MapGet("/nodes", _Nodes).WithName("Messaging_Nodes");
-        apiGroup.MapGet("/list-ns", _ListNamespaces).WithName("Messaging_ListNamespaces");
-        apiGroup.MapGet("/list-svc/{namespace}", _ListServices).WithName("Messaging_ListServices");
+        apiGroup
+            .MapGet("/nodes", _Nodes)
+            .WithName("Messaging_Nodes")
+            .WithSummary("Get registered messaging nodes");
+        apiGroup
+            .MapGet("/list-ns", _ListNamespaces)
+            .WithName("Messaging_ListNamespaces")
+            .WithSummary("List available namespaces for node discovery");
+        apiGroup
+            .MapGet("/list-svc/{namespace}", _ListServices)
+            .WithName("Messaging_ListServices")
+            .WithSummary("List services in a namespace");
     }
 
     #region Endpoint Handlers
