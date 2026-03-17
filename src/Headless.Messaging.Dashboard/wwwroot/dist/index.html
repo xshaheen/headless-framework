@@ -5,11 +5,28 @@
     <link rel="icon" href="./logo.svg" >
     <meta name="viewport" content="width=device-width, initial-scale=1.0" >
     <title>Headless Messaging</title>
+    <!--
+      Dev-mode config — in production this block is absent;
+      the .NET middleware injects window.MessagingConfig at runtime.
+      Uses a classic (non-module) script so it executes synchronously
+      before any module scripts.
+    -->
+    <script>
+      if (!window.MessagingConfig) {
+        window.MessagingConfig = {
+          basePath: '/',
+          backendDomain: '/messaging',
+          auth: { mode: 'none', enabled: false, sessionTimeout: 30 },
+          statsPollingInterval: 2000,
+        };
+        window.__dynamic_base__ = '/';
+      }
+    </script>
     
     
     <script>
 (function(){
-var preloads = [{"parentTagName":"head","tagName":"script","attrs":{"type":"module","crossorigin":"","src":"/assets/index-DJSjy7iX.js"}},{"parentTagName":"head","tagName":"link","attrs":{"rel":"stylesheet","crossorigin":"","href":"/assets/index-zmOnen9i.css"}}];
+var preloads = [{"parentTagName":"head","tagName":"script","attrs":{"type":"module","crossorigin":"","src":"/assets/index-Dzoy9rIh.js"}},{"parentTagName":"head","tagName":"link","attrs":{"rel":"stylesheet","crossorigin":"","href":"/assets/index-CD5xdmWh.css"}}];
 function setAttribute(target, attrs) {
 for (var key in attrs) {
   target.setAttribute(key, attrs[key]);

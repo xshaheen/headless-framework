@@ -149,7 +149,7 @@ interface NodeInfo {
 
 // --- Cookie helpers ---
 const getCookie = (name: string): string | null => {
-  const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name.replaceAll('.', '\\.') + '=([^;]*)'))
+  const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name.split('.').join('\\.') + '=([^;]*)'))
   return m ? decodeURIComponent(m[1]) : null
 }
 

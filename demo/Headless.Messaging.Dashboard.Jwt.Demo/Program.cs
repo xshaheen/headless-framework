@@ -56,6 +56,8 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(dashboardPolicy, policy => policy.RequireAuthenticatedUser());
 });
 
+builder.Services.AddHttpClient();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.FailedRetryCount = 0;

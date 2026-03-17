@@ -112,8 +112,8 @@ export default defineConfig(async ({ command, mode }) => {
           target: DEMO_BACKEND,
           changeOrigin: true,
           secure: false,
-          configure: (proxy) => {
-            proxy.on('proxyReq', (proxyReq) => {
+          configure: (proxy: { on: Function }) => {
+            proxy.on('proxyReq', (proxyReq: { setHeader: Function }) => {
               if (devToken) {
                 proxyReq.setHeader('Authorization', `Bearer ${devToken}`)
               }
