@@ -507,6 +507,19 @@ Three levels, aligned with NServiceBus timeout model but using persisted timers 
 
 All timeouts are persisted (stored as `ExpiresAtUtc` on the saga instance or step). The runtime uses a durable timeout processor. The default implementation polls over persisted expiration timestamps via a hosted service. Alternative implementations (transport-based delayed messages, external scheduler integration) can be swapped without changing the contract. No in-memory `Task.Delay`.
 
+### Step Timeout Semantics
+
+Step timeout is **cooperative**, not preemptive. .NET does not support safe hard preemption of async code.
+
+1. The runtime creates a `CancellationTokenSource` linked to the step's timeout duration and passes the token via the `CancellationToken ct` parameter to the step lambda.
+2. When the timeout fires, the runtime cancels the token.
+3. If the step lambda honors cancellation promptly, it throws `OperationCanceledException` and the runtime treats the step as failed → compensation begins.
+4. If the step lambda does **not** honor cancellation, the runtime still treats the step as timed out for saga state purposes (transitions to `Compensating`). The lambda may continue running in the background — the runtime does not await it indefinitely.
+
+Users must ensure that timed-out local operations are safe, idempotent, and abortable. The framework cannot forcibly stop in-flight HTTP calls, database transactions, or other non-cooperative work.
+
+**Wait/saga timeouts** are different: these are persisted timers checked by the timeout processor, not cooperative cancellation. They fire regardless of whether any code is running.
+
 ## Conditional Steps
 
 Steps can be skipped based on current state via `When(predicate)`:
