@@ -76,7 +76,7 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
-app.MapGet("/", () => Results.LocalRedirect("/messaging", true));
+app.MapGet("/", () => Results.LocalRedirect("/index.html", true));
 
 app.MapPost(
     "/security/createToken",

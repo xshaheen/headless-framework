@@ -14,6 +14,6 @@ function logIn() {
     dataType: "json"
   })
     .done(token => {
-      window.open(`/messaging/index.html?access_token=${token}`, '_blank')
+      window.open(`/messaging/login?access_token=Bearer ${token}`, '_blank')
     });
 }
