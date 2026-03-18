@@ -74,7 +74,17 @@ Messaging ╳ Jobs
 | **Jobs** | Scheduling layer — cron, delayed, distributed coordination | None. Timeout polling is just another job. |
 | **Saga** | Orchestration layer — multi-step workflows, compensation, state | Consumes both; owns its own tables in messaging's schema. |
 
-**Implications:** Adding saga touches zero lines in existing messaging or jobs packages. No shared abstractions need to change. Future capabilities (parallel steps, sub-sagas, dynamic steps) are additive to the saga layer only.
+**Implications:** Adding saga touches zero lines in existing messaging or jobs packages. No shared abstractions need to change. Future capabilities (sub-sagas, dynamic steps) are additive to the saga layer only.
+
+## Long-Term Execution Shape
+
+The initial authoring model is **sequential**, but the compiled step graph and runtime state model are designed so branching, child sagas, and parallel segments can be added later without breaking existing contracts.
+
+- `ISagaDefinition<TState>` and `ISagaBuilder<TState>` stay sequential-first — the public DSL does not expose graph primitives in v1.
+- Internally, `step_index` progression is an engine concern. A future `Parallel()` block could compile to a sub-graph with path-based indexing (e.g., `3.1`, `3.2`) while existing sequential sagas continue using integer progression unchanged.
+- Sub-sagas = a step that calls `ISagaOrchestrator.StartAsync` and `WaitFor` its completion event. Both primitives already exist — sub-saga support is a convenience API, not a runtime change.
+
+**Not in scope for v1:** parallel steps, fan-out/fan-in, conditional branching beyond `When()` skip, loop/retry blocks, join points.
 
 ## Why Builder DSL
 
@@ -719,6 +729,101 @@ options.OnSagaStuck = async (sagaInstance, exception, ct) =>
 };
 ```
 
+## Observability
+
+Follows the same pattern as `Headless.Messaging.OpenTelemetry` — a separate `Headless.Sagas.OpenTelemetry` package wrapping the engine with instrumentation. The `saga_events` table provides the data foundation; OTel adds real-time signals.
+
+### Metrics (counters / histograms)
+
+| Metric | Type | Tags |
+|---|---|---|
+| `saga.started` | Counter | `saga_name` |
+| `saga.completed` | Counter | `saga_name` |
+| `saga.failed` | Counter | `saga_name` |
+| `saga.cancelled` | Counter | `saga_name` |
+| `saga.stuck` | Counter | `saga_name` |
+| `saga.step.duration` | Histogram | `saga_name`, `step_name`, `step_type` |
+| `saga.step.retries` | Counter | `saga_name`, `step_name` |
+| `saga.compensation.count` | Counter | `saga_name` |
+| `saga.timeout.fired` | Counter | `saga_name`, `timeout_kind` |
+| `saga.reply.ignored` | Counter | `saga_name`, `reason` (stale, duplicate, unrecognized) |
+
+### Traces (spans)
+
+| Span | Parent | Key attributes |
+|---|---|---|
+| `saga.execute` | Caller of `StartAsync` | `saga.id`, `saga.name` |
+| `saga.step` | `saga.execute` | `step.name`, `step.index`, `step.type` |
+| `saga.command.send` | `saga.step` | `destination`, `command.type` |
+| `saga.reply.handle` | Incoming message span | `saga.id`, `reply.type`, `step.index` |
+| `saga.event.handle` | Incoming message span | `saga.id`, `event.type` |
+| `saga.compensate` | `saga.execute` | `step.name`, `step.index` |
+| `saga.timeout.fire` | Timeout processor | `saga.id`, `timeout.kind` |
+
+### Structured Logging
+
+The engine emits structured log entries with `SagaId`, `SagaName`, `StepName`, and `StepIndex` as scoped properties on every state transition. Log levels: `Information` for normal flow, `Warning` for retries/timeouts, `Error` for failures/stuck.
+
+### Execution Observer
+
+```csharp
+public interface ISagaExecutionObserver
+{
+    ValueTask OnSagaStartedAsync(string sagaId, string sagaName, CancellationToken ct = default);
+    ValueTask OnStepCompletedAsync(string sagaId, string stepName, int stepIndex,
+        TimeSpan duration, CancellationToken ct = default);
+    ValueTask OnStepFailedAsync(string sagaId, string stepName, int stepIndex,
+        Exception exception, CancellationToken ct = default);
+    ValueTask OnStatusChangedAsync(string sagaId, SagaRuntimeStatus oldStatus,
+        SagaRuntimeStatus newStatus, CancellationToken ct = default);
+    ValueTask OnSagaCompletedAsync(string sagaId, string sagaName, CancellationToken ct = default);
+}
+```
+
+Default implementation: no-op. `Headless.Sagas.OpenTelemetry` provides an implementation that emits metrics + traces. Users can register additional observers for custom side effects (alerts, webhooks, etc.).
+
+## Runtime Extension Points
+
+Abstractions defined early to keep the runtime composable. Each ships with one default implementation; users can swap via DI.
+
+```csharp
+/// Saga instance persistence (CRUD + queries).
+public interface ISagaStore
+{
+    Task<SagaInstance?> GetAsync(string sagaId, CancellationToken ct = default);
+    Task SaveAsync(SagaInstance instance, CancellationToken ct = default);
+    Task<SagaInstance?> FindWaitingAsync(string eventType, string eventKey,
+        CancellationToken ct = default);
+    Task<IReadOnlyList<SagaInstance>> GetByStatusAsync(SagaRuntimeStatus status,
+        int limit = 100, CancellationToken ct = default);
+}
+
+/// Saga state + step data serialization.
+public interface ISagaSerializer
+{
+    string Serialize<T>(T value);
+    T? Deserialize<T>(string json);
+}
+
+/// Saga ID generation strategy.
+public interface ISagaIdGenerator
+{
+    string NewId();
+}
+```
+
+`ISagaTimeoutStore` is already defined in the Timeout Design section.
+
+| Abstraction | Default Implementation | When to swap |
+|---|---|---|
+| `ISagaStore` | PostgreSQL/SQL Server (via messaging storage providers) | Custom persistence (MongoDB, DynamoDB, etc.) |
+| `ISagaTimeoutStore` | Polling over persisted timestamps | Transport-based delayed messages, external scheduler |
+| `ISagaSerializer` | `System.Text.Json` with same options as state serialization | Custom serializer, encryption-at-rest |
+| `ISagaIdGenerator` | `Guid.NewGuid().ToString()` | ULID, snowflake, custom format |
+| `ISagaExecutionObserver` | No-op | OTel package, custom alerting, webhooks |
+
+**Not abstracted (internal engine):** step graph compilation, message routing, compensation engine. These are implementation details — if someone needs to replace them, they're replacing the engine.
+
 ## Testing
 
 ### SagaTestHarness
@@ -988,8 +1093,9 @@ Following the abstraction + provider pattern:
 
 | Package | Depends On | Contents |
 |---------|-----------|----------|
-| `Headless.Sagas.Abstractions` | `Headless.Messaging.Abstractions` | ISagaDefinition, ISagaBuilder, ISagaOrchestrator, ISagaContext, ISagaManagement, state types |
-| `Headless.Sagas` | `Headless.Sagas.Abstractions`, `Headless.Messaging.Core` | Orchestrator runtime, step engine, compensation engine, timeout polling |
+| `Headless.Sagas.Abstractions` | `Headless.Messaging.Abstractions` | ISagaDefinition, ISagaBuilder, ISagaOrchestrator, ISagaContext, ISagaManagement, ISagaStore, ISagaSerializer, ISagaIdGenerator, ISagaExecutionObserver, ISagaTimeoutStore, state types |
+| `Headless.Sagas` | `Headless.Sagas.Abstractions`, `Headless.Messaging.Core` | Orchestrator runtime, step engine, compensation engine, timeout polling, default implementations |
+| `Headless.Sagas.OpenTelemetry` | `Headless.Sagas.Abstractions` | ISagaExecutionObserver implementation emitting metrics + traces |
 | `Headless.Sagas.Testing` | `Headless.Sagas.Abstractions` | SagaTestHarness, in-memory runtime, assertion helpers |
 
 Storage: saga tables added to existing messaging storage providers via `UseSagaStorage()` extension. No separate `Headless.Sagas.PostgreSql` package — the saga tables live in the same schema as `published`/`received` tables.
@@ -1042,7 +1148,7 @@ CREATE TABLE {schema}.saga_events (
     step_name       VARCHAR(500)    NULL,
     old_status      VARCHAR(20)     NULL,
     new_status      VARCHAR(20)     NULL,
-    detail          TEXT            NULL,       -- reason, exception summary, operator id, etc.
+    detail          JSONB           NULL,       -- structured per event_type (see below)
     created_at_utc  TIMESTAMPTZ     NOT NULL
 );
 
@@ -1058,6 +1164,20 @@ CREATE INDEX ix_saga_waiting ON {schema}.saga_instances (waiting_event, waiting_
 **Why normalized tables over JSONB:** Per-step indexing enables dashboard visibility, direct SQL queries for stuck compensation steps, and step-level analytics (duration, failure rates) without JSON parsing. Write amplification is negligible — sagas typically have 3-7 steps.
 
 **Why `saga_events`:** `saga_step_log` captures step *outcomes* (the final result). `saga_events` captures the *journey* — every state transition, retry attempt, and operator action as an append-only stream. This enables dashboard timelines, retry audit trails, stuck-step root cause analysis, and operator intervention history without polluting the step log with transient events. The engine appends events as a side effect of state transitions; no additional round-trips since they batch with the step log write.
+
+**`detail` column shape by event type:**
+
+| Event Type | `detail` JSON shape |
+|---|---|
+| `StatusChanged` | `{ }` (statuses captured in `old_status`/`new_status` columns) |
+| `StepCompleted`, `StepFailed` | `{ "duration_ms": int, "exception"?: string }` |
+| `StepRetried` | `{ "attempt": int, "exception": string }` |
+| `CompensationStarted/Completed` | `{ "duration_ms"?: int }` |
+| `CompensationFailed` | `{ "attempt": int, "exception": string }` |
+| `TimeoutFired` | `{ "kind": "Step\|Wait\|Saga", "timeout_id": string }` |
+| `OperatorRetry`, `OperatorSkip` | `{ "actor": string, "reason"?: string, "notes"?: string }` |
+| `OperatorResolved` | `{ "actor": string, "reason": string, "notes"?: string }` |
+| `Cancelled` | `{ "actor"?: string, "reason"?: string }` |
 
 ## Key Decisions
 
@@ -1086,6 +1206,10 @@ CREATE INDEX ix_saga_waiting ON {schema}.saga_instances (waiting_event, waiting_
 23. **`SagaName` over `DefinitionType`** — logical name, not CLR type; avoids overloaded "type" semantics
 24. **`CompensationDataJson` over `StepDataJson`** — communicates the sole intended use (compensation context)
 25. **Split event ingress API** — `PublishEventAsync(event)` for business-key routed ingress, `RaiseEventToSagaAsync(sagaId, event)` for direct targeted delivery
+26. **Sequential core, graph-capable future** — public DSL is sequential-first; internal model can grow into branching/parallelism without breaking existing contracts
+27. **Structured operator event detail** — `saga_events.detail` is JSONB with documented shape per event type (actor, reason, notes for operator events)
+28. **Observability as a separate package** — `Headless.Sagas.OpenTelemetry` with defined metrics, traces, and `ISagaExecutionObserver` hook
+29. **Runtime extension points** — 5 abstractions (`ISagaStore`, `ISagaTimeoutStore`, `ISagaSerializer`, `ISagaIdGenerator`, `ISagaExecutionObserver`); internal engine plumbing (step graph compilation, message routing) not abstracted
 
 ## Resolved Questions
 
@@ -1113,6 +1237,10 @@ CREATE INDEX ix_saga_waiting ON {schema}.saga_instances (waiting_event, waiting_
 22. **`StepDataJson` → `CompensationDataJson`** → Clearer intent: sole use is compensation context
 23. **`RaiseEventAsync` split** → `PublishEventAsync(event)` for business-key routed ingress, `RaiseEventToSagaAsync(sagaId, event)` for direct targeted delivery
 24. **Execution history as first-class** → `saga_events` append-only audit table captures state transitions, retry attempts, and operator actions separately from step outcomes in `saga_step_log`
+25. **Long-term execution shape** → Sequential core, graph-capable future; public DSL stays sequential-first, internal model extensible
+26. **Operator event detail format** → `saga_events.detail` is JSONB with documented shape per event type; operator events include `actor`, `reason`, `notes`
+27. **Observability** → Separate `Headless.Sagas.OpenTelemetry` package; defined metric names, trace spans, and `ISagaExecutionObserver` abstraction
+28. **Runtime extension points** → 5 abstractions ship: `ISagaStore`, `ISagaTimeoutStore`, `ISagaSerializer`, `ISagaIdGenerator`, `ISagaExecutionObserver`; internal plumbing not abstracted
 
 ## Open Questions
 
