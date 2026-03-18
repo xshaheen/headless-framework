@@ -260,10 +260,12 @@ public interface ISagaManagement
     /// Does NOT skip forward steps — forward failures always trigger compensation.
     Task SkipFailedCompensationAsync(string sagaId, CancellationToken ct = default);
 
-    /// Mark a saga as completed by operator override.
+    /// Mark a saga as resolved by operator intervention.
+    /// Terminal state is `Resolved` (distinct from `Completed`).
     /// No remaining steps are executed. No compensation is performed.
-    /// Saga is marked terminal. Intended for manual remediation only.
-    Task OverrideToCompletedAsync(string sagaId, string reason, CancellationToken ct = default);
+    /// Intended for manual remediation after external recovery.
+    /// Stores audit metadata: reason, timestamp, operator identity.
+    Task MarkResolvedAsync(string sagaId, string reason, CancellationToken ct = default);
 
     /// Find sagas stuck in a failed/compensating state.
     Task<IReadOnlyList<SagaInstance>> GetStuckSagasAsync(
@@ -418,6 +420,10 @@ public sealed record SagaInstance
     public string? FailureReason { get; set; }
     public string? ExceptionInfo { get; set; }
     public int Version { get; set; }
+    // Operator override audit (populated by MarkResolvedAsync)
+    public string? ResolvedReason { get; set; }
+    public DateTimeOffset? ResolvedAtUtc { get; set; }
+    public string? ResolvedBy { get; set; }
 }
 
 public enum SagaRuntimeStatus
@@ -449,6 +455,10 @@ public enum SagaRuntimeStatus
 
     /// Terminal: cancelled by operator, compensation completed successfully.
     Cancelled,
+
+    /// Terminal: manually resolved by operator after external remediation.
+    /// Distinct from Completed — dashboard must not treat as natural success.
+    Resolved,
 }
 
 public sealed record CompletedStepLog
@@ -569,7 +579,7 @@ After exhausting retries, the saga remains in `Stuck` status. The `ISagaManageme
 
 - `RetryCompensationAsync` — retry from the failed compensation step
 - `SkipFailedCompensationAsync` — skip the stuck compensation step, continue rollback (compensation only, never forward)
-- `OverrideToCompletedAsync` — mark terminal by operator override; no steps executed, no compensation performed; manual remediation only
+- `MarkResolvedAsync` — transition to `Resolved` terminal state (distinct from `Completed`); stores audit: reason, timestamp, operator identity
 - `GetStuckSagasAsync` — query for stuck sagas (for alerting/dashboards)
 
 ### Dead-Letter
@@ -876,7 +886,10 @@ CREATE TABLE {schema}.saga_instances (
     failure_reason  TEXT            NULL,
     exception_info  TEXT            NULL,
     completed_steps JSONB           NOT NULL DEFAULT '[]',
-    version         INT             NOT NULL DEFAULT 0
+    version         INT             NOT NULL DEFAULT 0,
+    resolved_reason TEXT            NULL,
+    resolved_at_utc TIMESTAMPTZ     NULL,
+    resolved_by     VARCHAR(500)    NULL
 );
 
 CREATE INDEX ix_saga_status ON {schema}.saga_instances (status);
@@ -903,7 +916,7 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
 13. **Optimistic concurrency** — `version` column on saga_instances, retry on conflict
 14. **Dashboard: same UI, new tab** — saga instances surfaced alongside messaging in the existing dashboard
 15. **Keyed step data** — `SetStepData<T>(key, data)` / `GetStepData<T>(key)` scoped to current step, persisted after successful completion
-16. **Safe management API** — `SkipFailedCompensationAsync` (compensation only, never forward), `OverrideToCompletedAsync` (explicit operator override naming)
+16. **Safe management API** — `SkipFailedCompensationAsync` (compensation only, never forward), `MarkResolvedAsync` (distinct `Resolved` terminal state with audit trail)
 17. **Cancellation with intermediate state** — `CancelAsync` → `Cancelling` → compensation → `Cancelled` or `Stuck`
 18. **No `Critical` step flag** — removed; undefined runtime semantics, better addressed by explicit retry/timeout configuration per step
 19. **At-least-once execution** — step, reply, and compensation handlers are at-least-once; users must make handlers idempotent
@@ -927,7 +940,7 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
 9. **`IdempotencyKey` signature** → `Func<ISagaContext<TState>, string>` for access to saga ID and step context
 10. **`FailAsync` signature** → Added `CancellationToken ct = default` for API consistency
 11. **`SkipStepAsync` ambiguity** → Split into `SkipFailedCompensationAsync` (compensation only); no forward step skipping
-12. **`ForceCompleteAsync` naming** → Renamed to `OverrideToCompletedAsync` with explicit contract: no steps executed, no compensation, operator override only
+12. **`ForceCompleteAsync` naming** → `MarkResolvedAsync` with distinct `Resolved` terminal state (not `Completed`); stores audit metadata (reason, timestamp, operator identity)
 13. **Timeout abstraction** → Durable timeout processor (abstracted); default polls persisted timestamps, swappable for transport-based or external scheduler
 14. **Cancellation flow** → `CancelAsync` → `Cancelling` (intermediate) → compensation → `Cancelled` or `Stuck`
 15. **Correlation model** → Two distinct modes: runtime correlation (headers) for Command replies, business correlation (type + key) for WaitFor events
