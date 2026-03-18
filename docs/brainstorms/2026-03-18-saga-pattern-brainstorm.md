@@ -141,7 +141,7 @@ public interface ISagaContext<TState> where TState : class
         where TMessage : class;
 
     /// Store keyed step-scoped data for compensation context.
-    /// Persisted in CompletedStepLog.StepDataJson as a keyed dictionary.
+    /// Persisted in CompletedStepLog.CompensationDataJson as a keyed dictionary.
     /// Scoping: data set during step N is readable during compensation of step N only.
     /// Written to persistence after successful step completion (not during).
     void SetStepData<T>(string key, T data);
@@ -261,6 +261,54 @@ public interface ISagaManagement
 }
 ```
 
+## Execution Guarantees
+
+Step execution, reply handling, and compensation are all **at least once**. The runtime may internally retry due to optimistic concurrency conflicts. Users must:
+
+- **Make step handlers idempotent** — the same step may execute more than once if the runtime retries after a transient failure or concurrency conflict.
+- **Make compensation handlers idempotent** — compensation may be retried after failure (via `CompensationRetry` or manual `RetryCompensationAsync`).
+- **Use outbox integration** for outgoing messages — `PublishAsync` in `ISagaContext` should go through the transactional outbox where possible to avoid dual-write issues.
+- **Not assume exactly-once** — the framework guarantees at-least-once execution with idempotency support (`IdempotencyKey`), not exactly-once.
+
+## Definition Model
+
+### Immutability
+
+`Build()` constructs an **immutable step graph** at startup. Runtime execution uses compiled step descriptors. Runtime lambdas execute against `ISagaContext<TState>`, which is a per-execution instance — never mutate shared state in the definition class.
+
+Separation:
+- **Definition time** (`Build()`) — produces metadata: step names, types, lambda references, options
+- **Runtime** — creates `ISagaContext<TState>` per execution, invokes compiled lambdas, manages persistence
+
+### Build-Time Validation
+
+The runtime validates the step graph at startup and throws if any rule is violated:
+
+- Step names must be **unique** within a saga definition
+- At most **one global timeout** per saga
+- `Command()` steps must have at least one `OnReply<T>()` or `OnFailure<T>()` handler
+- No duplicate reply type handlers within the same `Command()` step
+- `destination` on `Command()` / `CompensateWith()` must not be null or empty
+- Compensation cannot be configured via both `Compensate()` and `CompensateWith()` on the same `Command()` step
+- `WaitFor()` must have both `sagaKey` and `eventKey` (non-null)
+
+## Reply and Event Safety
+
+### Rules
+
+The runtime accepts replies/events **only when the saga is in the expected waiting state**. All other arrivals are ignored or dead-lettered.
+
+| Scenario | Behavior |
+|----------|----------|
+| **Duplicate reply** | `SagaId + SagaStepIndex + ReplyType` must match current expected step. If saga has already advanced, the reply is ignored. |
+| **Reply after timeout** | Saga has transitioned to `Compensating`. Late reply is ignored. |
+| **Reply for old step index** | `SagaStepIndex` doesn't match `CurrentStepIndex`. Ignored. |
+| **Late success after compensation started** | Saga status is `Compensating`. Reply is ignored — compensation cannot be reversed. |
+| **Duplicate external event** | `WaitFor` match succeeds only if saga is in `WaitingForEvent` for that type/key. If already advanced, event is ignored. |
+| **Event for non-waiting saga** | Saga is `Running` or `Completed`. Event is ignored. |
+
+Dead-lettering of ignored messages is configurable via `options.OnIgnoredMessage`.
+
 ## Step Types
 
 All step types compile into the same internal runtime shape:
@@ -348,7 +396,7 @@ The saga instance stores `WaitingForEventType` + `WaitingForEventKey` while bloc
 public sealed record SagaInstance
 {
     public required string Id { get; init; }
-    public required string DefinitionType { get; init; }
+    public required string SagaName { get; init; }
     public required string StateJson { get; set; }
     public required SagaRuntimeStatus Status { get; set; }
     public int CurrentStepIndex { get; set; }
@@ -402,13 +450,13 @@ public sealed record CompletedStepLog
     /// Keyed dictionary of step-scoped data, serialized as JSON.
     /// Set via SetStepData<T>(key, data) during step execution.
     /// Readable via GetStepData<T>(key) during compensation of this step only.
-    public string? StepDataJson { get; init; }
+    public string? CompensationDataJson { get; init; }
 }
 
 public sealed record SagaStatusInfo
 {
     public required string Id { get; init; }
-    public required string DefinitionType { get; init; }
+    public required string SagaName { get; init; }
     public required SagaRuntimeStatus Status { get; init; }
     public required int CurrentStepIndex { get; init; }
     public required DateTimeOffset CreatedAtUtc { get; init; }
@@ -794,7 +842,7 @@ Storage: saga tables added to existing messaging storage providers via `UseSagaS
 -- saga instances
 CREATE TABLE {schema}.saga_instances (
     id              VARCHAR(36)     PRIMARY KEY,
-    definition_type VARCHAR(500)    NOT NULL,
+    saga_name       VARCHAR(500)    NOT NULL,
     state_json      TEXT            NOT NULL,
     status          VARCHAR(20)     NOT NULL,
     step_index      INT             NOT NULL DEFAULT 0,
@@ -836,6 +884,12 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
 16. **Safe management API** — `SkipFailedCompensationAsync` (compensation only, never forward), `OverrideToCompletedAsync` (explicit operator override naming)
 17. **Cancellation with intermediate state** — `CancelAsync` → `Cancelling` → compensation → `Cancelled` or `Stuck`
 18. **No `Critical` step flag** — removed; undefined runtime semantics, better addressed by explicit retry/timeout configuration per step
+19. **At-least-once execution** — step, reply, and compensation handlers are at-least-once; users must make handlers idempotent
+20. **Immutable definition model** — `Build()` produces metadata; runtime lambdas execute against per-instance `ISagaContext<TState>`; no shared mutable state in definitions
+21. **Build-time validation** — unique step names, single global timeout, required reply handlers, no duplicate reply types, no empty destinations, no conflicting compensation
+22. **Reply/event safety** — late, duplicate, and stale replies/events are ignored based on `SagaId + StepIndex + Status` matching; configurable dead-lettering
+23. **`SagaName` over `DefinitionType`** — logical name, not CLR type; avoids overloaded "type" semantics
+24. **`CompensationDataJson` over `StepDataJson`** — communicates the sole intended use (compensation context)
 
 ## Resolved Questions
 
@@ -855,7 +909,13 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
 14. **Cancellation flow** → `CancelAsync` → `Cancelling` (intermediate) → compensation → `Cancelled` or `Stuck`
 15. **Correlation model** → Two distinct modes: runtime correlation (headers) for Command replies, business correlation (type + key) for WaitFor events
 16. **Command() runtime contract** → Compiles to same internal step shape as Step(); syntactic sugar, not a separate engine
+17. **Execution guarantees** → At-least-once for steps, replies, and compensation; users must make handlers idempotent
+18. **Definition immutability** → `Build()` produces immutable metadata; runtime uses per-instance `ISagaContext<TState>`
+19. **Build-time validation** → Unique step names, single global timeout, required reply handlers, no duplicates, no empty destinations
+20. **Reply/event safety** → Late/duplicate/stale arrivals ignored based on saga state matching; `options.OnIgnoredMessage` for dead-lettering
+21. **`DefinitionType` → `SagaName`** → Logical name avoids overloaded "type" semantics in .NET
+22. **`StepDataJson` → `CompensationDataJson`** → Clearer intent: sole use is compensation context
 
 ## Open Questions
 
-1. **Step data serialization**: `SetStepData<T>(key, data)` serializes to `CompletedStepLog.StepDataJson` as a keyed dictionary. What serializer? System.Text.Json with the same options as state serialization? Should there be a size limit to prevent bloat?
+1. **Compensation data serialization**: `SetStepData<T>(key, data)` serializes to `CompletedStepLog.CompensationDataJson` as a keyed dictionary. What serializer? System.Text.Json with the same options as state serialization? Should there be a size limit to prevent bloat?
