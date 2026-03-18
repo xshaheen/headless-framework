@@ -320,8 +320,9 @@ The runtime accepts replies/events **only when the saga is in the expected waiti
 | **Late success after compensation started** | Saga status is `Compensating`. Reply is ignored — compensation cannot be reversed. |
 | **Duplicate external event** | `WaitFor` match succeeds only if saga is in `WaitingForEvent` for that type/key. If already advanced, event is ignored. |
 | **Event for non-waiting saga** | Saga is `Running` or `Completed`. Event is ignored. |
+| **Unrecognized reply type** | Reply CLR type has no matching `OnReply<T>()` or `OnFailure<T>()` handler for the current `Command()` step. Treated as an invalid reply — ignored or dead-lettered. Saga remains in `WaitingForReply`. |
 
-Dead-lettering of ignored messages is configurable via `options.OnIgnoredMessage`.
+All ignored or unrecognized messages are reported via `options.OnIgnoredMessage` (configurable: log, dead-letter, or discard silently).
 
 ## Step Types
 
