@@ -54,6 +54,7 @@ Orchestration-based saga support for `headless-framework`. A saga is a sequence 
 **Dashboard includes:**
 
 - Read-only step visualization: linear flow diagram of the compiled step definition (name, type, status per step) with current execution position highlighted. Not an editor — purely operational visibility derived from the cached step graph + `saga_step_log`.
+- Execution timeline: chronological event stream per saga instance from `saga_events` — state transitions, retry attempts, timeout firings, operator interventions. Enables debugging and root cause analysis directly from the dashboard.
 
 ## Why Builder DSL
 
@@ -1012,12 +1013,31 @@ CREATE INDEX ix_step_log_saga ON {schema}.saga_step_log (saga_id);
 CREATE INDEX ix_step_log_status ON {schema}.saga_step_log (status)
     WHERE status != 'Completed';
 
+-- append-only audit log (state transitions, retries, operator actions)
+CREATE TABLE {schema}.saga_events (
+    id              BIGINT          GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    saga_id         VARCHAR(36)     NOT NULL REFERENCES {schema}.saga_instances(id),
+    event_type      VARCHAR(50)     NOT NULL,  -- StatusChanged, StepRetried, StepCompleted, StepFailed, CompensationStarted, CompensationCompleted, CompensationFailed, OperatorRetry, OperatorSkip, OperatorResolved, TimeoutFired, Cancelled
+    step_index      INT             NULL,
+    step_name       VARCHAR(500)    NULL,
+    old_status      VARCHAR(20)     NULL,
+    new_status      VARCHAR(20)     NULL,
+    detail          TEXT            NULL,       -- reason, exception summary, operator id, etc.
+    created_at_utc  TIMESTAMPTZ     NOT NULL
+);
+
+CREATE INDEX ix_saga_events_saga ON {schema}.saga_events (saga_id);
+CREATE INDEX ix_saga_events_type ON {schema}.saga_events (event_type)
+    WHERE event_type NOT IN ('StatusChanged', 'StepCompleted');
+
 CREATE INDEX ix_saga_status ON {schema}.saga_instances (status);
 CREATE INDEX ix_saga_waiting ON {schema}.saga_instances (waiting_event, waiting_key)
     WHERE waiting_event IS NOT NULL;
 ```
 
-**Why child table over JSONB:** Per-step indexing enables dashboard visibility, direct SQL queries for stuck compensation steps, and step-level analytics (duration, failure rates) without JSON parsing. Write amplification is negligible — sagas typically have 3-7 steps.
+**Why normalized tables over JSONB:** Per-step indexing enables dashboard visibility, direct SQL queries for stuck compensation steps, and step-level analytics (duration, failure rates) without JSON parsing. Write amplification is negligible — sagas typically have 3-7 steps.
+
+**Why `saga_events`:** `saga_step_log` captures step *outcomes* (the final result). `saga_events` captures the *journey* — every state transition, retry attempt, and operator action as an append-only stream. This enables dashboard timelines, retry audit trails, stuck-step root cause analysis, and operator intervention history without polluting the step log with transient events. The engine appends events as a side effect of state transitions; no additional round-trips since they batch with the step log write.
 
 ## Key Decisions
 
@@ -1072,6 +1092,7 @@ CREATE INDEX ix_saga_waiting ON {schema}.saga_instances (waiting_event, waiting_
 21. **`DefinitionType` → `SagaName`** → Logical name avoids overloaded "type" semantics in .NET
 22. **`StepDataJson` → `CompensationDataJson`** → Clearer intent: sole use is compensation context
 23. **`RaiseEventAsync` split** → `PublishEventAsync(event)` for business-key routed ingress, `RaiseEventToSagaAsync(sagaId, event)` for direct targeted delivery
+24. **Execution history as first-class** → `saga_events` append-only audit table captures state transitions, retry attempts, and operator actions separately from step outcomes in `saga_step_log`
 
 ## Open Questions
 
