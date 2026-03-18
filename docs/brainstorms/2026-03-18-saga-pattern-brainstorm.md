@@ -176,7 +176,7 @@ public interface ISagaContext<TState> where TState : class
         where TMessage : class;
 
     /// Store keyed step-scoped data for compensation context.
-    /// Persisted in CompletedStepLog.CompensationDataJson as a keyed dictionary.
+    /// Persisted in SagaStepLogEntry.CompensationDataJson as a keyed dictionary.
     /// Scoping: data set during step N is readable during compensation of step N only.
     /// Written to persistence after successful step completion (not during).
     void SetStepData<T>(string key, T data);
@@ -455,7 +455,7 @@ public sealed record SagaInstance
     public string? WaitingForEventType { get; set; }
     public string? WaitingForEventKey { get; set; }
     public string? FailureReason { get; set; }
-    public string? ExceptionInfo { get; set; }
+    public string? FailureInfo { get; set; }
     public int Version { get; set; }
     // Operator override audit (populated by MarkResolvedAsync)
     public string? ResolvedReason { get; set; }
@@ -498,7 +498,7 @@ public enum SagaRuntimeStatus
     Resolved,
 }
 
-public sealed record CompletedStepLog
+public sealed record SagaStepLogEntry
 {
     public required long Id { get; init; }
     public required string SagaId { get; init; }
@@ -511,7 +511,7 @@ public sealed record CompletedStepLog
     /// Readable via GetStepData<T>(key) during compensation of this step only.
     public string? CompensationDataJson { get; init; }
     public int? DurationMs { get; init; }
-    public string? ExceptionInfo { get; init; }
+    public string? FailureInfo { get; init; }
 }
 
 public enum StepLogStatus
@@ -531,7 +531,7 @@ public sealed record SagaStatusInfo
     public required DateTimeOffset UpdatedAtUtc { get; init; }
     public string? WaitingForEventType { get; init; }
     public string? FailureReason { get; init; }
-    public IReadOnlyList<CompletedStepLog> StepLog { get; init; } = [];
+    public IReadOnlyList<SagaStepLogEntry> StepLog { get; init; } = [];
 }
 ```
 
@@ -1116,7 +1116,7 @@ CREATE TABLE {schema}.saga_instances (
     waiting_event   VARCHAR(500)    NULL,
     waiting_key     VARCHAR(500)    NULL,
     failure_reason  TEXT            NULL,
-    exception_info  TEXT            NULL,
+    failure_info  TEXT            NULL,
     version         INT             NOT NULL DEFAULT 0,
     resolved_reason TEXT            NULL,
     resolved_at_utc TIMESTAMPTZ     NULL,
@@ -1133,7 +1133,7 @@ CREATE TABLE {schema}.saga_step_log (
     completed_at_utc TIMESTAMPTZ    NOT NULL,
     compensation_data TEXT          NULL,       -- keyed JSON dictionary for compensation context
     duration_ms     INT             NULL,
-    exception_info  TEXT            NULL
+    failure_info  TEXT            NULL
 );
 
 CREATE INDEX ix_step_log_saga ON {schema}.saga_step_log (saga_id);
@@ -1245,4 +1245,4 @@ CREATE INDEX ix_saga_waiting ON {schema}.saga_instances (waiting_event, waiting_
 
 ## Open Questions
 
-1. **Compensation data serialization**: `SetStepData<T>(key, data)` serializes to `CompletedStepLog.CompensationDataJson` as a keyed dictionary. What serializer? System.Text.Json with the same options as state serialization? Should there be a size limit to prevent bloat?
+1. **Compensation data serialization**: `SetStepData<T>(key, data)` serializes to `SagaStepLogEntry.CompensationDataJson` as a keyed dictionary. What serializer? System.Text.Json with the same options as state serialization? Should there be a size limit to prevent bloat?
