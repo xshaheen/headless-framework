@@ -55,7 +55,10 @@ public sealed class AuthMiddleware
         if (!authResult.IsAuthenticated)
         {
             // Log path only (no query string) — access_token may be in query params.
-            _logger.LogWarning("Authentication failed for {Path}: {Error}", context.Request.Path, authResult.ErrorMessage);
+            // Sanitize user-controlled values to prevent log injection (CRLF/newline attacks).
+            var sanitizedPath = context.Request.Path.Value?.Replace('\n', '_').Replace('\r', '_') ?? "";
+            var sanitizedError = authResult.ErrorMessage?.Replace('\n', '_').Replace('\r', '_') ?? "";
+            _logger.LogWarning("Authentication failed for {Path}: {Error}", sanitizedPath, sanitizedError);
             context.Response.StatusCode = 401;
             await context.Response.WriteAsync("Unauthorized");
             return;
