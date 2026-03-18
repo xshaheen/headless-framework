@@ -899,6 +899,19 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
     WHERE expires_at_utc IS NOT NULL;
 ```
 
+**`completed_steps` as JSONB — trade-off note:**
+
+JSONB column is simpler to start with (single table, no joins, atomic read/write with the saga instance) but has known downsides:
+
+- Per-step queries are harder (e.g., "find all sagas where step X failed compensation")
+- Dashboard per-step visibility requires JSON parsing at query time
+- Reporting/analytics on step durations or failure rates across sagas is awkward
+- PostgreSQL JSONB operators work but are slower than indexed relational columns
+
+A normalized `saga_step_log` child table would solve all of these but adds write amplification (INSERT per step) and requires transactional consistency with the parent row.
+
+**Decision: start with JSONB.** The `ISagaDataStorage` abstraction can migrate to a child table later without changing the public API — `CompletedStepLog` is an internal persistence detail, not a user-facing contract. If per-step querying becomes a real need, add a `saga_step_log` table behind the same abstraction.
+
 ## Key Decisions
 
 1. **Builder DSL over handler/interfaces** — one class per saga, explicit step/compensation pairs
