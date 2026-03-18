@@ -417,7 +417,6 @@ public sealed record SagaInstance
     public int CurrentStepIndex { get; set; }
     public DateTimeOffset CreatedAtUtc { get; init; }
     public DateTimeOffset UpdatedAtUtc { get; set; }
-    public DateTimeOffset? ExpiresAtUtc { get; set; }
     public string? WaitingForEventType { get; set; }
     public string? WaitingForEventKey { get; set; }
     public string? FailureReason { get; set; }
@@ -525,28 +524,109 @@ Compensation:
 
 ## Timeout Design
 
-Three levels, aligned with NServiceBus timeout model but using persisted timers (not in-memory):
+All timeouts — step, wait, and saga-wide — compile to the same internal primitive: a **durable timeout registration**. No in-memory timers, no `Task.Delay`.
 
-| Level | Scope | Trigger | Default |
-|-------|-------|---------|---------|
-| **Step timeout** | Single step execution | Step exceeds duration | None (no timeout) |
-| **Wait timeout** | WaitFor / Command reply | Event/reply not received | None |
-| **Saga timeout** | Entire saga lifetime | Saga not completed | None |
+### Timeout as a First-Class Record
 
-All timeouts are persisted (stored as `ExpiresAtUtc` on the saga instance or step). The runtime uses a durable timeout processor. The default implementation polls over persisted expiration timestamps via a hosted service. Alternative implementations (transport-based delayed messages, external scheduler integration) can be swapped without changing the contract. No in-memory `Task.Delay`.
+```csharp
+public sealed record SagaTimeoutRegistration
+{
+    public required string Id { get; init; }
+    public required string SagaId { get; init; }
+    public required SagaTimeoutKind Kind { get; init; }
+    public required int StepIndex { get; init; }
+    public required DateTimeOffset DueAtUtc { get; init; }
+    public string? PayloadJson { get; init; }
+}
 
-### Step Timeout Semantics
+public enum SagaTimeoutKind
+{
+    Step,
+    Wait,
+    Saga,
+}
+```
+
+### Timeout Store
+
+```csharp
+public interface ISagaTimeoutStore
+{
+    Task ScheduleAsync(SagaTimeoutRegistration timeout, CancellationToken ct = default);
+    Task CancelAsync(string sagaId, string timeoutId, CancellationToken ct = default);
+    Task<IReadOnlyList<SagaTimeoutRegistration>> GetDueAsync(
+        DateTimeOffset utcNow,
+        int batchSize,
+        CancellationToken ct = default);
+}
+```
+
+Default implementation: polling over persisted `due_at_utc` timestamps via a hosted service. Alternative implementations (transport-based delayed messages, external scheduler) can be swapped without changing the contract.
+
+### Timeout Kinds
+
+| Kind | When registered | When cancelled | On fire |
+|------|----------------|----------------|---------|
+| **Step** | Step execution begins | Step completes (success or failure) | Cancel step token → compensation |
+| **Wait** | Saga enters `WaitingForEvent` / `WaitingForReply` | Event/reply arrives | Invoke `OnTimeout` handler or fail → compensation |
+| **Saga** | `StartAsync` (at saga creation) | Saga reaches any terminal state | Invoke saga timeout handler |
+
+A saga may have **multiple active timeouts simultaneously** (e.g., a step timeout + the saga-wide timeout). Each is a separate record.
+
+### Stale Timeout Validation
+
+When a timeout fires, the runtime validates before executing:
+
+```
+if saga.Status is terminal (Completed, Failed, Stuck, Cancelled, Resolved):
+    ignore — saga already done
+
+if timeout.StepIndex != saga.CurrentStepIndex:
+    ignore — saga has moved past this step
+
+if saga state doesn't match timeout kind expectations:
+    ignore — timeout is no longer relevant
+```
+
+Late or stale timeouts are harmless — they are silently discarded.
+
+### Step Timeout Semantics (Local Steps)
 
 Step timeout is **cooperative**, not preemptive. .NET does not support safe hard preemption of async code.
 
-1. The runtime creates a `CancellationTokenSource` linked to the step's timeout duration and passes the token via the `CancellationToken ct` parameter to the step lambda.
-2. When the timeout fires, the runtime cancels the token.
-3. If the step lambda honors cancellation promptly, it throws `OperationCanceledException` and the runtime treats the step as failed → compensation begins.
-4. If the step lambda does **not** honor cancellation, the runtime still treats the step as timed out for saga state purposes (transitions to `Compensating`). The lambda may continue running in the background — the runtime does not await it indefinitely.
+1. When a `Step()` with timeout begins, the runtime registers a timeout and creates a `CancellationTokenSource` linked to the duration, passing the token via `CancellationToken ct` to the step lambda.
+2. If the step completes first, the timeout registration is cancelled.
+3. If the timeout fires first, the runtime cancels the token. If the handler honors cancellation, it throws `OperationCanceledException` → compensation begins.
+4. If the handler does **not** honor cancellation, the runtime still treats the step as timed out for saga state purposes (transitions to `Compensating`). The lambda may continue running in the background — the runtime does not await it indefinitely.
 
 Users must ensure that timed-out local operations are safe, idempotent, and abortable. The framework cannot forcibly stop in-flight HTTP calls, database transactions, or other non-cooperative work.
 
-**Wait/saga timeouts** are different: these are persisted timers checked by the timeout processor, not cooperative cancellation. They fire regardless of whether any code is running.
+### Wait / Command Timeout Semantics
+
+For `WaitFor()` and `Command()` steps, timeout is a persisted timer checked by the timeout processor. No code is running — the saga is blocked waiting for a message.
+
+- **WaitFor**: if the event does not arrive by `DueAtUtc`, invoke `OnTimeout` handler if configured, otherwise fail → compensation.
+- **Command**: if the reply does not arrive by `DueAtUtc`, mark step as timed out → compensation.
+
+### Saga-Wide Timeout
+
+Registered at saga creation (`CreatedAtUtc + configured timeout`). Cancelled when the saga reaches any terminal state. If it fires first, the saga-wide timeout handler is invoked (typically calls `FailAsync`).
+
+### DB Schema (saga timeouts)
+
+```sql
+CREATE TABLE {schema}.saga_timeouts (
+    id              VARCHAR(36)     PRIMARY KEY,
+    saga_id         VARCHAR(36)     NOT NULL REFERENCES {schema}.saga_instances(id),
+    kind            VARCHAR(10)     NOT NULL,  -- Step, Wait, Saga
+    step_index      INT             NOT NULL,
+    due_at_utc      TIMESTAMPTZ     NOT NULL,
+    payload_json    TEXT            NULL
+);
+
+CREATE INDEX ix_timeout_due ON {schema}.saga_timeouts (due_at_utc);
+CREATE INDEX ix_timeout_saga ON {schema}.saga_timeouts (saga_id);
+```
 
 ## Conditional Steps
 
@@ -901,7 +981,6 @@ CREATE TABLE {schema}.saga_instances (
     step_index      INT             NOT NULL DEFAULT 0,
     created_at_utc  TIMESTAMPTZ     NOT NULL,
     updated_at_utc  TIMESTAMPTZ     NOT NULL,
-    expires_at_utc  TIMESTAMPTZ     NULL,
     waiting_event   VARCHAR(500)    NULL,
     waiting_key     VARCHAR(500)    NULL,
     failure_reason  TEXT            NULL,
@@ -932,8 +1011,6 @@ CREATE INDEX ix_step_log_status ON {schema}.saga_step_log (status)
 CREATE INDEX ix_saga_status ON {schema}.saga_instances (status);
 CREATE INDEX ix_saga_waiting ON {schema}.saga_instances (waiting_event, waiting_key)
     WHERE waiting_event IS NOT NULL;
-CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
-    WHERE expires_at_utc IS NOT NULL;
 ```
 
 **Why child table over JSONB:** Per-step indexing enables dashboard visibility, direct SQL queries for stuck compensation steps, and step-level analytics (duration, failure rates) without JSON parsing. Write amplification is negligible — sagas typically have 3-7 steps.
@@ -944,7 +1021,7 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
 2. **Both direct invocation and command/reply** — `Step()` for DI calls, `Command()` for messaging
 3. **Single runtime shape** — `Command()` compiles to the same internal step contract as `Step()`, not a separate engine
 4. **Explicit compensation only** — framework never auto-generates rollback
-5. **Durable timeout processor** — default uses polling over persisted `expires_at_utc`; abstracted for future swap to transport-based delayed messages or external scheduler
+5. **Timeouts as first-class records** — all three timeout kinds compile to `SagaTimeoutRegistration` in a `saga_timeouts` table; `ISagaTimeoutStore` abstraction with default polling, swappable for transport-based delayed messages or external scheduler
 6. **Compensation retry with dead-letter** — configurable retry + `Stuck` status + manual intervention
 7. **Saga storage alongside messaging** — same schema, same providers, `UseSagaStorage()` extension
 8. **Two distinct correlation modes** — runtime correlation (headers) for `Command()` replies, business correlation (type + key) for `WaitFor()` events
