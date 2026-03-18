@@ -44,12 +44,16 @@ Orchestration-based saga support for `headless-framework`. A saga is a sequence 
 - Persistence alongside existing messaging storage
 - Single runtime shape: `Command()` is syntactic sugar, not a separate engine
 
-**Non-goals (v1):**
+**Non-goals:**
 
 - Choreography-based sagas (event-driven, no central orchestrator)
 - Parallel step execution (fan-out/fan-in)
-- Visual saga designer / diagram generation
+- Visual saga **designer** (drag-and-drop, code generation)
 - Saga versioning / migration
+
+**Dashboard includes:**
+
+- Read-only step visualization: linear flow diagram of the compiled step definition (name, type, status per step) with current execution position highlighted. Not an editor — purely operational visibility derived from the cached step graph + `saga_step_log`.
 
 ## Why Builder DSL
 
