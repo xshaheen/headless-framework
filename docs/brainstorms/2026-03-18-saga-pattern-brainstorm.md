@@ -267,7 +267,7 @@ public interface ISagaManagement
     /// Stores audit metadata: reason, timestamp, operator identity.
     Task MarkResolvedAsync(string sagaId, string reason, CancellationToken ct = default);
 
-    /// Find sagas stuck in a failed/compensating state.
+    /// Find sagas in Stuck status, optionally filtered by age.
     Task<IReadOnlyList<SagaInstance>> GetStuckSagasAsync(
         TimeSpan? olderThan = null,
         CancellationToken ct = default);
@@ -297,8 +297,9 @@ Separation:
 
 The runtime validates the step graph at startup and throws if any rule is violated:
 
-- Step names must be **unique** within a saga definition
+- Step names must be **unique** and not null/whitespace
 - At most **one global timeout** per saga
+- At most **one** `Completed()` and one `Failed()` lifecycle hook
 - `Command()` steps must have at least one `OnReply<T>()` or `OnFailure<T>()` handler
 - No duplicate reply type handlers within the same `Command()` step
 - `destination` on `Command()` / `CompensateWith()` must not be null or empty
