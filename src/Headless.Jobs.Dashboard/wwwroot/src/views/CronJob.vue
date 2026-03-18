@@ -1375,7 +1375,7 @@ const refreshData = async () => {
 <style scoped>
 /* Dashboard Layout */
 .cron-job-dashboard {
-  background: linear-gradient(135deg, #212121 0%, #2d2d2d 100%);
+  background: transparent;
   min-height: 100vh;
   font-family:
     'Inter',
@@ -1399,7 +1399,7 @@ const refreshData = async () => {
 
 /* Analytics Overview Card */
 .analytics-overview {
-  background: rgba(66, 66, 66, 0.9);
+  background: rgba(30, 30, 30, 0.8);
   backdrop-filter: blur(20px);
   border-radius: 12px;
   padding: var(--dashboard-card-padding, 16px);
@@ -1428,7 +1428,7 @@ const refreshData = async () => {
 }
 
 .chart-switch-vertical {
-  background: rgba(66, 66, 66, 0.95);
+  background: rgba(30, 30, 30, 0.8);
   backdrop-filter: blur(20px);
   border-radius: 16px;
   border: 1px solid rgba(100, 181, 246, 0.4);
@@ -1600,7 +1600,7 @@ const refreshData = async () => {
 }
 
 .content-card {
-  background: rgba(66, 66, 66, 0.9);
+  background: rgba(30, 30, 30, 0.8);
   backdrop-filter: blur(20px);
   border-radius: 12px;
   padding: var(--dashboard-card-padding, 16px);
@@ -1749,7 +1749,7 @@ const refreshData = async () => {
 
 /* Table Section */
 .table-section {
-  background: rgba(66, 66, 66, 0.9);
+  background: rgba(30, 30, 30, 0.8);
   backdrop-filter: blur(20px);
   border-radius: 12px;
   padding: var(--dashboard-card-padding, 16px);

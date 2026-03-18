@@ -22,7 +22,7 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
     }
 
     const token = await res.json();
-    window.open(`/messaging/login?access_token=Bearer ${token}`, '_blank');
+    window.open(`/jobs/dashboard/login?access_token=Bearer ${token}`, '_blank');
   } catch {
     error.textContent = 'Request failed';
     error.style.display = 'block';

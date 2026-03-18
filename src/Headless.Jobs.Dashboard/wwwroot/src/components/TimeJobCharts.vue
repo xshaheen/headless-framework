@@ -315,7 +315,7 @@ watch(
 
 <style scoped>
 .charts-container {
-  background: rgba(66, 66, 66, 0.9);
+  background: rgba(30, 30, 30, 0.8);
   backdrop-filter: blur(20px);
   border-radius: 12px;
   padding: 20px;
@@ -333,7 +333,7 @@ watch(
 }
 
 .chart-switch-vertical {
-  background: rgba(66, 66, 66, 0.95);
+  background: rgba(30, 30, 30, 0.8);
   backdrop-filter: blur(20px);
   border-radius: 16px;
   border: 1px solid rgba(100, 181, 246, 0.4);

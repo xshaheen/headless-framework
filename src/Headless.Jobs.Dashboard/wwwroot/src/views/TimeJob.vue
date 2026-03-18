@@ -392,7 +392,7 @@ const lineChartOption = computed(() => ({
     axisPointer: {
       type: 'cross',
       label: {
-        backgroundColor: 'rgba(66, 66, 66, 0.9)',
+        backgroundColor: 'rgba(30, 30, 30, 0.95)',
         color: '#fff',
       },
     },
@@ -1762,7 +1762,7 @@ const canBeForceDeleted = ref<string[]>([])
 
 /* Dashboard Layout */
 .time-job-dashboard {
-  background: linear-gradient(135deg, #212121 0%, #2d2d2d 100%);
+  background: transparent;
   min-height: 100vh;
   font-family:
     'Inter',
@@ -1786,7 +1786,7 @@ const canBeForceDeleted = ref<string[]>([])
 
 /* Table Section */
 .table-section {
-  background: rgba(66, 66, 66, 0.9);
+  background: rgba(30, 30, 30, 0.8);
   backdrop-filter: blur(20px);
   border-radius: 12px;
   padding: var(--dashboard-card-padding, 16px);
@@ -2654,7 +2654,7 @@ const canBeForceDeleted = ref<string[]>([])
 
 /* Analytics Overview Card */
 .analytics-overview {
-  background: rgba(66, 66, 66, 0.9);
+  background: rgba(30, 30, 30, 0.8);
   backdrop-filter: blur(20px);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.05);
@@ -2684,7 +2684,7 @@ const canBeForceDeleted = ref<string[]>([])
 }
 
 .chart-switch-vertical {
-  background: rgba(66, 66, 66, 0.95);
+  background: rgba(30, 30, 30, 0.8);
   backdrop-filter: blur(20px);
   border-radius: 16px;
   border: 1px solid rgba(100, 181, 246, 0.4);

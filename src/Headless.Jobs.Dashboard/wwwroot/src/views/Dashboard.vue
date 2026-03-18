@@ -630,7 +630,7 @@ const getVisiblePageNumbers = () => {
 /* Dashboard Container */
 .dashboard-container {
   min-height: 100vh;
-  background: linear-gradient(135deg, #212121 0%, #2d2d2d 100%);
+  background: transparent;
   padding: 0;
   font-family:
     'Inter',
@@ -658,33 +658,20 @@ const getVisiblePageNumbers = () => {
 }
 
 .metric-card {
-  background: rgba(66, 66, 66, 0.9);
-  backdrop-filter: blur(20px);
+  background: rgba(30, 30, 30, 0.8) !important;
   border-radius: 12px;
   padding: 14px;
   display: flex;
   align-items: center;
   gap: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-.metric-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
 }
 
 .metric-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .primary-metric::before {
@@ -767,18 +754,17 @@ const getVisiblePageNumbers = () => {
 }
 
 .stat-card {
-  background: rgba(66, 66, 66, 0.9);
-  backdrop-filter: blur(20px);
+  background: rgba(30, 30, 30, 0.8);
   border-radius: 12px;
   padding: 14px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   transition: all 0.3s ease;
 }
 
 .stat-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .stat-header {
@@ -834,17 +820,16 @@ const getVisiblePageNumbers = () => {
 }
 
 .content-card {
-  background: rgba(66, 66, 66, 0.9);
-  backdrop-filter: blur(20px);
+  background: rgba(30, 30, 30, 0.8);
   border-radius: 12px;
   padding: var(--dashboard-card-padding, 16px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   transition: all 0.3s ease;
 }
 
 .content-card:hover {
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .card-header {
@@ -1340,11 +1325,10 @@ const getVisiblePageNumbers = () => {
 
 /* Vuetify Table Styles */
 .functions-table-vuetify {
-  background: transparent !important;
+  background: rgba(30, 30, 30, 0.8) !important;
   border-radius: 12px !important;
   overflow: hidden !important;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
 }
 
 .functions-table-vuetify .v-data-table__wrapper {
@@ -1352,8 +1336,8 @@ const getVisiblePageNumbers = () => {
 }
 
 .functions-table-vuetify .v-data-table-header {
-  background: rgba(66, 66, 66, 0.9) !important;
-  backdrop-filter: blur(20px) !important;
+  background: transparent !important;
+
   border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
   padding: 0 !important;
 }
@@ -1389,8 +1373,8 @@ const getVisiblePageNumbers = () => {
 }
 
 .functions-table-vuetify .v-data-table-footer {
-  background: rgba(66, 66, 66, 0.9) !important;
-  backdrop-filter: blur(20px) !important;
+  background: transparent !important;
+
   border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
   color: #bdbdbd !important;
   padding: 16px !important;

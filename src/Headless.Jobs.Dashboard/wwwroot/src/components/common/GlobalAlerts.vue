@@ -86,7 +86,7 @@ const handleClose = (alertId: string) => {
 .alert-item {
   pointer-events: auto;
   min-width: 280px;
-  background: rgba(66, 66, 66, 0.95);
+  background: rgba(30, 30, 30, 0.95);
   backdrop-filter: blur(10px);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);

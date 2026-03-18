@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "Headless.Jobs.Dashboard.Jwt.Demo": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "index.html",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:5222"
+    }
+  }
+}

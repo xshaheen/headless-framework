@@ -1,9 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using Demo;
-using Demo.Data;
-using Headless.Messaging;
-using Headless.Messaging.Dashboard;
+using Headless.Jobs.Dashboard.Jwt.Demo;
+using Headless.Jobs.DependencyInjection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
@@ -59,16 +57,13 @@ builder.Services.AddAuthorization(options =>
 
 builder.Services.AddHttpClient();
 
-builder.Services.AddHeadlessMessaging(options =>
+// Jobs setup — no AddOperationalStore() means in-memory persistence by default
+builder.Services.AddHeadlessJobs(options =>
 {
-    options.FailedRetryCount = 0;
-    options.SubscribeFromAssembly(typeof(Program).Assembly);
-    options.UseInMemoryStorage();
-    options.UseInMemoryMessageQueue();
-    options.UseDashboard(d => d.WithHostAuthentication(dashboardPolicy));
+    options.AddDashboard(d => d.WithHostAuthentication(dashboardPolicy));
 });
 
-builder.Services.AddHostedService<DemoMessagePublisher>();
+builder.Services.AddHostedService<DemoJobSeeder>();
 
 var app = builder.Build();
 

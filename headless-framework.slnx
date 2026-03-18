@@ -130,6 +130,7 @@
     <Folder Name="/Jobs/">
         <Project Path="demo/Headless.Jobs.Api.Demo/Headless.Jobs.Api.Demo.csproj" />
         <Project Path="demo/Headless.Jobs.Console.Demo/Headless.Jobs.Console.Demo.csproj" />
+        <Project Path="demo/Headless.Jobs.Dashboard.Jwt.Demo/Headless.Jobs.Dashboard.Jwt.Demo.csproj" />
         <Project Path="src/Headless.Jobs.Abstractions/Headless.Jobs.Abstractions.csproj" />
         <Project Path="src/Headless.Jobs.Caching.Redis/Headless.Jobs.Caching.Redis.csproj" />
         <Project Path="src/Headless.Jobs.Core/Headless.Jobs.Core.csproj" />

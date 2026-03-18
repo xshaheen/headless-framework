@@ -385,8 +385,7 @@ const handleForceUIUpdate = () => {
     </v-app-bar>
 
     <!-- Main Content Area -->
-    <v-main>
-      <!-- Main Content Slot -->
+    <v-main class="main-content">
       <slot />
     </v-main>
 
@@ -423,7 +422,8 @@ const handleForceUIUpdate = () => {
               <span class="websocket-text">{{ getWebSocketStatusText() }}</span>
               <v-btn
                 v-if="!connectionStore.isWebSocketConnected"
-                size="x-small"
+                size="small"
+                density="compact"
                 variant="text"
                 class="reconnect-btn"
                 @click="handleReconnect()"
@@ -435,14 +435,14 @@ const handleForceUIUpdate = () => {
               <div class="websocket-indicator websocket-connecting"></div>
               <span class="websocket-text">Initializing...</span>
             </div>
-          </div>
 
-          <div class="footer-status-right">
+            <!-- Action Buttons -->
             <v-btn
               v-if="!tickerHostStatus && isServicesReady"
               color="success"
-              variant="elevated"
+              variant="tonal"
               size="small"
+              density="compact"
               prepend-icon="mdi-play-circle"
               @click="startJobHost?.requestAsync().then(() => {
                 dashboardStore.resetForceState();
@@ -455,14 +455,15 @@ const handleForceUIUpdate = () => {
               :loading="startJobHost?.loader?.value"
               class="action-btn start-btn"
             >
-              Start System
+              Start
             </v-btn>
 
             <template v-if="tickerHostStatus && isServicesReady">
               <v-btn
                 color="warning"
-                variant="elevated"
+                variant="tonal"
                 size="small"
+                density="compact"
                 @click="handleRestart"
                 :loading="restartJobHost?.loader?.value"
                 class="action-btn restart-btn"
@@ -471,6 +472,7 @@ const handleForceUIUpdate = () => {
               >
                 <span class="btn-content">
                   <v-icon
+                    size="small"
                     class="restart-icon"
                     :class="{ 'rotating': restartIsAnimating }"
                   >
@@ -485,26 +487,27 @@ const handleForceUIUpdate = () => {
 
               <v-btn
                 color="error"
-                variant="elevated"
+                variant="tonal"
                 size="small"
+                density="compact"
                 prepend-icon="mdi-stop-circle"
                 @click="confirmDialog?.open({...new ConfirmDialogProps(), confirmText: 'Stop' })"
                 :loading="stopJobHost?.loader?.value"
                 class="action-btn stop-btn"
               >
-                Stop System
+                Stop
               </v-btn>
             </template>
 
             <div v-if="!isServicesReady" class="action-loading">
-              <v-progress-circular indeterminate size="20" color="primary"></v-progress-circular>
+              <v-progress-circular indeterminate size="16" color="primary"></v-progress-circular>
               <span class="loading-text">Loading...</span>
             </div>
           </div>
-        </div>
 
-        <div class="footer-bottom">
-          2026 — <strong>Headless Framework</strong>
+          <div class="footer-bottom">
+            2026 — <strong>Headless Framework</strong>
+          </div>
         </div>
       </div>
     </v-footer>
@@ -540,7 +543,7 @@ const handleForceUIUpdate = () => {
 <style scoped>
 #inspire {
   --dashboard-shell-max-width: 1240px;
-  --dashboard-shell-padding-x: clamp(8px, 1.2vw, 16px);
+  --dashboard-shell-padding-x: clamp(16px, 2.4vw, 28px);
   --dashboard-card-padding: 16px;
   --dashboard-control-gap: 12px;
 }
@@ -687,48 +690,48 @@ const handleForceUIUpdate = () => {
   background: rgba(var(--v-theme-primary), 0.1) !important;
 }
 
+.main-content {
+  flex: 1 0 auto;
+}
+
 /* Footer Status Row */
 .footer-status-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .footer-status-left {
   display: flex;
   align-items: center;
-  gap: 16px;
-}
-
-.footer-status-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .footer-bottom {
-  color: #9e9e9e;
-  font-size: 0.75rem;
-  text-align: center;
+  color: #bdbdbd;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .footer-bottom strong {
-  color: #bdbdbd;
+  color: #e0e0e0;
   font-weight: 600;
 }
 
 .status-indicator {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
 }
 
 .status-pulse {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -787,16 +790,17 @@ const handleForceUIUpdate = () => {
 .websocket-status {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
+  gap: 4px;
+  padding: 0 6px;
+  height: 28px;
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .websocket-indicator {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -837,13 +841,6 @@ const handleForceUIUpdate = () => {
   font-weight: 500;
 }
 
-.reconnect-btn {
-  margin-left: 8px;
-  font-size: 0.7rem;
-  text-transform: none;
-  min-width: auto;
-  padding: 2px 8px;
-}
 
 /* Action Section */
 .action-section {
@@ -857,17 +854,35 @@ const handleForceUIUpdate = () => {
 }
 
 .action-btn {
-  font-weight: 600;
+  font-weight: 500;
   text-transform: none;
-  letter-spacing: 0.5px;
-  border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  transition: all 0.3s ease;
+  letter-spacing: 0;
+  border-radius: 4px;
+  transition: all 0.2s ease;
 }
 
 .action-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+  filter: brightness(1.15);
+}
+
+.reconnect-btn {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Compact all footer buttons */
+.footer-status-left :deep(.v-btn) {
+  font-size: 0.7rem;
+  min-width: 0;
+}
+
+.footer-status-left :deep(.v-btn .v-icon) {
+  font-size: 14px;
+}
+
+.footer-status-left :deep(.v-btn .v-btn__prepend) {
+  margin-inline-end: 2px;
 }
 
 /* Loading States */
@@ -896,8 +911,7 @@ const handleForceUIUpdate = () => {
 }
 
 .restart-btn:hover {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 8px 25px rgba(255, 152, 0, 0.3);
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.3);
 }
 
 .restart-btn:active {
@@ -1089,16 +1103,12 @@ const handleForceUIUpdate = () => {
   backdrop-filter: blur(20px) !important;
   border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
   box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.3) !important;
-  padding: 10px 0 !important;
+  padding: 6px 0 !important;
 }
 
 .footer-content {
   max-width: var(--dashboard-shell-max-width);
   margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
   padding: 0 var(--dashboard-shell-padding-x);
   width: 100%;
 }
@@ -1108,14 +1118,17 @@ const handleForceUIUpdate = () => {
   .footer-status-row {
     flex-direction: column;
     align-items: flex-start;
+    gap: 6px;
   }
 
   .footer-status-left {
-    flex-wrap: wrap;
+    width: 100%;
+    gap: 6px;
   }
 
-  .footer-status-right {
-    flex-wrap: wrap;
+  .footer-bottom {
+    width: 100%;
+    text-align: center;
   }
 }
 </style>
