@@ -68,6 +68,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
+- **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 
 ---
 # Headless.Messaging.Abstractions
@@ -286,6 +287,37 @@ public sealed class MetricsPublisher(IDirectPublisher publisher)
 - **Topic from type**: Topic resolved from `WithTopicMapping<T>()` or conventions
 
 **Use cases:** Metrics, telemetry, cache invalidation, real-time notifications
+
+### Callback Headers (Async Response Routing)
+
+Callback headers enable asynchronous message chaining — a consumer processes a message and the framework automatically publishes its return value to a designated response topic. This is **not** request/reply; the publisher does not await a response. A separate consumer must listen on the response topic.
+
+**Publishing with a callback:**
+
+```csharp
+await publisher.PublishAsync(
+    new GetOrderStatus { OrderId = orderId },
+    new PublishOptions { CallbackName = "order.status.result" },
+    ct);
+```
+
+When `CallbackName` is set, the consumer's return value is automatically published to that topic. The response message carries `CorrelationId` (set to the original message ID), an incremented `CorrelationSequence`, and any `TraceParent` header for tracing continuity.
+
+**Consumer-side header manipulation:**
+
+Consumers can modify callback behavior during handling via `context.Headers`:
+
+| Method | Effect |
+|--------|--------|
+| `AddResponseHeader(key, value)` | Attach custom headers to the response message |
+| `RemoveCallback()` | Suppress response — no message is published back |
+| `RewriteCallback(newTopic)` | Redirect response to a different topic |
+
+**Constraints:**
+
+- `CallbackName` is a reserved header — cannot be set via `PublishOptions.Headers`
+- Response delivery uses `IOutboxPublisher`, so a storage provider must be configured
+- The caller does NOT await the response — this is async message chaining, not RPC
 
 ## Configuration
 
