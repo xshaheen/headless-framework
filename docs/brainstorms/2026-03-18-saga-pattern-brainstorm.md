@@ -308,7 +308,7 @@ The runtime accepts replies/events **only when the saga is in the expected waiti
 
 | Scenario | Behavior |
 |----------|----------|
-| **Duplicate reply** | `SagaId + SagaStepIndex + ReplyType` must match current expected step. If saga has already advanced, the reply is ignored. |
+| **Duplicate reply** | `SagaId + SagaStepIndex` must match current expected step. If saga has already advanced, the reply is ignored. |
 | **Reply after timeout** | Saga has transitioned to `Compensating`. Late reply is ignored. |
 | **Reply for old step index** | `SagaStepIndex` doesn't match `CurrentStepIndex`. Ignored. |
 | **Late success after compensation started** | Saga status is `Compensating`. Reply is ignored — compensation cannot be reversed. |
@@ -378,9 +378,7 @@ The saga runtime attaches dedicated headers to outgoing commands:
 
 - `Headers.SagaId` — saga instance ID
 - `Headers.SagaStepIndex` — current step index
-- `Headers.SagaReplyType` — expected reply type name
-
-The participant service echoes these headers in its reply. The runtime uses `SagaId` + `SagaStepIndex` to route the reply to the exact saga instance and step. No business-key matching involved.
+The participant service echoes these headers in its reply. The runtime uses `SagaId` + `SagaStepIndex` to route the reply to the exact saga instance and step. The actual message CLR type identifies the reply type — no additional type header needed for routing. No business-key matching involved.
 
 These headers are separate from the existing `Headers.CorrelationId` to avoid collision with application-level correlation.
 
@@ -884,7 +882,7 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
 8. **Two distinct correlation modes** — runtime correlation (headers) for `Command()` replies, business correlation (type + key) for `WaitFor()` events
 9. **Testing harness with two modes** — service mocking for direct steps, command/reply simulation for messaging steps
 10. **Generic `IStepOptionsBuilder<TState>`** — typed `When()` predicate, `IdempotencyKey(Func<ISagaContext<TState>, string>)` for runtime context access
-11. **Dedicated saga headers** — `Headers.SagaId` + `Headers.SagaStepIndex` + `Headers.SagaReplyType`, separate from existing `CorrelationId`
+11. **Dedicated saga headers** — `Headers.SagaId` + `Headers.SagaStepIndex` for routing (separate from existing `CorrelationId`); reply type determined by message CLR type, not a header
 12. **Singleton definitions** — `Build()` called once at startup, immutable step graph cached
 13. **Optimistic concurrency** — `version` column on saga_instances, retry on conflict
 14. **Dashboard: same UI, new tab** — saga instances surfaced alongside messaging in the existing dashboard
@@ -895,7 +893,7 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
 19. **At-least-once execution** — step, reply, and compensation handlers are at-least-once; users must make handlers idempotent
 20. **Immutable definition model** — `Build()` produces metadata; runtime lambdas execute against per-instance `ISagaContext<TState>`; no shared mutable state in definitions
 21. **Build-time validation** — unique step names, single global timeout, required reply handlers, no duplicate reply types, no empty destinations, no conflicting compensation
-22. **Reply/event safety** — late, duplicate, and stale replies/events are ignored based on `SagaId + StepIndex + Status` matching; configurable dead-lettering
+22. **Reply/event safety** — late, duplicate, and stale replies/events are ignored based on `SagaId + StepIndex` + saga status matching; configurable dead-lettering
 23. **`SagaName` over `DefinitionType`** — logical name, not CLR type; avoids overloaded "type" semantics
 24. **`CompensationDataJson` over `StepDataJson`** — communicates the sole intended use (compensation context)
 25. **Split event ingress API** — `RaiseEventAsync(event)` for business-key correlation, `RaiseEventToSagaAsync(sagaId, event)` for direct targeted delivery; separate public intent from internal routing
