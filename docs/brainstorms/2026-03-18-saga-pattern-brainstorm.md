@@ -42,6 +42,7 @@ Orchestration-based saga support for `headless-framework`. A saga is a sequence 
 - Three timeout levels (step, wait, saga-wide)
 - Reuses existing messaging infrastructure for command/reply
 - Persistence alongside existing messaging storage
+- Single runtime shape: `Command()` is syntactic sugar, not a separate engine
 
 **Non-goals (v1):**
 
@@ -139,13 +140,15 @@ public interface ISagaContext<TState> where TState : class
     ValueTask PublishAsync<TMessage>(TMessage message, CancellationToken ct = default)
         where TMessage : class;
 
-    /// Store step-scoped data for compensation context.
-    /// Persisted in CompletedStepLog.StepDataJson.
-    void SetStepData<T>(T data);
-    T? GetStepData<T>();
+    /// Store keyed step-scoped data for compensation context.
+    /// Persisted in CompletedStepLog.StepDataJson as a keyed dictionary.
+    /// Scoping: data set during step N is readable during compensation of step N only.
+    /// Written to persistence after successful step completion (not during).
+    void SetStepData<T>(string key, T data);
+    T? GetStepData<T>(string key);
 
     /// Force-fail the saga (triggers compensation).
-    ValueTask FailAsync(string reason);
+    ValueTask FailAsync(string reason, CancellationToken ct = default);
 }
 ```
 
@@ -156,8 +159,7 @@ public interface IStepOptionsBuilder<TState> where TState : class
 {
     IStepOptionsBuilder<TState> Retry(int maxAttempts, Func<int, TimeSpan>? delay = null);
     IStepOptionsBuilder<TState> Timeout(TimeSpan timeout);
-    IStepOptionsBuilder<TState> Critical(bool value = true);
-    IStepOptionsBuilder<TState> IdempotencyKey(Func<TState, string> factory);
+    IStepOptionsBuilder<TState> IdempotencyKey(Func<ISagaContext<TState>, string> factory);
     IStepOptionsBuilder<TState> When(Func<TState, bool> predicate);
     IStepOptionsBuilder<TState> CompensationRetry(int maxAttempts, Func<int, TimeSpan>? delay = null);
 }
@@ -239,13 +241,18 @@ public interface ISagaOrchestrator
 public interface ISagaManagement
 {
     /// Retry failed compensation for a stuck saga.
+    /// Resumes reverse execution from the failed compensation step.
     Task RetryCompensationAsync(string sagaId, CancellationToken ct = default);
 
-    /// Force-complete a saga, skipping remaining steps.
-    Task ForceCompleteAsync(string sagaId, string reason, CancellationToken ct = default);
+    /// Skip the current failed compensation step and continue rollback.
+    /// Only valid for sagas in Stuck status during compensation.
+    /// Does NOT skip forward steps — forward failures always trigger compensation.
+    Task SkipFailedCompensationAsync(string sagaId, CancellationToken ct = default);
 
-    /// Skip the current failed step and continue.
-    Task SkipStepAsync(string sagaId, CancellationToken ct = default);
+    /// Mark a saga as completed by operator override.
+    /// No remaining steps are executed. No compensation is performed.
+    /// Saga is marked terminal. Intended for manual remediation only.
+    Task OverrideToCompletedAsync(string sagaId, string reason, CancellationToken ct = default);
 
     /// Find sagas stuck in a failed/compensating state.
     Task<IReadOnlyList<SagaInstance>> GetStuckSagasAsync(
@@ -255,6 +262,14 @@ public interface ISagaManagement
 ```
 
 ## Step Types
+
+All step types compile into the same internal runtime shape:
+
+- **execute action** — what happens on forward execution
+- **transition handler** — how success/failure is determined
+- **compensation handler** — what happens on rollback
+
+`Command()` is syntactic sugar over this contract, not a separate execution engine.
 
 ### 1. Local/Direct Step (`Step`)
 
@@ -269,7 +284,7 @@ Orchestrator --execute--> Lambda (calls IPaymentService via DI)
 
 ### 2. Command/Reply Step (`Command`)
 
-Sends a command message to a participant service via the existing messaging infrastructure. The saga enters a waiting state until the reply arrives. Reply correlation uses dedicated `Headers.SagaId` + `Headers.SagaStepIndex` headers (separate from the existing `CorrelationId`).
+Sends a command message to a participant service via the existing messaging infrastructure. The saga enters a waiting state until the reply arrives.
 
 ```
 Orchestrator --send command--> Message Broker --deliver--> Participant Service
@@ -283,7 +298,7 @@ Orchestrator --send command--> Message Broker --deliver--> Participant Service
 
 ### 3. Wait Step (`WaitFor`)
 
-Waits for an external event not triggered by a command. The runtime matches incoming events by type + correlation key.
+Waits for an external event not triggered by a command. The runtime matches incoming events by type + business key.
 
 ```
 Orchestrator --enters wait state (persisted)
@@ -295,7 +310,35 @@ External System --publishes event--> Message Broker
      +-- Timeout: invoke onTimeout or fail
 ```
 
-**Event correlation**: `sagaKey(state)` produces the key stored in the saga instance. When an event arrives, `eventKey(event)` extracts the key from the event. The runtime matches by `(event type, key)`.
+## Correlation Model
+
+Two distinct correlation modes. Do not mix them.
+
+### 1. Runtime Correlation (Command/Reply)
+
+For `Command()` steps. Deterministic, header-based.
+
+The saga runtime attaches dedicated headers to outgoing commands:
+
+- `Headers.SagaId` — saga instance ID
+- `Headers.SagaStepIndex` — current step index
+- `Headers.SagaReplyType` — expected reply type name
+
+The participant service echoes these headers in its reply. The runtime uses `SagaId` + `SagaStepIndex` to route the reply to the exact saga instance and step. No business-key matching involved.
+
+These headers are separate from the existing `Headers.CorrelationId` to avoid collision with application-level correlation.
+
+### 2. Business Correlation (WaitFor)
+
+For `WaitFor()` steps. Key-based, event-driven.
+
+- `sagaKey(state)` produces the key stored in the saga instance (`WaitingForEventKey`)
+- `eventKey(event)` extracts the key from the incoming event
+- The runtime matches by `(event type name, key value)`
+
+The saga instance stores `WaitingForEventType` + `WaitingForEventKey` while blocked. When an event arrives, the runtime queries: `WHERE waiting_event = @type AND waiting_key = @key`.
+
+`RaiseEventAsync(sagaId, event)` on `ISagaOrchestrator` bypasses key matching and delivers directly by saga ID.
 
 ## Execution Model
 
@@ -322,13 +365,32 @@ public sealed record SagaInstance
 
 public enum SagaRuntimeStatus
 {
+    /// Forward execution in progress.
     Running,
+
+    /// Blocked on an external event (WaitFor step).
     WaitingForEvent,
+
+    /// Blocked on a command reply (Command step).
     WaitingForReply,
+
+    /// Compensation in progress (reverse execution).
     Compensating,
+
+    /// Cancel requested, compensation in progress.
+    Cancelling,
+
+    /// Terminal: all steps completed successfully.
     Completed,
-    Failed,        // saga failed, compensation completed successfully
-    Stuck,         // compensation itself failed, requires intervention
+
+    /// Terminal: forward execution failed, compensation completed successfully.
+    /// Business result is unsuccessful but runtime is done.
+    Failed,
+
+    /// Terminal: compensation itself failed, manual intervention required.
+    Stuck,
+
+    /// Terminal: cancelled by operator, compensation completed successfully.
     Cancelled,
 }
 
@@ -337,7 +399,10 @@ public sealed record CompletedStepLog
     public required string StepName { get; init; }
     public required int StepIndex { get; init; }
     public DateTimeOffset CompletedAtUtc { get; init; }
-    public string? StepDataJson { get; init; }  // snapshot for compensation
+    /// Keyed dictionary of step-scoped data, serialized as JSON.
+    /// Set via SetStepData<T>(key, data) during step execution.
+    /// Readable via GetStepData<T>(key) during compensation of this step only.
+    public string? StepDataJson { get; init; }
 }
 
 public sealed record SagaStatusInfo
@@ -374,6 +439,8 @@ Compensation:
 
 **Compensation order**: Reverse of completed steps. Only steps with a `compensate` handler are invoked. Steps without compensation are skipped.
 
+**Cancellation flow**: `CancelAsync()` → status becomes `Cancelling` → compensation runs in reverse → final status is `Cancelled` (if compensation succeeds) or `Stuck` (if compensation fails).
+
 ## Timeout Design
 
 Three levels, aligned with NServiceBus timeout model but using persisted timers (not in-memory):
@@ -384,7 +451,7 @@ Three levels, aligned with NServiceBus timeout model but using persisted timers 
 | **Wait timeout** | WaitFor / Command reply | Event/reply not received | None |
 | **Saga timeout** | Entire saga lifetime | Saga not completed | None |
 
-All timeouts are persisted (stored as `ExpiresAtUtc` on the saga instance or step). A background job polls for expired sagas/steps. No `Task.Delay`.
+All timeouts are persisted (stored as `ExpiresAtUtc` on the saga instance or step). The runtime uses a durable timeout processor. The default implementation polls over persisted expiration timestamps via a hosted service. Alternative implementations (transport-based delayed messages, external scheduler integration) can be swapped without changing the contract. No in-memory `Task.Delay`.
 
 ## Conditional Steps
 
@@ -404,7 +471,7 @@ When the predicate returns `false`, the step is skipped entirely (no execution, 
 
 1. **Compensation is explicit** — never auto-generated
 2. **Reverse-order execution** — compensate completed steps in LIFO order
-3. **Step data available** — `GetStepData<T>()` provides snapshot from when the step executed
+3. **Step data available** — `GetStepData<T>(key)` provides keyed snapshots from when the step executed
 4. **Three compensation modes per step:**
    - No compensation (step is skipped during rollback)
    - Local compensation (lambda via `compensate:` parameter)
@@ -431,8 +498,8 @@ options.CompensationRetry = new CompensationRetryOptions
 After exhausting retries, the saga remains in `Stuck` status. The `ISagaManagement` interface provides manual intervention:
 
 - `RetryCompensationAsync` — retry from the failed compensation step
-- `ForceCompleteAsync` — mark as complete despite partial compensation
-- `SkipStepAsync` — skip the stuck compensation step, continue with next
+- `SkipFailedCompensationAsync` — skip the stuck compensation step, continue rollback (compensation only, never forward)
+- `OverrideToCompletedAsync` — mark terminal by operator override; no steps executed, no compensation performed; manual remediation only
 - `GetStuckSagasAsync` — query for stuck sagas (for alerting/dashboards)
 
 ### Dead-Letter
@@ -659,7 +726,7 @@ public sealed class OrderSaga : ISagaDefinition<OrderSagaState>
             // Global timeout
             .Timeout(
                 TimeSpan.FromHours(6),
-                async (ctx, ct) => await ctx.FailAsync("Order saga timed out"))
+                async (ctx, ct) => await ctx.FailAsync("Order saga timed out", ct))
 
             // Lifecycle hooks
             .Completed(async (ctx, ct) =>
@@ -753,17 +820,22 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
 
 1. **Builder DSL over handler/interfaces** — one class per saga, explicit step/compensation pairs
 2. **Both direct invocation and command/reply** — `Step()` for DI calls, `Command()` for messaging
-3. **Explicit compensation only** — framework never auto-generates rollback
-4. **Persisted timers** — background job polls `expires_at_utc`, no in-memory `Task.Delay`
-5. **Compensation retry with dead-letter** — configurable retry + `Stuck` status + manual intervention
-6. **Saga storage alongside messaging** — same schema, same providers, `UseSagaStorage()` extension
-7. **Event correlation by type + key** — `WaitFor` uses dual key extractors (saga-side + event-side)
-8. **Testing harness with two modes** — service mocking for direct steps, command/reply simulation for messaging steps
-9. **Generic `IStepOptionsBuilder<TState>`** — typed `When(Func<TState, bool>)` predicate, compile-time safety
-10. **Dedicated saga headers** — `Headers.SagaId` + `Headers.SagaStepIndex` + `Headers.SagaReplyType`, separate from existing `CorrelationId`
-11. **Singleton definitions** — `Build()` called once at startup, immutable step graph cached
-12. **Optimistic concurrency** — `version` column on saga_instances, retry on conflict
-13. **Dashboard: same UI, new tab** — saga instances surfaced alongside messaging in the existing dashboard
+3. **Single runtime shape** — `Command()` compiles to the same internal step contract as `Step()`, not a separate engine
+4. **Explicit compensation only** — framework never auto-generates rollback
+5. **Durable timeout processor** — default uses polling over persisted `expires_at_utc`; abstracted for future swap to transport-based delayed messages or external scheduler
+6. **Compensation retry with dead-letter** — configurable retry + `Stuck` status + manual intervention
+7. **Saga storage alongside messaging** — same schema, same providers, `UseSagaStorage()` extension
+8. **Two distinct correlation modes** — runtime correlation (headers) for `Command()` replies, business correlation (type + key) for `WaitFor()` events
+9. **Testing harness with two modes** — service mocking for direct steps, command/reply simulation for messaging steps
+10. **Generic `IStepOptionsBuilder<TState>`** — typed `When()` predicate, `IdempotencyKey(Func<ISagaContext<TState>, string>)` for runtime context access
+11. **Dedicated saga headers** — `Headers.SagaId` + `Headers.SagaStepIndex` + `Headers.SagaReplyType`, separate from existing `CorrelationId`
+12. **Singleton definitions** — `Build()` called once at startup, immutable step graph cached
+13. **Optimistic concurrency** — `version` column on saga_instances, retry on conflict
+14. **Dashboard: same UI, new tab** — saga instances surfaced alongside messaging in the existing dashboard
+15. **Keyed step data** — `SetStepData<T>(key, data)` / `GetStepData<T>(key)` scoped to current step, persisted after successful completion
+16. **Safe management API** — `SkipFailedCompensationAsync` (compensation only, never forward), `OverrideToCompletedAsync` (explicit operator override naming)
+17. **Cancellation with intermediate state** — `CancelAsync` → `Cancelling` → compensation → `Cancelled` or `Stuck`
+18. **No `Critical` step flag** — removed; undefined runtime semantics, better addressed by explicit retry/timeout configuration per step
 
 ## Resolved Questions
 
@@ -773,7 +845,17 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
 4. **Definition lifecycle** → Singleton; `Build()` called once, step graph cached and reused
 5. **Concurrency** → Optimistic concurrency via `version` column + retry on conflict
 6. **Dashboard** → Same messaging dashboard, new saga tab/section
+7. **Step data shape** → Keyed access (`SetStepData<T>(key, data)`), scoped to current step during compensation, persisted after successful step completion
+8. **`Critical` flag** → Removed; undefined runtime semantics, use explicit retry/timeout per step instead
+9. **`IdempotencyKey` signature** → `Func<ISagaContext<TState>, string>` for access to saga ID and step context
+10. **`FailAsync` signature** → Added `CancellationToken ct = default` for API consistency
+11. **`SkipStepAsync` ambiguity** → Split into `SkipFailedCompensationAsync` (compensation only); no forward step skipping
+12. **`ForceCompleteAsync` naming** → Renamed to `OverrideToCompletedAsync` with explicit contract: no steps executed, no compensation, operator override only
+13. **Timeout abstraction** → Durable timeout processor (abstracted); default polls persisted timestamps, swappable for transport-based or external scheduler
+14. **Cancellation flow** → `CancelAsync` → `Cancelling` (intermediate) → compensation → `Cancelled` or `Stuck`
+15. **Correlation model** → Two distinct modes: runtime correlation (headers) for Command replies, business correlation (type + key) for WaitFor events
+16. **Command() runtime contract** → Compiles to same internal step shape as Step(); syntactic sugar, not a separate engine
 
 ## Open Questions
 
-1. **Step data serialization**: `SetStepData<T>()` serializes to `CompletedStepLog.StepDataJson`. What serializer? System.Text.Json with the same options as state serialization? Should there be a size limit to prevent bloat?
+1. **Step data serialization**: `SetStepData<T>(key, data)` serializes to `CompletedStepLog.StepDataJson` as a keyed dictionary. What serializer? System.Text.Json with the same options as state serialization? Should there be a size limit to prevent bloat?
