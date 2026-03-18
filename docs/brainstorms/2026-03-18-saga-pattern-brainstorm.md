@@ -675,11 +675,12 @@ Steps can be skipped based on current state via `When(predicate)`:
 
 Exact semantics:
 
-- `When()` is evaluated **once**, immediately before forward execution of that step
-- If `false`: step is skipped, no `saga_step_log` entry is written, step index advances
-- Skipped steps **never participate in compensation** — they have no completion record
-- If state changes during a retry (e.g., optimistic concurrency retry re-evaluates the step), the predicate is re-evaluated against the current state
-- During cancellation/compensation, `When()` is irrelevant — compensation walks the `saga_step_log`, which only contains steps that actually executed
+- `When()` is evaluated **once** when the step is entered for forward execution. The resulting skip/execute decision is persisted for that step's attempt chain.
+- Retries of the same step **do not** re-evaluate the predicate — the initial decision holds.
+- If `false`: step is skipped, no `saga_step_log` entry is written, step index advances.
+- Skipped steps **never participate in compensation** — they have no completion record.
+- If the saga is reloaded (e.g., process restart) before entering the step for the first time, evaluation happens against current state at that moment.
+- During cancellation/compensation, `When()` is irrelevant — compensation walks the `saga_step_log`, which only contains steps that actually executed.
 
 ## Compensation Design
 
