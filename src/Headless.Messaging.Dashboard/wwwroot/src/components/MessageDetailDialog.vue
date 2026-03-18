@@ -184,9 +184,13 @@ const hasAdditionalInfo = computed(() => {
 })
 
 async function copyContent() {
-  if (!props.message?.content) return
+  const text =
+    hasExceptionInfo.value && activeTab.value === 'exception'
+      ? props.message?.exceptionInfo
+      : props.message?.content
+  if (!text) return
   try {
-    await navigator.clipboard.writeText(props.message.content)
+    await navigator.clipboard.writeText(text)
     copied.value = true
     setTimeout(() => {
       copied.value = false
@@ -195,6 +199,8 @@ async function copyContent() {
     // clipboard not available
   }
 }
+
+
 </script>
 
 <template>
@@ -642,8 +648,8 @@ async function copyContent() {
   font-size: 0.78rem;
   line-height: 1.5;
   margin: 0;
-  white-space: pre-wrap;
-  word-wrap: break-word;
+  white-space: pre;
+  overflow-x: auto;
   color: #e0e0e0;
 }
 
