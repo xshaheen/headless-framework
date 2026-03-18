@@ -71,7 +71,6 @@ public sealed class RedisConnection(IConnectionMultiplexer connection) : IDispos
     public void Dispose()
     {
         _Dispose(disposing: true);
-        GC.SuppressFinalize(this);
     }
 
     private void _Dispose(bool disposing)

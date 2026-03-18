@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <InternalsVisibleTo Include="Headless.Jobs.Dashboard" />
+    <InternalsVisibleTo Include="Headless.Messaging.Dashboard" />
+  </ItemGroup>
+</Project>

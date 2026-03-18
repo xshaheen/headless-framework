@@ -11,7 +11,7 @@ public static class AuditLogSetup
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers audit log options. Call <c>AddHeadlessAuditLogEntityFramework()</c>
+        /// Registers audit log options. Call <c>AddAuditLogEntityFramework()</c>
         /// (from <c>Headless.AuditLog.EntityFramework</c>) to add storage.
         /// </summary>
         public IServiceCollection AddHeadlessAuditLog(Action<AuditLogOptions>? configure = null)

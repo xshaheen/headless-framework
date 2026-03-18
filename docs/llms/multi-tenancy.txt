@@ -12,7 +12,7 @@ packages: Api, Core, Orm.EntityFramework, Permissions.Core
 Headless multi-tenancy is built from four pieces:
 
 - `ICurrentTenant` and `ICurrentTenantAccessor` live in the `Headless.Abstractions` namespace (implemented in `src/Headless.Core/Abstractions`) and hold the current tenant in an `AsyncLocal` scope.
-- `Headless.Api` resolves tenant context for HTTP requests via `UseHeadlessTenantResolution()`.
+- `Headless.Api` resolves tenant context for HTTP requests via `UseTenantResolution()`.
 - `Headless.Orm.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities.
 - `Headless.Permissions.Core` scopes permission grant cache keys by tenant via `ScopedCache<PermissionGrantCacheItem>`.
 
@@ -32,16 +32,16 @@ builder.AddHeadlessMultiTenancy();
 var app = builder.Build();
 
 app.UseAuthentication();
-app.UseHeadlessTenantResolution();
+app.UseTenantResolution();
 app.UseAuthorization();
 ```
 
-`UseHeadlessTenantResolution()` must run after `UseAuthentication()` and before `UseAuthorization()`.
+`UseTenantResolution()` must run after `UseAuthentication()` and before `UseAuthorization()`.
 
 ## Agent Instructions
 
 - Use `ICurrentTenant` for tenant-aware application logic; do not pass tenant ID around manually once the execution context is established.
-- In HTTP apps, call `AddHeadlessMultiTenancy()` on the builder and `UseHeadlessTenantResolution()` in the middleware pipeline.
+- In HTTP apps, call `AddHeadlessMultiTenancy()` on the builder and `UseTenantResolution()` in the middleware pipeline.
 - The default claim type is `tenant_id`. Override it with `AddHeadlessMultiTenancy(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
 - When no tenant claim is present, the middleware intentionally skips `Change(null)`. This preserves the distinction between "never set" and "explicitly null".
 - For EF Core, inherit from `HeadlessDbContext` and let the built-in model processor apply tenant filters to `IMultiTenant` entities.
@@ -57,7 +57,7 @@ app.UseAuthorization();
 - Registers `ICurrentTenantAccessor` if needed
 - Configures `MultiTenancyOptions` for the HTTP middleware
 
-`UseHeadlessTenantResolution()` reads the authenticated principal and:
+`UseTenantResolution()` reads the authenticated principal and:
 
 - Uses `tenant_id` by default
 - Uses `MultiTenancyOptions.ClaimType` when configured
@@ -134,7 +134,7 @@ SignalR hub invocations start new execution flows after the initial upgrade requ
 
 ## Failure Modes to Watch
 
-- Missing `UseHeadlessTenantResolution()` means HTTP requests stay at host scope even when the JWT contains a tenant claim.
+- Missing `UseTenantResolution()` means HTTP requests stay at host scope even when the JWT contains a tenant claim.
 - Registering middleware before `UseAuthentication()` means no authenticated principal is available yet.
 - Forgetting `using` around `currentTenant.Change()` in non-HTTP code can leak tenant context within the current async flow.
 - Assuming host-level cache scope `t:` is tenant-isolated is incorrect; it is intentionally shared.

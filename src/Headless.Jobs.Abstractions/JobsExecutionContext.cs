@@ -15,7 +15,6 @@ internal class JobsExecutionContext
 {
     private long _nextOccurrenceTicks;
     internal Action<IServiceProvider>? ExternalProviderApplicationAction { get; set; }
-    internal Action<object>? DashboardApplicationAction { get; set; }
     public Action<object?, CoreNotifyActionType>? NotifyCoreAction { get; set; }
     public string? LastHostExceptionMessage { get; set; }
     internal IJobsOptionsSeeding? OptionsSeeding { get; set; }

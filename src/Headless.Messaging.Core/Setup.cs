@@ -35,7 +35,7 @@ public static class Setup
     /// <para>
     /// <strong>Example:</strong>
     /// <code>
-    /// services.AddMessaging(options =>
+    /// services.AddHeadlessMessaging(options =>
     /// {
     ///     // Configure infrastructure
     ///     options.FailedRetryCount = 50;
@@ -62,7 +62,7 @@ public static class Setup
     /// </code>
     /// </para>
     /// </remarks>
-    public static MessagingBuilder AddMessaging(this IServiceCollection services, Action<MessagingOptions> configure)
+    public static MessagingBuilder AddHeadlessMessaging(this IServiceCollection services, Action<MessagingOptions> configure)
     {
         Argument.IsNotNull(configure);
 
@@ -76,17 +76,16 @@ public static class Setup
         // Discover consumers registered via AddConsumer<TConsumer, TMessage>()
         _DiscoverConsumersFromDI(services, options, registry);
 
-        return _RegisterCoreMessagingServices(services, options, configure);
+        return _RegisterCoreMessagingServices(services, options);
     }
 
     private static MessagingBuilder _RegisterCoreMessagingServices(
         IServiceCollection services,
-        MessagingOptions options,
-        Action<MessagingOptions>? setupAction
+        MessagingOptions options
     )
     {
         services.AddSingleton(_ => services);
-        services.TryAddSingleton(new MessagingMarkerService("Messages"));
+        services.TryAddSingleton(new MessagingMarkerService("Messaging"));
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();
@@ -138,12 +137,11 @@ public static class Setup
             serviceExtension.AddServices(services);
         }
 
-        // Register options with values that were set during AddMessaging configuration.
+        // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that
-        // requires Services/Registry to be initialized - which only happens in AddMessaging.
+        // requires Services/Registry to be initialized - which only happens in AddHeadlessMessaging.
         services.Configure<MessagingOptions>(opt =>
         {
-            // Copy internal state for consumer registration methods
             opt.Services = services;
             opt.Registry = options.Registry;
 

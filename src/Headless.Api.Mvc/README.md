@@ -26,7 +26,7 @@ dotnet add package Headless.Api.Mvc
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi().ConfigureHeadlessMvc();
+builder.AddHeadlessApi().ConfigureMvc();
 builder.Services.AddControllers();
 
 var app = builder.Build();

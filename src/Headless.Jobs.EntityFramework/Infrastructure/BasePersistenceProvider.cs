@@ -9,7 +9,7 @@ namespace Headless.Jobs.Infrastructure;
 
 internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
-    IJobClock clock,
+    TimeProvider timeProvider,
     SchedulerOptionsBuilder optionsBuilder,
     IJobsRedisContext redisContext
 )
@@ -21,7 +21,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     protected string LockHolder { get; } = optionsBuilder.NodeIdentifier;
 
-    protected IJobClock Clock { get; } = clock;
+    protected TimeProvider TimeProvider { get; } = timeProvider;
 
     protected IJobsRedisContext RedisContext { get; } = redisContext;
 
@@ -36,7 +36,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
 
         var context = dbContext.Set<TTimeJob>();
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
 
         foreach (var timeJob in timeJobs)
         {
@@ -77,7 +77,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
 
         var context = dbContext.Set<TTimeJob>();
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
         var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
         var timeJobsToUpdate = await context
@@ -122,7 +122,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
 
         var baseQuery =
             timeJobIds.Length == 0
@@ -154,7 +154,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await dbContext
             .Set<TTimeJob>()
             .Where(x => x.Id == functionContexts.JobId)
-            .ExecuteUpdateAsync(setter => setter.UpdateTimeJob(functionContexts, Clock.UtcNow), cancellationToken)
+            .ExecuteUpdateAsync(setter => setter.UpdateTimeJob(functionContexts, TimeProvider.GetUtcNow().UtcDateTime), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -171,7 +171,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await dbContext
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)timeJobIds).Contains(x.Id))
-            .ExecuteUpdateAsync(setter => setter.UpdateTimeJob(functionContext, Clock.UtcNow), cancellationToken)
+            .ExecuteUpdateAsync(setter => setter.UpdateTimeJob(functionContext, TimeProvider.GetUtcNow().UtcDateTime), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -180,7 +180,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
 
         // Define the window: ignore anything older than 1 second ago
         var oneSecondAgo = now.AddSeconds(-1);
@@ -249,7 +249,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -297,7 +297,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
 
         // Acquire and mark InProgress in a single update
         var affected = await dbContext
@@ -344,7 +344,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
 
         var functions = cronJobs.Select(x => x.Function).ToArray();
         var cronSet = dbContext.Set<TCronJob>();
@@ -470,7 +470,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
         var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
         await using var dbContext = await DbContextFactory
@@ -521,7 +521,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -560,7 +560,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -591,7 +591,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
         var executionTime = cronJobOccurrences.Key;
 
         await using var dbContext = await DbContextFactory
@@ -691,7 +691,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        var now = Clock.UtcNow;
+        var now = TimeProvider.GetUtcNow().UtcDateTime;
         var mainSchedulerThreshold = now.AddSeconds(-1);
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)

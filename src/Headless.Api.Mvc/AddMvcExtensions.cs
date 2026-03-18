@@ -8,7 +8,7 @@ namespace Headless.Api;
 
 public static class AddMvcExtensions
 {
-    public static IServiceCollection ConfigureHeadlessMvc(this IServiceCollection services)
+    public static IServiceCollection ConfigureMvc(this IServiceCollection services)
     {
         services.ConfigureOptions<ConfigureMvcJsonOptions>();
         services.ConfigureOptions<ConfigureMvcApiOptions>();
@@ -16,7 +16,7 @@ public static class AddMvcExtensions
         return services;
     }
 
-    public static WebApplicationBuilder ConfigureHeadlessMvc(this WebApplicationBuilder builder)
+    public static WebApplicationBuilder ConfigureMvc(this WebApplicationBuilder builder)
     {
         builder.Services.ConfigureOptions<ConfigureMvcJsonOptions>();
         builder.Services.ConfigureOptions<ConfigureMvcApiOptions>();

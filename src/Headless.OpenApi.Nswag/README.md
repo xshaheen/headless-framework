@@ -28,7 +28,7 @@ dotnet add package Headless.OpenApi.Nswag
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessNswagOpenApi(options =>
+builder.Services.AddNswagOpenApi(options =>
 {
     options.AddBearerSecurity = true;
     options.AddPrimitiveMappings = true;
@@ -36,9 +36,9 @@ builder.Services.AddHeadlessNswagOpenApi(options =>
 
 var app = builder.Build();
 
-app.MapHeadlessNswagOpenApi();
+app.MapNswagOpenApi();
 // or for versioned APIs:
-app.MapHeadlessNswagOpenApiVersions();
+app.MapNswagOpenApiVersions();
 ```
 
 ## Configuration
@@ -46,7 +46,7 @@ app.MapHeadlessNswagOpenApiVersions();
 ### Options
 
 ```csharp
-services.AddHeadlessNswagOpenApi(options =>
+services.AddNswagOpenApi(options =>
 {
     options.AddBearerSecurity = true;        // JWT Bearer auth
     options.AddApiKeySecurity = true;        // API Key auth

@@ -7,7 +7,10 @@ internal static class JsonExampleGenerator
 {
     private static readonly JsonSerializerOptions _JsonOptions = new() { WriteIndented = true };
 
-    private static object? _GenerateExample(Type type) => _Generate(type);
+    private static object? _GenerateExample(Type type)
+    {
+        return _Generate(type);
+    }
 
     private static object? _Generate(Type type)
     {
@@ -35,8 +38,8 @@ internal static class JsonExampleGenerator
 
         // Handle generic lists (List<T>)
         if (
-            type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>)
-            || type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IList<>)
+            (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
+            || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IList<>))
         )
         {
             var elementType = type.GetGenericArguments()[0];

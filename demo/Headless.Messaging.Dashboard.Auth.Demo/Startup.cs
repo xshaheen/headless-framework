@@ -68,17 +68,13 @@ public class Startup
                 options.Scope.Add("profile");
             });
 
-        services.AddMessaging(x =>
+        services.AddHeadlessMessaging(x =>
         {
             x.SubscribeFromAssembly(typeof(Startup).Assembly);
             x.UseInMemoryStorage();
             x.UseInMemoryMessageQueue();
 
-            x.UseDashboard(d =>
-            {
-                d.AllowAnonymousExplicit = false;
-                d.AuthorizationPolicy = dashboardAuthorizationPolicy;
-            });
+            x.UseDashboard(d => d.WithHostAuthentication(dashboardAuthorizationPolicy));
         });
 
         return services;
@@ -105,16 +101,13 @@ public class Startup
                 configureOptions: null
             );
 
-        services.AddMessaging(x =>
+        services.AddHeadlessMessaging(x =>
         {
             x.SubscribeFromAssembly(typeof(Startup).Assembly);
             x.UseInMemoryStorage();
             x.UseInMemoryMessageQueue();
 
-            x.UseDashboard(d =>
-            {
-                d.AuthorizationPolicy = myDashboardAuthenticationPolicy;
-            });
+            x.UseDashboard(d => d.WithHostAuthentication(myDashboardAuthenticationPolicy));
         });
 
         return services;
@@ -158,14 +151,10 @@ public class Startup
                 options.Scope.Add("profile");
             });
 
-        services.AddMessaging(x =>
+        services.AddHeadlessMessaging(x =>
         {
             x.SubscribeFromAssembly(typeof(Startup).Assembly);
-            x.UseDashboard(d =>
-            {
-                d.AllowAnonymousExplicit = false;
-                d.AuthorizationPolicy = dashboardAuthorizationPolicy;
-            });
+            x.UseDashboard(d => d.WithHostAuthentication(dashboardAuthorizationPolicy));
             x.UseInMemoryStorage();
             x.UseInMemoryMessageQueue();
         });
@@ -175,13 +164,10 @@ public class Startup
 
     public IServiceCollection AddMessagingWithAnonymousAccess(IServiceCollection services)
     {
-        services.AddMessaging(x =>
+        services.AddHeadlessMessaging(x =>
         {
             x.SubscribeFromAssembly(typeof(Startup).Assembly);
-            x.UseDashboard(d =>
-            {
-                d.AllowAnonymousExplicit = true;
-            });
+            x.UseDashboard(d => d.WithNoAuth());
             x.UseInMemoryStorage();
             x.UseInMemoryMessageQueue();
         });

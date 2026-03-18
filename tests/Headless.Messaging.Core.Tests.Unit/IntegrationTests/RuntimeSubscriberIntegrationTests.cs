@@ -89,7 +89,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         services.AddSingleton<RecordingRuntimeProbe>();
         services.AddSingleton<BlockingRuntimeProbe>();
 
-        services.AddMessaging(options =>
+        services.AddHeadlessMessaging(options =>
         {
             options.UseInMemoryMessageQueue();
             options.UseInMemoryStorage();

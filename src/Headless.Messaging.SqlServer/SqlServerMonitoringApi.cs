@@ -26,21 +26,11 @@ internal class SqlServerMonitoringApi(
     {
         var sql = $"""
             SELECT
-            (
-                SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Succeeded'
-            ) AS PublishedSucceeded,
-            (
-                SELECT COUNT(Id) FROM {_recName} WHERE StatusName = N'Succeeded'
-            ) AS ReceivedSucceeded,
-            (
-                SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Failed'
-            ) AS PublishedFailed,
-            (
-                SELECT COUNT(Id) FROM {_recName} WHERE StatusName = N'Failed'
-            ) AS ReceivedFailed,
-            (
-                SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Delayed'
-            ) AS PublishedDelayed;
+                (SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Succeeded') AS PublishedSucceeded,
+                (SELECT COUNT(Id) FROM {_recName} WHERE StatusName = N'Succeeded') AS ReceivedSucceeded,
+                (SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Failed') AS PublishedFailed,
+                (SELECT COUNT(Id) FROM {_recName} WHERE StatusName = N'Failed') AS ReceivedFailed,
+                (SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Delayed') AS PublishedDelayed;
             """;
 
         await using var connection = new SqlConnection(_options.ConnectionString);
@@ -231,7 +221,7 @@ internal class SqlServerMonitoringApi(
             .ExecuteScalarAsync(
                 sqlQuery,
                 cancellationToken: cancellationToken,
-                sqlParams: new SqlParameter("@StatusName", statusName)
+                sqlParams: [new SqlParameter("@StatusName", statusName)]
             )
             .ConfigureAwait(false);
     }
@@ -327,7 +317,7 @@ internal class SqlServerMonitoringApi(
     )
     {
         var sql =
-            $"SELECT TOP(1) Id AS DbId, Content, Added, ExpiresAt, Retries FROM {tableName} WITH (READPAST) WHERE Id={id}";
+            $"SELECT TOP(1) Id AS DbId, Content, Added, ExpiresAt, Retries, ExceptionInfo FROM {tableName} WITH (READPAST) WHERE Id={id}";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 
@@ -349,6 +339,9 @@ internal class SqlServerMonitoringApi(
                             Added = reader.GetDateTime(2),
                             ExpiresAt = expiresAtIsNull ? null : reader.GetDateTime(3),
                             Retries = reader.GetInt32(4),
+                            ExceptionInfo = await reader.IsDBNullAsync(5, ct).ConfigureAwait(false)
+                                ? null
+                                : reader.GetString(5),
                         };
                     }
 

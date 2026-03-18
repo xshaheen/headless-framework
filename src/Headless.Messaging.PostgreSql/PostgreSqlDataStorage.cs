@@ -155,13 +155,29 @@ public sealed class PostgreSqlDataStorage(
         return _ChangeMessageStateAsync(_pubName, message, state, transaction, cancellationToken);
     }
 
-    public ValueTask ChangeReceiveStateAsync(
+    public async ValueTask ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
         CancellationToken cancellationToken = default
     )
     {
-        return _ChangeMessageStateAsync(_recName, message, state, cancellationToken: cancellationToken);
+        var sql =
+            $"UPDATE {_recName} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id";
+
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@Id", long.Parse(message.DbId, CultureInfo.InvariantCulture)),
+            new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
+            new NpgsqlParameter("@Retries", message.Retries),
+            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? (object)message.ExpiresAt.Value : DBNull.Value),
+            new NpgsqlParameter("@StatusName", state.ToString("G")),
+            new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
+        ];
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        await connection
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<MediumMessage> StoreMessageAsync(
@@ -222,6 +238,7 @@ public sealed class PostgreSqlDataStorage(
         string name,
         string group,
         string content,
+        string? exceptionInfo = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -239,6 +256,7 @@ public sealed class PostgreSqlDataStorage(
             ),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
             new NpgsqlParameter("@MessageId", serializer.Deserialize(content)!.GetId()),
+            new NpgsqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
         ];
 
         await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -275,6 +293,7 @@ public sealed class PostgreSqlDataStorage(
             ),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", message.GetId()),
+            new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
         ];
 
         await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
@@ -450,13 +469,14 @@ public sealed class PostgreSqlDataStorage(
     private async ValueTask _StoreReceivedMessage(object[] sqlParams, CancellationToken cancellationToken = default)
     {
         var sql = $"""
-            INSERT INTO {_recName}("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","StatusName","MessageId")
-            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@StatusName,@MessageId)
+            INSERT INTO {_recName}("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","StatusName","MessageId","ExceptionInfo")
+            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@StatusName,@MessageId,@ExceptionInfo)
             ON CONFLICT ("MessageId","Group") DO UPDATE SET
                 "StatusName"=EXCLUDED."StatusName",
                 "Retries"=EXCLUDED."Retries",
                 "ExpiresAt"=EXCLUDED."ExpiresAt",
-                "Content"=EXCLUDED."Content";
+                "Content"=EXCLUDED."Content",
+                "ExceptionInfo"=EXCLUDED."ExceptionInfo";
             """;
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();

@@ -1,28 +1,26 @@
-﻿using Headless.Jobs.BackgroundServices;
+using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Dispatcher;
 using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.JobsThreadPool;
 using Headless.Jobs.Managers;
 using Headless.Jobs.Provider;
 using Headless.Jobs.Temps;
-using Headless.Jobs.JobsThreadPool;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Jobs.DependencyInjection;
 
 public static class JobsServiceExtensions
 {
-    public static IServiceCollection AddJobs(
+    public static IServiceCollection AddHeadlessJobs(
         this IServiceCollection services,
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? optionsBuilder = null
-    ) => services.AddJobs<TimeJobEntity, CronJobEntity>(optionsBuilder);
+    ) => services.AddHeadlessJobs<TimeJobEntity, CronJobEntity>(optionsBuilder);
 
-    public static IServiceCollection AddJobs<TTimeJob, TCronJob>(
+    public static IServiceCollection AddHeadlessJobs<TTimeJob, TCronJob>(
         this IServiceCollection services,
         Action<JobsOptionsBuilder<TTimeJob, TCronJob>>? optionsBuilder = null
     )
@@ -55,7 +53,10 @@ public static class JobsServiceExtensions
             JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
         >();
         services.AddSingleton<IJobsNotificationHubSender, NoOpJobsNotificationHubSender>();
-        services.AddSingleton<IJobClock, JobSystemClock>();
+        services.TryAddSingleton(TimeProvider.System);
+
+        // Core initialization — registered before background services to guarantee startup order
+        services.AddHostedService<JobsInitializationHostedService>();
 
         // Only register background services if enabled (default is true)
         if (optionInstance.RegisterBackgroundServices)
@@ -104,111 +105,5 @@ public static class JobsServiceExtensions
         services.AddSingleton(_ => tickerExecutionContext);
         services.AddSingleton(_ => schedulerOptionsBuilder);
         return services;
-    }
-
-    /// <summary>
-    /// Initializes Jobs for generic host applications (Console, MAUI, WPF, Worker Services, etc.)
-    /// </summary>
-    public static IHost UseJobs(this IHost host, JobsStartMode qStartMode = JobsStartMode.Immediate)
-    {
-        _InitializeJobs(host.Services, qStartMode);
-        return host;
-    }
-
-    /// <summary>
-    /// Initializes Jobs with a service provider directly
-    /// </summary>
-    public static IServiceProvider UseJobs(
-        this IServiceProvider serviceProvider,
-        JobsStartMode qStartMode = JobsStartMode.Immediate
-    )
-    {
-        _InitializeJobs(serviceProvider, qStartMode);
-        return serviceProvider;
-    }
-
-    private static void _InitializeJobs(IServiceProvider serviceProvider, JobsStartMode qStartMode)
-    {
-        var tickerExecutionContext = serviceProvider.GetRequiredService<JobsExecutionContext>();
-        var configuration = serviceProvider.GetRequiredService<IConfiguration>();
-        var notificationHubSender = serviceProvider.GetRequiredService<IJobsNotificationHubSender>();
-        var backgroundScheduler = serviceProvider.GetRequiredService<JobsSchedulerBackgroundService>();
-
-        // If background services are registered, configure them
-        if (backgroundScheduler != null)
-        {
-            backgroundScheduler.SkipFirstRun = qStartMode == JobsStartMode.Manual;
-
-            tickerExecutionContext.NotifyCoreAction += (value, type) =>
-            {
-                if (value == null)
-                {
-                    return;
-                }
-
-                if (type == CoreNotifyActionType.NotifyHostExceptionMessage)
-                {
-                    notificationHubSender.UpdateHostException(value);
-                    tickerExecutionContext.LastHostExceptionMessage = (string)value;
-                }
-                else if (type == CoreNotifyActionType.NotifyNextOccurence)
-                {
-                    notificationHubSender.UpdateNextOccurrence(value);
-                }
-                else if (type == CoreNotifyActionType.NotifyHostStatus)
-                {
-                    notificationHubSender.UpdateHostStatus(value);
-                }
-                else if (type == CoreNotifyActionType.NotifyThreadCount)
-                {
-                    notificationHubSender.UpdateActiveThreads(value);
-                }
-            };
-        }
-        // If background services are not registered (due to DisableBackgroundServices()),
-        // silently skip background service configuration. This is expected behavior.
-
-        JobFunctionProvider.UpdateCronExpressionsFromIConfiguration(configuration);
-        JobFunctionProvider.Build();
-
-        // Run core seeding pipeline based on main options (works for both in-memory and EF providers).
-        var options = tickerExecutionContext.OptionsSeeding;
-
-        if (options == null || options.SeedDefinedCronJobs)
-        {
-            _SeedDefinedCronJobs(serviceProvider).GetAwaiter().GetResult();
-        }
-
-        if (options?.TimeSeederAction != null)
-        {
-            options.TimeSeederAction(serviceProvider).GetAwaiter().GetResult();
-        }
-
-        if (options?.CronSeederAction != null)
-        {
-            options.CronSeederAction(serviceProvider).GetAwaiter().GetResult();
-        }
-
-        // Let external providers (e.g., EF Core) perform their own startup logic (dead-node cleanup, etc.).
-        if (tickerExecutionContext.ExternalProviderApplicationAction != null)
-        {
-            tickerExecutionContext.ExternalProviderApplicationAction(serviceProvider);
-            tickerExecutionContext.ExternalProviderApplicationAction = null;
-        }
-
-        // Dashboard integration is handled by Headless.Jobs.Dashboard package via DashboardApplicationAction
-        // It will be invoked when UseJobs is called from ASP.NET Core specific extension
-    }
-
-    private static async Task _SeedDefinedCronJobs(IServiceProvider serviceProvider)
-    {
-        var internalJobsManager = serviceProvider.GetRequiredService<IInternalJobManager>();
-
-        var functionsToSeed = JobFunctionProvider
-            .JobFunctions.Where(x => !string.IsNullOrEmpty(x.Value.cronExpression))
-            .Select(x => (x.Key, x.Value.cronExpression))
-            .ToArray();
-
-        await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed);
     }
 }

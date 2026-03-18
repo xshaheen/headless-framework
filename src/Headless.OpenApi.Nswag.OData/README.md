@@ -23,7 +23,7 @@ dotnet add package Headless.OpenApi.Nswag.OData
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessNswagOpenApi(
+builder.Services.AddNswagOpenApi(
     setupHeadlessAction: null,
     setupGeneratorActions: settings =>
     {

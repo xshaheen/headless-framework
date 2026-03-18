@@ -9,7 +9,7 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 ## Key Features
 
 - One-call service registration via `AddHeadlessApi()`
-- Multi-tenancy primitives via `AddHeadlessMultiTenancy()` and `UseHeadlessTenantResolution()`
+- Multi-tenancy primitives via `AddHeadlessMultiTenancy()` and `UseTenantResolution()`
 - Response compression (Brotli, Gzip) with optimized settings
 - Problem details standardization
 - JWT token factory and claims principal handling
@@ -52,7 +52,7 @@ using var _ = app.AddHeadlessApiDiagnosticListeners();
 app.UseResponseCompression();
 app.UseHsts();
 app.UseAuthentication();
-app.UseHeadlessTenantResolution();
+app.UseTenantResolution();
 app.UseAuthorization();
 
 app.Run();
@@ -69,11 +69,11 @@ builder.AddHeadlessMultiTenancy(options =>
 });
 
 app.UseAuthentication();
-app.UseHeadlessTenantResolution();
+app.UseTenantResolution();
 app.UseAuthorization();
 ```
 
-Place `UseHeadlessTenantResolution()` after authentication and before authorization.
+Place `UseTenantResolution()` after authentication and before authorization.
 
 ## Configuration
 

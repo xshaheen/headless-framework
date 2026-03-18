@@ -118,7 +118,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         var app = builder.Build();
 
         app.UseAuthentication();
-        app.UseHeadlessTenantResolution();
+        app.UseTenantResolution();
         app.UseAuthorization();
 
         app.MapGet("/tenant", (ICurrentTenant currentTenant) => Results.Json(new TenantResponse(currentTenant.Id, currentTenant.IsAvailable)));

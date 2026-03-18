@@ -44,7 +44,7 @@ public sealed class OrderPlacedHandler(
 }
 
 // Register consumers with Headless.Messaging.Core
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.SubscribeFromAssemblyContaining<Program>();
     options.WithTopicMapping<OrderPlacedEvent>("orders.placed");

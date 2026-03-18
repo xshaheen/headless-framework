@@ -11,17 +11,17 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
     where TCronJob : CronJobEntity, new()
 {
     private readonly IJobPersistenceProvider<TTimeJob, TCronJob> _persistenceProvider;
-    private readonly IJobClock _clock;
+    private readonly TimeProvider _timeProvider;
     private readonly IJobsNotificationHubSender _notificationHubSender;
 
     public InternalJobsManager(
         IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
-        IJobClock clock,
+        TimeProvider timeProvider,
         IJobsNotificationHubSender notificationHubSender
     )
     {
         _persistenceProvider = persistenceProvider;
-        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _notificationHubSender = notificationHubSender;
     }
 
@@ -29,7 +29,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
         CancellationToken cancellationToken = default
     )
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         var minCronGroupTask = _GetEarliestCronJobGroupAsync(cancellationToken);
         var minTimeJobsTask = _persistenceProvider.GetEarliestTimeJobs(cancellationToken);
@@ -166,7 +166,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
                     Retries = updatedTimeJob.Retries,
                     RetryIntervals = updatedTimeJob.RetryIntervals,
                     ParentId = updatedTimeJob.ParentId,
-                    ExecutionTime = updatedTimeJob.ExecutionTime ?? _clock.UtcNow,
+                    ExecutionTime = updatedTimeJob.ExecutionTime ?? _timeProvider.GetUtcNow().UtcDateTime,
                     TimeJobChildren = updatedTimeJob
                         .Children.Select(ch => new InternalFunctionContext
                         {
@@ -247,7 +247,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
         CancellationToken cancellationToken = default
     )
     {
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         var cronJobs = await _persistenceProvider
             .GetAllCronJobExpressions(cancellationToken)
@@ -503,7 +503,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
     {
         var unifiedFunctionContext = new InternalFunctionContext { FunctionName = string.Empty }
             .SetProperty(x => x.Status, JobStatus.Skipped)
-            .SetProperty(x => x.ExecutedAt, _clock.UtcNow)
+            .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime)
             .SetProperty(x => x.ExceptionDetails, "Rule RunCondition did not match!");
 
         if (resources.Length != 0)
@@ -519,7 +519,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
 
         foreach (var resource in resources)
         {
-            resource.ExecutedAt = _clock.UtcNow;
+            resource.ExecutedAt = _timeProvider.GetUtcNow().UtcDateTime;
             resource.Status = JobStatus.Skipped;
             resource.ExceptionDetails = "Rule RunCondition did not match!";
             if (resource.Type == JobType.TimeJob)
@@ -574,7 +574,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
                     Retries = timedOutTimeJob.Retries,
                     RetryIntervals = timedOutTimeJob.RetryIntervals,
                     ParentId = timedOutTimeJob.ParentId,
-                    ExecutionTime = timedOutTimeJob.ExecutionTime ?? _clock.UtcNow,
+                    ExecutionTime = timedOutTimeJob.ExecutionTime ?? _timeProvider.GetUtcNow().UtcDateTime,
                     TimeJobChildren = timedOutTimeJob
                         .Children.Select(ch => new InternalFunctionContext
                         {

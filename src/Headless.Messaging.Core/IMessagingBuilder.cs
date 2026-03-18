@@ -20,7 +20,7 @@ namespace Headless.Messaging;
 /// <para>
 /// <strong>Example:</strong>
 /// <code>
-/// services.AddMessaging(options =>
+/// services.AddHeadlessMessaging(options =>
 /// {
 ///     // Auto-discover all IConsume&lt;T&gt; implementations in assembly
 ///     options.SubscribeFromAssembly(typeof(Program).Assembly);

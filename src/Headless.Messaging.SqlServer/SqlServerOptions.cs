@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.SqlServer;
 
-public class SqlServerOptions : SqlServerEntityFrameworkMessagingOptions
+public sealed class SqlServerOptions : SqlServerEntityFrameworkMessagingOptions
 {
     /// <summary>
     /// Gets or sets the database's connection string that will be used to store database entities.
@@ -15,7 +15,8 @@ public class SqlServerOptions : SqlServerEntityFrameworkMessagingOptions
     public required string ConnectionString { get; set; }
 }
 
-internal class ConfigureSqlServerOptions(IServiceScopeFactory serviceScopeFactory) : IConfigureOptions<SqlServerOptions>
+internal sealed class ConfigureSqlServerOptions(IServiceScopeFactory serviceScopeFactory)
+    : IConfigureOptions<SqlServerOptions>
 {
     public void Configure(SqlServerOptions options)
     {

@@ -10,7 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddLogging(l => l.AddConsole());
 
-builder.Services.AddMessaging(c =>
+builder.Services.AddHeadlessMessaging(c =>
 {
     c.Subscribe<SampleSubscriber>().Topic("messaging.sample.tests");
 
@@ -42,7 +42,7 @@ builder.Services.AddMessaging(c =>
         );
     });
 
-    c.UseDashboard();
+    c.UseDashboard(d => d.WithNoAuth());
 });
 
 var app = builder.Build();

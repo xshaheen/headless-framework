@@ -1,21 +1,19 @@
 ﻿using Headless.Jobs.Entities;
+using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
 
-public class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
+public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
     private readonly JobsExecutionContext _tickerExecutionContext;
     private readonly SchedulerOptionsBuilder _schedulerOptions;
 
-    internal JobsOptionsBuilder(
-        JobsExecutionContext tickerExecutionContext,
-        SchedulerOptionsBuilder schedulerOptions
-    )
+    internal JobsOptionsBuilder(JobsExecutionContext tickerExecutionContext, SchedulerOptionsBuilder schedulerOptions)
     {
         _tickerExecutionContext = tickerExecutionContext;
         _schedulerOptions = schedulerOptions;
@@ -79,9 +77,7 @@ public class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// </summary>
     /// <param name="configure">Action to configure JsonSerializerOptions for job requests</param>
     /// <returns>The JobsOptionsBuilder for method chaining</returns>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureRequestJsonOptions(
-        Action<JsonSerializerOptions> configure
-    )
+    public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureRequestJsonOptions(Action<JsonSerializerOptions> configure)
     {
         RequestJsonSerializerOptions ??= new JsonSerializerOptions();
         configure?.Invoke(RequestJsonSerializerOptions);
@@ -122,9 +118,7 @@ public class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// <summary>
     /// Configure a custom seeder for time jobs, executed on application startup.
     /// </summary>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(
-        Func<ITimeJobManager<TTimeJob>, Task> timeSeeder
-    )
+    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task> timeSeeder)
     {
         if (timeSeeder == null)
         {
@@ -143,9 +137,7 @@ public class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// <summary>
     /// Configure a custom seeder for cron jobs, executed on application startup.
     /// </summary>
-    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(
-        Func<ICronJobManager<TCronJob>, Task> cronSeeder
-    )
+    public JobsOptionsBuilder<TTimeJob, TCronJob> UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task> cronSeeder)
     {
         if (cronSeeder == null)
         {
@@ -183,16 +175,18 @@ public class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
 
     internal void UseExternalProviderApplication(Action<IServiceProvider> action) =>
         _tickerExecutionContext.ExternalProviderApplicationAction = action;
-
-    internal void UseDashboardApplication(Action<object> action) =>
-        _tickerExecutionContext.DashboardApplicationAction = action;
 }
 
-public class SchedulerOptionsBuilder
+public sealed class SchedulerOptionsBuilder
 {
     public string NodeIdentifier { get; set; } = Environment.MachineName;
     public int MaxConcurrency { get; set; } = Environment.ProcessorCount;
     public TimeSpan IdleWorkerTimeOut { get; set; } = TimeSpan.FromMinutes(1);
     public TimeSpan FallbackIntervalChecker { get; set; } = TimeSpan.FromSeconds(30);
     public TimeZoneInfo SchedulerTimeZone { get; set; } = TimeZoneInfo.Local;
+
+    /// <summary>
+    /// Controls how job processing starts. Defaults to <see cref="JobsStartMode.Immediate"/>.
+    /// </summary>
+    public JobsStartMode StartMode { get; set; } = JobsStartMode.Immediate;
 }

@@ -5,6 +5,7 @@ using Headless.Messaging.Dashboard.K8s;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
 using k8s.Models;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Tests;
 
@@ -12,11 +13,12 @@ public sealed class K8SNodeDiscoveryProviderTests : TestBase
 {
     private readonly K8sNodeDiscoveryProvider _provider;
     private readonly K8sDiscoveryOptions _options;
+    private readonly IMemoryCache _cache = new MemoryCache(new MemoryCacheOptions());
 
     public K8SNodeDiscoveryProviderTests()
     {
         _options = new K8sDiscoveryOptions();
-        _provider = new K8sNodeDiscoveryProvider(LoggerFactory, _options);
+        _provider = new K8sNodeDiscoveryProvider(LoggerFactory, _cache, _options);
     }
 
     #region FilterNodesByTags Tests
@@ -72,7 +74,7 @@ public sealed class K8SNodeDiscoveryProviderTests : TestBase
     {
         // given
         _options.ShowOnlyExplicitVisibleNodes = false;
-        var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _options);
+        var provider = new K8sNodeDiscoveryProvider(LoggerFactory, _cache, _options);
         var tags = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["headless.messaging.something"] = "value",

@@ -2,7 +2,6 @@
 
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.GatewayProxy;
-using Headless.Messaging.Dashboard.GatewayProxy.Requester;
 using Headless.Messaging.Dashboard.K8s;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
@@ -26,7 +25,7 @@ public sealed class SetupTests : TestBase
         var provider = services.BuildServiceProvider();
 
         provider.GetService<K8sDiscoveryOptions>().Should().NotBeNull();
-        provider.GetService<DashboardOptions>().Should().NotBeNull();
+        provider.GetService<MessagingDashboardOptionsBuilder>().Should().NotBeNull();
         provider.GetService<INodeDiscoveryProvider>().Should().NotBeNull();
         provider.GetService<INodeDiscoveryProvider>().Should().BeOfType<K8sNodeDiscoveryProvider>();
     }
@@ -44,8 +43,7 @@ public sealed class SetupTests : TestBase
         // then
         var provider = services.BuildServiceProvider();
 
-        provider.GetService<IHttpRequester>().Should().NotBeNull();
-        provider.GetService<IHttpClientCache>().Should().NotBeNull();
+        provider.GetService<IHttpClientFactory>().Should().NotBeNull();
         provider.GetService<IRequestMapper>().Should().NotBeNull();
         // Note: GatewayProxyAgent requires ConsulDiscoveryOptions which is not registered with K8s-only setup
         // So we just verify the other services are registered
@@ -61,16 +59,16 @@ public sealed class SetupTests : TestBase
 
         // when
         services.AddMessagingDashboardStandalone(
-            option => option.PathMatch = "/custom-path",
+            option => option.SetBasePath("/custom-path"),
             k8SOption => k8SOption.ShowOnlyExplicitVisibleNodes = false
         );
 
         // then
         var provider = services.BuildServiceProvider();
-        var dashboardOptions = provider.GetRequiredService<DashboardOptions>();
+        var builder = provider.GetRequiredService<MessagingDashboardOptionsBuilder>();
         var k8SOptions = provider.GetRequiredService<K8sDiscoveryOptions>();
 
-        dashboardOptions.PathMatch.Should().Be("/custom-path");
+        builder.BasePath.Should().Be("/custom-path");
         k8SOptions.ShowOnlyExplicitVisibleNodes.Should().BeFalse();
     }
 
@@ -88,7 +86,7 @@ public sealed class SetupTests : TestBase
         var provider = services.BuildServiceProvider();
 
         provider.GetService<K8sDiscoveryOptions>().Should().NotBeNull();
-        provider.GetService<DashboardOptions>().Should().NotBeNull();
+        provider.GetService<MessagingDashboardOptionsBuilder>().Should().NotBeNull();
     }
 
     [Fact]

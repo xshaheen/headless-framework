@@ -1,21 +1,30 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width,initial-scale=1.0">
-    <link rel="icon" href="/logo.svg">
-    <title>Messaging Dashboard</title>
-</head>
-
-<body>
-<div id="app"></div>
-<script type="module" src="/src/main.js"></script>
-<!-- built files will be auto injected -->
-<script>
-    window.serverUrl = window.location.origin + "%(servicePrefix)";
-    window.pollingInterval = "%(pollingInterval)";
-  </script>
-</body>
-
+<!doctype html>
+<html lang="">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="./logo.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Headless Messaging</title>
+    <!--
+      Dev-mode config — in production this block is absent;
+      the .NET middleware injects window.MessagingConfig at runtime.
+      Uses a classic (non-module) script so it executes synchronously
+      before any module scripts.
+    -->
+    <script>
+      if (!window.MessagingConfig) {
+        window.MessagingConfig = {
+          basePath: '/',
+          backendDomain: '/messaging',
+          auth: { mode: 'none', enabled: false, sessionTimeout: 30 },
+          statsPollingInterval: 2000,
+        };
+        window.__dynamic_base__ = '/';
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
 </html>

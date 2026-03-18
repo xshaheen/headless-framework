@@ -84,7 +84,12 @@ public sealed class InMemoryDataStorageTests : TestBase
         var content = "Error: Something went wrong";
 
         // when
-        await _sut.StoreReceivedExceptionMessageAsync("failed.topic", "error-group", content, AbortToken);
+        await _sut.StoreReceivedExceptionMessageAsync(
+            "failed.topic",
+            "error-group",
+            content,
+            cancellationToken: AbortToken
+        );
 
         // then
         var storedMessage = InMemoryDataStorage.ReceivedMessages.Values.First();

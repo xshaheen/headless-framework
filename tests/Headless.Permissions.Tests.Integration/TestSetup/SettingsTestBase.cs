@@ -53,7 +53,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         services.AddServiceProviderLocalMessagePublisher();
 
         // Messages
-        services.AddMessaging(options =>
+        services.AddHeadlessMessaging(options =>
         {
             options.UseInMemoryMessageQueue();
             options.UseInMemoryStorage();

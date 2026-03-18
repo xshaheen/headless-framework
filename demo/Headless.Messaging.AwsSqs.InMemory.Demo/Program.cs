@@ -3,12 +3,12 @@ using Headless.Messaging.Dashboard;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddMessaging(x =>
+builder.Services.AddHeadlessMessaging(x =>
 {
     x.SubscribeFromAssembly(typeof(Program).Assembly);
     x.UseInMemoryStorage();
     x.UseAmazonSqs(RegionEndpoint.CNNorthWest1);
-    x.UseDashboard();
+    x.UseDashboard(d => d.WithNoAuth());
 });
 
 builder.Services.AddControllers();

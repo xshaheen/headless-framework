@@ -32,13 +32,13 @@ await using (var connection = new SqlConnection(AppDbContext.ConnectionString))
     );
 }
 
-builder.Services.AddMessaging(x =>
+builder.Services.AddHeadlessMessaging(x =>
 {
     x.SubscribeFromAssembly(typeof(Program).Assembly);
 
     x.UseEntityFramework<AppDbContext>();
     x.UseRabbitMq("127.0.0.1");
-    x.UseDashboard();
+    x.UseDashboard(d => d.WithNoAuth());
 
     //x.EnablePublishParallelSend = true;
 

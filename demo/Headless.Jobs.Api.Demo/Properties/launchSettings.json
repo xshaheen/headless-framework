@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "Sample.Dashboard.Auth": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "index.html",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:5211"
+    }
+  }
+}

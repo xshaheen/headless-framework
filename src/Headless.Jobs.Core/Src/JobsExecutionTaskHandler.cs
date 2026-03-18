@@ -12,7 +12,7 @@ namespace Headless.Jobs;
 
 internal class JobsExecutionTaskHandler(
     IServiceProvider serviceProvider,
-    IJobClock clock,
+    TimeProvider timeProvider,
     IJobsInstrumentation tickerQInstrumentation,
     IInternalJobManager internalJobsManager
 )
@@ -43,10 +43,8 @@ internal class JobsExecutionTaskHandler(
         if (hasChildren)
         {
             // Process children - separate InProgress from others
-            for (var i = 0; i < context.TimeJobChildren.Count; i++)
+            foreach (var child in context.TimeJobChildren)
             {
-                var child = context.TimeJobChildren[i];
-
                 if (child.CachedDelegate != null)
                 {
                     if (child.RunCondition == RunCondition.InProgress)
@@ -210,11 +208,7 @@ internal class JobsExecutionTaskHandler(
                 // Create service scope - will be disposed automatically via await using
                 await using var scope = serviceProvider.CreateAsyncScope();
                 jobFunctionContext.SetServiceScope(scope);
-                await context.CachedDelegate(
-                    cancellationTokenSource.Token,
-                    scope.ServiceProvider,
-                    jobFunctionContext
-                );
+                await context.CachedDelegate(cancellationTokenSource.Token, scope.ServiceProvider, jobFunctionContext);
 
                 success = true;
                 context.RetryCount = attempt;
@@ -224,7 +218,7 @@ internal class JobsExecutionTaskHandler(
             {
                 context
                     .SetProperty(x => x.Status, JobStatus.Cancelled)
-                    .SetProperty(x => x.ExecutedAt, clock.UtcNow)
+                    .SetProperty(x => x.ExecutedAt, timeProvider.GetUtcNow().UtcDateTime)
                     .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
                     .SetProperty(x => x.ExceptionDetails, _SerializeException(ex));
 
@@ -251,7 +245,7 @@ internal class JobsExecutionTaskHandler(
             {
                 context
                     .SetProperty(x => x.Status, ex.Status)
-                    .SetProperty(x => x.ExecutedAt, clock.UtcNow)
+                    .SetProperty(x => x.ExecutedAt, timeProvider.GetUtcNow().UtcDateTime)
                     .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds);
 
                 if (ex.InnerException != null)
@@ -288,7 +282,7 @@ internal class JobsExecutionTaskHandler(
 
         context
             .SetProperty(x => x.ElapsedTime, stopWatch.ElapsedMilliseconds)
-            .SetProperty(x => x.ExecutedAt, clock.UtcNow);
+            .SetProperty(x => x.ExecutedAt, timeProvider.GetUtcNow().UtcDateTime);
 
         if (success)
         {
@@ -320,12 +314,7 @@ internal class JobsExecutionTaskHandler(
             jobActivity?.SetTag("Headless.Jobs.job.error_type", lastException.GetType().Name);
 
             // Log job failed
-            tickerQInstrumentation.LogJobFailed(
-                context.JobId,
-                context.FunctionName,
-                lastException,
-                context.RetryCount
-            );
+            tickerQInstrumentation.LogJobFailed(context.JobId, context.FunctionName, lastException, context.RetryCount);
             tickerQInstrumentation.LogJobCompleted(
                 context.JobId,
                 context.FunctionName,
@@ -371,14 +360,12 @@ internal class JobsExecutionTaskHandler(
 
         var retryInterval =
             (context.RetryIntervals?.Length > 0)
-                ? (
-                    attempt - 1 < context.RetryIntervals.Length
-                        ? context.RetryIntervals[attempt - 1]
-                        : context.RetryIntervals[^1]
-                )
+                ? attempt - 1 < context.RetryIntervals.Length
+                    ? context.RetryIntervals[attempt - 1]
+                    : context.RetryIntervals[^1]
                 : 30;
 
-        await Task.Delay(TimeSpan.FromSeconds(retryInterval), cancellationTokenSource.Token);
+        await Task.Delay(TimeSpan.FromSeconds(retryInterval), timeProvider, cancellationTokenSource.Token);
 
         return false;
     }
@@ -386,7 +373,10 @@ internal class JobsExecutionTaskHandler(
     private static Exception _GetRootException(Exception ex)
     {
         while (ex.InnerException != null)
+        {
             ex = ex.InnerException;
+        }
+
         return ex;
     }
 

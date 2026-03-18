@@ -26,7 +26,7 @@ public static class NswagSetup
 {
     #region Add
 
-    public static IServiceCollection AddHeadlessNswagOpenApi(
+    public static IServiceCollection AddNswagOpenApi(
         this IServiceCollection services,
         Action<HeadlessNswagOptions>? setupHeadlessAction = null,
         Action<AspNetCoreOpenApiDocumentGeneratorSettings>? setupGeneratorActions = null
@@ -46,7 +46,7 @@ public static class NswagSetup
         return services;
     }
 
-    public static IServiceCollection AddHeadlessNswagOpenApi(
+    public static IServiceCollection AddNswagOpenApi(
         this IServiceCollection services,
         Action<HeadlessNswagOptions>? setupHeadlessAction,
         Action<AspNetCoreOpenApiDocumentGeneratorSettings, IServiceProvider>? setupGeneratorActions
@@ -70,7 +70,7 @@ public static class NswagSetup
 
     #region Map
 
-    public static WebApplication MapHeadlessNswagOpenApiVersions(
+    public static WebApplication MapNswagOpenApiVersions(
         this WebApplication app,
         Action<OpenApiDocumentMiddlewareSettings, ApiVersionDescription>? documentSettings = null,
         Action<SwaggerUiSettings>? uiSettings = null
@@ -100,7 +100,7 @@ public static class NswagSetup
         return app;
     }
 
-    public static WebApplication MapHeadlessNswagOpenApi(
+    public static WebApplication MapNswagOpenApi(
         this WebApplication app,
         Action<OpenApiDocumentMiddlewareSettings>? documentSettings = null,
         Action<SwaggerUiSettings>? uiSettings = null

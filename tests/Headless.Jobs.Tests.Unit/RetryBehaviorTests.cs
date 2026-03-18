@@ -1,7 +1,6 @@
 using Headless.Jobs;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
-using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -82,17 +81,14 @@ public sealed class RetryBehaviorTests
     ) _SetupRetryTestFixture(int[] retryIntervals, int retries, int? succeedOnRetryCount = null)
     {
         var services = new ServiceCollection();
-        var clock = Substitute.For<IJobClock>();
         var internalManager = Substitute.For<IInternalJobManager>();
         var instrumentation = Substitute.For<IJobsInstrumentation>();
-
-        clock.UtcNow.Returns(DateTime.UtcNow);
 
         services.AddSingleton(internalManager);
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
 
-        var handler = new JobsExecutionTaskHandler(serviceProvider, clock, instrumentation, internalManager);
+        var handler = new JobsExecutionTaskHandler(serviceProvider, TimeProvider.System, instrumentation, internalManager);
 
         var attempts = new List<Attempt>();
 

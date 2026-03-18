@@ -35,10 +35,10 @@ services.AddHeadlessAuditLog(o =>
     o.SensitiveDataStrategy = SensitiveDataStrategy.Redact;
 });
 
-services.AddHeadlessAuditLogEntityFramework();
+services.AddAuditLogEntityFramework();
 ```
 
-`AddHeadlessAuditLogEntityFramework` requires `AddHeadlessAuditLog` (from `Headless.AuditLog.Abstractions`) to be called first for options registration, and `AddHeadlessDbContext<T>` for the DbContext registration.
+`AddAuditLogEntityFramework` requires `AddHeadlessAuditLog` (from `Headless.AuditLog.Abstractions`) to be called first for options registration, and `AddHeadlessDbContext<T>` for the DbContext registration.
 
 ### DbContext setup
 

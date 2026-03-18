@@ -24,13 +24,13 @@ public static class HybridCacheSetup
         /// <list type="bullet">
         /// <item>In-memory cache: Call <c>AddInMemoryCache()</c> before this</item>
         /// <item>Distributed cache: Call <c>AddRedisCache()</c> or similar before this</item>
-        /// <item>Messaging: Configure messaging with <c>AddMessaging()</c></item>
+        /// <item>Messaging: Configure messaging with <c>AddHeadlessMessaging()</c></item>
         /// </list>
         /// <para><b>Example:</b></para>
         /// <code>
         /// services.AddInMemoryCache(isDefault: false);
         /// services.AddRedisCache(options => options.ConnectionString = "localhost:6379");
-        /// services.AddMessaging(...);
+        /// services.AddHeadlessMessaging(...);
         /// services.AddHybridCache(options =>
         /// {
         ///     options.DefaultLocalExpiration = TimeSpan.FromMinutes(5);

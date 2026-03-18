@@ -26,7 +26,7 @@ dotnet add package Headless.Jobs.Core
 
 ```csharp
 // Register Jobs
-builder.Services.AddJobs(options =>
+builder.Services.AddHeadlessJobs(options =>
 {
     options.ConfigureScheduler(scheduler =>
     {
@@ -48,9 +48,6 @@ public static class CleanupJob
     }
 }
 
-// Initialize Jobs
-app.UseJobs();
-
 // Schedule time-based job programmatically
 public sealed class OrderService(ITimeJobManager<TimeJobEntity> job)
 {
@@ -70,7 +67,7 @@ public sealed class OrderService(ITimeJobManager<TimeJobEntity> job)
 ## Configuration
 
 ```csharp
-builder.Services.AddJobs(options =>
+builder.Services.AddHeadlessJobs(options =>
 {
     options.ConfigureScheduler(scheduler =>
     {
@@ -84,11 +81,14 @@ builder.Services.AddJobs(options =>
 
     // Disable background services (for testing)
     options.DisableBackgroundServices();
-});
 
-// Start modes
-app.UseJobs(JobsStartMode.Immediate); // Start immediately (default)
-app.UseJobs(JobsStartMode.Manual);    // Wait for manual trigger
+    // Start modes
+    options.ConfigureScheduler(scheduler =>
+    {
+        scheduler.StartMode = JobsStartMode.Immediate; // default
+        scheduler.StartMode = JobsStartMode.Manual;    // wait for manual trigger
+    });
+});
 ```
 
 ## Error Handling and Retries
@@ -138,7 +138,7 @@ public sealed class CustomJobExceptionHandler(ILogger<CustomJobExceptionHandler>
 Register it with:
 
 ```csharp
-builder.Services.AddJobs(options =>
+builder.Services.AddHeadlessJobs(options =>
 {
     options.SetExceptionHandler<CustomJobExceptionHandler>();
 });

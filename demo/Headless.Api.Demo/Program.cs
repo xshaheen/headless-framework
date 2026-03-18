@@ -16,10 +16,10 @@ builder
         encryption.InitVectorBytes = "DemoIV0123456789"u8.ToArray();
         encryption.DefaultSalt = "DemoSalt"u8.ToArray();
     })
-    .ConfigureHeadlessMinimalApi();
-builder.Services.AddHeadlessNswagOpenApi();
-builder.Services.ConfigureHeadlessMvc();
-builder.Services.AddHeadlessStatusCodesRewriterMiddleware();
+    .ConfigureMinimalApi();
+builder.Services.AddNswagOpenApi();
+builder.Services.ConfigureMvc();
+builder.Services.AddStatusCodesRewriterMiddleware();
 builder.Services.AddControllers();
 
 // Add Basic authentication
@@ -54,10 +54,10 @@ else
     app.UseExceptionHandler();
 }
 
-app.UseHeadlessStatusCodesRewriter();
+app.UseStatusCodesRewriter();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapHeadlessNswagOpenApi();
+app.MapNswagOpenApi();
 app.MapControllers();
 app.MapProblemsEndpoints();
 

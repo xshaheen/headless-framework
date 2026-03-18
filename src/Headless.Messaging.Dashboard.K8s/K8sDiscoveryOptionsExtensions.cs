@@ -1,11 +1,11 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
-using Headless.Messaging.Dashboard.GatewayProxy.Requester;
 using Headless.Messaging.Dashboard.NodeDiscovery;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Messaging.Dashboard.K8s;
 
@@ -19,10 +19,9 @@ internal sealed class K8sDiscoveryOptionsExtension(Action<K8sDiscoveryOptions>? 
         option?.Invoke(k8SOptions);
         services.AddSingleton(k8SOptions);
 
-        services.AddSingleton<IHttpRequester, HttpClientHttpRequester>();
-        services.AddSingleton<IHttpClientCache, MemoryHttpClientCache>();
-        services.AddSingleton<IRequestMapper, RequestMapper>();
-        services.AddSingleton<GatewayProxyAgent>();
+        services.AddHttpClient();
+        services.TryAddSingleton<IRequestMapper, RequestMapper>();
+        services.TryAddSingleton<GatewayProxyAgent>();
         services.AddSingleton<INodeDiscoveryProvider, K8sNodeDiscoveryProvider>();
     }
 }

@@ -21,7 +21,7 @@ dotnet add package Headless.Caching.Hybrid
 ```csharp
 services.AddInMemoryCache(isDefault: false);
 services.AddRedisCache(options => options.ConnectionString = "localhost:6379");
-services.AddMessaging(builder => builder.UseRedis("localhost:6379"));
+services.AddHeadlessMessaging(builder => builder.UseRedis("localhost:6379"));
 services.AddHybridCache(options =>
 {
     options.DefaultLocalExpiration = TimeSpan.FromMinutes(5);

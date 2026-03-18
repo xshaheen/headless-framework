@@ -18,7 +18,7 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
         });
@@ -45,7 +45,7 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
         });
@@ -73,7 +73,7 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
         });
@@ -106,7 +106,7 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
         });
@@ -145,7 +145,7 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
         });
@@ -190,7 +190,7 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<CancellableConsumer>().Topic("test.topic");
         });
@@ -219,7 +219,7 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(messaging =>
+        services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
         });

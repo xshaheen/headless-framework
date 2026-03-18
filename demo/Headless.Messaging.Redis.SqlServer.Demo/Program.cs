@@ -9,7 +9,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddMessaging(x =>
+builder.Services.AddHeadlessMessaging(x =>
 {
     x.SubscribeFromAssembly(typeof(Program).Assembly);
     x.WithTopicMapping<Person>("test-message");
@@ -22,7 +22,7 @@ builder.Services.AddMessaging(x =>
 
     x.UseSqlServer("Server=db;Database=master;User=sa;Password=P@ssw0rd;Encrypt=False");
 
-    x.UseDashboard();
+    x.UseDashboard(d => d.WithNoAuth());
 });
 
 var app = builder.Build();

@@ -16,7 +16,7 @@ internal class JobsManager<TTimeJob, TCronJob>
 {
     private readonly IJobPersistenceProvider<TTimeJob, TCronJob> _persistenceProvider;
     private readonly IJobsHostScheduler _tickerQHostScheduler;
-    private readonly IJobClock _clock;
+    private readonly TimeProvider _timeProvider;
     private readonly IJobsNotificationHubSender _notificationHubSender;
     private readonly IJobsDispatcher _dispatcher;
     private readonly JobsExecutionContext _executionContext;
@@ -24,7 +24,7 @@ internal class JobsManager<TTimeJob, TCronJob>
     public JobsManager(
         IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
         IJobsHostScheduler tickerQHostScheduler,
-        IJobClock clock,
+        TimeProvider timeProvider,
         IJobsNotificationHubSender notificationHubSender,
         JobsExecutionContext executionContext,
         IJobsDispatcher dispatcher
@@ -32,7 +32,7 @@ internal class JobsManager<TTimeJob, TCronJob>
     {
         _persistenceProvider = persistenceProvider;
         _tickerQHostScheduler = tickerQHostScheduler ?? throw new ArgumentNullException(nameof(tickerQHostScheduler));
-        _clock = clock;
+        _timeProvider = timeProvider;
         _notificationHubSender = notificationHubSender;
         _executionContext = executionContext ?? throw new ArgumentNullException(nameof(executionContext));
         _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
@@ -116,14 +116,14 @@ internal class JobsManager<TTimeJob, TCronJob>
         }
 
         entity.ExecutionTime =
-            entity.ExecutionTime == null ? _clock.UtcNow : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
+            entity.ExecutionTime == null ? _timeProvider.GetUtcNow().UtcDateTime : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
 
-        entity.CreatedAt = _clock.UtcNow;
-        entity.UpdatedAt = _clock.UtcNow;
+        entity.CreatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+        entity.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
 
         try
         {
-            var now = _clock.UtcNow;
+            var now = _timeProvider.GetUtcNow().UtcDateTime;
             var executionTime = entity.ExecutionTime!.Value;
 
             // Persist first
@@ -176,15 +176,15 @@ internal class JobsManager<TTimeJob, TCronJob>
             );
         }
 
-        if (CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, _clock.UtcNow) is not { } nextOccurrence)
+        if (CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, _timeProvider.GetUtcNow().UtcDateTime) is not { } nextOccurrence)
         {
             return new JobResult<TCronJob>(
                 new JobValidatorException($"Cannot parse expression {entity.Expression}")
             );
         }
 
-        entity.CreatedAt = _clock.UtcNow;
-        entity.UpdatedAt = _clock.UtcNow;
+        entity.CreatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+        entity.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
 
         try
         {
@@ -219,7 +219,7 @@ internal class JobsManager<TTimeJob, TCronJob>
             );
         }
 
-        timeJob.UpdatedAt = _clock.UtcNow;
+        timeJob.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
         timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
         try
@@ -265,7 +265,7 @@ internal class JobsManager<TTimeJob, TCronJob>
         }
 
         if (
-            CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, _clock.UtcNow) is not { } nextOccurrence
+            CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, _timeProvider.GetUtcNow().UtcDateTime) is not { } nextOccurrence
         )
         {
             return new JobResult<TCronJob>(
@@ -275,7 +275,7 @@ internal class JobsManager<TTimeJob, TCronJob>
 
         try
         {
-            cronJob.UpdatedAt = _clock.UtcNow;
+            cronJob.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
 
             var affectedRows = await _persistenceProvider.UpdateCronJobs(
                 [cronJob],
@@ -404,7 +404,7 @@ internal class JobsManager<TTimeJob, TCronJob>
             StringComparer.Ordinal
         );
         var immediateTickers = new List<Guid>();
-        var now = _clock.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         DateTime earliestForNonImmediate = default;
         foreach (var entity in entities)
         {
@@ -494,15 +494,15 @@ internal class JobsManager<TTimeJob, TCronJob>
             }
 
             if (
-                CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, _clock.UtcNow) is not { } nextOccurrence
+                CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, _timeProvider.GetUtcNow().UtcDateTime) is not { } nextOccurrence
             )
             {
                 errors.Add(new JobValidatorException($"Cannot parse expression {entity.Expression}"));
                 continue;
             }
 
-            entity.CreatedAt = _clock.UtcNow;
-            entity.UpdatedAt = _clock.UtcNow;
+            entity.CreatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+            entity.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
 
             validEntities.Add(entity);
             nextOccurrences.Add(nextOccurrence);
@@ -561,7 +561,7 @@ internal class JobsManager<TTimeJob, TCronJob>
                 continue;
             }
 
-            timeJob.UpdatedAt = _clock.UtcNow;
+            timeJob.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
             timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
             if (_executionContext.Functions.Any(x => x.JobId == timeJob.Id))
@@ -627,7 +627,7 @@ internal class JobsManager<TTimeJob, TCronJob>
             }
 
             if (
-                CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, _clock.UtcNow)
+                CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, _timeProvider.GetUtcNow().UtcDateTime)
                 is not { } nextOccurrence
             )
             {
@@ -635,7 +635,7 @@ internal class JobsManager<TTimeJob, TCronJob>
                 continue;
             }
 
-            cronJob.UpdatedAt = _clock.UtcNow;
+            cronJob.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
 
             if (_executionContext.Functions.FirstOrDefault(x => x.ParentId == cronJob.Id) is { } internalFunction)
             {

@@ -25,7 +25,7 @@ public sealed class TypeSafePublishApiTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(opt =>
+        services.AddHeadlessMessaging(opt =>
         {
             opt.WithTopicMapping<OrderCreated>("orders.created");
             opt.UseInMemoryMessageQueue();
@@ -47,7 +47,7 @@ public sealed class TypeSafePublishApiTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(opt =>
+        services.AddHeadlessMessaging(opt =>
         {
             opt.WithTopicMapping<OrderCreated>("orders.created");
             opt.WithTopicMapping<UserRegistered>("users.registered");
@@ -74,7 +74,7 @@ public sealed class TypeSafePublishApiTests
         // when/Then
         services
             .Invoking(s =>
-                s.AddMessaging(opt =>
+                s.AddHeadlessMessaging(opt =>
                 {
                     opt.WithTopicMapping<OrderCreated>("orders.created");
                     opt.WithTopicMapping<OrderCreated>("orders.new"); // Different topic
@@ -96,7 +96,7 @@ public sealed class TypeSafePublishApiTests
         // when/Then - Should not throw
         services
             .Invoking(s =>
-                s.AddMessaging(opt =>
+                s.AddHeadlessMessaging(opt =>
                 {
                     opt.WithTopicMapping<OrderCreated>("orders.created");
                     opt.WithTopicMapping<OrderCreated>("orders.created"); // Same topic
@@ -115,7 +115,7 @@ public sealed class TypeSafePublishApiTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(opt =>
+        services.AddHeadlessMessaging(opt =>
         {
             // Topic mapping can be used by both publisher and consumer
             opt.WithTopicMapping<OrderCreated>("orders.created");
@@ -179,7 +179,7 @@ public sealed class TypeSafePublishApiTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddMessaging(opt =>
+        services.AddHeadlessMessaging(opt =>
         {
             opt.WithTopicMapping<OrderCreated>("orders.created");
             opt.UseInMemoryMessageQueue();

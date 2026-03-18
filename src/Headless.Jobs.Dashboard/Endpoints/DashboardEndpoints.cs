@@ -1,4 +1,4 @@
-using Headless.Jobs.Authentication;
+using Headless.Dashboard.Authentication;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Hubs;
@@ -11,9 +11,9 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Headless.Jobs.Endpoints;
 
-public static class DashboardEndpoints
+internal static class DashboardEndpoints
 {
-    public static void MapDashboardEndpoints<TTimeJob, TCronJob>(
+    internal static void MapDashboardEndpoints<TTimeJob, TCronJob>(
         this IEndpointRouteBuilder endpoints,
         DashboardOptionsBuilder config
     )
@@ -347,7 +347,10 @@ public static class DashboardEndpoints
         where TCronJob : CronJobEntity, new()
     {
         var result = await repository.GetTimeJobFullDataAsync(cancellationToken);
-        return Results.Json(result, dashboardOptions.DashboardJsonOptions);
+        return Results.Json(
+            result.Select(x => new { item1 = x.Status, item2 = x.Count }).ToArray(),
+            dashboardOptions.DashboardJsonOptions
+        );
     }
 
     private static async Task<IResult> _CreateChainJobs<TTimeJob, TCronJob>(
@@ -541,7 +544,10 @@ public static class DashboardEndpoints
         where TCronJob : CronJobEntity, new()
     {
         var result = await repository.GetCronJobFullDataAsync(cancellationToken);
-        return Results.Json(result, dashboardOptions.DashboardJsonOptions);
+        return Results.Json(
+            result.Select(x => new { item1 = x.Status, item2 = x.Count }).ToArray(),
+            dashboardOptions.DashboardJsonOptions
+        );
     }
 
     private static async Task<IResult> _GetCronJobOccurrences<TTimeJob, TCronJob>(

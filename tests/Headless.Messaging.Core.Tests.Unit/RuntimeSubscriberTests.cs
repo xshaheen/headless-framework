@@ -158,7 +158,7 @@ public sealed class RuntimeSubscriberTests : TestBase
             services.AddSingleton<ConcurrentRuntimeHandler>();
         }
 
-        services.AddMessaging(options =>
+        services.AddHeadlessMessaging(options =>
         {
             options.UseInMemoryMessageQueue();
             options.UseInMemoryStorage();

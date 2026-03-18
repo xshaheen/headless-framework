@@ -1,8 +1,10 @@
-using Headless.Jobs.Authentication;
+using Headless.Dashboard.Authentication;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Hubs;
 using Headless.Jobs.Infrastructure.Dashboard;
 using Headless.Jobs.Interfaces;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -47,8 +49,6 @@ public static class ServiceExtensions
             // Add authentication services if using host authentication
             if (dashboardConfig.Auth.Mode == AuthMode.Host)
             {
-                // The host application should configure authentication services
-                // We just ensure they're available
                 var hasAuthenticationService = services.Any(s =>
                     s.ServiceType == typeof(Microsoft.AspNetCore.Authentication.IAuthenticationService)
                     || string.Equals(s.ServiceType.Name, "IAuthenticationSchemeProvider", StringComparison.Ordinal)
@@ -63,27 +63,26 @@ public static class ServiceExtensions
 
             services.AddDashboardService<TTimeJob, TCronJob>(dashboardConfig);
             services.AddSingleton<DashboardOptionsBuilder>(_ => dashboardConfig);
-        };
 
-        jobsConfiguration._UseDashboardDelegate(dashboardConfig);
+            // Auto-inject dashboard middleware pipeline via IStartupFilter
+            services.AddTransient<IStartupFilter>(_ =>
+                new JobsDashboardStartupFilter<TTimeJob, TCronJob>(dashboardConfig));
+        };
 
         return jobsConfiguration;
     }
+}
 
-    private static void _UseDashboardDelegate<TTimeJob, TCronJob>(
-        this JobsOptionsBuilder<TTimeJob, TCronJob> jobsConfiguration,
-        DashboardOptionsBuilder dashboardConfig
-    )
-        where TTimeJob : TimeJobEntity<TTimeJob>, new()
-        where TCronJob : CronJobEntity, new()
+internal sealed class JobsDashboardStartupFilter<TTimeJob, TCronJob>(DashboardOptionsBuilder config) : IStartupFilter
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    where TCronJob : CronJobEntity, new()
+{
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
     {
-        jobsConfiguration.UseDashboardApplication(
-            (appObj) =>
-            {
-                // Configure static files and middleware with endpoints
-                var app = (Microsoft.AspNetCore.Builder.IApplicationBuilder)appObj;
-                app.UseDashboardWithEndpoints<TTimeJob, TCronJob>(dashboardConfig);
-            }
-        );
+        return app =>
+        {
+            next(app);
+            app.UseDashboardWithEndpoints<TTimeJob, TCronJob>(config);
+        };
     }
 }

@@ -48,6 +48,7 @@ public interface IDataStorage
         string name,
         string group,
         string content,
+        string? exceptionInfo = null,
         CancellationToken cancellationToken = default
     );
 

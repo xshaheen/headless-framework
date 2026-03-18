@@ -109,7 +109,7 @@ internal sealed class Bootstrapper(
         if (marker == null)
         {
             throw new InvalidOperationException(
-                "AddMessaging() must be added on the service collection.   eg: services.AddMessaging(...)"
+                "AddHeadlessMessaging() must be added on the service collection.   eg: services.AddHeadlessMessaging(...)"
             );
         }
 
@@ -121,7 +121,7 @@ internal sealed class Bootstrapper(
                     + Environment.NewLine
                     + "=================================================================================="
                     + Environment.NewLine
-                    + "========   eg: services.AddMessaging( options => { options.UseRabbitMq(...) }); ========"
+                    + "========   eg: services.AddHeadlessMessaging( options => { options.UseRabbitMq(...) }); ========"
                     + Environment.NewLine
                     + "=================================================================================="
             );
@@ -136,7 +136,7 @@ internal sealed class Bootstrapper(
                     + Environment.NewLine
                     + "==================================================================================="
                     + Environment.NewLine
-                    + "========   eg: services.AddMessaging( options => { options.UseSqlServer(...) }); ========"
+                    + "========   eg: services.AddHeadlessMessaging( options => { options.UseSqlServer(...) }); ========"
                     + Environment.NewLine
                     + "==================================================================================="
             );

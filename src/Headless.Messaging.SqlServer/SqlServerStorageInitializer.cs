@@ -92,6 +92,7 @@ public sealed class SqlServerStorageInitializer(
                     [ExpiresAt] [datetime2](7) NULL,
                     [StatusName] [nvarchar](50) NOT NULL,
                     [MessageId] [nvarchar](200) NOT NULL,
+                    [ExceptionInfo] [nvarchar](max) NULL,
                     CONSTRAINT [PK_{receivedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
 

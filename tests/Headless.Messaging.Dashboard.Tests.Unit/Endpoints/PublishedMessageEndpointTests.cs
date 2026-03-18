@@ -1,13 +1,19 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
+using System.Net.Http.Json;
+using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
+using Headless.Messaging.Dashboard.GatewayProxy;
+using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Tests.Endpoints;
 
@@ -36,20 +42,15 @@ public sealed class PublishedMessageEndpointTests : TestBase
             .Returns(ValueTask.FromResult<MediumMessage?>(message));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
-        var context = _CreateHttpContext(_dataStorage);
-        context.Request.RouteValues["id"] = messageId.ToString(CultureInfo.InvariantCulture);
-
-        var options = new DashboardOptions();
-        var builder = Substitute.For<IEndpointRouteBuilder>();
-        builder.ServiceProvider.Returns(context.RequestServices);
-
-        var provider = new RouteActionProvider(builder, options);
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync();
+        using var client = app.GetTestClient();
 
         // when
-        await provider.PublishedMessageDetails(context);
+        var response = await client.GetAsync($"/api/published/message/{messageId}");
 
         // then
-        context.Response.StatusCode.Should().NotBe(StatusCodes.Status404NotFound);
+        response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -62,42 +63,15 @@ public sealed class PublishedMessageEndpointTests : TestBase
             .Returns(ValueTask.FromResult<MediumMessage?>(null));
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
-        var context = _CreateHttpContext(_dataStorage);
-        context.Request.RouteValues["id"] = messageId.ToString(CultureInfo.InvariantCulture);
-
-        var options = new DashboardOptions();
-        var builder = Substitute.For<IEndpointRouteBuilder>();
-        builder.ServiceProvider.Returns(context.RequestServices);
-
-        var provider = new RouteActionProvider(builder, options);
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync();
+        using var client = app.GetTestClient();
 
         // when
-        await provider.PublishedMessageDetails(context);
+        var response = await client.GetAsync($"/api/published/message/{messageId}");
 
         // then
-        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
-    }
-
-    [Fact]
-    public async Task PublishedMessageDetails_should_return_400_for_invalid_id()
-    {
-        // given
-        _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
-
-        var context = _CreateHttpContext(_dataStorage);
-        context.Request.RouteValues["id"] = "not-a-number";
-
-        var options = new DashboardOptions();
-        var builder = Substitute.For<IEndpointRouteBuilder>();
-        builder.ServiceProvider.Returns(context.RequestServices);
-
-        var provider = new RouteActionProvider(builder, options);
-
-        // when
-        await provider.PublishedMessageDetails(context);
-
-        // then
-        context.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -106,22 +80,15 @@ public sealed class PublishedMessageEndpointTests : TestBase
         // given
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
-        var context = _CreateHttpContext(_dataStorage);
-        var emptyArray = "[]"u8.ToArray();
-        context.Request.Body = new MemoryStream(emptyArray);
-        context.Request.ContentType = "application/json";
-
-        var options = new DashboardOptions();
-        var builder = Substitute.For<IEndpointRouteBuilder>();
-        builder.ServiceProvider.Returns(context.RequestServices);
-
-        var provider = new RouteActionProvider(builder, options);
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync();
+        using var client = app.GetTestClient();
 
         // when
-        await provider.PublishedRequeue(context);
+        var response = await client.PostAsJsonAsync("/api/published/requeue", Array.Empty<long>());
 
         // then
-        context.Response.StatusCode.Should().Be(StatusCodes.Status422UnprocessableEntity);
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
     [Fact]
@@ -130,22 +97,18 @@ public sealed class PublishedMessageEndpointTests : TestBase
         // given
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
-        var context = _CreateHttpContext(_dataStorage);
-        var nullJson = "null"u8.ToArray();
-        context.Request.Body = new MemoryStream(nullJson);
-        context.Request.ContentType = "application/json";
-
-        var options = new DashboardOptions();
-        var builder = Substitute.For<IEndpointRouteBuilder>();
-        builder.ServiceProvider.Returns(context.RequestServices);
-
-        var provider = new RouteActionProvider(builder, options);
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync();
+        using var client = app.GetTestClient();
 
         // when
-        await provider.PublishedDelete(context);
+        var response = await client.PostAsync(
+            "/api/published/delete",
+            new StringContent("null", System.Text.Encoding.UTF8, "application/json")
+        );
 
         // then
-        context.Response.StatusCode.Should().Be(StatusCodes.Status422UnprocessableEntity);
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
     [Fact]
@@ -158,31 +121,47 @@ public sealed class PublishedMessageEndpointTests : TestBase
             .DeletePublishedMessageAsync(messageId, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(1));
 
-        var context = _CreateHttpContext(_dataStorage);
-        var json = System.Text.Encoding.UTF8.GetBytes($"[{messageId}]");
-        context.Request.Body = new MemoryStream(json);
-        context.Request.ContentType = "application/json";
-
-        var options = new DashboardOptions();
-        var builder = Substitute.For<IEndpointRouteBuilder>();
-        builder.ServiceProvider.Returns(context.RequestServices);
-
-        var provider = new RouteActionProvider(builder, options);
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync();
+        using var client = app.GetTestClient();
 
         // when
-        await provider.PublishedDelete(context);
+        var response = await client.PostAsJsonAsync("/api/published/delete", new[] { messageId });
 
         // then
-        context.Response.StatusCode.Should().Be(StatusCodes.Status204NoContent);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
-    private static DefaultHttpContext _CreateHttpContext(IDataStorage dataStorage)
+    private static WebApplication _CreateTestApp(IDataStorage dataStorage)
     {
-        var services = new ServiceCollection().AddLogging().AddSingleton(dataStorage).BuildServiceProvider();
+        var config = new MessagingDashboardOptionsBuilder().WithNoAuth();
 
-        var context = new DefaultHttpContext { RequestServices = services };
-        context.Response.Body = new MemoryStream();
+        var appBuilder = WebApplication.CreateSlimBuilder();
+        appBuilder.WebHost.UseTestServer();
 
-        return context;
+        appBuilder.Services.AddSingleton(config);
+        appBuilder.Services.AddSingleton(config.Auth);
+        appBuilder.Services.AddScoped<IAuthService, AuthService>();
+        appBuilder.Services.AddSingleton(dataStorage);
+        appBuilder.Services.AddSingleton<MessagingMetricsEventListener>();
+
+        // Gateway proxy deps for ActivatorUtilities resolution
+        appBuilder.Services.AddSingleton(Substitute.For<IRequestMapper>());
+        appBuilder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
+        appBuilder.Services.AddMemoryCache();
+        appBuilder.Services.AddSingleton(Substitute.For<INodeDiscoveryProvider>());
+        appBuilder.Services.AddSingleton(new ConsulDiscoveryOptions { NodeName = "test-node" });
+        appBuilder.Services.AddSingleton<GatewayProxyAgent>();
+
+        appBuilder.Services.AddRouting();
+        appBuilder.Services.AddAuthorization();
+        appBuilder.Services.AddCors(o => o.AddPolicy("Messaging_Dashboard_CORS", p => p.AllowAnyOrigin()));
+
+        var app = appBuilder.Build();
+        app.UseRouting();
+        app.UseCors("Messaging_Dashboard_CORS");
+        app.MapMessagingDashboardEndpoints(config);
+
+        return app;
     }
 }

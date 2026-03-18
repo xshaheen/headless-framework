@@ -2,11 +2,13 @@
 
 using System.Net;
 using Consul;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Dashboard.NodeDiscovery;
 
-public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryOptions options) : INodeDiscoveryProvider
+public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache, ConsulDiscoveryOptions options)
+    : INodeDiscoveryProvider
 {
     private readonly ILogger<ConsulNodeDiscoveryProvider> _logger = logger.CreateLogger<ConsulNodeDiscoveryProvider>();
 
@@ -75,13 +77,13 @@ public class ConsulNodeDiscoveryProvider(ILoggerFactory logger, ConsulDiscoveryO
                 nodes.AddRange(node);
             }
 
-            MessagingCache.Global.AddOrUpdate("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60), true);
+            cache.Set("messaging.nodes.count", nodes.Count, TimeSpan.FromSeconds(60));
 
             return nodes;
         }
         catch (Exception ex)
         {
-            MessagingCache.Global.AddOrUpdate("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
+            cache.Set("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
 
             _logger.LogConsulGetNodesException(ex.Message, ex.InnerException?.Message);
             return [];

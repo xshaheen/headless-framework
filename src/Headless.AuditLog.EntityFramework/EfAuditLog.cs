@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -27,7 +28,9 @@ internal sealed class EfAuditLog(
     )
     {
         if (!options.Value.IsEnabled)
+        {
             return Task.CompletedTask;
+        }
 
         dbContext
             .Set<AuditLogEntry>()
@@ -35,22 +38,26 @@ internal sealed class EfAuditLog(
                 new AuditLogEntry
                 {
                     CreatedAt = clock.UtcNow,
-                    UserId = currentUser.UserId?.ToString(),
-                    AccountId = currentUser.AccountId?.ToString(),
-                    TenantId = currentTenant.Id,
-                    CorrelationId = correlationIdProvider.CorrelationId is { Length: > 128 } cid
-                        ? cid[..128]
-                        : correlationIdProvider.CorrelationId,
-                    Action = action,
+                    UserId = _Truncate(currentUser.UserId?.ToString(), 128),
+                    AccountId = _Truncate(currentUser.AccountId?.ToString(), 128),
+                    TenantId = _Truncate(currentTenant.Id, 128),
+                    CorrelationId = _Truncate(correlationIdProvider.CorrelationId, 128),
+                    Action = _Truncate(action, 256),
                     ChangeType = null,
-                    EntityType = entityType,
-                    EntityId = entityId,
+                    EntityType = _Truncate(entityType, 512),
+                    EntityId = _Truncate(entityId, 256),
                     NewValues = data,
                     Success = success,
-                    ErrorCode = errorCode,
+                    ErrorCode = _Truncate(errorCode, 256),
                 }
             );
 
         return Task.CompletedTask;
+    }
+
+    [return: NotNullIfNotNull(nameof(value))]
+    private static string? _Truncate(string? value, int maxLength)
+    {
+        return value is { Length: var len } && len > maxLength ? value[..maxLength] : value;
     }
 }

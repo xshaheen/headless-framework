@@ -78,7 +78,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
         services.AddScoped<ScopedExecutionFilter>();
         services.AddScoped<IConsumeFilter>(sp => sp.GetRequiredService<ScopedExecutionFilter>());
 
-        services.AddMessaging(options =>
+        services.AddHeadlessMessaging(options =>
         {
             options.UseInMemoryMessageQueue();
             options.UseInMemoryStorage();

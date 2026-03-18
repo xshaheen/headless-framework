@@ -1,10 +1,10 @@
-using Headless.Jobs.Authentication;
+using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 
 namespace Headless.Jobs;
 
-public class DashboardOptionsBuilder
+public sealed class DashboardOptionsBuilder
 {
     internal string BasePath { get; set; } = "/jobs/dashboard";
     internal Action<CorsPolicyBuilder>? CorsPolicyBuilder { get; set; }
@@ -24,11 +24,23 @@ public class DashboardOptionsBuilder
     /// </summary>
     internal JsonSerializerOptions? DashboardJsonOptions { get; set; }
 
-    public void SetCorsPolicy(Action<CorsPolicyBuilder> corsPolicyBuilder) => CorsPolicyBuilder = corsPolicyBuilder;
+    public DashboardOptionsBuilder SetCorsPolicy(Action<CorsPolicyBuilder> corsPolicyBuilder)
+    {
+        CorsPolicyBuilder = corsPolicyBuilder;
+        return this;
+    }
 
-    public void SetBasePath(string basePath) => BasePath = basePath;
+    public DashboardOptionsBuilder SetBasePath(string basePath)
+    {
+        BasePath = basePath;
+        return this;
+    }
 
-    public void SetBackendDomain(string backendDomain) => BackendDomain = backendDomain;
+    public DashboardOptionsBuilder SetBackendDomain(string backendDomain)
+    {
+        BackendDomain = backendDomain;
+        return this;
+    }
 
     /// <summary>Configure no authentication (public dashboard)</summary>
     public DashboardOptionsBuilder WithNoAuth()
@@ -63,7 +75,7 @@ public class DashboardOptionsBuilder
     }
 
     /// <summary>Configure custom authentication with validation function</summary>
-    public DashboardOptionsBuilder WithCustomAuth(Func<string, bool> validator)
+    public DashboardOptionsBuilder WithCustomAuth(Func<string, IServiceProvider, bool> validator)
     {
         Auth.Mode = AuthMode.Custom;
         Auth.CustomValidator = validator;

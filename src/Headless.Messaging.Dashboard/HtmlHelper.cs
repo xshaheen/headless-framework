@@ -18,14 +18,10 @@ public static class HtmlHelper
         if (isAwaitable)
         {
             async = _WrapKeyword("async");
-            if (resultType == typeof(void))
-            {
-                @return = _WrapType("Task");
-            }
-            else
-            {
-                @return = _WrapType("Task") + _WrapIdentifier("<") + _WrapType(resultType) + _WrapIdentifier(">");
-            }
+            @return =
+                resultType == typeof(void)
+                    ? _WrapType("Task")
+                    : _WrapType("Task") + _WrapIdentifier("<") + _WrapType(resultType) + _WrapIdentifier(">");
         }
         else
         {

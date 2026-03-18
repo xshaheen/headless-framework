@@ -14,7 +14,7 @@ dotnet add package Headless.Jobs.Dashboard
 using Headless.Jobs.DependencyInjection;
 
 builder.Services
-    .AddJobs()
+    .AddHeadlessJobs()
     .AddDashboard(dashboard =>
     {
         dashboard.SetBasePath("/jobs-dashboard");
@@ -22,10 +22,9 @@ builder.Services
     });
 
 var app = builder.Build();
-app.UseJobs();
 ```
 
-The dashboard API, SignalR hub, and UI are mounted under the configured base path.
+The dashboard API, SignalR hub, and UI are auto-mounted under the configured base path via `IStartupFilter`.
 
 ## 🚀 Quick Examples
 
@@ -64,7 +63,7 @@ services.AddJobs<MyTimeJob, MyCronJob>(config =>
 
 ### Use Host Application's Authentication
 ```csharp
-services.AddJobs<MyTimeJob, MyCronJob>(config =>
+services.AddHeadlessJobs<MyTimeJob, MyCronJob>(config =>
 {
     config.AddDashboard(dashboard =>
     {
@@ -75,7 +74,7 @@ services.AddJobs<MyTimeJob, MyCronJob>(config =>
 
 ### Use Host Authentication with Custom Policy
 ```csharp
-services.AddJobs<MyTimeJob, MyCronJob>(config =>
+services.AddHeadlessJobs<MyTimeJob, MyCronJob>(config =>
 {
     config.AddDashboard(dashboard =>
     {
@@ -120,4 +119,9 @@ Dashboard tracks runtime outcomes from the scheduler, including:
 
 Use Dashboard for operational triage, then combine with `Headless.Jobs.OpenTelemetry` for trace-level diagnostics.
 
-That's it! Simple and clean. 🎉
+## Dependencies
+
+- `Headless.Jobs.Abstractions`
+- `Headless.Jobs.Core`
+- `Headless.Dashboard.Authentication` (shared auth with Messaging Dashboard)
+- Embedded web UI assets

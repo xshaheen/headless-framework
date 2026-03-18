@@ -28,7 +28,10 @@ internal static class CallerInfoHelper
                     var methodName = method.Name;
 
                     // Filter out compiler-generated methods
-                    if (methodName.Contains('<') || methodName.Contains('>'))
+                    if (
+                        methodName.Contains('<', StringComparison.Ordinal)
+                        || methodName.Contains('>', StringComparison.Ordinal)
+                    )
                     {
                         // Try to get the next frame for async methods
                         var nextFrame = stackTrace.GetFrame(skipFrames + 1);
@@ -79,7 +82,10 @@ internal static class CallerInfoHelper
                 var methodName = method.Name;
 
                 // Filter out compiler-generated methods
-                if (methodName.Contains('<') || methodName.Contains('>'))
+                if (
+                    methodName.Contains('<', StringComparison.Ordinal)
+                    || methodName.Contains('>', StringComparison.Ordinal)
+                )
                 {
                     var nextFrame = stackTrace.GetFrame(skipFrames + 1);
                     if (nextFrame?.GetMethod() is { } nextMethod)

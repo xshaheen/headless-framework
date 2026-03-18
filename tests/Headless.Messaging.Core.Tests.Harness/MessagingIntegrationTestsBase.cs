@@ -102,7 +102,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         });
 
         // Add messaging with abstract configuration
-        services.AddMessaging(options =>
+        services.AddHeadlessMessaging(options =>
         {
             ConfigureTransport(options);
             ConfigureStorage(options);

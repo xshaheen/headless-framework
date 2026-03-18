@@ -19,7 +19,7 @@ using Headless.Jobs.DbContextFactory;
 using Microsoft.EntityFrameworkCore;
 
 builder.Services
-    .AddJobs(options =>
+    .AddHeadlessJobs(options =>
     {
         options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = TimeZoneInfo.Utc);
     })
@@ -30,8 +30,6 @@ builder.Services
             db.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
         });
     });
-
-app.UseJobs();
 ```
 
 ## Error Handling and Retry Persistence

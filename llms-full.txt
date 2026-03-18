@@ -11,8 +11,8 @@ packages: Api, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.L
 
 The core package is `Headless.Api` — call `AddHeadlessApi()` to register compression, security headers, problem details, JWT, identity, and validation in one shot. Then choose an endpoint style:
 
-- **Minimal API** (recommended for new projects): Add `Headless.Api.MinimalApi` and call `ConfigureHeadlessMinimalApi()` for JSON config, validation filters, and exception handling.
-- **MVC/Controllers**: Add `Headless.Api.Mvc` and call `ConfigureHeadlessMvc()` for base controllers, exception filters, and URL canonicalization.
+- **Minimal API** (recommended for new projects): Add `Headless.Api.MinimalApi` and call `ConfigureMinimalApi()` for JSON config, validation filters, and exception handling.
+- **MVC/Controllers**: Add `Headless.Api.Mvc` and call `ConfigureMvc()` for base controllers, exception filters, and URL canonicalization.
 
 Use `Headless.Api.Abstractions` when you only need interfaces (`IRequestContext`, `IWebClientInfoProvider`) without pulling in the full API stack.
 
@@ -26,10 +26,10 @@ Additional packages:
 - Use `AddHeadlessApi()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, or problem details.
 - Call `ApiRegistration.ConfigureGlobalSettings()` before `AddHeadlessApi()` to set regex timeout, FluentValidation, and JWT defaults.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.WithValidation<T>()` on endpoints for FluentValidation integration.
-- For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureHeadlessMvc()` not manual `MvcOptions` configuration.
+- For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`) for `IFormFile` validation — do not write manual file validation logic.
 - Use `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` to persist Data Protection keys in distributed/containerized environments.
-- For Serilog enrichment, call `AddHeadlessSerilogEnrichers()` on services and `UseHeadlessSerilogEnrichers()` on the app — place the middleware early in the pipeline.
+- For Serilog enrichment, call `AddSerilogEnrichers()` on services and `UseSerilogEnrichers()` on the app — place the middleware early in the pipeline.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
 - Configuration sections `StringHash:Secret` and `StringEncryption:Key` are required by `Headless.Api`.
 
@@ -325,12 +325,12 @@ dotnet add package Headless.Api.Logging.Serilog
 var builder = WebApplication.CreateBuilder(args);
 
 // Register enrichers
-builder.Services.AddHeadlessSerilogEnrichers();
+builder.Services.AddSerilogEnrichers();
 
 var app = builder.Build();
 
 // Use enrichers middleware (place early in pipeline)
-app.UseHeadlessSerilogEnrichers();
+app.UseSerilogEnrichers();
 
 app.Run();
 ```
@@ -378,7 +378,7 @@ dotnet add package Headless.Api.MinimalApi
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi().ConfigureHeadlessMinimalApi();
+builder.AddHeadlessApi().ConfigureMinimalApi();
 
 var app = builder.Build();
 
@@ -430,7 +430,7 @@ dotnet add package Headless.Api.Mvc
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi().ConfigureHeadlessMvc();
+builder.AddHeadlessApi().ConfigureMvc();
 builder.Services.AddControllers();
 
 var app = builder.Build();
@@ -1634,7 +1634,7 @@ dotnet add package Headless.Caching.Hybrid
 ```csharp
 services.AddInMemoryCache(isDefault: false);
 services.AddRedisCache(options => options.ConnectionString = "localhost:6379");
-services.AddMessaging(builder => builder.UseRedis("localhost:6379"));
+services.AddHeadlessMessaging(builder => builder.UseRedis("localhost:6379"));
 services.AddHybridCache(options =>
 {
     options.DefaultLocalExpiration = TimeSpan.FromMinutes(5);
@@ -3205,33 +3205,55 @@ dotnet add package Headless.Messaging.Dashboard
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 
     options.UseDashboard(dashboard =>
     {
-        dashboard.PathMatch = "/messages";
-        dashboard.StatsPollingInterval = 2000;
+        dashboard.AllowAnonymousExplicit = false;
+        dashboard.AuthorizationPolicy = "DashboardPolicy";
     });
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 
-// Access dashboard at: http://localhost:5000/messages
+// Access dashboard at: http://localhost:5000/messaging
 ```
 
 ## Configuration
 
+You **must** explicitly choose an auth mode — either allow anonymous or set a policy. Omitting both throws at startup.
+
+### With Authorization Policy
+
 ```csharp
 options.UseDashboard(dashboard =>
 {
-    dashboard.PathMatch = "/messages";
-    dashboard.StatsPollingInterval = 2000;
-    dashboard.Authorization = new[] { new CustomDashboardAuthFilter() };
+    dashboard.AllowAnonymousExplicit = false;
+    dashboard.AuthorizationPolicy = "DashboardPolicy";
 });
 ```
+
+### Anonymous Access (Dev/Testing Only)
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.AllowAnonymousExplicit = true;
+});
+```
+
+### All Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `PathMatch` | `/messaging` | URL path for the dashboard |
+| `PathBase` | `""` | Base path when behind a reverse proxy |
+| `StatsPollingInterval` | `2000` | Stats endpoint polling interval (ms) |
+| `AllowAnonymousExplicit` | `false` | Allow unauthenticated access. Must be set to `true` or `AuthorizationPolicy` must be configured |
+| `AuthorizationPolicy` | `null` | ASP.NET Core authorization policy name. Required when `AllowAnonymousExplicit` is `false` |
 
 ## Dependencies
 
@@ -3242,7 +3264,7 @@ options.UseDashboard(dashboard =>
 
 - Exposes web endpoint at configured path (default: `/messaging`)
 - Periodically polls message storage for statistics
-- Requires authentication configuration for production use
+- Anonymous by default — configure `AuthorizationPolicy` for production use
 ---
 # Headless.Messaging.Dashboard.K8s
 
@@ -4178,26 +4200,26 @@ Three packages:
 Typical registration:
 ```csharp
 // Services
-builder.Services.AddHeadlessNswagOpenApi(options =>
+builder.Services.AddNswagOpenApi(options =>
 {
     options.AddBearerSecurity = true;
     options.AddPrimitiveMappings = true;
 });
 
 // Middleware
-app.MapHeadlessNswagOpenApi();         // OpenAPI JSON endpoint
-app.MapHeadlessScalarOpenApi();        // Scalar docs UI
+app.MapNswagOpenApi();         // OpenAPI JSON endpoint
+app.MapScalarOpenApi();        // Scalar docs UI
 ```
 
-For versioned APIs, use `app.MapHeadlessNswagOpenApiVersions()` instead.
+For versioned APIs, use `app.MapNswagOpenApiVersions()` instead.
 
 ## Agent Instructions
 
-- Use `AddHeadlessNswagOpenApi()` for OpenAPI spec generation — do NOT configure NSwag manually; this method wires up all framework processors.
+- Use `AddNswagOpenApi()` for OpenAPI spec generation — do NOT configure NSwag manually; this method wires up all framework processors.
 - Key processors registered automatically: `FluentValidationSchemaProcessor` (extracts validation rules into schema), `NullabilityAsRequiredSchemaProcessor`, `CamelCaseQueryParameterOperationProcessor`, and response processors for 401/403/ProblemDetails.
 - Framework primitive types (Money, Month, UserId, AccountId) are mapped to OpenAPI types when `AddPrimitiveMappings = true`.
 - For OData support, add `ODataOperationFilter` via `setupGeneratorActions` — only if the API uses OData queries.
-- Use `MapHeadlessScalarOpenApi()` for the docs UI. Configure dark mode, layout, and endpoint prefix via options.
+- Use `MapScalarOpenApi()` for the docs UI. Configure dark mode, layout, and endpoint prefix via options.
 - Scalar depends on `Scalar.AspNetCore` (transitive). NSwag depends on `NSwag.AspNetCore` and `FluentValidation` (transitive).
 - Security: set `AddBearerSecurity = true` for JWT, `AddApiKeySecurity = true` for API key auth. Configure `ApiKeyHeaderName` if non-default.
 - Do NOT add both Swagger UI (from NSwag) and Scalar simultaneously — pick one. Scalar is the recommended choice.
@@ -4233,7 +4255,7 @@ dotnet add package Headless.OpenApi.Nswag
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessNswagOpenApi(options =>
+builder.Services.AddNswagOpenApi(options =>
 {
     options.AddBearerSecurity = true;
     options.AddPrimitiveMappings = true;
@@ -4241,9 +4263,9 @@ builder.Services.AddHeadlessNswagOpenApi(options =>
 
 var app = builder.Build();
 
-app.MapHeadlessNswagOpenApi();
+app.MapNswagOpenApi();
 // or for versioned APIs:
-app.MapHeadlessNswagOpenApiVersions();
+app.MapNswagOpenApiVersions();
 ```
 
 ## Configuration
@@ -4251,7 +4273,7 @@ app.MapHeadlessNswagOpenApiVersions();
 ### Options
 
 ```csharp
-services.AddHeadlessNswagOpenApi(options =>
+services.AddNswagOpenApi(options =>
 {
     options.AddBearerSecurity = true;        // JWT Bearer auth
     options.AddApiKeySecurity = true;        // API Key auth
@@ -4296,7 +4318,7 @@ dotnet add package Headless.OpenApi.Nswag.OData
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessNswagOpenApi(
+builder.Services.AddNswagOpenApi(
     setupHeadlessAction: null,
     setupGeneratorActions: settings =>
     {
@@ -4345,11 +4367,11 @@ dotnet add package Headless.OpenApi.Scalar
 var builder = WebApplication.CreateBuilder(args);
 
 // Add OpenAPI generation (NSwag or other)
-builder.Services.AddHeadlessNswagOpenApi();
+builder.Services.AddNswagOpenApi();
 
 var app = builder.Build();
 
-app.MapHeadlessScalarOpenApi();
+app.MapScalarOpenApi();
 ```
 
 ## Configuration
@@ -4357,7 +4379,7 @@ app.MapHeadlessScalarOpenApi();
 ### Options
 
 ```csharp
-app.MapHeadlessScalarOpenApi(options =>
+app.MapScalarOpenApi(options =>
 {
     options.DarkMode = true;
     options.Layout = ScalarLayout.Modern;

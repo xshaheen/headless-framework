@@ -14,7 +14,7 @@ builder.Services.AddDbContext<AppDbContext>(
     }
 );
 
-builder.Services.AddMessaging(x =>
+builder.Services.AddHeadlessMessaging(x =>
 {
     x.SubscribeFromAssembly(typeof(Program).Assembly);
 
@@ -42,7 +42,7 @@ builder.Services.AddMessaging(x =>
         apache/kafka:3.7.0
     */
     x.UseKafka("127.0.0.1:9092");
-    x.UseDashboard();
+    x.UseDashboard(d => d.WithNoAuth());
 });
 
 builder.Services.AddControllers();

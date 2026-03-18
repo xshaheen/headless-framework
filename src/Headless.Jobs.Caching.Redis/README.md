@@ -24,7 +24,7 @@ dotnet add package Headless.Jobs.Caching.Redis
 
 ```csharp
 builder.Services
-    .AddJobs(options =>
+    .AddHeadlessJobs(options =>
     {
         options.ConfigureScheduler(scheduler => scheduler.MaxConcurrency = 10);
     })
@@ -33,15 +33,13 @@ builder.Services
         redis.Configuration = "localhost:6379";
         redis.NodeHeartbeatInterval = TimeSpan.FromSeconds(30);
     });
-
-app.UseJobs();
 ```
 
 ## Configuration
 
 ```csharp
 builder.Services
-    .AddJobs()
+    .AddHeadlessJobs()
     .AddStackExchangeRedis(redis =>
 {
     redis.Configuration = "localhost:6379,ssl=true,password=secret";
@@ -49,7 +47,7 @@ builder.Services
     redis.NodeHeartbeatInterval = TimeSpan.FromSeconds(30);
 });
 
-builder.Services.AddJobs(options =>
+builder.Services.AddHeadlessJobs(options =>
 {
     options.ConfigureScheduler(scheduler =>
     {

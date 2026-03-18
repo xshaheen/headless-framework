@@ -1,4 +1,3 @@
-using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Entities;
@@ -8,20 +7,16 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // Jobs setup with SQLite operational store (file-based)
-builder.Services.AddJobs(options =>
+builder.Services.AddHeadlessJobs(options =>
 {
     options.AddOperationalStore(efOptions =>
     {
         efOptions.UseJobsDbContext<JobsDbContext>(dbOptions =>
-        {
-            dbOptions.UseSqlite("Data Source=jobs-webapi.db", b => b.MigrationsAssembly("Headless.Jobs.Api.Demo"));
-        });
+            dbOptions.UseSqlite("Data Source=jobs-webapi.db", b => b.MigrationsAssembly("Headless.Jobs.Api.Demo"))
+        );
     });
 
-    options.AddDashboard(dashboard =>
-    {
-        dashboard.WithNoAuth();
-    });
+    options.AddDashboard(dashboard => dashboard.WithNoAuth());
 });
 
 var app = builder.Build();
@@ -32,9 +27,6 @@ await using (var scope = app.Services.CreateAsyncScope())
     var db = scope.ServiceProvider.GetRequiredService<JobsDbContext>();
     await db.Database.MigrateAsync();
 }
-
-// Activate Jobs job processor (mirrors docs' minimal setup)
-Headless.Jobs.DependencyInjection.AspNetCoreExtensions.UseJobs(app);
 
 // Minimal endpoint to schedule the sample job
 app.MapPost(

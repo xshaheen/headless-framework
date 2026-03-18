@@ -1,33 +1,29 @@
 using System.Buffers;
-using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Interfaces;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 
 namespace Headless.Jobs;
 
-internal class JobsRedisContext : IJobsRedisContext
+internal class JobsRedisContext(
+    [FromKeyedServices("jobs")] IDistributedCache cache,
+    SchedulerOptionsBuilder schedulerOptions,
+    ServiceExtension.JobsRedisOptionBuilder tickerQRedisOptionBuilder,
+    IJobsNotificationHubSender notificationHubSender
+) : IJobsRedisContext
 {
-    private readonly IDistributedCache _cache;
-    private readonly SchedulerOptionsBuilder _schedulerOptions;
-    private readonly ServiceExtension.JobsRedisOptionBuilder _tickerQRedisOptionBuilder;
-    private readonly IJobsNotificationHubSender _notificationHubSender;
-    public IDistributedCache DistributedCache { get; }
-    public bool HasRedisConnection => true;
+    private readonly IDistributedCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+    private readonly SchedulerOptionsBuilder _schedulerOptions =
+        schedulerOptions ?? throw new ArgumentNullException(nameof(schedulerOptions));
 
-    public JobsRedisContext(
-        [FromKeyedServices("jobs")] IDistributedCache cache,
-        SchedulerOptionsBuilder schedulerOptions,
-        ServiceExtension.JobsRedisOptionBuilder tickerQRedisOptionBuilder,
-        IJobsNotificationHubSender notificationHubSender
-    )
-    {
-        DistributedCache = cache;
-        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-        _schedulerOptions = schedulerOptions ?? throw new ArgumentNullException(nameof(schedulerOptions));
-        _tickerQRedisOptionBuilder = tickerQRedisOptionBuilder;
-        _notificationHubSender = notificationHubSender;
-    }
+    private volatile IDatabase? _database;
+
+    private readonly string _registryKey = $"{tickerQRedisOptionBuilder.InstanceName}nodes:registry";
+
+    public IDistributedCache DistributedCache { get; } = cache;
+
+    public bool HasRedisConnection => true;
 
     public async Task NotifyNodeAliveAsync()
     {
@@ -36,9 +32,9 @@ internal class JobsRedisContext : IJobsRedisContext
 
         var payload = new { ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), node };
 
-        await _notificationHubSender.UpdateNodeHeartBeatAsync(payload);
+        await notificationHubSender.UpdateNodeHeartBeatAsync(payload);
 
-        var interval = _tickerQRedisOptionBuilder.NodeHeartbeatInterval;
+        var interval = tickerQRedisOptionBuilder.NodeHeartbeatInterval;
         var ttl = TimeSpan.FromSeconds(interval.TotalSeconds + 20);
 
         await _cache.SetStringAsync(
@@ -52,69 +48,78 @@ internal class JobsRedisContext : IJobsRedisContext
 
     public async Task<string[]> GetDeadNodesAsync()
     {
-        // Get all registered nodes
-        var nodesJson = await _cache.GetStringAsync("nodes:registry");
-        if (string.IsNullOrEmpty(nodesJson))
+        var db = await _GetDatabaseAsync();
+
+        // Get all registered nodes atomically via SMEMBERS
+        var members = await db.SetMembersAsync(_registryKey);
+        if (members.Length == 0)
         {
             return [];
         }
 
-        var allNodes = JsonSerializer.Deserialize<HashSet<string>>(nodesJson) ?? [];
-        var deadNodes = new HashSet<string>(StringComparer.Ordinal);
+        // Check heartbeats concurrently to avoid N+1 sequential Redis reads
+        var nodes = Array.ConvertAll(members, m => m.ToString());
+        var heartbeatTasks = Array.ConvertAll(nodes, node => _cache.GetStringAsync($"hb:{node}"));
+        var heartbeats = await Task.WhenAll(heartbeatTasks);
 
-        // Check which ones are dead
-        foreach (var node in allNodes)
+        var deadNodes = new List<string>();
+        for (var i = 0; i < nodes.Length; i++)
         {
-            var heartbeat = await _cache.GetStringAsync($"hb:{node}");
-            if (string.IsNullOrEmpty(heartbeat))
+            if (string.IsNullOrEmpty(heartbeats[i]))
             {
-                deadNodes.Add(node);
+                deadNodes.Add(nodes[i]);
             }
         }
 
         if (deadNodes.Count != 0)
         {
-            await _RemoveNodesFromRegistryAsync(deadNodes);
+            await _RemoveNodesFromRegistryAsync(db, deadNodes);
         }
 
-        //if(deadNodes.Count != 0)
-        //Todo notification
         return deadNodes.ToArray();
     }
 
-    private async Task _RemoveNodesFromRegistryAsync(HashSet<string> nodes)
+    private async Task _RemoveNodesFromRegistryAsync(IDatabase db, List<string> nodes)
     {
-        var nodesJson = await _cache.GetStringAsync("nodes:registry");
-
-        var nodesList = string.IsNullOrEmpty(nodesJson)
-            ? []
-            : JsonSerializer.Deserialize<HashSet<string>>(nodesJson) ?? [];
-
-        nodesList.RemoveWhere(nodes.Contains);
-
-        await _cache.SetStringAsync(
-            "nodes:registry",
-            JsonSerializer.Serialize(nodesList),
-            new DistributedCacheEntryOptions { SlidingExpiration = TimeSpan.FromDays(30) }
-        );
+        var values = nodes.ConvertAll(n => (RedisValue)n).ToArray();
+        await db.SetRemoveAsync(_registryKey, values);
     }
 
     private async Task _AddNodeToRegistryAsync(string node)
     {
-        var nodesJson = await _cache.GetStringAsync("nodes:registry");
+        var db = await _GetDatabaseAsync();
+        await db.SetAddAsync(_registryKey, node);
+    }
 
-        var nodesList = string.IsNullOrEmpty(nodesJson)
-            ? []
-            : JsonSerializer.Deserialize<HashSet<string>>(nodesJson) ?? [];
-
-        if (nodesList.Add(node))
+    private async Task<IDatabase> _GetDatabaseAsync()
+    {
+        if (_database is not null)
         {
-            await _cache.SetStringAsync(
-                "nodes:registry",
-                JsonSerializer.Serialize(nodesList),
-                new DistributedCacheEntryOptions { SlidingExpiration = TimeSpan.FromDays(30) }
-            );
+            return _database;
         }
+
+        IConnectionMultiplexer multiplexer;
+
+        if (tickerQRedisOptionBuilder.ConnectionMultiplexerFactory is { } factory)
+        {
+            multiplexer = await factory();
+        }
+        else
+        {
+            var configOptions =
+                tickerQRedisOptionBuilder.ConfigurationOptions
+                ?? ConfigurationOptions.Parse(
+                    tickerQRedisOptionBuilder.Configuration
+                        ?? throw new InvalidOperationException(
+                            "Redis connection is not configured. Provide ConnectionMultiplexerFactory, ConfigurationOptions, or Configuration."
+                        )
+                );
+
+            multiplexer = await ConnectionMultiplexer.ConnectAsync(configOptions);
+        }
+
+        _database = multiplexer.GetDatabase();
+        return _database;
     }
 
     public async Task<TResult[]?> GetOrSetArrayAsync<TResult>(
@@ -173,6 +178,6 @@ internal class JobsRedisContext : IJobsRedisContext
         }
 #pragma warning restore ERP022, RCS1075
 
-        return null;
+        return result;
     }
 }

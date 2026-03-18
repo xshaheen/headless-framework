@@ -11,7 +11,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Outbox Publisher**: Transactional message publishing with database consistency
 - **Scheduled Publisher**: Delayed message delivery through the configured scheduler pipeline
 - **Unified Publish Contract**: `IDirectPublisher` and `IOutboxPublisher` share the same `PublishAsync(message, options, ct)` surface
-- **Consumer Management**: `AddMessaging(...)`, `Subscribe*()`, `AddConsumer(...)`, invocation, and per-dispatch lifecycle handling
+- **Consumer Management**: `AddHeadlessMessaging(...)`, `Subscribe*()`, `AddConsumer(...)`, invocation, and per-dispatch lifecycle handling
 - **Runtime Delegate Support**: Broker-attached function handlers with scoped DI and the same consume pipeline as class handlers
 - **Message Processing**: Retry processor, delayed message scheduler, transport health checks
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
@@ -28,7 +28,7 @@ dotnet add package Headless.Messaging.Core
 
 ```csharp
 // Register messaging with storage and transport
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     // Core configuration
     options.SucceedMessageExpiredAfter = 24 * 3600;
@@ -81,7 +81,7 @@ public sealed class MetricsService(IDirectPublisher publisher)
 
 ## Defaults And Telemetry
 
-- `AddMessaging(...)` is the primary DI entry point.
+- `AddHeadlessMessaging(...)` is the primary DI entry point.
 - `SubscribeFromAssemblyContaining<T>()` and `Subscribe<T>()` are the primary registration APIs.
 - `AddConsumer<TConsumer, TMessage>(topic)` is the library-author registration API when a package wants to contribute consumers through DI.
 - topic and group defaults are deterministic; duplicate registrations fail fast by default.
@@ -172,7 +172,7 @@ public sealed class ProjectionSubscriptions(IRuntimeSubscriber subscriber)
 Register in `Program.cs`:
 
 ```csharp
-builder.Services.AddMessaging(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.FailedRetryCount = 50;
     options.SucceedMessageExpiredAfter = 24 * 3600;

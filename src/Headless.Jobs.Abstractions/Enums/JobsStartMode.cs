@@ -3,8 +3,7 @@ namespace Headless.Jobs.Enums;
 public enum JobsStartMode
 {
     /// <summary>
-    /// Start job processing immediately when UseJobs is called.
-    /// Background services are registered and start automatically.
+    /// Start job processing immediately on application startup.
     /// </summary>
     Immediate,
 
