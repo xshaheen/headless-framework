@@ -290,19 +290,22 @@ public interface ISagaManagement
 {
     /// Retry failed compensation for a stuck saga.
     /// Resumes reverse execution from the failed compensation step.
-    Task RetryCompensationAsync(string sagaId, CancellationToken ct = default);
+    Task RetryCompensationAsync(string sagaId, string? actor = null,
+        string? reason = null, CancellationToken ct = default);
 
     /// Skip the current failed compensation step and continue rollback.
     /// Only valid for sagas in Stuck status during compensation.
     /// Does NOT skip forward steps — forward failures always trigger compensation.
-    Task SkipFailedCompensationAsync(string sagaId, CancellationToken ct = default);
+    Task SkipFailedCompensationAsync(string sagaId, string? actor = null,
+        string? reason = null, CancellationToken ct = default);
 
     /// Mark a saga as resolved by operator intervention.
     /// Terminal state is `Resolved` (distinct from `Completed`).
     /// No remaining steps are executed. No compensation is performed.
     /// Intended for manual remediation after external recovery.
-    /// Stores audit metadata: reason, timestamp, operator identity.
-    Task MarkResolvedAsync(string sagaId, string reason, CancellationToken ct = default);
+    Task MarkResolvedAsync(string sagaId, string reason,
+        string? actor = null, string? notes = null,
+        CancellationToken ct = default);
 
     /// Find sagas in Stuck status, optionally filtered by age.
     Task<IReadOnlyList<SagaInstance>> GetStuckSagasAsync(
@@ -339,6 +342,7 @@ The runtime validates the step graph at startup and throws if any rule is violat
 - At most **one** `Completed()` and one `Failed()` lifecycle hook
 - `Command()` steps must have at least one `OnReply<T>()` or `OnFailure<T>()` handler
 - No duplicate reply type handlers within the same `Command()` step
+- Reply type matching is **exact CLR type only** — no inheritance/assignability. `OnReply<BaseReply>()` does not match `DerivedReply`. Build-time validation rejects overlapping handler types where one is assignable to another
 - `destination` on `Command()` / `CompensateWith()` must not be null or empty
 - Compensation cannot be configured via both `Compensate()` and `CompensateWith()` on the same `Command()` step
 - `WaitFor()` must have both `sagaKey` and `eventKey` (non-null)
@@ -437,6 +441,16 @@ For `WaitFor()` steps. Key-based, event-driven.
 The saga instance stores `WaitingForEventType` + `WaitingForEventKey` while blocked. When an event arrives, the runtime queries: `WHERE waiting_event = @type AND waiting_key = @key`.
 
 `PublishEventAsync(event)` on `ISagaOrchestrator` uses business-key correlation to find matching sagas. `RaiseEventToSagaAsync(sagaId, event)` bypasses key matching and delivers directly by saga ID (for tests, admin tools, replay).
+
+### PublishEventAsync Delivery Semantics
+
+A single published event may match **multiple** waiting sagas (e.g., two sagas both waiting on `OrderShipped` with the same order ID). The runtime:
+
+- Queries `ISagaStore.FindWaitingAsync(eventType, eventKey)` — returns all matching instances.
+- Delivers the event to **each** matched saga independently. One saga's failure does not block others.
+- Each delivery is its own unit of work (load saga, apply event, save). Failures are isolated — a transient error in saga A does not prevent saga B from processing.
+- Delivery is **best-effort per saga** — failed deliveries follow the normal retry/failure path for that saga instance.
+- Events are not queued or buffered — they are processed as they arrive. No ordering guarantees across sagas.
 
 ## Execution Model
 
@@ -793,7 +807,7 @@ public interface ISagaStore
 {
     Task<SagaInstance?> GetAsync(string sagaId, CancellationToken ct = default);
     Task SaveAsync(SagaInstance instance, CancellationToken ct = default);
-    Task<SagaInstance?> FindWaitingAsync(string eventType, string eventKey,
+    Task<IReadOnlyList<SagaInstance>> FindWaitingAsync(string eventType, string eventKey,
         CancellationToken ct = default);
     Task<IReadOnlyList<SagaInstance>> GetByStatusAsync(SagaRuntimeStatus status,
         int limit = 100, CancellationToken ct = default);
@@ -1211,6 +1225,9 @@ CREATE INDEX ix_saga_waiting ON {schema}.saga_instances (waiting_event, waiting_
 27. **Structured operator event detail** — `saga_events.detail` is JSONB with documented shape per event type (actor, reason, notes for operator events)
 28. **Observability as a separate package** — `Headless.Sagas.OpenTelemetry` with defined metrics, traces, and `ISagaExecutionObserver` hook
 29. **Runtime extension points** — 5 abstractions (`ISagaStore`, `ISagaTimeoutStore`, `ISagaSerializer`, `ISagaIdGenerator`, `ISagaExecutionObserver`); internal engine plumbing (step graph compilation, message routing) not abstracted
+30. **Operator audit on all management methods** — `RetryCompensationAsync`, `SkipFailedCompensationAsync`, `MarkResolvedAsync` all accept `actor`/`reason`/`notes` for audit trail via `saga_events`
+31. **Multi-saga event delivery** — `PublishEventAsync` may match multiple waiting sagas; each delivery is independent and isolated; `FindWaitingAsync` returns `IReadOnlyList<SagaInstance>`
+32. **Exact CLR type matching for replies** — no inheritance/assignability; `OnReply<Base>()` does not match `Derived`; build-time validation rejects overlapping handler types
 
 ## Resolved Questions
 
@@ -1238,6 +1255,12 @@ CREATE INDEX ix_saga_waiting ON {schema}.saga_instances (waiting_event, waiting_
 22. **`StepDataJson` → `CompensationDataJson`** → Clearer intent: sole use is compensation context
 23. **`RaiseEventAsync` split** → `PublishEventAsync(event)` for business-key routed ingress, `RaiseEventToSagaAsync(sagaId, event)` for direct targeted delivery
 24. **Execution history as first-class** → `saga_events` append-only audit table captures state transitions, retry attempts, and operator actions separately from step outcomes in `saga_step_log`
+25. **`ExceptionInfo` → `FailureInfo`** → Broader name covers timeouts, invalid replies, operator actions, not just exceptions
+26. **`CompletedStepLog` → `SagaStepLogEntry`** → Aligns with `saga_step_log` table; entries include `Compensated` and `CompensationFailed`, not just completions
+27. **Operator audit signatures** → All `ISagaManagement` methods accept `actor`/`reason`/`notes`; persisted via `saga_events` with structured JSONB detail
+28. **`FindWaitingAsync` returns list** → Multiple sagas may wait on same (event type, key); `IReadOnlyList<SagaInstance>` not single-or-null
+29. **`PublishEventAsync` multi-delivery** → Each matched saga processed independently; isolated failures; best-effort per saga; no cross-saga ordering
+30. **Reply type matching: exact CLR type** → No assignability; `OnReply<Base>()` ≠ `Derived`; build-time validation rejects overlapping types
 25. **Long-term execution shape** → Sequential core, graph-capable future; public DSL stays sequential-first, internal model extensible
 26. **Operator event detail format** → `saga_events.detail` is JSONB with documented shape per event type; operator events include `actor`, `reason`, `notes`
 27. **Observability** → Separate `Headless.Sagas.OpenTelemetry` package; defined metric names, trace spans, and `ISagaExecutionObserver` abstraction
