@@ -221,14 +221,16 @@ public interface ISagaOrchestrator
         where TSaga : ISagaDefinition<TState>
         where TState : class;
 
-    /// Business-key correlation: runtime finds matching sagas via
+    /// Business-key routed ingress: runtime finds matching sagas via
     /// (event type, eventKey) == (WaitingForEventType, WaitingForEventKey).
-    Task RaiseEventAsync<TEvent>(
+    /// For real event-driven integration, external systems, normal WaitFor() usage.
+    Task PublishEventAsync<TEvent>(
         TEvent @event,
         CancellationToken ct = default)
         where TEvent : class;
 
     /// Direct targeted delivery by saga ID. Bypasses key matching.
+    /// For tests, admin tools, deterministic replay/debug.
     Task RaiseEventToSagaAsync<TEvent>(
         string sagaId,
         TEvent @event,
@@ -399,7 +401,7 @@ For `WaitFor()` steps. Key-based, event-driven.
 
 The saga instance stores `WaitingForEventType` + `WaitingForEventKey` while blocked. When an event arrives, the runtime queries: `WHERE waiting_event = @type AND waiting_key = @key`.
 
-`RaiseEventToSagaAsync(sagaId, event)` on `ISagaOrchestrator` bypasses key matching and delivers directly by saga ID. `RaiseEventAsync(event)` uses business-key correlation to find matching sagas.
+`PublishEventAsync(event)` on `ISagaOrchestrator` uses business-key correlation to find matching sagas. `RaiseEventToSagaAsync(sagaId, event)` bypasses key matching and delivers directly by saga ID (for tests, admin tools, replay).
 
 ## Execution Model
 
@@ -962,7 +964,7 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
 22. **Reply/event safety** — late, duplicate, and stale replies/events are ignored based on `SagaId + StepIndex` + saga status matching; configurable dead-lettering
 23. **`SagaName` over `DefinitionType`** — logical name, not CLR type; avoids overloaded "type" semantics
 24. **`CompensationDataJson` over `StepDataJson`** — communicates the sole intended use (compensation context)
-25. **Split event ingress API** — `RaiseEventAsync(event)` for business-key correlation, `RaiseEventToSagaAsync(sagaId, event)` for direct targeted delivery; separate public intent from internal routing
+25. **Split event ingress API** — `PublishEventAsync(event)` for business-key routed ingress, `RaiseEventToSagaAsync(sagaId, event)` for direct targeted delivery
 
 ## Resolved Questions
 
@@ -988,7 +990,7 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
 20. **Reply/event safety** → Late/duplicate/stale arrivals ignored based on saga state matching; `options.OnIgnoredMessage` for dead-lettering
 21. **`DefinitionType` → `SagaName`** → Logical name avoids overloaded "type" semantics in .NET
 22. **`StepDataJson` → `CompensationDataJson`** → Clearer intent: sole use is compensation context
-23. **`RaiseEventAsync` split** → `RaiseEventAsync(event)` for business-key matched delivery, `RaiseEventToSagaAsync(sagaId, event)` for direct targeted delivery
+23. **`RaiseEventAsync` split** → `PublishEventAsync(event)` for business-key routed ingress, `RaiseEventToSagaAsync(sagaId, event)` for direct targeted delivery
 
 ## Open Questions
 
