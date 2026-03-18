@@ -175,7 +175,9 @@ public interface ICommandStepBuilder<TState> where TState : class
         Func<ISagaContext<TState>, TReply, CancellationToken, ValueTask> handler)
         where TReply : class;
 
-    /// Handle a failure reply type. Triggers compensation.
+    /// Handle a failure reply type. Handler may mutate saga state (e.g., store
+    /// failure code, decline reason, audit data). After handler completes,
+    /// saga transitions to compensation.
     ICommandStepBuilder<TState> OnFailure<TFailure>(
         Func<ISagaContext<TState>, TFailure, CancellationToken, ValueTask> handler)
         where TFailure : class;
