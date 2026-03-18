@@ -554,7 +554,13 @@ Steps can be skipped based on current state via `When(predicate)`:
     configure: step => step.When(state => state.RequiresPayment))
 ```
 
-When the predicate returns `false`, the step is skipped entirely (no execution, no compensation entry). The step index advances. This matches Eventuate Tram's `Predicate<Data>` behavior.
+Exact semantics:
+
+- `When()` is evaluated **once**, immediately before forward execution of that step
+- If `false`: step is skipped, no `saga_step_log` entry is written, step index advances
+- Skipped steps **never participate in compensation** — they have no completion record
+- If state changes during a retry (e.g., optimistic concurrency retry re-evaluates the step), the predicate is re-evaluated against the current state
+- During cancellation/compensation, `When()` is irrelevant — compensation walks the `saga_step_log`, which only contains steps that actually executed
 
 ## Compensation Design
 
