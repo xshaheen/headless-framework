@@ -78,32 +78,11 @@ Messaging ╳ Jobs
 
 ## Long-Term Execution Shape
 
-The initial authoring model is **sequential**, but the compiled step graph and runtime state model are designed so branching, child sagas, and parallel segments can be added later without breaking existing contracts.
-
-- `ISagaDefinition<TState>` and `ISagaBuilder<TState>` stay sequential-first — the public DSL does not expose graph primitives in v1.
-- **Known tension:** The current public contract (`ISagaContext.CurrentStepIndex` as `int`) and storage schema (`step_index INT`) are sequential-only. Future graph support would likely introduce an additional internal execution path identifier (e.g., `string StepPath` = `"3.1"`, `"3.2"`) while preserving the integer step index for sequential definitions. This is a future additive change — not introduced now since it has no v1 use.
-- Sub-sagas can be *composed* today using existing primitives (`StartAsync` + `WaitFor` completion event). However, first-class sub-saga support will likely require additional runtime metadata (parent/child relationships, cascading cancellation, failure propagation) and operational semantics (linked observability, dashboard nesting).
-
-**Not in scope for v1:** parallel steps, fan-out/fan-in, conditional branching beyond `When()` skip, loop/retry blocks, join points.
+Sequential core, graph-capable future. The public DSL is sequential-first; internal step graph and state model are designed so branching, parallelism, and child sagas can be added later without breaking existing contracts. **Not in scope for v1:** parallel steps, fan-out/fan-in, conditional branching beyond `When()` skip, loop/retry blocks, join points, first-class sub-sagas.
 
 ## Why Builder DSL
 
-Evaluated six API styles across .NET and Go ecosystems:
-
-| Style | Library | Why not |
-|-------|---------|---------|
-| Fluent state machine | MassTransit | Steep learning curve, overkill for linear orchestration |
-| Handler + interfaces | Rebus, NServiceBus | Multiple classes per saga, correlation ceremony |
-| Convention methods | Wolverine | Naming magic, hard to enforce at compile time |
-| **Builder DSL** | **Eventuate Tram** | **Selected: explicit, one place, composable** |
-| Code-as-workflow | Temporal, Dapr | Requires replay engine, different execution model |
-| Annotations | Axon | Reflection-heavy, poor discoverability |
-
-Builder DSL wins because:
-1. Step sequence and compensation pairs are visible in one definition
-2. No naming conventions or interface ceremony
-3. Strongly typed with lambda intellisense
-4. Composable with `configure:` delegates for per-step options
+Builder DSL (inspired by Eventuate Tram) over state machines (MassTransit), handler interfaces (Rebus/NServiceBus), convention methods (Wolverine), code-as-workflow (Temporal/Dapr), and annotations (Axon). Wins because: step sequence + compensation pairs visible in one definition, strongly typed with lambda intellisense, composable via `configure:` delegates.
 
 ## API Contract
 
@@ -112,6 +91,10 @@ Builder DSL wins because:
 ```csharp
 public interface ISagaDefinition<TState> where TState : class
 {
+    /// Logical saga name used in persistence, dashboard, and observability.
+    /// Must be unique across all registered saga definitions.
+    string Name { get; }
+
     void Build(ISagaBuilder<TState> builder);
 }
 ```
@@ -321,6 +304,8 @@ Step execution, reply handling, and compensation are all **at least once**. The 
 - **Make step handlers idempotent** — the same step may execute more than once if the runtime retries after a transient failure or concurrency conflict.
 - **Make compensation handlers idempotent** — compensation may be retried after failure (via `CompensationRetry` or manual `RetryCompensationAsync`).
 - **Use outbox integration** for outgoing messages — `PublishAsync` in `ISagaContext` should go through the transactional outbox where possible to avoid dual-write issues.
+
+**Concurrent execution across nodes:** The runtime does not acquire distributed locks. If two nodes simultaneously process the same saga instance (e.g., competing consumers both receive a reply), both load the saga, but only one wins the optimistic concurrency check (`version` column). The loser gets `SagaConcurrencyException`, reloads the saga, and retries. This is safe because steps are idempotent by contract. The conflict window is small — local steps are milliseconds, command steps persist-and-wait.
 - **Not assume exactly-once** — the framework guarantees at-least-once execution with idempotency support (`IdempotencyKey`), not exactly-once.
 
 ## Definition Model
@@ -337,12 +322,14 @@ Separation:
 
 The runtime validates the step graph at startup and throws if any rule is violated:
 
-- Step names must be **unique** and not null/whitespace
+- `Name` must be non-null/whitespace and **unique** across all registered saga definitions
+- Step names must be **unique** within a saga and not null/whitespace
 - At most **one global timeout** per saga
 - At most **one** `Completed()` and one `Failed()` lifecycle hook
 - `Command()` steps must have at least one `OnReply<T>()` or `OnFailure<T>()` handler
 - No duplicate reply type handlers within the same `Command()` step
 - Reply type matching is **exact CLR type only** — no inheritance/assignability. `OnReply<BaseReply>()` does not match `DerivedReply`. Build-time validation rejects overlapping handler types where one is assignable to another
+- The same reply type **may appear** as a handler in different `Command()` steps — routing uses `SagaStepIndex` header, not reply type. No cross-step uniqueness constraint.
 - `destination` on `Command()` / `CompensateWith()` must not be null or empty
 - Compensation cannot be configured via both `Compensate()` and `CompensateWith()` on the same `Command()` step
 - `WaitFor()` must have both `sagaKey` and `eventKey` (non-null)
@@ -399,6 +386,8 @@ Orchestrator --send command--> Message Broker --deliver--> Participant Service
      +-- OnFailure handler: update state, begin compensation
      +-- Timeout: begin compensation
 ```
+
+**Step log timing:** The `saga_step_log` entry is written **after the reply is received and processed** (after `OnReply`/`OnFailure` handler completes), not after command send. This means `CompensationDataJson` set during the reply handler is captured naturally, and `DurationMs` reflects the full round-trip. Consistent with local steps where the log is written after the lambda completes.
 
 ### 3. Wait Step (`WaitFor`)
 
@@ -531,6 +520,7 @@ public sealed record SagaStepLogEntry
 public enum StepLogStatus
 {
     Completed,
+    Skipped,
     CompensationFailed,
     Compensated,
 }
@@ -677,6 +667,50 @@ CREATE INDEX ix_timeout_due ON {schema}.saga_timeouts (due_at_utc);
 CREATE INDEX ix_timeout_saga ON {schema}.saga_timeouts (saga_id);
 ```
 
+## Retry Semantics
+
+Step retry applies to forward execution of `Step()` and the command-send phase of `Command()`. Compensation retry is a separate mechanism (see Compensation Design).
+
+### Attempt Tracking
+
+Retry state is tracked **in-memory** within the current execution context. The orchestrator maintains a per-step attempt counter during forward execution. If the process crashes mid-retry, the saga resumes from the persisted `CurrentStepIndex` with the attempt counter reset to 0 — this is safe because steps are idempotent by contract.
+
+No additional persistence column is needed for retry tracking. The `saga_events` table records each retry attempt (`StepRetried` event) for observability.
+
+### Retry Delay
+
+Retry delays are **in-memory** (`Task.Delay`) — not durable timeouts. Rationale:
+
+- Retry delays are short (seconds to low minutes) — process crash during a delay simply restarts the step, which is safe given idempotency.
+- Durable retry delays (via `SagaTimeoutRegistration`) would add persistence round-trips for a mechanism that already tolerates restarts.
+- This is distinct from step/wait/saga **timeouts**, which are durable because they may span minutes to hours and must survive process restarts.
+
+### Retry × Timeout Interaction
+
+Step timeout applies **across all attempts**, not per-attempt. If a step has `Retry(3)` and `Timeout(30s)`:
+
+- The timeout clock starts when the step is first entered.
+- Each retry attempt runs within the remaining timeout budget.
+- If the timeout fires before all retries are exhausted, the step is timed out → compensation begins.
+
+### Command Step Retry
+
+For `Command()` steps, `Retry(n)` controls the **command send** phase only:
+
+- If the command fails to publish (transport error), the runtime retries the send.
+- Once the command is successfully published and the saga enters `WaitingForReply`, the retry counter is irrelevant — the saga waits for a reply or timeout.
+- A reply timeout does **not** trigger retry. It triggers compensation. If the user wants retry-on-timeout behavior, they should implement it as multiple sequential `Command()` steps or handle it in the timeout callback.
+
+### Compensation Command Reply Handling
+
+`CompensateWith<T>()` sends a compensating command but does **not** wait for a reply. Compensation commands are fire-and-forget from the saga's perspective:
+
+- The saga sends the compensating command and immediately marks the compensation step as complete.
+- If the compensating command fails to publish, the compensation step fails → saga enters `Stuck`.
+- The participant service is responsible for idempotent processing of the compensating command.
+
+Rationale: Waiting for compensation replies adds round-trips and failure modes to an already-failing path. The participant's compensating action must be idempotent regardless, so acknowledgment adds ceremony without safety. If the user needs confirmed compensation, they should use local compensation (`Compensate()`) that calls the service directly via DI and awaits the result.
+
 ## Conditional Steps
 
 Steps can be skipped based on current state via `When(predicate)`:
@@ -689,12 +723,12 @@ Steps can be skipped based on current state via `When(predicate)`:
 
 Exact semantics:
 
-- `When()` is evaluated **once** when the step is entered for forward execution. The resulting skip/execute decision is persisted for that step's attempt chain.
+- `When()` is evaluated **once** when the step is entered for forward execution. The resulting skip/execute decision is persisted as a `saga_step_log` entry with `Status = Skipped`.
 - Retries of the same step **do not** re-evaluate the predicate — the initial decision holds.
-- If `false`: step is skipped, no `saga_step_log` entry is written, step index advances.
-- Skipped steps **never participate in compensation** — they have no completion record.
+- If `false`: step is skipped, a `saga_step_log` entry is written with `Status = Skipped`, step index advances. `CompensationDataJson` and `DurationMs` are null for skipped entries.
+- Skipped steps **never participate in compensation** — compensation walks the `saga_step_log` and ignores entries with `Status = Skipped`.
 - If the saga is reloaded (e.g., process restart) before entering the step for the first time, evaluation happens against current state at that moment.
-- During cancellation/compensation, `When()` is irrelevant — compensation walks the `saga_step_log`, which only contains steps that actually executed.
+- During cancellation/compensation, `When()` is irrelevant — compensation walks the `saga_step_log`, processing only `Completed` entries in reverse.
 
 ## Compensation Design
 
@@ -803,14 +837,29 @@ Abstractions defined early to keep the runtime composable. Each ships with one d
 
 ```csharp
 /// Saga instance persistence (CRUD + queries).
+/// SaveAsync throws SagaConcurrencyException on version conflict.
 public interface ISagaStore
 {
     Task<SagaInstance?> GetAsync(string sagaId, CancellationToken ct = default);
+
+    /// Persists the saga instance. Throws SagaConcurrencyException if the
+    /// version column doesn't match (optimistic concurrency conflict).
     Task SaveAsync(SagaInstance instance, CancellationToken ct = default);
+
     Task<IReadOnlyList<SagaInstance>> FindWaitingAsync(string eventType, string eventKey,
         CancellationToken ct = default);
     Task<IReadOnlyList<SagaInstance>> GetByStatusAsync(SagaRuntimeStatus status,
         int limit = 100, CancellationToken ct = default);
+}
+
+/// Thrown when SaveAsync detects an optimistic concurrency conflict.
+public class SagaConcurrencyException(
+    string sagaId, int expectedVersion, int actualVersion)
+    : Exception($"Saga '{sagaId}' concurrency conflict: expected version {expectedVersion}, actual {actualVersion}")
+{
+    public string SagaId { get; } = sagaId;
+    public int ExpectedVersion { get; } = expectedVersion;
+    public int ActualVersion { get; } = actualVersion;
 }
 
 /// Saga state + step data serialization.
@@ -986,6 +1035,8 @@ public sealed record OrderSagaState
 
 public sealed class OrderSaga : ISagaDefinition<OrderSagaState>
 {
+    public string Name => "Order";
+
     public void Build(ISagaBuilder<OrderSagaState> saga)
     {
         saga
@@ -1143,7 +1194,7 @@ CREATE TABLE {schema}.saga_step_log (
     saga_id         VARCHAR(36)     NOT NULL REFERENCES {schema}.saga_instances(id),
     step_name       VARCHAR(500)    NOT NULL,
     step_index      INT             NOT NULL,
-    status          VARCHAR(20)     NOT NULL,  -- Completed, CompensationFailed, Compensated
+    status          VARCHAR(20)     NOT NULL,  -- Completed, Skipped, CompensationFailed, Compensated
     completed_at_utc TIMESTAMPTZ    NOT NULL,
     compensation_data TEXT          NULL,       -- keyed JSON dictionary for compensation context
     duration_ms     INT             NULL,
@@ -1218,7 +1269,7 @@ CREATE INDEX ix_saga_waiting ON {schema}.saga_instances (waiting_event, waiting_
 20. **Immutable definition model** — `Build()` produces metadata; runtime lambdas execute against per-instance `ISagaContext<TState>`; no shared mutable state in definitions
 21. **Build-time validation** — unique step names, single global timeout, required reply handlers, no duplicate reply types, no empty destinations, no conflicting compensation
 22. **Reply/event safety** — late, duplicate, and stale replies/events are ignored based on `SagaId + StepIndex` + saga status matching; configurable dead-lettering
-23. **`SagaName` over `DefinitionType`** — logical name, not CLR type; avoids overloaded "type" semantics
+23. **`Name` as interface property** — `ISagaDefinition<TState>.Name` is a required property the user implements; logical name used in persistence, dashboard, observability; must be unique across all registered definitions
 24. **`CompensationDataJson` over `StepDataJson`** — communicates the sole intended use (compensation context)
 25. **Split event ingress API** — `PublishEventAsync(event)` for business-key routed ingress, `RaiseEventToSagaAsync(sagaId, event)` for direct targeted delivery
 26. **Sequential core, graph-capable future** — public DSL is sequential-first; internal model can grow into branching/parallelism without breaking existing contracts
@@ -1228,44 +1279,32 @@ CREATE INDEX ix_saga_waiting ON {schema}.saga_instances (waiting_event, waiting_
 30. **Operator audit on all management methods** — `RetryCompensationAsync`, `SkipFailedCompensationAsync`, `MarkResolvedAsync` all accept `actor`/`reason`/`notes` for audit trail via `saga_events`
 31. **Multi-saga event delivery** — `PublishEventAsync` may match multiple waiting sagas; each delivery is independent and isolated; `FindWaitingAsync` returns `IReadOnlyList<SagaInstance>`
 32. **Exact CLR type matching for replies** — no inheritance/assignability; `OnReply<Base>()` does not match `Derived`; build-time validation rejects overlapping handler types
+33. **In-memory retry tracking** — attempt counter is in-memory, reset on process restart (safe: steps are idempotent). `saga_events` records each retry for observability.
+34. **In-memory retry delays** — `Task.Delay`, not durable timeouts. Short delays (seconds) tolerate process restarts. Distinct from step/wait/saga timeouts which are durable.
+35. **Timeout spans all retry attempts** — step timeout applies across all attempts, not per-attempt. Timeout fires → compensation, regardless of remaining retries.
+36. **Command retry = send phase only** — `Retry(n)` on `Command()` retries the publish. Once published and `WaitingForReply`, retry is irrelevant. Reply timeout → compensation, not retry.
+37. **Fire-and-forget compensation commands** — `CompensateWith<T>()` sends the command and immediately marks compensation complete. No reply waiting. Publish failure → `Stuck`. Use local `Compensate()` for confirmed compensation.
+38. **Compensation data serialization** — uses `ISagaSerializer` (same `System.Text.Json` options as state). No size limit — trust the user and the database, consistent with how all peer frameworks handle saga state.
+39. **`SagaConcurrencyException` for conflicts** — `ISagaStore.SaveAsync` throws `SagaConcurrencyException` on version mismatch; carries `SagaId`, `ExpectedVersion`, `ActualVersion`; orchestrator catches internally and retries
+40. **Conflict-and-retry, no distributed locks** — concurrent execution of the same saga across nodes is safe via optimistic concurrency; loser reloads and retries; no `ISagaLockProvider` in v1
+41. **Explicit `Skipped` status in step log** — `When()` predicate evaluates to `false` → `saga_step_log` entry with `Status = Skipped`; skipped entries are ignored during compensation
+42. **Step log written after reply processed** — for `Command()` steps, the `saga_step_log` entry is written after `OnReply`/`OnFailure` handler completes; `DurationMs` reflects full round-trip; `CompensationDataJson` set during reply handler is captured
+43. **Same reply type across steps is supported** — routing uses `SagaStepIndex` header, not reply CLR type; no cross-step uniqueness constraint on reply types
 
 ## Resolved Questions
 
-1. **Generic step options** → `IStepOptionsBuilder<TState>` with typed `When()` predicate
-2. **Storage packaging** → Extend messaging providers via `UseSagaStorage()`, no separate packages
-3. **Command reply correlation** → Dedicated `Headers.SagaId` / `Headers.SagaStepIndex` headers to avoid collision with existing `CorrelationId`
-4. **Definition lifecycle** → Singleton; `Build()` called once, step graph cached and reused
-5. **Concurrency** → Optimistic concurrency via `version` column + retry on conflict
-6. **Dashboard** → Same messaging dashboard, new saga tab/section
-7. **Step data shape** → Keyed access (`SetStepData<T>(key, data)`), scoped to current step during compensation, persisted after successful step completion
-8. **`Critical` flag** → Removed; undefined runtime semantics, use explicit retry/timeout per step instead
+Items not already captured in Key Decisions:
+
+1. **`FailAsync` signature** → Added `CancellationToken ct = default` for API consistency
+2. **`SkipStepAsync` ambiguity** → Split into `SkipFailedCompensationAsync` (compensation only); no forward step skipping
+3. **`ForceCompleteAsync` naming** → `MarkResolvedAsync` with distinct `Resolved` terminal state; stores audit metadata
+4. **`Critical` flag** → Removed; undefined runtime semantics, use explicit retry/timeout per step instead
+5. **`ExceptionInfo` → `FailureInfo`** → Broader name covers timeouts, invalid replies, operator actions
+6. **`CompletedStepLog` → `SagaStepLogEntry`** → Aligns with `saga_step_log` table; entries include `Compensated` and `CompensationFailed`
+7. **`StepDataJson` → `CompensationDataJson`** → Clearer intent: sole use is compensation context
+8. **`RaiseEventAsync` split** → `PublishEventAsync(event)` for business-key routed, `RaiseEventToSagaAsync(sagaId, event)` for direct targeted
 9. **`IdempotencyKey` signature** → `Func<ISagaContext<TState>, string>` for access to saga ID and step context
-10. **`FailAsync` signature** → Added `CancellationToken ct = default` for API consistency
-11. **`SkipStepAsync` ambiguity** → Split into `SkipFailedCompensationAsync` (compensation only); no forward step skipping
-12. **`ForceCompleteAsync` naming** → `MarkResolvedAsync` with distinct `Resolved` terminal state (not `Completed`); stores audit metadata (reason, timestamp, operator identity)
-13. **Timeout abstraction** → Durable timeout processor (abstracted); default polls persisted timestamps, swappable for transport-based or external scheduler
-14. **Cancellation flow** → `CancelAsync` → `Cancelling` (intermediate) → compensation → `Cancelled` or `Stuck`
-15. **Correlation model** → Two distinct modes: runtime correlation (headers) for Command replies, business correlation (type + key) for WaitFor events
-16. **Command() runtime contract** → Compiles to same internal step shape as Step(); syntactic sugar, not a separate engine
-17. **Execution guarantees** → At-least-once for steps, replies, and compensation; users must make handlers idempotent
-18. **Definition immutability** → `Build()` produces immutable metadata; runtime uses per-instance `ISagaContext<TState>`
-19. **Build-time validation** → Unique step names, single global timeout, required reply handlers, no duplicates, no empty destinations
-20. **Reply/event safety** → Late/duplicate/stale arrivals ignored based on saga state matching; `options.OnIgnoredMessage` for dead-lettering
-21. **`DefinitionType` → `SagaName`** → Logical name avoids overloaded "type" semantics in .NET
-22. **`StepDataJson` → `CompensationDataJson`** → Clearer intent: sole use is compensation context
-23. **`RaiseEventAsync` split** → `PublishEventAsync(event)` for business-key routed ingress, `RaiseEventToSagaAsync(sagaId, event)` for direct targeted delivery
-24. **Execution history as first-class** → `saga_events` append-only audit table captures state transitions, retry attempts, and operator actions separately from step outcomes in `saga_step_log`
-25. **`ExceptionInfo` → `FailureInfo`** → Broader name covers timeouts, invalid replies, operator actions, not just exceptions
-26. **`CompletedStepLog` → `SagaStepLogEntry`** → Aligns with `saga_step_log` table; entries include `Compensated` and `CompensationFailed`, not just completions
-27. **Operator audit signatures** → All `ISagaManagement` methods accept `actor`/`reason`/`notes`; persisted via `saga_events` with structured JSONB detail
-28. **`FindWaitingAsync` returns list** → Multiple sagas may wait on same (event type, key); `IReadOnlyList<SagaInstance>` not single-or-null
-29. **`PublishEventAsync` multi-delivery** → Each matched saga processed independently; isolated failures; best-effort per saga; no cross-saga ordering
-30. **Reply type matching: exact CLR type** → No assignability; `OnReply<Base>()` ≠ `Derived`; build-time validation rejects overlapping types
-25. **Long-term execution shape** → Sequential core, graph-capable future; public DSL stays sequential-first, internal model extensible
-26. **Operator event detail format** → `saga_events.detail` is JSONB with documented shape per event type; operator events include `actor`, `reason`, `notes`
-27. **Observability** → Separate `Headless.Sagas.OpenTelemetry` package; defined metric names, trace spans, and `ISagaExecutionObserver` abstraction
-28. **Runtime extension points** → 5 abstractions ship: `ISagaStore`, `ISagaTimeoutStore`, `ISagaSerializer`, `ISagaIdGenerator`, `ISagaExecutionObserver`; internal plumbing not abstracted
 
 ## Open Questions
 
-1. **Compensation data serialization**: `SetStepData<T>(key, data)` serializes to `SagaStepLogEntry.CompensationDataJson` as a keyed dictionary. What serializer? System.Text.Json with the same options as state serialization? Should there be a size limit to prevent bloat?
+None — all questions resolved.
