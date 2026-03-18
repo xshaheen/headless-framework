@@ -90,7 +90,7 @@ public interface ISagaBuilder<TState> where TState : class
         string name,
         Func<ISagaContext<TState>, CancellationToken, ValueTask> execute,
         Func<ISagaContext<TState>, CancellationToken, ValueTask>? compensate = null,
-        Action<IStepOptionsBuilder>? configure = null);
+        Action<IStepOptionsBuilder<TState>>? configure = null);
 
     /// Command/reply step: send a command via messaging, wait for reply.
     ISagaBuilder<TState> Command<TCommand>(
@@ -154,11 +154,11 @@ public interface ISagaContext<TState> where TState : class
 ```csharp
 public interface IStepOptionsBuilder
 {
-    IStepOptionsBuilder Retry(int maxAttempts, Func<int, TimeSpan>? delay = null);
-    IStepOptionsBuilder Timeout(TimeSpan timeout);
-    IStepOptionsBuilder Critical(bool value = true);
-    IStepOptionsBuilder IdempotencyKey(Func<object, string> factory);
-    IStepOptionsBuilder When(Func<object, bool> predicate);
+    IStepOptionsBuilder<TState> Retry(int maxAttempts, Func<int, TimeSpan>? delay = null);
+    IStepOptionsBuilder<TState> Timeout(TimeSpan timeout);
+    IStepOptionsBuilder<TState> Critical(bool value = true);
+    IStepOptionsBuilder<TState> IdempotencyKey(Func<object, string> factory);
+    IStepOptionsBuilder<TState> When(Func<TState, bool> predicate);
 }
 ```
 
@@ -723,7 +723,8 @@ CREATE TABLE {schema}.saga_instances (
     waiting_key     VARCHAR(500)    NULL,
     failure_reason  TEXT            NULL,
     exception_info  TEXT            NULL,
-    completed_steps JSONB           NOT NULL DEFAULT '[]'
+    completed_steps JSONB           NOT NULL DEFAULT '[]',
+    version         INT             NOT NULL DEFAULT 0
 );
 
 CREATE INDEX ix_saga_status ON {schema}.saga_instances (status);
@@ -743,19 +744,21 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
 6. **Saga storage alongside messaging** — same schema, same providers, `UseSagaStorage()` extension
 7. **Event correlation by type + key** — `WaitFor` uses dual key extractors (saga-side + event-side)
 8. **Testing harness with two modes** — service mocking for direct steps, command/reply simulation for messaging steps
+9. **Generic `IStepOptionsBuilder<TState>`** — typed `When(Func<TState, bool>)` predicate, compile-time safety
+10. **Dedicated saga headers** — `Headers.SagaId` + `Headers.SagaStepIndex` + `Headers.SagaReplyType`, separate from existing `CorrelationId`
+11. **Singleton definitions** — `Build()` called once at startup, immutable step graph cached
+12. **Optimistic concurrency** — `version` column on saga_instances, retry on conflict
+13. **Dashboard: same UI, new tab** — saga instances surfaced alongside messaging in the existing dashboard
+
+## Resolved Questions
+
+1. **Generic step options** → `IStepOptionsBuilder<TState>` with typed `When()` predicate
+2. **Storage packaging** → Extend messaging providers via `UseSagaStorage()`, no separate packages
+3. **Command reply correlation** → Dedicated `Headers.SagaId` / `Headers.SagaStepIndex` headers to avoid collision with existing `CorrelationId`
+4. **Definition lifecycle** → Singleton; `Build()` called once, step graph cached and reused
+5. **Concurrency** → Optimistic concurrency via `version` column + retry on conflict
+6. **Dashboard** → Same messaging dashboard, new saga tab/section
 
 ## Open Questions
 
-1. **`IStepOptionsBuilder.When` generic constraint**: The `When(Func<object, bool>)` predicate uses `object` because `IStepOptionsBuilder` is not generic. Should it be `IStepOptionsBuilder<TState>` to get `When(Func<TState, bool>)`? This would make `Step()`'s `configure:` parameter generic too.
-
-2. **Saga storage as extension vs separate package**: Current proposal uses `UseSagaStorage()` on messaging options. Alternative: separate `Headless.Sagas.PostgreSql` package that shares the schema but has independent lifecycle. Trade-off: convenience vs coupling.
-
-3. **Command reply correlation**: The proposal uses `Headers.CorrelationId` = saga ID. But the existing messaging system already uses `CorrelationId` for its own correlation. Should sagas use a separate `SagaId` header to avoid collision?
-
-4. **Saga definition lifecycle**: Should `ISagaDefinition<TState>` instances be singletons (registered once, `Build()` called once to create a step graph) or transient (new instance per saga execution)? Singleton is more efficient but means the definition can't hold instance state.
-
-5. **Step data serialization**: `SetStepData<T>()` serializes to `CompletedStepLog.StepDataJson`. What serializer? System.Text.Json with the same options as state serialization? Should there be a size limit to prevent bloat?
-
-6. **Dashboard integration**: The existing messaging dashboard shows published/received messages. Should saga instances be surfaced in the same dashboard, or a separate saga-specific view?
-
-7. **Concurrency**: What happens if two events arrive simultaneously for the same saga instance (e.g., two `RaiseEventAsync` calls)? Options: optimistic concurrency (retry on conflict), pessimistic locking (DB row lock), or queue-per-saga.
+1. **Step data serialization**: `SetStepData<T>()` serializes to `CompletedStepLog.StepDataJson`. What serializer? System.Text.Json with the same options as state serialization? Should there be a size limit to prevent bloat?
