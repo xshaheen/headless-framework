@@ -56,6 +56,26 @@ Orchestration-based saga support for `headless-framework`. A saga is a sequence 
 - Read-only step visualization: linear flow diagram of the compiled step definition (name, type, status per step) with current execution position highlighted. Not an editor — purely operational visibility derived from the cached step graph + `saga_step_log`.
 - Execution timeline: chronological event stream per saga instance from `saga_events` — state transitions, retry attempts, timeout firings, operator interventions. Enables debugging and root cause analysis directly from the dashboard.
 
+## Subsystem Boundaries
+
+Saga sits *on top of* Messaging and Jobs — strictly one-way dependencies:
+
+```
+Saga ──→ Messaging (transport + storage)
+Saga ──→ Jobs      (timeout polling)
+Messaging ╳ Saga
+Jobs      ╳ Saga
+Messaging ╳ Jobs
+```
+
+| Subsystem | Role | Saga Awareness |
+|---|---|---|
+| **Messaging** | Transport layer — publish/consume, outbox, broker abstraction | None. Saga is just another consumer. |
+| **Jobs** | Scheduling layer — cron, delayed, distributed coordination | None. Timeout polling is just another job. |
+| **Saga** | Orchestration layer — multi-step workflows, compensation, state | Consumes both; owns its own tables in messaging's schema. |
+
+**Implications:** Adding saga touches zero lines in existing messaging or jobs packages. No shared abstractions need to change. Future capabilities (parallel steps, sub-sagas, dynamic steps) are additive to the saga layer only.
+
 ## Why Builder DSL
 
 Evaluated six API styles across .NET and Go ecosystems:
