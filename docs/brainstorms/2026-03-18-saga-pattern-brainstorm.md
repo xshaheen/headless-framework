@@ -152,13 +152,14 @@ public interface ISagaContext<TState> where TState : class
 ### Step Options
 
 ```csharp
-public interface IStepOptionsBuilder
+public interface IStepOptionsBuilder<TState> where TState : class
 {
     IStepOptionsBuilder<TState> Retry(int maxAttempts, Func<int, TimeSpan>? delay = null);
     IStepOptionsBuilder<TState> Timeout(TimeSpan timeout);
     IStepOptionsBuilder<TState> Critical(bool value = true);
-    IStepOptionsBuilder<TState> IdempotencyKey(Func<object, string> factory);
+    IStepOptionsBuilder<TState> IdempotencyKey(Func<TState, string> factory);
     IStepOptionsBuilder<TState> When(Func<TState, bool> predicate);
+    IStepOptionsBuilder<TState> CompensationRetry(int maxAttempts, Func<int, TimeSpan>? delay = null);
 }
 ```
 
@@ -257,7 +258,7 @@ public interface ISagaManagement
 
 ### 1. Local/Direct Step (`Step`)
 
-Calls a service directly via DI or runs in-process logic. The saga orchestrator executes the lambda synchronously (in saga context) and advances immediately on success.
+Calls a service directly via DI or runs in-process logic. The saga orchestrator awaits the lambda and advances immediately on success.
 
 ```
 Orchestrator --execute--> Lambda (calls IPaymentService via DI)
@@ -268,7 +269,7 @@ Orchestrator --execute--> Lambda (calls IPaymentService via DI)
 
 ### 2. Command/Reply Step (`Command`)
 
-Sends a command message to a participant service via the existing messaging infrastructure. The saga enters a waiting state until the reply arrives. Reply correlation uses `Headers.CorrelationId` = saga ID + step index.
+Sends a command message to a participant service via the existing messaging infrastructure. The saga enters a waiting state until the reply arrives. Reply correlation uses dedicated `Headers.SagaId` + `Headers.SagaStepIndex` headers (separate from the existing `CorrelationId`).
 
 ```
 Orchestrator --send command--> Message Broker --deliver--> Participant Service
@@ -316,6 +317,7 @@ public sealed record SagaInstance
     public List<CompletedStepLog> CompletedSteps { get; init; } = [];
     public string? FailureReason { get; set; }
     public string? ExceptionInfo { get; set; }
+    public int Version { get; set; }
 }
 
 public enum SagaRuntimeStatus
@@ -325,8 +327,8 @@ public enum SagaRuntimeStatus
     WaitingForReply,
     Compensating,
     Completed,
-    Failed,        // compensation succeeded but saga didn't complete
-    Stuck,         // compensation itself failed
+    Failed,        // saga failed, compensation completed successfully
+    Stuck,         // compensation itself failed, requires intervention
     Cancelled,
 }
 
@@ -336,6 +338,19 @@ public sealed record CompletedStepLog
     public required int StepIndex { get; init; }
     public DateTimeOffset CompletedAtUtc { get; init; }
     public string? StepDataJson { get; init; }  // snapshot for compensation
+}
+
+public sealed record SagaStatusInfo
+{
+    public required string Id { get; init; }
+    public required string DefinitionType { get; init; }
+    public required SagaRuntimeStatus Status { get; init; }
+    public required int CurrentStepIndex { get; init; }
+    public required DateTimeOffset CreatedAtUtc { get; init; }
+    public required DateTimeOffset UpdatedAtUtc { get; init; }
+    public string? WaitingForEventType { get; init; }
+    public string? FailureReason { get; init; }
+    public IReadOnlyList<CompletedStepLog> CompletedSteps { get; init; } = [];
 }
 ```
 
