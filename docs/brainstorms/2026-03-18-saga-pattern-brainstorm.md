@@ -81,7 +81,7 @@ Messaging ╳ Jobs
 The initial authoring model is **sequential**, but the compiled step graph and runtime state model are designed so branching, child sagas, and parallel segments can be added later without breaking existing contracts.
 
 - `ISagaDefinition<TState>` and `ISagaBuilder<TState>` stay sequential-first — the public DSL does not expose graph primitives in v1.
-- Internally, `step_index` progression is an engine concern. A future `Parallel()` block could compile to a sub-graph with path-based indexing (e.g., `3.1`, `3.2`) while existing sequential sagas continue using integer progression unchanged.
+- **Known tension:** The current public contract (`ISagaContext.CurrentStepIndex` as `int`) and storage schema (`step_index INT`) are sequential-only. Future graph support would likely introduce an additional internal execution path identifier (e.g., `string StepPath` = `"3.1"`, `"3.2"`) while preserving the integer step index for sequential definitions. This is a future additive change — not introduced now since it has no v1 use.
 - Sub-sagas can be *composed* today using existing primitives (`StartAsync` + `WaitFor` completion event). However, first-class sub-saga support will likely require additional runtime metadata (parent/child relationships, cascading cancellation, failure propagation) and operational semantics (linked observability, dashboard nesting).
 
 **Not in scope for v1:** parallel steps, fan-out/fan-in, conditional branching beyond `When()` skip, loop/retry blocks, join points.
