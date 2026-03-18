@@ -416,7 +416,6 @@ public sealed record SagaInstance
     public DateTimeOffset? ExpiresAtUtc { get; set; }
     public string? WaitingForEventType { get; set; }
     public string? WaitingForEventKey { get; set; }
-    public List<CompletedStepLog> CompletedSteps { get; init; } = [];
     public string? FailureReason { get; set; }
     public string? ExceptionInfo { get; set; }
     public int Version { get; set; }
@@ -463,13 +462,25 @@ public enum SagaRuntimeStatus
 
 public sealed record CompletedStepLog
 {
+    public required long Id { get; init; }
+    public required string SagaId { get; init; }
     public required string StepName { get; init; }
     public required int StepIndex { get; init; }
+    public required StepLogStatus Status { get; init; }
     public DateTimeOffset CompletedAtUtc { get; init; }
     /// Keyed dictionary of step-scoped data, serialized as JSON.
     /// Set via SetStepData<T>(key, data) during step execution.
     /// Readable via GetStepData<T>(key) during compensation of this step only.
     public string? CompensationDataJson { get; init; }
+    public int? DurationMs { get; init; }
+    public string? ExceptionInfo { get; init; }
+}
+
+public enum StepLogStatus
+{
+    Completed,
+    CompensationFailed,
+    Compensated,
 }
 
 public sealed record SagaStatusInfo
@@ -482,7 +493,7 @@ public sealed record SagaStatusInfo
     public required DateTimeOffset UpdatedAtUtc { get; init; }
     public string? WaitingForEventType { get; init; }
     public string? FailureReason { get; init; }
-    public IReadOnlyList<CompletedStepLog> CompletedSteps { get; init; } = [];
+    public IReadOnlyList<CompletedStepLog> StepLog { get; init; } = [];
 }
 ```
 
@@ -885,12 +896,28 @@ CREATE TABLE {schema}.saga_instances (
     waiting_key     VARCHAR(500)    NULL,
     failure_reason  TEXT            NULL,
     exception_info  TEXT            NULL,
-    completed_steps JSONB           NOT NULL DEFAULT '[]',
     version         INT             NOT NULL DEFAULT 0,
     resolved_reason TEXT            NULL,
     resolved_at_utc TIMESTAMPTZ     NULL,
     resolved_by     VARCHAR(500)    NULL
 );
+
+-- per-step completion log (normalized, not JSONB)
+CREATE TABLE {schema}.saga_step_log (
+    id              BIGINT          GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    saga_id         VARCHAR(36)     NOT NULL REFERENCES {schema}.saga_instances(id),
+    step_name       VARCHAR(500)    NOT NULL,
+    step_index      INT             NOT NULL,
+    status          VARCHAR(20)     NOT NULL,  -- Completed, CompensationFailed, Compensated
+    completed_at_utc TIMESTAMPTZ    NOT NULL,
+    compensation_data TEXT          NULL,       -- keyed JSON dictionary for compensation context
+    duration_ms     INT             NULL,
+    exception_info  TEXT            NULL
+);
+
+CREATE INDEX ix_step_log_saga ON {schema}.saga_step_log (saga_id);
+CREATE INDEX ix_step_log_status ON {schema}.saga_step_log (status)
+    WHERE status != 'Completed';
 
 CREATE INDEX ix_saga_status ON {schema}.saga_instances (status);
 CREATE INDEX ix_saga_waiting ON {schema}.saga_instances (waiting_event, waiting_key)
@@ -899,18 +926,7 @@ CREATE INDEX ix_saga_expires ON {schema}.saga_instances (expires_at_utc)
     WHERE expires_at_utc IS NOT NULL;
 ```
 
-**`completed_steps` as JSONB — trade-off note:**
-
-JSONB column is simpler to start with (single table, no joins, atomic read/write with the saga instance) but has known downsides:
-
-- Per-step queries are harder (e.g., "find all sagas where step X failed compensation")
-- Dashboard per-step visibility requires JSON parsing at query time
-- Reporting/analytics on step durations or failure rates across sagas is awkward
-- PostgreSQL JSONB operators work but are slower than indexed relational columns
-
-A normalized `saga_step_log` child table would solve all of these but adds write amplification (INSERT per step) and requires transactional consistency with the parent row.
-
-**Decision: start with JSONB.** The `ISagaDataStorage` abstraction can migrate to a child table later without changing the public API — `CompletedStepLog` is an internal persistence detail, not a user-facing contract. If per-step querying becomes a real need, add a `saga_step_log` table behind the same abstraction.
+**Why child table over JSONB:** Per-step indexing enables dashboard visibility, direct SQL queries for stuck compensation steps, and step-level analytics (duration, failure rates) without JSON parsing. Write amplification is negligible — sagas typically have 3-7 steps.
 
 ## Key Decisions
 
