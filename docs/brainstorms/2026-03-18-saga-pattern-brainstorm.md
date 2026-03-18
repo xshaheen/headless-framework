@@ -193,6 +193,7 @@ public interface ICommandStepBuilder<TState> where TState : class
     ICommandStepBuilder<TState> Retry(int maxAttempts, Func<int, TimeSpan>? delay = null);
     ICommandStepBuilder<TState> Timeout(TimeSpan timeout);
     ICommandStepBuilder<TState> When(Func<TState, bool> predicate);
+    ICommandStepBuilder<TState> CompensationRetry(int maxAttempts, Func<int, TimeSpan>? delay = null);
 }
 ```
 
