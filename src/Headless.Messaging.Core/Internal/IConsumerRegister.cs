@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Exceptions;
@@ -37,6 +38,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private readonly MessagingOptions _options = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
     private readonly TimeSpan _pollingDelay = TimeSpan.FromSeconds(1);
 
+    private ICircuitBreakerStateManager? _circuitBreakerStateManager;
     private IConsumerClientFactory _consumerClientFactory = null!;
     private IDispatcher _dispatcher = null!;
     private int _disposed;
@@ -63,6 +65,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         _serializer = serviceProvider.GetRequiredService<ISerializer>();
         _storage = serviceProvider.GetRequiredService<IDataStorage>();
         _consumerClientFactory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
+        _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();
 
         await ExecuteAsync();
 
@@ -231,6 +234,71 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             }
 
             _groupHandles[groupName] = handle;
+
+            _circuitBreakerStateManager?.RegisterGroupCallbacks(
+                groupName,
+                onPause: () => _PauseGroupAsync(handle),
+                onResume: () => _ResumeGroupAsync(handle)
+            );
+        }
+    }
+
+    private async ValueTask _PauseGroupAsync(GroupHandle handle)
+    {
+        _logger.LogWarning("Circuit breaker opened for group '{GroupName}'. Pausing consumers.", handle.GroupName);
+
+        try
+        {
+            await handle.Cts.CancelAsync();
+        }
+        catch (ObjectDisposedException)
+        {
+            // CTS already disposed (group was shut down)
+        }
+
+        foreach (var client in handle.Clients)
+        {
+            try
+            {
+                await client.PauseAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to pause consumer client for group '{GroupName}'.", handle.GroupName);
+            }
+        }
+    }
+
+    private async ValueTask _ResumeGroupAsync(GroupHandle handle)
+    {
+        _logger.LogWarning(
+            "Circuit breaker half-open for group '{GroupName}'. Resuming consumers.",
+            handle.GroupName
+        );
+
+        var newCts = CancellationTokenSource.CreateLinkedTokenSource(_stoppingCts.Token);
+        var oldCts = handle.Cts;
+        handle.Cts = newCts;
+
+        try
+        {
+            oldCts.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Already disposed
+        }
+
+        foreach (var client in handle.Clients)
+        {
+            try
+            {
+                await client.ResumeAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to resume consumer client for group '{GroupName}'.", handle.GroupName);
+            }
         }
     }
 
@@ -427,7 +495,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     {
         private readonly Lock _clientsLock = new();
 
-        public required CancellationTokenSource Cts { get; init; }
+        public required CancellationTokenSource Cts { get; set; }
         public required List<IConsumerClient> Clients { get; init; }
         public required int OriginalConcurrency { get; init; }
         public required string GroupName { get; init; }
