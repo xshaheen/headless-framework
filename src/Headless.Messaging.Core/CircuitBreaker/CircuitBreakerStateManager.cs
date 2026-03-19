@@ -1,0 +1,271 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Collections.Concurrent;
+using Microsoft.Extensions.Options;
+
+namespace Headless.Messaging.CircuitBreaker;
+
+/// <summary>
+/// Default implementation of <see cref="ICircuitBreakerStateManager"/>.
+/// Maintains per-group circuit state and drives Open → HalfOpen transitions via <see cref="Timer"/>.
+/// Thread safety is achieved with a per-group <see cref="Lock"/> object for all compound
+/// check-and-transition operations.
+/// </summary>
+internal sealed class CircuitBreakerStateManager(IOptions<CircuitBreakerOptions> options) : ICircuitBreakerStateManager
+{
+    private readonly CircuitBreakerOptions _options = options.Value;
+
+    // Lock objects are stored separately from the state so the analyzer never sees
+    // locking on a property accessor. We always lock on the local variable 'groupLock'.
+    private readonly ConcurrentDictionary<string, GroupCircuitState> _groups =
+        new(StringComparer.Ordinal);
+
+    private readonly ConcurrentDictionary<string, Lock> _locks = new(StringComparer.Ordinal);
+
+    /// <inheritdoc />
+    public void RegisterGroupCallbacks(string groupName, Func<ValueTask> onPause, Func<ValueTask> onResume)
+    {
+        var state = _GetOrAddState(groupName);
+        var groupLock = _locks[groupName];
+
+        lock (groupLock)
+        {
+            state.OnPause = onPause;
+            state.OnResume = onResume;
+        }
+    }
+
+    /// <inheritdoc />
+    public async ValueTask ReportFailureAsync(string groupName, Exception exception)
+    {
+        var isTransient = CircuitBreakerDefaults.IsTransient(exception);
+        var state = _GetOrAddState(groupName);
+        var groupLock = _locks[groupName];
+        Func<ValueTask>? pauseCallback = null;
+
+        lock (groupLock)
+        {
+            switch (state.State)
+            {
+                case CircuitBreakerState.HalfOpen when !isTransient:
+                    // Non-transient failure during probe: the message is bad but the dependency is healthy.
+                    // Close the circuit so normal processing resumes.
+                    _TryReleaseProbeSemaphore(state);
+                    _TransitionToClosed(state);
+                    break;
+
+                case CircuitBreakerState.HalfOpen when isTransient:
+                    // Transient failure during probe: dependency still unhealthy — re-open.
+                    _TryReleaseProbeSemaphore(state);
+                    _TransitionToOpen(state, groupName);
+                    pauseCallback = state.OnPause;
+                    break;
+
+                default:
+                    if (!isTransient)
+                    {
+                        // Non-transient failure in Closed/Open state: ignore — not a signal for the breaker.
+                        break;
+                    }
+
+                    state.ConsecutiveFailures++;
+
+                    if (state.State is CircuitBreakerState.Closed
+                        && state.ConsecutiveFailures >= _options.FailureThreshold)
+                    {
+                        _TransitionToOpen(state, groupName);
+                        pauseCallback = state.OnPause;
+                    }
+
+                    break;
+            }
+        }
+
+        if (pauseCallback is not null)
+        {
+            await pauseCallback().ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    public void ReportSuccess(string groupName)
+    {
+        if (!_groups.TryGetValue(groupName, out var state))
+        {
+            return;
+        }
+
+        var groupLock = _locks[groupName];
+
+        lock (groupLock)
+        {
+            state.ConsecutiveFailures = 0;
+
+            if (state.State is CircuitBreakerState.HalfOpen)
+            {
+                _TryReleaseProbeSemaphore(state);
+                _TransitionToClosed(state);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public bool IsOpen(string groupName)
+    {
+        if (!_groups.TryGetValue(groupName, out var state))
+        {
+            return false;
+        }
+
+        // No lock needed — reading a single enum field (int-aligned) is atomic on all .NET platforms
+        return state.State is CircuitBreakerState.Open or CircuitBreakerState.HalfOpen;
+    }
+
+    /// <inheritdoc />
+    public bool TryAcquireProbePermit(string groupName)
+    {
+        if (!_groups.TryGetValue(groupName, out var state))
+        {
+            return false;
+        }
+
+        return state.ProbePermit.Wait(0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
+
+    private GroupCircuitState _GetOrAddState(string groupName)
+    {
+        return _groups.GetOrAdd(
+            groupName,
+            static (key, locks) =>
+            {
+                locks.TryAdd(key, new Lock());
+                return new GroupCircuitState();
+            },
+            _locks
+        );
+    }
+
+    /// <summary>Must be called while holding the group lock.</summary>
+    private void _TransitionToOpen(GroupCircuitState state, string groupName)
+    {
+        state.State = CircuitBreakerState.Open;
+
+        var openDuration = _GetOpenDuration(state);
+        state.EscalationLevel++;
+
+        // Dispose any existing timer to prevent a stale HalfOpen transition from firing
+        state.OpenTimer?.Dispose();
+        state.OpenTimer = new Timer(
+            _OnOpenTimerElapsed,
+            groupName,
+            openDuration,
+            Timeout.InfiniteTimeSpan
+        );
+    }
+
+    /// <summary>Must be called while holding the group lock.</summary>
+    private static void _TransitionToClosed(GroupCircuitState state)
+    {
+        state.State = CircuitBreakerState.Closed;
+        state.OpenTimer?.Dispose();
+        state.OpenTimer = null;
+        state.SuccessfulCyclesAfterClose++;
+    }
+
+    /// <summary>
+    /// Releases the probe semaphore if it was previously acquired (i.e. if its current count is 0).
+    /// Must be called while holding the group lock.
+    /// </summary>
+    private static void _TryReleaseProbeSemaphore(GroupCircuitState state)
+    {
+        if (state.ProbePermit.CurrentCount == 0)
+        {
+            state.ProbePermit.Release();
+        }
+    }
+
+    private void _OnOpenTimerElapsed(object? timerState)
+    {
+        var groupName = (string)timerState!;
+
+        if (!_groups.TryGetValue(groupName, out var state) || !_locks.TryGetValue(groupName, out var groupLock))
+        {
+            return;
+        }
+
+        Func<ValueTask>? resumeCallback = null;
+
+        lock (groupLock)
+        {
+            if (state.State is not CircuitBreakerState.Open)
+            {
+                // Circuit was already closed or re-opened — ignore stale timer
+                return;
+            }
+
+            state.State = CircuitBreakerState.HalfOpen;
+            resumeCallback = state.OnResume;
+        }
+
+        if (resumeCallback is not null)
+        {
+            // Fire-and-forget on a thread-pool thread to avoid blocking the timer callback thread
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await resumeCallback().ConfigureAwait(false);
+                }
+#pragma warning disable ERP022 // Intentional: callback failures must not crash the timer thread
+                catch
+                {
+                    // Swallow — callers are responsible for handling errors in their own callbacks
+                }
+#pragma warning restore ERP022
+            });
+        }
+    }
+
+    private TimeSpan _GetOpenDuration(GroupCircuitState state)
+    {
+        var seconds = _options.OpenDuration.TotalSeconds * Math.Pow(2, state.EscalationLevel);
+        return TimeSpan.FromSeconds(Math.Min(seconds, _options.MaxOpenDuration.TotalSeconds));
+    }
+
+    // -------------------------------------------------------------------------
+    // Inner state type
+    // -------------------------------------------------------------------------
+
+    private sealed class GroupCircuitState
+    {
+        public CircuitBreakerState State { get; set; } = CircuitBreakerState.Closed;
+        public int ConsecutiveFailures { get; set; }
+
+        /// <summary>
+        /// Zero-based escalation level. Incremented each time the circuit opens.
+        /// Controls the exponential back-off of <see cref="CircuitBreakerOptions.OpenDuration"/>.
+        /// </summary>
+        public int EscalationLevel { get; set; }
+
+        /// <summary>
+        /// Number of successful close cycles since the last escalation reset.
+        /// Resets <see cref="EscalationLevel"/> to zero after reaching
+        /// <see cref="CircuitBreakerOptions.SuccessfulCyclesToResetEscalation"/>.
+        /// </summary>
+        public int SuccessfulCyclesAfterClose { get; set; }
+
+        public Func<ValueTask>? OnPause { get; set; }
+        public Func<ValueTask>? OnResume { get; set; }
+
+        public Timer? OpenTimer { get; set; }
+
+        /// <summary>
+        /// Semaphore limiting HalfOpen to a single concurrent probe message.
+        /// </summary>
+        public SemaphoreSlim ProbePermit { get; } = new(1, 1);
+    }
+}
