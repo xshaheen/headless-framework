@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using Headless.Messaging;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -81,7 +82,8 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         var logger = provider.GetRequiredService<ILogger<SubscribeExecutor>>();
         var options = Options.Create(new MessagingOptions());
 
-        return new SubscribeExecutor(provider, storage, invoker, TimeProvider.System, logger, options);
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        return new SubscribeExecutor(provider, storage, invoker, TimeProvider.System, logger, options, circuitBreaker);
     }
 
     [Fact]

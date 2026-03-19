@@ -8,6 +8,7 @@
     <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard" />
     <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FastExpressionCompiler" />
