@@ -7,13 +7,14 @@ namespace Headless.Messaging.CircuitBreaker;
 /// </summary>
 /// <remarks>
 /// These options control the sensitivity and recovery behavior of the circuit breaker.
-/// Additional options (such as integration with <c>MessagingOptions</c>) will be wired in a subsequent step.
+/// They apply globally to all consumer groups unless overridden per consumer via
+/// <c>ConsumerCircuitBreakerOptions</c>.
 /// </remarks>
 public sealed class CircuitBreakerOptions
 {
     /// <summary>
     /// Gets or sets the number of consecutive transient failures required to open the circuit.
-    /// Default is 5.
+    /// Must be greater than zero. Default is 5.
     /// </summary>
     public int FailureThreshold { get; init; } = 5;
 
@@ -26,6 +27,7 @@ public sealed class CircuitBreakerOptions
 
     /// <summary>
     /// Gets or sets the maximum duration the circuit can stay open, regardless of escalation level.
+    /// Must be greater than or equal to <see cref="OpenDuration"/>.
     /// Default is 240 seconds (4 minutes).
     /// </summary>
     public TimeSpan MaxOpenDuration { get; init; } = TimeSpan.FromSeconds(240);
@@ -35,4 +37,28 @@ public sealed class CircuitBreakerOptions
     /// Default is 3.
     /// </summary>
     public int SuccessfulCyclesToResetEscalation { get; init; } = 3;
+
+    /// <summary>
+    /// Gets or sets the number of probe messages allowed through when the circuit is half-open.
+    /// Kept for API completeness; the state manager currently uses a fixed value of 1.
+    /// Default is 1.
+    /// </summary>
+    public int HalfOpenProbeCount { get; init; } = 1;
+
+    /// <summary>
+    /// Gets or sets a predicate that determines whether an exception is transient and should
+    /// count toward the circuit breaker failure threshold.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Transient exceptions indicate infrastructure or connectivity problems (broker, network, etc.)
+    /// and are appropriate signals to open the circuit. Non-transient exceptions such as
+    /// deserialization errors or validation failures indicate problems with the message itself and
+    /// should not trip the circuit breaker.
+    /// </para>
+    /// <para>
+    /// Defaults to <see cref="CircuitBreakerDefaults.IsTransient"/>.
+    /// </para>
+    /// </remarks>
+    public Func<Exception, bool> IsTransientException { get; init; } = CircuitBreakerDefaults.IsTransient;
 }

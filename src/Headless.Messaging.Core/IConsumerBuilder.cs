@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.CircuitBreaker;
+
 namespace Headless.Messaging;
 
 /// <summary>
@@ -133,4 +135,34 @@ public interface IConsumerBuilder<TConsumer>
     /// <param name="handlerId">The explicit handler identity to use for duplicate detection and diagnostics.</param>
     /// <returns>The current <see cref="IConsumerBuilder{TConsumer}"/> instance for method chaining.</returns>
     IConsumerBuilder<TConsumer> HandlerId(string handlerId);
+
+    /// <summary>
+    /// Configures per-consumer circuit breaker overrides for this consumer.
+    /// </summary>
+    /// <param name="configure">
+    /// A delegate that receives a <see cref="ConsumerCircuitBreakerOptions"/> instance to configure.
+    /// Any property left unset falls back to the global <c>MessagingOptions.CircuitBreaker</c> values.
+    /// </param>
+    /// <returns>The current <see cref="IConsumerBuilder{TConsumer}"/> instance for method chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Use this method when a specific consumer requires different circuit breaker sensitivity than
+    /// the global default. For example, a latency-sensitive consumer might use a lower
+    /// <see cref="ConsumerCircuitBreakerOptions.FailureThreshold"/>, while a best-effort consumer
+    /// might disable the circuit breaker entirely.
+    /// </para>
+    /// <para>
+    /// <strong>Example:</strong>
+    /// <code>
+    /// options.Subscribe&lt;PaymentHandler&gt;()
+    ///     .Topic("payments.process")
+    ///     .WithCircuitBreaker(cb =>
+    ///     {
+    ///         cb.FailureThreshold = 3;
+    ///         cb.OpenDuration = TimeSpan.FromSeconds(60);
+    ///     });
+    /// </code>
+    /// </para>
+    /// </remarks>
+    IConsumerBuilder<TConsumer> WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure);
 }

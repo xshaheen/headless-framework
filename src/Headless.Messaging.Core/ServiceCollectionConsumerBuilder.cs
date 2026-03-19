@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.CircuitBreaker;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging;
@@ -71,6 +72,20 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
 
         _metadata = _metadata with { HandlerId = handlerId };
         _UpdateMetadataInServices();
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IConsumerBuilder<TConsumer> WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        var cbOptions = new ConsumerCircuitBreakerOptions();
+        configure(cbOptions);
+
+        // Register as a singleton so Setup.cs can discover and apply it to ConsumerCircuitBreakerRegistry
+        _services.AddSingleton(new ConsumerCircuitBreakerRegistration(_metadata.Group!, cbOptions));
+
         return this;
     }
 
