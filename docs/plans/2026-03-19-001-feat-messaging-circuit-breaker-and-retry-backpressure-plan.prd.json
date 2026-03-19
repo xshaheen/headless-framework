@@ -10,7 +10,7 @@
     "feature": "xshaheen/feat-messaging-circuit-breaker"
   },
   "verification_command": "dotnet test",
-  "status": "pending",
+  "status": "in_progress",
   "userStories": [
     {
       "id": "US-001",
@@ -122,18 +122,16 @@
     },
     {
       "id": "US-006",
-      "title": "Wire SubscribeExecutor failure reporting to ICircuitBreakerStateManager [M]",
-      "size": "M",
-      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nInject ICircuitBreakerStateManager into SubscribeExecutor. Call ReportFailure on handler exceptions, ReportSuccess on handler completion. Ensure group name is resolved from ConsumerExecutorDescriptor.",
+      "title": "Handle TaskCanceledException timeout in SubscribeExecutor._InvokeConsumerMethodAsync [S]",
+      "size": "S",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nMUST precede US-007. The OperationCanceledException catch in _InvokeConsumerMethodAsync currently swallows all cancellations unconditionally. Timeout-sourced TaskCanceledExceptions (HttpClient timeouts) never reach _SetFailedState and are invisible to the circuit breaker. Fix: re-throw TaskCanceledException when inner CancellationToken.IsCancellationRequested is false (timeout, not shutdown). App-shutdown cancellations continue to be swallowed.",
       "filesToStudy": [
-        "src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs",
-        "src/Headless.Messaging.Core/Internal/IConsumeExecutionPipeline.cs"
+        "src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs"
       ],
       "acceptanceCriteria": [
-        "Handler exceptions trigger ReportFailure(groupName, exception) on the state manager",
-        "Handler success triggers ReportSuccess(groupName)",
-        "Group name resolved from ConsumerExecutorDescriptor.Attribute.Group",
-        "Existing failure persistence (DB status, retry count) unchanged"
+        "TaskCanceledException where CancellationToken.IsCancellationRequested is false is re-thrown (not swallowed)",
+        "OperationCanceledException from app shutdown continues to be swallowed (existing behavior)",
+        "HttpClient timeout scenario propagates to _SetFailedState and becomes visible to circuit breaker"
       ],
       "priority": 6,
       "pass": false,
@@ -143,16 +141,18 @@
     },
     {
       "id": "US-007",
-      "title": "Handle TaskCanceledException timeout classification [S]",
-      "size": "S",
-      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nStop unconditionally swallowing OperationCanceledException in SubscribeExecutor. Distinguish TaskCanceledException-from-timeout (HttpClient) vs cancellation-from-shutdown by checking if inner CancellationToken matches app shutdown token.",
+      "title": "Wire SubscribeExecutor failure reporting to ICircuitBreakerStateManager [M]",
+      "size": "M",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nDepends on US-006 (TaskCanceledException fix). Inject ICircuitBreakerStateManager into SubscribeExecutor. Call ReportFailureAsync on handler exceptions, ReportSuccess on handler completion. Group name resolved from ConsumerExecutorDescriptor.",
       "filesToStudy": [
-        "src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs"
+        "src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs",
+        "src/Headless.Messaging.Core/Internal/IConsumeExecutionPipeline.cs"
       ],
       "acceptanceCriteria": [
-        "TaskCanceledException where inner token != app shutdown token is treated as transient and reported to circuit breaker",
-        "OperationCanceledException from app shutdown is still swallowed (existing behavior)",
-        "HttpClient timeout scenario triggers circuit breaker failure counting"
+        "Handler exceptions trigger ReportFailureAsync(groupName, exception) on the state manager",
+        "Handler success triggers ReportSuccess(groupName)",
+        "Group name resolved from ConsumerExecutorDescriptor.Attribute.Group",
+        "Existing failure persistence (DB status, retry count) unchanged"
       ],
       "priority": 7,
       "pass": false,
@@ -164,15 +164,16 @@
       "id": "US-008",
       "title": "Implement PauseAsync/ResumeAsync for RabbitMQ transport [M]",
       "size": "M",
-      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nImplement PauseAsync via BasicCancel(consumerTag). ResumeAsync re-registers via BasicConsume. Handle idempotency (pause when already paused = no-op).",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nImplement PauseAsync via BasicCancelAsync(consumerTag) — stops new message deliveries; in-flight OnMessageCallback invocations are fire-and-forget and allowed to complete naturally (do NOT close/dispose the channel during pause). ResumeAsync re-registers via BasicConsumeAsync. CTS cancellation is NOT a safe pause mechanism for RabbitMQ — it exits the ListeningAsync loop but leaves in-flight callbacks running detached; broker redelivers on channel close. PauseAsync (not CTS) is the primary pause path.",
       "filesToStudy": [
         "src/Headless.Messaging.RabbitMq/"
       ],
       "acceptanceCriteria": [
-        "PauseAsync cancels consumer tag on the channel",
-        "ResumeAsync re-registers consumer with BasicConsume",
+        "PauseAsync calls BasicCancelAsync(consumerTag) to stop new message deliveries",
+        "PauseAsync does NOT close the channel — in-flight callbacks complete naturally",
+        "ResumeAsync re-registers consumer with BasicConsumeAsync",
         "Both methods are idempotent",
-        "Integration test: pause stops message delivery, resume restarts it"
+        "Integration test: pause stops new message delivery, in-flight messages complete, resume restarts delivery"
       ],
       "priority": 8,
       "pass": false,
