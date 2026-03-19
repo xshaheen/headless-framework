@@ -22,6 +22,8 @@ internal sealed class NatsConsumerClient(
     private readonly MessagingNatsOptions _natsOptions =
         options.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly ManualResetEventSlim _pauseGate = new(true);
+    private volatile bool _paused;
     private IConnection? _consumerClient;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -150,6 +152,8 @@ internal sealed class NatsConsumerClient(
     {
         try
         {
+            _pauseGate.Wait();
+
             if (groupConcurrent > 0)
             {
                 await _semaphore.WaitAsync();
@@ -293,8 +297,31 @@ internal sealed class NatsConsumerClient(
         }
     }
 
+    public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_paused)
+        {
+            _pauseGate.Reset();
+            _paused = true;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        if (_paused)
+        {
+            _pauseGate.Set();
+            _paused = false;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
     public ValueTask DisposeAsync()
     {
+        _pauseGate.Dispose();
         _consumerClient?.Dispose();
         _semaphore.Dispose();
         return ValueTask.CompletedTask;

@@ -24,6 +24,8 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly AmazonSqsOptions _amazonSqsOptions = options.Value;
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly ManualResetEventSlim _pauseGate = new(true);
+    private volatile bool _paused;
     private string _queueUrl = string.Empty;
 
     private IAmazonSimpleNotificationService? _snsClient;
@@ -73,6 +75,8 @@ internal sealed class AmazonSqsConsumerClient(
 
         while (true)
         {
+            _pauseGate.Wait(cancellationToken);
+
             var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
 
             if (response?.Messages?.Count > 0)
@@ -182,8 +186,31 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
+    public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_paused)
+        {
+            _pauseGate.Reset();
+            _paused = true;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        if (_paused)
+        {
+            _pauseGate.Set();
+            _paused = false;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
     public ValueTask DisposeAsync()
     {
+        _pauseGate.Dispose();
         _sqsClient?.Dispose();
         _snsClient?.Dispose();
         _semaphore.Dispose();

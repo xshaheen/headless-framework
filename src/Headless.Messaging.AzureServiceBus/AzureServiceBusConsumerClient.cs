@@ -24,6 +24,7 @@ internal sealed class AzureServiceBusConsumerClient(
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
 
+    private volatile bool _paused;
     private ServiceBusAdministrationClient? _administrationClient;
     private ServiceBusClient? _serviceBusClient;
     private ServiceBusProcessorFacade? _serviceBusProcessor;
@@ -138,6 +139,24 @@ internal sealed class AzureServiceBusConsumerClient(
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
         await commitInput.AbandonMessageAsync();
         _semaphore.Release();
+    }
+
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_paused && _serviceBusProcessor is not null)
+        {
+            await _serviceBusProcessor.StopProcessingAsync(cancellationToken);
+            _paused = true;
+        }
+    }
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        if (_paused && _serviceBusProcessor is not null)
+        {
+            await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
+            _paused = false;
+        }
     }
 
     public async ValueTask DisposeAsync()
