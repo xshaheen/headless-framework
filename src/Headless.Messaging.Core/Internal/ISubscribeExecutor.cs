@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using Headless.Checks;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Exceptions;
@@ -39,6 +40,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
     private readonly IDataStorage _dataStorage;
     private readonly ISubscribeInvoker _invoker;
     private readonly IRetryBackoffStrategy _backoffStrategy;
+    private readonly ICircuitBreakerStateManager _circuitBreakerStateManager;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<SubscribeExecutor> _logger;
     private readonly MessagingOptions _options;
@@ -49,7 +51,8 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         ISubscribeInvoker invoker,
         TimeProvider timeProvider,
         ILogger<SubscribeExecutor> logger,
-        IOptions<MessagingOptions> options
+        IOptions<MessagingOptions> options,
+        ICircuitBreakerStateManager circuitBreakerStateManager
     )
     {
         _provider = provider;
@@ -59,6 +62,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         _dataStorage = dataStorage;
         _invoker = invoker;
         _timeProvider = timeProvider;
+        _circuitBreakerStateManager = circuitBreakerStateManager;
         _hostName = Helper.GetInstanceHostname();
         _backoffStrategy = _options.RetryBackoffStrategy;
     }
@@ -165,11 +169,13 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         }
     }
 
-    private ValueTask _SetSuccessfulState(MediumMessage message)
+    private async ValueTask _SetSuccessfulState(MediumMessage message)
     {
         message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
 
-        return _dataStorage.ChangeReceiveStateAsync(message, StatusName.Succeeded);
+        await _dataStorage.ChangeReceiveStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
+
+        _circuitBreakerStateManager.ReportSuccess(message.Origin.GetGroup()!);
     }
 
     private async Task<bool> _SetFailedState(MediumMessage message, Exception ex)
@@ -186,6 +192,12 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         message.ExpiresAt = message.Added.AddSeconds(_options.FailedMessageExpiredAfter);
 
         await _dataStorage.ChangeReceiveStateAsync(message, StatusName.Failed).ConfigureAwait(false);
+
+        // Report the original (inner) exception to the circuit breaker so transient-classification
+        // predicates see the real exception type, not the SubscriberExecutionFailedException wrapper.
+        var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
+        await _circuitBreakerStateManager.ReportFailureAsync(message.Origin.GetGroup()!, reportedException)
+            .ConfigureAwait(false);
 
         return needRetry;
     }
