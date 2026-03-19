@@ -2,6 +2,7 @@
 title: "feat: Add circuit breaker and adaptive retry backpressure to messaging"
 type: feat
 date: 2026-03-19
+deepened: 2026-03-19
 origin: docs/brainstorms/2026-03-18-messaging-circuit-breaker-and-retry-backpressure-brainstorm.md
 ---
 
@@ -39,7 +40,7 @@ Handler throws exception
 SubscribeExecutor._SetFailedState
         │
         ▼ calls
-ICircuitBreakerStateManager.ReportFailure(groupName, exception)
+ICircuitBreakerStateManager.ReportFailureAsync(groupName, exception)
         │
         ├─ Exception in allowlist? (TimeoutException, HttpRequestException, etc.)
         │   NO → ignore, normal retry/failure handling
@@ -51,11 +52,11 @@ ICircuitBreakerStateManager.ReportFailure(groupName, exception)
         │   NO → done
         │   YES ↓
         │
-        ▼ notifies
-ConsumerRegister reads circuit state
+        ▼ invokes registered onPause callback
+ConsumerRegister (notified via callback)
         │
         ▼
-Pause transport consumer for this group (per-group CTS cancel)
+Pause transport consumer for this group (cancel group CTS + PauseAsync on clients)
 ```
 
 **Key architectural decisions** (see brainstorm: `docs/brainstorms/2026-03-18-messaging-circuit-breaker-and-retry-backpressure-brainstorm.md`):
@@ -83,7 +84,7 @@ Pause transport consumer for this group (per-group CTS cancel)
 
 | Type | Package | Responsibility |
 |------|---------|----------------|
-| `ICircuitBreakerStateManager` | Core (internal) | Tracks per-group circuit state. Reports failures, manages state machine transitions. Thread-safe via `ConcurrentDictionary<string, CircuitState>`. |
+| `ICircuitBreakerStateManager` | Core (internal) | Tracks per-group circuit state. Key interface: `ReportFailureAsync(groupName, exception)` (`ValueTask` — async to await pause callback after releasing lock), `ReportSuccess(groupName)`, `IsOpen(groupName)`, `TryAcquireProbePermit(groupName)` (HalfOpen concurrency guard), `RegisterGroupCallbacks(groupName, Func<ValueTask> onPause, Func<ValueTask> onResume)`. Owns per-group `System.Threading.Timer` for Open→HalfOpen transitions; old timer disposed on every state re-entry. `ConcurrentDictionary<string, CircuitState>` for per-group state; thread-safety via `lock` on each `CircuitState` object (not `Interlocked` — compound check+transition requires guarding the full sequence). |
 | `CircuitState` | Core (internal) | Per-group state: `Closed`/`Open`/`HalfOpen`, consecutive failure count, escalation level, open-since timestamp. |
 | `CircuitBreakerOptions` | Core (public) | Global defaults: `FailureThreshold`, `OpenDuration`, `MaxOpenDuration`, `HalfOpenProbeCount`, `IsTransientException` predicate. |
 | `ConsumerCircuitBreakerOptions` | Core (public) | Per-group overrides: `Enabled`, `FailureThreshold`, `OpenDuration`, `IsTransientException` predicate. |
@@ -96,12 +97,11 @@ Pause transport consumer for this group (per-group CTS cancel)
 | `IConsumerClient` | Add `PauseAsync()` / `ResumeAsync()` methods |
 | `ConsumerRegister` | Refactor `ExecuteAsync` to per-group `CancellationTokenSource`. Track `Dictionary<string, List<IConsumerClient>>`. Read circuit state to pause/resume groups. |
 | `ConsumerRegister._isHealthy` | Kept for broker connectivity (transport-level). Circuit breaker is handler-level. `ReStartAsync()` does NOT reset circuit state — orthogonal concerns. |
-| `SubscribeExecutor._SetFailedState` | Call `ICircuitBreakerStateManager.ReportFailure()` with exception and group name. |
-| `SubscribeExecutor._ExecuteWithoutRetryAsync` | Stop swallowing `OperationCanceledException` unconditionally. Check if it's `TaskCanceledException` from timeout (inner token != app shutdown token) and let it propagate to circuit breaker. |
+| `SubscribeExecutor._SetFailedState` | Call `ICircuitBreakerStateManager.ReportFailureAsync()` with exception and group name. |
+| `SubscribeExecutor._InvokeConsumerMethodAsync` | The `OperationCanceledException` catch (currently swallows all) must re-throw `TaskCanceledException` sourced from a handler timeout (inner token != app shutdown token) so it propagates to `_SetFailedState` and is reported to the circuit breaker. App-shutdown cancellations continue to be swallowed. |
 | `MessageNeedToRetryProcessor` | Add adaptive interval logic. Check circuit state before re-enqueueing — skip groups with open circuits. |
 | `MessagingOptions` | Add `CircuitBreaker` and `RetryProcessor` config sections. |
 | `IConsumerBuilder<T>` | Add `WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions>)`. |
-| `SubscribeExecutor._ExecuteWithoutRetryAsync` | Stop swallowing `OperationCanceledException` unconditionally. Check if it's `TaskCanceledException` from timeout (not app shutdown) and let it propagate to circuit breaker via predicate. |
 | `EventCounterSource` | Add circuit breaker metrics: trip count, open duration histogram, state gauge. |
 | All 8 transport `IConsumerClient` implementations | Implement `PauseAsync()` / `ResumeAsync()`. |
 
@@ -194,7 +194,7 @@ Transport-specific implementations:
 
 | Transport | Pause Mechanism | Resume Mechanism |
 |-----------|----------------|------------------|
-| **RabbitMQ** | `BasicCancel(consumerTag)` | Re-register consumer with `BasicConsume` |
+| **RabbitMQ** | `BasicCancelAsync(consumerTag)` — stops new deliveries; in-flight callbacks complete naturally (do NOT close channel) | Re-register with `BasicConsumeAsync` |
 | **Kafka** | `consumer.Pause(partitions)` | `consumer.Resume(partitions)` |
 | **AWS SQS** | Stop polling loop (set flag) | Resume polling loop |
 | **Azure Service Bus** | `StopProcessingAsync()` | `StartProcessingAsync()` |
@@ -219,6 +219,26 @@ internal sealed class GroupHandle
 ```
 
 `ExecuteAsync` creates one `GroupHandle` per group. Pause = cancel group's CTS + call `PauseAsync` on each client. Resume = create new CTS + call `ResumeAsync`.
+
+#### Resolved Architectural Decisions
+
+Four implementation gaps were identified and resolved during planning:
+
+**1. How `ConsumerRegister` learns circuit state changed (notification mechanism)**
+
+`ICircuitBreakerStateManager.RegisterGroupCallbacks(groupName, Func<ValueTask> onPause, Func<ValueTask> onResume)` — called by `ConsumerRegister.ExecuteAsync` after creating each `GroupHandle`. When `ReportFailureAsync` triggers an Open transition, the registered `onPause` callback is invoked after releasing the group's lock. When the HalfOpen timer fires, `onResume` is invoked through the same path. Callbacks are serialized per group (invoked under lock release, never overlapping) to prevent a late `onResume` racing with a subsequent `onPause`. Polling was rejected: adds response latency proportional to poll interval and wastes CPU.
+
+**2. Who drives the Open→HalfOpen timer**
+
+`ICircuitBreakerStateManager` owns a `System.Threading.Timer` per open circuit. Set at Open-entry with the escalated open duration. On expiry, transitions to HalfOpen and invokes the registered `onResume` callback. **Critical**: the timer must be disposed and replaced on every state re-entry. If a circuit re-opens before the previous timer fires, the stale timer would cause a spurious HalfOpen transition — guard timer creation and disposal under the group's lock. Note: Polly v8's lazy-timestamp approach (no timer, transition triggered per incoming request) is inapplicable here because our transport consumer is actively paused during Open — no messages arrive to trigger a lazy check.
+
+**3. HalfOpen concurrency=1 enforcement**
+
+`ICircuitBreakerStateManager.TryAcquireProbePermit(groupName)` — backed by a per-group `SemaphoreSlim(1,1)`. `SubscribeExecutor` calls this before processing a message when the circuit is in HalfOpen. If the permit is unavailable (another probe is in progress), `SubscribeExecutor` nacks/rejects the message without processing it — it will be redelivered by the broker once the circuit closes. The semaphore is released by the state manager on probe success (→ Close) or failure (→ re-Open with escalation). Polly's `_blockedUntil` gate approach was considered but rejected for the same reason as item 2 above.
+
+**4. Thread safety model**
+
+Use `lock` on each `CircuitState` object — not `Interlocked` — for all compound check+transition operations. `Interlocked` alone cannot atomically guard the multi-step sequence of: check threshold → change state → invoke callback. This follows Polly v8's design where all state mutations occur inside a coarse lock. `ReportFailureAsync` is `ValueTask`-returning to allow awaiting the `onPause` callback after releasing the lock without blocking the thread.
 
 #### Retry Processor Interaction
 
@@ -248,7 +268,7 @@ MessageNeedToRetryProcessor.ProcessAsync
 
 ### Interaction Graph
 
-- `SubscribeExecutor._SetFailedState` → `ICircuitBreakerStateManager.ReportFailure()` → state transition → `ConsumerRegister` pauses group
+- `SubscribeExecutor._SetFailedState` → `ICircuitBreakerStateManager.ReportFailureAsync()` → state transition → `ConsumerRegister` pauses group (via registered `onPause` callback)
 - `TransportCheckProcessor` → `ConsumerRegister.IsHealthy()` → `ReStartAsync()` — orthogonal to circuit breaker. `ReStartAsync` does NOT reset circuit state.
 - `MessageNeedToRetryProcessor` → checks `ICircuitBreakerStateManager.IsOpen(group)` before re-enqueue
 - `EventCounterSource` → new counters: `circuit-breaker-trips`, `circuit-breaker-open-duration`
@@ -266,7 +286,10 @@ MessageNeedToRetryProcessor.ProcessAsync
 
 - **Circuit state is in-memory only.** App restart resets to Closed. Brief retry storm on restart until circuits re-trip (~5 messages per group).
 - **Per-group CTS lifecycle.** Old CTS must be disposed when creating new one on resume. Leak risk if not handled.
-- **Concurrent failure counting.** Multiple threads process same group. Use `Interlocked` operations on the counter. State transition (check threshold → open → pause) must be atomic — `lock` or compare-and-swap on `CircuitState`.
+- **Concurrent failure counting.** Use `lock` on each `CircuitState` object for all compound check+transition operations. `Interlocked` alone is insufficient — atomicity must cover the full check → state change → callback invocation sequence. See Resolved Architectural Decisions above.
+- **In-flight messages during circuit open.** CTS cancellation does NOT safely drain in-flight messages. RabbitMQ's `ListeningAsync` loop exits on CTS cancel, but `OnMessageCallback` invocations are fire-and-forget and may still be executing when the channel disposes — RabbitMQ redelivers those messages. `PauseAsync` (transport-native: `BasicCancelAsync` for RabbitMQ) is the correct primary pause mechanism: it stops new deliveries while in-flight callbacks complete naturally. CTS cancellation stops the consumer loop, not the message pipeline.
+- **`PauseAsync` failure during circuit open.** If `PauseAsync` throws (e.g., broker connection lost at the moment the circuit opens), the circuit is logically Open but the consumer keeps running. Log at Error level; do not suppress. `TransportCheckProcessor` will eventually invoke `ReStartAsync`, which must check and honour the existing Open circuit state rather than blindly restarting consumption.
+- **Timer stale re-entry.** If a group re-opens before the HalfOpen timer fires, the stale timer must be disposed before creating a new one. Guard timer creation under the group's lock. Failure causes a spurious HalfOpen on a group that should stay Open.
 
 ### API Surface Parity
 
@@ -293,8 +316,8 @@ MessageNeedToRetryProcessor.ProcessAsync
 | US-003 | Add `PauseAsync`/`ResumeAsync` to `IConsumerClient` | S |
 | US-004 | Refactor `ConsumerRegister` for per-group CTS and client tracking | L |
 | US-005 | Integrate circuit breaker into `ConsumerRegister` (pause/resume on state change) | M |
-| US-006 | Wire `SubscribeExecutor` failure reporting to `ICircuitBreakerStateManager` | M |
-| US-007 | Handle `TaskCanceledException` timeout in default predicate | S |
+| US-006 | Handle `TaskCanceledException` timeout in `SubscribeExecutor._InvokeConsumerMethodAsync` | S |
+| US-007 | Wire `SubscribeExecutor` failure reporting to `ICircuitBreakerStateManager` | M |
 | US-008 | Implement `PauseAsync`/`ResumeAsync` for RabbitMQ transport | M |
 | US-009 | Implement `PauseAsync`/`ResumeAsync` for Kafka transport | M |
 | US-010 | Implement `PauseAsync`/`ResumeAsync` for remaining transports (SQS, ASB, Redis, NATS, Pulsar, InMemory) | L |
@@ -321,7 +344,7 @@ MessageNeedToRetryProcessor.ProcessAsync
 
 ### Non-Functional Requirements
 
-- [ ] Thread-safe circuit state management (`Interlocked`/CAS for counters, atomic state transitions)
+- [ ] Thread-safe circuit state management (`lock` on each `CircuitState` object for all compound check+transition operations — not `Interlocked` alone)
 - [ ] Zero allocations on the happy path (circuit closed, no transient exceptions)
 - [ ] Per-group pause does not affect other groups' consumers
 - [ ] `TransportCheckProcessor.ReStartAsync()` does not reset circuit state
@@ -331,6 +354,9 @@ MessageNeedToRetryProcessor.ProcessAsync
 - [ ] Unit tests for `ICircuitBreakerStateManager` state machine (all transitions, concurrency, escalation)
 - [ ] Unit tests for exception classification (allowlist matching, `TaskCanceledException` timeout vs shutdown)
 - [ ] Unit tests for adaptive retry interval logic
+- [ ] Unit test: re-open before HalfOpen timer fires disposes stale timer and does not produce spurious HalfOpen
+- [ ] Unit test: `TryAcquireProbePermit` blocks concurrent probes; second caller returns false without processing
+- [ ] Unit test: `RegisterGroupCallbacks` — `onPause` invoked on Open transition, `onResume` invoked on HalfOpen transition
 - [ ] Integration tests with InMemory transport for circuit trip/recovery flow
 - [ ] Integration tests verifying retry processor respects open circuits
 - [ ] Line coverage ≥85%, branch coverage ≥80%
@@ -355,9 +381,33 @@ See brainstorm for full rejected alternatives list. Key rejections:
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | Transport `PauseAsync` semantics differ significantly | High — 8 implementations, some may not support clean pause | Design contract as idempotent and best-effort. InMemory + RabbitMQ + Kafka first; others can have no-op stubs initially. |
-| Concurrent failure counting race condition | Medium — can cause premature or delayed trips | `Interlocked` for counter, `lock` or CAS for state transitions |
-| `ConsumerRegister` refactor breaks existing behavior | High — core component | Extensive unit tests for existing behavior before refactoring. Keep `_isHealthy` global mechanism intact. |
+| Concurrent failure counting race condition | Medium — can cause premature or delayed trips | `lock` on each `CircuitState` object for all compound check+transition operations; not `Interlocked` alone (compound guard covers check → state change → callback). |
+| `ConsumerRegister` refactor breaks existing behavior | High — core component | Extensive unit tests for existing behavior before refactoring. Keep `_isHealthy` global boolean intact. Decompose `ExecuteAsync` into `_StartGroupAsync` helper; existing `ReStartAsync`/`PulseAsync` must cancel all group handles. |
 | Adaptive polling penalizes healthy groups | Low — circuit breaker is the primary per-group protection | Document as V1 limitation. Processor-wide adaptive polling is a secondary safety net. |
+| `PauseAsync` throws during circuit open (broker connection lost) | Medium — circuit is logically Open but consumer continues running; DB-pressure protection negated | Log at Error level; do not suppress. `ICircuitBreakerStateManager` stays in Open state. `TransportCheckProcessor.ReStartAsync` must honour existing Open circuit state and not blindly restart the group. V1 limitation: no immediate retry of `PauseAsync`. |
+| Stale HalfOpen timer fires after circuit re-opens | Low — spurious HalfOpen on a group that should stay Open; admits probe when dependency is still down | Dispose previous `System.Threading.Timer` before creating a new one on any state re-entry. Guard under group's `lock`. |
+
+## Open Questions
+
+### Resolved During Planning
+
+| Question | Resolution | Basis |
+|----------|-----------|-------|
+| How does `ConsumerRegister` learn when a circuit opens/closes? | Callback registration: `RegisterGroupCallbacks(group, onPause, onResume)` on `ICircuitBreakerStateManager` | No existing cross-service event/observable pattern; `Func<ValueTask>` callbacks match existing `IConsumerClient.OnMessageCallback` style |
+| Who drives the Open→HalfOpen transition? | `System.Threading.Timer` per open circuit owned by `ICircuitBreakerStateManager` | Transport consumer is paused — no incoming messages to trigger a lazy timestamp check (Polly's approach inapplicable) |
+| How is HalfOpen concurrency=1 enforced? | `TryAcquireProbePermit(group)` backed by `SemaphoreSlim(1,1)`; contending messages are nacked | Same reason: paused transport means lazy gating can't work |
+| Should `TaskCanceledException` fix precede failure-reporting wiring? | Yes — US-006 (`TaskCanceledException` fix) must precede US-007 (failure wiring) | `OperationCanceledException` is swallowed in `_InvokeConsumerMethodAsync`; timeout exceptions never reach `_SetFailedState` without the fix in place |
+| Does `message.Origin.GetGroup()` exist? | Yes — C# 13 extension method reading `Headers[Headers.Group]` on `Message` | Verified in repo |
+| Should `ReportFailure` be synchronous or async? | Async (`ReportFailureAsync`, `ValueTask`) | Pause callback involves async work (CTS cancel + `PauseAsync`); blocking the calling thread is unacceptable |
+
+### Deferred to Implementation
+
+| Question | Why Deferred |
+|----------|-------------|
+| Exact per-transport drain mechanism for in-flight messages during pause | Varies by transport; principle established (use `PauseAsync` not CTS cancel), specifics require reading each implementation |
+| Whether HalfOpen nack creates a redelivery burst and if broker-level redelivery delay is warranted | Transport-specific broker behaviour; V1: rely on broker's natural redelivery backoff |
+| Whether to use `PeriodicTimer` or dedicated background task for any monitoring inside state manager | Internal implementation detail; does not affect interface contract |
+| `ReStartAsync` group-scoped vs global scope after refactor | Requires reading `TransportCheckProcessor` usage; global restart (cancel all groups) is safe default |
 
 ## Sources & References
 
