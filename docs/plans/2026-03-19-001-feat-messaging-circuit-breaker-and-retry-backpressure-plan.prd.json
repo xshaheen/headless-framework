@@ -1,0 +1,352 @@
+{
+  "name": "feat-messaging-circuit-breaker-and-retry-backpressure",
+  "title": "Add circuit breaker and adaptive retry backpressure to messaging",
+  "type": "feat",
+  "date": "2026-03-19",
+  "description": "Per-consumer-group circuit breaker that pauses transport consumers on sustained transient failures, plus adaptive retry processor polling that backs off under high failure rates. Reduces DB pressure during downstream outages.",
+  "created_at": "2026-03-19T00:00:00Z",
+  "branches": {
+    "base": "main",
+    "feature": "xshaheen/feat-messaging-circuit-breaker"
+  },
+  "verification_command": "dotnet test",
+  "status": "pending",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add ICircuitBreakerStateManager and circuit state types [M]",
+      "size": "M",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nCreate the core circuit breaker state machine as an internal service. Includes CircuitState enum (Closed/Open/HalfOpen), per-group state tracking via ConcurrentDictionary, ReportFailure/ReportSuccess methods, exception allowlist matching, escalating open duration, and thread-safe state transitions.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Internal/IConsumerRegister.cs",
+        "src/Headless.Messaging.Core/Retry/ExponentialBackoffStrategy.cs",
+        "src/Headless.Messaging.Abstractions/IRetryBackoffStrategy.cs"
+      ],
+      "acceptanceCriteria": [
+        "CircuitState transitions correctly: Closed→Open after N transient failures, Open→HalfOpen after duration, HalfOpen→Closed on success, HalfOpen→Open on transient failure",
+        "Only allowlist-matched exceptions increment failure counter; non-matching exceptions are ignored",
+        "Consecutive failure counter resets to 0 on any success",
+        "Open duration escalates on repeated reopens (30s→60s→120s→240s) and resets after 3 healthy cycles",
+        "Thread-safe: concurrent ReportFailure/ReportSuccess calls do not corrupt state",
+        "Non-transient probe failure (HalfOpen) transitions to Closed, not Open"
+      ],
+      "priority": 1,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-002",
+      "title": "Add CircuitBreakerOptions and ConsumerCircuitBreakerOptions config [S]",
+      "size": "S",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nAdd configuration types for global and per-consumer-group circuit breaker settings. Wire into MessagingOptions. Add WithCircuitBreaker() to IConsumerBuilder<T>.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Configuration/MessagingOptions.cs",
+        "src/Headless.Messaging.Core/ServiceCollectionExtensions.cs"
+      ],
+      "acceptanceCriteria": [
+        "CircuitBreakerOptions has FailureThreshold (default 5), OpenDuration (30s), MaxOpenDuration (4min), HalfOpenProbeCount (1), TransientExceptionTypes (default allowlist)",
+        "ConsumerCircuitBreakerOptions has Enabled (default true), FailureThreshold, OpenDuration, AdditionalTransientExceptions",
+        "WithCircuitBreaker(cb => ...) fluent API works on IConsumerBuilder<T>",
+        "Configuration validation rejects invalid values (threshold=0, maxOpen < open, empty types list)"
+      ],
+      "priority": 2,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-003",
+      "title": "Add PauseAsync/ResumeAsync to IConsumerClient [S]",
+      "size": "S",
+      "description": "Sequential: add interface methods → add default implementations → verify compile.\n\nExtend IConsumerClient with PauseAsync and ResumeAsync. Both are idempotent. Default implementation is no-op (backward compatible for custom transports).",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Transport/IConsumerClient.cs"
+      ],
+      "acceptanceCriteria": [
+        "IConsumerClient has PauseAsync(CancellationToken) and ResumeAsync(CancellationToken) methods",
+        "Default interface implementations are no-op (ValueTask.CompletedTask) for backward compatibility",
+        "XML docs specify idempotency contract and in-flight message behavior"
+      ],
+      "priority": 3,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-004",
+      "title": "Refactor ConsumerRegister for per-group CTS and client tracking [L]",
+      "size": "L",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nRefactor ConsumerRegister.ExecuteAsync to create per-group CancellationTokenSource and track IConsumerClient instances per group. Replace fire-and-forget tasks with tracked GroupHandle objects. Maintain existing behavior — no circuit breaker logic yet, just the infrastructure for per-group pause/resume.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Internal/IConsumerRegister.cs",
+        "src/Headless.Messaging.Core/Internal/MethodMatcherCache.cs"
+      ],
+      "acceptanceCriteria": [
+        "Each consumer group has its own CancellationTokenSource (not shared global _cts)",
+        "GroupHandle tracks CTS, client list, and original concurrency per group",
+        "Existing PulseAsync/ReStartAsync behavior preserved (cancels all groups, restarts all)",
+        "_isHealthy global boolean kept intact for TransportCheckProcessor compatibility",
+        "All existing messaging tests pass without modification"
+      ],
+      "priority": 4,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-005",
+      "title": "Integrate circuit breaker into ConsumerRegister (pause/resume on state change) [M]",
+      "size": "M",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nConnect ICircuitBreakerStateManager to ConsumerRegister. When circuit opens: cancel group CTS + PauseAsync on clients. When half-open timer fires: drain in-flight, resume with concurrency=1. On close: restore original concurrency.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Internal/IConsumerRegister.cs",
+        "src/Headless.Messaging.Core/Processor/IProcessor.TransportCheck.cs"
+      ],
+      "acceptanceCriteria": [
+        "Circuit open → group's transport consumers paused, no new messages pulled",
+        "Half-open → drains in-flight, resumes with concurrency=1, admits 1 probe message",
+        "Circuit close → original concurrency restored",
+        "TransportCheckProcessor.ReStartAsync does NOT reset circuit state",
+        "Per-group pause does not affect other groups' consumers"
+      ],
+      "priority": 5,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-006",
+      "title": "Wire SubscribeExecutor failure reporting to ICircuitBreakerStateManager [M]",
+      "size": "M",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nInject ICircuitBreakerStateManager into SubscribeExecutor. Call ReportFailure on handler exceptions, ReportSuccess on handler completion. Ensure group name is resolved from ConsumerExecutorDescriptor.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs",
+        "src/Headless.Messaging.Core/Internal/IConsumeExecutionPipeline.cs"
+      ],
+      "acceptanceCriteria": [
+        "Handler exceptions trigger ReportFailure(groupName, exception) on the state manager",
+        "Handler success triggers ReportSuccess(groupName)",
+        "Group name resolved from ConsumerExecutorDescriptor.Attribute.Group",
+        "Existing failure persistence (DB status, retry count) unchanged"
+      ],
+      "priority": 6,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-007",
+      "title": "Handle TaskCanceledException timeout classification [S]",
+      "size": "S",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nStop unconditionally swallowing OperationCanceledException in SubscribeExecutor. Distinguish TaskCanceledException-from-timeout (HttpClient) vs cancellation-from-shutdown by checking if inner CancellationToken matches app shutdown token.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs"
+      ],
+      "acceptanceCriteria": [
+        "TaskCanceledException where inner token != app shutdown token is treated as transient and reported to circuit breaker",
+        "OperationCanceledException from app shutdown is still swallowed (existing behavior)",
+        "HttpClient timeout scenario triggers circuit breaker failure counting"
+      ],
+      "priority": 7,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-008",
+      "title": "Implement PauseAsync/ResumeAsync for RabbitMQ transport [M]",
+      "size": "M",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nImplement PauseAsync via BasicCancel(consumerTag). ResumeAsync re-registers via BasicConsume. Handle idempotency (pause when already paused = no-op).",
+      "filesToStudy": [
+        "src/Headless.Messaging.RabbitMq/"
+      ],
+      "acceptanceCriteria": [
+        "PauseAsync cancels consumer tag on the channel",
+        "ResumeAsync re-registers consumer with BasicConsume",
+        "Both methods are idempotent",
+        "Integration test: pause stops message delivery, resume restarts it"
+      ],
+      "priority": 8,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-009",
+      "title": "Implement PauseAsync/ResumeAsync for Kafka transport [M]",
+      "size": "M",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nImplement PauseAsync via consumer.Pause(partitions). ResumeAsync via consumer.Resume(partitions). Native Kafka support.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Kafka/"
+      ],
+      "acceptanceCriteria": [
+        "PauseAsync calls consumer.Pause on assigned partitions",
+        "ResumeAsync calls consumer.Resume on paused partitions",
+        "Both methods are idempotent",
+        "Integration test: pause stops consumption, resume restarts it"
+      ],
+      "priority": 9,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-010",
+      "title": "Implement PauseAsync/ResumeAsync for remaining transports [L]",
+      "size": "L",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nImplement PauseAsync/ResumeAsync for AWS SQS (stop polling), Azure Service Bus (StopProcessingAsync), Redis Streams (stop XREADGROUP), NATS (Unsubscribe), Pulsar (PauseAsync native), InMemory (stop dequeue). InMemory is critical for unit testing.",
+      "filesToStudy": [
+        "src/Headless.Messaging.AwsSqs/",
+        "src/Headless.Messaging.AzureServiceBus/",
+        "src/Headless.Messaging.RedisStreams/",
+        "src/Headless.Messaging.Nats/",
+        "src/Headless.Messaging.Pulsar/",
+        "src/Headless.Messaging.InMemoryQueue/"
+      ],
+      "acceptanceCriteria": [
+        "All 6 transports implement idempotent PauseAsync/ResumeAsync",
+        "InMemory transport supports pause/resume (enables circuit breaker testing without Docker)",
+        "Each transport's pause mechanism stops new message delivery",
+        "Each transport's resume mechanism restarts delivery"
+      ],
+      "priority": 10,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-011",
+      "title": "Add adaptive polling to MessageNeedToRetryProcessor [M]",
+      "size": "M",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nReplace fixed _waitingInterval with adaptive logic. Track transient failure rate per cycle. Double interval on >80% transient, halve after 2 healthy cycles, reset after 3 clean cycles.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Processor/IProcessor.NeedRetry.cs",
+        "src/Headless.Messaging.Core/Processor/IProcessor.InfiniteRetry.cs"
+      ],
+      "acceptanceCriteria": [
+        "Polling interval doubles when >80% of executed batch are transient failures",
+        "Interval caps at MaxPollingInterval (default 15min)",
+        "Interval halves after 2 consecutive healthy cycles (>50% success)",
+        "Interval resets to base after 3 consecutive cycles with 0 transient failures",
+        "AdaptivePolling can be disabled via config (falls back to fixed interval)"
+      ],
+      "priority": 11,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-012",
+      "title": "Add retry processor circuit-state awareness [S]",
+      "size": "S",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nRetry processor checks ICircuitBreakerStateManager before re-enqueuing. Messages for groups with open circuits are skipped. Skipped messages excluded from adaptive polling rate calculation.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Processor/IProcessor.NeedRetry.cs"
+      ],
+      "acceptanceCriteria": [
+        "Messages for groups with open circuits are not re-enqueued",
+        "Skipped-due-to-open-circuit messages excluded from adaptive polling rate",
+        "When circuit closes, retry processor resumes normal behavior for that group"
+      ],
+      "priority": 12,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-013",
+      "title": "Add OpenTelemetry metrics and logging for circuit breaker [M]",
+      "size": "M",
+      "description": "Sequential: add counters/gauges → add logging → verify.\n\nAdd OTel metrics: circuit trip counter, open duration histogram, state gauge per group. Log state transitions at Warning level. Integrate with existing Messaging.OpenTelemetry package.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Diagnostics/EventCounterSource.Message.cs",
+        "src/Headless.Messaging.OpenTelemetry/"
+      ],
+      "acceptanceCriteria": [
+        "OTel counter for circuit trips (tagged by group name)",
+        "OTel histogram for open duration",
+        "OTel gauge for current circuit state per group",
+        "State transitions logged at Warning level with group name, old state, new state, and failure count"
+      ],
+      "priority": 13,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-014",
+      "title": "Add configuration validation for circuit breaker options [S]",
+      "size": "S",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nValidate circuit breaker config at startup. Reject invalid values with clear error messages.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Configuration/MessagingOptions.cs"
+      ],
+      "acceptanceCriteria": [
+        "FailureThreshold = 0 throws ArgumentOutOfRangeException at startup",
+        "MaxOpenDuration < OpenDuration throws ArgumentException",
+        "Empty TransientExceptionTypes logs warning (circuit breaker effectively disabled)",
+        "AdditionalTransientExceptions containing typeof(Exception) logs warning (overly broad)"
+      ],
+      "priority": 14,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-015",
+      "title": "Update docs and package READMEs [S]",
+      "size": "S",
+      "description": "Sequential: update llms/messaging.txt → update Core README → update Abstractions README → verify.\n\nDocument circuit breaker configuration, failure classification, adaptive retry, and cluster scope limitations.",
+      "filesToStudy": [
+        "docs/llms/messaging.txt",
+        "src/Headless.Messaging.Core/README.md",
+        "src/Headless.Messaging.Abstractions/README.md"
+      ],
+      "acceptanceCriteria": [
+        "docs/llms/messaging.txt has circuit breaker section with configuration examples",
+        "Core README documents CircuitBreakerOptions and adaptive retry config",
+        "Cluster scope limitation (per-process only) documented clearly"
+      ],
+      "priority": 15,
+      "pass": false,
+      "attempts": 0,
+      "commits": [],
+      "notes": []
+    }
+  ],
+  "pass": false,
+  "validation_errors": [],
+  "metadata": {
+    "research": {
+      "local": {
+        "findings": [
+          "IConsumerClient has no PauseAsync/ResumeAsync — must be added to interface and 8 transport implementations",
+          "ConsumerRegister uses single shared CancellationTokenSource for all groups — must refactor to per-group CTS",
+          "ConsumerRegister._isHealthy is a single global volatile bool — circuit breaker needs per-group state via separate ICircuitBreakerStateManager",
+          "IConsumeFilter is single-instance (GetService<IConsumeFilter>), not a pipeline — cannot use as circuit breaker owner",
+          "MessageNeedToRetryProcessor uses fixed _waitingInterval with no adaptive behavior",
+          "ExponentialBackoffStrategy.ShouldRetry classifies exceptions but is insufficient for circuit breaker (NullReferenceException returns true)",
+          "SubscribeExecutor swallows OperationCanceledException unconditionally — HttpClient timeouts are invisible",
+          "TransportCheckProcessor polls _isHealthy every 30s and calls ReStartAsync — must not reset circuit state"
+        ],
+        "timestamp": "2026-03-19T00:00:00Z"
+      }
+    },
+    "projectLearnings": []
+  }
+}
