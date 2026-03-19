@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
@@ -31,13 +32,12 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
+    private readonly ConcurrentDictionary<string, GroupHandle> _groupHandles = new(StringComparer.Ordinal);
     private readonly ILogger _logger = logger;
     private readonly MessagingOptions _options = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
     private readonly TimeSpan _pollingDelay = TimeSpan.FromSeconds(1);
-    private Task? _compositeTask;
 
     private IConsumerClientFactory _consumerClientFactory = null!;
-    private CancellationTokenSource _cts = new();
     private IDispatcher _dispatcher = null!;
     private int _disposed;
     private volatile bool _isHealthy = true;
@@ -45,6 +45,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private MethodMatcherCache _selector = null!;
     private ISerializer _serializer = null!;
     private BrokerAddress _serverAddress;
+    private CancellationTokenSource _stoppingCts = new();
     private IDataStorage _storage = null!;
 
     public bool IsHealthy()
@@ -54,8 +55,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
     public async ValueTask StartAsync(CancellationToken stoppingToken)
     {
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        _cts.Token.Register(Dispose);
+        _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        _stoppingCts.Token.Register(Dispose);
 
         _selector = serviceProvider.GetRequiredService<MethodMatcherCache>();
         _dispatcher = serviceProvider.GetRequiredService<IDispatcher>();
@@ -74,7 +75,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         {
             await PulseAsync();
 
-            _cts = new CancellationTokenSource();
+            _stoppingCts = new CancellationTokenSource();
             _isHealthy = true;
 
             await ExecuteAsync();
@@ -99,11 +100,6 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         try
         {
             await PulseAsync();
-
-            if (_compositeTask is not null)
-            {
-                await _compositeTask.WaitAsync(TimeSpan.FromSeconds(2));
-            }
         }
         catch (AggregateException e)
         {
@@ -125,22 +121,48 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
     public async Task PulseAsync()
     {
-        await _cts.CancelAsync();
-        _cts.Dispose();
+        // Cancel all group CTSes
+        foreach (var handle in _groupHandles.Values)
+        {
+            await handle.Cts.CancelAsync();
+        }
+
+        // Wait for all consumer tasks to complete
+        var allTasks = _groupHandles.Values.SelectMany(h => h.ConsumerTasks).ToArray();
+        if (allTasks.Length > 0)
+        {
+            try
+            {
+                await Task.WhenAll(allTasks).WaitAsync(TimeSpan.FromSeconds(2));
+            }
+#pragma warning disable ERP022, RCS1075 // Intentional: timeout or cancellation — proceed with cleanup
+            catch (Exception) { }
+#pragma warning restore ERP022, RCS1075
+        }
+
+        // Dispose all handles
+        foreach (var handle in _groupHandles.Values)
+        {
+            await handle.DisposeAsync();
+        }
+
+        _groupHandles.Clear();
+        _stoppingCts.Dispose();
     }
 
     public async ValueTask ExecuteAsync()
     {
         var groupingMatches = _selector.GetCandidatesMethodsOfGroupNameGrouped();
-        var consumerTasks = new List<Task>();
 
         foreach (var matchGroup in groupingMatches)
         {
+            var groupName = matchGroup.Key;
+            var limit = _selector.GetGroupConcurrentLimit(groupName);
+
             ICollection<string> topics;
-            var limit = _selector.GetGroupConcurrentLimit(matchGroup.Key);
             try
             {
-                await using var client = await _consumerClientFactory.CreateAsync(matchGroup.Key, limit);
+                await using var client = await _consumerClientFactory.CreateAsync(groupName, limit);
                 client.OnLogCallback = _WriteLog;
                 topics = await client.FetchTopicsAsync(matchGroup.Value.Select(x => x.TopicName));
             }
@@ -151,6 +173,15 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 return;
             }
 
+            var groupCts = CancellationTokenSource.CreateLinkedTokenSource(_stoppingCts.Token);
+            var handle = new GroupHandle
+            {
+                Cts = groupCts,
+                Clients = [],
+                OriginalConcurrency = _options.ConsumerThreadCount,
+                GroupName = groupName,
+            };
+
             for (var i = 0; i < _options.ConsumerThreadCount; i++)
             {
                 var topicIds = topics.Select(t => t);
@@ -160,22 +191,21 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                         {
                             try
                             {
-                                await using var client = await _consumerClientFactory.CreateAsync(
-                                    matchGroup.Key,
-                                    limit
-                                );
+                                var innerClient = await _consumerClientFactory.CreateAsync(groupName, limit);
 
-                                _serverAddress = client.BrokerAddress;
+                                handle.AddClient(innerClient);
 
-                                _RegisterMessageProcessor(client);
+                                _serverAddress = innerClient.BrokerAddress;
 
-                                await client.SubscribeAsync(topicIds);
+                                _RegisterMessageProcessor(innerClient);
 
-                                await client.ListeningAsync(_pollingDelay, _cts.Token);
+                                await innerClient.SubscribeAsync(topicIds);
+
+                                await innerClient.ListeningAsync(_pollingDelay, groupCts.Token);
                             }
                             catch (OperationCanceledException)
                             {
-                                //ignore
+                                // ignore
                             }
                             catch (BrokerConnectionException e)
                             {
@@ -191,17 +221,17 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                                 );
                             }
                         },
-                        _cts.Token,
+                        groupCts.Token,
                         TaskCreationOptions.LongRunning,
                         TaskScheduler.Default
                     )
                     .Unwrap();
 
-                consumerTasks.Add(task);
+                handle.ConsumerTasks.Add(task);
             }
-        }
 
-        _compositeTask = Task.WhenAll(consumerTasks);
+            _groupHandles[groupName] = handle;
+        }
     }
 
     private void _RegisterMessageProcessor(IConsumerClient client)
@@ -390,6 +420,35 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 break;
             default:
                 throw new InvalidOperationException($"Unknown {nameof(MqLogType)}={logMessage.LogType}");
+        }
+    }
+
+    private sealed class GroupHandle : IAsyncDisposable
+    {
+        private readonly Lock _clientsLock = new();
+
+        public required CancellationTokenSource Cts { get; init; }
+        public required List<IConsumerClient> Clients { get; init; }
+        public required int OriginalConcurrency { get; init; }
+        public required string GroupName { get; init; }
+        public List<Task> ConsumerTasks { get; init; } = [];
+
+        public void AddClient(IConsumerClient client)
+        {
+            lock (_clientsLock)
+            {
+                Clients.Add(client);
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            Cts.Dispose();
+
+            foreach (var client in Clients)
+            {
+                await client.DisposeAsync();
+            }
         }
     }
 
