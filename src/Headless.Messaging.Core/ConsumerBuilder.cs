@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 
 namespace Headless.Messaging;
@@ -14,6 +15,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
 {
     private readonly MessagingOptions _parent;
     private readonly ConsumerRegistry _registry;
+    private readonly ConsumerCircuitBreakerRegistry _circuitBreakerRegistry;
     private readonly Type _messageType;
     private readonly bool _autoRegistered;
     private string? _topic;
@@ -24,6 +26,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     internal ConsumerBuilder(
         MessagingOptions parent,
         ConsumerRegistry registry,
+        ConsumerCircuitBreakerRegistry circuitBreakerRegistry,
         Type messageType,
         string? topic = null,
         bool autoRegistered = false
@@ -31,6 +34,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     {
         _parent = parent;
         _registry = registry;
+        _circuitBreakerRegistry = circuitBreakerRegistry;
         _messageType = messageType;
         this._topic = topic;
         _autoRegistered = autoRegistered;
@@ -76,6 +80,28 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
 
         _handlerId = handlerId;
         _UpdateIfAutoRegistered();
+        return this;
+    }
+
+    /// <inheritdoc />
+    public IConsumerBuilder<TConsumer> WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        // Derive the resolved group name the same way the metadata will
+        var metadata = _parent.CreateConsumerMetadata(
+            typeof(TConsumer),
+            _messageType,
+            _topic,
+            _group,
+            _concurrency,
+            _handlerId
+        );
+
+        var cbOptions = new ConsumerCircuitBreakerOptions();
+        configure(cbOptions);
+        _circuitBreakerRegistry.Register(metadata.Group!, cbOptions);
+
         return this;
     }
 

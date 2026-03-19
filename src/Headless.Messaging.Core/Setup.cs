@@ -1,8 +1,9 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
@@ -10,6 +11,7 @@ using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -76,6 +78,9 @@ public static class Setup
         // Discover consumers registered via AddConsumer<TConsumer, TMessage>()
         _DiscoverConsumersFromDI(services, options, registry);
 
+        // Discover per-consumer circuit breaker registrations added via AddConsumer().WithCircuitBreaker()
+        _DiscoverCircuitBreakerRegistrationsFromDI(services, options.CircuitBreakerRegistry);
+
         return _RegisterCoreMessagingServices(services, options);
     }
 
@@ -132,6 +137,10 @@ public static class Setup
 
         services.TryAddSingleton<IDispatcher, Dispatcher>();
 
+        // Circuit breaker
+        services.TryAddSingleton(options.CircuitBreakerRegistry);
+        services.TryAddSingleton<ICircuitBreakerStateManager, CircuitBreakerStateManager>();
+
         foreach (var serviceExtension in options.Extensions)
         {
             serviceExtension.AddServices(services);
@@ -175,6 +184,23 @@ public static class Setup
             }
         });
 
+        // Validate eagerly — throws OptionsValidationException at startup rather than on first access
+        _ValidateCircuitBreakerOptions(options.CircuitBreaker);
+        _ValidateRetryProcessorOptions(options.RetryProcessor);
+
+        // Register circuit breaker and retry processor options as direct IOptions wrappers
+        // (init-only properties prevent use of the standard Configure<T> pipeline).
+        services.TryAddSingleton<IOptions<CircuitBreakerOptions>>(
+            _ => Microsoft.Extensions.Options.Options.Create(options.CircuitBreaker)
+        );
+        services.TryAddSingleton<IOptions<RetryProcessorOptions>>(
+            _ => Microsoft.Extensions.Options.Options.Create(options.RetryProcessor)
+        );
+
+        // Also register the validators so consumers of IValidateOptions<T> can discover them
+        services.AddSingleton<IValidateOptions<CircuitBreakerOptions>, CircuitBreakerOptionsValidator>();
+        services.AddSingleton<IValidateOptions<RetryProcessorOptions>, RetryProcessorOptionsValidator>();
+
         //Startup and Hosted
         services.TryAddSingleton<Bootstrapper>();
         services.TryAddSingleton<IBootstrapper>(sp => sp.GetRequiredService<Bootstrapper>());
@@ -206,6 +232,31 @@ public static class Setup
         }
     }
 
+    /// <summary>
+    /// Discovers per-consumer circuit breaker registrations added via
+    /// <c>AddConsumer().WithCircuitBreaker()</c> and applies them to the registry.
+    /// </summary>
+    private static void _DiscoverCircuitBreakerRegistrationsFromDI(
+        IServiceCollection services,
+        ConsumerCircuitBreakerRegistry circuitBreakerRegistry
+    )
+    {
+        var registrationDescriptors = services
+            .Where(d =>
+                d.ServiceType == typeof(ConsumerCircuitBreakerRegistration)
+                && d.Lifetime == ServiceLifetime.Singleton
+            )
+            .ToList();
+
+        foreach (var descriptor in registrationDescriptors)
+        {
+            if (descriptor.ImplementationInstance is ConsumerCircuitBreakerRegistration registration)
+            {
+                circuitBreakerRegistry.Register(registration.GroupName, registration.Options);
+            }
+        }
+    }
+
     private static ConsumerMetadata _ResolveDiscoveredMetadata(ConsumerMetadata metadata, MessagingOptions options)
     {
         if (!string.IsNullOrWhiteSpace(metadata.Group))
@@ -215,5 +266,35 @@ public static class Setup
 
         options.Conventions.Version = options.Version;
         return metadata with { Group = options.Conventions.GetGroupName(metadata.ResolvedHandlerId) };
+    }
+
+    private static void _ValidateCircuitBreakerOptions(CircuitBreakerOptions opt)
+    {
+        var validator = new CircuitBreakerOptionsValidator();
+        var result = validator.Validate(null, opt);
+
+        if (result.Failed)
+        {
+            throw new OptionsValidationException(
+                nameof(CircuitBreakerOptions),
+                typeof(CircuitBreakerOptions),
+                result.Failures
+            );
+        }
+    }
+
+    private static void _ValidateRetryProcessorOptions(RetryProcessorOptions opt)
+    {
+        var validator = new RetryProcessorOptionsValidator();
+        var result = validator.Validate(null, opt);
+
+        if (result.Failed)
+        {
+            throw new OptionsValidationException(
+                nameof(RetryProcessorOptions),
+                typeof(RetryProcessorOptions),
+                result.Failures
+            );
+        }
     }
 }
