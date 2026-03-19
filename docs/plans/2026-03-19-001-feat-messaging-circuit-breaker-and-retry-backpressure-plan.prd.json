@@ -16,7 +16,7 @@
       "id": "US-001",
       "title": "Add ICircuitBreakerStateManager and circuit state types [M]",
       "size": "M",
-      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nCreate the core circuit breaker state machine as an internal service. Includes CircuitState enum (Closed/Open/HalfOpen), per-group state tracking via ConcurrentDictionary, ReportFailure/ReportSuccess methods, exception allowlist matching, escalating open duration, and thread-safe state transitions.",
+      "description": "TDD order: write failing test → implement minimal code → verify PASS.\n\nCreate the core circuit breaker state machine as an internal service. Includes CircuitState enum (Closed/Open/HalfOpen), per-group state tracking via ConcurrentDictionary, ReportFailure/ReportSuccess methods, IsTransientException predicate evaluation, escalating open duration, and thread-safe state transitions. Ship CircuitBreakerDefaults.IsTransient as the default predicate.",
       "filesToStudy": [
         "src/Headless.Messaging.Core/Internal/IConsumerRegister.cs",
         "src/Headless.Messaging.Core/Retry/ExponentialBackoffStrategy.cs",
@@ -24,7 +24,7 @@
       ],
       "acceptanceCriteria": [
         "CircuitState transitions correctly: Closed→Open after N transient failures, Open→HalfOpen after duration, HalfOpen→Closed on success, HalfOpen→Open on transient failure",
-        "Only allowlist-matched exceptions increment failure counter; non-matching exceptions are ignored",
+        "Only exceptions where IsTransientException predicate returns true increment failure counter; non-matching exceptions are ignored",
         "Consecutive failure counter resets to 0 on any success",
         "Open duration escalates on repeated reopens (30s→60s→120s→240s) and resets after 3 healthy cycles",
         "Thread-safe: concurrent ReportFailure/ReportSuccess calls do not corrupt state",
@@ -46,10 +46,10 @@
         "src/Headless.Messaging.Core/ServiceCollectionExtensions.cs"
       ],
       "acceptanceCriteria": [
-        "CircuitBreakerOptions has FailureThreshold (default 5), OpenDuration (30s), MaxOpenDuration (4min), HalfOpenProbeCount (1), TransientExceptionTypes (default allowlist)",
-        "ConsumerCircuitBreakerOptions has Enabled (default true), FailureThreshold, OpenDuration, AdditionalTransientExceptions",
+        "CircuitBreakerOptions has FailureThreshold (default 5), OpenDuration (30s), MaxOpenDuration (4min), HalfOpenProbeCount (1), IsTransientException predicate (default: CircuitBreakerDefaults.IsTransient)",
+        "ConsumerCircuitBreakerOptions has Enabled (default true), FailureThreshold, OpenDuration, IsTransientException predicate (composable with CircuitBreakerDefaults.IsTransient)",
         "WithCircuitBreaker(cb => ...) fluent API works on IConsumerBuilder<T>",
-        "Configuration validation rejects invalid values (threshold=0, maxOpen < open, empty types list)"
+        "Configuration validation rejects invalid values (threshold=0, maxOpen < open, null predicate)"
       ],
       "priority": 2,
       "pass": false,
@@ -298,8 +298,8 @@
       "acceptanceCriteria": [
         "FailureThreshold = 0 throws ArgumentOutOfRangeException at startup",
         "MaxOpenDuration < OpenDuration throws ArgumentException",
-        "Empty TransientExceptionTypes logs warning (circuit breaker effectively disabled)",
-        "AdditionalTransientExceptions containing typeof(Exception) logs warning (overly broad)"
+        "Null IsTransientException predicate throws ArgumentNullException at startup",
+        "CircuitBreakerDefaults.IsTransient is documented as composable (users chain via || operator)"
       ],
       "priority": 14,
       "pass": false,

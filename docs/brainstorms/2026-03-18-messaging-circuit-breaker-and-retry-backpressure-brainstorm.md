@@ -49,36 +49,54 @@ Only **transient dependency failures** contribute to circuit breaker state. This
 - `InvalidOperationException`, `NotSupportedException` (consumer bugs or unsupported scenarios)
 - Permanent 4xx-style downstream errors
 
-### Classification mechanism: Exception type allowlist
+### Classification mechanism: Predicate function
 
-The circuit breaker uses an **allowlist** of exception types that indicate dependency/infrastructure failures. Only exceptions matching the allowlist count toward tripping the breaker. Everything else — consumer bugs, business exceptions, unknown exceptions — is ignored by the breaker and handled by existing retry/failure policy.
+The circuit breaker uses a **predicate** (`Func<Exception, bool>`) to classify exceptions. Only exceptions where the predicate returns `true` count toward tripping the breaker. Everything else is ignored by the breaker and handled by existing retry/failure policy.
 
-**Why allowlist over `IRetryBackoffStrategy.ShouldRetry()`:** `ShouldRetry = true` means "not a known permanent failure" — it does not mean "downstream is unhealthy." `NullReferenceException` (consumer bug) and custom `BusinessRuleException` both return `ShouldRetry = true` but should never trip the breaker. An allowlist is safe by default: unknown exception types don't accidentally pause a healthy consumer group.
+**Why predicate over type allowlist:** A type list can't distinguish `HttpRequestException` with 503 (transient) from 404 (permanent), can't match inner exceptions inside `AggregateException`, and can't handle `TaskCanceledException` timeout-vs-shutdown logic. The predicate subsumes the type list and handles all these cases with pattern matching.
 
-**Default allowlist:**
-- `TimeoutException`
-- `HttpRequestException`
-- `SocketException`
-- `BrokerConnectionException` (framework type)
+**Why predicate over `IRetryBackoffStrategy.ShouldRetry()`:** `ShouldRetry = true` means "not a known permanent failure" — it does not mean "downstream is unhealthy." `NullReferenceException` (consumer bug) and custom `BusinessRuleException` both return `ShouldRetry = true` but should never trip the breaker.
 
-**Extensible per-group:**
+**Default predicate** (shipped as `CircuitBreakerDefaults.IsTransient`):
+
+```csharp
+public static class CircuitBreakerDefaults
+{
+    public static bool IsTransient(Exception exception) => exception switch
+    {
+        TimeoutException => true,
+        HttpRequestException { StatusCode: >= HttpStatusCode.InternalServerError } => true,
+        HttpRequestException { InnerException: SocketException } => true,
+        SocketException => true,
+        BrokerConnectionException => true,
+        TaskCanceledException tce when !tce.CancellationToken.IsCancellationRequested => true,
+        _ => false,
+    };
+}
+```
+
+**Composable per-group:**
 ```csharp
 services.AddConsumer<OrderHandler, OrderEvent>("orders.placed")
     .WithCircuitBreaker(cb =>
     {
-        cb.AdditionalTransientExceptions = [typeof(MyCustomTransientException)];
+        cb.IsTransientException = ex =>
+            ex is MyCustomTransientException
+            || CircuitBreakerDefaults.IsTransient(ex);
     });
 ```
 
-**Extensible globally:**
+**Replaceable globally:**
 ```csharp
-options.CircuitBreaker.TransientExceptionTypes = [
-    typeof(TimeoutException),
-    typeof(HttpRequestException),
-    typeof(SocketException),
-    typeof(BrokerConnectionException),
-    typeof(MyInfraException),  // add custom types
-];
+options.CircuitBreaker.IsTransientException = ex => ex switch
+{
+    TimeoutException => true,
+    HttpRequestException { StatusCode: >= HttpStatusCode.InternalServerError } => true,
+    SocketException => true,
+    BrokerConnectionException => true,
+    MyInfraException => true,
+    _ => false,
+};
 ```
 
 ## Why This Approach
@@ -112,7 +130,7 @@ options.CircuitBreaker.TransientExceptionTypes = [
 | Location | `ConsumerRegister` | Owns transport lifecycle. Filter reports failures only. |
 | Open behavior | Pause transport consumer | Zero DB writes. Broker handles backlog. |
 | Default thresholds | 5 consecutive transient failures -> open, 30s initial open duration, 1 probe on half-open | Conservative. Trips fast, recovers fast. |
-| Failure counting | Consecutive transient failures only | Only exceptions matching the allowlist (`TimeoutException`, `HttpRequestException`, `SocketException`, `BrokerConnectionException`) count. Resets on any success. Unknown exceptions, poison messages, and business failures do not trip the breaker. |
+| Failure counting | Consecutive transient failures only | Only exceptions where `IsTransientException` predicate returns `true` count. Resets on any success. Unknown exceptions, poison messages, and business failures do not trip the breaker. |
 | Escalating open duration | 30s -> 60s -> 120s -> 240s on repeated reopens | Fixed 30s causes flapping during long outages. Resets after sustained healthy period (3 consecutive successful cycles after closing). |
 | Configuration | Framework defaults + per-consumer-group opt-in override | Sensible defaults via `MessagingOptions`. Per-group override via `AddConsumer<T>().WithCircuitBreaker(cb => ...)`. |
 | Disableable | Per-group opt-out via `cb.Enabled = false` | For handlers that must never pause (audit logging, compliance). |
@@ -165,7 +183,7 @@ options.CircuitBreaker.TransientExceptionTypes = [
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Strategy | Double polling interval on high transient failure rate | Simple exponential backoff. One config knob. |
-| Trigger | >80% of batch resulted in allowlist-matched failures | Same exception type allowlist as circuit breaker. Permanent failures, business rejections, and unknown exceptions don't trigger backoff. |
+| Trigger | >80% of batch resulted in predicate-matched failures | Same `IsTransientException` predicate as circuit breaker. Permanent failures, business rejections, and unknown exceptions don't trigger backoff. |
 | Interval range | Base: `FailedRetryInterval` (60s) -> Max: 15min | 60 -> 120 -> 240 -> 480 -> 900 (capped). |
 | Recovery | Halve interval after 2 consecutive healthy cycles (>50% succeed) | Requires sustained improvement to avoid flapping. Single good cycle is not enough. |
 | Reset | Return to base interval after 3 consecutive cycles with 0 transient failures | Gradual recovery, not instant reset. |
@@ -182,12 +200,10 @@ builder.Services.AddHeadlessMessaging(options =>
     options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);  // initial; escalates on repeated reopens
     options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromMinutes(4); // escalation cap
     options.CircuitBreaker.HalfOpenProbeCount = 1;
-    options.CircuitBreaker.TransientExceptionTypes = [   // only these trip the breaker
-        typeof(TimeoutException),
-        typeof(HttpRequestException),
-        typeof(SocketException),
-        typeof(BrokerConnectionException),
-    ];
+    // Default: CircuitBreakerDefaults.IsTransient (handles TimeoutException,
+    // HttpRequestException 5xx, SocketException, BrokerConnectionException,
+    // TaskCanceledException from timeout)
+    options.CircuitBreaker.IsTransientException = CircuitBreakerDefaults.IsTransient;
 
     // Adaptive retry processor
     options.RetryProcessor.AdaptivePolling = true;       // default: true
@@ -201,7 +217,9 @@ services.AddConsumer<OrderHandler, OrderEvent>("orders.placed")
     {
         cb.FailureThreshold = 10;  // more tolerant for this handler
         cb.OpenDuration = TimeSpan.FromMinutes(2);
-        cb.AdditionalTransientExceptions = [typeof(MyCustomTransientException)];
+        cb.IsTransientException = ex =>
+            ex is MyCustomTransientException
+            || CircuitBreakerDefaults.IsTransient(ex);
     });
 
 // Disable for specific group
@@ -241,7 +259,8 @@ This is acceptable for V1 because:
 - **Skip-and-mark-for-retry on circuit open**: Defeats the purpose — still writes Failed rows to DB.
 - **Reject with CircuitOpenException**: Same problem — generates more Failed rows.
 - **Counting all failures toward breaker**: Dangerous — a single bad payload would pause a healthy consumer group. Only transient dependency failures should trip the breaker.
-- **Using `IRetryBackoffStrategy.ShouldRetry()` as classification**: `ShouldRetry = true` means "not a known permanent failure," not "downstream is unhealthy." `NullReferenceException` and business exceptions return `true` but shouldn't trip the breaker. Allowlist is safe by default — unknown exceptions are ignored.
+- **Using `IRetryBackoffStrategy.ShouldRetry()` as classification**: `ShouldRetry = true` means "not a known permanent failure," not "downstream is unhealthy." `NullReferenceException` and business exceptions return `true` but shouldn't trip the breaker. Predicate is safe by default — unknown exceptions are ignored.
+- **Exception type allowlist (`Type[]`) instead of predicate**: Can't distinguish `HttpRequestException` 503 (transient) from 404 (permanent), can't match inner exceptions in `AggregateException`, and can't handle `TaskCanceledException` timeout-vs-shutdown. Predicate subsumes the type list with pattern matching.
 - **Fixed open duration without escalation**: Causes flapping during long outages. 30s open -> probe fails -> 30s open -> probe fails, indefinitely.
 - **Single-cycle recovery for adaptive polling**: Flaps under mixed outcomes. Requiring 2-3 healthy cycles provides stability.
 - **Per-group adaptive polling**: Adds significant complexity (per-group interval tracking, timer management). Global is sufficient for V1 since the circuit breaker already handles per-group protection at the transport level.

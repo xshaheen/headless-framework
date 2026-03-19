@@ -62,7 +62,7 @@ Pause transport consumer for this group (per-group CTS cancel)
 
 - **Circuit state in `ICircuitBreakerStateManager`** — new internal service injected into both `SubscribeExecutor` and `ConsumerRegister`. Executor reports failures; Register reads state to decide pause.
 - **Circuit key = consumer group name** — matches transport consumer granularity. `ConsumerRegister` already iterates by group.
-- **Exception allowlist** — only `TimeoutException`, `HttpRequestException`, `SocketException`, `BrokerConnectionException`, `TaskCanceledException` (timeout-only) trip the breaker. Safe by default.
+- **Exception predicate** — `Func<Exception, bool>` classifies exceptions. Default `CircuitBreakerDefaults.IsTransient` handles `TimeoutException`, `HttpRequestException` 5xx, `SocketException`, `BrokerConnectionException`, `TaskCanceledException` (timeout-only). Composable per-group. Safe by default — unknown exceptions don't trip.
 - **Pause transport** — zero DB writes during outage. Broker handles backlog.
 - **Escalating open duration** — 30s → 60s → 120s → 240s on repeated reopens. Prevents flapping.
 - **Non-transient probe failure closes circuit** — dependency is presumably fine, message is just bad.
@@ -85,8 +85,9 @@ Pause transport consumer for this group (per-group CTS cancel)
 |------|---------|----------------|
 | `ICircuitBreakerStateManager` | Core (internal) | Tracks per-group circuit state. Reports failures, manages state machine transitions. Thread-safe via `ConcurrentDictionary<string, CircuitState>`. |
 | `CircuitState` | Core (internal) | Per-group state: `Closed`/`Open`/`HalfOpen`, consecutive failure count, escalation level, open-since timestamp. |
-| `CircuitBreakerOptions` | Core (public) | Global defaults: `FailureThreshold`, `OpenDuration`, `MaxOpenDuration`, `HalfOpenProbeCount`, `TransientExceptionTypes`. |
-| `ConsumerCircuitBreakerOptions` | Core (public) | Per-group overrides: `Enabled`, `FailureThreshold`, `OpenDuration`, `AdditionalTransientExceptions`. |
+| `CircuitBreakerOptions` | Core (public) | Global defaults: `FailureThreshold`, `OpenDuration`, `MaxOpenDuration`, `HalfOpenProbeCount`, `IsTransientException` predicate. |
+| `ConsumerCircuitBreakerOptions` | Core (public) | Per-group overrides: `Enabled`, `FailureThreshold`, `OpenDuration`, `IsTransientException` predicate. |
+| `CircuitBreakerDefaults` | Core (public static) | Default `IsTransient(Exception)` predicate. Composable — users chain with `||`. |
 
 #### Modified Types
 
@@ -100,6 +101,7 @@ Pause transport consumer for this group (per-group CTS cancel)
 | `MessageNeedToRetryProcessor` | Add adaptive interval logic. Check circuit state before re-enqueueing — skip groups with open circuits. |
 | `MessagingOptions` | Add `CircuitBreaker` and `RetryProcessor` config sections. |
 | `IConsumerBuilder<T>` | Add `WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions>)`. |
+| `SubscribeExecutor._ExecuteWithoutRetryAsync` | Stop swallowing `OperationCanceledException` unconditionally. Check if it's `TaskCanceledException` from timeout (not app shutdown) and let it propagate to circuit breaker via predicate. |
 | `EventCounterSource` | Add circuit breaker metrics: trip count, open duration histogram, state gauge. |
 | All 8 transport `IConsumerClient` implementations | Implement `PauseAsync()` / `ResumeAsync()`. |
 
@@ -135,17 +137,37 @@ Pause transport consumer for this group (per-group CTS cancel)
 #### Exception Classification
 
 ```csharp
-// Default allowlist — shipped with framework
-options.CircuitBreaker.TransientExceptionTypes = [
-    typeof(TimeoutException),
-    typeof(HttpRequestException),
-    typeof(SocketException),
-    typeof(BrokerConnectionException),
-    typeof(TaskCanceledException),  // with timeout-vs-shutdown check
-];
+// Default predicate — shipped as CircuitBreakerDefaults.IsTransient
+public static class CircuitBreakerDefaults
+{
+    public static bool IsTransient(Exception exception) => exception switch
+    {
+        TimeoutException => true,
+        HttpRequestException { StatusCode: >= HttpStatusCode.InternalServerError } => true,
+        HttpRequestException { InnerException: SocketException } => true,
+        SocketException => true,
+        BrokerConnectionException => true,
+        TaskCanceledException tce when !tce.CancellationToken.IsCancellationRequested => true,
+        _ => false,
+    };
+}
+
+// Global override
+options.CircuitBreaker.IsTransientException = CircuitBreakerDefaults.IsTransient; // default
+
+// Per-group composition
+services.AddConsumer<OrderHandler, OrderEvent>("orders.placed")
+    .WithCircuitBreaker(cb =>
+    {
+        cb.IsTransientException = ex =>
+            ex is MyCustomTransientException
+            || CircuitBreakerDefaults.IsTransient(ex);
+    });
 ```
 
-`TaskCanceledException` handling: only counts as transient when the exception's `CancellationToken` does NOT match the application's shutdown token. `HttpClient` throws `TaskCanceledException` (subclass of `OperationCanceledException`) on request timeout — the most common transient failure in microservices.
+**Why predicate over type allowlist:** A `Type[]` can't distinguish `HttpRequestException` 503 (transient) from 404 (permanent), can't match inner exceptions in `AggregateException`, and can't handle `TaskCanceledException` timeout-vs-shutdown. The predicate subsumes type matching with full pattern matching.
+
+`TaskCanceledException` handling: only counts as transient when `CancellationToken.IsCancellationRequested` is `false` (timeout, not app shutdown). `HttpClient` throws `TaskCanceledException` on request timeout — the most common transient failure in microservices.
 
 #### Transport Pause/Resume Contract
 
@@ -220,7 +242,7 @@ MessageNeedToRetryProcessor.ProcessAsync
     └─ Wait adaptive interval
 ```
 
-**Exception type matching for retry processor:** The retry processor only has `Headers.Exception` string (`"TypeName-->Message"`). Match by parsing the type name prefix and comparing against `Type.Name` from the allowlist. Accept string matching fragility as V1 limitation — the circuit breaker itself (which has the actual `Exception` object) is the primary protection; the retry processor's classification is a secondary optimization.
+**Exception classification for retry processor:** The retry processor only has `Headers.Exception` string (`"TypeName-->Message"`). The `IsTransientException` predicate requires an `Exception` object, which is unavailable for persisted messages. For the retry processor's adaptive polling, use string-prefix matching against a static list of known transient type names derived from the default predicate. Accept string matching fragility as V1 limitation — the circuit breaker itself (which has the actual `Exception` object and runs the full predicate) is the primary protection; the retry processor's classification is a secondary optimization.
 
 ## System-Wide Impact
 
@@ -272,7 +294,7 @@ MessageNeedToRetryProcessor.ProcessAsync
 | US-004 | Refactor `ConsumerRegister` for per-group CTS and client tracking | L |
 | US-005 | Integrate circuit breaker into `ConsumerRegister` (pause/resume on state change) | M |
 | US-006 | Wire `SubscribeExecutor` failure reporting to `ICircuitBreakerStateManager` | M |
-| US-007 | Handle `TaskCanceledException` timeout classification | S |
+| US-007 | Handle `TaskCanceledException` timeout in default predicate | S |
 | US-008 | Implement `PauseAsync`/`ResumeAsync` for RabbitMQ transport | M |
 | US-009 | Implement `PauseAsync`/`ResumeAsync` for Kafka transport | M |
 | US-010 | Implement `PauseAsync`/`ResumeAsync` for remaining transports (SQS, ASB, Redis, NATS, Pulsar, InMemory) | L |
@@ -287,7 +309,7 @@ MessageNeedToRetryProcessor.ProcessAsync
 ### Functional Requirements
 
 - [ ] Circuit breaker trips after N consecutive transient failures (configurable, default 5)
-- [ ] Only allowlist exceptions trip the breaker (`TimeoutException`, `HttpRequestException`, `SocketException`, `BrokerConnectionException`, `TaskCanceledException` with timeout check)
+- [ ] Only exceptions where `IsTransientException` predicate returns `true` trip the breaker. Default `CircuitBreakerDefaults.IsTransient` handles `TimeoutException`, `HttpRequestException` 5xx, `SocketException`, `BrokerConnectionException`, `TaskCanceledException` (timeout)
 - [ ] Transport consumer pauses when circuit opens — zero new messages pulled
 - [ ] Half-open probe admits exactly 1 message after drain. Transient failure re-opens; non-transient or success closes.
 - [ ] Open duration escalates on repeated reopens (30s → 60s → 120s → 240s), resets after 3 healthy cycles
@@ -324,6 +346,7 @@ In a 3-node deployment, each node trips independently. DB pressure is reduced by
 See brainstorm for full rejected alternatives list. Key rejections:
 - **`IConsumeFilter` as circuit breaker owner** — fires after message pulled, single-slot conflicts with user filters
 - **`IRetryBackoffStrategy.ShouldRetry()` as classification** — `NullReferenceException` and business exceptions return `true` but shouldn't trip breaker
+- **Exception type allowlist (`Type[]`)** — can't distinguish `HttpRequestException` 503 vs 404, can't match inner exceptions, can't handle `TaskCanceledException` timeout-vs-shutdown. Predicate subsumes type matching.
 - **Skip-and-mark-for-retry on circuit open** — defeats purpose, still writes Failed rows to DB
 - **Per-group adaptive polling** — too complex for V1; circuit breaker handles per-group protection at transport level
 
@@ -340,7 +363,7 @@ See brainstorm for full rejected alternatives list. Key rejections:
 
 ### Origin
 
-- **Brainstorm document:** [docs/brainstorms/2026-03-18-messaging-circuit-breaker-and-retry-backpressure-brainstorm.md](../brainstorms/2026-03-18-messaging-circuit-breaker-and-retry-backpressure-brainstorm.md) — Key decisions carried forward: exception type allowlist (not `ShouldRetry`), transport pause (not skip-and-mark), `ICircuitBreakerStateManager` as signaling path, group name as circuit key.
+- **Brainstorm document:** [docs/brainstorms/2026-03-18-messaging-circuit-breaker-and-retry-backpressure-brainstorm.md](../brainstorms/2026-03-18-messaging-circuit-breaker-and-retry-backpressure-brainstorm.md) — Key decisions carried forward: exception predicate (not type allowlist, not `ShouldRetry`), transport pause (not skip-and-mark), `ICircuitBreakerStateManager` as signaling path, group name as circuit key.
 
 ### Internal References
 
