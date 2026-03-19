@@ -275,9 +275,18 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
                     .ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException oce)
         {
-            //ignore
+            // Re-throw TaskCanceledException from handler timeouts (HttpClient, etc.)
+            // so they propagate to _SetFailedState and are reported to the circuit breaker.
+            // App-shutdown cancellations (IsCancellationRequested = true) continue to be swallowed.
+            if (oce is TaskCanceledException && !oce.CancellationToken.IsCancellationRequested)
+            {
+                var e = new SubscriberExecutionFailedException(oce.Message, oce);
+                _TracingError(tracingTimestamp, message.Origin, descriptor.MethodInfo, e);
+                e.ReThrow();
+            }
+            // Otherwise: app shutdown cancellation — swallow as before
         }
         catch (Exception ex)
         {
