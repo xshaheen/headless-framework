@@ -24,6 +24,7 @@ internal sealed class NatsConsumerClient(
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ManualResetEventSlim _pauseGate = new(true);
     private int _paused; // 0 = running, 1 = paused
+    private CancellationToken _cancellationToken;
     private IConnection? _consumerClient;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -139,6 +140,8 @@ internal sealed class NatsConsumerClient(
 
     public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
+        _cancellationToken = cancellationToken;
+
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -152,7 +155,7 @@ internal sealed class NatsConsumerClient(
     {
         try
         {
-            _pauseGate.Wait();
+            _pauseGate.Wait(_cancellationToken);
 
             if (groupConcurrent > 0)
             {
