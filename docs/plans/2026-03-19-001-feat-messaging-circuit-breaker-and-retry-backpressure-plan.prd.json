@@ -31,7 +31,7 @@
         "Non-transient probe failure (HalfOpen) transitions to Closed, not Open"
       ],
       "priority": 1,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -52,7 +52,7 @@
         "Configuration validation rejects invalid values (threshold=0, maxOpen < open, null predicate)"
       ],
       "priority": 2,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -71,7 +71,7 @@
         "XML docs specify idempotency contract and in-flight message behavior"
       ],
       "priority": 3,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -93,7 +93,7 @@
         "All existing messaging tests pass without modification"
       ],
       "priority": 4,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -115,7 +115,7 @@
         "Per-group pause does not affect other groups' consumers"
       ],
       "priority": 5,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -134,7 +134,7 @@
         "HttpClient timeout scenario propagates to _SetFailedState and becomes visible to circuit breaker"
       ],
       "priority": 6,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -155,7 +155,7 @@
         "Existing failure persistence (DB status, retry count) unchanged"
       ],
       "priority": 7,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -176,7 +176,7 @@
         "Integration test: pause stops new message delivery, in-flight messages complete, resume restarts delivery"
       ],
       "priority": 8,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -196,7 +196,7 @@
         "Integration test: pause stops consumption, resume restarts it"
       ],
       "priority": 9,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -221,7 +221,7 @@
         "Each transport's resume mechanism restarts delivery"
       ],
       "priority": 10,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -243,7 +243,7 @@
         "AdaptivePolling can be disabled via config (falls back to fixed interval)"
       ],
       "priority": 11,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -262,7 +262,7 @@
         "When circuit closes, retry processor resumes normal behavior for that group"
       ],
       "priority": 12,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -283,7 +283,7 @@
         "State transitions logged at Warning level with group name, old state, new state, and failure count"
       ],
       "priority": 13,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -303,7 +303,7 @@
         "CircuitBreakerDefaults.IsTransient is documented as composable (users chain via || operator)"
       ],
       "priority": 14,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
@@ -324,13 +324,13 @@
         "Cluster scope limitation (per-process only) documented clearly"
       ],
       "priority": 15,
-      "pass": false,
+      "pass": true,
       "attempts": 0,
       "commits": [],
       "notes": []
     }
   ],
-  "pass": false,
+  "pass": true,
   "validation_errors": [],
   "metadata": {
     "research": {
