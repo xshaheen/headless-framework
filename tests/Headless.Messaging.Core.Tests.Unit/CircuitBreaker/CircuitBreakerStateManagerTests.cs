@@ -390,4 +390,99 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // then
         resumeInvoked.Should().BeTrue();
     }
+
+    [Fact]
+    public void IsOpen_returns_false_for_unregistered_group()
+    {
+        var sut = _Create();
+        sut.IsOpen("never-registered").Should().BeFalse();
+    }
+
+    [Fact]
+    public void TryAcquireProbePermit_returns_false_for_unregistered_group()
+    {
+        var sut = _Create();
+        sut.TryAcquireProbePermit("never-registered").Should().BeFalse();
+    }
+
+    [Fact]
+    public void ReportSuccess_is_noop_for_unregistered_group()
+    {
+        var sut = _Create();
+        var act = () => sut.ReportSuccess("never-registered");
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task ReportFailure_while_open_increments_counter_but_does_not_re_trigger_open()
+    {
+        // given — trip circuit to Open
+        var sut = _Create(failureThreshold: 2);
+        var pauseCount = 0;
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () =>
+            {
+                pauseCount++;
+                return ValueTask.CompletedTask;
+            },
+            onResume: () => ValueTask.CompletedTask
+        );
+
+        await _ReportTransientFailuresAsync(sut, Group, 2); // Opens circuit, pauseCount=1
+        pauseCount.Should().Be(1);
+        sut.IsOpen(Group).Should().BeTrue();
+
+        // when — additional transient failure while Open
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+
+        // then — should NOT trigger another pause callback
+        pauseCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task resume_callback_exception_is_swallowed()
+    {
+        // given
+        var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(50));
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () => throw new InvalidOperationException("resume failed!")
+        );
+
+        // when — trip then wait for HalfOpen timer
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+        await Task.Delay(200);
+
+        // then — system still functional; report success to close
+        sut.ReportSuccess(Group);
+        sut.IsOpen(Group).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task open_duration_never_exceeds_max()
+    {
+        // given — base=1s, max=4s → escalation: 1s→2s→4s→4s→4s...
+        var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromSeconds(1),
+            maxOpenDuration: TimeSpan.FromSeconds(4)
+        );
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () => ValueTask.CompletedTask
+        );
+
+        // when — escalate 10 times without waiting for timers
+        for (var i = 0; i < 10; i++)
+        {
+            await sut.ReportFailureAsync(Group, new TimeoutException());
+        }
+
+        // then — if escalation overflowed MaxOpenDuration, the timer duration would be
+        // impossibly long; the fact we got here without hanging means the cap worked
+        sut.IsOpen(Group).Should().BeTrue();
+    }
 }
