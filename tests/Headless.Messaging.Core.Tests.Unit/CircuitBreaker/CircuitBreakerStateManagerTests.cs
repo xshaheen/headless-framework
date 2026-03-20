@@ -4,6 +4,8 @@ using System.Net.Sockets;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Exceptions;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -31,7 +33,11 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             SuccessfulCyclesToResetEscalation = successfulCyclesToResetEscalation,
         };
 
-        return new CircuitBreakerStateManager(Options.Create(opts));
+        return new CircuitBreakerStateManager(
+            Options.Create(opts),
+            new NullLogger<CircuitBreakerStateManager>(),
+            new CircuitBreakerMetrics()
+        );
     }
 
     private static async Task _ReportTransientFailuresAsync(

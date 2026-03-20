@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.CircuitBreaker;
@@ -11,7 +12,11 @@ namespace Headless.Messaging.CircuitBreaker;
 /// Thread safety is achieved with a per-group <see cref="Lock"/> object for all compound
 /// check-and-transition operations.
 /// </summary>
-internal sealed class CircuitBreakerStateManager(IOptions<CircuitBreakerOptions> options) : ICircuitBreakerStateManager
+internal sealed class CircuitBreakerStateManager(
+    IOptions<CircuitBreakerOptions> options,
+    ILogger<CircuitBreakerStateManager> logger,
+    CircuitBreakerMetrics metrics
+) : ICircuitBreakerStateManager
 {
     private readonly CircuitBreakerOptions _options = options.Value;
 
@@ -51,7 +56,7 @@ internal sealed class CircuitBreakerStateManager(IOptions<CircuitBreakerOptions>
                     // Non-transient failure during probe: the message is bad but the dependency is healthy.
                     // Close the circuit so normal processing resumes.
                     _TryReleaseProbeSemaphore(state);
-                    _TransitionToClosed(state);
+                    _TransitionToClosed(state, groupName);
                     break;
 
                 case CircuitBreakerState.HalfOpen when isTransient:
@@ -104,7 +109,7 @@ internal sealed class CircuitBreakerStateManager(IOptions<CircuitBreakerOptions>
             if (state.State is CircuitBreakerState.HalfOpen)
             {
                 _TryReleaseProbeSemaphore(state);
-                _TransitionToClosed(state);
+                _TransitionToClosed(state, groupName);
             }
         }
     }
@@ -152,7 +157,9 @@ internal sealed class CircuitBreakerStateManager(IOptions<CircuitBreakerOptions>
     /// <summary>Must be called while holding the group lock.</summary>
     private void _TransitionToOpen(GroupCircuitState state, string groupName)
     {
+        var previousState = state.State;
         state.State = CircuitBreakerState.Open;
+        state.OpenedAt = Environment.TickCount64;
 
         var openDuration = _GetOpenDuration(state);
         state.EscalationLevel++;
@@ -165,15 +172,38 @@ internal sealed class CircuitBreakerStateManager(IOptions<CircuitBreakerOptions>
             openDuration,
             Timeout.InfiniteTimeSpan
         );
+
+        metrics.RecordTrip(groupName);
+
+        logger.LogWarning(
+            "Circuit breaker {PreviousState} → Open for group {Group} (failures: {Failures}, escalation: {Escalation}, open for {Duration})",
+            previousState,
+            groupName,
+            state.ConsecutiveFailures,
+            state.EscalationLevel,
+            openDuration
+        );
     }
 
     /// <summary>Must be called while holding the group lock.</summary>
-    private static void _TransitionToClosed(GroupCircuitState state)
+    private void _TransitionToClosed(GroupCircuitState state, string groupName)
     {
         state.State = CircuitBreakerState.Closed;
         state.OpenTimer?.Dispose();
         state.OpenTimer = null;
         state.SuccessfulCyclesAfterClose++;
+
+        if (state.OpenedAt > 0)
+        {
+            var openMs = Environment.TickCount64 - state.OpenedAt;
+            metrics.RecordOpenDuration(groupName, openMs);
+            state.OpenedAt = 0;
+        }
+
+        logger.LogWarning(
+            "Circuit breaker HalfOpen → Closed for group {Group}",
+            groupName
+        );
     }
 
     /// <summary>
@@ -209,6 +239,11 @@ internal sealed class CircuitBreakerStateManager(IOptions<CircuitBreakerOptions>
 
             state.State = CircuitBreakerState.HalfOpen;
             resumeCallback = state.OnResume;
+
+            logger.LogWarning(
+                "Circuit breaker Open → HalfOpen for group {Group}",
+                groupName
+            );
         }
 
         if (resumeCallback is not null)
@@ -257,6 +292,11 @@ internal sealed class CircuitBreakerStateManager(IOptions<CircuitBreakerOptions>
         /// <see cref="CircuitBreakerOptions.SuccessfulCyclesToResetEscalation"/>.
         /// </summary>
         public int SuccessfulCyclesAfterClose { get; set; }
+
+        /// <summary>
+        /// Tick count when the circuit was opened, for duration tracking. 0 = not open.
+        /// </summary>
+        public long OpenedAt { get; set; }
 
         public Func<ValueTask>? OnPause { get; set; }
         public Func<ValueTask>? OnResume { get; set; }
