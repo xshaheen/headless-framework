@@ -23,11 +23,7 @@ public static class MessagingTestHarnessExtensions
     /// </remarks>
     public static TestConsumer<TMessage> GetTestConsumer<TMessage>(this MessagingTestHarness harness)
         where TMessage : class => harness.GetRequiredService<TestConsumer<TMessage>>();
-}
 
-/// <summary>Extension methods for registering <see cref="MessagingTestHarness"/> in an existing DI container.</summary>
-public static class ServiceCollectionExtensions
-{
     /// <summary>
     /// Registers the messaging test harness recording infrastructure into an existing
     /// <see cref="IServiceCollection"/>. Use this when the application host owns the

@@ -41,27 +41,5 @@ internal sealed class RecordingConsumeExecutionPipeline(IConsumeExecutionPipelin
         object messageInstance,
         Type messageType,
         Exception? exception = null
-    )
-    {
-        var originHeaders = context.MediumMessage.Origin.Headers;
-
-        var messageId = originHeaders.TryGetValue(Headers.MessageId, out var id) ? id ?? string.Empty : string.Empty;
-        var correlationId =
-            originHeaders.TryGetValue(Headers.CorrelationId, out var corrId) && !string.IsNullOrWhiteSpace(corrId)
-                ? corrId
-                : null;
-        var topic = originHeaders.TryGetValue(Headers.MessageName, out var name) ? name ?? string.Empty : string.Empty;
-
-        return new RecordedMessage
-        {
-            MessageType = messageType,
-            Message = messageInstance,
-            MessageId = messageId,
-            CorrelationId = correlationId,
-            Headers = new Dictionary<string, string?>(originHeaders, StringComparer.Ordinal),
-            Topic = topic,
-            Timestamp = DateTimeOffset.UtcNow,
-            Exception = exception,
-        };
-    }
+    ) => RecordedMessage.FromHeaders(context.MediumMessage.Origin.Headers, messageInstance, messageType, exception);
 }

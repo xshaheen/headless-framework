@@ -18,12 +18,6 @@ internal sealed class RecordingTransport(ITransport inner, MessageObservationSto
         if (result.Succeeded)
         {
             var headers = message.Headers;
-            var messageId = headers.TryGetValue(Headers.MessageId, out var id) ? id ?? string.Empty : string.Empty;
-            var correlationId =
-                headers.TryGetValue(Headers.CorrelationId, out var corrId) && !string.IsNullOrWhiteSpace(corrId)
-                    ? corrId
-                    : null;
-            var topic = headers.TryGetValue(Headers.MessageName, out var name) ? name ?? string.Empty : string.Empty;
             var messageTypeName = headers.TryGetValue(Headers.Type, out var typeName) ? typeName : null;
 
             object messageObj = message;
@@ -47,22 +41,17 @@ internal sealed class RecordingTransport(ITransport inner, MessageObservationSto
                             messageType = resolvedType;
                         }
                     }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
 #pragma warning disable ERP022 // Intentional: deserialization failure is non-fatal; keep raw TransportMessage as the recorded payload
                     catch { }
 #pragma warning restore ERP022
                 }
             }
 
-            var recorded = new RecordedMessage
-            {
-                MessageType = messageType,
-                Message = messageObj,
-                MessageId = messageId,
-                CorrelationId = correlationId,
-                Headers = new Dictionary<string, string?>(headers, StringComparer.Ordinal),
-                Topic = topic,
-                Timestamp = DateTimeOffset.UtcNow,
-            };
+            var recorded = RecordedMessage.FromHeaders(headers, messageObj, messageType);
 
             store.Record(recorded, MessageObservationType.Published);
         }

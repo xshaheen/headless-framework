@@ -37,12 +37,14 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     private readonly IServiceProvider _sp;
     private readonly MessageObservationStore _store;
     private readonly bool _ownsSp;
+    private readonly Lazy<IMessagePublisher> _publisher;
 
     private MessagingTestHarness(IServiceProvider sp, MessageObservationStore store, bool ownsSp)
     {
         _sp = sp;
         _store = store;
         _ownsSp = ownsSp;
+        _publisher = new Lazy<IMessagePublisher>(sp.GetRequiredService<IMessagePublisher>);
     }
 
     // -------------------------------------------------------------------------
@@ -69,38 +71,16 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         // Let the caller register AddHeadlessMessaging + consumers
         configure(services);
 
-        // Force in-memory transport and storage (no-ops if already registered due to TryAdd,
-        // but the extensions use AddSingleton so we need to call them on MessagingOptions —
-        // they're already expected to be called by the caller inside AddHeadlessMessaging.
-        // If the caller omitted them, inject the required markers so bootstrap doesn't throw.
-        _EnsureInMemoryInfrastructure(services);
-
-        // Disable parallelism for deterministic single-threaded test execution
-        services.Configure<MessagingOptions>(opt =>
-        {
-            opt.EnablePublishParallelSend = false;
-            opt.EnableSubscriberParallelExecute = false;
-        });
-
-        // Register the shared observation store as singleton
-        var store = new MessageObservationStore();
-        services.AddSingleton(store);
-
-        // Decorate ITransport with RecordingTransport
-        _DecorateTransport(services, store);
-
-        // Decorate IConsumeExecutionPipeline with RecordingConsumeExecutionPipeline
-        _DecoratePipeline(services, store);
-
-        // Expose IMessagePublisher as an alias for IDirectPublisher so harness.Publisher resolves correctly.
-        // AddHeadlessMessaging registers IDirectPublisher but not IMessagePublisher directly.
-        services.TryAddSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IDirectPublisher>());
+        // Shared setup: observation store, decorators, options
+        ConfigureServices(services);
 
         var sp = services.BuildServiceProvider();
 
         // Bootstrap without hosted-service infrastructure
         var bootstrapper = sp.GetRequiredService<IBootstrapper>();
         await bootstrapper.BootstrapAsync(cancellationToken).ConfigureAwait(false);
+
+        var store = sp.GetRequiredService<MessageObservationStore>();
 
         return new MessagingTestHarness(sp, store, ownsSp: true);
     }
@@ -112,7 +92,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <summary>
     /// Registers the messaging test harness recording infrastructure into an existing
     /// <see cref="IServiceCollection"/>. Called by the
-    /// <see cref="ServiceCollectionExtensions.AddMessagingTestHarness"/> extension method.
+    /// <see cref="MessagingTestHarnessExtensions.AddMessagingTestHarness"/> extension method.
     /// </summary>
     internal static void ConfigureServices(IServiceCollection services)
     {
@@ -214,11 +194,21 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     ) => _store.WaitForAsync(typeof(T), MessageObservationType.Faulted, obj => predicate((T)obj), timeout, ct);
 
     // -------------------------------------------------------------------------
+    // State management
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Resets all observation state and cancels pending waiters.
+    /// Call between tests when using a shared fixture.
+    /// </summary>
+    public void Clear() => _store.Clear();
+
+    // -------------------------------------------------------------------------
     // Service access
     // -------------------------------------------------------------------------
 
     /// <summary>Returns a publisher backed by the in-memory transport.</summary>
-    public IMessagePublisher Publisher => _sp.GetRequiredService<IMessagePublisher>();
+    public IMessagePublisher Publisher => _publisher.Value;
 
     /// <summary>Resolves an arbitrary service from the harness container.</summary>
     public T GetRequiredService<T>()
@@ -268,16 +258,11 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Ensures in-memory infrastructure markers are present so the bootstrapper's
-    /// requirement check does not throw when the caller already called
-    /// <c>UseInMemoryMessageQueue()</c> and <c>UseInMemoryStorage()</c> inside their
-    /// <c>AddHeadlessMessaging</c> callback.  If the markers are missing (caller forgot),
-    /// this is a no-op — the bootstrapper will surface a clear error.
+    /// Verifies that in-memory queue and storage providers are registered.
+    /// Throws <see cref="InvalidOperationException"/> if either marker is missing.
     /// </summary>
     private static void _EnsureInMemoryInfrastructure(IServiceCollection services)
     {
-        // Both extensions register their own marker services via AddSingleton (not TryAdd),
-        // so a second call would add duplicates.  We only call them if not already present.
         var hasQueueMarker = services.Any(d =>
             d.ServiceType == typeof(MessageQueueMarkerService) && d.Lifetime == ServiceLifetime.Singleton
         );
@@ -286,24 +271,20 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             d.ServiceType == typeof(MessageStorageMarkerService) && d.Lifetime == ServiceLifetime.Singleton
         );
 
-        if (!hasQueueMarker || !hasStorageMarker)
+        if (!hasQueueMarker)
         {
-            // Re-invoking AddHeadlessMessaging here is not safe, so surface a clear error.
-            if (!hasQueueMarker)
-            {
-                throw new InvalidOperationException(
-                    "MessagingTestHarness requires an in-memory transport. "
-                        + "Call options.UseInMemoryMessageQueue() inside your AddHeadlessMessaging callback."
-                );
-            }
+            throw new InvalidOperationException(
+                "MessagingTestHarness requires an in-memory transport. "
+                    + "Call options.UseInMemoryMessageQueue() inside your AddHeadlessMessaging callback."
+            );
+        }
 
-            if (!hasStorageMarker)
-            {
-                throw new InvalidOperationException(
-                    "MessagingTestHarness requires an in-memory storage. "
-                        + "Call options.UseInMemoryStorage() inside your AddHeadlessMessaging callback."
-                );
-            }
+        if (!hasStorageMarker)
+        {
+            throw new InvalidOperationException(
+                "MessagingTestHarness requires an in-memory storage. "
+                    + "Call options.UseInMemoryStorage() inside your AddHeadlessMessaging callback."
+            );
         }
     }
 

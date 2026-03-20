@@ -116,7 +116,13 @@ internal sealed class MessageObservationStore
 
             var elapsed = DateTimeOffset.UtcNow - startTime;
             var observed = _GetQueue(type).ToArray();
-            throw new MessageObservationTimeoutException(messageType, type, elapsed, observed);
+            throw new MessageObservationTimeoutException(
+                messageType,
+                type,
+                elapsed,
+                observed,
+                hasPredicate: predicate is not null
+            );
         }
         finally
         {
@@ -138,6 +144,11 @@ internal sealed class MessageObservationStore
 
         lock (_waitersLock)
         {
+            foreach (var waiter in _waiters)
+            {
+                waiter.Tcs.TrySetCanceled();
+            }
+
             _waiters.Clear();
         }
     }

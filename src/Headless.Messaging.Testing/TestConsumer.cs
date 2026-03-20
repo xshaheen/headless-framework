@@ -13,7 +13,6 @@ public sealed class TestConsumer<TMessage> : IConsume<TMessage>
     where TMessage : class
 {
     private readonly ConcurrentQueue<ConsumeContext<TMessage>> _receivedContexts = new();
-    private readonly Lock _lock = new();
 
     /// <summary>All captured consume contexts in order received.</summary>
     public IReadOnlyList<ConsumeContext<TMessage>> ReceivedContexts => _receivedContexts.ToArray();
@@ -21,13 +20,13 @@ public sealed class TestConsumer<TMessage> : IConsume<TMessage>
     /// <summary>Projected payloads from <see cref="ReceivedContexts"/>.</summary>
     public IReadOnlyList<TMessage> ReceivedMessages => _receivedContexts.Select(c => c.Message).ToArray();
 
-    /// <summary>Resets captured state. Thread-safe.</summary>
+    /// <summary>
+    /// Best-effort drain of captured state. Concurrent <see cref="Consume"/> calls
+    /// may still enqueue while draining; callers should ensure no publishers are active.
+    /// </summary>
     public void Clear()
     {
-        lock (_lock)
-        {
-            while (_receivedContexts.TryDequeue(out _)) { }
-        }
+        while (_receivedContexts.TryDequeue(out _)) { }
     }
 
     /// <inheritdoc />
