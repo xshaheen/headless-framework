@@ -25,8 +25,8 @@ internal sealed class CircuitBreakerMetrics : IDisposable
 
         _openDuration = _meter.CreateHistogram<double>(
             "messaging.circuit_breaker.open_duration",
-            unit: "ms",
-            description: "Duration in milliseconds that a consumer group circuit was in Open state"
+            unit: "s",
+            description: "Duration in seconds that a consumer group circuit was in Open state"
         );
     }
 
@@ -37,10 +37,10 @@ internal sealed class CircuitBreakerMetrics : IDisposable
     }
 
     /// <summary>Records how long the circuit was open before transitioning to HalfOpen or Closed.</summary>
-    public void RecordOpenDuration(string groupName, double milliseconds)
+    public void RecordOpenDuration(string groupName, double durationMs)
     {
         _openDuration.Record(
-            milliseconds,
+            durationMs / 1000.0,
             new KeyValuePair<string, object?>("messaging.consumer.group", groupName)
         );
     }

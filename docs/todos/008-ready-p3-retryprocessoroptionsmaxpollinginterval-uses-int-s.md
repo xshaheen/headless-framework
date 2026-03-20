@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "008"
 tags: ["code-review","messaging","dotnet","api-design"]
@@ -46,3 +46,9 @@ PR #194 review. Low priority since this is a new API.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-20 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

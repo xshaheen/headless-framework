@@ -40,7 +40,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
     private readonly IDataStorage _dataStorage;
     private readonly ISubscribeInvoker _invoker;
     private readonly IRetryBackoffStrategy _backoffStrategy;
-    private readonly ICircuitBreakerStateManager _circuitBreakerStateManager;
+    private readonly ICircuitBreakerStateManager? _circuitBreakerStateManager;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<SubscribeExecutor> _logger;
     private readonly MessagingOptions _options;
@@ -52,7 +52,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         TimeProvider timeProvider,
         ILogger<SubscribeExecutor> logger,
         IOptions<MessagingOptions> options,
-        ICircuitBreakerStateManager circuitBreakerStateManager
+        ICircuitBreakerStateManager? circuitBreakerStateManager = null
     )
     {
         _provider = provider;
@@ -175,7 +175,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
 
         await _dataStorage.ChangeReceiveStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
 
-        _circuitBreakerStateManager.ReportSuccess(message.Origin.GetGroup()!);
+        _circuitBreakerStateManager?.ReportSuccess(message.Origin.GetGroup()!);
     }
 
     private async Task<bool> _SetFailedState(MediumMessage message, Exception ex)
@@ -195,9 +195,12 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
 
         // Report the original (inner) exception to the circuit breaker so transient-classification
         // predicates see the real exception type, not the SubscriberExecutionFailedException wrapper.
-        var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
-        await _circuitBreakerStateManager.ReportFailureAsync(message.Origin.GetGroup()!, reportedException)
-            .ConfigureAwait(false);
+        if (_circuitBreakerStateManager is not null)
+        {
+            var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
+            await _circuitBreakerStateManager.ReportFailureAsync(message.Origin.GetGroup()!, reportedException)
+                .ConfigureAwait(false);
+        }
 
         return needRetry;
     }

@@ -22,7 +22,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         int failureThreshold = 5,
         TimeSpan? openDuration = null,
         TimeSpan? maxOpenDuration = null,
-        int successfulCyclesToResetEscalation = 3
+        int successfulCyclesToResetEscalation = 3,
+        ConsumerCircuitBreakerRegistry? registry = null
     )
     {
         var opts = new CircuitBreakerOptions
@@ -35,6 +36,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         return new CircuitBreakerStateManager(
             Options.Create(opts),
+            registry ?? new ConsumerCircuitBreakerRegistry(),
             new NullLogger<CircuitBreakerStateManager>(),
             new CircuitBreakerMetrics()
         );

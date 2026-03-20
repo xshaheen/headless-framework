@@ -247,15 +247,10 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     {
         _logger.LogWarning("Circuit breaker opened for group '{GroupName}'. Pausing consumers.", handle.GroupName);
 
-        try
-        {
-            await handle.Cts.CancelAsync();
-        }
-        catch (ObjectDisposedException)
-        {
-            // CTS already disposed (group was shut down)
-        }
-
+        // Do NOT cancel the CTS here — the ListeningAsync loops must stay alive so they can
+        // resume without restarting tasks. Transport-level pause (PauseAsync) is sufficient:
+        // MRES-based transports block at the pause gate, RabbitMQ cancels the consumer,
+        // and Kafka pauses partition polling.
         foreach (var client in handle.Clients)
         {
             try
@@ -276,19 +271,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             handle.GroupName
         );
 
-        var newCts = CancellationTokenSource.CreateLinkedTokenSource(_stoppingCts.Token);
-        var oldCts = handle.Cts;
-        handle.Cts = newCts;
-
-        try
-        {
-            oldCts.Dispose();
-        }
-        catch (ObjectDisposedException)
-        {
-            // Already disposed
-        }
-
+        // No CTS recreation needed — the original CTS was never cancelled during pause,
+        // so ListeningAsync loops are still running. Just un-gate the transport.
         foreach (var client in handle.Clients)
         {
             try
