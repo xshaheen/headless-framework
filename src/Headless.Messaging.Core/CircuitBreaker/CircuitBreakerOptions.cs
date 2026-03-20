@@ -39,13 +39,6 @@ public sealed class CircuitBreakerOptions
     public int SuccessfulCyclesToResetEscalation { get; init; } = 3;
 
     /// <summary>
-    /// Gets or sets the number of probe messages allowed through when the circuit is half-open.
-    /// Kept for API completeness; the state manager currently uses a fixed value of 1.
-    /// Default is 1.
-    /// </summary>
-    public int HalfOpenProbeCount { get; init; } = 1;
-
-    /// <summary>
     /// Gets or sets a predicate that determines whether an exception is transient and should
     /// count toward the circuit breaker failure threshold.
     /// </summary>

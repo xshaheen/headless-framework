@@ -14,6 +14,7 @@ namespace Headless.Messaging.CircuitBreaker;
 /// </summary>
 internal sealed class CircuitBreakerStateManager(
     IOptions<CircuitBreakerOptions> options,
+    ConsumerCircuitBreakerRegistry registry,
     ILogger<CircuitBreakerStateManager> logger,
     CircuitBreakerMetrics metrics
 ) : ICircuitBreakerStateManager
@@ -43,8 +44,14 @@ internal sealed class CircuitBreakerStateManager(
     /// <inheritdoc />
     public async ValueTask ReportFailureAsync(string groupName, Exception exception)
     {
-        var isTransient = CircuitBreakerDefaults.IsTransient(exception);
         var state = _GetOrAddState(groupName);
+
+        if (!state.Enabled)
+        {
+            return;
+        }
+
+        var isTransient = state.EffectiveIsTransient(exception);
         var groupLock = _locks[groupName];
         Func<ValueTask>? pauseCallback = null;
 
@@ -76,7 +83,7 @@ internal sealed class CircuitBreakerStateManager(
                     state.ConsecutiveFailures++;
 
                     if (state.State is CircuitBreakerState.Closed
-                        && state.ConsecutiveFailures >= _options.FailureThreshold)
+                        && state.ConsecutiveFailures >= state.EffectiveFailureThreshold)
                     {
                         _TransitionToOpen(state, groupName);
                         pauseCallback = state.OnPause;
@@ -145,12 +152,21 @@ internal sealed class CircuitBreakerStateManager(
     {
         return _groups.GetOrAdd(
             groupName,
-            static (key, locks) =>
+            static (key, ctx) =>
             {
-                locks.TryAdd(key, new Lock());
-                return new GroupCircuitState();
+                ctx.Locks.TryAdd(key, new Lock());
+
+                ctx.Registry.TryGet(key, out var perGroup);
+
+                return new GroupCircuitState
+                {
+                    Enabled = perGroup?.Enabled ?? true,
+                    EffectiveFailureThreshold = perGroup?.FailureThreshold ?? ctx.GlobalOptions.FailureThreshold,
+                    EffectiveOpenDuration = perGroup?.OpenDuration ?? ctx.GlobalOptions.OpenDuration,
+                    EffectiveIsTransient = perGroup?.IsTransientException ?? ctx.GlobalOptions.IsTransientException,
+                };
             },
-            _locks
+            (Locks: _locks, Registry: registry, GlobalOptions: _options)
         );
     }
 
@@ -267,7 +283,7 @@ internal sealed class CircuitBreakerStateManager(
 
     private TimeSpan _GetOpenDuration(GroupCircuitState state)
     {
-        var seconds = _options.OpenDuration.TotalSeconds * Math.Pow(2, state.EscalationLevel);
+        var seconds = state.EffectiveOpenDuration.TotalSeconds * Math.Pow(2, state.EscalationLevel);
         return TimeSpan.FromSeconds(Math.Min(seconds, _options.MaxOpenDuration.TotalSeconds));
     }
 
@@ -307,5 +323,29 @@ internal sealed class CircuitBreakerStateManager(
         /// Semaphore limiting HalfOpen to a single concurrent probe message.
         /// </summary>
         public SemaphoreSlim ProbePermit { get; } = new(1, 1);
+
+        /// <summary>
+        /// Whether the circuit breaker is enabled for this group. When <see langword="false"/>,
+        /// all failure reporting is skipped.
+        /// </summary>
+        public bool Enabled { get; init; } = true;
+
+        /// <summary>
+        /// Resolved failure threshold (per-group override or global fallback).
+        /// Cached at group creation to avoid re-merging on every call.
+        /// </summary>
+        public required int EffectiveFailureThreshold { get; init; }
+
+        /// <summary>
+        /// Resolved open duration (per-group override or global fallback).
+        /// Cached at group creation to avoid re-merging on every call.
+        /// </summary>
+        public required TimeSpan EffectiveOpenDuration { get; init; }
+
+        /// <summary>
+        /// Resolved transient-exception predicate (per-group override or global fallback).
+        /// Cached at group creation to avoid re-merging on every call.
+        /// </summary>
+        public required Func<Exception, bool> EffectiveIsTransient { get; init; }
     }
 }

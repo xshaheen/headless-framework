@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "010"
 tags: ["code-review","messaging","dotnet","quality"]
@@ -45,3 +45,9 @@ PR #194 review. Depends on P1 _ResumeGroupAsync restart decision.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-20 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

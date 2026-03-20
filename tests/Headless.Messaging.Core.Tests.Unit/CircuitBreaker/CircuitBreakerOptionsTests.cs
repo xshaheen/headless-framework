@@ -24,7 +24,6 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         opts.OpenDuration.Should().Be(TimeSpan.FromSeconds(30));
         opts.MaxOpenDuration.Should().Be(TimeSpan.FromSeconds(240));
         opts.SuccessfulCyclesToResetEscalation.Should().Be(3);
-        opts.HalfOpenProbeCount.Should().Be(1);
         opts.IsTransientException.Should().NotBeNull();
     }
 
