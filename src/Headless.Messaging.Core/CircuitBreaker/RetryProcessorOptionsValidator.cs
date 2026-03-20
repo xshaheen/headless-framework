@@ -15,11 +15,11 @@ internal sealed class RetryProcessorOptionsValidator : IValidateOptions<RetryPro
             failures.Add($"{nameof(RetryProcessorOptions.MaxPollingInterval)} must be greater than TimeSpan.Zero.");
         }
 
-        if (options.TransientFailureRateThreshold is <= 0 or >= 1)
+        if (options.CircuitOpenRateThreshold is <= 0 or >= 1)
         {
             failures.Add(
-                $"{nameof(RetryProcessorOptions.TransientFailureRateThreshold)} must be strictly between 0 and 1 "
-                    + $"(got {options.TransientFailureRateThreshold})."
+                $"{nameof(RetryProcessorOptions.CircuitOpenRateThreshold)} must be strictly between 0 and 1 "
+                    + $"(got {options.CircuitOpenRateThreshold})."
             );
         }
 

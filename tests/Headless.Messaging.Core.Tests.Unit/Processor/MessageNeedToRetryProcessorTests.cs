@@ -50,7 +50,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         int failedRetryInterval = 60,
         bool adaptivePolling = true,
         int maxPollingIntervalSeconds = 900,
-        double transientFailureRateThreshold = 0.8
+        double circuitOpenRateThreshold = 0.8
     )
     {
         var dispatcher = Substitute.For<IDispatcher>();
@@ -61,7 +61,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var options = new MessagingOptions { FailedRetryInterval = failedRetryInterval };
         options.RetryProcessor.AdaptivePolling = adaptivePolling;
         options.RetryProcessor.MaxPollingInterval = TimeSpan.FromSeconds(maxPollingIntervalSeconds);
-        options.RetryProcessor.TransientFailureRateThreshold = transientFailureRateThreshold;
+        options.RetryProcessor.CircuitOpenRateThreshold = circuitOpenRateThreshold;
 
         var services = new ServiceCollection();
         services.AddSingleton(cb);
@@ -193,7 +193,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task ProcessAsync_DoublesInterval_WhenTransientRateExceedsThreshold()
     {
         // Arrange — 5 messages, 4 skipped (circuit open) = 80% > threshold
-        var (sut, dispatcher, cb) = _Create(failedRetryInterval: 10, transientFailureRateThreshold: 0.7);
+        var (sut, dispatcher, cb) = _Create(failedRetryInterval: 10, circuitOpenRateThreshold: 0.7);
 
         cb.IsOpen("open-group").Returns(true);
         cb.IsOpen("healthy-group").Returns(false);
@@ -293,7 +293,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var (sut, dispatcher, cb) = _Create(
             failedRetryInterval: 1,
             maxPollingIntervalSeconds: 2,
-            transientFailureRateThreshold: 0.5
+            circuitOpenRateThreshold: 0.5
         );
         cb.IsOpen("open-group").Returns(true);
 
@@ -324,7 +324,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var (sut, dispatcher, cb) = _Create(
             failedRetryInterval: 1,
             maxPollingIntervalSeconds: 60,
-            transientFailureRateThreshold: 0.5
+            circuitOpenRateThreshold: 0.5
         );
 
         var dataStorage = Substitute.For<IDataStorage>();
@@ -366,7 +366,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Arrange — rate between 0.5 and threshold (0.8): e.g., 6 skipped out of 10 = 60%
         var (sut, dispatcher, cb) = _Create(
             failedRetryInterval: 1,
-            transientFailureRateThreshold: 0.8
+            circuitOpenRateThreshold: 0.8
         );
         cb.IsOpen("open-group").Returns(true);
         cb.IsOpen("healthy-group").Returns(false);

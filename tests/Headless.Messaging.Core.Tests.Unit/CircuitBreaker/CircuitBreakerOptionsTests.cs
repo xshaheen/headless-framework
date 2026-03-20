@@ -173,7 +173,7 @@ public sealed class RetryProcessorOptionsTests : TestBase
 
         opts.AdaptivePolling.Should().BeTrue();
         opts.MaxPollingInterval.Should().Be(TimeSpan.FromMinutes(15));
-        opts.TransientFailureRateThreshold.Should().Be(0.8);
+        opts.CircuitOpenRateThreshold.Should().Be(0.8);
     }
 
     [Fact]
@@ -191,25 +191,25 @@ public sealed class RetryProcessorOptionsTests : TestBase
     [Fact]
     public void validator_rejects_transient_failure_rate_of_zero()
     {
-        var opts = new RetryProcessorOptions { TransientFailureRateThreshold = 0 };
+        var opts = new RetryProcessorOptions { CircuitOpenRateThreshold = 0 };
         var validator = new RetryProcessorOptionsValidator();
 
         var result = validator.Validate(null, opts);
 
         result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*TransientFailureRateThreshold*between 0 and 1*");
+        result.Failures.Should().ContainMatch("*CircuitOpenRateThreshold*between 0 and 1*");
     }
 
     [Fact]
     public void validator_rejects_transient_failure_rate_of_one()
     {
-        var opts = new RetryProcessorOptions { TransientFailureRateThreshold = 1.0 };
+        var opts = new RetryProcessorOptions { CircuitOpenRateThreshold = 1.0 };
         var validator = new RetryProcessorOptionsValidator();
 
         var result = validator.Validate(null, opts);
 
         result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*TransientFailureRateThreshold*between 0 and 1*");
+        result.Failures.Should().ContainMatch("*CircuitOpenRateThreshold*between 0 and 1*");
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public sealed class RetryProcessorOptionsTests : TestBase
         var opts = new RetryProcessorOptions
         {
             MaxPollingInterval = TimeSpan.FromSeconds(60),
-            TransientFailureRateThreshold = 0.5,
+            CircuitOpenRateThreshold = 0.5,
         };
         var validator = new RetryProcessorOptionsValidator();
 
