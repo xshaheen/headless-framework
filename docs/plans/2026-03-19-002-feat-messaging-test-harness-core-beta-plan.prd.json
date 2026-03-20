@@ -1,0 +1,192 @@
+{
+  "name": "feat-messaging-test-harness-core",
+  "title": "Add messaging test harness for application developers",
+  "type": "feat",
+  "date": "2026-03-19",
+  "description": "Add Headless.Messaging.Testing \u2014 a single NuGet package with ITestHarness, observable collections (Published/Consumed/Faulted), awaitable assertion primitives, and TestConsumer<T> for testing messaging flows against an in-memory pipeline without Docker.",
+  "created_at": "2026-03-19T12:00:00Z",
+  "branches": {
+    "base": "main",
+    "feature": "xshaheen/feat-messaging-circuit-breaker"
+  },
+  "verification_command": "dotnet-test",
+  "status": "completed",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Project scaffolding",
+      "size": "S",
+      "description": "TDD order: write failing test \u2192 implement minimal code \u2192 verify PASS\n\nCreate the Headless.Messaging.Testing project with correct structure, dependencies, and package metadata. Follow Headless.Testing pattern: IsTestProject=false, IsTestableProject=false, net10.0. Add project references to Headless.Messaging.Core, Headless.Messaging.InMemoryQueue, Headless.Messaging.InMemoryStorage.",
+      "filesToStudy": [
+        "src/Headless.Testing/Headless.Testing.csproj",
+        "src/Headless.Messaging.InMemoryQueue/Headless.Messaging.InMemoryQueue.csproj",
+        "Directory.Packages.props"
+      ],
+      "acceptanceCriteria": [
+        "src/Headless.Messaging.Testing/Headless.Messaging.Testing.csproj exists with correct TargetFramework, IsTestProject, and project references",
+        "dotnet build src/Headless.Messaging.Testing/ succeeds",
+        "Project added to Headless.sln"
+      ],
+      "priority": 1,
+      "pass": true,
+      "attempts": 1,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-002",
+      "title": "RecordedMessage types and MessageObservationStore",
+      "size": "M",
+      "description": "TDD order: write failing test \u2192 implement minimal code \u2192 verify PASS\n\nDefine RecordedMessage record type (MessageType, Message, MessageId, CorrelationId, Headers, Topic, Timestamp, Exception) and MessageObservationStore with three ConcurrentQueue<RecordedMessage> collections (Published, Consumed, Faulted) plus TaskCompletionSource waiter lists for WaitFor* methods. On timeout throw MessageObservationTimeoutException with diagnostic payload.",
+      "filesToStudy": [
+        "tests/Headless.Messaging.Core.Tests.Harness/Helpers/TestSubscriber.cs",
+        "src/Headless.Messaging.Abstractions/ConsumeContext.cs"
+      ],
+      "acceptanceCriteria": [
+        "RecordedMessage sealed record contains all required metadata fields including Exception",
+        "MessageObservationStore.Record() adds to correct collection and completes matching waiters",
+        "WaitForAsync completes immediately when matching message already exists in queue",
+        "WaitForAsync with predicate only matches when predicate returns true",
+        "WaitForAsync times out and throws MessageObservationTimeoutException with expected-vs-actual diagnostic info",
+        "Thread-safe under concurrent Record + WaitFor"
+      ],
+      "priority": 2,
+      "pass": true,
+      "attempts": 1,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-003",
+      "title": "Recording infrastructure (transport + pipeline decorators)",
+      "size": "M",
+      "description": "TDD order: write failing test \u2192 implement minimal code \u2192 verify PASS\n\nCreate RecordingTransport (decorates ITransport) that records TransportMessage to Published then forwards, and RecordingConsumeExecutionPipeline (decorates IConsumeExecutionPipeline) that records Consumed on success or Faulted with exception on failure. Both reference shared MessageObservationStore.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Transport/ITransport.cs",
+        "src/Headless.Messaging.Core/Internal/IConsumeExecutionPipeline.cs",
+        "src/Headless.Messaging.Core/Serialization/JsonUtf8Serializer.cs"
+      ],
+      "acceptanceCriteria": [
+        "RecordingTransport records message headers and deserialized body then forwards to inner transport",
+        "RecordingConsumeExecutionPipeline records Consumed on successful execution",
+        "RecordingConsumeExecutionPipeline records Faulted with exception on handler failure and re-throws",
+        "Both decorators correctly populate MessageType for typed WaitFor queries"
+      ],
+      "priority": 3,
+      "pass": true,
+      "attempts": 1,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-004",
+      "title": "MessagingTestHarness core class",
+      "size": "L",
+      "description": "TDD order: write failing test \u2192 implement minimal code \u2192 verify PASS\n\nCreate MessagingTestHarness : IAsyncDisposable with static CreateAsync(Action<IServiceCollection>) that builds isolated DI container, forces in-memory transport+storage, registers recording decorators, sets single-threaded Dispatcher defaults, bootstraps pipeline. Expose Published/Consumed/Faulted collections, WaitFor* methods, GetTestConsumer<T>(), Publisher, ServiceProvider.",
+      "filesToStudy": [
+        "src/Headless.Messaging.Core/Setup.cs",
+        "src/Headless.Messaging.InMemoryQueue/Setup.cs",
+        "src/Headless.Messaging.InMemoryStorage/Setup.cs",
+        "src/Headless.Messaging.Core/Processor/Dispatcher.cs",
+        "src/Headless.Messaging.Core/ConsumerRegistry.cs",
+        "tests/Headless.Messaging.Core.Tests.Harness/MessagingIntegrationTestsBase.cs"
+      ],
+      "acceptanceCriteria": [
+        "CreateAsync builds isolated DI container with in-memory transport and storage",
+        "CreateAsync bootstraps pipeline successfully without HostedService infrastructure",
+        "Published/Consumed/Faulted collections are initially empty and populate correctly after pub-sub",
+        "Two concurrent harness instances do not share state",
+        "DisposeAsync stops background tasks and cleans up without exceptions",
+        "User-configured consumers are registered and discoverable"
+      ],
+      "priority": 4,
+      "pass": true,
+      "attempts": 1,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-005",
+      "title": "TestConsumer<T> generic fixture",
+      "size": "S",
+      "description": "TDD order: write failing test \u2192 implement minimal code \u2192 verify PASS\n\nCreate TestConsumer<TMessage> : IConsume<TMessage> that captures ConsumeContext into thread-safe list. Expose ReceivedContexts, ReceivedMessages (projected), Clear(). Add convenience extension AddTestConsumer<TMessage> for harness registration.",
+      "filesToStudy": [
+        "tests/Headless.Messaging.Core.Tests.Harness/Helpers/TestSubscriber.cs",
+        "src/Headless.Messaging.Abstractions/IConsume.cs"
+      ],
+      "acceptanceCriteria": [
+        "TestConsumer captures ConsumeContext with full metadata (MessageId, CorrelationId, Headers, Topic)",
+        "ReceivedMessages projects payloads correctly from ConsumeContext",
+        "Clear() resets all captured data (thread-safe)",
+        "GetTestConsumer<T>() on harness returns the registered singleton instance"
+      ],
+      "priority": 5,
+      "pass": true,
+      "attempts": 1,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-006",
+      "title": "End-to-end integration test suite",
+      "size": "L",
+      "description": "TDD order: write failing test \u2192 implement minimal code \u2192 verify PASS\n\nCreate comprehensive test suite exercising the harness as a downstream developer would. Cover publish-consume-assert flow, fault observation, predicate filtering, timeout diagnostics, parallel isolation, DI integration with mocks, custom headers, TestConsumer workflow, and <100ms performance.",
+      "filesToStudy": [
+        "tests/Headless.Messaging.Core.Tests.Harness/MessagingIntegrationTestsBase.cs"
+      ],
+      "acceptanceCriteria": [
+        "Publish \u2192 consume \u2192 assert test works end-to-end with ConsumeContext metadata verification",
+        "Faulted observation captures exception type and message when consumer throws",
+        "WaitForConsumed with predicate correctly filters on message properties",
+        "Timeout throws MessageObservationTimeoutException with diagnostic info showing published messages",
+        "Two concurrent harness instances in parallel do not cross-contaminate messages",
+        "Consumer with injected mock dependency resolves and processes correctly"
+      ],
+      "priority": 6,
+      "pass": true,
+      "attempts": 1,
+      "commits": [],
+      "notes": []
+    },
+    {
+      "id": "US-007",
+      "title": "Package README and XML documentation",
+      "size": "S",
+      "description": "Sequential: write README \u2192 add XML docs \u2192 verify build\n\nCreate package README with quick-start example following existing package README patterns. Add XML docs to all public types and methods: MessagingTestHarness, TestConsumer<T>, RecordedMessage, MessageObservationTimeoutException.",
+      "filesToStudy": [
+        "src/Headless.Messaging.InMemoryQueue/README.md",
+        "src/Headless.Messaging.Nats/README.md"
+      ],
+      "acceptanceCriteria": [
+        "README.md exists with quick-start example showing create \u2192 publish \u2192 assert pattern",
+        "All public types and methods have XML documentation comments",
+        "dotnet build with documentation warnings enabled passes"
+      ],
+      "priority": 7,
+      "pass": true,
+      "attempts": 1,
+      "commits": [],
+      "notes": []
+    }
+  ],
+  "pass": true,
+  "validation_errors": [],
+  "metadata": {
+    "research": {
+      "local": {
+        "findings": [
+          "All messaging services (ConsumerRegistry, Dispatcher, MemoryQueue) use instance fields, no static state \u2014 fresh ServiceCollection per test gives full isolation",
+          "ConsumerRegistry freeze-on-first-read pattern is instance-scoped in src/Headless.Messaging.Core/ConsumerRegistry.cs",
+          "Existing Headless.Testing package at src/Headless.Testing/ provides pattern: IsTestProject=false, ships as NuGet, references xunit + AwesomeAssertions",
+          "IConsumeFilter is single-slot scoped (not a chain) \u2014 recording should use pipeline decorator instead to preserve filter slot for users",
+          "ConsumeExecutionPipeline creates DI scope per message in src/Headless.Messaging.Core/Internal/IConsumeExecutionPipeline.cs",
+          "Dispatcher requires IDataStorage \u2014 InMemoryStorage package provides in-memory implementation via UseInMemoryStorage()",
+          "Bootstrapper registered as HostedService \u2014 harness needs to call StartAsync directly",
+          "TestSubscriber in tests/Headless.Messaging.Core.Tests.Harness/Helpers/TestSubscriber.cs has WaitForMessageAsync + ConsumeContext capture pattern"
+        ],
+        "timestamp": "2026-03-19T12:00:00Z"
+      }
+    },
+    "projectLearnings": []
+  }
+}
