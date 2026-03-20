@@ -211,4 +211,41 @@ public sealed class EndToEndTests : TestBase
         // then — the mock was invoked with the correct order ID
         notifier.Received(1).Notify("ORD-INJ");
     }
+
+    // ─── Test 7: AddMessagingTestHarness registers into existing container ───
+
+    [Fact]
+    public async Task AddMessagingTestHarness_registers_into_existing_container()
+    {
+        // given — simulate a host-owned ServiceCollection
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(options =>
+        {
+            options.UseInMemoryMessageQueue();
+            options.UseInMemoryStorage();
+            options.Subscribe<OrderCreatedConsumer>("order-created");
+        });
+
+        // Register the test harness via extension method (hosted mode)
+        services.AddMessagingTestHarness();
+
+        await using var sp = services.BuildServiceProvider();
+
+        // Bootstrap manually (in a real host, the HostedService does this)
+        var bootstrapper = sp.GetRequiredService<IBootstrapper>();
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        var harness = sp.GetRequiredService<MessagingTestHarness>();
+
+        // when
+        var publisher = sp.GetRequiredService<IMessagePublisher>();
+        await publisher.PublishAsync(new OrderCreatedEvent("HOSTED-1", 42m), AbortToken);
+        var recorded = await harness.WaitForConsumed<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then — harness observes messages through the same container
+        recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("HOSTED-1");
+        harness.Published.Should().ContainSingle();
+        harness.Consumed.Should().ContainSingle();
+    }
 }

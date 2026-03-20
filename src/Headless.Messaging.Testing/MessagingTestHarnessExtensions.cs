@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Testing;
 
-/// <summary>Extension methods for registering test consumers in a <see cref="MessagingTestHarness"/>.</summary>
+/// <summary>Extension methods for <see cref="MessagingTestHarness"/>.</summary>
 public static class MessagingTestHarnessExtensions
 {
     /// <summary>
@@ -23,4 +23,44 @@ public static class MessagingTestHarnessExtensions
     /// </remarks>
     public static TestConsumer<TMessage> GetTestConsumer<TMessage>(this MessagingTestHarness harness)
         where TMessage : class => harness.GetRequiredService<TestConsumer<TMessage>>();
+}
+
+/// <summary>Extension methods for registering <see cref="MessagingTestHarness"/> in an existing DI container.</summary>
+public static class ServiceCollectionExtensions
+{
+    /// <summary>
+    /// Registers the messaging test harness recording infrastructure into an existing
+    /// <see cref="IServiceCollection"/>. Use this when the application host owns the
+    /// <see cref="IServiceProvider"/> lifecycle (e.g. <c>WebApplicationFactory</c>, <c>IHost</c>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Call this <strong>after</strong> <c>AddHeadlessMessaging</c> so that the transport and
+    /// pipeline registrations exist to be decorated. The host is responsible for bootstrapping
+    /// and disposal — the harness resolved from DI will <strong>not</strong> dispose the container.
+    /// </para>
+    /// <para>
+    /// <strong>Example with WebApplicationFactory:</strong>
+    /// <code>
+    /// var factory = new WebApplicationFactory&lt;Program&gt;()
+    ///     .WithWebHostBuilder(b =&gt; b.ConfigureTestServices(services =&gt;
+    ///     {
+    ///         services.AddMessagingTestHarness();
+    ///     }));
+    ///
+    /// var client = factory.CreateClient();
+    /// var harness = factory.Services.GetRequiredService&lt;MessagingTestHarness&gt;();
+    ///
+    /// await client.PostAsJsonAsync("/orders", new { Id = "ORD-1" });
+    /// await harness.WaitForConsumed&lt;OrderCreated&gt;(TimeSpan.FromSeconds(5));
+    /// </code>
+    /// </para>
+    /// </remarks>
+    /// <param name="services">The service collection to decorate.</param>
+    /// <returns>The same <paramref name="services"/> instance for chaining.</returns>
+    public static IServiceCollection AddMessagingTestHarness(this IServiceCollection services)
+    {
+        MessagingTestHarness.ConfigureServices(services);
+        return services;
+    }
 }

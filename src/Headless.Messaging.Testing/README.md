@@ -11,7 +11,8 @@ Integration-testing a messaging pipeline typically requires a running broker and
 - **Zero Infrastructure**: No broker, no Docker — runs entirely in-process
 - **Awaitable Assertions**: `WaitForPublished`, `WaitForConsumed`, `WaitForFaulted` block until observed or timed out
 - **Full Pipeline Coverage**: Decorates the real transport and consume pipeline, so middleware, serialization, and consumer logic all execute
-- **Isolated Per Test**: Each `MessagingTestHarness` instance owns its own DI container and observation store
+- **Isolated Per Test**: Each `MessagingTestHarness` instance owns its own observation store
+- **Host Integration**: `AddMessagingTestHarness()` extension decorates an existing DI container for use with `WebApplicationFactory`, `IHost`, or `WebApplication`
 - **Predicate Overloads**: Wait for a specific message matching a condition, not just any message of a type
 
 ## Installation
@@ -184,57 +185,81 @@ public sealed class OrderMessagingTests(OrderHarnessFixture fixture)
 
 > **Note:** When sharing a harness across tests, use `TestConsumer<T>.Clear()` and check `WaitFor*` with predicates to avoid cross-test interference.
 
-### Testing Alongside a Web Application
+### Host Integration (WebApplicationFactory / IHost)
 
-The harness owns its own DI container, separate from the application host. When testing an API endpoint that publishes messages, run the harness and the web application side by side:
+Use `AddMessagingTestHarness()` to inject the recording infrastructure into the application's own DI container. The harness shares the same transport as the app — when an API endpoint publishes a message, the harness observes it end-to-end.
+
+#### With WebApplicationFactory
 
 ```csharp
-public sealed class OrderApiMessagingTests : TestBase
+public sealed class OrderApiTests : TestBase
 {
     [Fact]
-    public async Task Post_order_should_publish_event()
+    public async Task Post_order_should_publish_and_consume_event()
     {
-        // Standalone harness for observing messages
-        await using var harness = await MessagingTestHarness.CreateAsync(services =>
-        {
-            services.AddSingleton<TestConsumer<OrderCreated>>();
-            services.AddHeadlessMessaging(options =>
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
             {
-                options.UseInMemoryMessageQueue();
-                options.UseInMemoryStorage();
-                options.Subscribe<TestConsumer<OrderCreated>>("orders.created");
+                builder.ConfigureTestServices(services =>
+                {
+                    // Decorates the app's existing messaging registrations with recording
+                    services.AddMessagingTestHarness();
+                });
             });
-        });
 
-        // Web application configured with the same in-memory transport
-        var builder = WebApplication.CreateBuilder(
-            new WebApplicationOptions { EnvironmentName = "Test" });
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        // Register your API services, controllers, etc.
-        builder.Services.AddHeadlessMessaging(options =>
-        {
-            options.UseInMemoryMessageQueue();
-            options.UseInMemoryStorage();
-        });
-        await using var app = builder.Build();
-        // ... configure middleware ...
-        await app.StartAsync(AbortToken);
+        using var client = factory.CreateClient();
+        var harness = factory.Services.GetRequiredService<MessagingTestHarness>();
 
-        using var client = new HttpClient
-        {
-            BaseAddress = new Uri(app.Urls.Single()),
-        };
-
-        // When — call the API endpoint
+        // When — call the API endpoint that publishes OrderCreated
         await client.PostAsJsonAsync("/orders", new { Id = "ORD-1" }, AbortToken);
 
-        // Then — the harness observes the published event
-        await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(5), AbortToken);
+        // Then — the harness observes the message through the app's own pipeline
+        var recorded = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(5), AbortToken);
+        recorded.Message.Should().BeOfType<OrderCreated>()
+            .Which.OrderId.Should().Be("ORD-1");
     }
 }
 ```
 
-> **Important:** The harness and the web application use **separate** in-memory transports. They do not share a message broker. This pattern verifies that consumers handle published messages correctly in isolation, not that the API and consumer share a transport.
+#### With WebApplication (no factory)
+
+```csharp
+public sealed class OrderApiTests : TestBase
+{
+    [Fact]
+    public async Task Post_order_should_publish_event()
+    {
+        var builder = WebApplication.CreateBuilder(
+            new WebApplicationOptions { EnvironmentName = "Test" });
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+
+        builder.Services.AddHeadlessMessaging(options =>
+        {
+            options.UseInMemoryMessageQueue();
+            options.UseInMemoryStorage();
+            options.Subscribe<OrderCreatedConsumer>("orders.created");
+        });
+
+        // Add the test harness AFTER AddHeadlessMessaging
+        builder.Services.AddMessagingTestHarness();
+
+        await using var app = builder.Build();
+        // ... configure middleware ...
+        await app.StartAsync(AbortToken);
+
+        using var client = new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
+        var harness = app.Services.GetRequiredService<MessagingTestHarness>();
+
+        await client.PostAsJsonAsync("/orders", new { Id = "ORD-1" }, AbortToken);
+
+        var recorded = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(5), AbortToken);
+        recorded.Message.Should().BeOfType<OrderCreated>()
+            .Which.OrderId.Should().Be("ORD-1");
+    }
+}
+```
+
+> **Note:** `AddMessagingTestHarness()` must be called **after** `AddHeadlessMessaging()` so the transport and pipeline registrations exist to be decorated. The host manages bootstrapping and disposal — the harness does not dispose the container.
 
 ## Isolation
 
