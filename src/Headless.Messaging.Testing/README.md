@@ -263,11 +263,10 @@ public sealed class OrderApiTests : TestBase
 
 ## Isolation
 
-Each `MessagingTestHarness` instance creates its own `ServiceProvider` and `MessageObservationStore`. Tests running in parallel with separate harness instances do not share state. Always dispose the harness after each test:
+Each `MessagingTestHarness` instance owns its own `MessageObservationStore`. Tests running in parallel with separate harness instances do not share state.
 
-```csharp
-await using var harness = await MessagingTestHarness.CreateAsync(...);
-```
+- **Standalone** (`CreateAsync`): owns its own `ServiceProvider` — always dispose after each test via `await using`.
+- **Hosted** (`AddMessagingTestHarness()`): the host owns the `ServiceProvider` — the harness does not dispose the container.
 
 ## Dependencies
 
