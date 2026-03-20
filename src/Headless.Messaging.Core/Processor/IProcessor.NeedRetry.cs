@@ -2,8 +2,10 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,28 +19,43 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
     private const int _MinSuggestedValueForFallbackWindowLookbackSeconds = 30;
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;
     private readonly IDispatcher _dispatcher;
-    private readonly TimeSpan _waitingInterval;
+    private readonly TimeSpan _baseInterval;
+    private readonly TimeSpan _maxInterval;
     private readonly IOptions<MessagingOptions> _options;
     private readonly IDataStorage _dataStorage;
     private readonly TimeSpan _ttl;
     private readonly TimeSpan _lookbackSeconds;
     private readonly string _instance;
+    private readonly ICircuitBreakerStateManager? _circuitBreakerStateManager;
+    private readonly bool _adaptivePolling;
+    private readonly double _transientFailureRateThreshold;
     private Task? _failedRetryConsumeTask;
+    private TimeSpan _currentInterval;
+    private int _consecutiveHealthyCycles;
+    private int _consecutiveCleanCycles;
 
     public MessageNeedToRetryProcessor(
         IOptions<MessagingOptions> options,
         ILogger<MessageNeedToRetryProcessor> logger,
         IDispatcher dispatcher,
-        IDataStorage dataStorage
+        IDataStorage dataStorage,
+        IServiceProvider serviceProvider
     )
     {
         _options = options;
         _logger = logger;
         _dispatcher = dispatcher;
-        _waitingInterval = TimeSpan.FromSeconds(options.Value.FailedRetryInterval);
+        _baseInterval = TimeSpan.FromSeconds(options.Value.FailedRetryInterval);
+        _currentInterval = _baseInterval;
         _lookbackSeconds = TimeSpan.FromSeconds(options.Value.FallbackWindowLookbackSeconds);
         _dataStorage = dataStorage;
-        _ttl = _waitingInterval.Add(TimeSpan.FromSeconds(10));
+        _ttl = _baseInterval.Add(TimeSpan.FromSeconds(10));
+        _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();
+
+        var retryProcessorOptions = options.Value.RetryProcessor;
+        _adaptivePolling = retryProcessorOptions.AdaptivePolling;
+        _maxInterval = TimeSpan.FromSeconds(retryProcessorOptions.MaxPollingInterval);
+        _transientFailureRateThreshold = retryProcessorOptions.TransientFailureRateThreshold;
 
         _instance = (
             (FormattableString)$"{Helper.GetInstanceHostname()}_{SnowflakeIdLongIdGenerator.GenerateWorkerId()}"
@@ -71,7 +88,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
                 context.CancellationToken
             );
 
-            await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
+            await context.WaitAsync(_currentInterval).ConfigureAwait(false);
 
             return;
         }
@@ -92,7 +109,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
             TaskScheduler.Default
         );
 
-        await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
+        await context.WaitAsync(_currentInterval).ConfigureAwait(false);
     }
 
     private async Task _ProcessPublishedAsync(IDataStorage connection, ProcessingContext context)
@@ -152,11 +169,32 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
         var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry, _lookbackSeconds)
             .ConfigureAwait(false);
 
+        var enqueued = 0;
+        var skippedCircuitOpen = 0;
+
         foreach (var message in messages)
         {
             context.ThrowIfStopping();
 
+            var group = message.Origin.GetGroup();
+            if (group is not null && _circuitBreakerStateManager?.IsOpen(group) == true)
+            {
+                skippedCircuitOpen++;
+                _logger.LogDebug(
+                    "Skipping retry for message {DbId} — circuit open for group {Group}",
+                    message.DbId,
+                    group
+                );
+                continue;
+            }
+
             await _dispatcher.EnqueueToExecute(message, null, context.CancellationToken).ConfigureAwait(false);
+            enqueued++;
+        }
+
+        if (_adaptivePolling)
+        {
+            _AdjustPollingInterval(enqueued, skippedCircuitOpen);
         }
 
         if (_options.Value.UseStorageLock)
@@ -184,6 +222,72 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
             _logger.LogWarning(1, ex, "Get messages from storage failed. Retrying...");
 
             return [];
+        }
+    }
+
+    private void _AdjustPollingInterval(int enqueued, int skippedCircuitOpen)
+    {
+        var total = enqueued + skippedCircuitOpen;
+
+        // No messages at all — clean cycle
+        if (total == 0)
+        {
+            _consecutiveCleanCycles++;
+            _consecutiveHealthyCycles++;
+
+            if (_consecutiveCleanCycles >= 3)
+            {
+                _currentInterval = _baseInterval;
+                _consecutiveCleanCycles = 0;
+                _consecutiveHealthyCycles = 0;
+            }
+            else if (_consecutiveHealthyCycles >= 2 && _currentInterval > _baseInterval)
+            {
+                _currentInterval = TimeSpan.FromTicks(Math.Max(_currentInterval.Ticks / 2, _baseInterval.Ticks));
+            }
+
+            return;
+        }
+
+        var transientRate = (double)skippedCircuitOpen / total;
+
+        if (transientRate > _transientFailureRateThreshold)
+        {
+            // High failure rate — back off
+            _consecutiveHealthyCycles = 0;
+            _consecutiveCleanCycles = 0;
+
+            var doubled = TimeSpan.FromTicks(_currentInterval.Ticks * 2);
+            _currentInterval = doubled < _maxInterval ? doubled : _maxInterval;
+
+            _logger.LogDebug(
+                "Adaptive polling: transient rate {Rate:P0} exceeds threshold, interval increased to {Interval}",
+                transientRate,
+                _currentInterval
+            );
+        }
+        else if (transientRate <= 0.5)
+        {
+            // Healthy cycle — >50% success
+            _consecutiveHealthyCycles++;
+            _consecutiveCleanCycles = 0;
+
+            if (_consecutiveHealthyCycles >= 2 && _currentInterval > _baseInterval)
+            {
+                _currentInterval = TimeSpan.FromTicks(Math.Max(_currentInterval.Ticks / 2, _baseInterval.Ticks));
+                _consecutiveHealthyCycles = 0;
+
+                _logger.LogDebug(
+                    "Adaptive polling: healthy for 2 cycles, interval decreased to {Interval}",
+                    _currentInterval
+                );
+            }
+        }
+        else
+        {
+            // Between threshold and 50% — neither healthy nor backing off
+            _consecutiveHealthyCycles = 0;
+            _consecutiveCleanCycles = 0;
         }
     }
 
