@@ -19,7 +19,7 @@ internal sealed class PulsarConsumerClient(
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ManualResetEventSlim _pauseGate = new(true);
-    private volatile bool _paused;
+    private int _paused; // 0 = running, 1 = paused
     private readonly MessagingPulsarOptions _pulsarOptions = options.Value;
     private IConsumer<byte[]>? _consumerClient;
 
@@ -107,10 +107,9 @@ internal sealed class PulsarConsumerClient(
 
     public ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (!_paused)
+        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
             _pauseGate.Reset();
-            _paused = true;
         }
 
         return ValueTask.CompletedTask;
@@ -118,10 +117,9 @@ internal sealed class PulsarConsumerClient(
 
     public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (_paused)
+        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
         {
             _pauseGate.Set();
-            _paused = false;
         }
 
         return ValueTask.CompletedTask;

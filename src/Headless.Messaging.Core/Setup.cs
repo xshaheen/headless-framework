@@ -141,6 +141,8 @@ public static class Setup
         services.TryAddSingleton(options.CircuitBreakerRegistry);
         services.TryAddSingleton<CircuitBreakerMetrics>();
         services.TryAddSingleton<ICircuitBreakerStateManager, CircuitBreakerStateManager>();
+        services.TryAddSingleton<ICircuitBreakerMonitor>(sp =>
+            (ICircuitBreakerMonitor)sp.GetRequiredService<ICircuitBreakerStateManager>());
 
         foreach (var serviceExtension in options.Extensions)
         {

@@ -17,7 +17,7 @@ internal sealed class CircuitBreakerStateManager(
     ConsumerCircuitBreakerRegistry registry,
     ILogger<CircuitBreakerStateManager> logger,
     CircuitBreakerMetrics metrics
-) : ICircuitBreakerStateManager
+) : ICircuitBreakerStateManager, ICircuitBreakerMonitor
 {
     private readonly CircuitBreakerOptions _options = options.Value;
 
@@ -134,6 +134,18 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
+    public CircuitBreakerState GetState(string groupName)
+    {
+        if (!_groups.TryGetValue(groupName, out var state))
+        {
+            return CircuitBreakerState.Closed;
+        }
+
+        // No lock needed — reading a single enum field (int-aligned) is atomic on all .NET platforms
+        return state.State;
+    }
+
+    /// <inheritdoc />
     public bool TryAcquireProbePermit(string groupName)
     {
         if (!_groups.TryGetValue(groupName, out var state))
@@ -209,6 +221,12 @@ internal sealed class CircuitBreakerStateManager(
         state.OpenTimer = null;
         state.SuccessfulCyclesAfterClose++;
 
+        if (state.SuccessfulCyclesAfterClose >= _options.SuccessfulCyclesToResetEscalation)
+        {
+            state.EscalationLevel = 0;
+            state.SuccessfulCyclesAfterClose = 0;
+        }
+
         if (state.OpenedAt > 0)
         {
             var openMs = Environment.TickCount64 - state.OpenedAt;
@@ -283,7 +301,8 @@ internal sealed class CircuitBreakerStateManager(
 
     private TimeSpan _GetOpenDuration(GroupCircuitState state)
     {
-        var seconds = state.EffectiveOpenDuration.TotalSeconds * Math.Pow(2, state.EscalationLevel);
+        var safeLevel = Math.Min(state.EscalationLevel, 62);
+        var seconds = state.EffectiveOpenDuration.TotalSeconds * Math.Pow(2, safeLevel);
         return TimeSpan.FromSeconds(Math.Min(seconds, _options.MaxOpenDuration.TotalSeconds));
     }
 

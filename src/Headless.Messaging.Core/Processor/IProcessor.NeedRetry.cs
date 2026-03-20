@@ -266,9 +266,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
                 _currentInterval
             );
         }
-        else if (transientRate <= 0.5)
+        else if (transientRate <= _transientFailureRateThreshold / 2.0)
         {
-            // Healthy cycle — >50% success
+            // Healthy cycle — well below backoff threshold
             _consecutiveHealthyCycles++;
             _consecutiveCleanCycles = 0;
 
@@ -285,7 +285,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
         }
         else
         {
-            // Between threshold and 50% — neither healthy nor backing off
+            // Between backoff threshold and recovery threshold — hold steady
             _consecutiveHealthyCycles = 0;
             _consecutiveCleanCycles = 0;
         }

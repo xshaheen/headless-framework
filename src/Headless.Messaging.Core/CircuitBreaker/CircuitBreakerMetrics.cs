@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
 namespace Headless.Messaging.CircuitBreaker;
@@ -33,16 +34,15 @@ internal sealed class CircuitBreakerMetrics : IDisposable
     /// <summary>Records a circuit trip (Closed → Open or HalfOpen → Open).</summary>
     public void RecordTrip(string groupName)
     {
-        _circuitTrips.Add(1, new KeyValuePair<string, object?>("messaging.consumer.group", groupName));
+        var tags = new TagList { { "messaging.consumer.group", groupName } };
+        _circuitTrips.Add(1, tags);
     }
 
     /// <summary>Records how long the circuit was open before transitioning to HalfOpen or Closed.</summary>
     public void RecordOpenDuration(string groupName, double durationMs)
     {
-        _openDuration.Record(
-            durationMs / 1000.0,
-            new KeyValuePair<string, object?>("messaging.consumer.group", groupName)
-        );
+        var tags = new TagList { { "messaging.consumer.group", groupName } };
+        _openDuration.Record(durationMs / 1000.0, tags);
     }
 
     public void Dispose()

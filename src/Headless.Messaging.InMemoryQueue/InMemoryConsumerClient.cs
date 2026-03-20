@@ -16,7 +16,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     private readonly BlockingCollection<TransportMessage> _messageQueue = new();
     private readonly SemaphoreSlim _semaphore;
     private readonly ManualResetEventSlim _pauseGate = new(true);
-    private volatile bool _paused;
+    private int _paused; // 0 = running, 1 = paused
 
     /// <summary>
     /// Initializes a new instance of the InMemoryConsumerClient class.
@@ -123,10 +123,9 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <inheritdoc />
     public ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (!_paused)
+        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
             _pauseGate.Reset();
-            _paused = true;
         }
 
         return ValueTask.CompletedTask;
@@ -135,10 +134,9 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <inheritdoc />
     public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (_paused)
+        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
         {
             _pauseGate.Set();
-            _paused = false;
         }
 
         return ValueTask.CompletedTask;
