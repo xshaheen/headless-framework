@@ -23,7 +23,7 @@ internal sealed class NatsConsumerClient(
         options.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ManualResetEventSlim _pauseGate = new(true);
-    private volatile bool _paused;
+    private int _paused; // 0 = running, 1 = paused
     private IConnection? _consumerClient;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -299,10 +299,9 @@ internal sealed class NatsConsumerClient(
 
     public ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (!_paused)
+        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
             _pauseGate.Reset();
-            _paused = true;
         }
 
         return ValueTask.CompletedTask;
@@ -310,10 +309,9 @@ internal sealed class NatsConsumerClient(
 
     public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (_paused)
+        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
         {
             _pauseGate.Set();
-            _paused = false;
         }
 
         return ValueTask.CompletedTask;

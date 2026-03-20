@@ -181,7 +181,6 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             {
                 Cts = groupCts,
                 Clients = [],
-                OriginalConcurrency = _options.ConsumerThreadCount,
                 GroupName = groupName,
             };
 
@@ -481,7 +480,6 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
         public required CancellationTokenSource Cts { get; set; }
         public required List<IConsumerClient> Clients { get; init; }
-        public required int OriginalConcurrency { get; init; }
         public required string GroupName { get; init; }
         public List<Task> ConsumerTasks { get; init; } = [];
 
