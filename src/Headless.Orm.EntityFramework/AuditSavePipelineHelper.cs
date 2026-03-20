@@ -21,7 +21,7 @@ internal static class AuditSavePipelineHelper
     /// </summary>
     public static IReadOnlyList<AuditLogEntryData>? CaptureAuditEntries(DbContext context, ILogger? logger)
     {
-        var auditCapture = context.GetService<IAuditChangeCapture>();
+        var auditCapture = _GetServiceOrDefault<IAuditChangeCapture>(context);
 
         if (auditCapture is null)
             return null;
@@ -55,7 +55,7 @@ internal static class AuditSavePipelineHelper
     /// </summary>
     public static void PrepareForRetry(DbContext context)
     {
-        var store = context.GetService<IAuditLogStore>();
+        var store = _GetServiceOrDefault<IAuditLogStore>(context);
         store?.PrepareForRetry(context);
     }
 
@@ -65,7 +65,7 @@ internal static class AuditSavePipelineHelper
     /// </summary>
     public static void ResolveEntityIds(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
     {
-        if (context.GetService<IAuditChangeCapture>() is IAuditEntityIdResolver resolver)
+        if (_GetServiceOrDefault<IAuditChangeCapture>(context) is IAuditEntityIdResolver resolver)
             resolver.ResolveEntityIds(entries);
     }
 
@@ -74,7 +74,7 @@ internal static class AuditSavePipelineHelper
     /// </summary>
     public static void SaveAuditEntries(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
     {
-        var store = context.GetService<IAuditLogStore>();
+        var store = _GetServiceOrDefault<IAuditLogStore>(context);
         store?.Save(entries, context);
     }
 
@@ -87,9 +87,29 @@ internal static class AuditSavePipelineHelper
         CancellationToken cancellationToken
     )
     {
-        var store = context.GetService<IAuditLogStore>();
+        var store = _GetServiceOrDefault<IAuditLogStore>(context);
 
         if (store is not null)
             await store.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves a service from the DbContext's service provider, returning <c>null</c> when
+    /// not registered. EF Core's <c>GetService&lt;T&gt;</c> extension calls
+    /// <c>GetRequiredService</c> and throws <see cref="InvalidOperationException"/> when
+    /// a service is missing; this helper catches that so contexts without audit registration
+    /// (e.g. no <c>AddAuditLogEntityFramework</c>) work without error.
+    /// </summary>
+    private static T? _GetServiceOrDefault<T>(DbContext context)
+        where T : class
+    {
+        try
+        {
+            return context.GetService<T>();
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 }
