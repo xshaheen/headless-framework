@@ -14,6 +14,7 @@ Provides standardized interfaces for building reliable distributed messaging sys
 - **Direct Publishing**: `IDirectPublisher` for fire-and-forget, low-latency message delivery
 - **Runtime Subscriptions**: `IRuntimeSubscriber` for ephemeral broker-attached delegates with scoped DI
 - **Per-Dispatch Lifecycle Hooks**: `IConsumerLifecycle` runs around each scoped message delivery
+- **Transport Pause/Resume**: `IConsumerClient.PauseAsync`/`ResumeAsync` default interface methods for backpressure
 - **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
 
 ## Installation
@@ -125,6 +126,23 @@ public sealed class ProjectionWarmup(IRuntimeSubscriber subscriber)
 - cleanup exceptions are suppressed so they do not mask the original message failure
 
 Use it for per-delivery setup and teardown. Do not rely on it for application-wide startup state.
+
+## Transport Pause/Resume
+
+`IConsumerClient` exposes `PauseAsync` and `ResumeAsync` as default interface methods (DIM), enabling transport-level backpressure without breaking existing implementations.
+
+**Key characteristics:**
+- **Idempotent**: Calling `PauseAsync` on an already-paused client or `ResumeAsync` on a running client is a no-op
+- **Backward compatible**: The default implementation returns `ValueTask.CompletedTask`, so existing custom transports compile without changes
+- **In-flight safe**: Messages currently being processed are allowed to complete; no new messages are pulled after `PauseAsync` returns
+
+All 8 built-in transports implement these methods:
+- **RabbitMQ**: `BasicCancelAsync` / re-subscribe
+- **Kafka**: `consumer.Pause` / `consumer.Resume` on assigned partitions
+- **Azure Service Bus**: `StopProcessingAsync` / `StartProcessingAsync`
+- **Others** (AWS SQS, NATS, Pulsar, Redis Streams, InMemoryQueue): `ManualResetEventSlim` gate
+
+The circuit breaker in `Headless.Messaging.Core` uses these methods to pause consumption when a consumer group enters the Open state.
 
 ## Configuration
 
