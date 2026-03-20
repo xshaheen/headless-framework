@@ -103,6 +103,139 @@ consumer.ReceivedMessages.Should().ContainSingle(m => m.OrderId == "ORD-1");
 - `ReceivedMessages` — projected payloads from `ReceivedContexts`
 - `Clear()` — resets captured state (thread-safe)
 
+## xUnit Integration
+
+The harness is standalone — it creates its own `ServiceProvider` per instance — so it works with any test runner. Below are recommended patterns for xUnit v3.
+
+### Per-Test Harness (Recommended)
+
+Create a fresh harness in each test for full isolation. Extend `TestBase` to get `AbortToken` and logging:
+
+```csharp
+public sealed class OrderMessagingTests : TestBase
+{
+    [Fact]
+    public async Task Should_consume_order_created_event()
+    {
+        await using var harness = await MessagingTestHarness.CreateAsync(services =>
+        {
+            services.AddHeadlessMessaging(options =>
+            {
+                options.UseInMemoryMessageQueue();
+                options.UseInMemoryStorage();
+                options.Subscribe<OrderCreatedConsumer>("orders.created");
+            });
+        });
+
+        await harness.Publisher.PublishAsync(new OrderCreated("ORD-1"), AbortToken);
+        var recorded = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(5), AbortToken);
+
+        recorded.Message.Should().BeOfType<OrderCreated>()
+            .Which.OrderId.Should().Be("ORD-1");
+    }
+}
+```
+
+### Shared Fixture (When Harness Setup Is Expensive)
+
+If many tests share the same consumer topology, use `IClassFixture` with `IAsyncLifetime` to create the harness once per class:
+
+```csharp
+public sealed class OrderHarnessFixture : IAsyncLifetime
+{
+    public MessagingTestHarness Harness { get; private set; } = null!;
+
+    public async ValueTask InitializeAsync()
+    {
+        Harness = await MessagingTestHarness.CreateAsync(services =>
+        {
+            services.AddSingleton<TestConsumer<OrderCreated>>();
+            services.AddHeadlessMessaging(options =>
+            {
+                options.UseInMemoryMessageQueue();
+                options.UseInMemoryStorage();
+                options.Subscribe<TestConsumer<OrderCreated>>("orders.created");
+            });
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await Harness.DisposeAsync();
+    }
+}
+
+public sealed class OrderMessagingTests(OrderHarnessFixture fixture)
+    : TestBase, IClassFixture<OrderHarnessFixture>
+{
+    [Fact]
+    public async Task Should_consume_order_created_event()
+    {
+        var consumer = fixture.Harness.GetTestConsumer<OrderCreated>();
+        consumer.Clear(); // Reset between tests
+
+        await fixture.Harness.Publisher.PublishAsync(new OrderCreated("ORD-1"), AbortToken);
+        await fixture.Harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(5), AbortToken);
+
+        consumer.ReceivedMessages.Should().ContainSingle(m => m.OrderId == "ORD-1");
+    }
+}
+```
+
+> **Note:** When sharing a harness across tests, use `TestConsumer<T>.Clear()` and check `WaitFor*` with predicates to avoid cross-test interference.
+
+### Testing Alongside a Web Application
+
+The harness owns its own DI container, separate from the application host. When testing an API endpoint that publishes messages, run the harness and the web application side by side:
+
+```csharp
+public sealed class OrderApiMessagingTests : TestBase
+{
+    [Fact]
+    public async Task Post_order_should_publish_event()
+    {
+        // Standalone harness for observing messages
+        await using var harness = await MessagingTestHarness.CreateAsync(services =>
+        {
+            services.AddSingleton<TestConsumer<OrderCreated>>();
+            services.AddHeadlessMessaging(options =>
+            {
+                options.UseInMemoryMessageQueue();
+                options.UseInMemoryStorage();
+                options.Subscribe<TestConsumer<OrderCreated>>("orders.created");
+            });
+        });
+
+        // Web application configured with the same in-memory transport
+        var builder = WebApplication.CreateBuilder(
+            new WebApplicationOptions { EnvironmentName = "Test" });
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        // Register your API services, controllers, etc.
+        builder.Services.AddHeadlessMessaging(options =>
+        {
+            options.UseInMemoryMessageQueue();
+            options.UseInMemoryStorage();
+        });
+        await using var app = builder.Build();
+        // ... configure middleware ...
+        await app.StartAsync(AbortToken);
+
+        using var client = new HttpClient
+        {
+            BaseAddress = new Uri(app.Urls.Single()),
+        };
+
+        // When — call the API endpoint
+        await client.PostAsJsonAsync("/orders", new { Id = "ORD-1" }, AbortToken);
+
+        // Then — the harness observes the published event
+        await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(5), AbortToken);
+    }
+}
+```
+
+> **Important:** The harness and the web application use **separate** in-memory transports. They do not share a message broker. This pattern verifies that consumers handle published messages correctly in isolation, not that the API and consumer share a transport.
+
 ## Isolation
 
 Each `MessagingTestHarness` instance creates its own `ServiceProvider` and `MessageObservationStore`. Tests running in parallel with separate harness instances do not share state. Always dispose the harness after each test:
