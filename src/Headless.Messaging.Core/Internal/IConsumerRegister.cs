@@ -493,6 +493,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
         public async ValueTask DisposeAsync()
         {
+            await Cts.CancelAsync();
             Cts.Dispose();
 
             foreach (var client in Clients)

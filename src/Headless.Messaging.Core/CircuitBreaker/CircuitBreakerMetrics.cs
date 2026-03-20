@@ -9,27 +9,22 @@ namespace Headless.Messaging.CircuitBreaker;
 /// OpenTelemetry-compatible metrics for the circuit breaker, emitted via the shared
 /// <c>Headless.Messaging</c> meter so existing OTel subscriptions pick them up automatically.
 /// </summary>
-internal sealed class CircuitBreakerMetrics : IDisposable
+internal sealed class CircuitBreakerMetrics(IMeterFactory meterFactory)
 {
-    private readonly Meter _meter;
-    private readonly Counter<long> _circuitTrips;
-    private readonly Histogram<double> _openDuration;
-
-    public CircuitBreakerMetrics()
-    {
-        _meter = new Meter("Headless.Messaging", "1.0.0");
-
-        _circuitTrips = _meter.CreateCounter<long>(
+    private readonly Counter<long> _circuitTrips = meterFactory
+        .Create("Headless.Messaging")
+        .CreateCounter<long>(
             "messaging.circuit_breaker.trips",
             description: "Number of times a consumer group circuit breaker transitioned to Open"
         );
 
-        _openDuration = _meter.CreateHistogram<double>(
+    private readonly Histogram<double> _openDuration = meterFactory
+        .Create("Headless.Messaging")
+        .CreateHistogram<double>(
             "messaging.circuit_breaker.open_duration",
             unit: "s",
             description: "Duration in seconds that a consumer group circuit was in Open state"
         );
-    }
 
     /// <summary>Records a circuit trip (Closed → Open or HalfOpen → Open).</summary>
     public void RecordTrip(string groupName)
@@ -43,10 +38,5 @@ internal sealed class CircuitBreakerMetrics : IDisposable
     {
         var tags = new TagList { { "messaging.consumer.group", groupName } };
         _openDuration.Record(durationMs / 1000.0, tags);
-    }
-
-    public void Dispose()
-    {
-        _meter.Dispose();
     }
 }

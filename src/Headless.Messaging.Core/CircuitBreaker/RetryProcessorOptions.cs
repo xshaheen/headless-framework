@@ -16,12 +16,12 @@ public sealed class RetryProcessorOptions
     public bool AdaptivePolling { get; set; } = true;
 
     /// <summary>
-    /// Gets or sets the maximum polling interval in seconds when adaptive polling is enabled.
+    /// Gets or sets the maximum polling interval when adaptive polling is enabled.
     /// The processor will not wait longer than this value between retry cycles, regardless of
-    /// the observed failure rate. Must be greater than zero.
-    /// Default is 900 seconds (15 minutes).
+    /// the observed failure rate. Must be greater than <see cref="TimeSpan.Zero"/>.
+    /// Default is 15 minutes.
     /// </summary>
-    public int MaxPollingInterval { get; set; } = 900;
+    public TimeSpan MaxPollingInterval { get; set; } = TimeSpan.FromMinutes(15);
 
     /// <summary>
     /// Gets or sets the transient failure rate above which the retry processor will back off.

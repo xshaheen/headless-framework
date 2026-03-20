@@ -49,7 +49,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     private static (MessageNeedToRetryProcessor Sut, IDispatcher Dispatcher, ICircuitBreakerStateManager Cb) _Create(
         int failedRetryInterval = 60,
         bool adaptivePolling = true,
-        int maxPollingInterval = 900,
+        int maxPollingIntervalSeconds = 900,
         double transientFailureRateThreshold = 0.8
     )
     {
@@ -60,7 +60,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var options = new MessagingOptions { FailedRetryInterval = failedRetryInterval };
         options.RetryProcessor.AdaptivePolling = adaptivePolling;
-        options.RetryProcessor.MaxPollingInterval = maxPollingInterval;
+        options.RetryProcessor.MaxPollingInterval = TimeSpan.FromSeconds(maxPollingIntervalSeconds);
         options.RetryProcessor.TransientFailureRateThreshold = transientFailureRateThreshold;
 
         var services = new ServiceCollection();
@@ -292,7 +292,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Arrange — maxPollingInterval=2s, base=1s, all messages skipped → high transient rate
         var (sut, dispatcher, cb) = _Create(
             failedRetryInterval: 1,
-            maxPollingInterval: 2,
+            maxPollingIntervalSeconds: 2,
             transientFailureRateThreshold: 0.5
         );
         cb.IsOpen("open-group").Returns(true);
@@ -323,7 +323,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Arrange — first elevate interval via high transient rate, then 2 healthy cycles
         var (sut, dispatcher, cb) = _Create(
             failedRetryInterval: 1,
-            maxPollingInterval: 60,
+            maxPollingIntervalSeconds: 60,
             transientFailureRateThreshold: 0.5
         );
 

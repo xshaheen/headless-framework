@@ -172,20 +172,20 @@ public sealed class RetryProcessorOptionsTests : TestBase
         var opts = new RetryProcessorOptions();
 
         opts.AdaptivePolling.Should().BeTrue();
-        opts.MaxPollingInterval.Should().Be(900);
+        opts.MaxPollingInterval.Should().Be(TimeSpan.FromMinutes(15));
         opts.TransientFailureRateThreshold.Should().Be(0.8);
     }
 
     [Fact]
     public void validator_rejects_max_polling_interval_of_zero()
     {
-        var opts = new RetryProcessorOptions { MaxPollingInterval = 0 };
+        var opts = new RetryProcessorOptions { MaxPollingInterval = TimeSpan.Zero };
         var validator = new RetryProcessorOptionsValidator();
 
         var result = validator.Validate(null, opts);
 
         result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*MaxPollingInterval*greater than 0*");
+        result.Failures.Should().ContainMatch("*MaxPollingInterval*greater than TimeSpan.Zero*");
     }
 
     [Fact]
@@ -217,7 +217,7 @@ public sealed class RetryProcessorOptionsTests : TestBase
     {
         var opts = new RetryProcessorOptions
         {
-            MaxPollingInterval = 60,
+            MaxPollingInterval = TimeSpan.FromSeconds(60),
             TransientFailureRateThreshold = 0.5,
         };
         var validator = new RetryProcessorOptionsValidator();

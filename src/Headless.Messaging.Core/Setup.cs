@@ -138,6 +138,7 @@ public static class Setup
         services.TryAddSingleton<IDispatcher, Dispatcher>();
 
         // Circuit breaker
+        services.AddMetrics();
         services.TryAddSingleton(options.CircuitBreakerRegistry);
         services.TryAddSingleton<CircuitBreakerMetrics>();
         services.TryAddSingleton<ICircuitBreakerStateManager, CircuitBreakerStateManager>();
