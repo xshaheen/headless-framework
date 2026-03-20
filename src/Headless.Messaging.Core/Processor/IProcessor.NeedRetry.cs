@@ -54,7 +54,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
 
         var retryProcessorOptions = options.Value.RetryProcessor;
         _adaptivePolling = retryProcessorOptions.AdaptivePolling;
-        _maxInterval = TimeSpan.FromSeconds(retryProcessorOptions.MaxPollingInterval);
+        _maxInterval = retryProcessorOptions.MaxPollingInterval;
         _transientFailureRateThreshold = retryProcessorOptions.TransientFailureRateThreshold;
 
         _instance = (

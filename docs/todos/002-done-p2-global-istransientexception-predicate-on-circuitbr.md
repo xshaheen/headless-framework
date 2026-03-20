@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p2
 issue_id: "002"
 tags: ["code-review","messaging","circuit-breaker","dotnet"]
@@ -54,3 +54,9 @@ PR #194 review. Depends on P1 todo for per-consumer overrides to get the full pi
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-20 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

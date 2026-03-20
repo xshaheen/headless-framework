@@ -10,9 +10,9 @@ internal sealed class RetryProcessorOptionsValidator : IValidateOptions<RetryPro
     {
         var failures = new List<string>();
 
-        if (options.MaxPollingInterval <= 0)
+        if (options.MaxPollingInterval <= TimeSpan.Zero)
         {
-            failures.Add($"{nameof(RetryProcessorOptions.MaxPollingInterval)} must be greater than 0.");
+            failures.Add($"{nameof(RetryProcessorOptions.MaxPollingInterval)} must be greater than TimeSpan.Zero.");
         }
 
         if (options.TransientFailureRateThreshold is <= 0 or >= 1)
