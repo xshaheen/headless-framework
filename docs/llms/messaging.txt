@@ -155,12 +155,7 @@ public sealed class MetricsService(IDirectPublisher publisher)
 
 ## Transport Pause/Resume
 
-`IConsumerClient` exposes `PauseAsync` and `ResumeAsync` as default interface methods (DIM). All 8 transports implement them:
-
-- **RabbitMQ**: `BasicCancelAsync` / re-subscribe
-- **Kafka**: `consumer.Pause` / `consumer.Resume` on assigned partitions
-- **Azure Service Bus**: `StopProcessingAsync` / `StartProcessingAsync`
-- **Others** (AWS SQS, NATS, Pulsar, Redis Streams, InMemoryQueue): `ManualResetEventSlim` gate
+`IConsumerClient` exposes `PauseAsync` and `ResumeAsync` as default interface methods (DIM). All transport providers implement them.
 
 Both methods are idempotent — calling `PauseAsync` on an already-paused client or `ResumeAsync` on a running client is a no-op. In-flight messages are allowed to complete; no new messages are pulled after `PauseAsync` returns.
 
