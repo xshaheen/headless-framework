@@ -289,12 +289,10 @@ internal sealed class CircuitBreakerStateManager(
                 {
                     await resumeCallback().ConfigureAwait(false);
                 }
-#pragma warning disable ERP022 // Intentional: callback failures must not crash the timer thread
-                catch
+                catch (Exception ex)
                 {
-                    // Swallow — callers are responsible for handling errors in their own callbacks
+                    logger.LogError(ex, "Resume callback failed for group {Group} during HalfOpen transition", groupName);
                 }
-#pragma warning restore ERP022
             });
         }
     }
