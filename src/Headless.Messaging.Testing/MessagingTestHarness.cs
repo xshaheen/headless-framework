@@ -34,13 +34,15 @@ namespace Headless.Messaging.Testing;
 /// </remarks>
 public sealed class MessagingTestHarness : IAsyncDisposable
 {
-    private readonly ServiceProvider _sp;
+    private readonly IServiceProvider _sp;
     private readonly MessageObservationStore _store;
+    private readonly bool _ownsSp;
 
-    private MessagingTestHarness(ServiceProvider sp, MessageObservationStore store)
+    private MessagingTestHarness(IServiceProvider sp, MessageObservationStore store, bool ownsSp)
     {
         _sp = sp;
         _store = store;
+        _ownsSp = ownsSp;
     }
 
     // -------------------------------------------------------------------------
@@ -100,7 +102,39 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         var bootstrapper = sp.GetRequiredService<IBootstrapper>();
         await bootstrapper.BootstrapAsync(cancellationToken).ConfigureAwait(false);
 
-        return new MessagingTestHarness(sp, store);
+        return new MessagingTestHarness(sp, store, ownsSp: true);
+    }
+
+    // -------------------------------------------------------------------------
+    // DI registration (for hosted scenarios — WebApplicationFactory, IHost, etc.)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Registers the messaging test harness recording infrastructure into an existing
+    /// <see cref="IServiceCollection"/>. Called by the
+    /// <see cref="ServiceCollectionExtensions.AddMessagingTestHarness"/> extension method.
+    /// </summary>
+    internal static void ConfigureServices(IServiceCollection services)
+    {
+        _EnsureInMemoryInfrastructure(services);
+
+        // Disable parallelism for deterministic single-threaded test execution
+        services.Configure<MessagingOptions>(opt =>
+        {
+            opt.EnablePublishParallelSend = false;
+            opt.EnableSubscriberParallelExecute = false;
+        });
+
+        var store = new MessageObservationStore();
+        services.AddSingleton(store);
+
+        _DecorateTransport(services, store);
+        _DecoratePipeline(services, store);
+
+        services.TryAddSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IDirectPublisher>());
+
+        // Register the harness itself — does NOT own the ServiceProvider.
+        services.AddSingleton(sp => new MessagingTestHarness(sp, store, ownsSp: false));
     }
 
     // -------------------------------------------------------------------------
@@ -200,6 +234,13 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
+        if (!_ownsSp)
+        {
+            // The host owns the ServiceProvider — nothing to dispose here.
+            // The host's disposal will clean up the bootstrapper and DI container.
+            return;
+        }
+
         // Cancel the bootstrapper first — its registered callback stops all processing servers.
         // Directly calling DisposeAsync on processors before the bootstrapper cancels its CTS
         // causes a race where the CTS cancel-callback fires on an already-disposed processor CTS.
@@ -216,7 +257,10 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         }
 
         // Dispose the DI container — remaining singletons are released here.
-        await _sp.DisposeAsync().ConfigureAwait(false);
+        if (_sp is IAsyncDisposable asyncDisposable)
+        {
+            await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     // -------------------------------------------------------------------------
