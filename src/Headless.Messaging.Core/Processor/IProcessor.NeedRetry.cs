@@ -28,7 +28,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
     private readonly string _instance;
     private readonly ICircuitBreakerStateManager? _circuitBreakerStateManager;
     private readonly bool _adaptivePolling;
-    private readonly double _transientFailureRateThreshold;
+    private readonly double _circuitOpenRateThreshold;
     private Task? _failedRetryConsumeTask;
     private TimeSpan _currentInterval;
     private int _consecutiveHealthyCycles;
@@ -55,7 +55,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
         var retryProcessorOptions = options.Value.RetryProcessor;
         _adaptivePolling = retryProcessorOptions.AdaptivePolling;
         _maxInterval = retryProcessorOptions.MaxPollingInterval;
-        _transientFailureRateThreshold = retryProcessorOptions.TransientFailureRateThreshold;
+        _circuitOpenRateThreshold = retryProcessorOptions.CircuitOpenRateThreshold;
 
         _instance = (
             (FormattableString)$"{Helper.GetInstanceHostname()}_{SnowflakeIdLongIdGenerator.GenerateWorkerId()}"
@@ -251,9 +251,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
 
         var transientRate = (double)skippedCircuitOpen / total;
 
-        if (transientRate > _transientFailureRateThreshold)
+        if (transientRate > _circuitOpenRateThreshold)
         {
-            // High failure rate — back off
+            // High circuit-open rate — back off
             _consecutiveHealthyCycles = 0;
             _consecutiveCleanCycles = 0;
 
@@ -261,12 +261,12 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
             _currentInterval = doubled < _maxInterval ? doubled : _maxInterval;
 
             _logger.LogDebug(
-                "Adaptive polling: transient rate {Rate:P0} exceeds threshold, interval increased to {Interval}",
+                "Adaptive polling: circuit-open rate {Rate:P0} exceeds threshold, interval increased to {Interval}",
                 transientRate,
                 _currentInterval
             );
         }
-        else if (transientRate <= _transientFailureRateThreshold / 2.0)
+        else if (transientRate <= _circuitOpenRateThreshold / 2.0)
         {
             // Healthy cycle — well below backoff threshold
             _consecutiveHealthyCycles++;

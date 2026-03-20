@@ -24,11 +24,11 @@ public sealed class RetryProcessorOptions
     public TimeSpan MaxPollingInterval { get; set; } = TimeSpan.FromMinutes(15);
 
     /// <summary>
-    /// Gets or sets the transient failure rate above which the retry processor will back off.
-    /// Expressed as a fraction between 0 (exclusive) and 1 (exclusive). When the observed
-    /// transient failure rate exceeds this threshold, the processor slows its polling to reduce
-    /// amplification of an unhealthy dependency.
+    /// Gets or sets the circuit-open rate above which the retry processor will back off.
+    /// Expressed as a fraction between 0 (exclusive) and 1 (exclusive). When the proportion
+    /// of messages skipped due to open circuits exceeds this threshold, the processor slows
+    /// its polling to reduce amplification of an unhealthy dependency.
     /// Default is 0.8 (80%).
     /// </summary>
-    public double TransientFailureRateThreshold { get; set; } = 0.8;
+    public double CircuitOpenRateThreshold { get; set; } = 0.8;
 }

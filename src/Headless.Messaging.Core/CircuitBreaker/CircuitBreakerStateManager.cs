@@ -129,7 +129,7 @@ internal sealed class CircuitBreakerStateManager(
             return false;
         }
 
-        // No lock needed — reading a single enum field (int-aligned) is atomic on all .NET platforms
+        // No lock needed — State property uses Volatile.Read for cross-thread visibility
         return state.State is CircuitBreakerState.Open or CircuitBreakerState.HalfOpen;
     }
 
@@ -141,7 +141,7 @@ internal sealed class CircuitBreakerStateManager(
             return CircuitBreakerState.Closed;
         }
 
-        // No lock needed — reading a single enum field (int-aligned) is atomic on all .NET platforms
+        // No lock needed — State property uses Volatile.Read for cross-thread visibility
         return state.State;
     }
 
@@ -312,7 +312,17 @@ internal sealed class CircuitBreakerStateManager(
 
     private sealed class GroupCircuitState
     {
-        public CircuitBreakerState State { get; set; } = CircuitBreakerState.Closed;
+        private int _state = (int)CircuitBreakerState.Closed;
+
+        /// <summary>
+        /// Current circuit state. Uses <see cref="Volatile"/> read/write to ensure
+        /// cross-thread visibility on weakly-ordered architectures (e.g. ARM64).
+        /// </summary>
+        public CircuitBreakerState State
+        {
+            get => (CircuitBreakerState)Volatile.Read(ref _state);
+            set => Volatile.Write(ref _state, (int)value);
+        }
         public int ConsecutiveFailures { get; set; }
 
         /// <summary>

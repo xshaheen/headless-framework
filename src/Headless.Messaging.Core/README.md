@@ -18,7 +18,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Extension System**: Pluggable storage and transport providers
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
 - **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
-- **Adaptive Retry Backpressure**: Retry processor backs off polling when transient failure rate exceeds threshold
+- **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
 
 ## Installation
 
@@ -229,7 +229,7 @@ builder.Services.AddHeadlessMessaging(options =>
     // Adaptive retry backpressure
     options.RetryProcessor.AdaptivePolling = true;
     options.RetryProcessor.MaxPollingInterval = 900;                   // seconds (15 min cap)
-    options.RetryProcessor.TransientFailureRateThreshold = 0.8;        // back off above 80% failure rate
+    options.RetryProcessor.CircuitOpenRateThreshold = 0.8;              // back off above 80% circuit-open rate
 });
 ```
 
