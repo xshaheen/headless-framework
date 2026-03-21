@@ -49,6 +49,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private BrokerAddress _serverAddress;
     private CancellationToken _hostStoppingToken;
     private CancellationTokenSource _stoppingCts = new();
+    private CancellationTokenRegistration _stoppingCtsRegistration;
     private IDataStorage _storage = null!;
 
     public bool IsHealthy()
@@ -60,7 +61,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     {
         _hostStoppingToken = stoppingToken;
         _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        _stoppingCts.Token.Register(Dispose);
+        _stoppingCtsRegistration = _stoppingCts.Token.Register(Dispose);
 
         _selector = serviceProvider.GetRequiredService<MethodMatcherCache>();
         _dispatcher = serviceProvider.GetRequiredService<IDispatcher>();
@@ -81,7 +82,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             await PulseAsync();
 
             _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(_hostStoppingToken);
-            _stoppingCts.Token.Register(Dispose);
+            _stoppingCtsRegistration = _stoppingCts.Token.Register(Dispose);
             _isHealthy = true;
 
             await ExecuteAsync();
@@ -154,6 +155,11 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         }
 
         _groupHandles.Clear();
+
+        // Dispose the token registration before disposing the CTS to prevent
+        // accumulated Dispose callbacks across successive ReStartAsync calls.
+        // CTS.Dispose alone does not deregister Token.Register callbacks.
+        await _stoppingCtsRegistration.DisposeAsync();
         _stoppingCts.Dispose();
     }
 

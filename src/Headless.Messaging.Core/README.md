@@ -277,7 +277,7 @@ var isOpen = monitor.IsOpen("payments");
 var state = monitor.GetState("payments"); // Closed, Open, or HalfOpen
 
 // Manual recovery (operator/agent action)
-await monitor.ResetAsync("payments", cancellationToken);
+var wasReset = await monitor.ResetAsync("payments", cancellationToken); // true if reset performed
 ```
 
 ### Cluster Scope Limitation
