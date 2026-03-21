@@ -130,9 +130,10 @@ internal sealed class CircuitBreakerStateManager(
                     break;
 
                 default:
-                    if (!isTransient)
+                    if (!isTransient || state.State is not CircuitBreakerState.Closed)
                     {
                         // Non-transient failure in Closed/Open state: ignore — not a signal for the breaker.
+                        // Also ignore transient failures in Open state — consecutive failures are not tracked there.
                         break;
                     }
 

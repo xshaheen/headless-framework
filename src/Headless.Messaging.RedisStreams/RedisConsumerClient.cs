@@ -9,7 +9,7 @@ using StackExchange.Redis;
 
 namespace Headless.Messaging.RedisStreams;
 
-internal class RedisConsumerClient(
+internal sealed class RedisConsumerClient(
     string groupId,
     byte groupConcurrent,
     IRedisStreamManager redis,
