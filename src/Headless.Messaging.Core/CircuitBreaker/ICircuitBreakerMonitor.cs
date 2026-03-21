@@ -27,6 +27,13 @@ public interface ICircuitBreakerMonitor
     IReadOnlyList<KeyValuePair<string, CircuitBreakerState>> GetAllStates();
 
     /// <summary>
+    /// Gets a rich snapshot of the circuit breaker state for a consumer group.
+    /// </summary>
+    /// <param name="groupName">The consumer group name.</param>
+    /// <returns>The snapshot, or <see langword="null"/> if the group has not been accessed.</returns>
+    CircuitBreakerSnapshot? GetSnapshot(string groupName);
+
+    /// <summary>
     /// Returns the set of consumer group names registered via
     /// <see cref="ICircuitBreakerStateManager.RegisterKnownGroups"/>, or <see langword="null"/>
     /// if <c>RegisterKnownGroups</c> was not called. Useful for agents and health-check

@@ -311,6 +311,38 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
+    public CircuitBreakerSnapshot? GetSnapshot(string groupName)
+    {
+        if (!_groups.TryGetValue(groupName, out var state))
+        {
+            return null;
+        }
+
+        var groupLock = state.SyncLock;
+
+        lock (groupLock)
+        {
+            TimeSpan? remaining = null;
+
+            if (state.State is CircuitBreakerState.Open && state.OpenedAt > 0)
+            {
+                var openDuration = _GetOpenDuration(state);
+                var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - state.OpenedAt);
+                var diff = openDuration - elapsed;
+                remaining = diff > TimeSpan.Zero ? diff : TimeSpan.Zero;
+            }
+
+            return new CircuitBreakerSnapshot
+            {
+                State = state.State,
+                EscalationLevel = state.EscalationLevel,
+                OpenedAt = state.OpenedAtUtc,
+                EstimatedRemainingOpenDuration = remaining,
+            };
+        }
+    }
+
+    /// <inheritdoc />
     public async ValueTask<bool> ResetAsync(string groupName, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(groupName);
@@ -341,6 +373,7 @@ internal sealed class CircuitBreakerStateManager(
             state.SuccessfulCyclesAfterClose = 0;
             state.ProbeAcquired = false;
             state.OpenedAt = 0;
+            state.OpenedAtUtc = null;
             timerToDispose = state.OpenTimer;
             state.OpenTimer = null;
 
@@ -462,6 +495,7 @@ internal sealed class CircuitBreakerStateManager(
         var previousState = state.State;
         state.State = CircuitBreakerState.Open;
         state.OpenedAt = Environment.TickCount64;
+        state.OpenedAtUtc = DateTimeOffset.UtcNow;
         state.SuccessfulCyclesAfterClose = 0;
 
         state.EscalationLevel = Math.Min(state.EscalationLevel + 1, 63);
@@ -545,6 +579,7 @@ internal sealed class CircuitBreakerStateManager(
         {
             openDuration = TimeSpan.FromMilliseconds(Environment.TickCount64 - state.OpenedAt);
             state.OpenedAt = 0;
+            state.OpenedAtUtc = null;
         }
 
         if (probeSucceeded)
@@ -787,6 +822,12 @@ internal sealed class CircuitBreakerStateManager(
         /// Tick count when the circuit was opened, for duration tracking. 0 = not open.
         /// </summary>
         public long OpenedAt { get; set; }
+
+        /// <summary>
+        /// Wall-clock timestamp when the circuit entered the Open state, for snapshot reporting.
+        /// <see langword="null"/> when not open.
+        /// </summary>
+        public DateTimeOffset? OpenedAtUtc { get; set; }
 
         public Func<ValueTask>? OnPause { get; set; }
         public Func<ValueTask>? OnResume { get; set; }
