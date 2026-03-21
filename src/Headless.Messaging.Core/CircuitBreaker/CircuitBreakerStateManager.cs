@@ -568,7 +568,9 @@ internal sealed class CircuitBreakerStateManager(
                 }
             }).ContinueWith(
                 t => logger.LogError(t.Exception, "Unhandled exception in HalfOpen transition for group {Group}", groupName),
-                TaskContinuationOptions.OnlyOnFaulted
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default
             );
         }
     }
