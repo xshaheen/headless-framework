@@ -293,12 +293,9 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public IEnumerable<KeyValuePair<string, CircuitBreakerState>> GetAllStates()
+    public IReadOnlyList<KeyValuePair<string, CircuitBreakerState>> GetAllStates()
     {
-        foreach (var (group, state) in _groups)
-        {
-            yield return new KeyValuePair<string, CircuitBreakerState>(group, state.State);
-        }
+        return _groups.Select(kvp => new KeyValuePair<string, CircuitBreakerState>(kvp.Key, kvp.Value.State)).ToList();
     }
 
     /// <inheritdoc />
