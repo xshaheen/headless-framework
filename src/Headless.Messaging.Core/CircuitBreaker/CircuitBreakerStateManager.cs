@@ -24,6 +24,8 @@ internal sealed class CircuitBreakerStateManager(
     private readonly ConcurrentDictionary<string, GroupCircuitState> _groups =
         new(StringComparer.Ordinal);
 
+    private int _disposed;
+
     /// <summary>
     /// Known consumer group names registered at startup. When populated, <see cref="_GetOrAddState"/>
     /// returns a static no-op state for unrecognized names to prevent unbounded OTel cardinality.
@@ -323,10 +325,22 @@ internal sealed class CircuitBreakerStateManager(
     /// </summary>
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
         foreach (var state in _groups.Values)
         {
-            state.OpenTimer?.Dispose();
-            state.OpenTimer = null;
+            var groupLock = state.SyncLock;
+
+            lock (groupLock)
+            {
+                state.OnPause = null;
+                state.OnResume = null;
+                state.OpenTimer?.Dispose();
+                state.OpenTimer = null;
+            }
         }
     }
 
@@ -453,6 +467,11 @@ internal sealed class CircuitBreakerStateManager(
 
     private void _OnOpenTimerElapsed(object? timerState)
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
         var groupName = (string)timerState!;
 
         if (!_groups.TryGetValue(groupName, out var state))
