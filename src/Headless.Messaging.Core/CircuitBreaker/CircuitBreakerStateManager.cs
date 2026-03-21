@@ -437,7 +437,7 @@ internal sealed class CircuitBreakerStateManager(
         state.OpenedAt = Environment.TickCount64;
         state.SuccessfulCyclesAfterClose = 0;
 
-        state.EscalationLevel++;
+        state.EscalationLevel = Math.Min(state.EscalationLevel + 1, 63);
         var openDuration = _GetOpenDuration(state);
 
         // Increment generation before creating the new timer so that any in-flight callback
@@ -605,7 +605,7 @@ internal sealed class CircuitBreakerStateManager(
                 int escalation;
                 lock (groupLock)
                 {
-                    state.EscalationLevel++;
+                    state.EscalationLevel = Math.Min(state.EscalationLevel + 1, 63);
                     escalation = state.EscalationLevel;
                 }
 
