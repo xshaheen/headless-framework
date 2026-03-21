@@ -61,7 +61,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     {
         _hostStoppingToken = stoppingToken;
         _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        _stoppingCtsRegistration = _stoppingCts.Token.Register(Dispose);
+        _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
 
         _selector = serviceProvider.GetRequiredService<MethodMatcherCache>();
         _dispatcher = serviceProvider.GetRequiredService<IDispatcher>();
@@ -82,7 +82,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             await PulseAsync();
 
             _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(_hostStoppingToken);
-            _stoppingCtsRegistration = _stoppingCts.Token.Register(Dispose);
+            _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
             _isHealthy = true;
 
             await ExecuteAsync();
@@ -91,10 +91,26 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
     public void Dispose()
     {
-        if (Interlocked.CompareExchange(ref _disposed, 1, 0) == 1)
+        // Forward to DisposeAsync so synchronous callers still get real cleanup.
+        _OnCancellationRequested();
+    }
+
+    /// <summary>
+    /// Callback for <see cref="CancellationToken.Register(Action)"/>. Fires <see cref="DisposeAsync"/>
+    /// on the thread-pool because the registration callback is synchronous and must not block.
+    /// </summary>
+    private void _OnCancellationRequested()
+    {
+        _ = Task.Run(async () =>
         {
-            return;
-        }
+            try
+            {
+                await DisposeAsync();
+            }
+#pragma warning disable ERP022 // Best-effort teardown — nothing useful to do with the exception
+            catch { }
+#pragma warning restore ERP022
+        });
     }
 
     public async ValueTask DisposeAsync()

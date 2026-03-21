@@ -226,7 +226,7 @@ internal sealed class AmazonSqsConsumerClient(
                 lock (_connectionLock)
                 {
 #pragma warning disable CA1508 // Justification: other thread can initialize it
-                    if (_sqsClient == null)
+                    if (_snsClient == null)
 #pragma warning restore CA1508
                     {
                         _snsClient = AwsClientFactory.CreateSnsClient(_amazonSqsOptions);

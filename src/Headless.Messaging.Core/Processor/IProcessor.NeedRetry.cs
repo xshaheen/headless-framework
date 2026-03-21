@@ -280,8 +280,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             _consecutiveHealthyCycles = 0;
             _consecutiveCleanCycles = 0;
 
-            var doubled = current <= _maxInterval.Ticks / 2 ? current * 2 : _maxInterval.Ticks;
-            var newTicks = doubled < _maxInterval.Ticks ? doubled : _maxInterval.Ticks;
+            var newTicks = current <= _maxInterval.Ticks / 2 ? current * 2 : _maxInterval.Ticks;
             Interlocked.Exchange(ref _currentIntervalTicks, newTicks);
 
             _logger.LogDebug(

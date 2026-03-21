@@ -26,8 +26,29 @@ internal sealed class ConsumerCircuitBreakerRegistry
     /// <exception cref="InvalidOperationException">
     /// Thrown when a circuit breaker override for <paramref name="groupName"/> is already registered.
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="options"/> contains invalid values.
+    /// </exception>
     internal void Register(string groupName, ConsumerCircuitBreakerOptions options)
     {
+        if (options.FailureThreshold is not null && options.FailureThreshold <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options.FailureThreshold),
+                options.FailureThreshold,
+                "FailureThreshold must be greater than 0 when set."
+            );
+        }
+
+        if (options.OpenDuration is not null && options.OpenDuration <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options.OpenDuration),
+                options.OpenDuration,
+                "OpenDuration must be greater than TimeSpan.Zero when set."
+            );
+        }
+
         if (!_options.TryAdd(groupName, options))
         {
             throw new InvalidOperationException(

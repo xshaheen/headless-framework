@@ -78,14 +78,17 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
             var selector = _provider.GetRequiredService<MethodMatcherCache>();
             if (!selector.TryGetTopicExecutor(message.Origin.GetName(), message.Origin.GetGroup()!, out descriptor))
             {
+                var safeName = _SanitizeHeader(message.Origin.GetName());
+                var safeGroup = _SanitizeHeader(message.Origin.GetGroup());
+
                 _logger.LogError(
                     "Message (Name:{GetName},Group:{GetGroup}) can not be found subscriber. Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.",
-                    message.Origin.GetName(),
-                    message.Origin.GetGroup()
+                    safeName,
+                    safeGroup
                 );
 
                 var exception = new SubscriberNotFoundException(
-                    $"Message (Name:{message.Origin.GetName()},Group:{message.Origin.GetGroup()}) can not be found subscriber."
+                    $"Message (Name:{safeName},Group:{safeGroup}) can not be found subscriber."
                         + $"{Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches."
                 );
 
@@ -160,7 +163,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         {
             _logger.ConsumerExecuteFailed(
                 ex,
-                message.Origin.GetName(),
+                _SanitizeHeader(message.Origin.GetName()) ?? "",
                 message.DbId,
                 message.Origin.GetExecutionInstanceId()
             );
@@ -311,6 +314,49 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
 
             e.ReThrow();
         }
+    }
+
+    /// <summary>
+    /// Sanitizes a broker message header value to prevent log injection.
+    /// Strips control characters and Unicode bidi overrides (U+202A-U+202E, U+2066-U+2069).
+    /// Returns null if input is null.
+    /// </summary>
+    private static string? _SanitizeHeader(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        var needsSanitization = false;
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (char.IsControl(c) || c is (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069'))
+            {
+                needsSanitization = true;
+                break;
+            }
+        }
+
+        if (!needsSanitization)
+        {
+            return value;
+        }
+
+        var buffer = new char[value.Length];
+        var pos = 0;
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (!char.IsControl(c) && c is not ((>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069')))
+            {
+                buffer[pos++] = c;
+            }
+        }
+
+        return new string(buffer, 0, pos);
     }
 
     #region tracing
