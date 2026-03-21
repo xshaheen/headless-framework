@@ -148,4 +148,58 @@ public sealed class AzureServiceBusConsumerClientTests
         // then
         await act.Should().NotThrowAsync();
     }
+
+    // -------------------------------------------------------------------------
+    // PauseAsync / ResumeAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PauseAsync_is_noop_when_processor_is_null()
+    {
+        // given — no ConnectAsync called, processor is null
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+
+        // when
+        await client.PauseAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_is_idempotent_when_called_twice()
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+
+        // when
+        await client.PauseAsync();
+        await client.PauseAsync();
+
+        // then — no exception, second call is no-op
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_when_not_paused()
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+
+        // when
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
 }
