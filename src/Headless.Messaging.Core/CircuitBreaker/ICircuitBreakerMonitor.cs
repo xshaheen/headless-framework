@@ -21,11 +21,10 @@ public interface ICircuitBreakerMonitor
     CircuitBreakerState? GetState(string groupName);
 
     /// <summary>
-    /// Returns an enumeration of current circuit breaker states for all tracked consumer groups.
-    /// The enumeration is lazy and allocation-free; callers should iterate it immediately
-    /// and not hold a reference across async boundaries.
+    /// Returns a snapshot of current circuit breaker states for all tracked consumer groups.
+    /// The returned list is materialized at call time and safe to hold across async boundaries.
     /// </summary>
-    IEnumerable<KeyValuePair<string, CircuitBreakerState>> GetAllStates();
+    IReadOnlyList<KeyValuePair<string, CircuitBreakerState>> GetAllStates();
 
     /// <summary>
     /// Force-resets the circuit for the specified consumer group to <see cref="CircuitBreakerState.Closed"/>,
