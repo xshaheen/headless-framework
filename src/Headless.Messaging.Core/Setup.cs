@@ -10,9 +10,7 @@ using Headless.Messaging.Processor;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
-using FluentValidation;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -200,17 +198,21 @@ public static class Setup
             }
         });
 
-        // Validate eagerly via FluentValidation — throws at startup rather than on first access
-        new CircuitBreakerOptionsValidator().ValidateAndThrow(options.CircuitBreaker);
-        new RetryProcessorOptionsValidator().ValidateAndThrow(options.RetryProcessor);
-
-        // Register circuit breaker and retry processor options as direct IOptions wrappers
-        services.TryAddSingleton<IOptions<CircuitBreakerOptions>>(
-            _ => Microsoft.Extensions.Options.Options.Create(options.CircuitBreaker)
-        );
-        services.TryAddSingleton<IOptions<RetryProcessorOptions>>(
-            _ => Microsoft.Extensions.Options.Options.Create(options.RetryProcessor)
-        );
+        // Register and validate circuit breaker and retry processor options via DI pipeline
+        services.Configure<CircuitBreakerOptions, CircuitBreakerOptionsValidator>(cb =>
+        {
+            cb.FailureThreshold = options.CircuitBreaker.FailureThreshold;
+            cb.OpenDuration = options.CircuitBreaker.OpenDuration;
+            cb.MaxOpenDuration = options.CircuitBreaker.MaxOpenDuration;
+            cb.SuccessfulCyclesToResetEscalation = options.CircuitBreaker.SuccessfulCyclesToResetEscalation;
+            cb.IsTransientException = options.CircuitBreaker.IsTransientException;
+        });
+        services.Configure<RetryProcessorOptions, RetryProcessorOptionsValidator>(rp =>
+        {
+            rp.AdaptivePolling = options.RetryProcessor.AdaptivePolling;
+            rp.MaxPollingInterval = options.RetryProcessor.MaxPollingInterval;
+            rp.CircuitOpenRateThreshold = options.RetryProcessor.CircuitOpenRateThreshold;
+        });
 
         //Startup and Hosted
         services.TryAddSingleton<Bootstrapper>();
