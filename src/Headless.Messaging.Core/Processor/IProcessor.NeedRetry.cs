@@ -75,6 +75,15 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     /// <inheritdoc />
     public bool IsBackedOff => Interlocked.Read(ref _currentIntervalTicks) > _baseInterval.Ticks;
 
+    /// <inheritdoc />
+    public ValueTask ResetBackpressureAsync(CancellationToken ct = default)
+    {
+        Interlocked.Exchange(ref _currentIntervalTicks, _baseInterval.Ticks);
+        _consecutiveHealthyCycles = 0;
+        _consecutiveCleanCycles = 0;
+        return ValueTask.CompletedTask;
+    }
+
     public async Task ProcessAsync(ProcessingContext context)
     {
         Argument.IsNotNull(context);

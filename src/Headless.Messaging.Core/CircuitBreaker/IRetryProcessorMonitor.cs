@@ -13,4 +13,11 @@ public interface IRetryProcessorMonitor
 
     /// <summary>Whether the retry processor has backed off from its base interval.</summary>
     bool IsBackedOff { get; }
+
+    /// <summary>
+    /// Resets the adaptive polling interval to the base value and clears all cycle counters.
+    /// This is the operator/agent manual recovery path for retry backpressure.
+    /// </summary>
+    /// <param name="ct">Optional cancellation token.</param>
+    ValueTask ResetBackpressureAsync(CancellationToken ct = default);
 }
