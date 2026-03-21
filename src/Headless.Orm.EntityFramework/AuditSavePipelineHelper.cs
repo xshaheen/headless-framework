@@ -21,15 +21,15 @@ internal static class AuditSavePipelineHelper
     /// </summary>
     public static IReadOnlyList<AuditLogEntryData>? CaptureAuditEntries(DbContext context, ILogger? logger)
     {
-        var auditCapture = _GetServiceOrDefault<IAuditChangeCapture>(context);
+        var auditCapture = _GetServiceOrNull<IAuditChangeCapture>(context);
 
         if (auditCapture is null)
             return null;
 
-        var currentUser = context.GetService<ICurrentUser>();
-        var currentTenant = context.GetService<ICurrentTenant>();
-        var correlationIdProvider = context.GetService<ICorrelationIdProvider>();
-        var clock = context.GetService<IClock>();
+        var currentUser = _GetServiceOrNull<ICurrentUser>(context);
+        var currentTenant = _GetServiceOrNull<ICurrentTenant>(context);
+        var correlationIdProvider = _GetServiceOrNull<ICorrelationIdProvider>(context);
+        var clock = _GetServiceOrNull<IClock>(context);
         var timestamp = clock?.UtcNow ?? DateTimeOffset.UtcNow;
 
         try
@@ -55,7 +55,7 @@ internal static class AuditSavePipelineHelper
     /// </summary>
     public static void PrepareForRetry(DbContext context)
     {
-        var store = _GetServiceOrDefault<IAuditLogStore>(context);
+        var store = _GetServiceOrNull<IAuditLogStore>(context);
         store?.PrepareForRetry(context);
     }
 
@@ -65,7 +65,7 @@ internal static class AuditSavePipelineHelper
     /// </summary>
     public static void ResolveEntityIds(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
     {
-        if (_GetServiceOrDefault<IAuditChangeCapture>(context) is IAuditEntityIdResolver resolver)
+        if (_GetServiceOrNull<IAuditChangeCapture>(context) is IAuditEntityIdResolver resolver)
             resolver.ResolveEntityIds(entries);
     }
 
@@ -74,7 +74,7 @@ internal static class AuditSavePipelineHelper
     /// </summary>
     public static void SaveAuditEntries(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
     {
-        var store = _GetServiceOrDefault<IAuditLogStore>(context);
+        var store = _GetServiceOrNull<IAuditLogStore>(context);
         store?.Save(entries, context);
     }
 
@@ -87,29 +87,33 @@ internal static class AuditSavePipelineHelper
         CancellationToken cancellationToken
     )
     {
-        var store = _GetServiceOrDefault<IAuditLogStore>(context);
+        var store = _GetServiceOrNull<IAuditLogStore>(context);
 
         if (store is not null)
             await store.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Resolves a service from the DbContext's service provider, returning <c>null</c> when
-    /// not registered. EF Core's <c>GetService&lt;T&gt;</c> extension calls
-    /// <c>GetRequiredService</c> and throws <see cref="InvalidOperationException"/> when
-    /// a service is missing; this helper catches that so contexts without audit registration
-    /// (e.g. no <c>AddAuditLogEntityFramework</c>) work without error.
+    /// Resolves a service from the DbContext's service provider, returning <c>null</c> when not
+    /// registered. Mirrors EF Core's internal resolution strategy (internal provider first, then
+    /// application provider via <c>CoreOptionsExtension.ApplicationServiceProvider</c>) but uses
+    /// the non-throwing <see cref="IServiceProvider.GetService"/> instead of
+    /// <c>GetRequiredService</c>.
     /// </summary>
-    private static T? _GetServiceOrDefault<T>(DbContext context)
+    private static T? _GetServiceOrNull<T>(DbContext context)
         where T : class
     {
-        try
-        {
-            return context.GetService<T>();
-        }
-        catch (InvalidOperationException)
-        {
-            return null;
-        }
+        var internalProvider = ((IInfrastructure<IServiceProvider>)context).Instance;
+
+        if (internalProvider.GetService(typeof(T)) is T service)
+            return service;
+
+        // Fall back to the application service provider (same as EF Core's internal
+        // InfrastructureExtensions.GetService does before throwing).
+        var appProvider = internalProvider.GetService(typeof(IDbContextOptions)) is IDbContextOptions options
+            ? options.FindExtension<CoreOptionsExtension>()?.ApplicationServiceProvider
+            : null;
+
+        return (T?)appProvider?.GetService(typeof(T));
     }
 }

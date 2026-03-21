@@ -3,7 +3,9 @@
 using System.Data;
 using Headless.Orm.EntityFramework.ChangeTrackers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Orm.EntityFramework.Contexts;
 
@@ -13,6 +15,8 @@ public abstract class HeadlessDbContext : DbContext
 
     private readonly IHeadlessEntityModelProcessor _entityProcessor;
     private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
+
+    private ILogger? _AuditLogger => field ??= this.GetService<ILoggerFactory>()?.CreateLogger(GetType());
 
     internal string? TenantId => _entityProcessor.TenantId;
 
@@ -41,9 +45,10 @@ public abstract class HeadlessDbContext : DbContext
                 this,
                 _entityProcessor,
                 _navigationModifiedTracker.RemoveModifiedEntityEntries,
-                PublishMessagesAsync,
-                PublishMessagesAsync,
+                (emitters, tx, ct) => PublishMessagesAsync(emitters, tx, ct),
+                (emitters, tx, ct) => PublishMessagesAsync(emitters, tx, ct),
                 _BaseSaveChangesAsync,
+                _AuditLogger,
                 acceptAllChangesOnSuccess,
                 cancellationToken
             )
@@ -56,9 +61,10 @@ public abstract class HeadlessDbContext : DbContext
             this,
             _entityProcessor,
             _navigationModifiedTracker.RemoveModifiedEntityEntries,
-            PublishMessages,
-            PublishMessages,
+            (emitters, tx) => PublishMessages(emitters, tx),
+            (emitters, tx) => PublishMessages(emitters, tx),
             _BaseSaveChanges,
+            _AuditLogger,
             acceptAllChangesOnSuccess
         );
     }

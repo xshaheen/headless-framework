@@ -9,6 +9,20 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Orm.EntityFramework.Contexts;
 
+/// <summary>
+/// Shared save pipeline runner used by both <c>HeadlessDbContext</c> and
+/// <c>HeadlessIdentityDbContext</c>. Centralizes entity processing, audit capture,
+/// message publishing, transaction management, and execution strategy retry logic.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Transaction behavior:</b> An explicit <c>ReadCommitted</c> transaction is started
+/// whenever audit entries are captured OR message emitters are present. This ensures audit
+/// entries are committed atomically with entity changes across all context types.
+/// Prior to this consolidation, <c>HeadlessIdentityDbContext</c> persisted audit entries
+/// outside an explicit transaction — the unified behavior is intentionally stricter.
+/// </para>
+/// </remarks>
 internal static class HeadlessSaveChangesRunner
 {
     public static async Task<int> ExecuteAsync(
@@ -18,12 +32,13 @@ internal static class HeadlessSaveChangesRunner
         Func<List<EmitterLocalMessages>, IDbContextTransaction, CancellationToken, Task> publishLocalAsync,
         Func<List<EmitterDistributedMessages>, IDbContextTransaction, CancellationToken, Task> publishDistributedAsync,
         Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
+        ILogger? auditLogger,
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken
     )
     {
         var report = entityProcessor.ProcessEntries(context);
-        var auditEntries = AuditSavePipelineHelper.CaptureAuditEntries(context, _GetAuditLogger(context));
+        var auditEntries = AuditSavePipelineHelper.CaptureAuditEntries(context, auditLogger);
 
         var state = new AsyncSaveState(
             context,
@@ -42,10 +57,7 @@ internal static class HeadlessSaveChangesRunner
             return await _ExecuteWithinCurrentTransactionAsync(state).ConfigureAwait(false);
         }
 
-        var requiresExplicitTransaction =
-            auditEntries is { Count: > 0 } || report.DistributedEmitters.Count > 0 || report.LocalEmitters.Count > 0;
-
-        if (!requiresExplicitTransaction)
+        if (!_RequiresExplicitTransaction(auditEntries, report))
         {
             var result = await baseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken).ConfigureAwait(false);
             _CompleteSuccessfulSave(report, cleanup);
@@ -68,12 +80,13 @@ internal static class HeadlessSaveChangesRunner
         Action<List<EmitterLocalMessages>, IDbContextTransaction> publishLocal,
         Action<List<EmitterDistributedMessages>, IDbContextTransaction> publishDistributed,
         Func<bool, int> baseSaveChanges,
+        ILogger? auditLogger,
         bool acceptAllChangesOnSuccess
     )
     {
 #pragma warning disable MA0045 // Sync SaveChanges intentionally wraps EF sync APIs.
         var report = entityProcessor.ProcessEntries(context);
-        var auditEntries = AuditSavePipelineHelper.CaptureAuditEntries(context, _GetAuditLogger(context));
+        var auditEntries = AuditSavePipelineHelper.CaptureAuditEntries(context, auditLogger);
 
         var state = new SaveState(
             context,
@@ -91,10 +104,7 @@ internal static class HeadlessSaveChangesRunner
             return _ExecuteWithinCurrentTransaction(state);
         }
 
-        var requiresExplicitTransaction =
-            auditEntries is { Count: > 0 } || report.DistributedEmitters.Count > 0 || report.LocalEmitters.Count > 0;
-
-        if (!requiresExplicitTransaction)
+        if (!_RequiresExplicitTransaction(auditEntries, report))
         {
             var result = baseSaveChanges(acceptAllChangesOnSuccess);
             _CompleteSuccessfulSave(report, cleanup);
@@ -109,9 +119,7 @@ internal static class HeadlessSaveChangesRunner
 
     private static async Task<int> _ExecuteWithinCurrentTransactionAsync(AsyncSaveState state)
     {
-        var currentTransaction =
-            state.Context.Database.CurrentTransaction
-            ?? throw new InvalidOperationException("Current transaction is required.");
+        var currentTransaction = state.Context.Database.CurrentTransaction!;
 
         if (state.Report.LocalEmitters.Count > 0)
         {
@@ -146,9 +154,7 @@ internal static class HeadlessSaveChangesRunner
 
     private static int _ExecuteWithinCurrentTransaction(SaveState state)
     {
-        var currentTransaction =
-            state.Context.Database.CurrentTransaction
-            ?? throw new InvalidOperationException("Current transaction is required.");
+        var currentTransaction = state.Context.Database.CurrentTransaction!;
 
         if (state.Report.LocalEmitters.Count > 0)
         {
@@ -266,10 +272,10 @@ internal static class HeadlessSaveChangesRunner
         baseSaveChanges(true);
     }
 
-    private static ILogger? _GetAuditLogger(DbContext context)
-    {
-        return context.GetService<ILoggerFactory>()?.CreateLogger(context.GetType());
-    }
+    private static bool _RequiresExplicitTransaction(
+        IReadOnlyList<AuditLogEntryData>? auditEntries,
+        ProcessBeforeSaveReport report
+    ) => auditEntries is { Count: > 0 } || report.DistributedEmitters.Count > 0 || report.LocalEmitters.Count > 0;
 
     private static void _CompleteSuccessfulSave(ProcessBeforeSaveReport report, Action cleanup)
     {
