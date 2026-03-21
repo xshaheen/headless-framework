@@ -56,12 +56,22 @@ internal sealed class EfReadAuditLog(DbContext dbContext) : IReadAuditLog
             query = query.Where(e => e.CreatedAt < to.Value);
         }
 
-        var entries = await query
-            .OrderByDescending(e => e.CreatedAt)
-            .ThenByDescending(e => e.Id)
-            .Take(limit)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        List<AuditLogEntry> entries;
+
+        if (dbContext.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+        {
+            entries = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
+            entries = [.. entries.OrderByDescending(e => e.CreatedAt).ThenByDescending(e => e.Id).Take(limit)];
+        }
+        else
+        {
+            entries = await query
+                .OrderByDescending(e => e.CreatedAt)
+                .ThenByDescending(e => e.Id)
+                .Take(limit)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         return entries.ConvertAll(e => new AuditLogEntryData
         {

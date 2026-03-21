@@ -97,6 +97,59 @@ public sealed class AuditLogIntegrationTests : TestBase
     }
 
     [Fact]
+    public async Task read_audit_log_query_orders_newest_entries_first_when_timestamps_match()
+    {
+        // given
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+        var readAuditLog = scope.ServiceProvider.GetRequiredService<IReadAuditLog>();
+
+        db.Orders.Add(
+            new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "First",
+                Email = "first@example.com",
+                Amount = 10m,
+            }
+        );
+        await db.SaveChangesAsync(AbortToken);
+
+        db.Orders.Add(
+            new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Second",
+                Email = "second@example.com",
+                Amount = 20m,
+            }
+        );
+        await db.SaveChangesAsync(AbortToken);
+
+        // when
+        var entries = await readAuditLog.QueryAsync(
+            action: AuditActionNames.Created,
+            entityType: typeof(Order).FullName,
+            limit: 2,
+            cancellationToken: AbortToken
+        );
+
+        // then
+        entries.Should().HaveCount(2);
+        entries[0]
+            .NewValues!["CustomerName"]
+            .Should()
+            .BeOfType<JsonElement>()
+            .Subject.GetString()
+            .Should()
+            .Be("Second");
+        entries[1].NewValues!["CustomerName"].Should().BeOfType<JsonElement>().Subject.GetString().Should().Be("First");
+    }
+
+    [Fact]
     public async Task updated_entity_round_trip()
     {
         // given
