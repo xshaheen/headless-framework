@@ -17,6 +17,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     private readonly SemaphoreSlim _semaphore;
     private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
     private int _paused; // 0 = running, 1 = paused
+    private int _disposed;
 
     /// <summary>
     /// Initializes a new instance of the InMemoryConsumerClient class.
@@ -123,6 +124,8 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <inheritdoc />
     public ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
+
         if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
             _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -148,6 +151,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <returns>A value task representing the disposal</returns>
     public ValueTask DisposeAsync()
     {
+        Interlocked.Exchange(ref _disposed, 1);
         _pauseGate.TrySetResult(true);
         _semaphore.Dispose();
         _messageQueue.Dispose();
