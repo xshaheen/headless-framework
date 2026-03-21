@@ -1,12 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using Headless.Orm.EntityFramework.ChangeTrackers;
 using Headless.Orm.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -34,7 +32,7 @@ public abstract class HeadlessIdentityDbContext<
     private readonly IHeadlessEntityModelProcessor _entityProcessor;
     private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
 
-    private ILogger? _AuditLogger => field ??= this.GetService<ILoggerFactory>()?.CreateLogger(GetType());
+    private ILogger? AuditLogger => field ??= this.GetServiceOrDefault<ILoggerFactory>()?.CreateLogger(GetType());
 
     public abstract string DefaultSchema { get; }
 
@@ -62,11 +60,11 @@ public abstract class HeadlessIdentityDbContext<
             .ExecuteAsync(
                 this,
                 _entityProcessor,
-                _navigationModifiedTracker.RemoveModifiedEntityEntries,
-                (emitters, tx, ct) => PublishMessagesAsync(emitters, tx, ct),
-                (emitters, tx, ct) => PublishMessagesAsync(emitters, tx, ct),
+                _navigationModifiedTracker,
+                PublishMessagesAsync,
+                PublishMessagesAsync,
                 _BaseSaveChangesAsync,
-                _AuditLogger,
+                AuditLogger,
                 acceptAllChangesOnSuccess,
                 cancellationToken
             )
@@ -78,11 +76,11 @@ public abstract class HeadlessIdentityDbContext<
         return HeadlessSaveChangesRunner.Execute(
             this,
             _entityProcessor,
-            _navigationModifiedTracker.RemoveModifiedEntityEntries,
-            (emitters, tx) => PublishMessages(emitters, tx),
-            (emitters, tx) => PublishMessages(emitters, tx),
+            _navigationModifiedTracker,
+            PublishMessages,
+            PublishMessages,
             _BaseSaveChanges,
-            _AuditLogger,
+            AuditLogger,
             acceptAllChangesOnSuccess
         );
     }
@@ -151,218 +149,6 @@ public abstract class HeadlessIdentityDbContext<
         List<EmitterLocalMessages> emitters,
         IDbContextTransaction currentTransaction
     );
-
-    #endregion
-
-    #region Execute Transaction
-
-    public Task ExecuteTransactionAsync(
-        Func<Task<bool>> operation,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var state = (Operation: operation, Isolation: isolation, Context: this);
-
-        return Database
-            .CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    await using var transaction = await state.Context.Database.BeginTransactionAsync(
-                        state.Isolation,
-                        ct
-                    );
-
-                    bool commit;
-
-                    try
-                    {
-                        commit = await state.Operation();
-
-                        if (commit)
-                        {
-                            await state.Context.SaveChangesAsync(ct).ConfigureAwait(false);
-                        }
-                    }
-                    catch
-                    {
-                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
-
-                        throw;
-                    }
-
-                    if (commit)
-                    {
-                        await transaction.CommitAsync(ct).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
-                    }
-                },
-                cancellationToken
-            );
-    }
-
-    public Task ExecuteTransactionAsync<TArg>(
-        Func<TArg, Task<bool>> operation,
-        TArg arg,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: this);
-
-        return Database
-            .CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    await using var transaction = await state.Context.Database.BeginTransactionAsync(
-                        state.Isolation,
-                        ct
-                    );
-
-                    bool commit;
-
-                    try
-                    {
-                        commit = await state.Operation(state.Arg);
-
-                        if (commit)
-                        {
-                            await state.Context.SaveChangesAsync(ct).ConfigureAwait(false);
-                        }
-                    }
-                    catch
-                    {
-                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
-
-                        throw;
-                    }
-
-                    if (commit)
-                    {
-                        await transaction.CommitAsync(ct).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
-                    }
-                },
-                cancellationToken
-            );
-    }
-
-    public Task<TResult?> ExecuteTransactionAsync<TResult>(
-        Func<Task<(bool, TResult?)>> operation,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var state = (Operation: operation, Isolation: isolation, Context: this);
-
-        return Database
-            .CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    await using var transaction = await state.Context.Database.BeginTransactionAsync(
-                        state.Isolation,
-                        ct
-                    );
-
-                    TResult? result;
-                    bool commit;
-
-                    try
-                    {
-                        (commit, result) = await state.Operation();
-
-                        if (commit)
-                        {
-                            await state.Context.SaveChangesAsync(ct).ConfigureAwait(false);
-                        }
-                    }
-                    catch
-                    {
-                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
-
-                        throw;
-                    }
-
-                    if (commit)
-                    {
-                        await transaction.CommitAsync(ct).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
-                    }
-
-                    return result;
-                },
-                cancellationToken
-            );
-    }
-
-    public Task<TResult?> ExecuteTransactionAsync<TResult, TArg>(
-        Func<TArg, Task<(bool, TResult?)>> operation,
-        TArg arg,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: this);
-
-        return Database
-            .CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async (state, ct) =>
-                {
-                    await using var transaction = await state.Context.Database.BeginTransactionAsync(
-                        state.Isolation,
-                        ct
-                    );
-
-                    TResult? result;
-                    bool commit;
-
-                    try
-                    {
-                        (commit, result) = await state.Operation(state.Arg);
-
-                        if (commit)
-                        {
-                            await state.Context.SaveChangesAsync(ct).ConfigureAwait(false);
-                        }
-                    }
-                    catch
-                    {
-                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
-
-                        throw;
-                    }
-
-                    if (commit)
-                    {
-                        await transaction.CommitAsync(ct).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
-                    }
-
-                    return result;
-                },
-                cancellationToken
-            );
-    }
 
     #endregion
 

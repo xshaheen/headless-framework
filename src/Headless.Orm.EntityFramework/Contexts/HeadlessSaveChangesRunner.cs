@@ -1,9 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using Headless.Abstractions;
 using Headless.AuditLog;
+using Headless.Orm.EntityFramework.ChangeTrackers;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -28,7 +29,7 @@ internal static class HeadlessSaveChangesRunner
     public static async Task<int> ExecuteAsync(
         DbContext context,
         IHeadlessEntityModelProcessor entityProcessor,
-        Action cleanup,
+        HeadlessEntityFrameworkNavigationModifiedTracker navigationTracker,
         Func<List<EmitterLocalMessages>, IDbContextTransaction, CancellationToken, Task> publishLocalAsync,
         Func<List<EmitterDistributedMessages>, IDbContextTransaction, CancellationToken, Task> publishDistributedAsync,
         Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
@@ -38,7 +39,7 @@ internal static class HeadlessSaveChangesRunner
     )
     {
         var report = entityProcessor.ProcessEntries(context);
-        var auditEntries = AuditSavePipelineHelper.CaptureAuditEntries(context, auditLogger);
+        var auditEntries = _CaptureAuditEntries(context, auditLogger);
 
         var state = new AsyncSaveState(
             context,
@@ -48,7 +49,7 @@ internal static class HeadlessSaveChangesRunner
             publishLocalAsync,
             publishDistributedAsync,
             baseSaveChangesAsync,
-            cleanup,
+            navigationTracker,
             cancellationToken
         );
 
@@ -60,23 +61,20 @@ internal static class HeadlessSaveChangesRunner
         if (!_RequiresExplicitTransaction(auditEntries, report))
         {
             var result = await baseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken).ConfigureAwait(false);
-            _CompleteSuccessfulSave(report, cleanup);
+            _CompleteSuccessfulSave(report, navigationTracker);
             return result;
         }
 
         return await context
             .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                state,
-                static async saveState => await _ExecuteWithNewTransactionAsync(saveState).ConfigureAwait(false)
-            )
+            .ExecuteAsync(state, _ExecuteWithNewTransactionAsync)
             .ConfigureAwait(false);
     }
 
     public static int Execute(
         DbContext context,
         IHeadlessEntityModelProcessor entityProcessor,
-        Action cleanup,
+        HeadlessEntityFrameworkNavigationModifiedTracker navigationTracker,
         Action<List<EmitterLocalMessages>, IDbContextTransaction> publishLocal,
         Action<List<EmitterDistributedMessages>, IDbContextTransaction> publishDistributed,
         Func<bool, int> baseSaveChanges,
@@ -86,7 +84,7 @@ internal static class HeadlessSaveChangesRunner
     {
 #pragma warning disable MA0045 // Sync SaveChanges intentionally wraps EF sync APIs.
         var report = entityProcessor.ProcessEntries(context);
-        var auditEntries = AuditSavePipelineHelper.CaptureAuditEntries(context, auditLogger);
+        var auditEntries = _CaptureAuditEntries(context, auditLogger);
 
         var state = new SaveState(
             context,
@@ -96,7 +94,7 @@ internal static class HeadlessSaveChangesRunner
             publishLocal,
             publishDistributed,
             baseSaveChanges,
-            cleanup
+            navigationTracker
         );
 
         if (context.Database.CurrentTransaction is not null)
@@ -107,13 +105,11 @@ internal static class HeadlessSaveChangesRunner
         if (!_RequiresExplicitTransaction(auditEntries, report))
         {
             var result = baseSaveChanges(acceptAllChangesOnSuccess);
-            _CompleteSuccessfulSave(report, cleanup);
+            _CompleteSuccessfulSave(report, navigationTracker);
             return result;
         }
 
-        return context
-            .Database.CreateExecutionStrategy()
-            .Execute(state, static saveState => _ExecuteWithNewTransaction(saveState));
+        return context.Database.CreateExecutionStrategy().Execute(state, _ExecuteWithNewTransaction);
 #pragma warning restore MA0045
     }
 
@@ -147,7 +143,7 @@ internal static class HeadlessSaveChangesRunner
                 .ConfigureAwait(false);
         }
 
-        _CompleteSuccessfulSave(state.Report, state.Cleanup);
+        _CompleteSuccessfulSave(state.Report, state.NavigationTracker);
 
         return result;
     }
@@ -169,14 +165,14 @@ internal static class HeadlessSaveChangesRunner
             state.PublishDistributed(state.Report.DistributedEmitters, currentTransaction);
         }
 
-        _CompleteSuccessfulSave(state.Report, state.Cleanup);
+        _CompleteSuccessfulSave(state.Report, state.NavigationTracker);
 
         return result;
     }
 
     private static async Task<int> _ExecuteWithNewTransactionAsync(AsyncSaveState state)
     {
-        AuditSavePipelineHelper.PrepareForRetry(state.Context);
+        _PrepareForRetry(state.Context);
 
         await using var transaction = await state
             .Context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, state.CancellationToken)
@@ -209,17 +205,18 @@ internal static class HeadlessSaveChangesRunner
         }
 
         await transaction.CommitAsync(state.CancellationToken).ConfigureAwait(false);
-        _CompleteSuccessfulSave(state.Report, state.Cleanup);
+
+        _CompleteSuccessfulSave(state.Report, state.NavigationTracker);
 
         return result;
     }
 
     private static int _ExecuteWithNewTransaction(SaveState state)
     {
-        AuditSavePipelineHelper.PrepareForRetry(state.Context);
+#pragma warning disable MA0045 // Sync intentionally
+        _PrepareForRetry(state.Context);
 
         using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
-
         if (state.Report.LocalEmitters.Count > 0)
         {
             state.PublishLocal(state.Report.LocalEmitters, transaction);
@@ -234,9 +231,58 @@ internal static class HeadlessSaveChangesRunner
         }
 
         transaction.Commit();
-        _CompleteSuccessfulSave(state.Report, state.Cleanup);
+        _CompleteSuccessfulSave(state.Report, state.NavigationTracker);
 
         return result;
+#pragma warning restore MA0045
+    }
+
+    #region Audit Helpers
+
+    /// <summary>
+    /// Captures audit entries from the change tracker before SaveChanges.
+    /// Returns <see langword="null"/> when audit capture is not registered or fails.
+    /// </summary>
+    private static IReadOnlyList<AuditLogEntryData>? _CaptureAuditEntries(DbContext context, ILogger? logger)
+    {
+        var auditCapture = context.GetServiceOrDefault<IAuditChangeCapture>();
+
+        if (auditCapture is null)
+        {
+            return null;
+        }
+
+        var currentUser = context.GetServiceOrDefault<ICurrentUser>();
+        var currentTenant = context.GetServiceOrDefault<ICurrentTenant>();
+        var correlationIdProvider = context.GetServiceOrDefault<ICorrelationIdProvider>();
+        var clock = context.GetServiceOrDefault<IClock>();
+        var timestamp = clock?.UtcNow ?? DateTimeOffset.UtcNow;
+
+        try
+        {
+            return auditCapture.CaptureChanges(
+                context.ChangeTracker.Entries(),
+                currentUser?.UserId?.ToString(),
+                currentUser?.AccountId?.ToString(),
+                currentTenant?.Id,
+                correlationIdProvider?.CorrelationId,
+                timestamp
+            );
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "Audit change capture failed. Continuing with entity save.");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Detaches stale audit entries from a prior failed attempt before an execution strategy retry.
+    /// </summary>
+    private static void _PrepareForRetry(DbContext context)
+    {
+        var store = context.GetServiceOrDefault<IAuditLogStore>();
+        store?.PrepareForRetry(context);
     }
 
     private static async Task _ResolveAndPersistAuditAsync(
@@ -251,8 +297,8 @@ internal static class HeadlessSaveChangesRunner
             return;
         }
 
-        AuditSavePipelineHelper.ResolveEntityIds(context, entries);
-        await AuditSavePipelineHelper.SaveAuditEntriesAsync(context, entries, cancellationToken).ConfigureAwait(false);
+        _ResolveEntityIds(context, entries);
+        await _SaveAuditEntriesAsync(context, entries, cancellationToken).ConfigureAwait(false);
         await baseSaveChangesAsync(true, cancellationToken).ConfigureAwait(false);
     }
 
@@ -267,19 +313,62 @@ internal static class HeadlessSaveChangesRunner
             return;
         }
 
-        AuditSavePipelineHelper.ResolveEntityIds(context, entries);
-        AuditSavePipelineHelper.SaveAuditEntries(context, entries);
+        _ResolveEntityIds(context, entries);
+        _SaveAuditEntries(context, entries);
         baseSaveChanges(true);
     }
+
+    /// <summary>
+    /// Resolves deferred entity IDs on captured audit entries after entity SaveChanges
+    /// has assigned store-generated keys.
+    /// </summary>
+    private static void _ResolveEntityIds(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
+    {
+        if (context.GetServiceOrDefault<IAuditChangeCapture>() is IAuditEntityIdResolver resolver)
+        {
+            resolver.ResolveEntityIds(entries);
+        }
+    }
+
+    /// <summary>
+    /// Adds audit entries to the saving context for synchronous persist.
+    /// </summary>
+    private static void _SaveAuditEntries(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
+    {
+        var store = context.GetServiceOrDefault<IAuditLogStore>();
+        store?.Save(entries, context);
+    }
+
+    /// <summary>
+    /// Adds audit entries to the saving context for asynchronous persist.
+    /// </summary>
+    private static async Task _SaveAuditEntriesAsync(
+        DbContext context,
+        IReadOnlyList<AuditLogEntryData> entries,
+        CancellationToken cancellationToken
+    )
+    {
+        var store = context.GetServiceOrDefault<IAuditLogStore>();
+
+        if (store is not null)
+        {
+            await store.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    #endregion
 
     private static bool _RequiresExplicitTransaction(
         IReadOnlyList<AuditLogEntryData>? auditEntries,
         ProcessBeforeSaveReport report
     ) => auditEntries is { Count: > 0 } || report.DistributedEmitters.Count > 0 || report.LocalEmitters.Count > 0;
 
-    private static void _CompleteSuccessfulSave(ProcessBeforeSaveReport report, Action cleanup)
+    private static void _CompleteSuccessfulSave(
+        ProcessBeforeSaveReport report,
+        HeadlessEntityFrameworkNavigationModifiedTracker navigationTracker
+    )
     {
-        cleanup();
+        navigationTracker.RemoveModifiedEntityEntries();
         report.ClearEmitterMessages();
     }
 
@@ -291,7 +380,7 @@ internal static class HeadlessSaveChangesRunner
         Func<List<EmitterLocalMessages>, IDbContextTransaction, CancellationToken, Task> PublishLocalAsync,
         Func<List<EmitterDistributedMessages>, IDbContextTransaction, CancellationToken, Task> PublishDistributedAsync,
         Func<bool, CancellationToken, Task<int>> BaseSaveChangesAsync,
-        Action Cleanup,
+        HeadlessEntityFrameworkNavigationModifiedTracker NavigationTracker,
         CancellationToken CancellationToken
     );
 
@@ -303,6 +392,6 @@ internal static class HeadlessSaveChangesRunner
         Action<List<EmitterLocalMessages>, IDbContextTransaction> PublishLocal,
         Action<List<EmitterDistributedMessages>, IDbContextTransaction> PublishDistributed,
         Func<bool, int> BaseSaveChanges,
-        Action Cleanup
+        HeadlessEntityFrameworkNavigationModifiedTracker NavigationTracker
     );
 }

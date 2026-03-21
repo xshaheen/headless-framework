@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using Headless.Orm.EntityFramework;
 using Headless.Orm.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
@@ -80,17 +79,5 @@ public sealed class TestIdentityDbContext(IHeadlessEntityModelProcessor entityPr
     {
         EmittedDistributedMessages.Clear();
         EmittedLocalMessages.Clear();
-    }
-
-    /// <summary>
-    /// Explicit implementation for IHarnessDbContext. The cancellation token is not used.
-    /// </summary>
-    Task IHarnessDbContext.ExecuteTransactionAsync(
-        Func<Task<bool>> operation,
-        IsolationLevel isolation,
-        CancellationToken cancellationToken
-    )
-    {
-        return ExecuteTransactionAsync(operation, isolation);
     }
 }
