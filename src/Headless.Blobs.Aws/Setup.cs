@@ -29,7 +29,7 @@ public static class AwsS3Setup
         Action<AwsBlobStorageOptions>? setupAction = null
     )
     {
-        var optionsBuilder = services.AddOptions<AwsBlobStorageOptions>();
+        var optionsBuilder = services.AddOptions<AwsBlobStorageOptions, AwsBlobStorageOptionsValidator>();
 
         if (setupAction is not null)
         {
