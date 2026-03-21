@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -318,6 +319,75 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         metadata.Topic.Should().Be("changed.topic");
         metadata.Group.Should().Be("group-2");
         metadata.Concurrency.Should().Be(7);
+    }
+
+    [Fact]
+    public void with_circuit_breaker_before_group_registers_with_final_group()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when — circuit breaker BEFORE group
+        services
+            .AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
+            .WithCircuitBreaker(cb => cb.FailureThreshold = 3)
+            .Group("my-group");
+
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+
+        // then — override is registered against the final group name
+        cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
+        opts!.FailureThreshold.Should().Be(3);
+    }
+
+    [Fact]
+    public void with_circuit_breaker_after_group_registers_with_final_group()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when — circuit breaker AFTER group
+        services
+            .AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
+            .Group("my-group")
+            .WithCircuitBreaker(cb => cb.FailureThreshold = 5);
+
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+
+        // then
+        cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
+        opts!.FailureThreshold.Should().Be(5);
+    }
+
+    [Fact]
+    public void with_circuit_breaker_no_longer_requires_group_first()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when — WithCircuitBreaker without Group() should not throw
+        var act = () => services
+            .AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
+            .WithCircuitBreaker(cb => cb.FailureThreshold = 3);
+
+        // then
+        act.Should().NotThrow();
     }
 }
 

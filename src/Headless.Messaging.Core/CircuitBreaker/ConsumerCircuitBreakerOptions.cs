@@ -14,26 +14,26 @@ public sealed class ConsumerCircuitBreakerOptions
     /// When <see langword="false"/>, the circuit breaker is bypassed entirely.
     /// Default is <see langword="true"/>.
     /// </summary>
-    public bool Enabled { get; init; } = true;
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
     /// Gets the number of consecutive transient failures required to open the circuit
     /// for this consumer. When <see langword="null"/>, the global
     /// <see cref="CircuitBreakerOptions.FailureThreshold"/> is used.
     /// </summary>
-    public int? FailureThreshold { get; init; }
+    public int? FailureThreshold { get; set; }
 
     /// <summary>
     /// Gets the initial duration the circuit stays open before transitioning to half-open
     /// for this consumer. When <see langword="null"/>, the global
     /// <see cref="CircuitBreakerOptions.OpenDuration"/> is used.
     /// </summary>
-    public TimeSpan? OpenDuration { get; init; }
+    public TimeSpan? OpenDuration { get; set; }
 
     /// <summary>
     /// Gets a predicate that determines whether an exception is transient for this consumer.
     /// When <see langword="null"/>, the global <see cref="CircuitBreakerOptions.IsTransientException"/>
     /// predicate is used.
     /// </summary>
-    public Func<Exception, bool>? IsTransientException { get; init; }
+    public Func<Exception, bool>? IsTransientException { get; set; }
 }

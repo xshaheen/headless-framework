@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.CircuitBreaker;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -460,6 +461,78 @@ public sealed class MessagingBuilderTests
         consumer.Topic.Should().Be("orders.placed");
         consumer.Concurrency.Should().Be(5);
         consumer.Group.Should().Be("order-service");
+    }
+
+    [Fact]
+    public void with_circuit_breaker_before_group_uses_final_group_name()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when — circuit breaker BEFORE group
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging
+                .Subscribe<TestOrderConsumer>()
+                .Topic("orders.placed")
+                .WithCircuitBreaker(cb => cb.FailureThreshold = 3)
+                .Group("my-group");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+
+        // then — override is registered against the final group name
+        cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
+        opts!.FailureThreshold.Should().Be(3);
+    }
+
+    [Fact]
+    public void with_circuit_breaker_after_group_uses_final_group_name()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when — circuit breaker AFTER group
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging
+                .Subscribe<TestOrderConsumer>()
+                .Topic("orders.placed")
+                .Group("my-group")
+                .WithCircuitBreaker(cb => cb.FailureThreshold = 5);
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+
+        // then
+        cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
+        opts!.FailureThreshold.Should().Be(5);
+    }
+
+    [Fact]
+    public void with_circuit_breaker_before_group_does_not_leave_stale_registration()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when — circuit breaker set, then group changes the group name
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging
+                .Subscribe<TestOrderConsumer>()
+                .Topic("orders.placed")
+                .WithCircuitBreaker(cb => cb.FailureThreshold = 3)
+                .Group("final-group");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+
+        // then — no stale default-group entry, only the final one
+        cbRegistry.TryGet("final-group", out var opts).Should().BeTrue();
+        opts!.FailureThreshold.Should().Be(3);
     }
 }
 

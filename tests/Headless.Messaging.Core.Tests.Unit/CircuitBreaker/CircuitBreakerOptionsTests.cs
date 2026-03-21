@@ -259,16 +259,32 @@ public sealed class ConsumerCircuitBreakerRegistryTests : TestBase
     }
 
     [Fact]
-    public void register_overwrites_previous_entry_for_same_group()
+    public void register_throws_when_group_already_registered()
+    {
+        var registry = new ConsumerCircuitBreakerRegistry();
+        registry.Register("my-group", new ConsumerCircuitBreakerOptions { FailureThreshold = 3 });
+
+        var act = () =>
+            registry.Register("my-group", new ConsumerCircuitBreakerOptions { FailureThreshold = 7 });
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*circuit breaker override for group 'my-group'*already registered*");
+    }
+
+    [Fact]
+    public void register_allows_different_groups()
     {
         var registry = new ConsumerCircuitBreakerRegistry();
 
-        registry.Register("my-group", new ConsumerCircuitBreakerOptions { FailureThreshold = 3 });
-        registry.Register("my-group", new ConsumerCircuitBreakerOptions { FailureThreshold = 7 });
+        registry.Register("group-a", new ConsumerCircuitBreakerOptions { FailureThreshold = 3 });
+        registry.Register("group-b", new ConsumerCircuitBreakerOptions { FailureThreshold = 7 });
 
-        registry.TryGet("my-group", out var retrieved);
+        registry.TryGet("group-a", out var a);
+        registry.TryGet("group-b", out var b);
 
-        retrieved!.FailureThreshold.Should().Be(7);
+        a!.FailureThreshold.Should().Be(3);
+        b!.FailureThreshold.Should().Be(7);
     }
 
     // -------------------------------------------------------------------------
