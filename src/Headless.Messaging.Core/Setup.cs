@@ -180,17 +180,6 @@ public static class Setup
             opt.UseStorageLock = options.UseStorageLock;
             opt.RetryBackoffStrategy = options.RetryBackoffStrategy;
 
-            // Copy sub-options
-            opt.CircuitBreaker.FailureThreshold = options.CircuitBreaker.FailureThreshold;
-            opt.CircuitBreaker.OpenDuration = options.CircuitBreaker.OpenDuration;
-            opt.CircuitBreaker.MaxOpenDuration = options.CircuitBreaker.MaxOpenDuration;
-            opt.CircuitBreaker.SuccessfulCyclesToResetEscalation = options.CircuitBreaker.SuccessfulCyclesToResetEscalation;
-            opt.CircuitBreaker.IsTransientException = options.CircuitBreaker.IsTransientException;
-
-            opt.RetryProcessor.AdaptivePolling = options.RetryProcessor.AdaptivePolling;
-            opt.RetryProcessor.MaxPollingInterval = options.RetryProcessor.MaxPollingInterval;
-            opt.RetryProcessor.CircuitOpenRateThreshold = options.RetryProcessor.CircuitOpenRateThreshold;
-
             // Copy internal collections
             foreach (var mapping in options.TopicMappings)
             {
