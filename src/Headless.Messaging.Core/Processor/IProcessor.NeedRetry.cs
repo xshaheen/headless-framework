@@ -20,7 +20,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;
     private readonly IDispatcher _dispatcher;
     private readonly TimeSpan _baseInterval;
-    private readonly TimeSpan _lockSafetyMargin = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan _lockSafetyMargin = TimeSpan.FromSeconds(10);
     private readonly TimeSpan _maxInterval;
     private readonly IOptions<MessagingOptions> _options;
     private readonly IDataStorage _dataStorage;
