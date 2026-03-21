@@ -47,7 +47,7 @@ public static class MessagingOptionsExtensions
         {
             services.AddSingleton(new MessageQueueMarkerService("Apache Pulsar"));
 
-            services.Configure(configure);
+            services.Configure<MessagingPulsarOptions, MessagingPulsarOptionsValidator>(configure);
 
             services.AddSingleton<ITransport, PulsarTransport>();
             services.AddSingleton<IConsumerClientFactory, PulsarConsumerClientFactory>();
