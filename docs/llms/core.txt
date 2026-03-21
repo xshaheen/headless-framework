@@ -1,6 +1,6 @@
 ---
 domain: Core
-packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher
+packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher, Security.Abstractions, Security
 ---
 
 # Core
@@ -10,7 +10,9 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher
 ## Quick Orientation
 
 - **`Headless.Extensions`** — utility extensions, domain primitives (`UserId`, `AccountId`, `Money`, `PhoneNumber`), result pattern (`ApiResult<T>`, `Result<TValue, TError>`), error hierarchy (`ResultError`, `NotFoundError`, `ValidationError`), ID generation (`SnowflakeId`, `SequentialGuid`, `IGuidGenerator`, `ILongIdGenerator`), collection helpers, pagination, constants (`JwtClaimTypes`, `RegexPatterns`, `HttpHeaderNames`), and validators.
-- **`Headless.Core`** — cross-cutting abstractions: `IClock`, `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `IStringEncryptionService`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`Run` retry helper, `SnappyCompressor`, `LogState` structured logging).
+- **`Headless.Core`** — cross-cutting abstractions: `IClock`, `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`Run` retry helper, `SnappyCompressor`, `LogState` structured logging).
+- **`Headless.Security.Abstractions`** — security contracts and options: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, `StringHashOptions`, and their validators. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
+- **`Headless.Security`** — default implementations and DI helpers for string encryption and hashing. `AddStringEncryptionService(...)` and `AddStringHashService(...)` are idempotent: the first registration wins.
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
 - **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and local/distributed messaging contracts (`ILocalMessage`, `IDistributedMessage`).
 - **`Headless.Domain.LocalPublisher`** — DI-based `ILocalMessagePublisher` for in-process event handling. Register with `AddLocalMessagePublisher()` and implement `ILocalMessageHandler<T>`.
@@ -25,6 +27,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher
 - For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
 - Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically.
 - `Headless.Extensions` has no configuration. `Headless.Core` implementations are registered by `Headless.Api` or other host packages — do not register them manually.
+- `Headless.Settings.Core` requires `IStringEncryptionService` to be registered before `AddSettingsManagementCore(...)`. Recommended: bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
 - Use `Run.WithRetriesAsync()` from `Headless.Core` for retry logic with exponential backoff instead of manual retry loops.
 - Use `LogState` with `LoggerExtensions` for structured logging with tags and properties.
 
@@ -141,7 +144,7 @@ Core abstractions for building applications with multi-tenancy, user context, an
 
 ## Problem Solved
 
-Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, encryption, timezone conversion) and utilities (retry logic, compression, structured logging) enabling consistent patterns across all application layers.
+Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, timezone conversion) and utilities (retry logic, compression, structured logging) enabling consistent patterns across all application layers.
 
 ## Key Features
 
@@ -152,7 +155,6 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
   - `ICurrentLocale` - Localization context (language, locale, culture)
   - `ICurrentTimeZone` - Timezone handling
   - `ICurrentPrincipalAccessor` - Scoped `ClaimsPrincipal` access with temporary switching
-  - `IStringEncryptionService` / `IStringHashService` - AES-256-CBC encryption and PBKDF2 hashing
   - `IPasswordGenerator` - Configurable secure password generation
   - `ICancellationTokenProvider` - Cancellation token access with fallback logic
   - `ITimezoneProvider` - Windows/IANA timezone conversion and listing

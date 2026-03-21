@@ -7,6 +7,9 @@
 **This is a framework, not a finished application.**
 It is designed to support multiple projects and packages, both internal and external. As such, it may contain abstractions, extension points, and utility classes or methods that are not directly used within this repository. These elements exist deliberately to enable extensibility, customization, and reuse by downstream consumers and future integrations.
 
+**This is a greenfield project.**
+Prefer simpler, cleaner APIs even when that requires breaking changes. Do not preserve awkward compatibility layers unless explicitly requested.
+
 **Coverage targets:**
 - **Line coverage**: ≥85% (minimum: 80%)
 - **Branch coverage**: ≥80% (minimum: 70%)
@@ -38,6 +41,12 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 - `sealed` by default if not designed for inheritance
 - Collection expressions: `[]`
 - Pattern matching over old-style checks
+- Use `Headless.Checks` guards (`Argument.*`, `Ensure.*`) for validation. Do not use `ArgumentNullException.ThrowIfNull`, `ArgumentOutOfRangeException.ThrowIfGreaterThan` and similars.
+- Validate options only when needed, and when you do, use FluentValidation through the existing hosting/options extensions.
+- For options with FluentValidation, use the existing hosting extensions: `AddOptions<TOptions, TValidator>()` and `Configure<TOptions, TValidator>(...)`. Do not add custom `IValidateOptions<T>` implementations when the hosting pattern already covers the case.
+- When adding a DI registration method that configures options, provide all three overloads by default: `IConfiguration`, `Action<TOptions>`, and `Action<TOptions, IServiceProvider>`. Keep the shared registration in a private/core helper instead of duplicating service registration across overloads.
+- Higher-level bootstrap APIs may also auto-bind required options from their owned default configuration sections, like `Headless:*`, when that convention is part of the package contract.
+- If a feature requires options, do not expose a misleading parameterless registration overload. Higher-level APIs should accept the options they need and delegate to the optioned registration path.
 
 ## Package Management
 

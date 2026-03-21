@@ -37,7 +37,7 @@ dotnet add package Headless.Orm.EntityFramework
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessApi();
+builder.AddHeadlessApi();
 
 builder.Services.AddHeadlessRedisCache(options =>
 {
@@ -56,7 +56,8 @@ builder.Services.AddAwsSesEmail(options =>
 });
 
 var app = builder.Build();
-app.UseHeadlessApi();
+app.UseResponseCompression();
+app.UseHsts();
 app.Run();
 ```
 
@@ -84,6 +85,8 @@ Foundational building blocks shared across the framework — domain primitives, 
 |---------|-------------|
 | [Headless.Extensions](src/Headless.Extensions/README.md) | Core primitives and utilities |
 | [Headless.Core](src/Headless.Core/README.md) | Domain-Driven Design building blocks |
+| [Headless.Security.Abstractions](src/Headless.Security.Abstractions/README.md) | Security contracts and options |
+| [Headless.Security](src/Headless.Security/README.md) | String encryption and hashing services |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
 | [Headless.Domain.LocalPublisher](src/Headless.Domain.LocalPublisher/README.md) | In-process domain event publishing |

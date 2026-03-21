@@ -36,12 +36,7 @@ var builder = WebApplication.CreateBuilder(args);
 ApiSetup.ConfigureGlobalSettings();
 
 // Register all framework API services
-builder.AddHeadlessApi(encryption =>
-{
-    encryption.DefaultPassPhrase = "YourPassPhrase123";
-    encryption.InitVectorBytes = "YourInitVector16"u8.ToArray();
-    encryption.DefaultSalt = "YourSalt"u8.ToArray();
-});
+builder.AddHeadlessApi();
 builder.AddHeadlessMultiTenancy();
 
 var app = builder.Build();
@@ -57,6 +52,14 @@ app.UseAuthorization();
 
 app.Run();
 ```
+
+`AddHeadlessApi()` requires the `Headless:StringEncryption` and `Headless:StringHash` configuration sections.
+
+If you do not want the default `Headless:*` binding, `AddHeadlessApi()` also exposes explicit overloads for:
+
+- `IConfiguration stringEncryptionConfig, IConfiguration stringHashConfig`
+- `Action<StringEncryptionOptions>, Action<StringHashOptions>`
+- `Action<StringEncryptionOptions, IServiceProvider>, Action<StringHashOptions, IServiceProvider>`
 
 ## Multi-Tenancy
 
@@ -77,30 +80,42 @@ Place `UseTenantResolution()` after authentication and before authorization.
 
 ## Configuration
 
-### String Hashing (required)
+### String Encryption
 
 ```json
 {
-  "StringHash": {
-    "Secret": "your-secret-key-min-32-chars-long"
+  "Headless": {
+    "StringEncryption": {
+      "DefaultPassPhrase": "YourPassPhrase123",
+      "InitVectorBytes": "WW91ckluaXRWZWN0b3IxNg==",
+      "DefaultSalt": "WW91clNhbHQ="
+    }
   }
 }
 ```
 
-### String Encryption (required)
+### String Hashing
 
 ```json
 {
-  "StringEncryption": {
-    "Key": "your-encryption-key"
+  "Headless": {
+    "StringHash": {
+      "Iterations": 600000,
+      "Size": 128,
+      "Algorithm": "SHA256",
+      "DefaultSalt": "DefaultSalt"
+    }
   }
 }
 ```
+`AddHeadlessApi()` binds both `Headless:StringEncryption` and `Headless:StringHash`, and requires both sections to exist.
 
 ## Dependencies
 
 - `Headless.Api.Abstractions`
 - `Headless.Core`
+- `Headless.Security.Abstractions`
+- `Headless.Security`
 - `Headless.Caching.Abstractions`
 - `Headless.FluentValidation`
 - `Headless.Api.FluentValidation`

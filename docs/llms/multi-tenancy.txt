@@ -21,12 +21,7 @@ For HTTP apps, the recommended setup is:
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi(encryption =>
-{
-    encryption.DefaultPassPhrase = "YourPassPhrase123";
-    encryption.InitVectorBytes = "YourInitVector16"u8.ToArray();
-    encryption.DefaultSalt = "YourSalt"u8.ToArray();
-});
+builder.AddHeadlessApi();
 builder.AddHeadlessMultiTenancy();
 
 var app = builder.Build();
@@ -37,6 +32,8 @@ app.UseAuthorization();
 ```
 
 `UseTenantResolution()` must run after `UseAuthentication()` and before `UseAuthorization()`.
+
+`AddHeadlessApi()` also requires `Headless:StringEncryption` and `Headless:StringHash` to be configured.
 
 ## Agent Instructions
 

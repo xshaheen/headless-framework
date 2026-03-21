@@ -56,7 +56,13 @@ builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
 
 ## Configuration
 
-No additional configuration beyond DbContext setup.
+Pre-requisite: register string encryption before calling `AddSettingsManagementCore(...)`, for example:
+
+```csharp
+builder.Services.AddStringEncryptionService(
+    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
+);
+```
 
 ## Dependencies
 

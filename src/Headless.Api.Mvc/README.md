@@ -53,7 +53,7 @@ public sealed class OrdersController : ApiControllerBase
 
 ## Configuration
 
-No additional configuration required.
+No additional configuration beyond what `AddHeadlessApi()` requires. Configure `Headless:StringEncryption` and `Headless:StringHash`.
 
 ## Dependencies
 

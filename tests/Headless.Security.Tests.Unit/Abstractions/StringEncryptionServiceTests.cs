@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
 using Headless.Abstractions;
 
 namespace Tests.Abstractions;
@@ -107,6 +108,22 @@ public sealed class StringEncryptionServiceTests
         // then
         encryptedWithCustom.Should().NotBe(encryptedWithDefault);
         decryptedWithCustom.Should().Be(plainText);
+    }
+
+    [Fact]
+    public void should_match_default_encryption_when_defaults_are_passed_explicitly()
+    {
+        // given
+        var options = _CreateValidOptions();
+        var sut = new StringEncryptionService(options);
+        const string plainText = "DeterministicDefaultMessage";
+
+        // when
+        var encryptedWithImplicitDefaults = sut.Encrypt(plainText);
+        var encryptedWithExplicitDefaults = sut.Encrypt(plainText, options.DefaultPassPhrase, options.DefaultSalt);
+
+        // then
+        encryptedWithImplicitDefaults.Should().Be(encryptedWithExplicitDefaults);
     }
 
     [Fact]

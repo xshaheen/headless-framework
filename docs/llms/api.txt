@@ -24,14 +24,14 @@ Additional packages:
 ## Agent Instructions
 
 - Use `AddHeadlessApi()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, or problem details.
-- Call `ApiRegistration.ConfigureGlobalSettings()` before `AddHeadlessApi()` to set regex timeout, FluentValidation, and JWT defaults.
+- Call `ApiSetup.ConfigureGlobalSettings()` before `AddHeadlessApi()` to set regex timeout, FluentValidation, and JWT defaults.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.WithValidation<T>()` on endpoints for FluentValidation integration.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`) for `IFormFile` validation — do not write manual file validation logic.
 - Use `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` to persist Data Protection keys in distributed/containerized environments.
 - For Serilog enrichment, call `AddSerilogEnrichers()` on services and `UseSerilogEnrichers()` on the app — place the middleware early in the pipeline.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
-- Configuration sections `StringHash:Secret` and `StringEncryption:Key` are required by `Headless.Api`.
+- `AddHeadlessApi()` auto-binds `Headless:StringEncryption` and `Headless:StringHash` through `Headless.Security`, and also exposes explicit overloads for configuration sections and option callbacks when the defaults are not suitable.
 
 ---
 # Headless.Api
@@ -68,7 +68,7 @@ dotnet add package Headless.Api
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure global settings (regex timeout, FluentValidation, JWT)
-ApiRegistration.ConfigureGlobalSettings();
+ApiSetup.ConfigureGlobalSettings();
 
 // Register all framework API services
 builder.AddHeadlessApi();
@@ -86,22 +86,31 @@ app.Run();
 
 ## Configuration
 
-### String Hashing (required)
+### String Encryption
 
 ```json
 {
-  "StringHash": {
-    "Secret": "your-secret-key-min-32-chars-long"
+  "Headless": {
+    "StringEncryption": {
+      "DefaultPassPhrase": "YourPassPhrase123",
+      "InitVectorBytes": "WW91ckluaXRWZWN0b3IxNg==",
+      "DefaultSalt": "WW91clNhbHQ="
+    }
   }
 }
 ```
 
-### String Encryption (required)
+### String Hashing
 
 ```json
 {
-  "StringEncryption": {
-    "Key": "your-encryption-key"
+  "Headless": {
+    "StringHash": {
+      "Iterations": 600000,
+      "Size": 128,
+      "Algorithm": "SHA256",
+      "DefaultSalt": "DefaultSalt"
+    }
   }
 }
 ```
@@ -110,6 +119,8 @@ app.Run();
 
 - `Headless.Api.Abstractions`
 - `Headless.Core`
+- `Headless.Security.Abstractions`
+- `Headless.Security`
 - `Headless.Caching.Abstractions`
 - `Headless.FluentValidation`
 - `Headless.Api.FluentValidation`

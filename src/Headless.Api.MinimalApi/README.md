@@ -37,7 +37,7 @@ app.Run();
 
 ## Configuration
 
-No additional configuration required. Uses framework JSON settings automatically.
+No additional configuration beyond what `AddHeadlessApi()` requires. Configure `Headless:StringEncryption` and `Headless:StringHash`.
 
 ## Dependencies
 

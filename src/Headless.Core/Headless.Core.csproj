@@ -4,7 +4,6 @@
     <RootNamespace>Headless</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="FluentValidation" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Snappier" />
   </ItemGroup>

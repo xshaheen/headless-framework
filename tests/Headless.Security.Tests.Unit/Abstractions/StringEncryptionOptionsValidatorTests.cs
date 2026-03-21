@@ -142,7 +142,7 @@ public sealed class StringEncryptionOptionsValidatorTests
         {
             KeySize = 256,
             DefaultPassPhrase = "TestPassPhrase123456",
-            InitVectorBytes = "TooShort"u8.ToArray(), // 8 bytes, should be 16 (256/16)
+            InitVectorBytes = "TooShort"u8.ToArray(),
             DefaultSalt = "TestSalt"u8.ToArray(),
         };
 

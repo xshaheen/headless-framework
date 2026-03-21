@@ -9,7 +9,7 @@ packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework
 
 ## Quick Orientation
 
-Install all three packages for a complete setup:
+Install the three settings packages:
 - `Headless.Settings.Abstractions` -- interfaces (`ISettingManager`, `ISettingDefinitionProvider`, `SettingDefinition`)
 - `Headless.Settings.Core` -- implementation with hierarchical providers, caching, encryption, background init
 - `Headless.Settings.Storage.EntityFramework` -- EF Core persistence for setting values and definitions
@@ -18,7 +18,7 @@ Minimal wiring:
 ```csharp
 builder.Services.AddCaching();
 builder.Services.AddDistributedLock();
-builder.Services.AddSettingsManagementCore();
+builder.Services.AddSettingsManagementCore(_ => { });
 builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
 ```
@@ -35,6 +35,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read/write via `ISett
 - Core registers a `SettingsInitializationBackgroundService` hosted service -- do not register your own init logic for settings.
 - For shared DbContext, implement `ISettingsDbContext` and call `modelBuilder.ApplySettingsConfiguration()` in `OnModelCreating`.
 - Dependencies: Core requires `Headless.Caching.Abstractions` and `Headless.DistributedLocks.Abstractions` to be registered.
+- Pre-requisite: register `IStringEncryptionService` before `AddSettingsManagementCore(...)`. Recommended: `AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"))`.
 
 ---
 # Headless.Settings.Abstractions
@@ -204,7 +205,25 @@ public sealed class ConfigService(ISettingManager settings)
 
 ## Configuration
 
+Pre-requisite: configure and register string encryption before settings management:
+
+```json
+{
+  "Headless": {
+    "StringEncryption": {
+      "DefaultPassPhrase": "YourPassPhrase123",
+      "InitVectorBytes": "WW91ckluaXRWZWN0b3IxNg==",
+      "DefaultSalt": "WW91clNhbHQ="
+    }
+  }
+}
+```
+
+Then register settings management:
+
 ```csharp
+services.AddStringEncryptionService(configuration.GetRequiredSection("Headless:StringEncryption"));
+
 services.AddSettingsManagementCore(options =>
 {
     // Cache expiration for setting values (default: 5 hours)
@@ -262,7 +281,7 @@ dotnet add package Headless.Settings.Storage.EntityFramework
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSettingsManagementCore();
+builder.Services.AddSettingsManagementCore(_ => { });
 builder.Services.AddSettingsManagementDbContextStorage(options =>
 {
     options.UseNpgsql(connectionString);
@@ -285,13 +304,13 @@ public class AppDbContext : DbContext, ISettingsDbContext
 }
 
 // In Program.cs
-builder.Services.AddSettingsManagementCore();
+builder.Services.AddSettingsManagementCore(_ => { });
 builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
 ```
 
 ## Configuration
 
-No additional configuration beyond DbContext setup.
+Pre-requisite: register string encryption before calling `AddSettingsManagementCore(...)`.
 
 ## Dependencies
 
