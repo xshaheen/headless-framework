@@ -59,9 +59,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var options = new MessagingOptions { FailedRetryInterval = failedRetryInterval };
-        options.RetryProcessor.AdaptivePolling = adaptivePolling;
-        options.RetryProcessor.MaxPollingInterval = TimeSpan.FromSeconds(maxPollingIntervalSeconds);
-        options.RetryProcessor.CircuitOpenRateThreshold = circuitOpenRateThreshold;
+
+        var retryProcessorOptions = new RetryProcessorOptions
+        {
+            AdaptivePolling = adaptivePolling,
+            MaxPollingInterval = TimeSpan.FromSeconds(maxPollingIntervalSeconds),
+            CircuitOpenRateThreshold = circuitOpenRateThreshold,
+        };
 
         var services = new ServiceCollection();
         services.AddSingleton(cb);
@@ -70,6 +74,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(options),
+            Options.Create(retryProcessorOptions),
             logger,
             dispatcher,
             dataStorage,
@@ -149,10 +154,12 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var options = new MessagingOptions { FailedRetryInterval = 60 };
+        var retryProcessorOptions = new RetryProcessorOptions();
         var sp = new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider();
 
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(options),
+            Options.Create(retryProcessorOptions),
             logger,
             dispatcher,
             dataStorage,

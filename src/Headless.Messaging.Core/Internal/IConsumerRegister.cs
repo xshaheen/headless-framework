@@ -250,7 +250,10 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         // resume without restarting tasks. Transport-level pause (PauseAsync) is sufficient:
         // MRES-based transports block at the pause gate, RabbitMQ cancels the consumer,
         // and Kafka pauses partition polling.
-        foreach (var client in handle.Clients)
+        handle.IsPaused = true;
+        var snapshot = handle.SnapshotClients();
+
+        foreach (var client in snapshot)
         {
             try
             {
@@ -272,7 +275,10 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
         // No CTS recreation needed — the original CTS was never cancelled during pause,
         // so ListeningAsync loops are still running. Just un-gate the transport.
-        foreach (var client in handle.Clients)
+        handle.IsPaused = false;
+        var snapshot = handle.SnapshotClients();
+
+        foreach (var client in snapshot)
         {
             try
             {
@@ -477,17 +483,43 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private sealed class GroupHandle : IAsyncDisposable
     {
         private readonly Lock _clientsLock = new();
+        private bool _isPaused;
 
         public required CancellationTokenSource Cts { get; set; }
         public required List<IConsumerClient> Clients { get; init; }
         public required string GroupName { get; init; }
         public List<Task> ConsumerTasks { get; init; } = [];
 
+        public bool IsPaused
+        {
+            get { lock (_clientsLock) { return _isPaused; } }
+            set { lock (_clientsLock) { _isPaused = value; } }
+        }
+
         public void AddClient(IConsumerClient client)
         {
+            bool shouldPause;
             lock (_clientsLock)
             {
                 Clients.Add(client);
+                shouldPause = _isPaused;
+            }
+
+            if (shouldPause)
+            {
+                // Fire-and-forget is acceptable here — the client will block at the pause gate
+                // on next poll regardless; this just ensures immediate consistency.
+#pragma warning disable CA2012 // Intentional fire-and-forget — see comment above
+                _ = client.PauseAsync();
+#pragma warning restore CA2012
+            }
+        }
+
+        public IConsumerClient[] SnapshotClients()
+        {
+            lock (_clientsLock)
+            {
+                return [.. Clients];
             }
         }
 
@@ -496,7 +528,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             await Cts.CancelAsync();
             Cts.Dispose();
 
-            foreach (var client in Clients)
+            var snapshot = SnapshotClients();
+            foreach (var client in snapshot)
             {
                 await client.DisposeAsync();
             }

@@ -19,13 +19,39 @@ internal sealed class ConsumerCircuitBreakerRegistry
         new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Registers or replaces the circuit breaker options for the specified consumer group.
+    /// Registers circuit breaker options for the specified consumer group.
     /// </summary>
     /// <param name="groupName">The consumer group name (must not be null or whitespace).</param>
     /// <param name="options">The circuit breaker overrides to associate with the group.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when a circuit breaker override for <paramref name="groupName"/> is already registered.
+    /// </exception>
     internal void Register(string groupName, ConsumerCircuitBreakerOptions options)
     {
+        if (!_options.TryAdd(groupName, options))
+        {
+            throw new InvalidOperationException(
+                $"A circuit breaker override for group '{groupName}' is already registered. "
+                + "Each consumer group can only have one circuit breaker override."
+            );
+        }
+    }
+
+    /// <summary>
+    /// Registers or updates circuit breaker options for the specified consumer group.
+    /// Used internally by builders that defer registration until the final group name is known.
+    /// </summary>
+    internal void RegisterOrUpdate(string groupName, ConsumerCircuitBreakerOptions options)
+    {
         _options[groupName] = options;
+    }
+
+    /// <summary>
+    /// Removes a previously registered override for the specified consumer group, if any.
+    /// </summary>
+    internal void Remove(string groupName)
+    {
+        _options.TryRemove(groupName, out _);
     }
 
     /// <summary>

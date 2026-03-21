@@ -79,7 +79,7 @@ public static class Setup
         _DiscoverConsumersFromDI(services, options, registry);
 
         // Discover per-consumer circuit breaker registrations added via AddConsumer().WithCircuitBreaker()
-        _DiscoverCircuitBreakerRegistrationsFromDI(services, options.CircuitBreakerRegistry);
+        _DiscoverCircuitBreakerRegistrationsFromDI(services, options, options.CircuitBreakerRegistry);
 
         return _RegisterCoreMessagingServices(services, options);
     }
@@ -242,6 +242,7 @@ public static class Setup
     /// </summary>
     private static void _DiscoverCircuitBreakerRegistrationsFromDI(
         IServiceCollection services,
+        MessagingOptions options,
         ConsumerCircuitBreakerRegistry circuitBreakerRegistry
     )
     {
@@ -254,9 +255,23 @@ public static class Setup
 
         foreach (var descriptor in registrationDescriptors)
         {
-            if (descriptor.ImplementationInstance is ConsumerCircuitBreakerRegistration registration)
+            if (descriptor.ImplementationInstance is not ConsumerCircuitBreakerRegistration registration)
             {
-                circuitBreakerRegistry.Register(registration.GroupName, registration.Options);
+                continue;
+            }
+
+            var groupName = registration.GroupName;
+
+            // If no group was set on the builder, resolve from the final consumer metadata in the registry
+            if (string.IsNullOrWhiteSpace(groupName))
+            {
+                var metadata = options.Registry?.FindByTypes(registration.ConsumerType, registration.MessageType);
+                groupName = metadata?.Group;
+            }
+
+            if (!string.IsNullOrWhiteSpace(groupName))
+            {
+                circuitBreakerRegistry.Register(groupName, registration.Options);
             }
         }
     }

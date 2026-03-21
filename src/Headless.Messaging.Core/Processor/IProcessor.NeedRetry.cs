@@ -36,6 +36,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
 
     public MessageNeedToRetryProcessor(
         IOptions<MessagingOptions> options,
+        IOptions<RetryProcessorOptions> retryOptions,
         ILogger<MessageNeedToRetryProcessor> logger,
         IDispatcher dispatcher,
         IDataStorage dataStorage,
@@ -52,10 +53,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
         _ttl = _baseInterval.Add(TimeSpan.FromSeconds(10));
         _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();
 
-        var retryProcessorOptions = options.Value.RetryProcessor;
-        _adaptivePolling = retryProcessorOptions.AdaptivePolling;
-        _maxInterval = retryProcessorOptions.MaxPollingInterval;
-        _circuitOpenRateThreshold = retryProcessorOptions.CircuitOpenRateThreshold;
+        _adaptivePolling = retryOptions.Value.AdaptivePolling;
+        _maxInterval = retryOptions.Value.MaxPollingInterval;
+        _circuitOpenRateThreshold = retryOptions.Value.CircuitOpenRateThreshold;
 
         _instance = (
             (FormattableString)$"{Helper.GetInstanceHostname()}_{SnowflakeIdLongIdGenerator.GenerateWorkerId()}"

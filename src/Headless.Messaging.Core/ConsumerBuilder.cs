@@ -22,6 +22,8 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     private string? _group;
     private string? _handlerId;
     private byte _concurrency = 1;
+    private Action<ConsumerCircuitBreakerOptions>? _pendingCircuitBreakerConfigure;
+    private string? _lastRegisteredCbGroup;
 
     internal ConsumerBuilder(
         MessagingOptions parent,
@@ -88,19 +90,8 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     {
         Argument.IsNotNull(configure);
 
-        // Derive the resolved group name the same way the metadata will
-        var metadata = _parent.CreateConsumerMetadata(
-            typeof(TConsumer),
-            _messageType,
-            _topic,
-            _group,
-            _concurrency,
-            _handlerId
-        );
-
-        var cbOptions = new ConsumerCircuitBreakerOptions();
-        configure(cbOptions);
-        _circuitBreakerRegistry.Register(metadata.Group!, cbOptions);
+        _pendingCircuitBreakerConfigure = configure;
+        _ApplyCircuitBreakerRegistration();
 
         return this;
     }
@@ -116,5 +107,36 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
             m => m.ConsumerType == typeof(TConsumer) && m.MessageType == _messageType,
             _parent.CreateConsumerMetadata(typeof(TConsumer), _messageType, _topic, _group, _concurrency, _handlerId)
         );
+
+        _ApplyCircuitBreakerRegistration();
+    }
+
+    private void _ApplyCircuitBreakerRegistration()
+    {
+        if (_pendingCircuitBreakerConfigure is null)
+        {
+            return;
+        }
+
+        var metadata = _parent.CreateConsumerMetadata(
+            typeof(TConsumer),
+            _messageType,
+            _topic,
+            _group,
+            _concurrency,
+            _handlerId
+        );
+
+        var cbOptions = new ConsumerCircuitBreakerOptions();
+        _pendingCircuitBreakerConfigure(cbOptions);
+
+        // Remove stale registration if group name changed
+        if (_lastRegisteredCbGroup is not null && _lastRegisteredCbGroup != metadata.Group)
+        {
+            _circuitBreakerRegistry.Remove(_lastRegisteredCbGroup);
+        }
+
+        _circuitBreakerRegistry.RegisterOrUpdate(metadata.Group!, cbOptions);
+        _lastRegisteredCbGroup = metadata.Group;
     }
 }

@@ -10,6 +10,8 @@ namespace Headless.Messaging.CircuitBreaker;
 /// during messaging startup.
 /// </summary>
 internal sealed record ConsumerCircuitBreakerRegistration(
-    string GroupName,
+    Type ConsumerType,
+    Type MessageType,
+    string? GroupName,
     ConsumerCircuitBreakerOptions Options
 );
