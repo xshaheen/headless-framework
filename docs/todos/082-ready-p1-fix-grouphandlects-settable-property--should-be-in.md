@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "082"
 tags: ["code-review","dotnet","messaging"]
@@ -47,3 +47,9 @@ PR #194.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-21 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

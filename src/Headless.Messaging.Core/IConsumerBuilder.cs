@@ -152,6 +152,11 @@ public interface IConsumerBuilder<TConsumer>
     /// might disable the circuit breaker entirely.
     /// </para>
     /// <para>
+    /// Each consumer group may only have one circuit breaker registration. Registering the same
+    /// group via both <c>Subscribe&lt;T&gt;().WithCircuitBreaker()</c> and
+    /// <c>AddConsumer&lt;T,M&gt;().WithCircuitBreaker()</c> will throw at startup.
+    /// </para>
+    /// <para>
     /// <strong>Example:</strong>
     /// <code>
     /// options.Subscribe&lt;PaymentHandler&gt;()

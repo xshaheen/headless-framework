@@ -8,7 +8,9 @@ internal sealed class RetryProcessorOptionsValidator : AbstractValidator<RetryPr
 {
     public RetryProcessorOptionsValidator()
     {
-        RuleFor(x => x.MaxPollingInterval).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.MaxPollingInterval)
+            .GreaterThan(TimeSpan.Zero)
+            .LessThanOrEqualTo(TimeSpan.FromHours(24));
         RuleFor(x => x.CircuitOpenRateThreshold).ExclusiveBetween(0, 1);
     }
 }

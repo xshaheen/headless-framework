@@ -31,8 +31,10 @@ internal sealed class ConsumerCircuitBreakerRegistry
         if (!_options.TryAdd(groupName, options))
         {
             throw new InvalidOperationException(
-                $"A circuit breaker override for group '{groupName}' is already registered. "
-                + "Each consumer group can only have one circuit breaker override."
+                $"Circuit breaker already registered for group '{groupName}'. "
+                + "Each consumer group can only have one circuit breaker override. "
+                + "Check that you haven't configured the same group via both "
+                + "Subscribe<T>().WithCircuitBreaker() and AddConsumer<T,M>().WithCircuitBreaker()."
             );
         }
     }

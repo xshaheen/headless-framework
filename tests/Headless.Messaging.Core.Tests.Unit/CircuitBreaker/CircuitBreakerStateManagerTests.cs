@@ -609,4 +609,26 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
         act.Should().NotThrow();
     }
+
+    [Fact]
+    public async Task Dispose_concurrent_with_timer_callback_is_safe()
+    {
+        for (var i = 0; i < 200; i++)
+        {
+            var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(1));
+            sut.RegisterGroupCallbacks(
+                Group,
+                onPause: () => ValueTask.CompletedTask,
+                onResume: () => ValueTask.CompletedTask
+            );
+
+            await sut.ReportFailureAsync(Group, new TimeoutException());
+
+            await Task.WhenAll(
+                Task.Run(() => sut.Dispose()),
+                Task.Run(() => sut.Dispose())
+            );
+            // no exception = pass
+        }
+    }
 }

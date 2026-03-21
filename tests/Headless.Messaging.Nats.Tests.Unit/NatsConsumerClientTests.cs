@@ -231,6 +231,21 @@ public sealed class NatsConsumerClientTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
+    public void PauseGate_should_use_TaskCompletionSource_not_ManualResetEventSlim()
+    {
+        // given
+        var clientType = typeof(NatsConsumerClient);
+        var field = clientType.GetField("_pauseGate", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        // then
+        field.Should().NotBeNull("_pauseGate field should exist");
+        field!.FieldType.Should().Be(
+            typeof(TaskCompletionSource<bool>),
+            "pause gate must use TaskCompletionSource<bool> to avoid blocking ThreadPool threads"
+        );
+    }
+
+    [Fact]
     public async Task PauseAsync_is_idempotent_when_called_twice()
     {
         // given

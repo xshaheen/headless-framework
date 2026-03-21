@@ -581,9 +581,11 @@ internal sealed class CircuitBreakerStateManager(
                 // Circuit is Open but transport may not be paused — inconsistent state.
                 // Escalate the open duration so the next retry waits longer, and log at
                 // Critical level so operators are alerted to the inconsistency.
+                int escalation;
                 lock (groupLock)
                 {
                     state.EscalationLevel++;
+                    escalation = state.EscalationLevel;
                 }
 
                 logger.LogCritical(
@@ -591,7 +593,7 @@ internal sealed class CircuitBreakerStateManager(
                     "Pause callback failed while re-opening circuit for group {Group}. "
                     + "Circuit is Open but transport may not be paused — manual ResetAsync may be required (escalation: {Escalation})",
                     groupName,
-                    state.EscalationLevel
+                    escalation
                 );
             }
         }
