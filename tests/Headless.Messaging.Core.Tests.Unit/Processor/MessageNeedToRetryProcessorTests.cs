@@ -99,6 +99,15 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
     }
 
+    private static TimeSpan _GetCurrentInterval(MessageNeedToRetryProcessor sut)
+    {
+        var field = typeof(MessageNeedToRetryProcessor).GetField(
+            "_currentInterval",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+        );
+        return (TimeSpan)field!.GetValue(sut)!;
+    }
+
     // -------------------------------------------------------------------------
     // US-012: Circuit-state awareness
     // -------------------------------------------------------------------------
@@ -195,6 +204,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Arrange — 5 messages, 4 skipped (circuit open) = 80% > threshold
         var (sut, dispatcher, cb) = _Create(failedRetryInterval: 10, circuitOpenRateThreshold: 0.7);
 
+        var baseInterval = TimeSpan.FromSeconds(10);
+
         cb.IsOpen("open-group").Returns(true);
         cb.IsOpen("healthy-group").Returns(false);
 
@@ -217,9 +228,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         await sut.ProcessAsync(context);
 
         // Assert — interval should have doubled from 10s to 20s
-        // We verify indirectly: the second cycle should wait 20s via context.WaitAsync
-        // Since we can't easily inspect private _currentInterval, we rely on correct behavior
-        // and test that the processor doesn't crash and messages are properly filtered
+        var currentInterval = _GetCurrentInterval(sut);
+        currentInterval.Should().Be(baseInterval * 2);
 
         await dispatcher.Received(1).EnqueueToExecute(
             Arg.Is<MediumMessage>(m => m.Origin.GetGroup() == "healthy-group"),
@@ -233,6 +243,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         // Arrange
         var (sut, dispatcher, cb) = _Create(failedRetryInterval: 10);
+
+        var baseInterval = TimeSpan.FromSeconds(10);
 
         cb.IsOpen(Arg.Any<string>()).Returns(false);
 
@@ -251,6 +263,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         // Assert — no crashes, processor handles empty batches
         // The interval should have been reset to base after 3 clean cycles
+        var currentInterval = _GetCurrentInterval(sut);
+        currentInterval.Should().Be(baseInterval);
+
         await dispatcher.DidNotReceive().EnqueueToExecute(
             Arg.Any<MediumMessage>(),
             Arg.Any<ConsumerExecutorDescriptor>(),
@@ -290,6 +305,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task ProcessAsync_IntervalCappedAtMax_AfterManyDoublings()
     {
         // Arrange — maxPollingInterval=2s, base=1s, all messages skipped → high transient rate
+        var maxPollingInterval = TimeSpan.FromSeconds(2);
         var (sut, dispatcher, cb) = _Create(
             failedRetryInterval: 1,
             maxPollingIntervalSeconds: 2,
@@ -310,6 +326,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         }
 
         // Assert — no crash, no overflow. Messages consistently skipped.
+        // Interval should be capped at maxPollingInterval (2s)
+        var currentInterval = _GetCurrentInterval(sut);
+        currentInterval.Should().Be(maxPollingInterval);
+
         await dispatcher.DidNotReceive().EnqueueToExecute(
             Arg.Any<MediumMessage>(),
             null,
