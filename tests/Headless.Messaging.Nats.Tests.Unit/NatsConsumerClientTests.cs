@@ -226,6 +226,48 @@ public sealed class NatsConsumerClientTests : TestBase
             );
     }
 
+    // -------------------------------------------------------------------------
+    // PauseAsync / ResumeAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PauseAsync_is_idempotent_when_called_twice()
+    {
+        // given
+        await using var client = _CreateClient("test-group");
+
+        // when
+        await client.PauseAsync();
+        await client.PauseAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_when_not_paused()
+    {
+        // given
+        await using var client = _CreateClient("test-group");
+
+        // when
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    {
+        // given
+        await using var client = _CreateClient("test-group");
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)
     {
         return new NatsConsumerClient(groupName, groupConcurrent, _options, _serviceProvider);

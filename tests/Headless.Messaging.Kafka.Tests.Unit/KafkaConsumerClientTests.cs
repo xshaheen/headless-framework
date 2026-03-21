@@ -187,4 +187,60 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         // then - no exception
     }
+
+    // -------------------------------------------------------------------------
+    // PauseAsync / ResumeAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PauseAsync_is_idempotent_when_called_twice()
+    {
+        // given
+        await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
+
+        // when — no consumer built yet, but should not throw
+        await client.PauseAsync();
+        await client.PauseAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_when_not_paused()
+    {
+        // given
+        await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
+
+        // when — never paused, resume should be a no-op
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    {
+        // given
+        await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+
+        // then — no exception, state restored
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_idempotent_after_resume()
+    {
+        // given
+        await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+        await client.ResumeAsync(); // second resume is no-op
+
+        // then — no exception
+    }
 }

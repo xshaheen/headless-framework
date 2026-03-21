@@ -897,6 +897,98 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             .ChangeMessageVisibilityAsync(Arg.Any<string>(), "receipt-json-error", 3, Arg.Any<CancellationToken>());
     }
 
+    // -------------------------------------------------------------------------
+    // PauseAsync / ResumeAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PauseAsync_is_idempotent_when_called_twice()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
+
+        // when
+        await client.PauseAsync();
+        await client.PauseAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_when_not_paused()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
+
+        // when
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_blocks_listening_loop()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
+
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        var receiveCount = 0;
+        sqsClient
+            .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref receiveCount);
+                return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+            });
+
+        _SetPrivateFields(client, sqsClient, "http://test");
+
+        // when — pause, then start listening
+        await client.PauseAsync();
+
+        using var cts = new CancellationTokenSource();
+        var listenTask = Task.Run(
+            async () =>
+            {
+                try { await client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token); }
+                catch (OperationCanceledException) { }
+            }
+        );
+
+        await Task.Delay(300);
+        var countWhilePaused = receiveCount;
+
+        // then — no messages polled while paused
+        countWhilePaused.Should().Be(0);
+
+        // cleanup
+        await client.ResumeAsync();
+        await Task.Delay(300);
+        await cts.CancelAsync();
+        await listenTask;
+
+        // after resume, polling should have started
+        receiveCount.Should().BeGreaterThan(0);
+    }
+
     [Fact]
     public async Task should_invoke_callback_with_correct_message_headers()
     {
