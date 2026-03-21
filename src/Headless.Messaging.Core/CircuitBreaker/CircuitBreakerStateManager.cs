@@ -293,6 +293,9 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
+    public IReadOnlySet<string>? KnownGroups => _knownGroups;
+
+    /// <inheritdoc />
     public IReadOnlyList<KeyValuePair<string, CircuitBreakerState>> GetAllStates()
     {
         return _groups.Select(kvp => new KeyValuePair<string, CircuitBreakerState>(kvp.Key, kvp.Value.State)).ToList();
