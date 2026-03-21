@@ -439,7 +439,7 @@ var monitor = app.Services.GetRequiredService<ICircuitBreakerMonitor>();
 // Check state
 var states = monitor.GetAllStates(); // all groups with current state
 var isOpen = monitor.IsOpen("payments");
-var state = monitor.GetState("payments"); // Closed, Open, or HalfOpen
+var state = monitor.GetState("payments"); // Closed, Open, HalfOpen, or null if unregistered
 
 // Manual recovery (operator/agent action)
 var wasReset = await monitor.ResetAsync("payments", cancellationToken); // true if reset performed
