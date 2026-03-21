@@ -24,7 +24,7 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly AmazonSqsOptions _amazonSqsOptions = options.Value;
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
-    private readonly ManualResetEventSlim _pauseGate = new(true);
+    private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
     private int _paused; // 0 = running, 1 = paused
     private string _queueUrl = string.Empty;
 
@@ -75,7 +75,7 @@ internal sealed class AmazonSqsConsumerClient(
 
         while (true)
         {
-            _pauseGate.Wait(cancellationToken);
+            await _pauseGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
 
             var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -190,7 +190,7 @@ internal sealed class AmazonSqsConsumerClient(
     {
         if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
-            _pauseGate.Reset();
+            _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         return ValueTask.CompletedTask;
@@ -200,7 +200,7 @@ internal sealed class AmazonSqsConsumerClient(
     {
         if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
         {
-            _pauseGate.Set();
+            _pauseGate.TrySetResult(true);
         }
 
         return ValueTask.CompletedTask;
@@ -208,7 +208,7 @@ internal sealed class AmazonSqsConsumerClient(
 
     public ValueTask DisposeAsync()
     {
-        _pauseGate.Dispose();
+        _pauseGate.TrySetResult(true);
         _sqsClient?.Dispose();
         _snsClient?.Dispose();
         _semaphore.Dispose();
@@ -253,6 +253,13 @@ internal sealed class AmazonSqsConsumerClient(
                 }
             }
         }
+    }
+
+    private static TaskCompletionSource<bool> _CreateCompletedGate()
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        tcs.SetResult(true);
+        return tcs;
     }
 
     #region private methods

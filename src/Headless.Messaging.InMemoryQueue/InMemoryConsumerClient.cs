@@ -15,7 +15,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     private readonly byte _groupConcurrent;
     private readonly BlockingCollection<TransportMessage> _messageQueue = new();
     private readonly SemaphoreSlim _semaphore;
-    private readonly ManualResetEventSlim _pauseGate = new(true);
+    private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
     private int _paused; // 0 = running, 1 = paused
 
     /// <summary>
@@ -81,7 +81,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     {
         foreach (var message in _messageQueue.GetConsumingEnumerable(cancellationToken))
         {
-            _pauseGate.Wait(cancellationToken);
+            await _pauseGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
             if (_groupConcurrent > 0)
             {
                 await _semaphore.WaitAsync(cancellationToken);
@@ -125,7 +125,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     {
         if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
-            _pauseGate.Reset();
+            _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         return ValueTask.CompletedTask;
@@ -136,7 +136,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     {
         if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
         {
-            _pauseGate.Set();
+            _pauseGate.TrySetResult(true);
         }
 
         return ValueTask.CompletedTask;
@@ -148,10 +148,17 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <returns>A value task representing the disposal</returns>
     public ValueTask DisposeAsync()
     {
-        _pauseGate.Dispose();
+        _pauseGate.TrySetResult(true);
         _semaphore.Dispose();
         _messageQueue.Dispose();
         _queue.Unsubscribe(_groupId);
         return ValueTask.CompletedTask;
+    }
+
+    private static TaskCompletionSource<bool> _CreateCompletedGate()
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        tcs.SetResult(true);
+        return tcs;
     }
 }

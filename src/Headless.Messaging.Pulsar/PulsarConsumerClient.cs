@@ -18,7 +18,7 @@ internal sealed class PulsarConsumerClient(
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
-    private readonly ManualResetEventSlim _pauseGate = new(true);
+    private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
     private int _paused; // 0 = running, 1 = paused
     private readonly MessagingPulsarOptions _pulsarOptions = options.Value;
     private IConsumer<byte[]>? _consumerClient;
@@ -50,7 +50,7 @@ internal sealed class PulsarConsumerClient(
         {
             try
             {
-                _pauseGate.Wait(cancellationToken);
+                await _pauseGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
 
                 var consumerResult = await _consumerClient!.ReceiveAsync(cancellationToken);
 
@@ -109,7 +109,7 @@ internal sealed class PulsarConsumerClient(
     {
         if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
-            _pauseGate.Reset();
+            _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         return ValueTask.CompletedTask;
@@ -119,7 +119,7 @@ internal sealed class PulsarConsumerClient(
     {
         if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
         {
-            _pauseGate.Set();
+            _pauseGate.TrySetResult(true);
         }
 
         return ValueTask.CompletedTask;
@@ -127,8 +127,15 @@ internal sealed class PulsarConsumerClient(
 
     public ValueTask DisposeAsync()
     {
-        _pauseGate.Dispose();
+        _pauseGate.TrySetResult(true);
         _semaphore.Dispose();
         return _consumerClient?.DisposeAsync() ?? ValueTask.CompletedTask;
+    }
+
+    private static TaskCompletionSource<bool> _CreateCompletedGate()
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        tcs.SetResult(true);
+        return tcs;
     }
 }

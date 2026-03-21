@@ -18,7 +18,7 @@ internal class RedisConsumerClient(
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
-    private readonly ManualResetEventSlim _pauseGate = new(true);
+    private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
     private int _paused; // 0 = running, 1 = paused
     private string[] _topics = null!;
 
@@ -73,7 +73,7 @@ internal class RedisConsumerClient(
     {
         if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
-            _pauseGate.Reset();
+            _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         return ValueTask.CompletedTask;
@@ -83,7 +83,7 @@ internal class RedisConsumerClient(
     {
         if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
         {
-            _pauseGate.Set();
+            _pauseGate.TrySetResult(true);
         }
 
         return ValueTask.CompletedTask;
@@ -91,9 +91,16 @@ internal class RedisConsumerClient(
 
     public ValueTask DisposeAsync()
     {
-        _pauseGate.Dispose();
+        _pauseGate.TrySetResult(true);
         _semaphore.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private static TaskCompletionSource<bool> _CreateCompletedGate()
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        tcs.SetResult(true);
+        return tcs;
     }
 
     private async Task _ListeningForMessagesAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -121,7 +128,7 @@ internal class RedisConsumerClient(
             {
                 foreach (var entry in stream.Entries)
                 {
-                    _pauseGate.Wait(cancellationToken);
+                    await _pauseGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
                     if (entry.IsNull)
                     {
                         return;
