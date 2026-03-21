@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p1
 issue_id: "047"
 tags: ["code-review","dotnet","quality"]
@@ -66,3 +66,9 @@ Discovered during PR #194 code review (round 2)
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-21 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done
