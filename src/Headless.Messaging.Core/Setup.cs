@@ -181,6 +181,17 @@ public static class Setup
             opt.UseStorageLock = options.UseStorageLock;
             opt.RetryBackoffStrategy = options.RetryBackoffStrategy;
 
+            // Copy sub-options
+            opt.CircuitBreaker.FailureThreshold = options.CircuitBreaker.FailureThreshold;
+            opt.CircuitBreaker.OpenDuration = options.CircuitBreaker.OpenDuration;
+            opt.CircuitBreaker.MaxOpenDuration = options.CircuitBreaker.MaxOpenDuration;
+            opt.CircuitBreaker.SuccessfulCyclesToResetEscalation = options.CircuitBreaker.SuccessfulCyclesToResetEscalation;
+            opt.CircuitBreaker.IsTransientException = options.CircuitBreaker.IsTransientException;
+
+            opt.RetryProcessor.AdaptivePolling = options.RetryProcessor.AdaptivePolling;
+            opt.RetryProcessor.MaxPollingInterval = options.RetryProcessor.MaxPollingInterval;
+            opt.RetryProcessor.CircuitOpenRateThreshold = options.RetryProcessor.CircuitOpenRateThreshold;
+
             // Copy internal collections
             foreach (var mapping in options.TopicMappings)
             {
@@ -200,10 +211,6 @@ public static class Setup
         services.TryAddSingleton<IOptions<RetryProcessorOptions>>(
             _ => Microsoft.Extensions.Options.Options.Create(options.RetryProcessor)
         );
-
-        // Also register the validators so consumers of IValidateOptions<T> can discover them
-        services.AddSingleton<IValidateOptions<CircuitBreakerOptions>, CircuitBreakerOptionsValidator>();
-        services.AddSingleton<IValidateOptions<RetryProcessorOptions>, RetryProcessorOptionsValidator>();
 
         //Startup and Hosted
         services.TryAddSingleton<Bootstrapper>();

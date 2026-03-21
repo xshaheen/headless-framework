@@ -171,23 +171,20 @@ internal sealed class NatsConsumerClient(
 
             if (groupConcurrent > 0)
             {
-                await _semaphore.WaitAsync();
-                _ = Task.Run(consumeAsync)
-                    .ContinueWith(
-                        static (t, state) =>
+                await _semaphore.WaitAsync(_cancellationToken).ConfigureAwait(false);
+                _ = Task.Run(
+                        async () =>
                         {
-                            ((Action<LogMessageEventArgs>?)state)?.Invoke(
-                                new LogMessageEventArgs
-                                {
-                                    LogType = MqLogType.ExceptionReceived,
-                                    Reason = $"Unhandled exception in message handler: {t.Exception}",
-                                }
-                            );
+                            try
+                            {
+                                await consumeAsync().ConfigureAwait(false);
+                            }
+                            finally
+                            {
+                                _ReleaseSemaphore();
+                            }
                         },
-                        OnLogCallback,
-                        CancellationToken.None,
-                        TaskContinuationOptions.OnlyOnFaulted,
-                        TaskScheduler.Default
+                        CancellationToken.None
                     );
             }
             else
@@ -262,10 +259,6 @@ internal sealed class NatsConsumerClient(
                 }
             );
         }
-        finally
-        {
-            _ReleaseSemaphore();
-        }
 
         return ValueTask.CompletedTask;
     }
@@ -288,10 +281,6 @@ internal sealed class NatsConsumerClient(
                     Reason = $"NATS message NAK failed: {ex}",
                 }
             );
-        }
-        finally
-        {
-            _ReleaseSemaphore();
         }
 
         return ValueTask.CompletedTask;

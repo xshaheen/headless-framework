@@ -9,34 +9,101 @@ namespace Headless.Messaging.CircuitBreaker;
 /// OpenTelemetry-compatible metrics for the circuit breaker, emitted via the shared
 /// <c>Headless.Messaging</c> meter so existing OTel subscriptions pick them up automatically.
 /// </summary>
-internal sealed class CircuitBreakerMetrics(IMeterFactory meterFactory)
+internal sealed class CircuitBreakerMetrics
 {
-    private readonly Counter<long> _circuitTrips = meterFactory
-        .Create("Headless.Messaging")
-        .CreateCounter<long>(
+    /// <summary>
+    /// Tag value used for unrecognized (not pre-registered) group names to prevent
+    /// unbounded OTel cardinality from attacker-controlled input.
+    /// </summary>
+    internal const string UnknownGroupTag = "_unknown";
+
+    private readonly Counter<long> _circuitTrips;
+    private readonly Histogram<double> _openDuration;
+
+    private Func<IReadOnlyDictionary<string, CircuitBreakerState>>? _stateSnapshot;
+    private IReadOnlySet<string>? _knownGroups;
+
+    public CircuitBreakerMetrics(IMeterFactory meterFactory)
+    {
+        // Meter lifetime is managed by the IMeterFactory (DI container), not by this class.
+#pragma warning disable CA2000
+        var meter = meterFactory.Create("Headless.Messaging");
+#pragma warning restore CA2000
+
+        _circuitTrips = meter.CreateCounter<long>(
             "messaging.circuit_breaker.trips",
             description: "Number of times a consumer group circuit breaker transitioned to Open"
         );
 
-    private readonly Histogram<double> _openDuration = meterFactory
-        .Create("Headless.Messaging")
-        .CreateHistogram<double>(
+        _openDuration = meter.CreateHistogram<double>(
             "messaging.circuit_breaker.open_duration",
             unit: "s",
             description: "Duration in seconds that a consumer group circuit was in Open state"
         );
 
+        meter.CreateObservableGauge(
+            "messaging.circuit_breaker.state",
+            observeValues: _ObserveCircuitStates,
+            description: "Current circuit state per group (0=Closed, 1=Open, 2=HalfOpen)"
+        );
+    }
+
+    /// <summary>
+    /// Registers the callback used by the observable gauge to pull current circuit states.
+    /// </summary>
+    public void RegisterStateCallback(Func<IReadOnlyDictionary<string, CircuitBreakerState>> callback)
+    {
+        _stateSnapshot = callback;
+    }
+
+    /// <summary>
+    /// Sets the known group names for cardinality guards. When set, unrecognized group names
+    /// are reported with the <see cref="UnknownGroupTag"/> tag value instead of the real name.
+    /// </summary>
+    public void SetKnownGroups(IReadOnlySet<string> knownGroups)
+    {
+        _knownGroups = knownGroups;
+    }
+
     /// <summary>Records a circuit trip (Closed → Open or HalfOpen → Open).</summary>
     public void RecordTrip(string groupName)
     {
-        var tags = new TagList { { "messaging.consumer.group", groupName } };
+        var tags = new TagList { { "messaging.consumer.group", _SafeTag(groupName) } };
         _circuitTrips.Add(1, tags);
     }
 
     /// <summary>Records how long the circuit was open before transitioning to HalfOpen or Closed.</summary>
-    public void RecordOpenDuration(string groupName, double durationMs)
+    public void RecordOpenDuration(string groupName, TimeSpan duration)
     {
-        var tags = new TagList { { "messaging.consumer.group", groupName } };
-        _openDuration.Record(durationMs / 1000.0, tags);
+        var tags = new TagList { { "messaging.consumer.group", _SafeTag(groupName) } };
+        _openDuration.Record(duration.TotalSeconds, tags);
+    }
+
+    private string _SafeTag(string groupName)
+    {
+        return _knownGroups is null || _knownGroups.Contains(groupName)
+            ? groupName
+            : UnknownGroupTag;
+    }
+
+    private IEnumerable<Measurement<int>> _ObserveCircuitStates()
+    {
+        var snapshot = _stateSnapshot;
+
+        if (snapshot is null)
+        {
+            return [];
+        }
+
+        var states = snapshot();
+        var measurements = new List<Measurement<int>>(states.Count);
+
+        foreach (var (group, state) in states)
+        {
+            var tags = new TagList { { "messaging.consumer.group", group } };
+            measurements.Add(new Measurement<int>((int)state, tags));
+        }
+
+        return measurements;
     }
 }
