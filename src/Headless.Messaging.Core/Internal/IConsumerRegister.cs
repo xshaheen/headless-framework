@@ -280,8 +280,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
     private async ValueTask _ResumeGroupAsync(GroupHandle handle)
     {
-        _logger.LogWarning(
-            "Circuit breaker half-open for group '{GroupName}'. Resuming consumers.",
+        _logger.LogDebug(
+            "Resuming consumers for group '{GroupName}' (half-open).",
             handle.GroupName
         );
 
