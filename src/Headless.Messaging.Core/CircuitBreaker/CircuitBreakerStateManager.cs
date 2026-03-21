@@ -420,13 +420,18 @@ internal sealed class CircuitBreakerStateManager(
         state.EscalationLevel++;
         var openDuration = _GetOpenDuration(state);
 
+        // Increment generation before creating the new timer so that any in-flight callback
+        // from the previous timer sees a stale generation and exits early.
+        state.TimerGeneration++;
+        var generation = state.TimerGeneration;
+
         // Dispose any existing timer to prevent a stale HalfOpen transition from firing.
         // Timer.Dispose() does not guarantee in-flight callbacks won't fire — safety comes
-        // from _OnOpenTimerElapsed checking state.State is not Open (see guard there).
+        // from the generation check in _OnOpenTimerElapsed (plus the state.State guard).
         state.OpenTimer?.Dispose();
         state.OpenTimer = new Timer(
             _OnOpenTimerElapsed,
-            groupName,
+            (groupName, generation),
             openDuration,
             Timeout.InfiniteTimeSpan
         );
@@ -483,7 +488,7 @@ internal sealed class CircuitBreakerStateManager(
             return;
         }
 
-        var groupName = (string)timerState!;
+        var (groupName, generation) = ((string, int))timerState!;
 
         if (!_groups.TryGetValue(groupName, out var state))
         {
@@ -495,6 +500,12 @@ internal sealed class CircuitBreakerStateManager(
 
         lock (groupLock)
         {
+            // Stale callback from a previous timer generation — discard to prevent double-resume.
+            if (generation != state.TimerGeneration)
+            {
+                return;
+            }
+
             if (state.State is not CircuitBreakerState.Open)
             {
                 // Circuit was already closed or re-opened — ignore stale timer callback.
@@ -514,7 +525,9 @@ internal sealed class CircuitBreakerStateManager(
 
         if (resumeCallback is not null)
         {
-            // Fire-and-forget on a thread-pool thread to avoid blocking the timer callback thread
+            // Fire-and-forget on a thread-pool thread to avoid blocking the timer callback thread.
+            // ContinueWith observes any unhandled exception (e.g. from _ReopenAfterResumeFailureAsync)
+            // to prevent UnobservedTaskException and ensure the failure is logged.
             _ = Task.Run(async () =>
             {
                 try
@@ -526,7 +539,10 @@ internal sealed class CircuitBreakerStateManager(
                     logger.LogError(ex, "Resume callback failed for group {Group} during HalfOpen transition", groupName);
                     await _ReopenAfterResumeFailureAsync(groupName).ConfigureAwait(false);
                 }
-            });
+            }).ContinueWith(
+                t => logger.LogError(t.Exception, "Unhandled exception in HalfOpen transition for group {Group}", groupName),
+                TaskContinuationOptions.OnlyOnFaulted
+            );
         }
     }
 
@@ -562,7 +578,21 @@ internal sealed class CircuitBreakerStateManager(
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Pause callback failed while re-opening circuit for group {Group}", groupName);
+                // Circuit is Open but transport may not be paused — inconsistent state.
+                // Escalate the open duration so the next retry waits longer, and log at
+                // Critical level so operators are alerted to the inconsistency.
+                lock (groupLock)
+                {
+                    state.EscalationLevel++;
+                }
+
+                logger.LogCritical(
+                    ex,
+                    "Pause callback failed while re-opening circuit for group {Group}. "
+                    + "Circuit is Open but transport may not be paused — manual ResetAsync may be required (escalation: {Escalation})",
+                    groupName,
+                    state.EscalationLevel
+                );
             }
         }
     }
@@ -625,6 +655,13 @@ internal sealed class CircuitBreakerStateManager(
         public Func<ValueTask>? OnResume { get; set; }
 
         public Timer? OpenTimer { get; set; }
+
+        /// <summary>
+        /// Monotonically increasing counter incremented each time <see cref="_TransitionToOpen"/> creates
+        /// a new timer. Timer callbacks capture the current value and compare it on firing — a mismatch
+        /// means the callback is stale and must be discarded.
+        /// </summary>
+        public int TimerGeneration { get; set; }
 
         /// <summary>
         /// Whether a HalfOpen probe has been acquired. Guards single-probe semantics.
