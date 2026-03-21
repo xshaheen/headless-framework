@@ -21,7 +21,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private RabbitMqBasicConsumer? _consumer;
     private IChannel? _channel;
     private string? _consumerTag;
-    private volatile bool _paused;
+    private int _paused;
 
     public RabbitMqConsumerClient(
         string groupName,
@@ -124,24 +124,22 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (_paused || _consumerTag is null)
+        if (Interlocked.CompareExchange(ref _paused, 1, 0) != 0 || _consumerTag is null)
         {
             return;
         }
 
         await _channel!.BasicCancelAsync(_consumerTag, cancellationToken: cancellationToken);
-        _paused = true;
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (!_paused)
+        if (Interlocked.CompareExchange(ref _paused, 0, 1) != 1)
         {
             return;
         }
 
         _consumerTag = await _channel!.BasicConsumeAsync(_groupName, false, _consumer!, cancellationToken);
-        _paused = false;
     }
 
     public ValueTask DisposeAsync()
