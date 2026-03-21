@@ -9,6 +9,8 @@
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard" />
     <InternalsVisibleTo Include="Headless.Messaging.Testing" />
     <InternalsVisibleTo Include="Headless.Messaging.Testing.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FastExpressionCompiler" />

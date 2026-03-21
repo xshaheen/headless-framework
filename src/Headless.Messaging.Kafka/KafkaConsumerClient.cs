@@ -22,6 +22,7 @@ public sealed class KafkaConsumerClient(
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly MessagingKafkaOptions _kafkaOptions = Argument.IsNotNull(options.Value);
     private IConsumer<string, byte[]>? _consumerClient;
+    private int _paused; // 0 = running, 1 = paused
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -150,6 +151,26 @@ public sealed class KafkaConsumerClient(
     {
         _consumerClient!.Assign(_consumerClient.Assignment);
         _semaphore.Release();
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0 && _consumerClient is not null)
+        {
+            _consumerClient.Pause(_consumerClient.Assignment);
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1 && _consumerClient is not null)
+        {
+            _consumerClient.Resume(_consumerClient.Assignment);
+        }
+
         return ValueTask.CompletedTask;
     }
 

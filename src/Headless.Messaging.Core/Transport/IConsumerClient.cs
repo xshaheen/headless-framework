@@ -55,6 +55,26 @@ public interface IConsumerClient : IAsyncDisposable
     ValueTask RejectAsync(object? sender);
 
     /// <summary>
+    /// Pauses message consumption. Idempotent — calling on an already-paused client is a no-op.
+    /// In-flight messages being processed are allowed to complete naturally.
+    /// No new messages are pulled from the broker after this call returns.
+    /// </summary>
+    /// <param name="cancellationToken">Token to cancel the pause operation.</param>
+    ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Resumes message consumption. Idempotent — calling on an already-running client is a no-op.
+    /// </summary>
+    /// <param name="cancellationToken">Token to cancel the resume operation.</param>
+    ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
     /// Callback that is invoked when a message is received from the broker
     /// </summary>
     Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }

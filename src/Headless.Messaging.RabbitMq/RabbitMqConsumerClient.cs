@@ -20,6 +20,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly RabbitMqOptions _rabbitMqOptions;
     private RabbitMqBasicConsumer? _consumer;
     private IChannel? _channel;
+    private string? _consumerTag;
+    private volatile bool _paused;
 
     public RabbitMqConsumerClient(
         string groupName,
@@ -89,7 +91,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         try
         {
-            await _channel!.BasicConsumeAsync(_groupName, false, _consumer, cancellationToken);
+            _consumerTag = await _channel!.BasicConsumeAsync(_groupName, false, _consumer, cancellationToken);
         }
         catch (TimeoutException ex)
         {
@@ -118,6 +120,28 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     public async ValueTask RejectAsync(object? sender)
     {
         await _consumer!.BasicReject((ulong)sender!);
+    }
+
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        if (_paused || _consumerTag is null)
+        {
+            return;
+        }
+
+        await _channel!.BasicCancelAsync(_consumerTag, cancellationToken: cancellationToken);
+        _paused = true;
+    }
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_paused)
+        {
+            return;
+        }
+
+        _consumerTag = await _channel!.BasicConsumeAsync(_groupName, false, _consumer!, cancellationToken);
+        _paused = false;
     }
 
     public ValueTask DisposeAsync()

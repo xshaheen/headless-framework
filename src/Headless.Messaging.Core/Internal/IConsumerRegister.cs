@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Exceptions;
@@ -31,13 +33,13 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
+    private readonly ConcurrentDictionary<string, GroupHandle> _groupHandles = new(StringComparer.Ordinal);
     private readonly ILogger _logger = logger;
     private readonly MessagingOptions _options = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
     private readonly TimeSpan _pollingDelay = TimeSpan.FromSeconds(1);
-    private Task? _compositeTask;
 
+    private ICircuitBreakerStateManager? _circuitBreakerStateManager;
     private IConsumerClientFactory _consumerClientFactory = null!;
-    private CancellationTokenSource _cts = new();
     private IDispatcher _dispatcher = null!;
     private int _disposed;
     private volatile bool _isHealthy = true;
@@ -45,6 +47,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private MethodMatcherCache _selector = null!;
     private ISerializer _serializer = null!;
     private BrokerAddress _serverAddress;
+    private CancellationToken _hostStoppingToken;
+    private CancellationTokenSource _stoppingCts = new();
     private IDataStorage _storage = null!;
 
     public bool IsHealthy()
@@ -54,14 +58,16 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
     public async ValueTask StartAsync(CancellationToken stoppingToken)
     {
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        _cts.Token.Register(Dispose);
+        _hostStoppingToken = stoppingToken;
+        _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        _stoppingCts.Token.Register(Dispose);
 
         _selector = serviceProvider.GetRequiredService<MethodMatcherCache>();
         _dispatcher = serviceProvider.GetRequiredService<IDispatcher>();
         _serializer = serviceProvider.GetRequiredService<ISerializer>();
         _storage = serviceProvider.GetRequiredService<IDataStorage>();
         _consumerClientFactory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
+        _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();
 
         await ExecuteAsync();
 
@@ -74,7 +80,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         {
             await PulseAsync();
 
-            _cts = new CancellationTokenSource();
+            _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(_hostStoppingToken);
+            _stoppingCts.Token.Register(Dispose);
             _isHealthy = true;
 
             await ExecuteAsync();
@@ -99,11 +106,6 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         try
         {
             await PulseAsync();
-
-            if (_compositeTask is not null)
-            {
-                await _compositeTask.WaitAsync(TimeSpan.FromSeconds(2));
-            }
         }
         catch (AggregateException e)
         {
@@ -125,22 +127,49 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
     public async Task PulseAsync()
     {
-        await _cts.CancelAsync();
-        _cts.Dispose();
+        // Cancel all group CTSes
+        foreach (var handle in _groupHandles.Values)
+        {
+            await handle.Cts.CancelAsync();
+        }
+
+        // Wait for all consumer tasks to complete
+        var allTasks = _groupHandles.Values.SelectMany(h => h.ConsumerTasks).ToArray();
+        if (allTasks.Length > 0)
+        {
+            try
+            {
+                await Task.WhenAll(allTasks).WaitAsync(TimeSpan.FromSeconds(2));
+            }
+#pragma warning disable ERP022, RCS1075 // Intentional: timeout or cancellation — proceed with cleanup
+            catch (Exception) { }
+#pragma warning restore ERP022, RCS1075
+        }
+
+        // Dispose all handles
+        foreach (var handle in _groupHandles.Values)
+        {
+            await handle.DisposeAsync();
+            _circuitBreakerStateManager?.RemoveGroup(handle.GroupName);
+        }
+
+        _groupHandles.Clear();
+        _stoppingCts.Dispose();
     }
 
     public async ValueTask ExecuteAsync()
     {
         var groupingMatches = _selector.GetCandidatesMethodsOfGroupNameGrouped();
-        var consumerTasks = new List<Task>();
 
         foreach (var matchGroup in groupingMatches)
         {
+            var groupName = matchGroup.Key;
+            var limit = _selector.GetGroupConcurrentLimit(groupName);
+
             ICollection<string> topics;
-            var limit = _selector.GetGroupConcurrentLimit(matchGroup.Key);
             try
             {
-                await using var client = await _consumerClientFactory.CreateAsync(matchGroup.Key, limit);
+                await using var client = await _consumerClientFactory.CreateAsync(groupName, limit);
                 client.OnLogCallback = _WriteLog;
                 topics = await client.FetchTopicsAsync(matchGroup.Value.Select(x => x.TopicName));
             }
@@ -151,31 +180,45 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 return;
             }
 
+            var groupCts = CancellationTokenSource.CreateLinkedTokenSource(_stoppingCts.Token);
+            var handle = new GroupHandle
+            {
+                Logger = _logger,
+                Cts = groupCts,
+                Clients = [],
+                GroupName = groupName,
+            };
+
+            _groupHandles[groupName] = handle;
+            _circuitBreakerStateManager?.RegisterGroupCallbacks(
+                groupName,
+                onPause: () => _PauseGroupAsync(handle),
+                onResume: () => _ResumeGroupAsync(handle)
+            );
+
             for (var i = 0; i < _options.ConsumerThreadCount; i++)
             {
-                var topicIds = topics.Select(t => t);
                 var task = Task
                     .Factory.StartNew(
                         async () =>
                         {
                             try
                             {
-                                await using var client = await _consumerClientFactory.CreateAsync(
-                                    matchGroup.Key,
-                                    limit
-                                );
+                                var innerClient = await _consumerClientFactory.CreateAsync(groupName, limit);
 
-                                _serverAddress = client.BrokerAddress;
+                                handle.AddClient(innerClient);
 
-                                _RegisterMessageProcessor(client);
+                                _serverAddress = innerClient.BrokerAddress;
 
-                                await client.SubscribeAsync(topicIds);
+                                _RegisterMessageProcessor(innerClient);
 
-                                await client.ListeningAsync(_pollingDelay, _cts.Token);
+                                await innerClient.SubscribeAsync(topics);
+
+                                await innerClient.ListeningAsync(_pollingDelay, groupCts.Token);
                             }
                             catch (OperationCanceledException)
                             {
-                                //ignore
+                                // ignore
                             }
                             catch (BrokerConnectionException e)
                             {
@@ -191,17 +234,64 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                                 );
                             }
                         },
-                        _cts.Token,
+                        groupCts.Token,
                         TaskCreationOptions.LongRunning,
                         TaskScheduler.Default
                     )
                     .Unwrap();
 
-                consumerTasks.Add(task);
+                handle.ConsumerTasks.Add(task);
             }
         }
+    }
 
-        _compositeTask = Task.WhenAll(consumerTasks);
+    private async ValueTask _PauseGroupAsync(GroupHandle handle)
+    {
+        _logger.LogWarning("Circuit breaker opened for group '{GroupName}'. Pausing consumers.", handle.GroupName);
+
+        // Do NOT cancel the CTS here — the ListeningAsync loops must stay alive so they can
+        // resume without restarting tasks. Transport-level pause (PauseAsync) is sufficient:
+        // MRES-based transports block at the pause gate, RabbitMQ cancels the consumer,
+        // and Kafka pauses partition polling.
+        handle.IsPaused = true;
+        var snapshot = handle.SnapshotClients();
+
+        foreach (var client in snapshot)
+        {
+            try
+            {
+                await client.PauseAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to pause consumer client for group '{GroupName}'.", handle.GroupName);
+            }
+        }
+    }
+
+    private async ValueTask _ResumeGroupAsync(GroupHandle handle)
+    {
+        _logger.LogWarning(
+            "Circuit breaker half-open for group '{GroupName}'. Resuming consumers.",
+            handle.GroupName
+        );
+
+        // No CTS recreation needed — the original CTS was never cancelled during pause,
+        // so ListeningAsync loops are still running. Just un-gate the transport.
+        handle.IsPaused = false;
+        var snapshot = handle.SnapshotClients();
+
+        foreach (var client in snapshot)
+        {
+            try
+            {
+                await client.ResumeAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to resume consumer client for group '{GroupName}'.", handle.GroupName);
+            }
+        }
     }
 
     private void _RegisterMessageProcessor(IConsumerClient client)
@@ -209,17 +299,32 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         client.OnLogCallback = _WriteLog;
         client.OnMessageCallback = async (transportMessage, sender) =>
         {
+            var groupName = transportMessage.GetGroup();
+            var probeAcquired = false;
+            var probeOutcomeTransferred = false;
             long? tracingTimestamp = null;
             try
             {
+                if (groupName is not null && _circuitBreakerStateManager is not null)
+                {
+                    probeAcquired = _circuitBreakerStateManager.TryAcquireHalfOpenProbe(groupName);
+
+                    if (!probeAcquired)
+                    {
+                        await client.RejectAsync(sender);
+                        return;
+                    }
+                }
+
                 _logger.MessageReceived(transportMessage.GetId(), transportMessage.GetName());
 
                 tracingTimestamp = _TracingBefore(transportMessage, _serverAddress);
 
                 var name = transportMessage.GetName();
-                var group = transportMessage.GetGroup()!;
+                var group = groupName!;
 
                 Message message;
+                Exception? dispatchBypassException = null;
 
                 var canFindSubscriber = _selector.TryGetTopicExecutor(name, group, out var executor);
                 string? exceptionInfo = null;
@@ -250,6 +355,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 }
                 catch (Exception e)
                 {
+                    dispatchBypassException = e;
 #pragma warning disable EPC12 // Suppress CA2200 warning to rethrow original exception
                     transportMessage.Headers[Headers.Exception] = e.GetType().Name + "-->" + e.Message;
 #pragma warning restore EPC12
@@ -278,6 +384,13 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
                 if (message.HasException())
                 {
+                    if (dispatchBypassException is not null && _circuitBreakerStateManager is not null)
+                    {
+                        await _circuitBreakerStateManager.ReportFailureAsync(group, dispatchBypassException)
+                            .ConfigureAwait(false);
+                        probeOutcomeTransferred = true;
+                    }
+
 #pragma warning disable CA1849, VSTHRD103
                     var content = _serializer.Serialize(message);
 #pragma warning restore VSTHRD103, CA1849
@@ -314,6 +427,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                     _TracingAfter(tracingTimestamp, transportMessage, _serverAddress);
 
                     await _dispatcher.EnqueueToExecute(mediumMessage, executor!);
+                    probeOutcomeTransferred = true;
 
                     await client.CommitAsync(sender);
                 }
@@ -329,6 +443,13 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 await client.RejectAsync(sender);
 
                 _TracingError(tracingTimestamp, transportMessage, client.BrokerAddress, e);
+            }
+            finally
+            {
+                if (probeAcquired && !probeOutcomeTransferred && groupName is not null)
+                {
+                    _circuitBreakerStateManager?.ReleaseHalfOpenProbe(groupName);
+                }
             }
         };
     }
@@ -390,6 +511,68 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 break;
             default:
                 throw new InvalidOperationException($"Unknown {nameof(MqLogType)}={logMessage.LogType}");
+        }
+    }
+
+    private sealed class GroupHandle : IAsyncDisposable
+    {
+        private readonly Lock _clientsLock = new();
+        private bool _isPaused;
+
+        public required ILogger Logger { get; init; }
+        public required CancellationTokenSource Cts { get; set; }
+        public required List<IConsumerClient> Clients { get; init; }
+        public required string GroupName { get; init; }
+        public List<Task> ConsumerTasks { get; init; } = [];
+
+        public bool IsPaused
+        {
+            get { lock (_clientsLock) { return _isPaused; } }
+            set { lock (_clientsLock) { _isPaused = value; } }
+        }
+
+        public void AddClient(IConsumerClient client)
+        {
+            bool shouldPause;
+            lock (_clientsLock)
+            {
+                Clients.Add(client);
+                shouldPause = _isPaused;
+            }
+
+            if (shouldPause)
+            {
+                // Fire-and-forget — the client will block at the pause gate on next poll
+                // regardless; this just ensures immediate consistency.
+                _ = client.PauseAsync().AsTask().ContinueWith(
+                    t => Logger.LogError(
+                        t.Exception,
+                        "Failed to pause newly added consumer client for group '{GroupName}'.",
+                        GroupName),
+                    CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted,
+                    TaskScheduler.Default);
+            }
+        }
+
+        public IConsumerClient[] SnapshotClients()
+        {
+            lock (_clientsLock)
+            {
+                return [.. Clients];
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await Cts.CancelAsync();
+            Cts.Dispose();
+
+            var snapshot = SnapshotClients();
+            foreach (var client in snapshot)
+            {
+                await client.DisposeAsync();
+            }
         }
     }
 

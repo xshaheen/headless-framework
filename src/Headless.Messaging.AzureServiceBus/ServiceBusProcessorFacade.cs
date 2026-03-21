@@ -45,6 +45,13 @@ public class ServiceBusProcessorFacade : IAsyncDisposable
             : _serviceBusProcessor!.StartProcessingAsync(cancellationToken);
     }
 
+    public Task StopProcessingAsync(CancellationToken cancellationToken = default)
+    {
+        return IsSessionProcessor
+            ? _serviceBusSessionProcessor!.StopProcessingAsync(cancellationToken)
+            : _serviceBusProcessor!.StopProcessingAsync(cancellationToken);
+    }
+
 #pragma warning disable CA1003, MA0046
     // CA1003/MA0046: Must use Func<T, Task> to match Azure SDK's ServiceBusProcessor event signatures
     public event Func<ProcessMessageEventArgs, Task> ProcessMessageAsync

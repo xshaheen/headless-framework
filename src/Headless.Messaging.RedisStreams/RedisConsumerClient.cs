@@ -18,6 +18,8 @@ internal class RedisConsumerClient(
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly ManualResetEventSlim _pauseGate = new(true);
+    private int _paused; // 0 = running, 1 = paused
     private string[] _topics = null!;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -67,8 +69,29 @@ internal class RedisConsumerClient(
         return ValueTask.CompletedTask;
     }
 
+    public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
+        {
+            _pauseGate.Reset();
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
+        {
+            _pauseGate.Set();
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
     public ValueTask DisposeAsync()
     {
+        _pauseGate.Dispose();
         _semaphore.Dispose();
         return ValueTask.CompletedTask;
     }
@@ -98,6 +121,7 @@ internal class RedisConsumerClient(
             {
                 foreach (var entry in stream.Entries)
                 {
+                    _pauseGate.Wait(cancellationToken);
                     if (entry.IsNull)
                     {
                         return;

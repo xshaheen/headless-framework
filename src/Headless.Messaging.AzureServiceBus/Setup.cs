@@ -48,7 +48,7 @@ public static class MessagesAzureServiceBusSetup
         {
             services.AddSingleton(new MessageQueueMarkerService("Azure Service Bus"));
 
-            services.Configure(configure);
+            services.Configure<AzureServiceBusOptions, AzureServiceBusOptionsValidator>(configure);
 
             services.AddSingleton<IConsumerClientFactory, AzureServiceBusConsumerClientFactory>();
             services.AddSingleton<ITransport, AzureServiceBusTransport>();

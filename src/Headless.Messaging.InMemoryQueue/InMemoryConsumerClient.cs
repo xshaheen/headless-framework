@@ -15,6 +15,8 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     private readonly byte _groupConcurrent;
     private readonly BlockingCollection<TransportMessage> _messageQueue = new();
     private readonly SemaphoreSlim _semaphore;
+    private readonly ManualResetEventSlim _pauseGate = new(true);
+    private int _paused; // 0 = running, 1 = paused
 
     /// <summary>
     /// Initializes a new instance of the InMemoryConsumerClient class.
@@ -79,6 +81,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     {
         foreach (var message in _messageQueue.GetConsumingEnumerable(cancellationToken))
         {
+            _pauseGate.Wait(cancellationToken);
             if (_groupConcurrent > 0)
             {
                 await _semaphore.WaitAsync(cancellationToken);
@@ -117,12 +120,35 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
         return ValueTask.CompletedTask;
     }
 
+    /// <inheritdoc />
+    public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
+        {
+            _pauseGate.Reset();
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
+        {
+            _pauseGate.Set();
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
     /// <summary>
     /// Disposes the consumer client and unsubscribes from the queue.
     /// </summary>
     /// <returns>A value task representing the disposal</returns>
     public ValueTask DisposeAsync()
     {
+        _pauseGate.Dispose();
         _semaphore.Dispose();
         _messageQueue.Dispose();
         _queue.Unsubscribe(_groupId);

@@ -353,4 +353,32 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         // then - should be idempotent (calling dispose again should not throw)
         await client.DisposeAsync();
     }
+
+    // -------------------------------------------------------------------------
+    // PauseAsync / ResumeAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PauseAsync_is_noop_when_consumer_tag_is_null()
+    {
+        // _consumerTag is null before ListeningAsync — PauseAsync should be a no-op
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await client.ConnectAsync();
+
+        await client.PauseAsync();
+
+        // BasicCancelAsync should NOT have been called
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_when_not_paused()
+    {
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+
+        // not paused — ResumeAsync should be no-op, no BasicConsumeAsync call
+        await client.ResumeAsync();
+
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+    }
 }

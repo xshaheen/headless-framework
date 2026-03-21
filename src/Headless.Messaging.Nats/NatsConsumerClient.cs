@@ -22,6 +22,11 @@ internal sealed class NatsConsumerClient(
     private readonly MessagingNatsOptions _natsOptions =
         options.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly ManualResetEventSlim _pauseGate = new(true);
+    private readonly List<IJetStreamPushAsyncSubscription> _subscriptions = [];
+    private IEnumerable<string>? _subscribedTopics;
+    private int _paused; // 0 = running, 1 = paused
+    private CancellationToken _cancellationToken;
     private IConnection? _consumerClient;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -83,6 +88,16 @@ internal sealed class NatsConsumerClient(
     {
         Argument.IsNotNull(topics);
 
+        // Materialize and store topics for re-subscription on resume
+        _subscribedTopics = topics.ToList();
+
+        _CreateSubscriptions(_subscribedTopics);
+
+        return ValueTask.CompletedTask;
+    }
+
+    private void _CreateSubscriptions(IEnumerable<string> topics)
+    {
         Connect();
 
         var js = _consumerClient!.CreateJetStreamContext();
@@ -113,7 +128,8 @@ internal sealed class NatsConsumerClient(
                             .WithConfiguration(consumerConfig.Build())
                             .Build();
 
-                        js.PushSubscribeAsync(subject, groupName, _SubscriptionMessageHandler, false, pso);
+                        var sub = js.PushSubscribeAsync(subject, groupName, _SubscriptionMessageHandler, false, pso);
+                        _subscriptions.Add(sub);
                     }
 #pragma warning disable ERP022
                     catch (Exception e)
@@ -132,11 +148,12 @@ internal sealed class NatsConsumerClient(
                 }
             }
         }
-        return ValueTask.CompletedTask;
     }
 
     public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
+        _cancellationToken = cancellationToken;
+
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -150,25 +167,24 @@ internal sealed class NatsConsumerClient(
     {
         try
         {
+            _pauseGate.Wait(_cancellationToken);
+
             if (groupConcurrent > 0)
             {
-                await _semaphore.WaitAsync();
-                _ = Task.Run(consumeAsync)
-                    .ContinueWith(
-                        static (t, state) =>
+                await _semaphore.WaitAsync(_cancellationToken).ConfigureAwait(false);
+                _ = Task.Run(
+                        async () =>
                         {
-                            ((Action<LogMessageEventArgs>?)state)?.Invoke(
-                                new LogMessageEventArgs
-                                {
-                                    LogType = MqLogType.ExceptionReceived,
-                                    Reason = $"Unhandled exception in message handler: {t.Exception}",
-                                }
-                            );
+                            try
+                            {
+                                await consumeAsync().ConfigureAwait(false);
+                            }
+                            finally
+                            {
+                                _ReleaseSemaphore();
+                            }
                         },
-                        OnLogCallback,
-                        CancellationToken.None,
-                        TaskContinuationOptions.OnlyOnFaulted,
-                        TaskScheduler.Default
+                        CancellationToken.None
                     );
             }
             else
@@ -243,10 +259,6 @@ internal sealed class NatsConsumerClient(
                 }
             );
         }
-        finally
-        {
-            _ReleaseSemaphore();
-        }
 
         return ValueTask.CompletedTask;
     }
@@ -270,10 +282,6 @@ internal sealed class NatsConsumerClient(
                 }
             );
         }
-        finally
-        {
-            _ReleaseSemaphore();
-        }
 
         return ValueTask.CompletedTask;
     }
@@ -293,8 +301,58 @@ internal sealed class NatsConsumerClient(
         }
     }
 
+    public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
+        {
+            _pauseGate.Reset();
+            _DrainSubscriptions();
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
+        {
+            if (_subscribedTopics is not null)
+            {
+                _CreateSubscriptions(_subscribedTopics);
+            }
+
+            _pauseGate.Set();
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    private void _DrainSubscriptions()
+    {
+        lock (_connectionLock)
+        {
+            foreach (var sub in _subscriptions)
+            {
+                try
+                {
+                    sub.Drain((int)TimeSpan.FromSeconds(5).TotalMilliseconds);
+                }
+#pragma warning disable ERP022
+                catch
+                {
+                    // Best-effort drain; subscription may already be closed
+                }
+#pragma warning restore ERP022
+            }
+
+            _subscriptions.Clear();
+        }
+    }
+
     public ValueTask DisposeAsync()
     {
+        _DrainSubscriptions();
+        _pauseGate.Dispose();
         _consumerClient?.Dispose();
         _semaphore.Dispose();
         return ValueTask.CompletedTask;

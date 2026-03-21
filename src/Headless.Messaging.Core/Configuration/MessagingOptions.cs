@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using Headless.Checks;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Retry;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,6 +20,7 @@ public class MessagingOptions : IMessagingBuilder
 {
     internal IServiceCollection? Services { get; set; }
     internal ConsumerRegistry? Registry { get; set; }
+    internal ConsumerCircuitBreakerRegistry CircuitBreakerRegistry { get; } = new();
     internal Dictionary<Type, string> TopicMappings { get; } = new();
     internal IList<IMessagesOptionsExtension> Extensions { get; } = new List<IMessagesOptionsExtension>();
     internal Headless.Messaging.MessagingConventions Conventions { get; set; } = new();
@@ -171,6 +173,19 @@ public class MessagingOptions : IMessagingBuilder
     public IRetryBackoffStrategy RetryBackoffStrategy { get; set; } = new ExponentialBackoffStrategy();
 
     /// <summary>
+    /// Gets the global circuit breaker configuration that applies to all consumer groups.
+    /// Individual consumers may override specific properties via
+    /// <see cref="IConsumerBuilder{TConsumer}.WithCircuitBreaker"/>.
+    /// </summary>
+    public CircuitBreakerOptions CircuitBreaker { get; } = new();
+
+    /// <summary>
+    /// Gets the retry processor configuration that controls adaptive polling and backpressure behavior
+    /// when the circuit breaker is engaged.
+    /// </summary>
+    public RetryProcessorOptions RetryProcessor { get; } = new();
+
+    /// <summary>
     /// Registers a messaging options extension that will be executed when configuring messaging services.
     /// Extensions allow third-party libraries to customize messaging behavior without modifying core configuration.
     /// </summary>
@@ -236,7 +251,7 @@ public class MessagingOptions : IMessagingBuilder
 
         RegisterConsumer(typeof(TConsumer), messageType, topic: null, group: null, concurrency: 1);
 
-        return new ConsumerBuilder<TConsumer>(this, Registry, messageType, autoRegistered: true);
+        return new ConsumerBuilder<TConsumer>(this, Registry, CircuitBreakerRegistry, messageType, autoRegistered: true);
     }
 
     /// <inheritdoc />
@@ -255,7 +270,7 @@ public class MessagingOptions : IMessagingBuilder
         RegisterConsumer(typeof(TConsumer), messageType, topic, group: null, concurrency: 1);
 
         // Return builder that can update the registration if further configuration is needed
-        return new ConsumerBuilder<TConsumer>(this, Registry, messageType, topic, autoRegistered: true);
+        return new ConsumerBuilder<TConsumer>(this, Registry, CircuitBreakerRegistry, messageType, topic, autoRegistered: true);
     }
 
     /// <inheritdoc />

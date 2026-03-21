@@ -2,8 +2,10 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,28 +19,50 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
     private const int _MinSuggestedValueForFallbackWindowLookbackSeconds = 30;
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;
     private readonly IDispatcher _dispatcher;
-    private readonly TimeSpan _waitingInterval;
+    private readonly TimeSpan _baseInterval;
+    private readonly TimeSpan _lockSafetyMargin = TimeSpan.FromSeconds(10);
+    private readonly TimeSpan _maxInterval;
     private readonly IOptions<MessagingOptions> _options;
     private readonly IDataStorage _dataStorage;
-    private readonly TimeSpan _ttl;
-    private readonly TimeSpan _lookbackSeconds;
+    private readonly TimeSpan _lookbackWindow;
     private readonly string _instance;
+    private readonly ICircuitBreakerStateManager? _circuitBreakerStateManager;
+    private readonly bool _adaptivePolling;
+    private readonly double _circuitOpenRateThreshold;
     private Task? _failedRetryConsumeTask;
+
+    // Threading: ProcessAsync is designed for single-threaded sequential invocation by the
+    // background processing loop. _consecutiveHealthyCycles and _consecutiveCleanCycles are
+    // only mutated inside _AdjustPollingInterval which runs on that sequential path.
+    // _currentIntervalTicks is accessed via Interlocked for atomic 64-bit read/write (C#
+    // volatile only supports <=32-bit types). This ensures cross-thread visibility when
+    // _GetLockTtl reads the interval from a different thread — sufficient given the
+    // single-writer sequential invocation guarantee.
+    private long _currentIntervalTicks;
+    private int _consecutiveHealthyCycles;
+    private int _consecutiveCleanCycles;
 
     public MessageNeedToRetryProcessor(
         IOptions<MessagingOptions> options,
+        IOptions<RetryProcessorOptions> retryOptions,
         ILogger<MessageNeedToRetryProcessor> logger,
         IDispatcher dispatcher,
-        IDataStorage dataStorage
+        IDataStorage dataStorage,
+        IServiceProvider serviceProvider
     )
     {
         _options = options;
         _logger = logger;
         _dispatcher = dispatcher;
-        _waitingInterval = TimeSpan.FromSeconds(options.Value.FailedRetryInterval);
-        _lookbackSeconds = TimeSpan.FromSeconds(options.Value.FallbackWindowLookbackSeconds);
+        _baseInterval = TimeSpan.FromSeconds(options.Value.FailedRetryInterval);
+        _currentIntervalTicks = _baseInterval.Ticks;
+        _lookbackWindow = TimeSpan.FromSeconds(options.Value.FallbackWindowLookbackSeconds);
         _dataStorage = dataStorage;
-        _ttl = _waitingInterval.Add(TimeSpan.FromSeconds(10));
+        _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();
+
+        _adaptivePolling = retryOptions.Value.AdaptivePolling;
+        _maxInterval = retryOptions.Value.MaxPollingInterval;
+        _circuitOpenRateThreshold = retryOptions.Value.CircuitOpenRateThreshold;
 
         _instance = (
             (FormattableString)$"{Helper.GetInstanceHostname()}_{SnowflakeIdLongIdGenerator.GenerateWorkerId()}"
@@ -66,12 +90,12 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
         {
             await _dataStorage.RenewLockAsync(
                 $"received_retry_{_options.Value.Version}",
-                _ttl,
+                _GetLockTtl(),
                 _instance,
                 context.CancellationToken
             );
 
-            await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
+            await context.WaitAsync(TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks))).ConfigureAwait(false);
 
             return;
         }
@@ -92,7 +116,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
             TaskScheduler.Default
         );
 
-        await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
+        await context.WaitAsync(TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks))).ConfigureAwait(false);
     }
 
     private async Task _ProcessPublishedAsync(IDataStorage connection, ProcessingContext context)
@@ -103,7 +127,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
             _options.Value.UseStorageLock
             && !await connection.AcquireLockAsync(
                 $"publish_retry_{_options.Value.Version}",
-                _ttl,
+                _GetLockTtl(),
                 _instance,
                 context.CancellationToken
             )
@@ -112,7 +136,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
             return;
         }
 
-        var messages = await _GetSafelyAsync(connection.GetPublishedMessagesOfNeedRetry, _lookbackSeconds)
+        var messages = await _GetSafelyAsync(connection.GetPublishedMessagesOfNeedRetry, _lookbackWindow)
             .ConfigureAwait(false);
 
         foreach (var message in messages)
@@ -140,7 +164,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
             _options.Value.UseStorageLock
             && !await connection.AcquireLockAsync(
                 $"received_retry_{_options.Value.Version}",
-                _ttl,
+                _GetLockTtl(),
                 _instance,
                 context.CancellationToken
             )
@@ -149,14 +173,35 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
             return;
         }
 
-        var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry, _lookbackSeconds)
+        var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry, _lookbackWindow)
             .ConfigureAwait(false);
+
+        var enqueued = 0;
+        var skippedCircuitOpen = 0;
 
         foreach (var message in messages)
         {
             context.ThrowIfStopping();
 
+            var group = message.Origin.GetGroup();
+            if (group is not null && _circuitBreakerStateManager?.IsOpen(group) == true)
+            {
+                skippedCircuitOpen++;
+                _logger.LogDebug(
+                    "Skipping retry for message {DbId} — circuit open for group {Group}",
+                    message.DbId,
+                    group
+                );
+                continue;
+            }
+
             await _dispatcher.EnqueueToExecute(message, null, context.CancellationToken).ConfigureAwait(false);
+            enqueued++;
+        }
+
+        if (_adaptivePolling)
+        {
+            _AdjustPollingInterval(enqueued, skippedCircuitOpen);
         }
 
         if (_options.Value.UseStorageLock)
@@ -171,13 +216,13 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
 
     private async Task<IEnumerable<T>> _GetSafelyAsync<T>(
         Func<TimeSpan, CancellationToken, ValueTask<IEnumerable<T>>> getMessagesAsync,
-        TimeSpan lookbackSeconds,
+        TimeSpan lookbackWindow,
         CancellationToken cancellationToken = default
     )
     {
         try
         {
-            return await getMessagesAsync(lookbackSeconds, cancellationToken).ConfigureAwait(false);
+            return await getMessagesAsync(lookbackWindow, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -187,9 +232,96 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
         }
     }
 
+    /// <summary>
+    /// Two-counter adaptive polling:
+    /// - _consecutiveHealthyCycles: cycles with zero circuit-open messages → halves interval at >=2.
+    /// - _consecutiveCleanCycles: cycles with zero total retry messages → resets to base at >=3.
+    /// Clean cycles (total==0) increment both counters; the >=3 reset check runs before the >=2
+    /// halving check, so a sustained quiet period snaps back to base rather than halving stepwise.
+    /// </summary>
+    private void _AdjustPollingInterval(int enqueued, int skippedCircuitOpen)
+    {
+        var total = enqueued + skippedCircuitOpen;
+        var current = Interlocked.Read(ref _currentIntervalTicks);
+
+        // No messages at all — clean cycle.
+        // Zero messages means both "healthy" (no circuit-open skips) and "clean" (no retries
+        // pending), so both counters are incremented. The _consecutiveCleanCycles >= 3 check
+        // resets to base interval before _consecutiveHealthyCycles >= 2 would halve, giving
+        // a full reset priority over gradual step-down when the system is completely idle.
+        if (total == 0)
+        {
+            _consecutiveCleanCycles++;
+            _consecutiveHealthyCycles++;
+
+            if (_consecutiveCleanCycles >= 3)
+            {
+                Interlocked.Exchange(ref _currentIntervalTicks, _baseInterval.Ticks);
+                _consecutiveCleanCycles = 0;
+                _consecutiveHealthyCycles = 0;
+            }
+            else if (_consecutiveHealthyCycles >= 2 && current > _baseInterval.Ticks)
+            {
+                Interlocked.Exchange(ref _currentIntervalTicks, Math.Max(current / 2, _baseInterval.Ticks));
+            }
+
+            return;
+        }
+
+        var transientRate = (double)skippedCircuitOpen / total;
+
+        if (transientRate > _circuitOpenRateThreshold)
+        {
+            // High circuit-open rate — back off
+            _consecutiveHealthyCycles = 0;
+            _consecutiveCleanCycles = 0;
+
+            var doubled = current * 2;
+            var newTicks = doubled < _maxInterval.Ticks ? doubled : _maxInterval.Ticks;
+            Interlocked.Exchange(ref _currentIntervalTicks, newTicks);
+
+            _logger.LogDebug(
+                "Adaptive polling: circuit-open rate {Rate:P0} exceeds threshold, interval increased to {Interval}",
+                transientRate,
+                TimeSpan.FromTicks(newTicks)
+            );
+        }
+        else if (transientRate <= _circuitOpenRateThreshold / 2.0)
+        {
+            // Healthy cycle — well below backoff threshold
+            _consecutiveHealthyCycles++;
+            _consecutiveCleanCycles = 0;
+
+            if (_consecutiveHealthyCycles >= 2 && current > _baseInterval.Ticks)
+            {
+                var newTicks = Math.Max(current / 2, _baseInterval.Ticks);
+                Interlocked.Exchange(ref _currentIntervalTicks, newTicks);
+                _consecutiveHealthyCycles = 0;
+
+                _logger.LogDebug(
+                    "Adaptive polling: healthy for 2 cycles, interval decreased to {Interval}",
+                    TimeSpan.FromTicks(newTicks)
+                );
+            }
+        }
+        else
+        {
+            // Between backoff threshold and recovery threshold — hold steady
+            _consecutiveHealthyCycles = 0;
+            _consecutiveCleanCycles = 0;
+        }
+    }
+
+    private TimeSpan _GetLockTtl()
+    {
+        var ticks = Interlocked.Read(ref _currentIntervalTicks);
+        var effectiveTicks = ticks > _baseInterval.Ticks ? ticks : _baseInterval.Ticks;
+        return TimeSpan.FromTicks(effectiveTicks).Add(_lockSafetyMargin);
+    }
+
     private void _CheckSafeOptionsSet()
     {
-        if (_lookbackSeconds < TimeSpan.FromSeconds(_MinSuggestedValueForFallbackWindowLookbackSeconds))
+        if (_lookbackWindow < TimeSpan.FromSeconds(_MinSuggestedValueForFallbackWindowLookbackSeconds))
         {
             _logger.LogWarning(
                 "The provided FallbackWindowLookbackSeconds of {CurrentSetFallbackWindowLookbackSeconds} is set to a value lower than {MinSuggestedSeconds} seconds. This might cause unwanted unsafe behavior if the consumer takes more than the provided FallbackWindowLookbackSeconds to execute. ",

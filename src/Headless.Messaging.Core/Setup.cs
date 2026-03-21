@@ -1,8 +1,9 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
@@ -76,6 +77,9 @@ public static class Setup
         // Discover consumers registered via AddConsumer<TConsumer, TMessage>()
         _DiscoverConsumersFromDI(services, options, registry);
 
+        // Discover per-consumer circuit breaker registrations added via AddConsumer().WithCircuitBreaker()
+        _DiscoverCircuitBreakerRegistrationsFromDI(services, options, options.CircuitBreakerRegistry);
+
         return _RegisterCoreMessagingServices(services, options);
     }
 
@@ -132,6 +136,14 @@ public static class Setup
 
         services.TryAddSingleton<IDispatcher, Dispatcher>();
 
+        // Circuit breaker
+        services.AddMetrics();
+        services.TryAddSingleton(options.CircuitBreakerRegistry);
+        services.TryAddSingleton<CircuitBreakerMetrics>();
+        services.TryAddSingleton<ICircuitBreakerStateManager, CircuitBreakerStateManager>();
+        services.TryAddSingleton<ICircuitBreakerMonitor>(sp =>
+            (ICircuitBreakerMonitor)sp.GetRequiredService<ICircuitBreakerStateManager>());
+
         foreach (var serviceExtension in options.Extensions)
         {
             serviceExtension.AddServices(services);
@@ -168,11 +180,38 @@ public static class Setup
             opt.UseStorageLock = options.UseStorageLock;
             opt.RetryBackoffStrategy = options.RetryBackoffStrategy;
 
+            // Copy sub-options
+            opt.CircuitBreaker.FailureThreshold = options.CircuitBreaker.FailureThreshold;
+            opt.CircuitBreaker.OpenDuration = options.CircuitBreaker.OpenDuration;
+            opt.CircuitBreaker.MaxOpenDuration = options.CircuitBreaker.MaxOpenDuration;
+            opt.CircuitBreaker.SuccessfulCyclesToResetEscalation = options.CircuitBreaker.SuccessfulCyclesToResetEscalation;
+            opt.CircuitBreaker.IsTransientException = options.CircuitBreaker.IsTransientException;
+
+            opt.RetryProcessor.AdaptivePolling = options.RetryProcessor.AdaptivePolling;
+            opt.RetryProcessor.MaxPollingInterval = options.RetryProcessor.MaxPollingInterval;
+            opt.RetryProcessor.CircuitOpenRateThreshold = options.RetryProcessor.CircuitOpenRateThreshold;
+
             // Copy internal collections
             foreach (var mapping in options.TopicMappings)
             {
                 opt.TopicMappings[mapping.Key] = mapping.Value;
             }
+        });
+
+        // Register and validate circuit breaker and retry processor options via DI pipeline
+        services.Configure<CircuitBreakerOptions, CircuitBreakerOptionsValidator>(cb =>
+        {
+            cb.FailureThreshold = options.CircuitBreaker.FailureThreshold;
+            cb.OpenDuration = options.CircuitBreaker.OpenDuration;
+            cb.MaxOpenDuration = options.CircuitBreaker.MaxOpenDuration;
+            cb.SuccessfulCyclesToResetEscalation = options.CircuitBreaker.SuccessfulCyclesToResetEscalation;
+            cb.IsTransientException = options.CircuitBreaker.IsTransientException;
+        });
+        services.Configure<RetryProcessorOptions, RetryProcessorOptionsValidator>(rp =>
+        {
+            rp.AdaptivePolling = options.RetryProcessor.AdaptivePolling;
+            rp.MaxPollingInterval = options.RetryProcessor.MaxPollingInterval;
+            rp.CircuitOpenRateThreshold = options.RetryProcessor.CircuitOpenRateThreshold;
         });
 
         //Startup and Hosted
@@ -206,6 +245,46 @@ public static class Setup
         }
     }
 
+    /// <summary>
+    /// Discovers per-consumer circuit breaker registrations added via
+    /// <c>AddConsumer().WithCircuitBreaker()</c> and applies them to the registry.
+    /// </summary>
+    private static void _DiscoverCircuitBreakerRegistrationsFromDI(
+        IServiceCollection services,
+        MessagingOptions options,
+        ConsumerCircuitBreakerRegistry circuitBreakerRegistry
+    )
+    {
+        var registrationDescriptors = services
+            .Where(d =>
+                d.ServiceType == typeof(ConsumerCircuitBreakerRegistration)
+                && d.Lifetime == ServiceLifetime.Singleton
+            )
+            .ToList();
+
+        foreach (var descriptor in registrationDescriptors)
+        {
+            if (descriptor.ImplementationInstance is not ConsumerCircuitBreakerRegistration registration)
+            {
+                continue;
+            }
+
+            var groupName = registration.GroupName;
+
+            // If no group was set on the builder, resolve from the final consumer metadata in the registry
+            if (string.IsNullOrWhiteSpace(groupName))
+            {
+                var metadata = options.Registry?.FindByTypes(registration.ConsumerType, registration.MessageType);
+                groupName = metadata?.Group;
+            }
+
+            if (!string.IsNullOrWhiteSpace(groupName))
+            {
+                circuitBreakerRegistry.Register(groupName, registration.Options);
+            }
+        }
+    }
+
     private static ConsumerMetadata _ResolveDiscoveredMetadata(ConsumerMetadata metadata, MessagingOptions options)
     {
         if (!string.IsNullOrWhiteSpace(metadata.Group))
@@ -216,4 +295,5 @@ public static class Setup
         options.Conventions.Version = options.Version;
         return metadata with { Group = options.Conventions.GetGroupName(metadata.ResolvedHandlerId) };
     }
+
 }
