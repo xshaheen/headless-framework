@@ -282,16 +282,12 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public IReadOnlyDictionary<string, CircuitBreakerState> GetAllStates()
+    public IEnumerable<KeyValuePair<string, CircuitBreakerState>> GetAllStates()
     {
-        var snapshot = new Dictionary<string, CircuitBreakerState>(_groups.Count, StringComparer.Ordinal);
-
         foreach (var (group, state) in _groups)
         {
-            snapshot[group] = state.State;
+            yield return new KeyValuePair<string, CircuitBreakerState>(group, state.State);
         }
-
-        return snapshot;
     }
 
     /// <inheritdoc />

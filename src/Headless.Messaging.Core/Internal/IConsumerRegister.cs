@@ -194,7 +194,6 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             {
                 Logger = _logger,
                 Cts = groupCts,
-                Clients = [],
                 GroupName = groupName,
             };
 
@@ -644,9 +643,10 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         private bool _disposing;
         private bool _isPaused;
 
+        private readonly List<IConsumerClient> _clients = [];
+
         public required ILogger Logger { get; init; }
         public required CancellationTokenSource Cts { get; init; }
-        public required List<IConsumerClient> Clients { get; init; }
         public required string GroupName { get; init; }
         public List<Task> ConsumerTasks { get; init; } = [];
 
@@ -672,7 +672,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                     return;
                 }
 
-                Clients.Add(client);
+                _clients.Add(client);
                 shouldPause = _isPaused;
             }
 
@@ -695,7 +695,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         {
             lock (_clientsLock)
             {
-                return [.. Clients];
+                return [.. _clients];
             }
         }
 
@@ -708,7 +708,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             lock (_clientsLock)
             {
                 _disposing = true;
-                snapshot = [.. Clients];
+                snapshot = [.. _clients];
             }
 
             foreach (var client in snapshot)
