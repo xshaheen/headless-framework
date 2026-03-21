@@ -623,8 +623,17 @@ internal sealed class CircuitBreakerStateManager(
     private TimeSpan _GetOpenDuration(GroupCircuitState state)
     {
         var safeLevel = Math.Min(state.EscalationLevel - 1, 62);
-        var seconds = state.EffectiveOpenDuration.TotalSeconds * (1L << safeLevel);
-        return TimeSpan.FromSeconds(Math.Min(seconds, _options.MaxOpenDuration.TotalSeconds));
+        var baseSeconds = state.EffectiveOpenDuration.TotalSeconds;
+        var maxSeconds = _options.MaxOpenDuration.TotalSeconds;
+
+        // At safeLevel >= 53 the bit-shift exceeds 2^53, which is beyond double
+        // precision — the multiplication would produce +Infinity. Short-circuit
+        // to maxSeconds instead of relying on Math.Min(+Inf, max) by accident.
+        var scaledSeconds = safeLevel >= 53
+            ? maxSeconds
+            : Math.Min(baseSeconds * (1L << safeLevel), maxSeconds);
+
+        return TimeSpan.FromSeconds(scaledSeconds);
     }
 
     // -------------------------------------------------------------------------
