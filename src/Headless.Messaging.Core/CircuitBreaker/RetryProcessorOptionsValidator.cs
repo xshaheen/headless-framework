@@ -1,28 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.Extensions.Options;
+using FluentValidation;
 
 namespace Headless.Messaging.CircuitBreaker;
 
-internal sealed class RetryProcessorOptionsValidator : IValidateOptions<RetryProcessorOptions>
+internal sealed class RetryProcessorOptionsValidator : AbstractValidator<RetryProcessorOptions>
 {
-    public ValidateOptionsResult Validate(string? name, RetryProcessorOptions options)
+    public RetryProcessorOptionsValidator()
     {
-        var failures = new List<string>();
-
-        if (options.MaxPollingInterval <= TimeSpan.Zero)
-        {
-            failures.Add($"{nameof(RetryProcessorOptions.MaxPollingInterval)} must be greater than TimeSpan.Zero.");
-        }
-
-        if (options.CircuitOpenRateThreshold is <= 0 or >= 1)
-        {
-            failures.Add(
-                $"{nameof(RetryProcessorOptions.CircuitOpenRateThreshold)} must be strictly between 0 and 1 "
-                    + $"(got {options.CircuitOpenRateThreshold})."
-            );
-        }
-
-        return failures.Count > 0 ? ValidateOptionsResult.Fail(failures) : ValidateOptionsResult.Success;
+        RuleFor(x => x.MaxPollingInterval).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.CircuitOpenRateThreshold).ExclusiveBetween(0, 1);
     }
 }

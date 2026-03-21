@@ -10,6 +10,7 @@ using Headless.Messaging.Processor;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
@@ -199,12 +200,11 @@ public static class Setup
             }
         });
 
-        // Validate eagerly — throws OptionsValidationException at startup rather than on first access
-        _ValidateCircuitBreakerOptions(options.CircuitBreaker);
-        _ValidateRetryProcessorOptions(options.RetryProcessor);
+        // Validate eagerly via FluentValidation — throws at startup rather than on first access
+        new CircuitBreakerOptionsValidator().ValidateAndThrow(options.CircuitBreaker);
+        new RetryProcessorOptionsValidator().ValidateAndThrow(options.RetryProcessor);
 
         // Register circuit breaker and retry processor options as direct IOptions wrappers
-        // (init-only properties prevent use of the standard Configure<T> pipeline).
         services.TryAddSingleton<IOptions<CircuitBreakerOptions>>(
             _ => Microsoft.Extensions.Options.Options.Create(options.CircuitBreaker)
         );
@@ -294,33 +294,4 @@ public static class Setup
         return metadata with { Group = options.Conventions.GetGroupName(metadata.ResolvedHandlerId) };
     }
 
-    private static void _ValidateCircuitBreakerOptions(CircuitBreakerOptions opt)
-    {
-        var validator = new CircuitBreakerOptionsValidator();
-        var result = validator.Validate(null, opt);
-
-        if (result.Failed)
-        {
-            throw new OptionsValidationException(
-                nameof(CircuitBreakerOptions),
-                typeof(CircuitBreakerOptions),
-                result.Failures
-            );
-        }
-    }
-
-    private static void _ValidateRetryProcessorOptions(RetryProcessorOptions opt)
-    {
-        var validator = new RetryProcessorOptionsValidator();
-        var result = validator.Validate(null, opt);
-
-        if (result.Failed)
-        {
-            throw new OptionsValidationException(
-                nameof(RetryProcessorOptions),
-                typeof(RetryProcessorOptions),
-                result.Failures
-            );
-        }
-    }
 }

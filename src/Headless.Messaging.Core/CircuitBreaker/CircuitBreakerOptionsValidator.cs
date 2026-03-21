@@ -1,46 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.Extensions.Options;
+using FluentValidation;
 
 namespace Headless.Messaging.CircuitBreaker;
 
-internal sealed class CircuitBreakerOptionsValidator : IValidateOptions<CircuitBreakerOptions>
+internal sealed class CircuitBreakerOptionsValidator : AbstractValidator<CircuitBreakerOptions>
 {
-    public ValidateOptionsResult Validate(string? name, CircuitBreakerOptions options)
+    public CircuitBreakerOptionsValidator()
     {
-        var failures = new List<string>();
-
-        if (options.FailureThreshold <= 0)
-        {
-            failures.Add($"{nameof(CircuitBreakerOptions.FailureThreshold)} must be greater than 0.");
-        }
-
-        if (options.OpenDuration <= TimeSpan.Zero)
-        {
-            failures.Add($"{nameof(CircuitBreakerOptions.OpenDuration)} must be greater than TimeSpan.Zero.");
-        }
-
-        if (options.MaxOpenDuration < options.OpenDuration)
-        {
-            failures.Add(
-                $"{nameof(CircuitBreakerOptions.MaxOpenDuration)} ({options.MaxOpenDuration}) "
-                    + $"must be greater than or equal to {nameof(CircuitBreakerOptions.OpenDuration)} ({options.OpenDuration})."
-            );
-        }
-
-        if (options.SuccessfulCyclesToResetEscalation <= 0)
-        {
-            failures.Add(
-                $"{nameof(CircuitBreakerOptions.SuccessfulCyclesToResetEscalation)} must be greater than 0."
-            );
-        }
-
-        // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
-        if (options.IsTransientException is null)
-        {
-            failures.Add($"{nameof(CircuitBreakerOptions.IsTransientException)} must not be null.");
-        }
-
-        return failures.Count > 0 ? ValidateOptionsResult.Fail(failures) : ValidateOptionsResult.Success;
+        RuleFor(x => x.FailureThreshold).GreaterThan(0);
+        RuleFor(x => x.OpenDuration).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.MaxOpenDuration).GreaterThanOrEqualTo(x => x.OpenDuration);
+        RuleFor(x => x.SuccessfulCyclesToResetEscalation).GreaterThan(0);
+        RuleFor(x => x.IsTransientException).NotNull();
     }
 }
