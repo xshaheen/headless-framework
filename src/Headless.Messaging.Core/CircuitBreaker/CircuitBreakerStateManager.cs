@@ -334,12 +334,29 @@ internal sealed class CircuitBreakerStateManager(
     // Private helpers
     // -------------------------------------------------------------------------
 
+    /// <summary>
+    /// Hard cap on the number of tracked groups. If exceeded, new groups receive the no-op state
+    /// to prevent unbounded memory growth even if <see cref="_knownGroups"/> is not yet populated.
+    /// </summary>
+    private const int MaxTrackedGroups = 1000;
+
     private GroupCircuitState _GetOrAddState(string groupName)
     {
         if (_knownGroups is not null && !_knownGroups.Contains(groupName))
         {
             logger.LogWarning(
                 "Unrecognized consumer group '{Group}' — returning no-op circuit state to prevent unbounded cardinality",
+                groupName
+            );
+
+            return s_noOpState;
+        }
+
+        if (_groups.Count >= MaxTrackedGroups && !_groups.ContainsKey(groupName))
+        {
+            logger.LogWarning(
+                "Circuit breaker group count cap ({Cap}) reached — returning no-op state for group '{Group}'",
+                MaxTrackedGroups,
                 groupName
             );
 
