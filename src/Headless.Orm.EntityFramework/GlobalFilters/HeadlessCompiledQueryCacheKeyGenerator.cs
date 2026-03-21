@@ -19,24 +19,23 @@ public sealed class HeadlessCompiledQueryCacheKeyGenerator(
 
         if (currentDbContext.Context is HeadlessDbContext db)
         {
-            return new HeadlessCompiledQueryCacheKey(innerCacheKey, db.TenantId);
+            return new HeadlessCacheKey(innerCacheKey, db.TenantId);
         }
 
         return innerCacheKey;
     }
 
-    private readonly struct HeadlessCompiledQueryCacheKey(object innerCacheKey, string? tenantId)
-        : IEquatable<HeadlessCompiledQueryCacheKey>
+    private readonly struct HeadlessCacheKey(object innerCacheKey, string? tenantId) : IEquatable<HeadlessCacheKey>
     {
         private readonly object _innerCacheKey = innerCacheKey;
         private readonly string? _tenantId = tenantId;
 
         public override bool Equals(object? obj)
         {
-            return obj is HeadlessCompiledQueryCacheKey key && Equals(key);
+            return obj is HeadlessCacheKey key && Equals(key);
         }
 
-        public bool Equals(HeadlessCompiledQueryCacheKey other)
+        public bool Equals(HeadlessCacheKey other)
         {
             return _innerCacheKey.Equals(other._innerCacheKey)
                 && string.Equals(_tenantId, other._tenantId, StringComparison.Ordinal);

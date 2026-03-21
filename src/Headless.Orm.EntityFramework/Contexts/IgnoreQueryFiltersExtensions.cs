@@ -15,37 +15,35 @@ public static class HeadlessQueryFilters
 
 public static class IgnoreQueryFiltersExtensions
 {
-    public static IQueryable<TEntity> IgnoreMultiTenancyFilter<TEntity>(
-        this IQueryable<TEntity> source,
-        [CallerMemberName] string callerMember = "",
-        [CallerFilePath] string callerFile = ""
-    )
+    extension<TEntity>(IQueryable<TEntity> source)
         where TEntity : class
     {
-        _LogFilterBypassed(HeadlessQueryFilters.MultiTenancyFilter, typeof(TEntity).Name, callerMember, callerFile);
-        return source.IgnoreQueryFilters([HeadlessQueryFilters.MultiTenancyFilter]);
-    }
+        public IQueryable<TEntity> IgnoreMultiTenancyFilter(
+            [CallerMemberName] string callerMember = "",
+            [CallerFilePath] string callerFile = ""
+        )
+        {
+            _LogFilterBypassed(HeadlessQueryFilters.MultiTenancyFilter, typeof(TEntity).Name, callerMember, callerFile);
+            return source.IgnoreQueryFilters([HeadlessQueryFilters.MultiTenancyFilter]);
+        }
 
-    public static IQueryable<TEntity> IgnoreNotDeletedFilter<TEntity>(
-        this IQueryable<TEntity> source,
-        [CallerMemberName] string callerMember = "",
-        [CallerFilePath] string callerFile = ""
-    )
-        where TEntity : class
-    {
-        _LogFilterBypassed(HeadlessQueryFilters.NotDeletedFilter, typeof(TEntity).Name, callerMember, callerFile);
-        return source.IgnoreQueryFilters([HeadlessQueryFilters.NotDeletedFilter]);
-    }
+        public IQueryable<TEntity> IgnoreNotDeletedFilter(
+            [CallerMemberName] string callerMember = "",
+            [CallerFilePath] string callerFile = ""
+        )
+        {
+            _LogFilterBypassed(HeadlessQueryFilters.NotDeletedFilter, typeof(TEntity).Name, callerMember, callerFile);
+            return source.IgnoreQueryFilters([HeadlessQueryFilters.NotDeletedFilter]);
+        }
 
-    public static IQueryable<TEntity> IgnoreNotSuspendedFilter<TEntity>(
-        this IQueryable<TEntity> source,
-        [CallerMemberName] string callerMember = "",
-        [CallerFilePath] string callerFile = ""
-    )
-        where TEntity : class
-    {
-        _LogFilterBypassed(HeadlessQueryFilters.NotSuspendedFilter, typeof(TEntity).Name, callerMember, callerFile);
-        return source.IgnoreQueryFilters([HeadlessQueryFilters.NotSuspendedFilter]);
+        public IQueryable<TEntity> IgnoreNotSuspendedFilter(
+            [CallerMemberName] string callerMember = "",
+            [CallerFilePath] string callerFile = ""
+        )
+        {
+            _LogFilterBypassed(HeadlessQueryFilters.NotSuspendedFilter, typeof(TEntity).Name, callerMember, callerFile);
+            return source.IgnoreQueryFilters([HeadlessQueryFilters.NotSuspendedFilter]);
+        }
     }
 
     private static void _LogFilterBypassed(string filterName, string entityType, string callerMember, string callerFile)
