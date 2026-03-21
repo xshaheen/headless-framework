@@ -566,4 +566,47 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // impossibly long; the fact we got here without hanging means the cap worked
         sut.IsOpen(Group).Should().BeTrue();
     }
+
+    [Fact]
+    public async Task Dispose_while_open_cancels_timer_and_prevents_resume_callback()
+    {
+        // given — trip circuit to Open with a short timer
+        var resumeCalled = false;
+        var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(50));
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () =>
+            {
+                resumeCalled = true;
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+        sut.IsOpen(Group).Should().BeTrue();
+
+        // when — dispose before the timer fires
+        sut.Dispose();
+
+        // then — wait well past the open duration; resume must NOT fire
+        await Task.Delay(200);
+        resumeCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Dispose_is_idempotent()
+    {
+        // given
+        var sut = _Create();
+
+        // when / then — calling Dispose twice should not throw
+        var act = () =>
+        {
+            sut.Dispose();
+            sut.Dispose();
+        };
+
+        act.Should().NotThrow();
+    }
 }
