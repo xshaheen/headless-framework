@@ -118,7 +118,7 @@ internal sealed class CircuitBreakerStateManager(
                     // Non-transient failure during probe: the message is bad but the dependency is healthy.
                     // Close the circuit so normal processing resumes.
                     state.ProbeAcquired = false;
-                    openDuration = _TransitionToClosed(state, groupName);
+                    openDuration = _TransitionToClosed(state, groupName, probeSucceeded: false);
                     break;
 
                 case CircuitBreakerState.HalfOpen when isTransient:
@@ -229,7 +229,7 @@ internal sealed class CircuitBreakerStateManager(
             if (state.State is CircuitBreakerState.HalfOpen)
             {
                 state.ProbeAcquired = false;
-                openDuration = _TransitionToClosed(state, groupName);
+                openDuration = _TransitionToClosed(state, groupName, probeSucceeded: true);
             }
         }
 
@@ -475,7 +475,7 @@ internal sealed class CircuitBreakerStateManager(
     /// Returns the open duration (or <see langword="null"/> if not tracked) so the caller
     /// can invoke <c>metrics.RecordOpenDuration</c> after releasing the lock.
     /// </summary>
-    private TimeSpan? _TransitionToClosed(GroupCircuitState state, string groupName)
+    private TimeSpan? _TransitionToClosed(GroupCircuitState state, string groupName, bool probeSucceeded)
     {
         state.State = CircuitBreakerState.Closed;
         state.ConsecutiveFailures = 0;
@@ -497,10 +497,20 @@ internal sealed class CircuitBreakerStateManager(
             state.OpenedAt = 0;
         }
 
-        logger.LogWarning(
-            "Circuit breaker HalfOpen → Closed for group {Group}",
-            groupName
-        );
+        if (probeSucceeded)
+        {
+            logger.LogInformation(
+                "Circuit breaker HalfOpen → Closed for group {Group} (probe succeeded)",
+                groupName
+            );
+        }
+        else
+        {
+            logger.LogWarning(
+                "Circuit breaker HalfOpen → Closed for group {Group} (non-transient failure, dependency considered healthy)",
+                groupName
+            );
+        }
 
         return openDuration;
     }
