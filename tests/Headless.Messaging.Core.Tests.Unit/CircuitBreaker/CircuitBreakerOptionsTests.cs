@@ -46,10 +46,10 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         var opts = new CircuitBreakerOptions { FailureThreshold = 0 };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*FailureThreshold*greater than 0*");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "FailureThreshold");
     }
 
     [Fact]
@@ -58,10 +58,10 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         var opts = new CircuitBreakerOptions { FailureThreshold = -1 };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*FailureThreshold*greater than 0*");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "FailureThreshold");
     }
 
     [Fact]
@@ -70,9 +70,9 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         var opts = new CircuitBreakerOptions { FailureThreshold = 1 };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeFalse();
+        result.IsValid.Should().BeTrue();
     }
 
     [Fact]
@@ -81,10 +81,10 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         var opts = new CircuitBreakerOptions { OpenDuration = TimeSpan.Zero };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*OpenDuration*greater than TimeSpan.Zero*");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "OpenDuration");
     }
 
     [Fact]
@@ -93,10 +93,10 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         var opts = new CircuitBreakerOptions { OpenDuration = TimeSpan.FromSeconds(-1) };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*OpenDuration*greater than TimeSpan.Zero*");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "OpenDuration");
     }
 
     // -------------------------------------------------------------------------
@@ -113,10 +113,10 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*MaxOpenDuration*OpenDuration*");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "MaxOpenDuration");
     }
 
     [Fact]
@@ -129,9 +129,9 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeFalse();
+        result.IsValid.Should().BeTrue();
     }
 
     [Fact]
@@ -144,9 +144,9 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeFalse();
+        result.IsValid.Should().BeTrue();
     }
 
     // -------------------------------------------------------------------------
@@ -159,10 +159,10 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         var opts = new CircuitBreakerOptions { SuccessfulCyclesToResetEscalation = 0 };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*SuccessfulCyclesToResetEscalation*greater than 0*");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "SuccessfulCyclesToResetEscalation");
     }
 
     [Fact]
@@ -171,10 +171,10 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         var opts = new CircuitBreakerOptions { SuccessfulCyclesToResetEscalation = -1 };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*SuccessfulCyclesToResetEscalation*greater than 0*");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "SuccessfulCyclesToResetEscalation");
     }
 
     [Fact]
@@ -183,9 +183,9 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         var opts = new CircuitBreakerOptions { SuccessfulCyclesToResetEscalation = 1 };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeFalse();
+        result.IsValid.Should().BeTrue();
     }
 
     // -------------------------------------------------------------------------
@@ -198,10 +198,10 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         var opts = new CircuitBreakerOptions { IsTransientException = null! };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*IsTransientException*null*");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "IsTransientException");
     }
 
     // -------------------------------------------------------------------------
@@ -221,10 +221,10 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         };
         var validator = new CircuitBreakerOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().HaveCount(4);
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().HaveCount(4);
     }
 }
 
@@ -246,10 +246,10 @@ public sealed class RetryProcessorOptionsTests : TestBase
         var opts = new RetryProcessorOptions { MaxPollingInterval = TimeSpan.Zero };
         var validator = new RetryProcessorOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*MaxPollingInterval*greater than TimeSpan.Zero*");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "MaxPollingInterval");
     }
 
     [Fact]
@@ -258,10 +258,10 @@ public sealed class RetryProcessorOptionsTests : TestBase
         var opts = new RetryProcessorOptions { CircuitOpenRateThreshold = 0 };
         var validator = new RetryProcessorOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*CircuitOpenRateThreshold*between 0 and 1*");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "CircuitOpenRateThreshold");
     }
 
     [Fact]
@@ -270,10 +270,10 @@ public sealed class RetryProcessorOptionsTests : TestBase
         var opts = new RetryProcessorOptions { CircuitOpenRateThreshold = 1.0 };
         var validator = new RetryProcessorOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeTrue();
-        result.Failures.Should().ContainMatch("*CircuitOpenRateThreshold*between 0 and 1*");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "CircuitOpenRateThreshold");
     }
 
     [Fact]
@@ -286,9 +286,9 @@ public sealed class RetryProcessorOptionsTests : TestBase
         };
         var validator = new RetryProcessorOptionsValidator();
 
-        var result = validator.Validate(null, opts);
+        var result = validator.Validate(opts);
 
-        result.Failed.Should().BeFalse();
+        result.IsValid.Should().BeTrue();
     }
 }
 

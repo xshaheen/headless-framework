@@ -73,6 +73,14 @@ dotnet tool restore  # Install: csharpier, dotnet-ef, minver-cli, husky
 - All NuGet versions are in `Directory.Packages.props` — never add `Version` in `.csproj`
 - Public APIs must have XML docs, and README.md files for each package must be kept up to date.
 
+### Options Validation
+
+Always validate options classes with **FluentValidation** (`AbstractValidator<T>`). Never use `IValidateOptions<T>`.
+
+- Create an `internal sealed class {OptionsName}Validator : AbstractValidator<{OptionsName}>` next to the options class.
+- Call `new {OptionsName}Validator().ValidateAndThrow(options)` eagerly at startup (in the `Setup.cs` / DI registration method) so invalid configuration fails fast.
+- For packages that reference `Headless.Hosting`, use `services.Configure<TOption, TValidator>(action)` or `services.AddOptions<TOption, TValidator>()` which wire up FluentValidation automatically.
+
 ### Input Validation Responsibility
 
 This framework delegates certain input validation to consuming applications:
