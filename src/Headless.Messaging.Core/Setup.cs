@@ -122,6 +122,8 @@ public static class Setup
 
         //Queue's message processor
         services.TryAddSingleton<MessageNeedToRetryProcessor>();
+        services.TryAddSingleton<IRetryProcessorMonitor>(sp =>
+            sp.GetRequiredService<MessageNeedToRetryProcessor>());
         services.TryAddSingleton<TransportCheckProcessor>();
         services.TryAddSingleton<MessageDelayedProcessor>();
         services.TryAddSingleton<CollectorProcessor>();
