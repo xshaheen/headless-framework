@@ -60,7 +60,7 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
             set.Add(
                 new AuditLogEntry
                 {
-                    CreatedAt = entry.CreatedAt,
+                    CreatedAt = entry.CreatedAt.UtcDateTime,
                     UserId = _Truncate(entry.UserId, 128),
                     AccountId = _Truncate(entry.AccountId, 128),
                     TenantId = _Truncate(entry.TenantId, 128),

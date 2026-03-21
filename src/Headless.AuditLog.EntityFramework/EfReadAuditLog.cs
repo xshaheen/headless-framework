@@ -48,30 +48,20 @@ internal sealed class EfReadAuditLog(DbContext dbContext) : IReadAuditLog
 
         if (from is not null)
         {
-            query = query.Where(e => e.CreatedAt >= from.Value);
+            query = query.Where(e => e.CreatedAt >= from.Value.UtcDateTime);
         }
 
         if (to is not null)
         {
-            query = query.Where(e => e.CreatedAt < to.Value);
+            query = query.Where(e => e.CreatedAt < to.Value.UtcDateTime);
         }
 
-        List<AuditLogEntry> entries;
-
-        if (dbContext.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
-        {
-            entries = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
-            entries = [.. entries.OrderByDescending(e => e.CreatedAt).ThenByDescending(e => e.Id).Take(limit)];
-        }
-        else
-        {
-            entries = await query
-                .OrderByDescending(e => e.CreatedAt)
-                .ThenByDescending(e => e.Id)
-                .Take(limit)
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
+        var entries = await query
+            .OrderByDescending(e => e.CreatedAt)
+            .ThenByDescending(e => e.Id)
+            .Take(limit)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         return entries.ConvertAll(e => new AuditLogEntryData
         {
@@ -90,7 +80,7 @@ internal sealed class EfReadAuditLog(DbContext dbContext) : IReadAuditLog
             ChangedFields = e.ChangedFields,
             Success = e.Success,
             ErrorCode = e.ErrorCode,
-            CreatedAt = e.CreatedAt,
+            CreatedAt = new DateTimeOffset(DateTime.SpecifyKind(e.CreatedAt, DateTimeKind.Utc)),
         });
     }
 }

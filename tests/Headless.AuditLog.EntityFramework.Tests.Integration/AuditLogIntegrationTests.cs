@@ -48,7 +48,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         entry.NewValues.Should().ContainKey("IsDeleted");
         entry.UserId.Should().Be(AuditIntegrationFixture.UserId);
         entry.TenantId.Should().Be(AuditIntegrationFixture.TenantId);
-        entry.CreatedAt.Should().Be(AuditIntegrationFixture.Now);
+        entry.CreatedAt.Should().Be(AuditIntegrationFixture.Now.UtcDateTime);
 
         var amount = entry.NewValues["Amount"].Should().BeOfType<JsonElement>().Subject;
         amount.GetDecimal().Should().Be(99.99m);
