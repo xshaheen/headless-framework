@@ -333,7 +333,7 @@ public sealed class ConsumerCircuitBreakerRegistryTests : TestBase
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*circuit breaker override for group 'my-group'*already registered*");
+            .WithMessage("*already registered for group 'my-group'*");
     }
 
     [Fact]
