@@ -22,11 +22,11 @@ public static class MultiTenancySetup
         Action<MultiTenancyOptions>? configure = null
     )
     {
-        builder.Services.AddOptions<MultiTenancyOptions>();
+        var optionsBuilder = builder.Services.AddOptions<MultiTenancyOptions, MultiTenancyOptionsValidator>();
 
         if (configure is not null)
         {
-            builder.Services.Configure(configure);
+            optionsBuilder.Configure(configure);
         }
 
         builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
