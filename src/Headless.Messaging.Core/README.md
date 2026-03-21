@@ -264,6 +264,22 @@ Default `CircuitBreakerDefaults.IsTransient` covers: `TimeoutException`, `HttpRe
 - **OTel histogram**: `messaging.circuit_breaker.open_duration` (tagged by group)
 - State transitions logged at Warning level
 
+### Programmatic Control
+
+Inject `ICircuitBreakerMonitor` for runtime observation and manual recovery:
+
+```csharp
+var monitor = app.Services.GetRequiredService<ICircuitBreakerMonitor>();
+
+// Check state
+var states = monitor.GetAllStates(); // all groups with current state
+var isOpen = monitor.IsOpen("payments");
+var state = monitor.GetState("payments"); // Closed, Open, or HalfOpen
+
+// Manual recovery (operator/agent action)
+await monitor.ResetAsync("payments", cancellationToken);
+```
+
 ### Cluster Scope Limitation
 
 The circuit breaker operates **per-process only**. There is no cross-instance coordination — each application instance maintains its own circuit state. In a multi-replica deployment, one instance may have an open circuit while others remain closed.

@@ -530,12 +530,16 @@ internal sealed class CircuitBreakerStateManager(
             // to prevent UnobservedTaskException and ensure the failure is logged.
             _ = Task.Run(async () =>
             {
+                if (Volatile.Read(ref _disposed) != 0) return;
+
                 try
                 {
                     await resumeCallback().ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
+                    if (Volatile.Read(ref _disposed) != 0) return;
+
                     logger.LogError(ex, "Resume callback failed for group {Group} during HalfOpen transition", groupName);
                     await _ReopenAfterResumeFailureAsync(groupName).ConfigureAwait(false);
                 }
@@ -572,6 +576,8 @@ internal sealed class CircuitBreakerStateManager(
 
         if (pauseCallback is not null)
         {
+            if (Volatile.Read(ref _disposed) != 0) return;
+
             try
             {
                 await pauseCallback().ConfigureAwait(false);

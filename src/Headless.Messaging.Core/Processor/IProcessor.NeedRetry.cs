@@ -31,13 +31,11 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
     private readonly double _circuitOpenRateThreshold;
     private Task? _failedRetryConsumeTask;
 
-    // Threading: ProcessAsync is designed for single-threaded sequential invocation by the
-    // background processing loop. _consecutiveHealthyCycles and _consecutiveCleanCycles are
-    // only mutated inside _AdjustPollingInterval which runs on that sequential path.
-    // _currentIntervalTicks is accessed via Interlocked for atomic 64-bit read/write (C#
-    // volatile only supports <=32-bit types). This ensures cross-thread visibility when
-    // _GetLockTtl reads the interval from a different thread — sufficient given the
-    // single-writer sequential invocation guarantee.
+    // Threading contract:
+    // - _AdjustPollingInterval is called only from ProcessAsync (sequential).
+    // - _GetLockTtl reads _currentIntervalTicks from the same sequential context.
+    // - Interlocked is used on _currentIntervalTicks for cross-thread visibility (future-proofing).
+    // - _consecutiveHealthyCycles and _consecutiveCleanCycles are only accessed from ProcessAsync — no sync needed.
     private long _currentIntervalTicks;
     private int _consecutiveHealthyCycles;
     private int _consecutiveCleanCycles;

@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p1
 issue_id: "081"
 tags: ["code-review","dotnet","messaging"]
@@ -60,3 +60,9 @@ PR #194.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-21 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

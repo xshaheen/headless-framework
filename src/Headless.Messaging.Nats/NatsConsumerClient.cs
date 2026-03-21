@@ -306,7 +306,11 @@ internal sealed class NatsConsumerClient(
         if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
             _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _DrainSubscriptions();
+
+            // Unsubscribe without drain — the circuit is opening because messages are
+            // already failing, so a synchronous 5-second drain adds latency with no
+            // safety benefit. Consistent with RabbitMQ/Kafka/Azure pause semantics.
+            _UnsubscribeWithoutDrain();
         }
 
         return ValueTask.CompletedTask;
@@ -325,6 +329,28 @@ internal sealed class NatsConsumerClient(
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    private void _UnsubscribeWithoutDrain()
+    {
+        lock (_connectionLock)
+        {
+            foreach (var sub in _subscriptions)
+            {
+                try
+                {
+                    sub.Unsubscribe();
+                }
+#pragma warning disable ERP022
+                catch
+                {
+                    // Best-effort unsubscribe; subscription may already be closed
+                }
+#pragma warning restore ERP022
+            }
+
+            _subscriptions.Clear();
+        }
     }
 
     private void _DrainSubscriptions()
