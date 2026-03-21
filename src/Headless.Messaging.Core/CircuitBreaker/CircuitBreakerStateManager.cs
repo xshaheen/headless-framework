@@ -80,7 +80,18 @@ internal sealed class CircuitBreakerStateManager(
             return;
         }
 
-        var isTransient = state.EffectiveIsTransient(exception);
+        bool isTransient;
+
+        try
+        {
+            isTransient = state.EffectiveIsTransient(exception);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "IsTransientException predicate threw for group {Group}; treating as non-transient", groupName);
+            isTransient = false;
+        }
+
         var groupLock = state.SyncLock;
         Func<ValueTask>? pauseCallback = null;
         var tripped = false;
@@ -406,8 +417,8 @@ internal sealed class CircuitBreakerStateManager(
         state.OpenedAt = Environment.TickCount64;
         state.SuccessfulCyclesAfterClose = 0;
 
-        var openDuration = _GetOpenDuration(state);
         state.EscalationLevel++;
+        var openDuration = _GetOpenDuration(state);
 
         // Dispose any existing timer to prevent a stale HalfOpen transition from firing.
         // Timer.Dispose() does not guarantee in-flight callbacks won't fire — safety comes
@@ -558,7 +569,7 @@ internal sealed class CircuitBreakerStateManager(
 
     private TimeSpan _GetOpenDuration(GroupCircuitState state)
     {
-        var safeLevel = Math.Min(state.EscalationLevel, 62);
+        var safeLevel = Math.Min(state.EscalationLevel - 1, 62);
         var seconds = state.EffectiveOpenDuration.TotalSeconds * Math.Pow(2, safeLevel);
         return TimeSpan.FromSeconds(Math.Min(seconds, _options.MaxOpenDuration.TotalSeconds));
     }
@@ -591,10 +602,10 @@ internal sealed class CircuitBreakerStateManager(
         public int ConsecutiveFailures { get; set; }
 
         /// <summary>
-        /// Number of times the circuit has opened previously. Used by <see cref="_GetOpenDuration"/>
-        /// to compute escalating durations via <c>baseDuration * 2^EscalationLevel</c>.
-        /// Incremented AFTER the duration is computed in <see cref="_TransitionToOpen"/>, so the
-        /// first open uses level 0 (= base duration with no escalation).
+        /// Number of times the circuit has opened (including current). Used by <see cref="_GetOpenDuration"/>
+        /// to compute escalating durations via <c>baseDuration * 2^(EscalationLevel - 1)</c>.
+        /// Incremented BEFORE the duration is computed in <see cref="_TransitionToOpen"/>, so the
+        /// first open uses level 1 which maps to exponent 0 (= base duration with no escalation).
         /// </summary>
         public int EscalationLevel { get; set; }
 
