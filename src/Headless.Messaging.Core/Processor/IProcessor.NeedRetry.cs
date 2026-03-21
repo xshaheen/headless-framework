@@ -14,7 +14,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Processor;
 
-public sealed class MessageNeedToRetryProcessor : IProcessor
+public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMonitor
 {
     private const int _MinSuggestedValueForFallbackWindowLookbackSeconds = 30;
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;
@@ -68,6 +68,12 @@ public sealed class MessageNeedToRetryProcessor : IProcessor
 
         _CheckSafeOptionsSet();
     }
+
+    /// <inheritdoc />
+    public TimeSpan CurrentPollingInterval => new(Interlocked.Read(ref _currentIntervalTicks));
+
+    /// <inheritdoc />
+    public bool IsBackedOff => Interlocked.Read(ref _currentIntervalTicks) > _baseInterval.Ticks;
 
     public async Task ProcessAsync(ProcessingContext context)
     {

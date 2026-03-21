@@ -302,7 +302,11 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         client.OnLogCallback = _WriteLog;
         client.OnMessageCallback = async (transportMessage, sender) =>
         {
-            var groupName = _SanitizeGroupName(transportMessage.GetGroup());
+            // Fast path: skip sanitization for groups registered at startup (trusted config).
+            var rawGroup = transportMessage.GetGroup();
+            var groupName = rawGroup is not null && _groupHandles.ContainsKey(rawGroup)
+                ? rawGroup
+                : _SanitizeGroupName(rawGroup);
             var probeAcquired = false;
             var probeOutcomeTransferred = false;
             long? tracingTimestamp = null;

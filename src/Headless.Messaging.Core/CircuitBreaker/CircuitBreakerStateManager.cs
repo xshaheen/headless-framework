@@ -72,6 +72,13 @@ internal sealed class CircuitBreakerStateManager(
     {
         var frozen = new HashSet<string>(groups, StringComparer.Ordinal);
         _knownGroups = frozen;
+
+        // Pre-populate state for all known groups so GetAllStates() returns them immediately
+        foreach (var group in frozen)
+        {
+            _GetOrAddState(group);
+        }
+
         metrics.SetKnownGroups(frozen);
         metrics.RegisterStateCallback(GetAllStates);
     }
