@@ -357,7 +357,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 {
                     dispatchBypassException = e;
 #pragma warning disable EPC12 // Suppress CA2200 warning to rethrow original exception
-                    transportMessage.Headers[Headers.Exception] = e.GetType().Name + "-->" + e.Message;
+                    transportMessage.Headers[Headers.Exception] = e.GetType().Name;
 #pragma warning restore EPC12
                     exceptionInfo = e.ExpandMessage();
 

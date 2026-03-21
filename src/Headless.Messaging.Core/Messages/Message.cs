@@ -143,14 +143,13 @@ public static class MessageExtensions
 
         /// <summary>
         /// Adds or updates the exception information in the message headers.
-        /// The exception is formatted as "ExceptionTypeName-->ExceptionMessage".
+        /// Only the exception type name is stored to avoid leaking sensitive details
+        /// (connection strings, file paths, auth tokens) via broker-visible headers.
         /// </summary>
         /// <param name="ex">The exception to record in the message.</param>
         public void AddOrUpdateException(Exception ex)
         {
-            var msg = $"{ex.GetType().Name}-->{ex.Message}";
-
-            message.Headers[Headers.Exception] = msg;
+            message.Headers[Headers.Exception] = ex.GetType().Name;
         }
 
         /// <summary>
