@@ -54,6 +54,11 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 dotnet tool restore  # Install: csharpier, dotnet-ef, minver-cli, husky
 ```
 
+## Build Validation
+
+- To validate build warnings, use `dotnet build --no-incremental`.
+- Use plain `dotnet build` only for quick feedback, not final warning verification.
+
 ## Design Decisions
 
 - All NuGet versions are in `Directory.Packages.props` — never add `Version` in `.csproj`
