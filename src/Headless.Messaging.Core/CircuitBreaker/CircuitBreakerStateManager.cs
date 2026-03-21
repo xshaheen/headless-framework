@@ -117,6 +117,7 @@ internal sealed class CircuitBreakerStateManager(
         Func<ValueTask>? pauseCallback = null;
         var tripped = false;
         TimeSpan? openDuration = null;
+        (TimeSpan OpenDuration, int Generation) timerInfo = default;
 
         lock (groupLock)
         {
@@ -132,7 +133,7 @@ internal sealed class CircuitBreakerStateManager(
                 case CircuitBreakerState.HalfOpen when isTransient:
                     // Transient failure during probe: dependency still unhealthy — re-open.
                     state.ProbeAcquired = false;
-                    _TransitionToOpen(state, groupName);
+                    timerInfo = _TransitionToOpen(state, groupName);
                     pauseCallback = state.OnPause;
                     tripped = true;
                     break;
@@ -150,13 +151,21 @@ internal sealed class CircuitBreakerStateManager(
                     if (state.State is CircuitBreakerState.Closed
                         && state.ConsecutiveFailures >= state.EffectiveFailureThreshold)
                     {
-                        _TransitionToOpen(state, groupName);
+                        timerInfo = _TransitionToOpen(state, groupName);
                         pauseCallback = state.OnPause;
                         tripped = true;
                     }
 
                     break;
             }
+        }
+
+        // Create timer outside the lock to avoid heap allocation and TimerQueue registration
+        // while holding it. The generation check inside _CreateAndAssignOpenTimer handles the
+        // race where another thread transitions the state between the two lock acquisitions.
+        if (tripped)
+        {
+            _CreateAndAssignOpenTimer(state, groupName, timerInfo.OpenDuration, timerInfo.Generation);
         }
 
         // Emit metrics outside the lock to avoid holding the lock during potentially slow I/O
@@ -445,8 +454,10 @@ internal sealed class CircuitBreakerStateManager(
     /// <summary>
     /// Must be called while holding the group lock.
     /// Callers must invoke <c>metrics.RecordTrip(groupName)</c> after releasing the lock.
+    /// Returns the open duration and timer generation so the caller can create the timer
+    /// outside the lock (to avoid heap allocation and TimerQueue registration while holding it).
     /// </summary>
-    private void _TransitionToOpen(GroupCircuitState state, string groupName)
+    private (TimeSpan OpenDuration, int Generation) _TransitionToOpen(GroupCircuitState state, string groupName)
     {
         var previousState = state.State;
         state.State = CircuitBreakerState.Open;
@@ -465,12 +476,7 @@ internal sealed class CircuitBreakerStateManager(
         // Timer.Dispose() does not guarantee in-flight callbacks won't fire — safety comes
         // from the generation check in _OnOpenTimerElapsed (plus the state.State guard).
         state.OpenTimer?.Dispose();
-        state.OpenTimer = new Timer(
-            _OnOpenTimerElapsed,
-            (groupName, generation),
-            openDuration,
-            Timeout.InfiniteTimeSpan
-        );
+        state.OpenTimer = null;
 
         logger.LogWarning(
             "Circuit breaker {PreviousState} → Open for group {Group} (failures: {Failures}, escalation: {Escalation}, open for {Duration})",
@@ -480,6 +486,38 @@ internal sealed class CircuitBreakerStateManager(
             state.EscalationLevel,
             openDuration
         );
+
+        return (openDuration, generation);
+    }
+
+    /// <summary>
+    /// Creates the open timer outside the group lock, then briefly re-acquires the lock
+    /// to store it. This avoids holding the lock during Timer construction (heap allocation,
+    /// ValueTuple boxing, and TimerQueue registration which may acquire internal runtime locks).
+    /// </summary>
+    private void _CreateAndAssignOpenTimer(GroupCircuitState state, string groupName, TimeSpan openDuration, int generation)
+    {
+        var timer = new Timer(
+            _OnOpenTimerElapsed,
+            (groupName, generation),
+            openDuration,
+            Timeout.InfiniteTimeSpan
+        );
+
+        var groupLock = state.SyncLock;
+
+        lock (groupLock)
+        {
+            // If the generation has moved on (another thread transitioned the state while we
+            // were outside the lock), this timer is already stale — dispose it immediately.
+            if (state.TimerGeneration != generation)
+            {
+                timer.Dispose();
+                return;
+            }
+
+            state.OpenTimer = timer;
+        }
     }
 
     /// <summary>
@@ -600,6 +638,7 @@ internal sealed class CircuitBreakerStateManager(
 
         var groupLock = state.SyncLock;
         Func<ValueTask>? pauseCallback = null;
+        (TimeSpan OpenDuration, int Generation) timerInfo;
 
         lock (groupLock)
         {
@@ -609,10 +648,11 @@ internal sealed class CircuitBreakerStateManager(
             }
 
             state.ProbeAcquired = false;
-            _TransitionToOpen(state, groupName);
+            timerInfo = _TransitionToOpen(state, groupName);
             pauseCallback = state.OnPause;
         }
 
+        _CreateAndAssignOpenTimer(state, groupName, timerInfo.OpenDuration, timerInfo.Generation);
         metrics.RecordTrip(groupName);
 
         if (pauseCallback is not null)
