@@ -88,22 +88,19 @@ internal sealed class CircuitBreakerMetrics
 
     private IEnumerable<Measurement<int>> _ObserveCircuitStates()
     {
-        var snapshot = _stateSnapshot;
+        var snapshot = _stateSnapshot?.Invoke();
 
         if (snapshot is null)
         {
-            return [];
+            yield break;
         }
 
-        var states = snapshot();
-        var measurements = new List<Measurement<int>>(states.Count);
-
-        foreach (var (group, state) in states)
+        foreach (var (group, state) in snapshot)
         {
-            var tags = new TagList { { "messaging.consumer.group", group } };
-            measurements.Add(new Measurement<int>((int)state, tags));
+            yield return new Measurement<int>(
+                (int)state,
+                new KeyValuePair<string, object?>("messaging.consumer.group", group)
+            );
         }
-
-        return measurements;
     }
 }
