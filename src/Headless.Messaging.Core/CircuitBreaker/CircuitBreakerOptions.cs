@@ -16,27 +16,27 @@ public sealed class CircuitBreakerOptions
     /// Gets or sets the number of consecutive transient failures required to open the circuit.
     /// Must be greater than zero. Default is 5.
     /// </summary>
-    public int FailureThreshold { get; init; } = 5;
+    public int FailureThreshold { get; set; } = 5;
 
     /// <summary>
     /// Gets or sets the initial duration the circuit stays open before transitioning to half-open.
     /// Subsequent trips will escalate this duration exponentially up to <see cref="MaxOpenDuration"/>.
     /// Default is 30 seconds.
     /// </summary>
-    public TimeSpan OpenDuration { get; init; } = TimeSpan.FromSeconds(30);
+    public TimeSpan OpenDuration { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Gets or sets the maximum duration the circuit can stay open, regardless of escalation level.
     /// Must be greater than or equal to <see cref="OpenDuration"/>.
     /// Default is 240 seconds (4 minutes).
     /// </summary>
-    public TimeSpan MaxOpenDuration { get; init; } = TimeSpan.FromSeconds(240);
+    public TimeSpan MaxOpenDuration { get; set; } = TimeSpan.FromSeconds(240);
 
     /// <summary>
     /// Gets or sets the number of successful close cycles required to reset the escalation level back to zero.
     /// Default is 3.
     /// </summary>
-    public int SuccessfulCyclesToResetEscalation { get; init; } = 3;
+    public int SuccessfulCyclesToResetEscalation { get; set; } = 3;
 
     /// <summary>
     /// Gets or sets a predicate that determines whether an exception is transient and should
@@ -53,5 +53,5 @@ public sealed class CircuitBreakerOptions
     /// Defaults to <see cref="CircuitBreakerDefaults.IsTransient"/>.
     /// </para>
     /// </remarks>
-    public Func<Exception, bool> IsTransientException { get; init; } = CircuitBreakerDefaults.IsTransient;
+    public Func<Exception, bool> IsTransientException { get; set; } = CircuitBreakerDefaults.IsTransient;
 }

@@ -145,17 +145,6 @@ internal sealed class CircuitBreakerStateManager(
         return state.State;
     }
 
-    /// <inheritdoc />
-    public bool TryAcquireProbePermit(string groupName)
-    {
-        if (!_groups.TryGetValue(groupName, out var state))
-        {
-            return false;
-        }
-
-        return state.ProbePermit.Wait(0);
-    }
-
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------

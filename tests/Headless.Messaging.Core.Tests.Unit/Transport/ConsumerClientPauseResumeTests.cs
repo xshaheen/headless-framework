@@ -70,7 +70,7 @@ public sealed class ConsumerClientPauseResumeTests
     }
 
     [Fact]
-    public async Task pause_async_respects_cancellation_token_parameter()
+    public async Task pause_async_accepts_cancellation_token_without_observing_it()
     {
         // given
         IConsumerClient client = new MinimalConsumerClient();
@@ -84,7 +84,7 @@ public sealed class ConsumerClientPauseResumeTests
     }
 
     [Fact]
-    public async Task resume_async_respects_cancellation_token_parameter()
+    public async Task resume_async_accepts_cancellation_token_without_observing_it()
     {
         // given
         IConsumerClient client = new MinimalConsumerClient();

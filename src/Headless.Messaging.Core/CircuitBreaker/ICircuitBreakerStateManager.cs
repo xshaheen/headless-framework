@@ -39,15 +39,4 @@ internal interface ICircuitBreakerStateManager
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
     bool IsOpen(string groupName);
-
-    /// <summary>
-    /// Attempts to acquire the single probe permit for a half-open circuit, allowing one message
-    /// through to test whether the dependency has recovered.
-    /// </summary>
-    /// <param name="groupName">The consumer group name.</param>
-    /// <returns>
-    /// <see langword="true"/> if the permit was acquired (caller may proceed as the probe);
-    /// <see langword="false"/> if another probe is already in flight.
-    /// </returns>
-    bool TryAcquireProbePermit(string groupName);
 }

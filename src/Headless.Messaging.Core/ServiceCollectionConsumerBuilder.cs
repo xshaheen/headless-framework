@@ -80,11 +80,18 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
     {
         Argument.IsNotNull(configure);
 
+        if (string.IsNullOrWhiteSpace(_metadata.Group))
+        {
+            throw new InvalidOperationException(
+                "Consumer group must be configured before enabling a circuit breaker. " +
+                "Call Group(string) explicitly when using IServiceCollection.AddConsumer().");
+        }
+
         var cbOptions = new ConsumerCircuitBreakerOptions();
         configure(cbOptions);
 
         // Register as a singleton so Setup.cs can discover and apply it to ConsumerCircuitBreakerRegistry
-        _services.AddSingleton(new ConsumerCircuitBreakerRegistration(_metadata.Group!, cbOptions));
+        _services.AddSingleton(new ConsumerCircuitBreakerRegistration(_metadata.Group, cbOptions));
 
         return this;
     }

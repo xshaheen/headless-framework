@@ -298,29 +298,6 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.IsOpen(Group).Should().BeFalse();
     }
 
-    [Fact]
-    public async Task should_block_concurrent_probes_in_halfopen()
-    {
-        // given
-        var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
-        sut.RegisterGroupCallbacks(
-            Group,
-            onPause: () => ValueTask.CompletedTask,
-            onResume: () => ValueTask.CompletedTask
-        );
-
-        // open then wait for HalfOpen
-        await sut.ReportFailureAsync(Group, new TimeoutException());
-        await Task.Delay(150);
-
-        // when — first probe acquires the permit
-        var firstAcquired = sut.TryAcquireProbePermit(Group);
-        var secondAcquired = sut.TryAcquireProbePermit(Group);
-
-        // then
-        firstAcquired.Should().BeTrue();
-        secondAcquired.Should().BeFalse();
-    }
 
     [Fact]
     public async Task should_dispose_stale_timer_on_reopen()
@@ -412,12 +389,6 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.IsOpen("never-registered").Should().BeFalse();
     }
 
-    [Fact]
-    public void TryAcquireProbePermit_returns_false_for_unregistered_group()
-    {
-        var sut = _Create();
-        sut.TryAcquireProbePermit("never-registered").Should().BeFalse();
-    }
 
     [Fact]
     public void ReportSuccess_is_noop_for_unregistered_group()
