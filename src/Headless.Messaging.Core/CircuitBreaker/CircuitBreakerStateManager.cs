@@ -294,11 +294,15 @@ internal sealed class CircuitBreakerStateManager(
     /// <inheritdoc />
     public async ValueTask<bool> ResetAsync(string groupName, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(groupName);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(groupName.Length, 512, nameof(groupName));
+
         if (!_groups.TryGetValue(groupName, out var state))
         {
             return false;
         }
 
+        var safeGroupName = _SanitizeForLog(groupName);
         var groupLock = state.SyncLock;
         Func<ValueTask>? resumeCallback = null;
         Timer? timerToDispose = null;
@@ -326,7 +330,7 @@ internal sealed class CircuitBreakerStateManager(
             logger.LogWarning(
                 "Circuit breaker {PreviousState} → Closed (manual reset) for group {Group}",
                 previousState,
-                groupName
+                safeGroupName
             );
         }
 
@@ -618,6 +622,45 @@ internal sealed class CircuitBreakerStateManager(
                 );
             }
         }
+    }
+
+    /// <summary>
+    /// Strips control characters and Unicode bidi overrides from a string before it is
+    /// interpolated into a log message. Prevents log injection via crafted group names
+    /// passed through public APIs like <see cref="ResetAsync"/>.
+    /// </summary>
+    private static string _SanitizeForLog(string value)
+    {
+        var needsSanitization = false;
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (char.IsControl(c) || c is (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069'))
+            {
+                needsSanitization = true;
+                break;
+            }
+        }
+
+        if (!needsSanitization)
+        {
+            return value;
+        }
+
+        var buffer = new char[value.Length];
+        var pos = 0;
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (!char.IsControl(c) && c is not ((>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069')))
+            {
+                buffer[pos++] = c;
+            }
+        }
+
+        return new string(buffer, 0, pos);
     }
 
     private TimeSpan _GetOpenDuration(GroupCircuitState state)
