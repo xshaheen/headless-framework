@@ -11,7 +11,7 @@ using Headers = Headless.Messaging.Headers;
 
 namespace Headless.Messaging.Kafka;
 
-public sealed class KafkaConsumerClient(
+internal sealed class KafkaConsumerClient(
     string groupId,
     byte groupConcurrent,
     IOptions<MessagingKafkaOptions> options,

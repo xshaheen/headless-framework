@@ -26,6 +26,7 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
     private int _paused; // 0 = running, 1 = paused
+    private int _disposed;
     private string _queueUrl = string.Empty;
 
     private IAmazonSimpleNotificationService? _snsClient;
@@ -188,6 +189,8 @@ internal sealed class AmazonSqsConsumerClient(
 
     public ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
+
         if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
             _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -208,6 +211,7 @@ internal sealed class AmazonSqsConsumerClient(
 
     public ValueTask DisposeAsync()
     {
+        Interlocked.Exchange(ref _disposed, 1);
         _pauseGate.TrySetResult(true);
         _sqsClient?.Dispose();
         _snsClient?.Dispose();

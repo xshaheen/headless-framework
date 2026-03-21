@@ -546,8 +546,6 @@ internal sealed class CircuitBreakerStateManager(
         if (resumeCallback is not null)
         {
             // Fire-and-forget on a thread-pool thread to avoid blocking the timer callback thread.
-            // ContinueWith observes any unhandled exception (e.g. from _ReopenAfterResumeFailureAsync)
-            // to prevent UnobservedTaskException and ensure the failure is logged.
             _ = Task.Run(async () =>
             {
                 if (Volatile.Read(ref _disposed) != 0) return;
@@ -563,12 +561,7 @@ internal sealed class CircuitBreakerStateManager(
                     logger.LogError(ex, "Resume callback failed for group {Group} during HalfOpen transition", groupName);
                     await _ReopenAfterResumeFailureAsync(groupName).ConfigureAwait(false);
                 }
-            }).ContinueWith(
-                t => logger.LogError(t.Exception, "Unhandled exception in HalfOpen transition for group {Group}", groupName),
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted,
-                TaskScheduler.Default
-            );
+            });
         }
     }
 

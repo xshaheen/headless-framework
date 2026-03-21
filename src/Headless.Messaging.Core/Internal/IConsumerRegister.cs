@@ -595,58 +595,60 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
     private void _WriteLog(LogMessageEventArgs logMessage)
     {
+        var reason = _SanitizeHeader(logMessage.Reason) ?? string.Empty;
+
         switch (logMessage.LogType)
         {
             case MqLogType.ConsumerCancelled:
                 _isHealthy = false;
-                _logger.LogWarning("RabbitMQ consumer cancelled. --> {Reason}", logMessage.Reason);
+                _logger.LogWarning("RabbitMQ consumer cancelled. --> {Reason}", reason);
                 break;
             case MqLogType.ConsumerRegistered:
                 _isHealthy = true;
-                _logger.LogInformation("RabbitMQ consumer registered. --> {Reason}", logMessage.Reason);
+                _logger.LogInformation("RabbitMQ consumer registered. --> {Reason}", reason);
                 break;
             case MqLogType.ConsumerUnregistered:
-                _logger.LogWarning("RabbitMQ consumer unregistered. --> {Reason}", logMessage.Reason);
+                _logger.LogWarning("RabbitMQ consumer unregistered. --> {Reason}", reason);
                 break;
             case MqLogType.ConsumerShutdown:
                 _isHealthy = false;
-                _logger.LogWarning("RabbitMQ consumer shutdown. --> {Reason}", logMessage.Reason);
+                _logger.LogWarning("RabbitMQ consumer shutdown. --> {Reason}", reason);
                 break;
             case MqLogType.ConsumeError:
-                _logger.LogError("Kafka client consume error. --> {Reason}", logMessage.Reason);
+                _logger.LogError("Kafka client consume error. --> {Reason}", reason);
                 break;
             case MqLogType.ConsumeRetries:
-                _logger.LogWarning("Kafka client consume exception, retying... --> {Reason}", logMessage.Reason);
+                _logger.LogWarning("Kafka client consume exception, retying... --> {Reason}", reason);
                 break;
             case MqLogType.ServerConnError:
                 _isHealthy = false;
-                _logger.LogCritical("Kafka server connection error. --> {Reason}", logMessage.Reason);
+                _logger.LogCritical("Kafka server connection error. --> {Reason}", reason);
                 break;
             case MqLogType.ExceptionReceived:
-                _logger.LogError("AzureServiceBus subscriber received an error. --> {Reason}", logMessage.Reason);
+                _logger.LogError("AzureServiceBus subscriber received an error. --> {Reason}", reason);
                 break;
             case MqLogType.AsyncErrorEvent:
-                _logger.LogError("NATS subscriber received an error. --> {Reason}", logMessage.Reason);
+                _logger.LogError("NATS subscriber received an error. --> {Reason}", reason);
                 break;
             case MqLogType.ConnectError:
                 _isHealthy = false;
-                _logger.LogError("NATS server connection error. --> {Reason}", logMessage.Reason);
+                _logger.LogError("NATS server connection error. --> {Reason}", reason);
                 break;
             case MqLogType.InvalidIdFormat:
                 _logger.LogError(
                     "AmazonSQS subscriber delete inflight message failed, invalid id. --> {Reason}",
-                    logMessage.Reason
+                    reason
                 );
                 break;
             case MqLogType.MessageNotInflight:
                 _logger.LogError(
                     "AmazonSQS subscriber change message's visibility failed, message isn't in flight. --> {Reason}",
-                    logMessage.Reason
+                    reason
                 );
                 break;
             case MqLogType.RedisConsumeError:
                 _isHealthy = true;
-                _logger.LogError("Redis client consume error. --> {Reason}", logMessage.Reason);
+                _logger.LogError("Redis client consume error. --> {Reason}", reason);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown {nameof(MqLogType)}={logMessage.LogType}");
