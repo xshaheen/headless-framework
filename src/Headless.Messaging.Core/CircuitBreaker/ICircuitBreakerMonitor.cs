@@ -15,10 +15,10 @@ public interface ICircuitBreakerMonitor
     bool IsOpen(string groupName);
 
     /// <summary>
-    /// Returns the current <see cref="CircuitBreakerState"/> for the specified consumer group.
-    /// Returns <see cref="CircuitBreakerState.Closed"/> for unregistered groups.
+    /// Returns the current <see cref="CircuitBreakerState"/> for the specified consumer group,
+    /// or <see langword="null"/> if the group is not registered.
     /// </summary>
-    CircuitBreakerState GetState(string groupName);
+    CircuitBreakerState? GetState(string groupName);
 
     /// <summary>
     /// Returns a snapshot of current circuit breaker states for all tracked consumer groups.

@@ -270,11 +270,11 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public CircuitBreakerState GetState(string groupName)
+    public CircuitBreakerState? GetState(string groupName)
     {
         if (!_groups.TryGetValue(groupName, out var state))
         {
-            return CircuitBreakerState.Closed;
+            return null;
         }
 
         // No lock needed — State property uses Volatile.Read for cross-thread visibility
