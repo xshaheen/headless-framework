@@ -4,6 +4,7 @@ namespace Headless.Messaging.CircuitBreaker;
 
 /// <summary>
 /// Read-only view of circuit breaker state for observability and health checks.
+/// Also provides operator-level control for manual recovery.
 /// </summary>
 public interface ICircuitBreakerMonitor
 {
@@ -18,4 +19,18 @@ public interface ICircuitBreakerMonitor
     /// Returns <see cref="CircuitBreakerState.Closed"/> for unregistered groups.
     /// </summary>
     CircuitBreakerState GetState(string groupName);
+
+    /// <summary>
+    /// Returns a snapshot of current circuit breaker states for all tracked consumer groups.
+    /// </summary>
+    IReadOnlyDictionary<string, CircuitBreakerState> GetAllStates();
+
+    /// <summary>
+    /// Force-resets the circuit for the specified consumer group to <see cref="CircuitBreakerState.Closed"/>,
+    /// cancelling any open timer and resetting escalation. Invokes the resume callback if the circuit
+    /// was previously Open or HalfOpen. This is the operator/agent manual recovery path.
+    /// </summary>
+    /// <param name="groupName">The consumer group name.</param>
+    /// <param name="cancellationToken">Optional cancellation token.</param>
+    ValueTask ResetAsync(string groupName, CancellationToken cancellationToken = default);
 }

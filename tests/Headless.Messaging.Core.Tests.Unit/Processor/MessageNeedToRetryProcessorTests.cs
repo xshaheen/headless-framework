@@ -107,10 +107,28 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     private static TimeSpan _GetCurrentInterval(MessageNeedToRetryProcessor sut)
     {
         var field = typeof(MessageNeedToRetryProcessor).GetField(
-            "_currentInterval",
+            "_currentIntervalTicks",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
         );
-        return (TimeSpan)field!.GetValue(sut)!;
+        return TimeSpan.FromTicks((long)field!.GetValue(sut)!);
+    }
+
+    private static void _SetCurrentInterval(MessageNeedToRetryProcessor sut, TimeSpan value)
+    {
+        var field = typeof(MessageNeedToRetryProcessor).GetField(
+            "_currentIntervalTicks",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+        );
+        field!.SetValue(sut, value.Ticks);
+    }
+
+    private static TimeSpan _GetLockTtl(MessageNeedToRetryProcessor sut)
+    {
+        var method = typeof(MessageNeedToRetryProcessor).GetMethod(
+            "_GetLockTtl",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+        );
+        return (TimeSpan)method!.Invoke(sut, null)!;
     }
 
     // -------------------------------------------------------------------------
@@ -385,6 +403,16 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             null,
             Arg.Any<CancellationToken>()
         );
+    }
+
+    [Fact]
+    public void lock_ttl_tracks_the_effective_polling_interval()
+    {
+        var (sut, _, _) = _Create(failedRetryInterval: 10);
+
+        _SetCurrentInterval(sut, TimeSpan.FromSeconds(20));
+
+        _GetLockTtl(sut).Should().Be(TimeSpan.FromSeconds(30));
     }
 
     [Fact]

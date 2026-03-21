@@ -6,7 +6,7 @@ namespace Headless.Messaging.CircuitBreaker;
 /// Manages per-consumer-group circuit breaker state, tracking failure rates and coordinating
 /// Open/HalfOpen/Closed transitions. Intended as an internal singleton service.
 /// </summary>
-internal interface ICircuitBreakerStateManager
+internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
 {
     /// <summary>
     /// Registers pause and resume callbacks for a consumer group.
@@ -27,6 +27,22 @@ internal interface ICircuitBreakerStateManager
     ValueTask ReportFailureAsync(string groupName, Exception exception);
 
     /// <summary>
+    /// Attempts to acquire the single HalfOpen probe slot for the specified group.
+    /// Returns <see langword="true"/> when the group is not HalfOpen, or when the probe
+    /// slot was acquired successfully.
+    /// </summary>
+    /// <param name="groupName">The consumer group name.</param>
+    bool TryAcquireHalfOpenProbe(string groupName);
+
+    /// <summary>
+    /// Releases a previously acquired HalfOpen probe slot without changing circuit state.
+    /// Intended for failures that occur before a probe reaches the normal success/failure
+    /// reporting path.
+    /// </summary>
+    /// <param name="groupName">The consumer group name.</param>
+    void ReleaseHalfOpenProbe(string groupName);
+
+    /// <summary>
     /// Reports a successful message processing for the specified consumer group.
     /// Resets the consecutive failure counter and, if in half-open state, closes the circuit.
     /// </summary>
@@ -34,9 +50,9 @@ internal interface ICircuitBreakerStateManager
     void ReportSuccess(string groupName);
 
     /// <summary>
-    /// Returns <see langword="true"/> if the circuit for the specified group is open or half-open,
-    /// indicating that new messages should not be dispatched to avoid amplifying failures.
+    /// Removes all tracked state for the specified group, including timers and callbacks.
+    /// Intended for consumer teardown/restart paths.
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
-    bool IsOpen(string groupName);
+    void RemoveGroup(string groupName);
 }

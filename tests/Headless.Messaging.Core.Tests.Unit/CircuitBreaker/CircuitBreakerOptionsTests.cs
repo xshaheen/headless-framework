@@ -75,6 +75,30 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         result.Failed.Should().BeFalse();
     }
 
+    [Fact]
+    public void validator_rejects_open_duration_of_zero()
+    {
+        var opts = new CircuitBreakerOptions { OpenDuration = TimeSpan.Zero };
+        var validator = new CircuitBreakerOptionsValidator();
+
+        var result = validator.Validate(null, opts);
+
+        result.Failed.Should().BeTrue();
+        result.Failures.Should().ContainMatch("*OpenDuration*greater than TimeSpan.Zero*");
+    }
+
+    [Fact]
+    public void validator_rejects_negative_open_duration()
+    {
+        var opts = new CircuitBreakerOptions { OpenDuration = TimeSpan.FromSeconds(-1) };
+        var validator = new CircuitBreakerOptionsValidator();
+
+        var result = validator.Validate(null, opts);
+
+        result.Failed.Should().BeTrue();
+        result.Failures.Should().ContainMatch("*OpenDuration*greater than TimeSpan.Zero*");
+    }
+
     // -------------------------------------------------------------------------
     // Validation — MaxOpenDuration vs OpenDuration
     // -------------------------------------------------------------------------
@@ -126,6 +150,45 @@ public sealed class CircuitBreakerOptionsTests : TestBase
     }
 
     // -------------------------------------------------------------------------
+    // Validation — SuccessfulCyclesToResetEscalation
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void validator_rejects_successful_cycles_to_reset_escalation_of_zero()
+    {
+        var opts = new CircuitBreakerOptions { SuccessfulCyclesToResetEscalation = 0 };
+        var validator = new CircuitBreakerOptionsValidator();
+
+        var result = validator.Validate(null, opts);
+
+        result.Failed.Should().BeTrue();
+        result.Failures.Should().ContainMatch("*SuccessfulCyclesToResetEscalation*greater than 0*");
+    }
+
+    [Fact]
+    public void validator_rejects_negative_successful_cycles_to_reset_escalation()
+    {
+        var opts = new CircuitBreakerOptions { SuccessfulCyclesToResetEscalation = -1 };
+        var validator = new CircuitBreakerOptionsValidator();
+
+        var result = validator.Validate(null, opts);
+
+        result.Failed.Should().BeTrue();
+        result.Failures.Should().ContainMatch("*SuccessfulCyclesToResetEscalation*greater than 0*");
+    }
+
+    [Fact]
+    public void validator_accepts_positive_successful_cycles_to_reset_escalation()
+    {
+        var opts = new CircuitBreakerOptions { SuccessfulCyclesToResetEscalation = 1 };
+        var validator = new CircuitBreakerOptionsValidator();
+
+        var result = validator.Validate(null, opts);
+
+        result.Failed.Should().BeFalse();
+    }
+
+    // -------------------------------------------------------------------------
     // Validation — IsTransientException
     // -------------------------------------------------------------------------
 
@@ -151,8 +214,9 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         var opts = new CircuitBreakerOptions
         {
             FailureThreshold = 0,
-            OpenDuration = TimeSpan.FromSeconds(60),
+            OpenDuration = TimeSpan.Zero,
             MaxOpenDuration = TimeSpan.FromSeconds(10),
+            SuccessfulCyclesToResetEscalation = 0,
             IsTransientException = null!,
         };
         var validator = new CircuitBreakerOptionsValidator();
@@ -160,7 +224,7 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         var result = validator.Validate(null, opts);
 
         result.Failed.Should().BeTrue();
-        result.Failures.Should().HaveCount(3);
+        result.Failures.Should().HaveCount(4);
     }
 }
 

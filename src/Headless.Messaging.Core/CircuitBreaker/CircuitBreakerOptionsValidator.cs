@@ -15,11 +15,23 @@ internal sealed class CircuitBreakerOptionsValidator : IValidateOptions<CircuitB
             failures.Add($"{nameof(CircuitBreakerOptions.FailureThreshold)} must be greater than 0.");
         }
 
+        if (options.OpenDuration <= TimeSpan.Zero)
+        {
+            failures.Add($"{nameof(CircuitBreakerOptions.OpenDuration)} must be greater than TimeSpan.Zero.");
+        }
+
         if (options.MaxOpenDuration < options.OpenDuration)
         {
             failures.Add(
                 $"{nameof(CircuitBreakerOptions.MaxOpenDuration)} ({options.MaxOpenDuration}) "
                     + $"must be greater than or equal to {nameof(CircuitBreakerOptions.OpenDuration)} ({options.OpenDuration})."
+            );
+        }
+
+        if (options.SuccessfulCyclesToResetEscalation <= 0)
+        {
+            failures.Add(
+                $"{nameof(CircuitBreakerOptions.SuccessfulCyclesToResetEscalation)} must be greater than 0."
             );
         }
 
