@@ -295,11 +295,11 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public async ValueTask ResetAsync(string groupName, CancellationToken cancellationToken = default)
+    public async ValueTask<bool> ResetAsync(string groupName, CancellationToken cancellationToken = default)
     {
         if (!_groups.TryGetValue(groupName, out var state))
         {
-            return;
+            return false;
         }
 
         var groupLock = state.SyncLock;
@@ -312,7 +312,7 @@ internal sealed class CircuitBreakerStateManager(
 
             if (previousState is CircuitBreakerState.Closed)
             {
-                return;
+                return false;
             }
 
             state.State = CircuitBreakerState.Closed;
@@ -342,6 +342,8 @@ internal sealed class CircuitBreakerStateManager(
         {
             await resumeCallback().ConfigureAwait(false);
         }
+
+        return true;
     }
 
     /// <summary>

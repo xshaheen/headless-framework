@@ -32,5 +32,9 @@ public interface ICircuitBreakerMonitor
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
     /// <param name="cancellationToken">Optional cancellation token.</param>
-    ValueTask ResetAsync(string groupName, CancellationToken cancellationToken = default);
+    /// <returns>
+    /// <see langword="true"/> if a reset was performed (the group was found and was Open or HalfOpen);
+    /// <see langword="false"/> if the group was not found or was already Closed.
+    /// </returns>
+    ValueTask<bool> ResetAsync(string groupName, CancellationToken cancellationToken = default);
 }
