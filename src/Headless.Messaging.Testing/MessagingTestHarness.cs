@@ -34,17 +34,16 @@ namespace Headless.Messaging.Testing;
 /// </remarks>
 public sealed class MessagingTestHarness : IAsyncDisposable
 {
-    private readonly IServiceProvider _sp;
     private readonly MessageObservationStore _store;
     private readonly bool _ownsSp;
     private readonly Lazy<IMessagePublisher> _publisher;
 
     private MessagingTestHarness(IServiceProvider sp, MessageObservationStore store, bool ownsSp)
     {
-        _sp = sp;
+        ServiceProvider = sp;
         _store = store;
         _ownsSp = ownsSp;
-        _publisher = new Lazy<IMessagePublisher>(sp.GetRequiredService<IMessagePublisher>);
+        _publisher = new Lazy<IMessagePublisher>(ServiceProvider.GetRequiredService<IMessagePublisher>);
     }
 
     // -------------------------------------------------------------------------
@@ -212,10 +211,10 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
     /// <summary>Resolves an arbitrary service from the harness container.</summary>
     public T GetRequiredService<T>()
-        where T : notnull => _sp.GetRequiredService<T>();
+        where T : notnull => ServiceProvider.GetRequiredService<T>();
 
     /// <summary>Provides direct access to the harness <see cref="IServiceProvider"/>.</summary>
-    public IServiceProvider ServiceProvider => _sp;
+    public IServiceProvider ServiceProvider { get; }
 
     // -------------------------------------------------------------------------
     // Disposal
@@ -234,7 +233,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         // Cancel the bootstrapper first — its registered callback stops all processing servers.
         // Directly calling DisposeAsync on processors before the bootstrapper cancels its CTS
         // causes a race where the CTS cancel-callback fires on an already-disposed processor CTS.
-        var bootstrapper = _sp.GetService<IBootstrapper>();
+        var bootstrapper = ServiceProvider.GetService<IBootstrapper>();
 
         if (bootstrapper is not null)
         {
@@ -247,7 +246,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         }
 
         // Dispose the DI container — remaining singletons are released here.
-        if (_sp is IAsyncDisposable asyncDisposable)
+        if (ServiceProvider is IAsyncDisposable asyncDisposable)
         {
             await asyncDisposable.DisposeAsync().ConfigureAwait(false);
         }

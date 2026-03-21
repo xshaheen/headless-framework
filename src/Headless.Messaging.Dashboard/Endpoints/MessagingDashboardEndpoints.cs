@@ -91,10 +91,7 @@ public static class MessagingDashboardEndpoints
             .MapGet("/meta", _MetaInfo)
             .WithName("Messaging_MetaInfo")
             .WithSummary("Get messaging infrastructure metadata");
-        apiGroup
-            .MapGet("/stats", _Stats)
-            .WithName("Messaging_Stats")
-            .WithSummary("Get aggregate message statistics");
+        apiGroup.MapGet("/stats", _Stats).WithName("Messaging_Stats").WithSummary("Get aggregate message statistics");
         apiGroup
             .MapGet("/metrics-history", _MetricsHistory)
             .WithName("Messaging_MetricsHistory")
@@ -149,10 +146,7 @@ public static class MessagingDashboardEndpoints
             .WithSummary("Get all registered message subscribers");
 
         // Nodes & discovery
-        apiGroup
-            .MapGet("/nodes", _Nodes)
-            .WithName("Messaging_Nodes")
-            .WithSummary("Get registered messaging nodes");
+        apiGroup.MapGet("/nodes", _Nodes).WithName("Messaging_Nodes").WithSummary("Get registered messaging nodes");
         apiGroup
             .MapGet("/list-ns", _ListNamespaces)
             .WithName("Messaging_ListNamespaces")
@@ -597,12 +591,12 @@ public static class MessagingDashboardEndpoints
         {
             return Results.StatusCode((int)(e.StatusCode ?? HttpStatusCode.BadGateway));
         }
-#pragma warning disable EPC12
+#pragma warning disable ERP022 // Dashboard health probe should return gateway failure for unexpected probe exceptions.
         catch
         {
             return Results.StatusCode((int)HttpStatusCode.BadGateway);
         }
-#pragma warning restore EPC12
+#pragma warning restore ERP022
     }
 
     #endregion
