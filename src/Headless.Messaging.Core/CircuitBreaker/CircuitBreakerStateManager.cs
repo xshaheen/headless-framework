@@ -27,6 +27,12 @@ internal sealed class CircuitBreakerStateManager(
     private int _disposed;
 
     /// <summary>
+    /// Flag to ensure the cap-reached warning is logged at most once.
+    /// Uses <see cref="Interlocked.CompareExchange(ref int, int, int)"/> for lock-free one-shot logging.
+    /// </summary>
+    private int _capWarningLogged;
+
+    /// <summary>
     /// Known consumer group names registered at startup. When populated, <see cref="_GetOrAddState"/>
     /// returns a static no-op state for unrecognized names to prevent unbounded OTel cardinality.
     /// </summary>
@@ -362,6 +368,12 @@ internal sealed class CircuitBreakerStateManager(
     /// <summary>
     /// Hard cap on the number of tracked groups. If exceeded, new groups receive the no-op state
     /// to prevent unbounded memory growth even if <see cref="_knownGroups"/> is not yet populated.
+    /// <para>
+    /// The cap is approximate: under high concurrency, multiple threads may pass the count check
+    /// simultaneously and each insert a new key, allowing the dictionary to exceed this value by
+    /// the concurrency factor (typically a handful of entries). This is acceptable — the goal is
+    /// to prevent unbounded growth, not enforce an exact limit.
+    /// </para>
     /// </summary>
     private const int MaxTrackedGroups = 1000;
 
@@ -379,11 +391,13 @@ internal sealed class CircuitBreakerStateManager(
 
         if (_groups.Count >= MaxTrackedGroups && !_groups.ContainsKey(groupName))
         {
-            logger.LogWarning(
-                "Circuit breaker group count cap ({Cap}) reached — returning no-op state for group '{Group}'",
-                MaxTrackedGroups,
-                groupName
-            );
+            if (Interlocked.CompareExchange(ref _capWarningLogged, 1, 0) == 0)
+            {
+                logger.LogWarning(
+                    "Circuit breaker group count cap ({Cap}) reached — returning no-op state for new groups",
+                    MaxTrackedGroups
+                );
+            }
 
             return s_noOpState;
         }

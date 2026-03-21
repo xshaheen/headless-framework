@@ -589,7 +589,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         private bool _isPaused;
 
         public required ILogger Logger { get; init; }
-        public required CancellationTokenSource Cts { get; set; }
+        public required CancellationTokenSource Cts { get; init; }
         public required List<IConsumerClient> Clients { get; init; }
         public required string GroupName { get; init; }
         public List<Task> ConsumerTasks { get; init; } = [];
