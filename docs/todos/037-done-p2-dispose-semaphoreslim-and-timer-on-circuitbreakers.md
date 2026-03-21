@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p2
 issue_id: "037"
 tags: ["code-review","dotnet","quality"]
@@ -54,3 +54,9 @@ Discovered during PR #194 code review (round 2). Note: ProbePermit may be remove
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-21 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done
