@@ -122,6 +122,15 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         field!.SetValue(sut, value.Ticks);
     }
 
+    private static void _InvokeAdjustPollingInterval(MessageNeedToRetryProcessor sut, int enqueued, int skippedCircuitOpen)
+    {
+        var method = typeof(MessageNeedToRetryProcessor).GetMethod(
+            "_AdjustPollingInterval",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+        );
+        method!.Invoke(sut, [enqueued, skippedCircuitOpen]);
+    }
+
     private static TimeSpan _GetLockTtl(MessageNeedToRetryProcessor sut)
     {
         var method = typeof(MessageNeedToRetryProcessor).GetMethod(
@@ -413,6 +422,29 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         _SetCurrentInterval(sut, TimeSpan.FromSeconds(20));
 
         _GetLockTtl(sut).Should().Be(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public void AdjustPollingInterval_DoesNotOverflow_WhenCurrentIntervalIsNearMaxValue()
+    {
+        // Arrange — set current interval to a value where * 2 would overflow a long
+        var (sut, _, _) = _Create(
+            failedRetryInterval: 1,
+            maxPollingIntervalSeconds: 900,
+            circuitOpenRateThreshold: 0.5
+        );
+
+        // Set current interval to just above long.MaxValue / 2 in ticks — doubling would overflow
+        var nearMaxTicks = (long.MaxValue / 2) + 1;
+        _SetCurrentInterval(sut, TimeSpan.FromTicks(nearMaxTicks));
+
+        // Act — invoke _AdjustPollingInterval directly (enqueued=1, skippedCircuitOpen=9 → 90% > 50% threshold → backoff path)
+        _InvokeAdjustPollingInterval(sut, enqueued: 1, skippedCircuitOpen: 9);
+
+        // Assert — interval should be capped at max, not negative/overflowed
+        var currentInterval = _GetCurrentInterval(sut);
+        currentInterval.Ticks.Should().BeGreaterThan(0, "interval must never overflow to negative");
+        currentInterval.Should().Be(TimeSpan.FromSeconds(900));
     }
 
     [Fact]

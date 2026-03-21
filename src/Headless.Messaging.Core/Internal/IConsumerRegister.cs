@@ -585,6 +585,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private sealed class GroupHandle : IAsyncDisposable
     {
         private readonly Lock _clientsLock = new();
+        private bool _disposing;
         private bool _isPaused;
 
         public required ILogger Logger { get; init; }
@@ -604,6 +605,17 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             bool shouldPause;
             lock (_clientsLock)
             {
+                if (_disposing)
+                {
+                    // Already shutting down — dispose inline instead of adding.
+                    // Fire-and-forget is acceptable here: we're inside a lock (can't await)
+                    // and the group is already being torn down.
+#pragma warning disable CA2012 // Use ValueTasks correctly
+                    _ = client.DisposeAsync();
+#pragma warning restore CA2012
+                    return;
+                }
+
                 Clients.Add(client);
                 shouldPause = _isPaused;
             }
@@ -636,7 +648,13 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             await Cts.CancelAsync();
             Cts.Dispose();
 
-            var snapshot = SnapshotClients();
+            IConsumerClient[] snapshot;
+            lock (_clientsLock)
+            {
+                _disposing = true;
+                snapshot = [.. Clients];
+            }
+
             foreach (var client in snapshot)
             {
                 await client.DisposeAsync();

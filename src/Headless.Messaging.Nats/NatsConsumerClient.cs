@@ -22,7 +22,7 @@ internal sealed class NatsConsumerClient(
     private readonly MessagingNatsOptions _natsOptions =
         options.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
-    private readonly ManualResetEventSlim _pauseGate = new(true);
+    private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
     private readonly List<IJetStreamPushAsyncSubscription> _subscriptions = [];
     private IEnumerable<string>? _subscribedTopics;
     private int _paused; // 0 = running, 1 = paused
@@ -167,7 +167,7 @@ internal sealed class NatsConsumerClient(
     {
         try
         {
-            _pauseGate.Wait(_cancellationToken);
+            await _pauseGate.Task.WaitAsync(_cancellationToken).ConfigureAwait(false);
 
             if (groupConcurrent > 0)
             {
@@ -305,7 +305,7 @@ internal sealed class NatsConsumerClient(
     {
         if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
-            _pauseGate.Reset();
+            _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _DrainSubscriptions();
         }
 
@@ -321,7 +321,7 @@ internal sealed class NatsConsumerClient(
                 _CreateSubscriptions(_subscribedTopics);
             }
 
-            _pauseGate.Set();
+            _pauseGate.TrySetResult(true);
         }
 
         return ValueTask.CompletedTask;
@@ -351,8 +351,8 @@ internal sealed class NatsConsumerClient(
 
     public ValueTask DisposeAsync()
     {
+        _pauseGate.TrySetResult(true);
         _DrainSubscriptions();
-        _pauseGate.Dispose();
         _consumerClient?.Dispose();
         _semaphore.Dispose();
         return ValueTask.CompletedTask;
@@ -399,5 +399,12 @@ internal sealed class NatsConsumerClient(
     {
         var logArgs = new LogMessageEventArgs { LogType = MqLogType.AsyncErrorEvent, Reason = e.Error };
         OnLogCallback!(logArgs);
+    }
+
+    private static TaskCompletionSource<bool> _CreateCompletedGate()
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        tcs.SetResult(true);
+        return tcs;
     }
 }
