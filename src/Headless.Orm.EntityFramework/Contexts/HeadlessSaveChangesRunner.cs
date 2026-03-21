@@ -42,27 +42,14 @@ internal static class HeadlessSaveChangesRunner
             return await _ExecuteWithinCurrentTransactionAsync(state).ConfigureAwait(false);
         }
 
-        if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
+        var requiresExplicitTransaction =
+            auditEntries is { Count: > 0 } || report.DistributedEmitters.Count > 0 || report.LocalEmitters.Count > 0;
+
+        if (!requiresExplicitTransaction)
         {
-            if (auditEntries is not { Count: > 0 })
-            {
-                var result = await baseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken)
-                    .ConfigureAwait(false);
-                _CompleteSuccessfulSave(report, cleanup);
-                return result;
-            }
-
-            await using var transaction = await context
-                .Database.BeginTransactionAsync(cancellationToken)
-                .ConfigureAwait(false);
-            var resultWithAudit = await baseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken)
-                .ConfigureAwait(false);
-            await _ResolveAndPersistAuditAsync(context, auditEntries, baseSaveChangesAsync, cancellationToken)
-                .ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            var result = await baseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken).ConfigureAwait(false);
             _CompleteSuccessfulSave(report, cleanup);
-
-            return resultWithAudit;
+            return result;
         }
 
         return await context
@@ -104,22 +91,14 @@ internal static class HeadlessSaveChangesRunner
             return _ExecuteWithinCurrentTransaction(state);
         }
 
-        if (report.DistributedEmitters.Count == 0 && report.LocalEmitters.Count == 0)
+        var requiresExplicitTransaction =
+            auditEntries is { Count: > 0 } || report.DistributedEmitters.Count > 0 || report.LocalEmitters.Count > 0;
+
+        if (!requiresExplicitTransaction)
         {
-            if (auditEntries is not { Count: > 0 })
-            {
-                var result = baseSaveChanges(acceptAllChangesOnSuccess);
-                _CompleteSuccessfulSave(report, cleanup);
-                return result;
-            }
-
-            using var transaction = context.Database.BeginTransaction();
-            var resultWithAudit = baseSaveChanges(acceptAllChangesOnSuccess);
-            _ResolveAndPersistAudit(context, auditEntries, baseSaveChanges);
-            transaction.Commit();
+            var result = baseSaveChanges(acceptAllChangesOnSuccess);
             _CompleteSuccessfulSave(report, cleanup);
-
-            return resultWithAudit;
+            return result;
         }
 
         return context

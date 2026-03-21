@@ -49,6 +49,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         entry.UserId.Should().Be(AuditIntegrationFixture.UserId);
         entry.TenantId.Should().Be(AuditIntegrationFixture.TenantId);
         entry.CreatedAt.Should().Be(AuditIntegrationFixture.Now.UtcDateTime);
+        entry.CreatedAt.Kind.Should().Be(DateTimeKind.Utc);
 
         var amount = entry.NewValues["Amount"].Should().BeOfType<JsonElement>().Subject;
         amount.GetDecimal().Should().Be(99.99m);
