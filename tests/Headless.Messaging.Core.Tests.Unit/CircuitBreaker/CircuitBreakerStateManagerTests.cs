@@ -512,6 +512,36 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     }
 
     [Fact]
+    public async Task concurrent_TryAcquireHalfOpenProbe_allows_exactly_one_winner()
+    {
+        // given — trip circuit then wait for HalfOpen
+        const int parallelTasks = 50;
+        var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () => ValueTask.CompletedTask
+        );
+
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+        await Task.Delay(150); // wait for HalfOpen transition
+
+        // when — launch N parallel tasks all racing to acquire the probe
+        using var barrier = new Barrier(parallelTasks);
+        var results = new bool[parallelTasks];
+        var tasks = Enumerable.Range(0, parallelTasks).Select(i => Task.Run(() =>
+        {
+            barrier.SignalAndWait(); // maximize contention
+            results[i] = sut.TryAcquireHalfOpenProbe(Group);
+        })).ToArray();
+
+        await Task.WhenAll(tasks);
+
+        // then — exactly one task acquired the probe
+        results.Count(r => r).Should().Be(1);
+    }
+
+    [Fact]
     public async Task open_duration_never_exceeds_max()
     {
         // given — base=1s, max=4s → escalation: 1s→2s→4s→4s→4s...
