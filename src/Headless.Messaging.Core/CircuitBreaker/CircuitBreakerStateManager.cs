@@ -27,6 +27,14 @@ internal sealed class CircuitBreakerStateManager(
     private int _disposed;
 
     /// <summary>
+    /// Atomic counter tracking the number of entries in <see cref="_groups"/>.
+    /// Replaces <c>ConcurrentDictionary.Count</c> on the hot path — <c>.Count</c> is O(N) and
+    /// takes a full lock sweep across all segments, creating a global serialization point.
+    /// A slight overcount under high concurrency is acceptable since the cap is approximate.
+    /// </summary>
+    private int _groupCount;
+
+    /// <summary>
     /// Flag to ensure the cap-reached warning is logged at most once.
     /// Uses <see cref="Interlocked.CompareExchange(ref int, int, int)"/> for lock-free one-shot logging.
     /// </summary>
@@ -259,6 +267,8 @@ internal sealed class CircuitBreakerStateManager(
             return;
         }
 
+        Interlocked.Decrement(ref _groupCount);
+
         var groupLock = state.SyncLock;
 
         lock (groupLock)
@@ -399,7 +409,7 @@ internal sealed class CircuitBreakerStateManager(
             return s_noOpState;
         }
 
-        if (_groups.Count >= MaxTrackedGroups && !_groups.ContainsKey(groupName))
+        if (Volatile.Read(ref _groupCount) >= MaxTrackedGroups && !_groups.ContainsKey(groupName))
         {
             if (Interlocked.CompareExchange(ref _capWarningLogged, 1, 0) == 0)
             {
@@ -416,6 +426,8 @@ internal sealed class CircuitBreakerStateManager(
             groupName,
             static (key, ctx) =>
             {
+                Interlocked.Increment(ref ctx.Self._groupCount);
+
                 ctx.Registry.TryGet(key, out var perGroup);
 
                 return new GroupCircuitState
@@ -426,7 +438,7 @@ internal sealed class CircuitBreakerStateManager(
                     EffectiveIsTransient = perGroup?.IsTransientException ?? ctx.GlobalOptions.IsTransientException,
                 };
             },
-            (Registry: registry, GlobalOptions: _options)
+            (Self: this, Registry: registry, GlobalOptions: _options)
         );
     }
 
