@@ -27,6 +27,14 @@ public interface ICircuitBreakerMonitor
     IReadOnlyList<KeyValuePair<string, CircuitBreakerState>> GetAllStates();
 
     /// <summary>
+    /// Returns the set of consumer group names registered via
+    /// <see cref="ICircuitBreakerStateManager.RegisterKnownGroups"/>, or <see langword="null"/>
+    /// if <c>RegisterKnownGroups</c> was not called. Useful for agents and health-check
+    /// endpoints that need to enumerate valid group names before any messages are processed.
+    /// </summary>
+    IReadOnlySet<string>? KnownGroups { get; }
+
+    /// <summary>
     /// Force-resets the circuit for the specified consumer group to <see cref="CircuitBreakerState.Closed"/>,
     /// cancelling any open timer and resetting escalation. Invokes the resume callback if the circuit
     /// was previously Open or HalfOpen. This is the operator/agent manual recovery path.
