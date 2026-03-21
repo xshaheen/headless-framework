@@ -161,6 +161,9 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     {
         var groupingMatches = _selector.GetCandidatesMethodsOfGroupNameGrouped();
 
+        // Arm the OTel cardinality guard so unrecognized group names are rejected.
+        _circuitBreakerStateManager?.RegisterKnownGroups(groupingMatches.Keys);
+
         foreach (var matchGroup in groupingMatches)
         {
             var groupName = matchGroup.Key;

@@ -9,6 +9,14 @@ namespace Headless.Messaging.CircuitBreaker;
 internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
 {
     /// <summary>
+    /// Freezes the set of valid consumer group names. After this call, unrecognized group names
+    /// receive a no-op circuit state to prevent unbounded OTel cardinality. Should be called once
+    /// during startup after all consumers are registered.
+    /// </summary>
+    /// <param name="groups">The known consumer group names.</param>
+    void RegisterKnownGroups(IEnumerable<string> groups);
+
+    /// <summary>
     /// Registers pause and resume callbacks for a consumer group.
     /// The <paramref name="onPause"/> callback is invoked when the circuit opens;
     /// <paramref name="onResume"/> is invoked when the circuit transitions to half-open.
