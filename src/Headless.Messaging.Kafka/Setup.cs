@@ -42,7 +42,7 @@ public static class MessagesKafkaSetup
         {
             services.AddSingleton(new MessageQueueMarkerService("Kafka"));
 
-            services.Configure(configure);
+            services.Configure<MessagingKafkaOptions, MessagingKafkaOptionsValidator>(configure);
 
             services.AddSingleton<ITransport, KafkaTransport>();
             services.AddSingleton<IConsumerClientFactory, KafkaConsumerClientFactory>();

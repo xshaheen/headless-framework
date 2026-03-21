@@ -91,9 +91,8 @@ public static class MessagingOptionsExtensions
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageStorageMarkerService("PostgreSql"));
-            services.Configure(configure);
+            services.Configure<PostgreSqlOptions, PostgreSqlOptionsValidator>(configure);
             services.AddSingleton<IConfigureOptions<PostgreSqlOptions>, ConfigurePostgreSqlOptions>();
-            services.AddSingleton<IValidateOptions<PostgreSqlOptions>, PostgreSqlOptionsValidator>();
 
             services.AddTransient<IOutboxTransaction, PostgreSqlOutboxTransaction>();
             services.AddSingleton<IDataStorage, PostgreSqlDataStorage>();

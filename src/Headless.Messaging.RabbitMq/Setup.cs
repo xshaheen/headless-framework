@@ -4,8 +4,6 @@ using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
-using Microsoft.Extensions.Options;
-
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -39,8 +37,7 @@ public static class MessagesRabbitMqSetup
         public void AddServices(IServiceCollection services)
         {
             services.AddSingleton(new MessageQueueMarkerService("RabbitMQ"));
-            services.Configure(configure);
-            services.AddSingleton<IValidateOptions<RabbitMqOptions>, RabbitMqOptionsValidator>();
+            services.Configure<RabbitMqOptions, RabbitMqOptionsValidator>(configure);
             services.AddSingleton<ITransport, RabbitMqTransport>();
             services.AddSingleton<IConsumerClientFactory, RabbitMqConsumerClientFactory>();
             services.AddSingleton<IConnectionChannelPool, ConnectionChannelPool>();

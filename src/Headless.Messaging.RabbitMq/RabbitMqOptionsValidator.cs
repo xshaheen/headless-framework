@@ -1,66 +1,52 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.Extensions.Options;
+using FluentValidation;
 
 namespace Headless.Messaging.RabbitMq;
 
-internal sealed class RabbitMqOptionsValidator : IValidateOptions<RabbitMqOptions>
+internal sealed class RabbitMqOptionsValidator : AbstractValidator<RabbitMqOptions>
 {
-    public ValidateOptionsResult Validate(string? name, RabbitMqOptions options)
+    public RabbitMqOptionsValidator()
     {
-        if (string.IsNullOrWhiteSpace(options.HostName))
-        {
-            return ValidateOptionsResult.Fail("HostName is required");
-        }
+        RuleFor(x => x.HostName).NotEmpty();
 
-        if (string.IsNullOrWhiteSpace(options.UserName))
-        {
-            return ValidateOptionsResult.Fail("UserName is required and must be configured explicitly");
-        }
+        RuleFor(x => x.UserName)
+            .NotEmpty()
+            .WithMessage("UserName is required and must be configured explicitly");
+        RuleFor(x => x.UserName)
+            .Must(u => !u.Equals("guest", StringComparison.OrdinalIgnoreCase))
+            .When(x => !string.IsNullOrWhiteSpace(x.UserName))
+            .WithMessage("UserName cannot be 'guest' - use a secure username for production environments");
 
-        if (options.UserName.Equals("guest", StringComparison.OrdinalIgnoreCase))
-        {
-            return ValidateOptionsResult.Fail(
-                "UserName cannot be 'guest' - use a secure username for production environments"
-            );
-        }
+        RuleFor(x => x.Password)
+            .NotEmpty()
+            .WithMessage("Password is required and must be configured explicitly");
+        RuleFor(x => x.Password)
+            .Must(p => !p.Equals("guest", StringComparison.OrdinalIgnoreCase))
+            .When(x => !string.IsNullOrWhiteSpace(x.Password))
+            .WithMessage("Password cannot be 'guest' - use a secure password for production environments");
 
-        if (string.IsNullOrWhiteSpace(options.Password))
-        {
-            return ValidateOptionsResult.Fail("Password is required and must be configured explicitly");
-        }
+        RuleFor(x => x.Port)
+            .Must(p => p is -1 or (>= 1 and <= 65535))
+            .WithMessage("Port must be -1 (default) or between 1 and 65535");
 
-        if (options.Password.Equals("guest", StringComparison.OrdinalIgnoreCase))
-        {
-            return ValidateOptionsResult.Fail(
-                "Password cannot be 'guest' - use a secure password for production environments"
-            );
-        }
+        RuleFor(x => x.VirtualHost).NotEmpty();
+        RuleFor(x => x.ExchangeName).NotEmpty();
 
-        if (options.Port is not (-1 or (>= 1 and <= 65535)))
-        {
-            return ValidateOptionsResult.Fail("Port must be -1 (default) or between 1 and 65535");
-        }
-
-        if (string.IsNullOrWhiteSpace(options.VirtualHost))
-        {
-            return ValidateOptionsResult.Fail("VirtualHost is required");
-        }
-
-        if (string.IsNullOrWhiteSpace(options.ExchangeName))
-        {
-            return ValidateOptionsResult.Fail("ExchangeName is required");
-        }
-
-        try
-        {
-            RabbitMqValidation.ValidateExchangeName(options.ExchangeName);
-        }
-        catch (ArgumentException ex)
-        {
-            return ValidateOptionsResult.Fail($"Invalid ExchangeName: {ex.Message}");
-        }
-
-        return ValidateOptionsResult.Success;
+        RuleFor(x => x.ExchangeName)
+            .Must(name =>
+            {
+                try
+                {
+                    RabbitMqValidation.ValidateExchangeName(name);
+                    return true;
+                }
+                catch (ArgumentException)
+                {
+                    return false;
+                }
+            })
+            .When(x => !string.IsNullOrWhiteSpace(x.ExchangeName))
+            .WithMessage("Invalid ExchangeName format");
     }
 }

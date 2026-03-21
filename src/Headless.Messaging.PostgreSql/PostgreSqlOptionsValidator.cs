@@ -1,21 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.Extensions.Options;
+using FluentValidation;
 
 namespace Headless.Messaging.PostgreSql;
 
-internal sealed class PostgreSqlOptionsValidator : IValidateOptions<PostgreSqlOptions>
+internal sealed class PostgreSqlOptionsValidator : AbstractValidator<PostgreSqlOptions>
 {
-    public ValidateOptionsResult Validate(string? name, PostgreSqlOptions options)
+    public PostgreSqlOptionsValidator()
     {
-        if (options.DataSource is null && string.IsNullOrWhiteSpace(options.ConnectionString))
-        {
-            return ValidateOptionsResult.Fail(
+        RuleFor(x => x)
+            .Must(x => x.DataSource is not null || !string.IsNullOrWhiteSpace(x.ConnectionString))
+            .WithMessage(
                 "PostgreSQL messaging storage requires either a DataSource or ConnectionString. "
                     + "Configure via UsePostgreSql(connectionString) or UsePostgreSql(options => options.ConnectionString = ...)"
             );
-        }
-
-        return ValidateOptionsResult.Success;
     }
 }
