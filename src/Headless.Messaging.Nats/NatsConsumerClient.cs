@@ -171,10 +171,10 @@ internal sealed class NatsConsumerClient(
 
             if (groupConcurrent > 0)
             {
-                await _semaphore.WaitAsync(_cancellationToken).ConfigureAwait(false);
                 _ = Task.Run(
                         async () =>
                         {
+                            await _semaphore.WaitAsync(_cancellationToken).ConfigureAwait(false);
                             try
                             {
                                 await consumeAsync().ConfigureAwait(false);
