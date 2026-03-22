@@ -6,11 +6,11 @@ using UserId = Headless.Primitives.UserId;
 namespace Headless.Orm.EntityFramework.Configurations;
 
 /// <summary>ValueConverter for <see cref = "UserId"/></summary>
-public sealed class UserIdValueConverter : PrimitiveValueConverter<UserId, string>
+public sealed class UserIdValueConverter : ValueConverter<UserId, string>
 {
     public UserIdValueConverter()
-        : base() { }
+        : base(v => v, v => new UserId(v)) { }
 
     public UserIdValueConverter(ConverterMappingHints? mappingHints)
-        : base(mappingHints) { }
+        : base(v => v, v => new UserId(v), mappingHints) { }
 }
