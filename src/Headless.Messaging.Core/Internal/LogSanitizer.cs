@@ -3,8 +3,16 @@
 namespace Headless.Messaging.Internal;
 
 /// <summary>
-/// Shared sanitization utilities for log-safe string values.
-/// Strips control characters and Unicode bidi overrides to prevent log injection.
+/// Sanitizes values originating from message broker wire data (transport headers, message
+/// metadata) before they are interpolated into structured log parameters. This is the only
+/// layer in the framework where untrusted external strings enter log output — publisher
+/// paths, configuration, and storage operations log trusted application data and do not
+/// need sanitization.
+/// <para>
+/// Strips control characters (which enable log-line forging in text-based log sinks) and
+/// Unicode bidi overrides U+202A–U+202E / U+2066–U+2069 (which can visually reorder text
+/// in log viewers to hide malicious content).
+/// </para>
 /// </summary>
 internal static class LogSanitizer
 {
