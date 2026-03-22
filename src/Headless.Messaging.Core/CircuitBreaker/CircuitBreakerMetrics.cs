@@ -81,9 +81,9 @@ internal sealed class CircuitBreakerMetrics
 
     private string _SafeTag(string groupName)
     {
-        return _knownGroups is null || _knownGroups.Contains(groupName)
-            ? groupName
-            : UnknownGroupTag;
+        var known = _knownGroups;
+        if (known is null) return UnknownGroupTag;
+        return known.Contains(groupName) ? groupName : UnknownGroupTag;
     }
 
     private IEnumerable<Measurement<int>> _ObserveCircuitStates()

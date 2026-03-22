@@ -29,7 +29,7 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
     }
 
     [Fact]
-    public void should_return_fixed_interval_regardless_of_exception()
+    public void should_return_fixed_interval_for_transient_exceptions()
     {
         // given
         var interval = TimeSpan.FromSeconds(3);
@@ -37,27 +37,53 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
 
         // when
         var delayWithTransient = strategy.GetNextDelay(0, new TimeoutException());
-        var delayWithPermanent = strategy.GetNextDelay(0, new SubscriberNotFoundException("Not found"));
         var delayWithNull = strategy.GetNextDelay(0);
 
-        // then - fixed interval ignores exception type for delay calculation
+        // then - fixed interval for transient exceptions and null
         delayWithTransient.Should().Be(interval);
-        delayWithPermanent.Should().Be(interval);
         delayWithNull.Should().Be(interval);
     }
 
     [Fact]
-    public void should_always_retry_via_should_retry()
+    public void should_return_null_for_permanent_exceptions()
     {
         // given
         var strategy = new FixedIntervalBackoffStrategy(TimeSpan.FromSeconds(1));
 
-        // when/then - always returns true (maintains legacy behavior)
-        strategy.ShouldRetry(new SubscriberNotFoundException("Not found")).Should().BeTrue();
-        strategy.ShouldRetry(new ArgumentNullException("value")).Should().BeTrue();
-        strategy.ShouldRetry(new ArgumentException("Invalid", "value")).Should().BeTrue();
-        strategy.ShouldRetry(new InvalidOperationException("Op")).Should().BeTrue();
-        strategy.ShouldRetry(new NotSupportedException("Not")).Should().BeTrue();
+        // when/then - permanent exceptions should not be retried
+        strategy.GetNextDelay(0, new SubscriberNotFoundException("Not found")).Should().BeNull();
+        strategy.GetNextDelay(0, new ArgumentNullException("value")).Should().BeNull();
+        strategy.GetNextDelay(0, new ArgumentException("Invalid arg", "value")).Should().BeNull();
+        strategy.GetNextDelay(0, new InvalidOperationException("Invalid op")).Should().BeNull();
+        strategy.GetNextDelay(0, new NotSupportedException("Not supported")).Should().BeNull();
+    }
+
+    [Fact]
+    public void should_retry_transient_exceptions()
+    {
+        // given
+        var strategy = new FixedIntervalBackoffStrategy(TimeSpan.FromSeconds(1));
+
+        // when/then - transient exceptions should be retried
+        strategy.GetNextDelay(0, new TimeoutException("Timeout")).Should().NotBeNull();
+        strategy.GetNextDelay(0, new IOException("Network error")).Should().NotBeNull();
+        strategy.GetNextDelay(0, new ApplicationException("Generic error")).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_reject_permanent_exceptions_via_should_retry()
+    {
+        // given
+        var strategy = new FixedIntervalBackoffStrategy(TimeSpan.FromSeconds(1));
+
+        // when/then - permanent exceptions should not be retried
+        strategy.ShouldRetry(new SubscriberNotFoundException("Not found")).Should().BeFalse();
+        strategy.ShouldRetry(new ArgumentNullException("value")).Should().BeFalse();
+        strategy.ShouldRetry(new ArgumentException("Invalid", "value")).Should().BeFalse();
+        strategy.ShouldRetry(new InvalidOperationException("Op")).Should().BeFalse();
+        strategy.ShouldRetry(new NotSupportedException("Not")).Should().BeFalse();
+
+        // transient exceptions should be retried
         strategy.ShouldRetry(new TimeoutException("Timeout")).Should().BeTrue();
         strategy.ShouldRetry(new IOException("Network")).Should().BeTrue();
         strategy.ShouldRetry(new ApplicationException("Generic")).Should().BeTrue();

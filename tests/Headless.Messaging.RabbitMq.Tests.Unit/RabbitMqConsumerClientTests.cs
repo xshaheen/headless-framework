@@ -405,6 +405,6 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         _channel.ReceivedCalls().Should().Contain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
 
         await cts.CancelAsync();
-        await FluentActions.Awaiting(() => listeningTask).Should().ThrowAsync<OperationCanceledException>();
+        await listeningTask; // Should complete gracefully — no OperationCanceledException
     }
 }

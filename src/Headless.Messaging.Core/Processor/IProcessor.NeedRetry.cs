@@ -29,7 +29,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private readonly IDataStorage _dataStorage;
     private readonly TimeSpan _lookbackWindow;
     private readonly string _instance;
-    private readonly ICircuitBreakerStateManager? _circuitBreakerStateManager;
+    private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
     private Task? _failedRetryConsumeTask;
@@ -51,7 +51,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         ILogger<MessageNeedToRetryProcessor> logger,
         IDispatcher dispatcher,
         IDataStorage dataStorage,
-        IServiceProvider serviceProvider
+        ICircuitBreakerMonitor? circuitBreakerMonitor = null
     )
     {
         _options = options;
@@ -61,7 +61,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         _currentIntervalTicks = _baseInterval.Ticks;
         _lookbackWindow = TimeSpan.FromSeconds(options.Value.FallbackWindowLookbackSeconds);
         _dataStorage = dataStorage;
-        _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();
+        _circuitBreakerMonitor = circuitBreakerMonitor;
 
         _adaptivePolling = retryOptions.Value.AdaptivePolling;
         _maxInterval = retryOptions.Value.MaxPollingInterval;
@@ -351,7 +351,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return isOpen;
         }
 
-        isOpen = _circuitBreakerStateManager?.IsOpen(group) == true;
+        isOpen = _circuitBreakerMonitor?.IsOpen(group) == true;
         cache[group] = isOpen;
         return isOpen;
     }

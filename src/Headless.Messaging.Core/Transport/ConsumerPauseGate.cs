@@ -10,7 +10,7 @@ namespace Headless.Messaging.Transport;
 internal sealed class ConsumerPauseGate
 {
     private readonly Lock _lock = new();
-    private TaskCompletionSource<bool> _gate = _CreateCompletedGate();
+    private volatile TaskCompletionSource<bool> _gate = _CreateCompletedGate();
     private bool _paused;
     private bool _disposed;
 

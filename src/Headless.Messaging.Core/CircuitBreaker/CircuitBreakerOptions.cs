@@ -29,7 +29,7 @@ public sealed class CircuitBreakerOptions
 
     /// <summary>
     /// Gets or sets the maximum duration the circuit can stay open, regardless of escalation level.
-    /// Must be greater than or equal to <see cref="OpenDuration"/>.
+    /// Must be greater than or equal to <see cref="OpenDuration"/> and at most 24 hours.
     /// Default is 240 seconds (4 minutes).
     /// </summary>
     public TimeSpan MaxOpenDuration { get; set; } = TimeSpan.FromSeconds(240);
@@ -64,7 +64,9 @@ internal sealed class CircuitBreakerOptionsValidator : AbstractValidator<Circuit
     {
         RuleFor(x => x.FailureThreshold).GreaterThan(0);
         RuleFor(x => x.OpenDuration).GreaterThan(TimeSpan.Zero);
-        RuleFor(x => x.MaxOpenDuration).GreaterThanOrEqualTo(x => x.OpenDuration);
+        RuleFor(x => x.MaxOpenDuration)
+            .GreaterThanOrEqualTo(x => x.OpenDuration)
+            .LessThanOrEqualTo(TimeSpan.FromDays(1));
         RuleFor(x => x.SuccessfulCyclesToResetEscalation).GreaterThan(0).LessThanOrEqualTo(100);
         RuleFor(x => x.IsTransientException).NotNull();
     }

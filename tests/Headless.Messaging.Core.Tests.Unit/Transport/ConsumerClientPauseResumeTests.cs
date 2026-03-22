@@ -8,7 +8,25 @@ namespace Tests.Transport;
 public sealed class ConsumerClientPauseResumeTests
 {
     [Fact]
-    public async Task pause_async_default_implementation_should_complete_without_throwing()
+    public void pause_async_is_required_interface_member()
+    {
+        // PauseAsync has no default implementation — any IConsumerClient must provide it.
+        // MinimalConsumerClient compiles only because it explicitly implements PauseAsync.
+        var method = typeof(IConsumerClient).GetMethod(nameof(IConsumerClient.PauseAsync));
+        method.Should().NotBeNull();
+        method!.IsAbstract.Should().BeTrue("PauseAsync must not have a default implementation");
+    }
+
+    [Fact]
+    public void resume_async_is_required_interface_member()
+    {
+        var method = typeof(IConsumerClient).GetMethod(nameof(IConsumerClient.ResumeAsync));
+        method.Should().NotBeNull();
+        method!.IsAbstract.Should().BeTrue("ResumeAsync must not have a default implementation");
+    }
+
+    [Fact]
+    public async Task pause_async_should_complete_without_throwing()
     {
         // given
         IConsumerClient client = new MinimalConsumerClient();
@@ -21,7 +39,7 @@ public sealed class ConsumerClientPauseResumeTests
     }
 
     [Fact]
-    public async Task resume_async_default_implementation_should_complete_without_throwing()
+    public async Task resume_async_should_complete_without_throwing()
     {
         // given
         IConsumerClient client = new MinimalConsumerClient();
@@ -70,7 +88,7 @@ public sealed class ConsumerClientPauseResumeTests
     }
 
     [Fact]
-    public async Task pause_async_accepts_cancellation_token_without_observing_it()
+    public async Task pause_async_accepts_cancellation_token()
     {
         // given
         IConsumerClient client = new MinimalConsumerClient();
@@ -79,12 +97,12 @@ public sealed class ConsumerClientPauseResumeTests
         // when
         var act = async () => await client.PauseAsync(cts.Token);
 
-        // then — default impl ignores the token, should still complete
+        // then
         await act.Should().NotThrowAsync();
     }
 
     [Fact]
-    public async Task resume_async_accepts_cancellation_token_without_observing_it()
+    public async Task resume_async_accepts_cancellation_token()
     {
         // given
         IConsumerClient client = new MinimalConsumerClient();
@@ -93,14 +111,14 @@ public sealed class ConsumerClientPauseResumeTests
         // when
         var act = async () => await client.ResumeAsync(cts.Token);
 
-        // then — default impl ignores the token, should still complete
+        // then
         await act.Should().NotThrowAsync();
     }
 
     /// <summary>
-    /// Minimal implementation of <see cref="IConsumerClient"/> that does not override
-    /// <see cref="IConsumerClient.PauseAsync"/> or <see cref="IConsumerClient.ResumeAsync"/>,
-    /// exercising the default interface method implementations.
+    /// Minimal implementation of <see cref="IConsumerClient"/> that provides no-op
+    /// <see cref="IConsumerClient.PauseAsync"/> and <see cref="IConsumerClient.ResumeAsync"/>
+    /// implementations, since these are now required interface members.
     /// </summary>
     private sealed class MinimalConsumerClient : IConsumerClient
     {
@@ -117,6 +135,10 @@ public sealed class ConsumerClientPauseResumeTests
         public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
 
         public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

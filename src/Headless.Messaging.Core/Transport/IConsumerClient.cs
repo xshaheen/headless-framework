@@ -60,19 +60,13 @@ public interface IConsumerClient : IAsyncDisposable
     /// No new messages are pulled from the broker after this call returns.
     /// </summary>
     /// <param name="cancellationToken">Token to cancel the pause operation.</param>
-    ValueTask PauseAsync(CancellationToken cancellationToken = default)
-    {
-        return ValueTask.CompletedTask;
-    }
+    ValueTask PauseAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Resumes message consumption. Idempotent — calling on an already-running client is a no-op.
     /// </summary>
     /// <param name="cancellationToken">Token to cancel the resume operation.</param>
-    ValueTask ResumeAsync(CancellationToken cancellationToken = default)
-    {
-        return ValueTask.CompletedTask;
-    }
+    ValueTask ResumeAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Callback that is invoked when a message is received from the broker

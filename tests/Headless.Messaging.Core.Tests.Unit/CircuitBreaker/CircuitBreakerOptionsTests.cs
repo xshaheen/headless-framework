@@ -149,6 +149,35 @@ public sealed class CircuitBreakerOptionsTests : TestBase
         result.IsValid.Should().BeTrue();
     }
 
+    [Fact]
+    public void validator_rejects_max_open_duration_exceeding_one_day()
+    {
+        var opts = new CircuitBreakerOptions
+        {
+            MaxOpenDuration = TimeSpan.FromDays(1) + TimeSpan.FromSeconds(1),
+        };
+        var validator = new CircuitBreakerOptionsValidator();
+
+        var result = validator.Validate(opts);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "MaxOpenDuration");
+    }
+
+    [Fact]
+    public void validator_accepts_max_open_duration_of_exactly_one_day()
+    {
+        var opts = new CircuitBreakerOptions
+        {
+            MaxOpenDuration = TimeSpan.FromDays(1),
+        };
+        var validator = new CircuitBreakerOptionsValidator();
+
+        var result = validator.Validate(opts);
+
+        result.IsValid.Should().BeTrue();
+    }
+
     // -------------------------------------------------------------------------
     // Validation — SuccessfulCyclesToResetEscalation
     // -------------------------------------------------------------------------
@@ -298,6 +327,22 @@ public sealed class RetryProcessorOptionsTests : TestBase
         {
             MaxPollingInterval = TimeSpan.FromSeconds(60),
             CircuitOpenRateThreshold = 0.5,
+        };
+        var validator = _CreateValidator();
+
+        var result = validator.Validate(opts);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void validator_skips_adaptive_polling_rules_when_disabled()
+    {
+        var opts = new RetryProcessorOptions
+        {
+            AdaptivePolling = false,
+            MaxPollingInterval = TimeSpan.Zero, // would fail if validated
+            CircuitOpenRateThreshold = 0, // would fail if validated
         };
         var validator = _CreateValidator();
 

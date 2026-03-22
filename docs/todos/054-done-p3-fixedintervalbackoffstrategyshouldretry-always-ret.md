@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p3
 issue_id: "054"
 tags: ["code-review","quality"]
@@ -38,9 +38,9 @@ Extract a shared `IsPermanentException` check and apply it before delegating to 
 
 ## Acceptance Criteria
 
-- [ ] SubscriberNotFoundException not retried regardless of strategy
-- [ ] Behavior consistent between FixedInterval and Exponential strategies
-- [ ] Tests verify permanent exception rejection in FixedInterval strategy
+- [x] SubscriberNotFoundException not retried regardless of strategy
+- [x] Behavior consistent between FixedInterval and Exponential strategies
+- [x] Tests verify permanent exception rejection in FixedInterval strategy
 
 ## Notes
 
@@ -53,3 +53,25 @@ Source: Code review
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-22 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-22 - Resolved
+
+**By:** Agent
+**Actions:**
+- Replicated ExponentialBackoffStrategy's permanent-exception pattern into FixedIntervalBackoffStrategy
+- ShouldRetry now returns false for SubscriberNotFoundException, ArgumentNullException, ArgumentException, InvalidOperationException, NotSupportedException
+- GetNextDelay now returns null when exception is permanent (matching ExponentialBackoffStrategy)
+- Updated tests to verify permanent exception rejection
+- Status changed: in-progress → done
+
+### 2026-03-22 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

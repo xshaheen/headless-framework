@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "064"
 tags: ["code-review","security"]
@@ -40,9 +40,9 @@ Add MaxOpenDuration <= TimeSpan.FromDays(1) rule to CircuitBreakerOptionsValidat
 
 ## Acceptance Criteria
 
-- [ ] CircuitBreakerOptionsValidator rejects MaxOpenDuration > 24 hours
-- [ ] Validator test for upper bound
-- [ ] XML doc updated to document the 24h cap
+- [x] CircuitBreakerOptionsValidator rejects MaxOpenDuration > 24 hours
+- [x] Validator test for upper bound
+- [x] XML doc updated to document the 24h cap
 
 ## Notes
 
@@ -55,3 +55,9 @@ Source: Code review
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-22 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

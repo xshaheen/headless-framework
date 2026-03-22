@@ -216,7 +216,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             catch (BrokerConnectionException e)
             {
                 _isHealthy = false;
-                _logger.LogError(e, "Failed to connect to broker. {Message}", e.Message);
+                _logger.LogError(e, "Failed to connect to broker");
                 return;
             }
 
@@ -262,15 +262,11 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                             catch (BrokerConnectionException e)
                             {
                                 _isHealthy = false;
-                                _logger.LogError(e, "Failed to connect to broker. {Message}", e.Message);
+                                _logger.LogError(e, "Failed to connect to broker");
                             }
                             catch (Exception e)
                             {
-                                _logger.LogError(
-                                    e,
-                                    "An exception occurred in consumer processing loop. {Message}",
-                                    e.Message
-                                );
+                                _logger.LogError(e, "An exception occurred in consumer processing loop");
                             }
                         },
                         groupCts.Token,

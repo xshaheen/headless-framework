@@ -46,7 +46,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         };
     }
 
-    private static (MessageNeedToRetryProcessor Sut, IDispatcher Dispatcher, ICircuitBreakerStateManager Cb) _Create(
+    private static (MessageNeedToRetryProcessor Sut, IDispatcher Dispatcher, ICircuitBreakerMonitor Cb) _Create(
         int failedRetryInterval = 60,
         bool adaptivePolling = true,
         int maxPollingIntervalSeconds = 900,
@@ -55,7 +55,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
-        var cb = Substitute.For<ICircuitBreakerStateManager>();
+        var cb = Substitute.For<ICircuitBreakerMonitor>();
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var options = new MessagingOptions { FailedRetryInterval = failedRetryInterval };
@@ -67,18 +67,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             CircuitOpenRateThreshold = circuitOpenRateThreshold,
         };
 
-        var services = new ServiceCollection();
-        services.AddSingleton(cb);
-        services.AddSingleton(dataStorage);
-        var sp = services.BuildServiceProvider();
-
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(options),
             Options.Create(retryProcessorOptions),
             logger,
             dispatcher,
             dataStorage,
-            sp
+            cb
         );
 
         return (sut, dispatcher, cb);
@@ -182,21 +177,19 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var options = new MessagingOptions { FailedRetryInterval = 60 };
         var retryProcessorOptions = new RetryProcessorOptions();
-        var sp = new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider();
 
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(options),
             Options.Create(retryProcessorOptions),
             logger,
             dispatcher,
-            dataStorage,
-            sp
+            dataStorage
         );
 
         var msg1 = _CreateMessage("group-a");
         var msg2 = _CreateMessage("group-b");
         _SetupReceivedMessages(dataStorage, msg1, msg2);
-        var context = _CreateContext(sp);
+        var context = _CreateContext();
 
         // Act
         await sut.ProcessAsync(context);

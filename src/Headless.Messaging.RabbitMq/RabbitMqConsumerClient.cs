@@ -108,11 +108,17 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             );
         }
 
-        while (!cancellationToken.IsCancellationRequested)
+        // RabbitMQ is push-based — after BasicConsumeAsync the broker delivers messages
+        // via the consumer callback. We just need to keep this task alive until shutdown.
+        // Using Timeout.Infinite avoids repeated timer+task allocations from a polling loop.
+        try
         {
-            await Task.Delay(timeout, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
         }
-        // ReSharper disable once FunctionNeverReturns
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Normal shutdown
+        }
     }
 
     public async ValueTask CommitAsync(object? sender)
