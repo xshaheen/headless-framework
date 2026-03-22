@@ -229,4 +229,23 @@ public sealed class AzureServiceBusConsumerClientTests
         // then - gate reopens for late-starting listeners
         ((TaskCompletionSource<bool>)gateField.GetValue(client)!).Task.IsCompleted.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task ResumeAsync_should_not_mark_processing_as_started_before_listening_runs()
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        var startedField = typeof(AzureServiceBusConsumerClient).GetField(
+            "_hasStartedProcessing",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        )!;
+
+        await client.PauseAsync();
+
+        // when
+        await client.ResumeAsync();
+
+        // then - resume only opens the gate before first ListeningAsync startup
+        ((int)startedField.GetValue(client)!).Should().Be(0);
+    }
 }

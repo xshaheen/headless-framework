@@ -26,6 +26,7 @@ internal sealed class AzureServiceBusConsumerClient(
     private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
 
     private int _disposed;
+    private int _hasStartedProcessing;
     private int _paused; // 0 = running, 1 = paused
     private ServiceBusAdministrationClient? _administrationClient;
     private ServiceBusClient? _serviceBusClient;
@@ -124,6 +125,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         await _pauseGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
+        Volatile.Write(ref _hasStartedProcessing, 1);
     }
 
     public async ValueTask CommitAsync(object? sender)
@@ -169,7 +171,12 @@ internal sealed class AzureServiceBusConsumerClient(
         {
             _pauseGate.TrySetResult(true);
 
-            if (_serviceBusProcessor is null)
+            if (_serviceBusProcessor is null || Volatile.Read(ref _hasStartedProcessing) == 0)
+            {
+                return;
+            }
+
+            if (_serviceBusProcessor.IsProcessing)
             {
                 return;
             }
