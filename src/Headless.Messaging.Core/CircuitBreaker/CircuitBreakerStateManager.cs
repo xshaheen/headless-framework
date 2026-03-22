@@ -464,7 +464,7 @@ internal sealed class CircuitBreakerStateManager(
         {
             logger.LogWarning(
                 "Unrecognized consumer group '{Group}' — returning no-op circuit state to prevent unbounded cardinality",
-                groupName
+                LogSanitizer.Sanitize(groupName) ?? groupName
             );
 
             return s_noOpState;
@@ -565,7 +565,7 @@ internal sealed class CircuitBreakerStateManager(
         {
             // If the generation has moved on (another thread transitioned the state while we
             // were outside the lock), this timer is already stale — dispose it immediately.
-            if (state.TimerGeneration != generation)
+            if (state.TimerGeneration != generation || Volatile.Read(ref _disposed) != 0)
             {
                 timer.Dispose();
                 return;
@@ -687,6 +687,8 @@ internal sealed class CircuitBreakerStateManager(
 
     private async Task _ReopenAfterResumeFailureAsync(string groupName)
     {
+        if (Volatile.Read(ref _disposed) != 0) return;
+
         if (!_groups.TryGetValue(groupName, out var state))
         {
             return;

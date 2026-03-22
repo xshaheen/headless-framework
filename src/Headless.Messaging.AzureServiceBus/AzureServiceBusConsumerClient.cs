@@ -166,7 +166,7 @@ internal sealed class AzureServiceBusConsumerClient(
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
 
-        if (_serviceBusProcessor is not null && !_serviceBusProcessor.IsProcessing)
+        if (_serviceBusProcessor is not null)
         {
             await _serviceBusProcessor.DisposeAsync();
         }

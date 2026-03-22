@@ -72,7 +72,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
         await ExecuteAsync();
 
-        _disposed = 0;
+        Interlocked.Exchange(ref _disposed, 0);
     }
 
     public async ValueTask ReStartAsync(bool force = false)

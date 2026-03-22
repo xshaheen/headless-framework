@@ -21,7 +21,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private RabbitMqBasicConsumer? _consumer;
     private IChannel? _channel;
     private string? _consumerTag;
-    private int _paused;
+    private int _paused; // 0 = running, 1 = paused
     private int _disposed;
 
     public RabbitMqConsumerClient(
