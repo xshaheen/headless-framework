@@ -37,10 +37,14 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     // Threading contract:
     // - _AdjustPollingInterval is called only from ProcessAsync (sequential).
     // - _GetLockTtl reads _currentIntervalTicks from the same sequential context.
-    // - Interlocked is used on _currentIntervalTicks for cross-thread visibility (future-proofing).
+    // - _currentIntervalTicks is mutated by both _AdjustPollingInterval (sequential) and
+    //   ResetBackpressureAsync (callable from any thread). All mutations use CAS loops
+    //   (Interlocked.CompareExchange) to avoid non-atomic read-modify-write races.
     // - _consecutiveHealthyCycles and _consecutiveCleanCycles are written by both ProcessAsync
     //   (sequential) and ResetBackpressureAsync (callable from any thread). Declared volatile
-    //   to ensure cross-thread visibility of plain reads/writes.
+    //   for cross-thread visibility of plain reads/writes. The compound increment (read + write)
+    //   is not atomic, but this is accepted as a benign approximation — a missed or duplicated
+    //   increment only slightly delays adaptive polling transitions.
     private long _currentIntervalTicks;
     private volatile int _consecutiveHealthyCycles;
     private volatile int _consecutiveCleanCycles;
@@ -271,11 +275,13 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     /// - _consecutiveCleanCycles: cycles with zero total retry messages → resets to base at >=3.
     /// Clean cycles (total==0) increment both counters; the >=3 reset check runs before the >=2
     /// halving check, so a sustained quiet period snaps back to base rather than halving stepwise.
+    ///
+    /// All mutations of _currentIntervalTicks use CAS (CompareExchange) loops to avoid
+    /// non-atomic read-modify-write races with concurrent ResetBackpressureAsync calls.
     /// </summary>
     private void _AdjustPollingInterval(int enqueued, int skippedCircuitOpen)
     {
         var total = enqueued + skippedCircuitOpen;
-        var current = Interlocked.Read(ref _currentIntervalTicks);
 
         // No messages at all — clean cycle.
         // Zero messages means both "healthy" (no circuit-open skips) and "clean" (no retries
@@ -293,9 +299,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 _consecutiveCleanCycles = 0;
                 _consecutiveHealthyCycles = 0;
             }
-            else if (_consecutiveHealthyCycles >= 2 && current > _baseInterval.Ticks)
+            else if (_consecutiveHealthyCycles >= 2)
             {
-                Interlocked.Exchange(ref _currentIntervalTicks, Math.Max(current / 2, _baseInterval.Ticks));
+                _CompareExchangeHalve();
             }
 
             return;
@@ -309,14 +315,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             _consecutiveHealthyCycles = 0;
             _consecutiveCleanCycles = 0;
 
-            var newTicks = current <= _maxInterval.Ticks / 2 ? current * 2 : _maxInterval.Ticks;
-            Interlocked.Exchange(ref _currentIntervalTicks, newTicks);
-
-            _logger.LogDebug(
-                "Adaptive polling: circuit-open rate {Rate:P0} exceeds threshold, interval increased to {Interval}",
-                circuitOpenSkipRate,
-                TimeSpan.FromTicks(newTicks)
-            );
+            _CompareExchangeDouble();
         }
         else if (circuitOpenSkipRate <= _circuitOpenRateThreshold / 2.0)
         {
@@ -324,16 +323,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             _consecutiveHealthyCycles++;
             _consecutiveCleanCycles = 0;
 
-            if (_consecutiveHealthyCycles >= 2 && current > _baseInterval.Ticks)
+            if (_consecutiveHealthyCycles >= 2)
             {
-                var newTicks = Math.Max(current / 2, _baseInterval.Ticks);
-                Interlocked.Exchange(ref _currentIntervalTicks, newTicks);
+                _CompareExchangeHalve();
                 _consecutiveHealthyCycles = 0;
-
-                _logger.LogDebug(
-                    "Adaptive polling: healthy for 2 cycles, interval decreased to {Interval}",
-                    TimeSpan.FromTicks(newTicks)
-                );
             }
         }
         else
@@ -342,6 +335,52 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             _consecutiveHealthyCycles = 0;
             _consecutiveCleanCycles = 0;
         }
+    }
+
+    /// <summary>
+    /// CAS loop: doubles _currentIntervalTicks, capped at _maxInterval.
+    /// If a concurrent ResetBackpressureAsync modifies the value between read and write,
+    /// the loop retries with the fresh value. Logs after successful CAS.
+    /// </summary>
+    private void _CompareExchangeDouble()
+    {
+        long snapshot;
+        long desired;
+        do
+        {
+            snapshot = Interlocked.Read(ref _currentIntervalTicks);
+            desired = snapshot <= _maxInterval.Ticks / 2 ? snapshot * 2 : _maxInterval.Ticks;
+        } while (Interlocked.CompareExchange(ref _currentIntervalTicks, desired, snapshot) != snapshot);
+
+        _logger.LogDebug(
+            "Adaptive polling: circuit-open rate exceeds threshold, interval increased to {Interval}",
+            TimeSpan.FromTicks(desired)
+        );
+    }
+
+    /// <summary>
+    /// CAS loop: halves _currentIntervalTicks, floored at _baseInterval.
+    /// No-op if already at base interval. Logs after successful CAS.
+    /// </summary>
+    private void _CompareExchangeHalve()
+    {
+        long snapshot;
+        long desired;
+        do
+        {
+            snapshot = Interlocked.Read(ref _currentIntervalTicks);
+            if (snapshot <= _baseInterval.Ticks)
+            {
+                return; // already at base — nothing to halve
+            }
+
+            desired = Math.Max(snapshot / 2, _baseInterval.Ticks);
+        } while (Interlocked.CompareExchange(ref _currentIntervalTicks, desired, snapshot) != snapshot);
+
+        _logger.LogDebug(
+            "Adaptive polling: healthy for 2 cycles, interval decreased to {Interval}",
+            TimeSpan.FromTicks(desired)
+        );
     }
 
     private bool _IsCircuitOpen(string group, Dictionary<string, bool> cache)

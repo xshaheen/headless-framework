@@ -159,24 +159,14 @@ internal sealed class KafkaConsumerClient(
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (_pauseGate.IsPaused) return;
-
         await _pauseGate.PauseAsync();
 
-        if (_consumerClient is not null)
-        {
-            _consumerClient.Pause(_consumerClient.Assignment);
-        }
+        _consumerClient?.Pause(_consumerClient.Assignment);
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (!_pauseGate.IsPaused) return;
-
-        if (_consumerClient is not null)
-        {
-            _consumerClient.Resume(_consumerClient.Assignment);
-        }
+        _consumerClient?.Resume(_consumerClient.Assignment);
 
         await _pauseGate.ResumeAsync();
     }

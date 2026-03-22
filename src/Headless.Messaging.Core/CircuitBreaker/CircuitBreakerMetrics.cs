@@ -68,15 +68,13 @@ internal sealed class CircuitBreakerMetrics
     /// <summary>Records a circuit trip (Closed → Open or HalfOpen → Open).</summary>
     public void RecordTrip(string groupName)
     {
-        var tags = new TagList { { "messaging.consumer.group", _SafeTag(groupName) } };
-        _circuitTrips.Add(1, tags);
+        _circuitTrips.Add(1, new KeyValuePair<string, object?>("messaging.consumer.group", _SafeTag(groupName)));
     }
 
     /// <summary>Records how long the circuit was open before transitioning to HalfOpen or Closed.</summary>
     public void RecordOpenDuration(string groupName, TimeSpan duration)
     {
-        var tags = new TagList { { "messaging.consumer.group", _SafeTag(groupName) } };
-        _openDuration.Record(duration.TotalSeconds, tags);
+        _openDuration.Record(duration.TotalSeconds, new KeyValuePair<string, object?>("messaging.consumer.group", _SafeTag(groupName)));
     }
 
     private string _SafeTag(string groupName)

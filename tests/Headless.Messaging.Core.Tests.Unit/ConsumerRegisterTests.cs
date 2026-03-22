@@ -1,5 +1,8 @@
+using System.Collections.Concurrent;
+using System.Reflection;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,7 +28,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         var field = typeof(ConsumerRegister).GetField(
             "_stoppingCts",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance
         );
         var linkedCts = (CancellationTokenSource)field!.GetValue(register)!;
 
@@ -66,6 +69,67 @@ public sealed class ConsumerRegisterTests : TestBase
         var act = async () => await ((ValueTask)resumeGroup.Invoke(register, [handle])!);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("resume failed");
+    }
+
+    [Fact]
+    public async Task restart_disposes_cts_when_execute_async_throws()
+    {
+        await using var provider = _CreateProvider();
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        using var hostCts = new CancellationTokenSource();
+
+        // Start normally so internal fields are initialized.
+        await register.StartAsync(hostCts.Token);
+
+        // Swap _selector with a MethodMatcherCache whose _entries are pre-populated so
+        // ExecuteAsync enters the foreach loop and calls the factory.
+        var selectorSub = Substitute.For<IConsumerServiceSelector>();
+        var fakeCache = new MethodMatcherCache(selectorSub);
+        var entriesField = typeof(MethodMatcherCache).GetField(
+            "_entries",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        )!;
+        var fakeEntries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
+            StringComparer.Ordinal
+        );
+        var fakeDescriptor = new ConsumerExecutorDescriptor
+        {
+            MethodInfo = typeof(object).GetMethod(nameof(ToString), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly, Type.EmptyTypes)!,
+            ImplTypeInfo = typeof(object).GetTypeInfo(),
+            TopicName = "fake-topic",
+            GroupName = "fake-group",
+        };
+        fakeEntries.TryAdd("fake-group", [fakeDescriptor]);
+        entriesField.SetValue(fakeCache, fakeEntries);
+
+        typeof(ConsumerRegister)
+            .GetField("_selector", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(register, fakeCache);
+
+        // Swap _consumerClientFactory with one that throws a non-BrokerConnectionException
+        // so the exception propagates out of ExecuteAsync.
+        var factorySub = Substitute.For<IConsumerClientFactory>();
+        factorySub
+            .CreateAsync(Arg.Any<string>(), Arg.Any<byte>())
+            .Returns<Task<IConsumerClient>>(_ => throw new InvalidOperationException("boom"));
+
+        typeof(ConsumerRegister)
+            .GetField("_consumerClientFactory", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(register, factorySub);
+
+        // Act — ReStartAsync should propagate the exception from ExecuteAsync.
+        var act = async () => await register.ReStartAsync(force: true);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
+
+        // Assert — the CTS created inside ReStartAsync must have been disposed.
+        var ctsField = typeof(ConsumerRegister).GetField(
+            "_stoppingCts",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        )!;
+        var cts = (CancellationTokenSource)ctsField.GetValue(register)!;
+        var tokenAccess = () => cts.Token;
+        tokenAccess.Should().Throw<ObjectDisposedException>();
     }
 
     private ServiceProvider _CreateProvider()

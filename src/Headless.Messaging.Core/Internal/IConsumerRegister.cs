@@ -85,7 +85,18 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
             _isHealthy = true;
 
-            await ExecuteAsync();
+            try
+            {
+                await ExecuteAsync();
+            }
+            catch
+            {
+                // ExecuteAsync failed — the CTS created above will never be cleaned up by a
+                // subsequent PulseAsync call, so dispose it here to prevent a leak.
+                await _stoppingCtsRegistration.DisposeAsync();
+                _stoppingCts.Dispose();
+                throw;
+            }
 
             Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
         }

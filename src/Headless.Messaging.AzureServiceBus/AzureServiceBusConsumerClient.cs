@@ -147,8 +147,6 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (_pauseGate.IsPaused) return;
-
         await _pauseGate.PauseAsync();
 
         if (_serviceBusProcessor is not null)
@@ -159,8 +157,6 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (!_pauseGate.IsPaused) return;
-
         await _pauseGate.ResumeAsync();
 
         if (_serviceBusProcessor is null || Volatile.Read(ref _hasStartedProcessing) == 0)

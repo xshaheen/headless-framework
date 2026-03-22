@@ -133,8 +133,6 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (_pauseGate.IsPaused) return;
-
         await _pauseGate.PauseAsync();
 
         if (_consumerTag is not null)
@@ -145,8 +143,6 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (!_pauseGate.IsPaused) return;
-
         await _pauseGate.ResumeAsync();
 
         if (_consumerTag is not null)

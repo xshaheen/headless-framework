@@ -308,8 +308,6 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (_pauseGate.IsPaused) return;
-
         await _pauseGate.PauseAsync();
 
         // Unsubscribe without drain — the circuit is opening because messages are
@@ -320,8 +318,6 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (!_pauseGate.IsPaused) return;
-
         if (_subscribedTopics is not null)
         {
             _CreateSubscriptions(_subscribedTopics);

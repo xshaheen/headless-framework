@@ -189,7 +189,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var msg1 = _CreateMessage("group-a");
         var msg2 = _CreateMessage("group-b");
         _SetupReceivedMessages(dataStorage, msg1, msg2);
-        var context = _CreateContext();
+        var context = _CreateContext(
+            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
+        );
 
         // Act
         await sut.ProcessAsync(context);
@@ -438,6 +440,51 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var currentInterval = _GetCurrentInterval(sut);
         currentInterval.Ticks.Should().BeGreaterThan(0, "interval must never overflow to negative");
         currentInterval.Should().Be(TimeSpan.FromSeconds(900));
+    }
+
+    [Fact]
+    public async Task ConcurrentResetAndAdjust_DoesNotPermanentlyOverrideReset()
+    {
+        // Arrange — elevate interval to 4x base, then race Reset vs Adjust(double)
+        var baseInterval = TimeSpan.FromSeconds(1);
+        var (sut, _, _) = _Create(
+            failedRetryInterval: 1,
+            maxPollingIntervalSeconds: 900,
+            circuitOpenRateThreshold: 0.5
+        );
+
+        _SetCurrentInterval(sut, TimeSpan.FromSeconds(4));
+
+        var barrier = new Barrier(2);
+        const int iterations = 10_000;
+
+        // Act — race _AdjustPollingInterval (doubling path) against ResetBackpressureAsync
+        var adjustTask = Task.Run(() =>
+        {
+            barrier.SignalAndWait();
+            for (var i = 0; i < iterations; i++)
+            {
+                // enqueued=1, skippedCircuitOpen=9 → 90% > 50% threshold → doubling path
+                _InvokeAdjustPollingInterval(sut, enqueued: 1, skippedCircuitOpen: 9);
+            }
+        });
+
+        var resetTask = Task.Run(async () =>
+        {
+            barrier.SignalAndWait();
+            for (var i = 0; i < iterations; i++)
+            {
+                await sut.ResetBackpressureAsync();
+            }
+        });
+
+        await Task.WhenAll(adjustTask, resetTask);
+
+        // Assert — after the race, a final reset must reliably bring the interval back to base.
+        // Without CAS, the stale-read doubling could permanently override the reset.
+        await sut.ResetBackpressureAsync();
+        var finalInterval = _GetCurrentInterval(sut);
+        finalInterval.Should().Be(baseInterval, "a reset after the race must restore the base interval");
     }
 
     [Fact]
