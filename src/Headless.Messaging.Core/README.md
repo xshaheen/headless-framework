@@ -280,6 +280,19 @@ var state = monitor.GetState("payments"); // Closed, Open, or HalfOpen
 var wasReset = await monitor.ResetAsync("payments", cancellationToken); // true if reset performed
 ```
 
+Inject `IRetryProcessorMonitor` for adaptive retry backpressure inspection and reset:
+
+```csharp
+var retryMonitor = app.Services.GetRequiredService<IRetryProcessorMonitor>();
+
+// Inspect backpressure state
+var pollingInterval = retryMonitor.CurrentPollingInterval;
+var isBackedOff = retryMonitor.IsBackedOff;
+
+// Manual recovery (operator/agent action)
+await retryMonitor.ResetBackpressureAsync(cancellationToken);
+```
+
 ### Cluster Scope Limitation
 
 The circuit breaker operates **per-process only**. There is no cross-instance coordination — each application instance maintains its own circuit state. In a multi-replica deployment, one instance may have an open circuit while others remain closed.

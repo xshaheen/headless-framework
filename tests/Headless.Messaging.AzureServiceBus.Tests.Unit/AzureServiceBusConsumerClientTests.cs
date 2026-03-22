@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Messaging.AzureServiceBus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -201,5 +202,31 @@ public sealed class AzureServiceBusConsumerClientTests
         await client.ResumeAsync();
 
         // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_and_ResumeAsync_should_toggle_the_startup_gate_before_processing_starts()
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        var gateField = typeof(AzureServiceBusConsumerClient).GetField(
+            "_pauseGate",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        )!;
+
+        // then - gate starts open
+        ((TaskCompletionSource<bool>)gateField.GetValue(client)!).Task.IsCompleted.Should().BeTrue();
+
+        // when
+        await client.PauseAsync();
+
+        // then - startup gate closes while paused
+        ((TaskCompletionSource<bool>)gateField.GetValue(client)!).Task.IsCompleted.Should().BeFalse();
+
+        // when
+        await client.ResumeAsync();
+
+        // then - gate reopens for late-starting listeners
+        ((TaskCompletionSource<bool>)gateField.GetValue(client)!).Task.IsCompleted.Should().BeTrue();
     }
 }

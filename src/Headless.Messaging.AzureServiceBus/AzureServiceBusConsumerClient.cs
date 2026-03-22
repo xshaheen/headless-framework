@@ -23,6 +23,7 @@ internal sealed class AzureServiceBusConsumerClient(
         options.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
 
     private int _disposed;
     private int _paused; // 0 = running, 1 = paused
@@ -121,6 +122,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         _serviceBusProcessor.ProcessErrorAsync += _serviceBusProcessor_ProcessErrorAsync;
 
+        await _pauseGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
         await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
     }
 
@@ -146,8 +148,15 @@ internal sealed class AzureServiceBusConsumerClient(
     {
         if (Volatile.Read(ref _disposed) != 0) return;
 
-        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0 && _serviceBusProcessor is not null)
+        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
+            _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            if (_serviceBusProcessor is null)
+            {
+                return;
+            }
+
             await _serviceBusProcessor.StopProcessingAsync(cancellationToken);
         }
     }
@@ -156,8 +165,15 @@ internal sealed class AzureServiceBusConsumerClient(
     {
         if (Volatile.Read(ref _disposed) != 0) return;
 
-        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1 && _serviceBusProcessor is not null)
+        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
         {
+            _pauseGate.TrySetResult(true);
+
+            if (_serviceBusProcessor is null)
+            {
+                return;
+            }
+
             await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
         }
     }
@@ -219,6 +235,13 @@ internal sealed class AzureServiceBusConsumerClient(
         var context = _ConvertMessage(arg.Message);
 
         await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg));
+    }
+
+    private static TaskCompletionSource<bool> _CreateCompletedGate()
+    {
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        tcs.SetResult(true);
+        return tcs;
     }
 
     public async Task ConnectAsync()

@@ -283,6 +283,27 @@ public sealed class NatsConsumerClientTests : TestBase
         // then — no exception
     }
 
+    [Fact]
+    public async Task SubscribeAsync_should_defer_initial_subscription_when_client_is_paused()
+    {
+        // given
+        await using var client = _CreateClient("test-group");
+        var connection = Substitute.For<IConnection>();
+        typeof(NatsConsumerClient)
+            .GetField("_consumerClient", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(client, connection);
+
+        var topics = new[] { "topic-1" };
+
+        await client.PauseAsync();
+
+        // when
+        await client.SubscribeAsync(topics);
+
+        // then - paused startup should not touch the connection path yet
+        connection.ReceivedCalls().Should().BeEmpty();
+    }
+
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)
     {
         return new NatsConsumerClient(groupName, groupConcurrent, _options, _serviceProvider);

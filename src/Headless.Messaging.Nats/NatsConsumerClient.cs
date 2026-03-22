@@ -92,6 +92,11 @@ internal sealed class NatsConsumerClient(
         // Materialize and store topics for re-subscription on resume
         _subscribedTopics = topics.ToList();
 
+        if (Volatile.Read(ref _paused) != 0)
+        {
+            return ValueTask.CompletedTask;
+        }
+
         _CreateSubscriptions(_subscribedTopics);
 
         return ValueTask.CompletedTask;

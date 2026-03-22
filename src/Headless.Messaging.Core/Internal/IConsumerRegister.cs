@@ -230,7 +230,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                             {
                                 var innerClient = await _consumerClientFactory.CreateAsync(groupName, limit);
 
-                                handle.AddClient(innerClient);
+                                await handle.AddClientAsync(innerClient);
 
                                 _serverAddress = innerClient.BrokerAddress;
 
@@ -304,6 +304,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         // so ListeningAsync loops are still running. Just un-gate the transport.
         handle.IsPaused = false;
         var snapshot = handle.SnapshotClients();
+        List<Exception>? failures = null;
 
         foreach (var client in snapshot)
         {
@@ -314,8 +315,25 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to resume consumer client for group '{GroupName}'.", handle.GroupName);
+                failures ??= [];
+                failures.Add(ex);
             }
         }
+
+        if (failures is null)
+        {
+            return;
+        }
+
+        if (failures.Count == 1)
+        {
+            throw failures[0];
+        }
+
+        throw new AggregateException(
+            $"Failed to resume one or more consumer clients for group '{handle.GroupName}'.",
+            failures
+        );
     }
 
     private void _RegisterMessageProcessor(IConsumerClient client)
@@ -632,7 +650,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             set { lock (_clientsLock) { _isPaused = value; } }
         }
 
-        public void AddClient(IConsumerClient client)
+        public async ValueTask AddClientAsync(IConsumerClient client)
         {
             bool shouldPause;
             lock (_clientsLock)
@@ -654,16 +672,18 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
             if (shouldPause)
             {
-                // Fire-and-forget — the client will block at the pause gate on next poll
-                // regardless; this just ensures immediate consistency.
-                _ = client.PauseAsync().AsTask().ContinueWith(
-                    t => Logger.LogError(
-                        t.Exception,
+                try
+                {
+                    await client.PauseAsync();
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(
+                        ex,
                         "Failed to pause newly added consumer client for group '{GroupName}'.",
-                        GroupName),
-                    CancellationToken.None,
-                    TaskContinuationOptions.OnlyOnFaulted,
-                    TaskScheduler.Default);
+                        GroupName
+                    );
+                }
             }
         }
 

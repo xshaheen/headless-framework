@@ -230,6 +230,9 @@ public sealed class CircuitBreakerOptionsTests : TestBase
 
 public sealed class RetryProcessorOptionsTests : TestBase
 {
+    private static RetryProcessorOptionsValidator _CreateValidator(int failedRetryIntervalSeconds = 60) =>
+        new(Options.Create(new MessagingOptions { FailedRetryInterval = failedRetryIntervalSeconds }));
+
     [Fact]
     public void defaults_are_correct()
     {
@@ -244,7 +247,19 @@ public sealed class RetryProcessorOptionsTests : TestBase
     public void validator_rejects_max_polling_interval_of_zero()
     {
         var opts = new RetryProcessorOptions { MaxPollingInterval = TimeSpan.Zero };
-        var validator = new RetryProcessorOptionsValidator();
+        var validator = _CreateValidator();
+
+        var result = validator.Validate(opts);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "MaxPollingInterval");
+    }
+
+    [Fact]
+    public void validator_rejects_max_polling_interval_below_failed_retry_interval()
+    {
+        var opts = new RetryProcessorOptions { MaxPollingInterval = TimeSpan.FromSeconds(30) };
+        var validator = _CreateValidator(failedRetryIntervalSeconds: 60);
 
         var result = validator.Validate(opts);
 
@@ -256,7 +271,7 @@ public sealed class RetryProcessorOptionsTests : TestBase
     public void validator_rejects_transient_failure_rate_of_zero()
     {
         var opts = new RetryProcessorOptions { CircuitOpenRateThreshold = 0 };
-        var validator = new RetryProcessorOptionsValidator();
+        var validator = _CreateValidator();
 
         var result = validator.Validate(opts);
 
@@ -268,7 +283,7 @@ public sealed class RetryProcessorOptionsTests : TestBase
     public void validator_rejects_transient_failure_rate_of_one()
     {
         var opts = new RetryProcessorOptions { CircuitOpenRateThreshold = 1.0 };
-        var validator = new RetryProcessorOptionsValidator();
+        var validator = _CreateValidator();
 
         var result = validator.Validate(opts);
 
@@ -284,7 +299,7 @@ public sealed class RetryProcessorOptionsTests : TestBase
             MaxPollingInterval = TimeSpan.FromSeconds(60),
             CircuitOpenRateThreshold = 0.5,
         };
-        var validator = new RetryProcessorOptionsValidator();
+        var validator = _CreateValidator();
 
         var result = validator.Validate(opts);
 
