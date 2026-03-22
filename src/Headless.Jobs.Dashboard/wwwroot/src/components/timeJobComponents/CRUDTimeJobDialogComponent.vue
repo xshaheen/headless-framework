@@ -7,6 +7,7 @@ import { jobsService } from '@/http/services/jobsService'
 import { timeJobService } from '@/http/services/timeJobService'
 import { formatTime } from '@/utilities/dateTimeParser'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
+import { vMaska } from 'maska/vue'
 
 const functionNamesStore = useFunctionNameStore()
 const timeZoneStore = useTimeZoneStore()
@@ -539,7 +540,7 @@ defineExpose({
                       v-bind="bindField('executionTime')"
                       label="Enter Time (HH:mm:ss)"
                       placeholder="HH:mm:ss"
-                      v-mask="'##:##:##'"
+                      v-maska data-maska="##:##:##"
                       prepend-icon=""
                       prepend-inner-icon="mdi-clock-outline"
                       variant="outlined"
