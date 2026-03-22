@@ -18,4 +18,13 @@ public sealed record CircuitBreakerSnapshot
 
     /// <summary>Estimated remaining duration in the Open state, or <see langword="null"/> if not open.</summary>
     public required TimeSpan? EstimatedRemainingOpenDuration { get; init; }
+
+    /// <summary>Current consecutive transient failure count.</summary>
+    public required int ConsecutiveFailures { get; init; }
+
+    /// <summary>Configured failure threshold required to trip the circuit.</summary>
+    public required int FailureThreshold { get; init; }
+
+    /// <summary>Current effective open duration (after escalation), capped by <c>MaxOpenDuration</c>.</summary>
+    public required TimeSpan EffectiveOpenDuration { get; init; }
 }

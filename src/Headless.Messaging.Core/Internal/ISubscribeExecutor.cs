@@ -158,7 +158,10 @@ internal sealed class SubscribeExecutor(
 
         await dataStorage.ChangeReceiveStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
 
-        circuitBreakerStateManager?.ReportSuccess(message.Origin.GetGroup()!);
+        if (circuitBreakerStateManager is not null)
+        {
+            await circuitBreakerStateManager.ReportSuccessAsync(message.Origin.GetGroup()!).ConfigureAwait(false);
+        }
     }
 
     private async Task<bool> _SetFailedState(MediumMessage message, Exception ex)

@@ -208,7 +208,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         // when — acquire probe and report success (simulating a successful message processing)
         var probeAcquired = sut.TryAcquireHalfOpenProbe(group);
         probeAcquired.Should().BeTrue();
-        sut.ReportSuccess(group);
+        await sut.ReportSuccessAsync(group);
 
         // then — circuit closes, consumer fully operational
         sut.IsOpen(group).Should().BeFalse();
@@ -334,7 +334,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         stateManager.GetState(group).Should().Be(CircuitBreakerState.HalfOpen);
 
         // --- Phase 4: Probe succeeds, circuit closes ---
-        _ReportProbeSuccess(stateManager, group);
+        await _ReportProbeSuccess(stateManager, group);
         stateManager.IsOpen(group).Should().BeFalse("circuit should be closed after successful probe");
         stateManager.GetState(group).Should().Be(CircuitBreakerState.Closed);
 
@@ -349,10 +349,10 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         await dispatcher.Received(1).EnqueueToExecute(msg2, null, Arg.Any<CancellationToken>());
     }
 
-    private static void _ReportProbeSuccess(CircuitBreakerStateManager stateManager, string group)
+    private static async Task _ReportProbeSuccess(CircuitBreakerStateManager stateManager, string group)
     {
         var probeAcquired = stateManager.TryAcquireHalfOpenProbe(group);
         probeAcquired.Should().BeTrue("should be able to acquire probe in HalfOpen state");
-        stateManager.ReportSuccess(group);
+        await stateManager.ReportSuccessAsync(group);
     }
 }

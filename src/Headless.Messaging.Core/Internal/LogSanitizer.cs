@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace Headless.Messaging.Internal;
 
 /// <summary>
@@ -22,6 +24,7 @@ internal static class LogSanitizer
     /// Optionally truncates to <paramref name="maxLength"/> characters (appending "..." when truncated).
     /// Returns null if input is null.
     /// </summary>
+    [return: NotNullIfNotNull(nameof(value))]
     internal static string? Sanitize(string? value, int maxLength = int.MaxValue)
     {
         if (value is null)

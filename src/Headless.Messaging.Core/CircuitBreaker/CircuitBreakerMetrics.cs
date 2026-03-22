@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
@@ -21,7 +22,7 @@ internal sealed class CircuitBreakerMetrics
     private readonly Histogram<double> _openDuration;
 
     private Func<IReadOnlyList<KeyValuePair<string, CircuitBreakerState>>>? _stateSnapshot;
-    private IReadOnlySet<string>? _knownGroups;
+    private IReadOnlySet<string> _knownGroups = ImmutableHashSet<string>.Empty;
 
     public CircuitBreakerMetrics(IMeterFactory meterFactory)
     {
@@ -80,7 +81,7 @@ internal sealed class CircuitBreakerMetrics
     private string _SafeTag(string groupName)
     {
         var known = _knownGroups;
-        if (known is null) return UnknownGroupTag;
+        if (known.Count == 0) return UnknownGroupTag;
         return known.Contains(groupName) ? groupName : UnknownGroupTag;
     }
 

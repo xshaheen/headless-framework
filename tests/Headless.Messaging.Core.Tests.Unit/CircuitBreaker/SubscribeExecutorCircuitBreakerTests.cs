@@ -157,7 +157,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
 
         // then
-        cbMock.Received(1).ReportSuccess(GroupName);
+        await cbMock.Received(1).ReportSuccessAsync(GroupName);
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await storage
             .Received()
             .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Succeeded);
-        cbMock.Received(1).ReportSuccess(GroupName);
+        await cbMock.Received(1).ReportSuccessAsync(GroupName);
     }
 }
 

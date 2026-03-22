@@ -101,11 +101,11 @@ public interface ICircuitBreakerMonitor
 
     /// <summary>
     /// Returns the set of consumer group names registered via
-    /// <see cref="ICircuitBreakerStateManager.RegisterKnownGroups"/>, or <see langword="null"/>
-    /// if <c>RegisterKnownGroups</c> was not called. Useful for agents and health-check
+    /// <see cref="ICircuitBreakerStateManager.RegisterKnownGroups"/>. Returns an empty set
+    /// if <c>RegisterKnownGroups</c> has not been called yet. Useful for agents and health-check
     /// endpoints that need to enumerate valid group names before any messages are processed.
     /// </summary>
-    IReadOnlySet<string>? KnownGroups { get; }
+    IReadOnlySet<string> KnownGroups { get; }
 
     /// <summary>
     /// Force-resets the circuit for the specified consumer group to <see cref="CircuitBreakerState.Closed"/>,
@@ -113,10 +113,21 @@ public interface ICircuitBreakerMonitor
     /// was previously Open or HalfOpen. This is the operator/agent manual recovery path.
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
-    /// <param name="cancellationToken">Optional cancellation token.</param>
     /// <returns>
     /// <see langword="true"/> if a reset was performed (the group was found and was Open or HalfOpen);
     /// <see langword="false"/> if the group was not found or was already Closed.
     /// </returns>
-    ValueTask<bool> ResetAsync(string groupName, CancellationToken cancellationToken = default);
+    ValueTask<bool> ResetAsync(string groupName);
+
+    /// <summary>
+    /// Force-opens the circuit for the specified consumer group, transitioning it to
+    /// <see cref="CircuitBreakerState.Open"/> and invoking the pause callback. Does not
+    /// increment escalation level (forced opens bypass natural failure counting).
+    /// </summary>
+    /// <param name="groupName">The consumer group name.</param>
+    /// <returns>
+    /// <see langword="true"/> if the circuit was force-opened (group was found and was Closed or HalfOpen);
+    /// <see langword="false"/> if the group was not found or was already Open.
+    /// </returns>
+    ValueTask<bool> ForceOpenAsync(string groupName);
 }

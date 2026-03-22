@@ -55,7 +55,7 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
     /// Resets the consecutive failure counter and, if in half-open state, closes the circuit.
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
-    void ReportSuccess(string groupName);
+    ValueTask ReportSuccessAsync(string groupName);
 
     /// <summary>
     /// Removes all tracked state for the specified group, including timers and callbacks.
