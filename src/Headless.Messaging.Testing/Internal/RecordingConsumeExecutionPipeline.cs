@@ -26,6 +26,10 @@ internal sealed class RecordingConsumeExecutionPipeline(IConsumeExecutionPipelin
             );
             return result;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             store.Record(
