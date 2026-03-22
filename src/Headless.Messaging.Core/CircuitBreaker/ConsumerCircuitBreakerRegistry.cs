@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Checks;
 
 namespace Headless.Messaging.CircuitBreaker;
 
@@ -79,22 +80,14 @@ internal sealed class ConsumerCircuitBreakerRegistry
 
     private static void _ValidateOptions(ConsumerCircuitBreakerOptions options)
     {
-        if (options.FailureThreshold is not null and <= 0)
+        if (options.FailureThreshold is not null)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                options.FailureThreshold,
-                "FailureThreshold must be greater than 0 when set."
-            );
+            Argument.IsGreaterThan(options.FailureThreshold.Value, 0, "FailureThreshold must be greater than 0 when set.");
         }
 
-        if (options.OpenDuration is not null && options.OpenDuration <= TimeSpan.Zero)
+        if (options.OpenDuration is not null)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                options.OpenDuration,
-                "OpenDuration must be greater than TimeSpan.Zero when set."
-            );
+            Argument.IsGreaterThan(options.OpenDuration.Value, TimeSpan.Zero, "OpenDuration must be greater than TimeSpan.Zero when set.");
         }
     }
 }
