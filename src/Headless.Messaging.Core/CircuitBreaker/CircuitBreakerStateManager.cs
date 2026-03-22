@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Checks;
+using Headless.Messaging.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -30,7 +32,8 @@ internal sealed class CircuitBreakerStateManager(
     /// Atomic counter tracking the number of entries in <see cref="_groups"/>.
     /// Replaces <c>ConcurrentDictionary.Count</c> on the hot path — <c>.Count</c> is O(N) and
     /// takes a full lock sweep across all segments, creating a global serialization point.
-    /// A slight overcount under high concurrency is acceptable since the cap is approximate.
+    /// Incremented only when <see cref="object.ReferenceEquals"/> confirms our instance won the
+    /// <c>GetOrAdd</c> race, so the count stays accurate even under contention.
     /// </summary>
     private int _groupCount;
 
@@ -117,6 +120,7 @@ internal sealed class CircuitBreakerStateManager(
         Func<ValueTask>? pauseCallback = null;
         var tripped = false;
         TimeSpan? openDuration = null;
+        Timer? closedTimerToDispose = null;
         (TimeSpan OpenDuration, int Generation) timerInfo = default;
 
         lock (groupLock)
@@ -127,7 +131,7 @@ internal sealed class CircuitBreakerStateManager(
                     // Non-transient failure during probe: the message is bad but the dependency is healthy.
                     // Close the circuit so normal processing resumes.
                     state.ProbeAcquired = false;
-                    openDuration = _TransitionToClosed(state, groupName, probeSucceeded: false);
+                    (openDuration, closedTimerToDispose) = _TransitionToClosed(state, groupName, probeSucceeded: false);
                     break;
 
                 case CircuitBreakerState.HalfOpen when isTransient:
@@ -158,6 +162,12 @@ internal sealed class CircuitBreakerStateManager(
 
                     break;
             }
+        }
+
+        // Dispose the timer from _TransitionToClosed outside the lock
+        if (closedTimerToDispose is not null)
+        {
+            await closedTimerToDispose.DisposeAsync().ConfigureAwait(false);
         }
 
         // Create timer outside the lock to avoid heap allocation and TimerQueue registration
@@ -238,6 +248,7 @@ internal sealed class CircuitBreakerStateManager(
 
         var groupLock = state.SyncLock;
         TimeSpan? openDuration = null;
+        Timer? closedTimerToDispose = null;
 
         lock (groupLock)
         {
@@ -246,9 +257,11 @@ internal sealed class CircuitBreakerStateManager(
             if (state.State is CircuitBreakerState.HalfOpen)
             {
                 state.ProbeAcquired = false;
-                openDuration = _TransitionToClosed(state, groupName, probeSucceeded: true);
+                (openDuration, closedTimerToDispose) = _TransitionToClosed(state, groupName, probeSucceeded: true);
             }
         }
+
+        closedTimerToDispose?.Dispose();
 
         if (openDuration is not null)
         {
@@ -345,15 +358,15 @@ internal sealed class CircuitBreakerStateManager(
     /// <inheritdoc />
     public async ValueTask<bool> ResetAsync(string groupName, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(groupName);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(groupName.Length, 512, nameof(groupName));
+        Argument.IsNotNull(groupName);
+        Argument.IsLessThanOrEqualTo(groupName.Length, 512);
 
         if (!_groups.TryGetValue(groupName, out var state))
         {
             return false;
         }
 
-        var safeGroupName = _SanitizeForLog(groupName);
+        var safeGroupName = LogSanitizer.Sanitize(groupName) ?? string.Empty;
         var groupLock = state.SyncLock;
         Func<ValueTask>? resumeCallback = null;
         Timer? timerToDispose = null;
@@ -441,6 +454,12 @@ internal sealed class CircuitBreakerStateManager(
 
     private GroupCircuitState _GetOrAddState(string groupName)
     {
+        // Fast path: group already tracked — no allocation, no contention
+        if (_groups.TryGetValue(groupName, out var existingState))
+        {
+            return existingState;
+        }
+
         if (_knownGroups is not null && !_knownGroups.Contains(groupName))
         {
             logger.LogWarning(
@@ -451,7 +470,8 @@ internal sealed class CircuitBreakerStateManager(
             return s_noOpState;
         }
 
-        if (Volatile.Read(ref _groupCount) >= MaxTrackedGroups && !_groups.ContainsKey(groupName))
+        // Slow path: group not yet tracked
+        if (Volatile.Read(ref _groupCount) >= MaxTrackedGroups)
         {
             if (Interlocked.CompareExchange(ref _capWarningLogged, 1, 0) == 0)
             {
@@ -464,24 +484,25 @@ internal sealed class CircuitBreakerStateManager(
             return s_noOpState;
         }
 
-        return _groups.GetOrAdd(
-            groupName,
-            static (key, ctx) =>
-            {
-                Interlocked.Increment(ref ctx.Self._groupCount);
+        registry.TryGet(groupName, out var perGroup);
 
-                ctx.Registry.TryGet(key, out var perGroup);
+        var newState = new GroupCircuitState
+        {
+            Enabled = perGroup?.Enabled ?? true,
+            EffectiveFailureThreshold = perGroup?.FailureThreshold ?? _options.FailureThreshold,
+            EffectiveOpenDuration = perGroup?.OpenDuration ?? _options.OpenDuration,
+            EffectiveIsTransient = perGroup?.IsTransientException ?? _options.IsTransientException,
+        };
 
-                return new GroupCircuitState
-                {
-                    Enabled = perGroup?.Enabled ?? true,
-                    EffectiveFailureThreshold = perGroup?.FailureThreshold ?? ctx.GlobalOptions.FailureThreshold,
-                    EffectiveOpenDuration = perGroup?.OpenDuration ?? ctx.GlobalOptions.OpenDuration,
-                    EffectiveIsTransient = perGroup?.IsTransientException ?? ctx.GlobalOptions.IsTransientException,
-                };
-            },
-            (Self: this, Registry: registry, GlobalOptions: _options)
-        );
+        var state = _groups.GetOrAdd(groupName, newState);
+
+        // Only increment if our instance won the race (was actually stored)
+        if (ReferenceEquals(state, newState))
+        {
+            Interlocked.Increment(ref _groupCount);
+        }
+
+        return state;
     }
 
     /// <summary>
@@ -559,11 +580,11 @@ internal sealed class CircuitBreakerStateManager(
     /// Returns the open duration (or <see langword="null"/> if not tracked) so the caller
     /// can invoke <c>metrics.RecordOpenDuration</c> after releasing the lock.
     /// </summary>
-    private TimeSpan? _TransitionToClosed(GroupCircuitState state, string groupName, bool probeSucceeded)
+    private (TimeSpan? OpenDuration, Timer? TimerToDispose) _TransitionToClosed(GroupCircuitState state, string groupName, bool probeSucceeded)
     {
         state.State = CircuitBreakerState.Closed;
         state.ConsecutiveFailures = 0;
-        state.OpenTimer?.Dispose();
+        var timerToDispose = state.OpenTimer;
         state.OpenTimer = null;
         state.SuccessfulCyclesAfterClose++;
 
@@ -597,7 +618,7 @@ internal sealed class CircuitBreakerStateManager(
             );
         }
 
-        return openDuration;
+        return (openDuration, timerToDispose);
     }
 
     private void _OnOpenTimerElapsed(object? timerState)
@@ -719,45 +740,6 @@ internal sealed class CircuitBreakerStateManager(
                 );
             }
         }
-    }
-
-    /// <summary>
-    /// Strips control characters and Unicode bidi overrides from a string before it is
-    /// interpolated into a log message. Prevents log injection via crafted group names
-    /// passed through public APIs like <see cref="ResetAsync"/>.
-    /// </summary>
-    private static string _SanitizeForLog(string value)
-    {
-        var needsSanitization = false;
-
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (char.IsControl(c) || c is (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069'))
-            {
-                needsSanitization = true;
-                break;
-            }
-        }
-
-        if (!needsSanitization)
-        {
-            return value;
-        }
-
-        var buffer = new char[value.Length];
-        var pos = 0;
-
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (!char.IsControl(c) && c is not ((>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069')))
-            {
-                buffer[pos++] = c;
-            }
-        }
-
-        return new string(buffer, 0, pos);
     }
 
     private TimeSpan _GetOpenDuration(GroupCircuitState state)

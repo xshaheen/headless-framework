@@ -8,7 +8,7 @@ internal sealed class RabbitMqOptionsValidator : AbstractValidator<RabbitMqOptio
 {
     public RabbitMqOptionsValidator()
     {
-        RuleFor(x => x.HostName).NotEmpty();
+        RuleFor(x => x.HostName).NotEmpty().WithMessage("HostName is required");
 
         RuleFor(x => x.UserName)
             .NotEmpty()
@@ -30,8 +30,8 @@ internal sealed class RabbitMqOptionsValidator : AbstractValidator<RabbitMqOptio
             .Must(p => p is -1 or (>= 1 and <= 65535))
             .WithMessage("Port must be -1 (default) or between 1 and 65535");
 
-        RuleFor(x => x.VirtualHost).NotEmpty();
-        RuleFor(x => x.ExchangeName).NotEmpty();
+        RuleFor(x => x.VirtualHost).NotEmpty().WithMessage("VirtualHost is required");
+        RuleFor(x => x.ExchangeName).NotEmpty().WithMessage("ExchangeName is required");
 
         RuleFor(x => x.ExchangeName)
             .Must(name =>

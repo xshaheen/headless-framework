@@ -345,8 +345,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 }
 
                 _logger.MessageReceived(
-                    _SanitizeHeader(transportMessage.GetId()) ?? "(null)",
-                    _SanitizeHeader(transportMessage.GetName()) ?? "(null)"
+                    LogSanitizer.Sanitize(transportMessage.GetId()) ?? "(null)",
+                    LogSanitizer.Sanitize(transportMessage.GetName()) ?? "(null)"
                 );
 
                 tracingTimestamp = _TracingBefore(transportMessage, _serverAddress);
@@ -487,7 +487,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
     /// <summary>
     /// Sanitizes a group name from a transport header to prevent log injection and
-    /// unbounded memory growth. Strips control characters and truncates to 256 chars.
+    /// unbounded memory growth. Strips control characters and Unicode bidi overrides
+    /// (U+202A-U+202E, U+2066-U+2069), and truncates to 256 chars.
     /// Returns the original string unchanged when no sanitization is needed (hot-path friendly).
     /// </summary>
     private static string? _SanitizeGroupName(string? groupName)
@@ -501,33 +502,33 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         const string truncationSuffix = "...";
 
         var needsTruncation = groupName.Length > maxLength;
-        var hasControlChars = false;
+        var hasUnsafeChars = false;
 
         var scanLength = needsTruncation ? maxLength : groupName.Length;
         for (var i = 0; i < scanLength; i++)
         {
-            if (char.IsControl(groupName[i]))
+            if (char.IsControl(groupName[i]) || groupName[i] is (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069'))
             {
-                hasControlChars = true;
+                hasUnsafeChars = true;
                 break;
             }
         }
 
-        if (!needsTruncation && !hasControlChars)
+        if (!needsTruncation && !hasUnsafeChars)
         {
             return groupName;
         }
 
         var span = groupName.AsSpan(0, scanLength);
 
-        if (!hasControlChars)
+        if (!hasUnsafeChars)
         {
             return needsTruncation
                 ? string.Concat(span[..(maxLength - truncationSuffix.Length)], truncationSuffix)
                 : groupName;
         }
 
-        // Control chars present — build a clean string
+        // Unsafe chars present — build a clean string
         var effectiveMax = needsTruncation ? maxLength - truncationSuffix.Length : scanLength;
         var buffer = new char[effectiveMax + (needsTruncation ? truncationSuffix.Length : 0)];
         var pos = 0;
@@ -535,7 +536,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         for (var i = 0; i < scanLength && pos < effectiveMax; i++)
         {
             var c = span[i];
-            if (!char.IsControl(c))
+            if (!char.IsControl(c) && c is not ((>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069')))
             {
                 buffer[pos++] = c;
             }
@@ -550,52 +551,9 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         return new string(buffer, 0, pos);
     }
 
-    /// <summary>
-    /// Sanitizes a broker message header value to prevent log injection.
-    /// Strips control characters and Unicode bidi overrides (U+202A–U+202E, U+2066–U+2069).
-    /// Returns null if input is null.
-    /// </summary>
-    private static string? _SanitizeHeader(string? value)
-    {
-        if (value is null)
-        {
-            return null;
-        }
-
-        var needsSanitization = false;
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (char.IsControl(c) || c is (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069'))
-            {
-                needsSanitization = true;
-                break;
-            }
-        }
-
-        if (!needsSanitization)
-        {
-            return value;
-        }
-
-        var buffer = new char[value.Length];
-        var pos = 0;
-
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (!char.IsControl(c) && c is not ((>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069')))
-            {
-                buffer[pos++] = c;
-            }
-        }
-
-        return new string(buffer, 0, pos);
-    }
-
     private void _WriteLog(LogMessageEventArgs logMessage)
     {
-        var reason = _SanitizeHeader(logMessage.Reason) ?? string.Empty;
+        var reason = LogSanitizer.Sanitize(logMessage.Reason) ?? string.Empty;
 
         switch (logMessage.LogType)
         {

@@ -127,7 +127,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     {
         if (Volatile.Read(ref _disposed) != 0)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         if (Interlocked.CompareExchange(ref _paused, 1, 0) != 0 || _consumerTag is null)

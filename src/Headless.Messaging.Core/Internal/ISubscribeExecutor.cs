@@ -78,8 +78,8 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
             var selector = _provider.GetRequiredService<MethodMatcherCache>();
             if (!selector.TryGetTopicExecutor(message.Origin.GetName(), message.Origin.GetGroup()!, out descriptor))
             {
-                var safeName = _SanitizeHeader(message.Origin.GetName());
-                var safeGroup = _SanitizeHeader(message.Origin.GetGroup());
+                var safeName = LogSanitizer.Sanitize(message.Origin.GetName());
+                var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup());
 
                 _logger.LogError(
                     "Message (Name:{GetName},Group:{GetGroup}) can not be found subscriber. Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.",
@@ -163,7 +163,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         {
             _logger.ConsumerExecuteFailed(
                 ex,
-                _SanitizeHeader(message.Origin.GetName()) ?? "",
+                LogSanitizer.Sanitize(message.Origin.GetName()) ?? "",
                 message.DbId,
                 message.Origin.GetExecutionInstanceId()
             );
@@ -178,7 +178,8 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
 
         await _dataStorage.ChangeReceiveStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
 
-        _circuitBreakerStateManager?.ReportSuccess(message.Origin.GetGroup()!);
+        var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup()!) ?? string.Empty;
+        _circuitBreakerStateManager?.ReportSuccess(safeGroup);
     }
 
     private async Task<bool> _SetFailedState(MediumMessage message, Exception ex)
@@ -200,8 +201,9 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         // predicates see the real exception type, not the SubscriberExecutionFailedException wrapper.
         if (_circuitBreakerStateManager is not null)
         {
+            var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup()!) ?? string.Empty;
             var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
-            await _circuitBreakerStateManager.ReportFailureAsync(message.Origin.GetGroup()!, reportedException)
+            await _circuitBreakerStateManager.ReportFailureAsync(safeGroup, reportedException)
                 .ConfigureAwait(false);
         }
 
@@ -314,49 +316,6 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
 
             e.ReThrow();
         }
-    }
-
-    /// <summary>
-    /// Sanitizes a broker message header value to prevent log injection.
-    /// Strips control characters and Unicode bidi overrides (U+202A-U+202E, U+2066-U+2069).
-    /// Returns null if input is null.
-    /// </summary>
-    private static string? _SanitizeHeader(string? value)
-    {
-        if (value is null)
-        {
-            return null;
-        }
-
-        var needsSanitization = false;
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (char.IsControl(c) || c is (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069'))
-            {
-                needsSanitization = true;
-                break;
-            }
-        }
-
-        if (!needsSanitization)
-        {
-            return value;
-        }
-
-        var buffer = new char[value.Length];
-        var pos = 0;
-
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (!char.IsControl(c) && c is not ((>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069')))
-            {
-                buffer[pos++] = c;
-            }
-        }
-
-        return new string(buffer, 0, pos);
     }
 
     #region tracing

@@ -31,23 +31,7 @@ internal sealed class ConsumerCircuitBreakerRegistry
     /// </exception>
     internal void Register(string groupName, ConsumerCircuitBreakerOptions options)
     {
-        if (options.FailureThreshold is not null && options.FailureThreshold <= 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(options.FailureThreshold),
-                options.FailureThreshold,
-                "FailureThreshold must be greater than 0 when set."
-            );
-        }
-
-        if (options.OpenDuration is not null && options.OpenDuration <= TimeSpan.Zero)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(options.OpenDuration),
-                options.OpenDuration,
-                "OpenDuration must be greater than TimeSpan.Zero when set."
-            );
-        }
+        _ValidateOptions(options);
 
         if (!_options.TryAdd(groupName, options))
         {
@@ -66,6 +50,7 @@ internal sealed class ConsumerCircuitBreakerRegistry
     /// </summary>
     internal void RegisterOrUpdate(string groupName, ConsumerCircuitBreakerOptions options)
     {
+        _ValidateOptions(options);
         _options[groupName] = options;
     }
 
@@ -90,5 +75,26 @@ internal sealed class ConsumerCircuitBreakerRegistry
     internal bool TryGet(string groupName, out ConsumerCircuitBreakerOptions? options)
     {
         return _options.TryGetValue(groupName, out options);
+    }
+
+    private static void _ValidateOptions(ConsumerCircuitBreakerOptions options)
+    {
+        if (options.FailureThreshold is not null and <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.FailureThreshold,
+                "FailureThreshold must be greater than 0 when set."
+            );
+        }
+
+        if (options.OpenDuration is not null && options.OpenDuration <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                options.OpenDuration,
+                "OpenDuration must be greater than TimeSpan.Zero when set."
+            );
+        }
     }
 }

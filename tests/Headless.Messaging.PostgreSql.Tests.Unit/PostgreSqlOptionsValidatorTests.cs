@@ -17,10 +17,10 @@ public sealed class PostgreSqlOptionsValidatorTests : TestBase
         var options = new PostgreSqlOptions { ConnectionString = "Host=localhost;Database=test" };
 
         // when
-        var result = _sut.Validate(null, options);
+        var result = _sut.Validate(options);
 
         // then
-        result.Succeeded.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
     }
 
     [Fact]
@@ -31,10 +31,10 @@ public sealed class PostgreSqlOptionsValidatorTests : TestBase
         var options = new PostgreSqlOptions { DataSource = dataSource };
 
         // when
-        var result = _sut.Validate(null, options);
+        var result = _sut.Validate(options);
 
         // then
-        result.Succeeded.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
         dataSource.Dispose();
     }
 
@@ -50,10 +50,10 @@ public sealed class PostgreSqlOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _sut.Validate(null, options);
+        var result = _sut.Validate(options);
 
         // then
-        result.Succeeded.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
         dataSource.Dispose();
     }
 
@@ -64,12 +64,12 @@ public sealed class PostgreSqlOptionsValidatorTests : TestBase
         var options = new PostgreSqlOptions();
 
         // when
-        var result = _sut.Validate(null, options);
+        var result = _sut.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("DataSource");
-        result.FailureMessage.Should().Contain("ConnectionString");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("DataSource"));
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("ConnectionString"));
     }
 
     [Theory]
@@ -84,10 +84,10 @@ public sealed class PostgreSqlOptionsValidatorTests : TestBase
         var options = new PostgreSqlOptions { ConnectionString = connectionString };
 
         // when
-        var result = _sut.Validate(null, options);
+        var result = _sut.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
+        result.IsValid.Should().BeFalse();
     }
 
     [Fact]
@@ -97,9 +97,9 @@ public sealed class PostgreSqlOptionsValidatorTests : TestBase
         var options = new PostgreSqlOptions { ConnectionString = "Host=localhost;Database=test" };
 
         // when
-        var result = _sut.Validate("named", options);
+        var result = _sut.Validate(options);
 
         // then
-        result.Succeeded.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
     }
 }
