@@ -38,7 +38,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
         _registry = registry;
         _circuitBreakerRegistry = circuitBreakerRegistry;
         _messageType = messageType;
-        this._topic = topic;
+        _topic = topic;
         _autoRegistered = autoRegistered;
     }
 

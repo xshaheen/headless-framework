@@ -14,6 +14,9 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Processor;
 
+/// <summary>
+/// Processes messages that need to be retried, with adaptive polling and circuit breaker awareness.
+/// </summary>
 public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMonitor
 {
     private const int _MinSuggestedValueForFallbackWindowLookbackSeconds = 30;
@@ -203,7 +206,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 _logger.LogDebug(
                     "Skipping retry for message {DbId} — circuit open for group {Group}",
                     message.DbId,
-                    group
+                    LogSanitizer.Sanitize(group)
                 );
                 continue;
             }

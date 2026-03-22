@@ -178,8 +178,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
 
         await _dataStorage.ChangeReceiveStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
 
-        var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup()!) ?? string.Empty;
-        _circuitBreakerStateManager?.ReportSuccess(safeGroup);
+        _circuitBreakerStateManager?.ReportSuccess(message.Origin.GetGroup()!);
     }
 
     private async Task<bool> _SetFailedState(MediumMessage message, Exception ex)
@@ -201,9 +200,8 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         // predicates see the real exception type, not the SubscriberExecutionFailedException wrapper.
         if (_circuitBreakerStateManager is not null)
         {
-            var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup()!) ?? string.Empty;
             var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
-            await _circuitBreakerStateManager.ReportFailureAsync(safeGroup, reportedException)
+            await _circuitBreakerStateManager.ReportFailureAsync(message.Origin.GetGroup()!, reportedException)
                 .ConfigureAwait(false);
         }
 
