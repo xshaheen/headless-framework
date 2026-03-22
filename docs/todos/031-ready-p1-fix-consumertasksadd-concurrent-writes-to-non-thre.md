@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "031"
 tags: ["code-review","threading","correctness"]
@@ -54,3 +54,9 @@ Low cardinality (1-4 threads per group), so either approach works.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-22 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

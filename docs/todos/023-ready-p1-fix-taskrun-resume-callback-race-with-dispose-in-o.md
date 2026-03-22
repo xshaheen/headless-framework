@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "023"
 tags: ["code-review","threading","correctness"]
@@ -56,3 +56,9 @@ Prior solution doc (Pattern 6) recommends ContinueWith for unobserved exceptions
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-22 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

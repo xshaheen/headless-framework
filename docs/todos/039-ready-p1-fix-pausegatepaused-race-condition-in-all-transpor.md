@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "039"
 tags: ["code-review","threading","correctness"]
@@ -56,3 +56,9 @@ Prior solution doc Pattern 2 flagged this. The simplicity reviewer also noted _C
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-22 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

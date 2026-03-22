@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "034"
 tags: ["code-review","async","correctness"]
@@ -50,3 +50,9 @@ Pattern: capture what to dispose under lock, release lock, then await dispose.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-22 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "042"
 tags: ["code-review","logic-bug","correctness"]
@@ -48,3 +48,9 @@ Discovered by performance-oracle during lock-acquisition analysis.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-22 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

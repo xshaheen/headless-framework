@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "022"
 tags: ["code-review","security","duplication"]
@@ -49,3 +49,9 @@ groupName derives from message.Origin.GetGroup() which reads transport headers â
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-22 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending â†’ ready
