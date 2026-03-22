@@ -77,7 +77,7 @@ dotnet tool restore  # Install: csharpier, dotnet-ef, minver-cli, husky
 
 Always validate options classes with **FluentValidation** (`AbstractValidator<T>`). Never use `IValidateOptions<T>`.
 
-- Create an `internal sealed class {OptionsName}Validator : AbstractValidator<{OptionsName}>` next to the options class.
+- Create an `internal sealed class {OptionsName}Validator : AbstractValidator<{OptionsName}>` in the same file as the options class, directly below it.
 - Register via DI using `services.Configure<TOption, TValidator>(action)` or `services.AddOptions<TOption, TValidator>()` from `Headless.Hosting` — these wire up FluentValidation + `ValidateOnStart()` automatically.
 - Never call `new Validator().ValidateAndThrow()` manually — use the DI pipeline.
 

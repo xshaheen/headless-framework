@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Confluent.Kafka;
+using FluentValidation;
 using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Kafka;
@@ -64,6 +65,15 @@ public sealed class MessagingKafkaOptions
             ErrorCode.NetworkException,
             ErrorCode.GroupCoordinatorNotAvailable,
         ];
+    }
+}
+
+internal sealed class MessagingKafkaOptionsValidator : AbstractValidator<MessagingKafkaOptions>
+{
+    public MessagingKafkaOptionsValidator()
+    {
+        RuleFor(x => x.Servers).NotEmpty();
+        RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
     }
 }
 

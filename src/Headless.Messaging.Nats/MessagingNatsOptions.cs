@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Messaging.Messages;
 using NATS.Client;
 using NATS.Client.JetStream;
@@ -46,4 +47,13 @@ public class MessagingNatsOptions
     >? CustomHeadersBuilder { get; set; }
 
     public Func<string, string> NormalizeStreamName { get; set; } = origin => origin.Split('.')[0];
+}
+
+internal sealed class MessagingNatsOptionsValidator : AbstractValidator<MessagingNatsOptions>
+{
+    public MessagingNatsOptionsValidator()
+    {
+        RuleFor(x => x.Servers).NotEmpty();
+        RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
+    }
 }

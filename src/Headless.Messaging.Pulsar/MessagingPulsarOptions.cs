@@ -2,6 +2,7 @@
 
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
+using FluentValidation;
 using Pulsar.Client.Api;
 
 namespace Headless.Messaging.Pulsar;
@@ -16,6 +17,14 @@ public class MessagingPulsarOptions
     public bool EnableClientLog { get; set; }
 
     public PulsarTlsOptions? TlsOptions { get; set; }
+}
+
+internal sealed class MessagingPulsarOptionsValidator : AbstractValidator<MessagingPulsarOptions>
+{
+    public MessagingPulsarOptionsValidator()
+    {
+        RuleFor(x => x.ServiceUrl).NotEmpty();
+    }
 }
 
 public class PulsarTlsOptions
