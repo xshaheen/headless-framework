@@ -6,6 +6,13 @@ namespace Headless.Messaging.CircuitBreaker;
 /// Read-only view of circuit breaker state for observability and health checks.
 /// Also provides operator-level control for manual recovery.
 /// </summary>
+/// <remarks>
+/// This is the public-facing interface for circuit breaker observability. The internal
+/// <c>ICircuitBreakerStateManager</c> extends this interface with mutation methods
+/// (failure reporting, group registration, etc.) used only by the framework's internal
+/// pipeline. The split is intentional: consumers inject <see cref="ICircuitBreakerMonitor"/>
+/// to query state and trigger manual resets without access to the internal write surface.
+/// </remarks>
 public interface ICircuitBreakerMonitor
 {
     /// <summary>
