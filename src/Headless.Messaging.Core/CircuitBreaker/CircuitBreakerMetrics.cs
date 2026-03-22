@@ -99,7 +99,7 @@ internal sealed class CircuitBreakerMetrics
         {
             yield return new Measurement<int>(
                 (int)state,
-                new KeyValuePair<string, object?>("messaging.consumer.group", group)
+                new KeyValuePair<string, object?>("messaging.consumer.group", _SafeTag(group))
             );
         }
     }

@@ -22,10 +22,9 @@ internal sealed class NatsConsumerClient(
     private readonly MessagingNatsOptions _natsOptions =
         options.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
-    private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
+    private readonly ConsumerPauseGate _pauseGate = new();
     private readonly List<IJetStreamPushAsyncSubscription> _subscriptions = [];
     private IEnumerable<string>? _subscribedTopics;
-    private int _paused; // 0 = running, 1 = paused
     private int _disposed;
     private CancellationToken _cancellationToken;
     private IConnection? _consumerClient;
@@ -92,7 +91,7 @@ internal sealed class NatsConsumerClient(
         // Materialize and store topics for re-subscription on resume
         _subscribedTopics = topics.ToList();
 
-        if (Volatile.Read(ref _paused) != 0)
+        if (_pauseGate.IsPaused)
         {
             return ValueTask.CompletedTask;
         }
@@ -173,7 +172,7 @@ internal sealed class NatsConsumerClient(
     {
         try
         {
-            await _pauseGate.Task.WaitAsync(_cancellationToken).ConfigureAwait(false);
+            await _pauseGate.WaitIfPausedAsync(_cancellationToken).ConfigureAwait(false);
 
             if (groupConcurrent > 0)
             {
@@ -307,38 +306,28 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    public ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
+        if (_pauseGate.IsPaused) return;
 
-        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
-        {
-            _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await _pauseGate.PauseAsync();
 
-            // Unsubscribe without drain — the circuit is opening because messages are
-            // already failing, so a synchronous 5-second drain adds latency with no
-            // safety benefit. Consistent with RabbitMQ/Kafka/Azure pause semantics.
-            _UnsubscribeWithoutDrain();
-        }
-
-        return ValueTask.CompletedTask;
+        // Unsubscribe without drain — the circuit is opening because messages are
+        // already failing, so a synchronous 5-second drain adds latency with no
+        // safety benefit. Consistent with RabbitMQ/Kafka/Azure pause semantics.
+        _UnsubscribeWithoutDrain();
     }
 
-    public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
+        if (!_pauseGate.IsPaused) return;
 
-        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
+        if (_subscribedTopics is not null)
         {
-            if (_subscribedTopics is not null)
-            {
-                _CreateSubscriptions(_subscribedTopics);
-            }
-
-            _pauseGate.TrySetResult(true);
+            _CreateSubscriptions(_subscribedTopics);
         }
 
-        return ValueTask.CompletedTask;
+        await _pauseGate.ResumeAsync();
     }
 
     private void _UnsubscribeWithoutDrain()
@@ -388,7 +377,7 @@ internal sealed class NatsConsumerClient(
     public ValueTask DisposeAsync()
     {
         Interlocked.Exchange(ref _disposed, 1);
-        _pauseGate.TrySetResult(true);
+        _pauseGate.Release();
         _DrainSubscriptions();
         _consumerClient?.Dispose();
         _semaphore.Dispose();
@@ -438,10 +427,4 @@ internal sealed class NatsConsumerClient(
         OnLogCallback!(logArgs);
     }
 
-    private static TaskCompletionSource<bool> _CreateCompletedGate()
-    {
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        tcs.SetResult(true);
-        return tcs;
-    }
 }

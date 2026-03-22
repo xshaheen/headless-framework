@@ -24,8 +24,7 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly AmazonSqsOptions _amazonSqsOptions = options.Value;
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
-    private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
-    private int _paused; // 0 = running, 1 = paused
+    private readonly ConsumerPauseGate _pauseGate = new();
     private int _disposed;
     private string _queueUrl = string.Empty;
 
@@ -76,7 +75,7 @@ internal sealed class AmazonSqsConsumerClient(
 
         while (true)
         {
-            await _pauseGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 
             var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -187,34 +186,14 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
-    public ValueTask PauseAsync(CancellationToken cancellationToken = default)
-    {
-        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
+    public ValueTask PauseAsync(CancellationToken cancellationToken = default) => _pauseGate.PauseAsync();
 
-        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
-        {
-            _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        }
-
-        return ValueTask.CompletedTask;
-    }
-
-    public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
-    {
-        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
-
-        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
-        {
-            _pauseGate.TrySetResult(true);
-        }
-
-        return ValueTask.CompletedTask;
-    }
+    public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => _pauseGate.ResumeAsync();
 
     public ValueTask DisposeAsync()
     {
         Interlocked.Exchange(ref _disposed, 1);
-        _pauseGate.TrySetResult(true);
+        _pauseGate.Release();
         _sqsClient?.Dispose();
         _snsClient?.Dispose();
         _semaphore.Dispose();
@@ -259,13 +238,6 @@ internal sealed class AmazonSqsConsumerClient(
                 }
             }
         }
-    }
-
-    private static TaskCompletionSource<bool> _CreateCompletedGate()
-    {
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        tcs.SetResult(true);
-        return tcs;
     }
 
     #region private methods

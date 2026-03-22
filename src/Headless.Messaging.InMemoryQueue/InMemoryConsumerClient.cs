@@ -15,8 +15,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     private readonly byte _groupConcurrent;
     private readonly BlockingCollection<TransportMessage> _messageQueue = new();
     private readonly SemaphoreSlim _semaphore;
-    private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
-    private int _paused; // 0 = running, 1 = paused
+    private readonly ConsumerPauseGate _pauseGate = new();
     private int _disposed;
 
     /// <summary>
@@ -82,7 +81,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     {
         foreach (var message in _messageQueue.GetConsumingEnumerable(cancellationToken))
         {
-            await _pauseGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
             if (_groupConcurrent > 0)
             {
                 await _semaphore.WaitAsync(cancellationToken);
@@ -122,30 +121,10 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     }
 
     /// <inheritdoc />
-    public ValueTask PauseAsync(CancellationToken cancellationToken = default)
-    {
-        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
-
-        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
-        {
-            _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        }
-
-        return ValueTask.CompletedTask;
-    }
+    public ValueTask PauseAsync(CancellationToken cancellationToken = default) => _pauseGate.PauseAsync();
 
     /// <inheritdoc />
-    public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
-    {
-        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
-
-        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
-        {
-            _pauseGate.TrySetResult(true);
-        }
-
-        return ValueTask.CompletedTask;
-    }
+    public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => _pauseGate.ResumeAsync();
 
     /// <summary>
     /// Disposes the consumer client and unsubscribes from the queue.
@@ -154,17 +133,10 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     public ValueTask DisposeAsync()
     {
         Interlocked.Exchange(ref _disposed, 1);
-        _pauseGate.TrySetResult(true);
+        _pauseGate.Release();
         _semaphore.Dispose();
         _messageQueue.Dispose();
         _queue.Unsubscribe(_groupId);
         return ValueTask.CompletedTask;
-    }
-
-    private static TaskCompletionSource<bool> _CreateCompletedGate()
-    {
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        tcs.SetResult(true);
-        return tcs;
     }
 }

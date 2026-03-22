@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p1
 issue_id: "031"
 tags: ["code-review","threading","correctness"]
@@ -60,3 +60,9 @@ Low cardinality (1-4 threads per group), so either approach works.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-22 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

@@ -38,10 +38,12 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     // - _AdjustPollingInterval is called only from ProcessAsync (sequential).
     // - _GetLockTtl reads _currentIntervalTicks from the same sequential context.
     // - Interlocked is used on _currentIntervalTicks for cross-thread visibility (future-proofing).
-    // - _consecutiveHealthyCycles and _consecutiveCleanCycles are only accessed from ProcessAsync — no sync needed.
+    // - _consecutiveHealthyCycles and _consecutiveCleanCycles are written by both ProcessAsync
+    //   (sequential) and ResetBackpressureAsync (callable from any thread). Declared volatile
+    //   to ensure cross-thread visibility of plain reads/writes.
     private long _currentIntervalTicks;
-    private int _consecutiveHealthyCycles;
-    private int _consecutiveCleanCycles;
+    private volatile int _consecutiveHealthyCycles;
+    private volatile int _consecutiveCleanCycles;
 
     public MessageNeedToRetryProcessor(
         IOptions<MessagingOptions> options,
@@ -100,7 +102,13 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 TaskCreationOptions.DenyChildAttach,
                 TaskScheduler.Default
             )
-            .Unwrap();
+            .Unwrap()
+            .ContinueWith(
+                t => _logger.LogError(t.Exception, "Unhandled exception in published-message retry processing"),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default
+            );
 
         if (_options.Value.UseStorageLock && _failedRetryConsumeTask is { IsCompleted: false })
         {
@@ -124,6 +132,14 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 TaskScheduler.Default
             )
             .Unwrap();
+
+        _ = _failedRetryConsumeTask
+            .ContinueWith(
+                t => _logger.LogError(t.Exception, "Unhandled exception in received-message retry processing"),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default
+            );
 
         _ = _failedRetryConsumeTask.ContinueWith(
             _ => _failedRetryConsumeTask = null,
@@ -194,13 +210,14 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         var enqueued = 0;
         var skippedCircuitOpen = 0;
+        var circuitOpenCache = new Dictionary<string, bool>(StringComparer.Ordinal);
 
         foreach (var message in messages)
         {
             context.ThrowIfStopping();
 
             var group = message.Origin.GetGroup();
-            if (group is not null && _circuitBreakerStateManager?.IsOpen(group) == true)
+            if (group is not null && _IsCircuitOpen(group, circuitOpenCache))
             {
                 skippedCircuitOpen++;
                 _logger.LogDebug(
@@ -284,9 +301,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return;
         }
 
-        var transientRate = (double)skippedCircuitOpen / total;
+        var circuitOpenSkipRate = (double)skippedCircuitOpen / total;
 
-        if (transientRate > _circuitOpenRateThreshold)
+        if (circuitOpenSkipRate > _circuitOpenRateThreshold)
         {
             // High circuit-open rate — back off
             _consecutiveHealthyCycles = 0;
@@ -297,11 +314,11 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
             _logger.LogDebug(
                 "Adaptive polling: circuit-open rate {Rate:P0} exceeds threshold, interval increased to {Interval}",
-                transientRate,
+                circuitOpenSkipRate,
                 TimeSpan.FromTicks(newTicks)
             );
         }
-        else if (transientRate <= _circuitOpenRateThreshold / 2.0)
+        else if (circuitOpenSkipRate <= _circuitOpenRateThreshold / 2.0)
         {
             // Healthy cycle — well below backoff threshold
             _consecutiveHealthyCycles++;
@@ -325,6 +342,18 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             _consecutiveHealthyCycles = 0;
             _consecutiveCleanCycles = 0;
         }
+    }
+
+    private bool _IsCircuitOpen(string group, Dictionary<string, bool> cache)
+    {
+        if (cache.TryGetValue(group, out var isOpen))
+        {
+            return isOpen;
+        }
+
+        isOpen = _circuitBreakerStateManager?.IsOpen(group) == true;
+        cache[group] = isOpen;
+        return isOpen;
     }
 
     private TimeSpan _GetLockTtl()

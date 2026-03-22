@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p1
 issue_id: "026"
 tags: ["code-review","threading","correctness"]
@@ -60,3 +60,9 @@ Discovered by pragmatic-dotnet-reviewer. The field comment at line 37-41 is inco
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-22 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

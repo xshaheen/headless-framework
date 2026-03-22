@@ -19,12 +19,14 @@ internal sealed class CircuitBreakerStateManager(
     ConsumerCircuitBreakerRegistry registry,
     ILogger<CircuitBreakerStateManager> logger,
     CircuitBreakerMetrics metrics
-) : ICircuitBreakerStateManager, IDisposable
+) : ICircuitBreakerStateManager, IAsyncDisposable, IDisposable
 {
     private readonly CircuitBreakerOptions _options = options.Value;
 
     private readonly ConcurrentDictionary<string, GroupCircuitState> _groups =
         new(StringComparer.Ordinal);
+
+    private readonly CancellationTokenSource _disposalCts = new();
 
     private int _disposed;
 
@@ -55,6 +57,7 @@ internal sealed class CircuitBreakerStateManager(
     /// </summary>
     private static readonly GroupCircuitState s_noOpState = new()
     {
+        GroupName = "_noop",
         Enabled = false,
         EffectiveFailureThreshold = int.MaxValue,
         EffectiveOpenDuration = TimeSpan.MaxValue,
@@ -413,7 +416,44 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <summary>
-    /// Disposes all per-group <see cref="Timer"/> instances held by tracked circuit states.
+    /// Asynchronously disposes all per-group <see cref="Timer"/> instances and cancels
+    /// any in-flight resume callbacks. Preferred over <see cref="Dispose"/> because it
+    /// can await timer disposal, ensuring no callbacks fire after this method returns.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        await _disposalCts.CancelAsync().ConfigureAwait(false);
+
+        foreach (var state in _groups.Values)
+        {
+            var groupLock = state.SyncLock;
+            Timer? timerToDispose;
+
+            lock (groupLock)
+            {
+                state.OnPause = null;
+                state.OnResume = null;
+                timerToDispose = state.OpenTimer;
+                state.OpenTimer = null;
+            }
+
+            if (timerToDispose is not null)
+            {
+                await timerToDispose.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+
+        _disposalCts.Dispose();
+    }
+
+    /// <summary>
+    /// Synchronously disposes all per-group <see cref="Timer"/> instances.
+    /// Prefer <see cref="DisposeAsync"/> when an async context is available.
     /// </summary>
     public void Dispose()
     {
@@ -421,6 +461,8 @@ internal sealed class CircuitBreakerStateManager(
         {
             return;
         }
+
+        _disposalCts.Cancel();
 
         foreach (var state in _groups.Values)
         {
@@ -434,6 +476,8 @@ internal sealed class CircuitBreakerStateManager(
                 state.OpenTimer = null;
             }
         }
+
+        _disposalCts.Dispose();
     }
 
     // -------------------------------------------------------------------------
@@ -488,6 +532,7 @@ internal sealed class CircuitBreakerStateManager(
 
         var newState = new GroupCircuitState
         {
+            GroupName = groupName,
             Enabled = perGroup?.Enabled ?? true,
             EffectiveFailureThreshold = perGroup?.FailureThreshold ?? _options.FailureThreshold,
             EffectiveOpenDuration = perGroup?.OpenDuration ?? _options.OpenDuration,
@@ -529,7 +574,7 @@ internal sealed class CircuitBreakerStateManager(
 
         // Dispose any existing timer to prevent a stale HalfOpen transition from firing.
         // Timer.Dispose() does not guarantee in-flight callbacks won't fire — safety comes
-        // from the generation check in _OnOpenTimerElapsed (plus the state.State guard).
+        // from the state.State guard in _OnOpenTimerElapsed.
         state.OpenTimer?.Dispose();
         state.OpenTimer = null;
 
@@ -547,14 +592,14 @@ internal sealed class CircuitBreakerStateManager(
 
     /// <summary>
     /// Creates the open timer outside the group lock, then briefly re-acquires the lock
-    /// to store it. This avoids holding the lock during Timer construction (heap allocation,
-    /// ValueTuple boxing, and TimerQueue registration which may acquire internal runtime locks).
+    /// to store it. This avoids holding the lock during Timer construction (heap allocation
+    /// and TimerQueue registration which may acquire internal runtime locks).
     /// </summary>
     private void _CreateAndAssignOpenTimer(GroupCircuitState state, string groupName, TimeSpan openDuration, int generation)
     {
         var timer = new Timer(
             _OnOpenTimerElapsed,
-            (groupName, generation),
+            state,
             openDuration,
             Timeout.InfiniteTimeSpan
         );
@@ -623,29 +668,19 @@ internal sealed class CircuitBreakerStateManager(
 
     private void _OnOpenTimerElapsed(object? timerState)
     {
-        if (Volatile.Read(ref _disposed) != 0)
+        if (_disposalCts.IsCancellationRequested)
         {
             return;
         }
 
-        var (groupName, generation) = ((string, int))timerState!;
-
-        if (!_groups.TryGetValue(groupName, out var state))
-        {
-            return;
-        }
+        var state = (GroupCircuitState)timerState!;
+        var groupName = state.GroupName;
 
         var groupLock = state.SyncLock;
         Func<ValueTask>? resumeCallback = null;
 
         lock (groupLock)
         {
-            // Stale callback from a previous timer generation — discard to prevent double-resume.
-            if (generation != state.TimerGeneration)
-            {
-                return;
-            }
-
             if (state.State is not CircuitBreakerState.Open)
             {
                 // Circuit was already closed or re-opened — ignore stale timer callback.
@@ -666,9 +701,13 @@ internal sealed class CircuitBreakerStateManager(
         if (resumeCallback is not null)
         {
             // Fire-and-forget on a thread-pool thread to avoid blocking the timer callback thread.
+            // Use _disposalCts.Token for race-free cancellation — the Volatile.Read(_disposed) check
+            // can race with Dispose (callback captures resumeCallback before Dispose nulls it).
+            var ct = _disposalCts.Token;
+
             _ = Task.Run(async () =>
             {
-                if (Volatile.Read(ref _disposed) != 0) return;
+                if (ct.IsCancellationRequested) return;
 
                 try
                 {
@@ -676,18 +715,28 @@ internal sealed class CircuitBreakerStateManager(
                 }
                 catch (Exception ex)
                 {
-                    if (Volatile.Read(ref _disposed) != 0) return;
+                    if (ct.IsCancellationRequested) return;
 
                     logger.LogError(ex, "Resume callback failed for group {Group} during HalfOpen transition", groupName);
                     await _ReopenAfterResumeFailureAsync(groupName).ConfigureAwait(false);
                 }
-            });
+            }, ct).ContinueWith(
+                static (t, s) =>
+                {
+                    var (log, group) = ((ILogger, string))s!;
+                    log.LogError(t.Exception, "Unobserved exception in HalfOpen resume for group {Group}", group);
+                },
+                (logger as ILogger, groupName),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default
+            );
         }
     }
 
     private async Task _ReopenAfterResumeFailureAsync(string groupName)
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
+        if (_disposalCts.IsCancellationRequested) return;
 
         if (!_groups.TryGetValue(groupName, out var state))
         {
@@ -715,7 +764,7 @@ internal sealed class CircuitBreakerStateManager(
 
         if (pauseCallback is not null)
         {
-            if (Volatile.Read(ref _disposed) != 0) return;
+            if (_disposalCts.IsCancellationRequested) return;
 
             try
             {
@@ -724,21 +773,15 @@ internal sealed class CircuitBreakerStateManager(
             catch (Exception ex)
             {
                 // Circuit is Open but transport may not be paused — inconsistent state.
-                // Escalate the open duration so the next retry waits longer, and log at
-                // Critical level so operators are alerted to the inconsistency.
-                int escalation;
-                lock (groupLock)
-                {
-                    state.EscalationLevel = Math.Min(state.EscalationLevel + 1, 63);
-                    escalation = state.EscalationLevel;
-                }
-
+                // _TransitionToOpen already incremented EscalationLevel, so do NOT bump it
+                // again here — that would cause 4x escalation instead of the intended 2x.
+                // Log at Critical level so operators are alerted to the inconsistency.
                 logger.LogCritical(
                     ex,
                     "Pause callback failed while re-opening circuit for group {Group}. "
                     + "Circuit is Open but transport may not be paused — manual ResetAsync may be required (escalation: {Escalation})",
                     groupName,
-                    escalation
+                    state.EscalationLevel
                 );
             }
         }
@@ -820,8 +863,8 @@ internal sealed class CircuitBreakerStateManager(
 
         /// <summary>
         /// Monotonically increasing counter incremented each time <see cref="_TransitionToOpen"/> creates
-        /// a new timer. Timer callbacks capture the current value and compare it on firing — a mismatch
-        /// means the callback is stale and must be discarded.
+        /// a new timer. Used by <see cref="_CreateAndAssignOpenTimer"/> to detect whether the state was
+        /// re-transitioned while the timer was being constructed outside the lock.
         /// </summary>
         public int TimerGeneration { get; set; }
 
@@ -830,6 +873,12 @@ internal sealed class CircuitBreakerStateManager(
         /// Must only be read/written while holding the group lock.
         /// </summary>
         public bool ProbeAcquired { get; set; }
+
+        /// <summary>
+        /// The consumer group name this state belongs to. Used as timer callback state
+        /// to avoid boxing a <c>(string, int)</c> ValueTuple on every circuit trip.
+        /// </summary>
+        public required string GroupName { get; init; }
 
         /// <summary>
         /// Whether the circuit breaker is enabled for this group. When <see langword="false"/>,

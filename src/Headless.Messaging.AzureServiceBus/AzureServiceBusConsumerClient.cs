@@ -23,11 +23,10 @@ internal sealed class AzureServiceBusConsumerClient(
         options.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
-    private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
+    private readonly ConsumerPauseGate _pauseGate = new();
 
     private int _disposed;
     private int _hasStartedProcessing;
-    private int _paused; // 0 = running, 1 = paused
     private ServiceBusAdministrationClient? _administrationClient;
     private ServiceBusClient? _serviceBusClient;
     private ServiceBusProcessorFacade? _serviceBusProcessor;
@@ -123,7 +122,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         _serviceBusProcessor.ProcessErrorAsync += _serviceBusProcessor_ProcessErrorAsync;
 
-        await _pauseGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
         await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
         Volatile.Write(ref _hasStartedProcessing, 1);
     }
@@ -148,46 +147,40 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
+        if (_pauseGate.IsPaused) return;
 
-        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
+        await _pauseGate.PauseAsync();
+
+        if (_serviceBusProcessor is not null)
         {
-            _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-            if (_serviceBusProcessor is null)
-            {
-                return;
-            }
-
             await _serviceBusProcessor.StopProcessingAsync(cancellationToken);
         }
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
+        if (!_pauseGate.IsPaused) return;
 
-        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
+        await _pauseGate.ResumeAsync();
+
+        if (_serviceBusProcessor is null || Volatile.Read(ref _hasStartedProcessing) == 0)
         {
-            _pauseGate.TrySetResult(true);
-
-            if (_serviceBusProcessor is null || Volatile.Read(ref _hasStartedProcessing) == 0)
-            {
-                return;
-            }
-
-            if (_serviceBusProcessor.IsProcessing)
-            {
-                return;
-            }
-
-            await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
+            return;
         }
+
+        if (_serviceBusProcessor.IsProcessing)
+        {
+            return;
+        }
+
+        await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+
+        _pauseGate.Release();
 
         if (_serviceBusProcessor is not null)
         {
@@ -242,13 +235,6 @@ internal sealed class AzureServiceBusConsumerClient(
         var context = _ConvertMessage(arg.Message);
 
         await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg));
-    }
-
-    private static TaskCompletionSource<bool> _CreateCompletedGate()
-    {
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        tcs.SetResult(true);
-        return tcs;
     }
 
     public async Task ConnectAsync()

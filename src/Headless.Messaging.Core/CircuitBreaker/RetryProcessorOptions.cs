@@ -9,8 +9,8 @@ public sealed class RetryProcessorOptions
 {
     /// <summary>
     /// Gets or sets a value indicating whether the retry processor uses adaptive polling intervals.
-    /// When <see langword="true"/>, the polling interval backs off under sustained transient failure
-    /// conditions and recovers as the failure rate drops.
+    /// When <see langword="true"/>, the polling interval backs off when a high fraction of messages
+    /// are skipped due to open circuits, and recovers as the skip rate drops.
     /// Default is <see langword="true"/>.
     /// </summary>
     public bool AdaptivePolling { get; set; } = true;

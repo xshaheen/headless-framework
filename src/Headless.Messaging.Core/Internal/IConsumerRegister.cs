@@ -41,7 +41,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private ICircuitBreakerStateManager? _circuitBreakerStateManager;
     private IConsumerClientFactory _consumerClientFactory = null!;
     private IDispatcher _dispatcher = null!;
-    private int _disposed;
+    private int _state = (int)LifecycleState.NotStarted;
     private volatile bool _isHealthy = true;
 
     private MethodMatcherCache _selector = null!;
@@ -72,7 +72,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
         await ExecuteAsync();
 
-        Interlocked.Exchange(ref _disposed, 0);
+        Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
     }
 
     public async ValueTask ReStartAsync(bool force = false)
@@ -86,6 +86,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             _isHealthy = true;
 
             await ExecuteAsync();
+
+            Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
         }
     }
 
@@ -115,9 +117,20 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.CompareExchange(ref _disposed, 1, 0) == 1)
+        // Spin until we win the transition to Disposed, or discover someone else already did.
+        while (true)
         {
-            return;
+            var current = (LifecycleState)Volatile.Read(ref _state);
+
+            if (current is LifecycleState.Disposing or LifecycleState.Disposed)
+            {
+                return;
+            }
+
+            if (Interlocked.CompareExchange(ref _state, (int)LifecycleState.Disposing, (int)current) == (int)current)
+            {
+                break;
+            }
         }
 
         try
@@ -139,6 +152,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             {
                 await _dispatcher.DisposeAsync();
             }
+
+            Interlocked.Exchange(ref _state, (int)LifecycleState.Disposed);
         }
     }
 
@@ -631,6 +646,14 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         }
     }
 
+    private enum LifecycleState
+    {
+        NotStarted = 0,
+        Running = 1,
+        Disposing = 2,
+        Disposed = 3,
+    }
+
     private sealed class GroupHandle : IAsyncDisposable
     {
         private readonly Lock _clientsLock = new();
@@ -642,7 +665,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         public required ILogger Logger { get; init; }
         public required CancellationTokenSource Cts { get; init; }
         public required string GroupName { get; init; }
-        public List<Task> ConsumerTasks { get; init; } = [];
+        public ConcurrentBag<Task> ConsumerTasks { get; init; } = [];
 
         public bool IsPaused
         {
@@ -653,21 +676,27 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         public async ValueTask AddClientAsync(IConsumerClient client)
         {
             bool shouldPause;
+            bool shouldDispose;
             lock (_clientsLock)
             {
                 if (_disposing)
                 {
-                    // Already shutting down — dispose inline instead of adding.
-                    // Fire-and-forget is acceptable here: we're inside a lock (can't await)
-                    // and the group is already being torn down.
-#pragma warning disable CA2012 // Use ValueTasks correctly
-                    _ = client.DisposeAsync();
-#pragma warning restore CA2012
-                    return;
+                    shouldDispose = true;
+                    shouldPause = false;
                 }
+                else
+                {
+                    shouldDispose = false;
+                    _clients.Add(client);
+                    shouldPause = _isPaused;
+                }
+            }
 
-                _clients.Add(client);
-                shouldPause = _isPaused;
+            if (shouldDispose)
+            {
+                // Already shutting down — dispose outside the lock so we can properly await.
+                await client.DisposeAsync();
+                return;
             }
 
             if (shouldPause)

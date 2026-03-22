@@ -18,11 +18,10 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly IServiceProvider _serviceProvider;
     private readonly string _exchangeName;
     private readonly RabbitMqOptions _rabbitMqOptions;
-    private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
+    private readonly ConsumerPauseGate _pauseGate = new();
     private RabbitMqBasicConsumer? _consumer;
     private IChannel? _channel;
     private string? _consumerTag;
-    private int _paused; // 0 = running, 1 = paused
     private int _disposed;
 
     public RabbitMqConsumerClient(
@@ -81,7 +80,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             await _channel!.BasicQosAsync(prefetchSize: 0, prefetchCount: prefetch, global: false, cancellationToken);
         }
 
-        await _pauseGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 
         _consumer = new RabbitMqBasicConsumer(
             _channel!,
@@ -128,51 +127,32 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0)
+        if (_pauseGate.IsPaused) return;
+
+        await _pauseGate.PauseAsync();
+
+        if (_consumerTag is not null)
         {
-            return;
+            await _channel!.BasicCancelAsync(_consumerTag, cancellationToken: cancellationToken);
         }
-
-        if (Interlocked.CompareExchange(ref _paused, 1, 0) != 0)
-        {
-            return;
-        }
-
-        _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        if (_consumerTag is null)
-        {
-            return;
-        }
-
-        await _channel!.BasicCancelAsync(_consumerTag, cancellationToken: cancellationToken);
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0)
+        if (!_pauseGate.IsPaused) return;
+
+        await _pauseGate.ResumeAsync();
+
+        if (_consumerTag is not null)
         {
-            return;
+            _consumerTag = await _channel!.BasicConsumeAsync(_groupName, false, _consumer!, cancellationToken);
         }
-
-        if (Interlocked.CompareExchange(ref _paused, 0, 1) != 1)
-        {
-            return;
-        }
-
-        _pauseGate.TrySetResult(true);
-
-        if (_consumerTag is null)
-        {
-            return;
-        }
-
-        _consumerTag = await _channel!.BasicConsumeAsync(_groupName, false, _consumer!, cancellationToken);
     }
 
     public ValueTask DisposeAsync()
     {
         Interlocked.Exchange(ref _disposed, 1);
+        _pauseGate.Release();
 
         _consumer?.Dispose();
         _channel?.Dispose();
@@ -234,10 +214,4 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _semaphore.Release();
     }
 
-    private static TaskCompletionSource<bool> _CreateCompletedGate()
-    {
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        tcs.SetResult(true);
-        return tcs;
-    }
 }

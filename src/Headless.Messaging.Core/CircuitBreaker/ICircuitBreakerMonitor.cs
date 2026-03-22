@@ -12,12 +12,71 @@ public interface ICircuitBreakerMonitor
     /// Returns <c>true</c> if the circuit for the specified consumer group is currently
     /// Open or HalfOpen (i.e., the group is paused or probing).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Advisory hint only:</strong> This method returns <c>false</c> for unknown groups
+    /// (groups not yet registered or never accessed). Use this when you want to check if a
+    /// <em>registered</em> group is in an open state, not to determine whether a group exists.
+    /// </para>
+    /// <example>
+    /// <code>
+    /// // Check if a registered group is paused/probing
+    /// if (monitor.IsOpen("payments"))
+    /// {
+    ///     // Handle paused consumer group
+    /// }
+    ///
+    /// // To distinguish between "not open" and "not registered", use GetState:
+    /// var state = monitor.GetState("payments");
+    /// if (state == null)
+    /// {
+    ///     // Group is not registered
+    /// }
+    /// else if (state == CircuitBreakerState.Open || state == CircuitBreakerState.HalfOpen)
+    /// {
+    ///     // Group is registered and open
+    /// }
+    /// </code>
+    /// </example>
+    /// </remarks>
     bool IsOpen(string groupName);
 
     /// <summary>
     /// Returns the current <see cref="CircuitBreakerState"/> for the specified consumer group,
     /// or <see langword="null"/> if the group is not registered.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Registration check:</strong> Unlike <see cref="IsOpen"/>, this method distinguishes
+    /// between "not registered" (<see langword="null"/>) and "registered but closed/open"
+    /// (returns <see cref="CircuitBreakerState"/>). Use this when you need to verify whether
+    /// a group is actually registered before making decisions.
+    /// </para>
+    /// <example>
+    /// <code>
+    /// // Get precise state information
+    /// var state = monitor.GetState("payments");
+    ///
+    /// if (state == null)
+    /// {
+    ///     // Group has never been registered or accessed
+    ///     return;
+    /// }
+    ///
+    /// // Group is registered; check its state
+    /// switch (state)
+    /// {
+    ///     case CircuitBreakerState.Closed:
+    ///         // Healthy, processing normally
+    ///         break;
+    ///     case CircuitBreakerState.Open:
+    ///     case CircuitBreakerState.HalfOpen:
+    ///         // Paused or probing for recovery
+    ///         break;
+    /// }
+    /// </code>
+    /// </example>
+    /// </remarks>
     CircuitBreakerState? GetState(string groupName);
 
     /// <summary>

@@ -11,7 +11,7 @@ internal sealed class CircuitBreakerOptionsValidator : AbstractValidator<Circuit
         RuleFor(x => x.FailureThreshold).GreaterThan(0);
         RuleFor(x => x.OpenDuration).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.MaxOpenDuration).GreaterThanOrEqualTo(x => x.OpenDuration);
-        RuleFor(x => x.SuccessfulCyclesToResetEscalation).GreaterThan(0);
+        RuleFor(x => x.SuccessfulCyclesToResetEscalation).GreaterThan(0).LessThanOrEqualTo(100);
         RuleFor(x => x.IsTransientException).NotNull();
     }
 }

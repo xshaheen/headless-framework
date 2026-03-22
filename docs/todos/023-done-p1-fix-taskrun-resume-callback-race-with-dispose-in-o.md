@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p1
 issue_id: "023"
 tags: ["code-review","threading","correctness"]
@@ -62,3 +62,9 @@ Prior solution doc (Pattern 6) recommends ContinueWith for unobserved exceptions
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-22 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

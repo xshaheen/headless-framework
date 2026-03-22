@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p1
 issue_id: "042"
 tags: ["code-review","logic-bug","correctness"]
@@ -54,3 +54,9 @@ Discovered by performance-oracle during lock-acquisition analysis.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-22 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

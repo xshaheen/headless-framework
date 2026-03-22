@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p2
 issue_id: "048"
 tags: ["code-review","security","observability"]
@@ -48,3 +48,9 @@ Source: Code review
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-22 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

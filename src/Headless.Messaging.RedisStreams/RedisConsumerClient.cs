@@ -18,8 +18,7 @@ internal sealed class RedisConsumerClient(
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
-    private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
-    private int _paused; // 0 = running, 1 = paused
+    private readonly ConsumerPauseGate _pauseGate = new();
     private int _disposed;
     private string[] _topics = null!;
 
@@ -70,43 +69,16 @@ internal sealed class RedisConsumerClient(
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask PauseAsync(CancellationToken cancellationToken = default)
-    {
-        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
+    public ValueTask PauseAsync(CancellationToken cancellationToken = default) => _pauseGate.PauseAsync();
 
-        if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
-        {
-            _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        }
-
-        return ValueTask.CompletedTask;
-    }
-
-    public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
-    {
-        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
-
-        if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
-        {
-            _pauseGate.TrySetResult(true);
-        }
-
-        return ValueTask.CompletedTask;
-    }
+    public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => _pauseGate.ResumeAsync();
 
     public ValueTask DisposeAsync()
     {
         Interlocked.Exchange(ref _disposed, 1);
-        _pauseGate.TrySetResult(true);
+        _pauseGate.Release();
         _semaphore.Dispose();
         return ValueTask.CompletedTask;
-    }
-
-    private static TaskCompletionSource<bool> _CreateCompletedGate()
-    {
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        tcs.SetResult(true);
-        return tcs;
     }
 
     private async Task _ListeningForMessagesAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -134,7 +106,7 @@ internal sealed class RedisConsumerClient(
             {
                 foreach (var entry in stream.Entries)
                 {
-                    await _pauseGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
                     if (entry.IsNull)
                     {
                         return;
