@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "016"
 tags: ["code-review","quality","testing"]
@@ -54,3 +54,15 @@ Shared fixture pattern (Clear() between tests) is the primary trigger.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-22 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-22 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

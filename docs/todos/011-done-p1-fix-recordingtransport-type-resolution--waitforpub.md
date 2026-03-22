@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "011"
 tags: ["code-review","correctness"]
@@ -56,3 +56,15 @@ No existing E2E test exercises WaitForPublished<T>() — all use WaitForConsumed
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-22 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-22 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done
