@@ -116,7 +116,7 @@ Create a fresh harness in each test for full isolation. Extend `TestBase` to get
 public sealed class OrderMessagingTests : TestBase
 {
     [Fact]
-    public async Task Should_consume_order_created_event()
+    public async Task should_consume_order_created_event()
     {
         await using var harness = await MessagingTestHarness.CreateAsync(services =>
         {
