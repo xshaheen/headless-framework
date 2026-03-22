@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Domain;
 using Headless.Settings.Definitions;
 using Headless.Settings.Entities;
@@ -97,8 +96,6 @@ public static class CoreSettingsSetup
 
     private static IServiceCollection _AddCore(IServiceCollection services)
     {
-        _EnsureStringEncryptionServiceRegistered(services);
-
         services._AddCoreValueProvider();
 
         services.AddHostedService<SettingsInitializationBackgroundService>();
@@ -131,17 +128,5 @@ public static class CoreSettingsSetup
         services.TryAddSingleton<ISettingManager, SettingManager>();
 
         return services;
-    }
-
-    private static void _EnsureStringEncryptionServiceRegistered(IServiceCollection services)
-    {
-        if (services.Any(service => service.ServiceType == typeof(IStringEncryptionService)))
-        {
-            return;
-        }
-
-        throw new InvalidOperationException(
-            $"{nameof(IStringEncryptionService)} must be registered before calling AddSettingsManagementCore(...)."
-        );
     }
 }
