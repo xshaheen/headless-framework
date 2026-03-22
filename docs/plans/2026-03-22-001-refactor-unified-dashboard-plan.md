@@ -64,13 +64,19 @@ builder.Services.AddHeadlessDashboard(d => {
 });
 
 // 2. Plugins attach — no auth config
-builder.Services.AddHeadlessJobs(o => o.UseDashboard());
+builder.Services.AddHeadlessJobs(o => o.AddDashboard());
 builder.Services.AddHeadlessMessaging(o => o.UseDashboard());
 
 // Jobs-only consumer — works fine, messaging sections hidden
 builder.Services.AddHeadlessDashboard(d => d.WithApiKey("key"));
-builder.Services.AddHeadlessJobs(o => o.UseDashboard());
+builder.Services.AddHeadlessJobs(o => o.AddDashboard());
 ```
+
+**Public API decision**:
+- Keep the existing verb per host builder to reduce churn:
+  - Jobs keeps `AddDashboard()` on `JobsOptionsBuilder`
+  - Messaging keeps `UseDashboard()` on `MessagingOptions`
+- Package names change to the new unified layout. Namespace changes are accepted as part of the breaking change and must be reflected in demos, READMEs, and upgrade notes.
 
 ## Technical Approach
 
@@ -124,6 +130,8 @@ public sealed class DashboardModuleSection
 
 Plugin endpoints are namespaced under `/api/{moduleId}/...` to avoid collisions.
 
+The short table below is illustrative only. The full migration inventory is the acceptance surface.
+
 | Current | Unified |
 |---------|---------|
 | `/api/time-jobs` | `/api/jobs/time-jobs` |
@@ -139,6 +147,74 @@ Plugin endpoints are namespaced under `/api/{moduleId}/...` to avoid collisions.
 Auth endpoints move to core (deduplicated):
 - `/api/auth/info` — core owns this
 - `/api/auth/validate` — core owns this
+
+#### Full Route Migration Inventory
+
+**Jobs endpoints**
+
+| Current | Unified |
+|---------|---------|
+| `/api/auth/info` | `/api/auth/info` |
+| `/api/auth/validate` | `/api/auth/validate` |
+| `/api/options` | `/api/jobs/options` |
+| `/api/time-jobs` | `/api/jobs/time-jobs` |
+| `/api/time-jobs/paginated` | `/api/jobs/time-jobs/paginated` |
+| `/api/time-jobs/graph-data-range` | `/api/jobs/time-jobs/graph-data-range` |
+| `/api/time-jobs/graph-data` | `/api/jobs/time-jobs/graph-data` |
+| `/api/time-job/add` | `/api/jobs/time-job/add` |
+| `/api/time-job/update` | `/api/jobs/time-job/update` |
+| `/api/time-job/delete` | `/api/jobs/time-job/delete` |
+| `/api/time-job/delete-batch` | `/api/jobs/time-job/delete-batch` |
+| `/api/cron-jobs` | `/api/jobs/cron-jobs` |
+| `/api/cron-jobs/paginated` | `/api/jobs/cron-jobs/paginated` |
+| `/api/cron-jobs/graph-data-range` | `/api/jobs/cron-jobs/graph-data-range` |
+| `/api/cron-jobs/graph-data-range-id` | `/api/jobs/cron-jobs/graph-data-range-id` |
+| `/api/cron-jobs/graph-data` | `/api/jobs/cron-jobs/graph-data` |
+| `/api/cron-job-occurrences/{cronJobId}` | `/api/jobs/cron-job-occurrences/{cronJobId}` |
+| `/api/cron-job-occurrences/{cronJobId}/paginated` | `/api/jobs/cron-job-occurrences/{cronJobId}/paginated` |
+| `/api/cron-job-occurrences/{cronJobId}/graph-data` | `/api/jobs/cron-job-occurrences/{cronJobId}/graph-data` |
+| `/api/cron-job/add` | `/api/jobs/cron-job/add` |
+| `/api/cron-job/update` | `/api/jobs/cron-job/update` |
+| `/api/cron-job/run` | `/api/jobs/cron-job/run` |
+| `/api/cron-job/delete` | `/api/jobs/cron-job/delete` |
+| `/api/cron-job-occurrence/delete` | `/api/jobs/cron-job-occurrence/delete` |
+| `/api/job/cancel` | `/api/jobs/job/cancel` |
+| `/api/job-request/{id}` | `/api/jobs/job-request/{id}` |
+| `/api/job-functions` | `/api/jobs/job-functions` |
+| `/api/job-host/next-job` | `/api/jobs/job-host/next-job` |
+| `/api/job-host/stop` | `/api/jobs/job-host/stop` |
+| `/api/job-host/start` | `/api/jobs/job-host/start` |
+| `/api/job-host/restart` | `/api/jobs/job-host/restart` |
+| `/api/job-host/status` | `/api/jobs/job-host/status` |
+| `/api/job/statuses/get-last-week` | `/api/jobs/job/statuses/get-last-week` |
+| `/api/job/statuses/get` | `/api/jobs/job/statuses/get` |
+| `/api/job/machine/jobs` | `/api/jobs/job/machine/jobs` |
+| `/job-notification-hub` | `/jobs/hub` |
+
+**Messaging endpoints**
+
+| Current | Unified |
+|---------|---------|
+| `/api/auth/info` | `/api/auth/info` |
+| `/api/auth/validate` | `/api/auth/validate` |
+| `/api/health` | `/api/health` |
+| `/api/ping` | `/api/ping` |
+| `/api/metrics-realtime` | `/api/messaging/metrics-realtime` |
+| `/api/meta` | `/api/messaging/meta` |
+| `/api/stats` | `/api/messaging/stats` |
+| `/api/metrics-history` | `/api/messaging/metrics-history` |
+| `/api/published/message/{id}` | `/api/messaging/published/message/{id}` |
+| `/api/published/requeue` | `/api/messaging/published/requeue` |
+| `/api/published/delete` | `/api/messaging/published/delete` |
+| `/api/published/{status}` | `/api/messaging/published/{status}` |
+| `/api/received/message/{id}` | `/api/messaging/received/message/{id}` |
+| `/api/received/reexecute` | `/api/messaging/received/reexecute` |
+| `/api/received/delete` | `/api/messaging/received/delete` |
+| `/api/received/{status}` | `/api/messaging/received/{status}` |
+| `/api/subscriber` | `/api/messaging/subscriber` |
+| `/api/nodes` | `/api/messaging/nodes` |
+| `/api/list-ns` | `/api/messaging/list-ns` |
+| `/api/list-svc/{namespace}` | `/api/messaging/list-svc/{namespace}` |
 
 ### 3. DI Registration & Validation
 
@@ -301,6 +377,7 @@ Auth is **header-based only** — no cookies for auth. Both dashboards store cre
 - Single `AuthService` reads `window.DashboardConfig.auth`
 - SignalR token generation via `getAccessToken()` stays (Jobs uses it for WebSocket auth)
 - Users re-login once after upgrade (key names change) — acceptable for breaking change
+- Normalize the auth mode string to `apikey` everywhere. Remove the current Jobs frontend's legacy `bearer` references during the merge so hub auth, login UI, and stored key names all use one convention.
 
 ### 6. Multi-Node Gateway Proxy (Messaging-Only)
 
@@ -313,14 +390,12 @@ The GatewayProxy is **messaging-specific** and uses cookies (`messaging.node`, `
 var group = endpoints
     .MapGroup("/api/messaging")
     .WithTags("Messaging Dashboard")
-    .RequireCors(...)
     .AddEndpointFilter<GatewayProxyEndpointFilter>(); // messaging-only proxy
 
 // Jobs group has no proxy filter
 var jobsGroup = endpoints
     .MapGroup("/api/jobs")
-    .WithTags("Jobs Dashboard")
-    .RequireCors(...);
+    .WithTags("Jobs Dashboard");
 ```
 
 Cookie names stay unchanged (`messaging.node`, `messaging.node.ns`). The `GatewayProxyAgent`, `IRequestMapper`, and `INodeDiscoveryProvider` all live in `Headless.Dashboard.Messaging`. The K8s extension (`Headless.Dashboard.Messaging.K8s`) continues to extend node discovery.
@@ -461,6 +536,16 @@ public sealed class DashboardOptions
 ```
 
 `DashboardOptionsBuilder.Build()` produces the immutable `DashboardOptions` during startup. Plugins receive the read-only version, never the builder.
+
+### 12. Frontend Compatibility & Build Constraints
+
+- The unified SPA must preserve the runtime base-path injection pattern already used by both dashboards (`window.__dynamic_base__` + embedded `dist` assets).
+- The merged dependency set must explicitly account for:
+  - Jobs-only dependencies: SignalR, Tailwind/PostCSS, cron expression helpers
+  - Messaging-only dependencies: `json-bigint`, messaging dev proxy/JWT bootstrap, node discovery UI
+- Tailwind is not assumed to survive the merge by default. Keep it only if imported Jobs components still require it after consolidation.
+- The implementation must update both the frontend source tree and the server-side asset embedding path in the new core package. Frontend work is incomplete until `build`, `type-check`, lint, and embedded-resource packaging all pass.
+- Dev-time Vite proxy behavior for the messaging demo must be re-established in the merged app or explicitly removed and replaced with documented local-dev instructions.
 
 ## Implementation Phases
 
@@ -771,6 +856,7 @@ All module views/services update their API paths to include the module namespace
 
 **Migrated from:**
 - `Headless.Dashboard.Authentication.Tests.Unit` → `Headless.Dashboard.Tests.Unit`
+- `Headless.Jobs.Dashboard` currently has no dedicated unit test project parity to migrate; `Headless.Dashboard.Jobs.Tests.Unit` is net-new coverage and must be treated as required scope, not stretch work
 - `Headless.Messaging.Dashboard.Tests.Unit` → `Headless.Dashboard.Messaging.Tests.Unit`
 - `Headless.Messaging.Dashboard.K8s.Tests.Unit` → stays, updated references
 
@@ -779,9 +865,11 @@ All module views/services update their API paths to include the module namespace
 - Plugin without core → `InvalidOperationException`
 - Duplicate registration → idempotent
 - `/api/modules` returns correct manifests for registered modules
+- Full old→new route inventory is covered by endpoint tests for both plugins
 - Auth middleware protects all plugin endpoints
 - GatewayProxy filter only applies to messaging endpoints
 - SignalR hub auth works via shared `IAuthService`
+- Frontend build/typecheck/lint succeed for the merged SPA before .NET packaging validation
 
 ### Phase 5: Demo Apps & Cleanup
 
@@ -789,7 +877,14 @@ All module views/services update their API paths to include the module namespace
 
 | Current | Updated |
 |---------|---------|
+| `Headless.Jobs.Api.Demo` | Update to reference `Headless.Dashboard` + `Headless.Dashboard.Jobs` |
 | `Headless.Jobs.Dashboard.Jwt.Demo` | Update to use `AddHeadlessDashboard()` + `o.AddDashboard()` |
+| `Headless.Messaging.Redis.SqlServer.Demo` | Update to new dashboard package references |
+| `Headless.Messaging.AwsSqs.InMemory.Demo` | Update to new dashboard package references |
+| `Headless.Messaging.AzureServiceBus.InMemory.Demo` | Update to new dashboard package references |
+| `Headless.Messaging.Kafka.PostgreSql.Demo` | Update to new dashboard package references |
+| `Headless.Messaging.Pulsar.InMemory.Demo` | Update to new dashboard package references |
+| `Headless.Messaging.RabbitMq.SqlServer.Demo` | Update to new dashboard package references |
 | `Headless.Messaging.Dashboard.Jwt.Demo` | Update to use `AddHeadlessDashboard()` + `o.UseDashboard()` |
 | `Headless.Messaging.Dashboard.Auth.Demo` | Update to new package references |
 
@@ -805,7 +900,32 @@ Consider adding a combined demo showing both modules in one dashboard.
 **Update:**
 - `Directory.Packages.props` — remove old package entries, add new
 - Solution file — remove old projects, add new
-- Any CI/CD that references old package names
+- Root `README.md` package table and feature docs
+- Package READMEs under `src/Headless.*`
+- `docs/llms/jobs.txt` and `docs/llms/messaging.txt`
+- `InternalsVisibleTo` declarations in moved/consuming projects
+- Demo project references, using statements, and launch instructions
+- Any CI/CD, packaging, or release automation that references old package names
+
+**Migration inventory that must be checked off explicitly**
+
+- Package refs:
+  - old dashboard packages removed from demos/tests
+  - new dashboard packages added where required
+- Internals/test visibility:
+  - `Headless.Dashboard.Authentication`
+  - `Headless.Jobs.Abstractions`
+  - `Headless.Messaging.Core`
+  - any moved plugin assembly names
+- Docs:
+  - root README
+  - package READMEs
+  - `docs/llms/*`
+  - upgrade/breaking-change notes
+- Frontend packaging:
+  - merged `wwwroot/dist`
+  - updated embedded-resource include path
+  - local dev commands still documented and working
 
 ## System-Wide Impact
 
@@ -832,7 +952,19 @@ Consider adding a combined demo showing both modules in one dashboard.
 
 ### API Surface Parity
 
-All existing dashboard endpoints are preserved under new namespaced paths. No functionality removed. Auth endpoints deduplicated into core.
+All existing dashboard endpoints are preserved under new namespaced paths. No functionality removed. Auth endpoints deduplicated into core. The route inventory in Technical Approach §2 is authoritative and must stay in sync with implementation.
+
+### Known Challenges
+
+- This is not just a backend route move. It is a package rename, namespace migration, frontend consolidation, asset-pipeline merge, and docs/demo sweep.
+- The current dashboards have drifted frontend behavior:
+  - Jobs still contains legacy `bearer` references that must be normalized during the merge
+  - Messaging has extra dev-proxy and `json-bigint` requirements not present in Jobs
+- Test migration is asymmetric:
+  - auth and messaging tests exist today
+  - jobs dashboard plugin coverage needs to be created, not merely renamed
+- `InternalsVisibleTo` and project references are part of the refactor surface. Missing them will break tests, demos, or provider packages after the package rename.
+- Bundle-size acceptance should be measured after the merged SPA is tree-shaken and embedded, not estimated from source structure alone.
 
 ### Integration Test Scenarios
 
@@ -847,14 +979,16 @@ All existing dashboard endpoints are preserved under new namespaced paths. No fu
 ### Functional Requirements
 
 - [ ] `AddHeadlessDashboard()` registers core services and SPA
-- [ ] `o.AddDashboard()` and `o.UseDashboard()` register plugins without auth config
+- [ ] `o.AddDashboard()` for Jobs and `o.UseDashboard()` for Messaging register plugins without auth config
 - [ ] `/api/modules` returns manifests for registered modules only
 - [ ] Sidebar shows sections for active modules only
+- [ ] Full old→new route inventory from Technical Approach §2 is implemented and covered by tests
 - [ ] All existing Jobs dashboard functionality preserved under `/api/jobs/` namespace
 - [ ] All existing Messaging dashboard functionality preserved under `/api/messaging/` namespace
 - [ ] SignalR hub works at `/jobs/hub` under unified base path
 - [ ] GatewayProxy filter applies only to messaging endpoints
 - [ ] All 5 auth modes work in unified dashboard
+- [ ] Unified frontend normalizes on `apikey` naming; no legacy `bearer` dashboard mode remains
 - [ ] Demo apps updated and functional
 
 ### Non-Functional Requirements
@@ -862,13 +996,16 @@ All existing dashboard endpoints are preserved under new namespaced paths. No fu
 - [ ] No performance regression in endpoint response times
 - [ ] SPA bundle size within 20% of combined current bundles
 - [ ] Auth is configured once, not per-module
+- [ ] Merged SPA passes frontend `build`, `type-check`, and lint before .NET packaging validation
 
 ### Quality Gates
 
 - [ ] Unit tests for core, both plugins, auth
 - [ ] Build succeeds with zero warnings (`dotnet build --no-incremental`)
 - [ ] All existing test scenarios migrated to new test projects
+- [ ] Required net-new Jobs dashboard plugin tests are added
 - [ ] READMEs updated for all new packages
+- [ ] Root README, `docs/llms/*`, and demo instructions updated
 - [ ] XML docs on all public APIs
 
 ## Sources & References

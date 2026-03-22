@@ -24,11 +24,11 @@
       "rollForward": false
     },
     "husky": {
-      "version": "0.7.2",
+      "version": "0.8.0",
       "commands": [
         "husky"
       ],
-      "rollForward": false
+      "rollForward": true
     },
     "dotnet-coverage": {
       "version": "18.5.2",
