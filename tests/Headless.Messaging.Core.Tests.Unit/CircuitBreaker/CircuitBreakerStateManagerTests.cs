@@ -648,7 +648,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.IsOpen(Group).Should().BeTrue();
 
         // when — dispose before the timer fires
-        sut.Dispose();
+        await sut.DisposeAsync();
 
         // then — wait well past the open duration; resume must NOT fire
         await Task.Delay(200);

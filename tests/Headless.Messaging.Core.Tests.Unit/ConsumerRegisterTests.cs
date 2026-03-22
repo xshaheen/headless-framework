@@ -53,7 +53,7 @@ public sealed class ConsumerRegisterTests : TestBase
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
         handleType.GetProperty("Cts")!.SetValue(handle, new CancellationTokenSource());
         handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
-        handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new List<Task>());
+        handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new System.Collections.Concurrent.ConcurrentBag<Task>());
 
         var addClient = handleType.GetMethod("AddClientAsync")!;
         await ((ValueTask)addClient.Invoke(handle, [client])!);
