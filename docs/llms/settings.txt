@@ -18,6 +18,9 @@ Minimal wiring:
 ```csharp
 builder.Services.AddCaching();
 builder.Services.AddDistributedLock();
+builder.Services.AddStringEncryptionService(
+    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
+);
 builder.Services.AddSettingsManagementCore(_ => { });
 builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
@@ -140,6 +143,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Add required dependencies
 builder.Services.AddCaching();
 builder.Services.AddDistributedLock();
+builder.Services.AddStringEncryptionService(
+    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
+);
 
 // Add settings management
 builder.Services.AddSettingsManagementCore(options =>
@@ -281,6 +287,9 @@ dotnet add package Headless.Settings.Storage.EntityFramework
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddStringEncryptionService(
+    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
+);
 builder.Services.AddSettingsManagementCore(_ => { });
 builder.Services.AddSettingsManagementDbContextStorage(options =>
 {
@@ -304,6 +313,9 @@ public class AppDbContext : DbContext, ISettingsDbContext
 }
 
 // In Program.cs
+builder.Services.AddStringEncryptionService(
+    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
+);
 builder.Services.AddSettingsManagementCore(_ => { });
 builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
 ```

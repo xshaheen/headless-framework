@@ -58,8 +58,10 @@ app.Run();
 If you do not want the default `Headless:*` binding, `AddHeadlessApi()` also exposes explicit overloads for:
 
 - `IConfiguration stringEncryptionConfig, IConfiguration stringHashConfig`
-- `Action<StringEncryptionOptions>, Action<StringHashOptions>`
-- `Action<StringEncryptionOptions, IServiceProvider>, Action<StringHashOptions, IServiceProvider>`
+- `Action<StringEncryptionOptions>, Action<StringHashOptions>?`
+- `Action<StringEncryptionOptions, IServiceProvider>, Action<StringHashOptions, IServiceProvider>?`
+
+When the hash callback is omitted, `AddHeadlessApi(...)` still binds `Headless:StringHash` by default.
 
 ## Multi-Tenancy
 

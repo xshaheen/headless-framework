@@ -17,6 +17,11 @@ public static class SecuritySetup
         {
             Argument.IsNotNull(config);
 
+            if (_HasStringEncryptionRegistration(services))
+            {
+                return services;
+            }
+
             services.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(config);
             return _AddEncryptionCore(services);
         }
@@ -24,6 +29,11 @@ public static class SecuritySetup
         public IServiceCollection AddStringEncryptionService(Action<StringEncryptionOptions> configure)
         {
             Argument.IsNotNull(configure);
+
+            if (_HasStringEncryptionRegistration(services))
+            {
+                return services;
+            }
 
             services.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(configure);
             return _AddEncryptionCore(services);
@@ -35,6 +45,11 @@ public static class SecuritySetup
         {
             Argument.IsNotNull(configure);
 
+            if (_HasStringEncryptionRegistration(services))
+            {
+                return services;
+            }
+
             services.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(configure);
             return _AddEncryptionCore(services);
         }
@@ -43,13 +58,23 @@ public static class SecuritySetup
         {
             Argument.IsNotNull(config);
 
+            if (_HasStringHashRegistration(services))
+            {
+                return services;
+            }
+
             services.Configure<StringHashOptions, StringHashOptionsValidator>(config);
             return _AddHashCore(services);
         }
 
-        public IServiceCollection AddStringHashService(Action<StringHashOptions>? configure)
+        public IServiceCollection AddStringHashService(Action<StringHashOptions> configure)
         {
             Argument.IsNotNull(configure);
+
+            if (_HasStringHashRegistration(services))
+            {
+                return services;
+            }
 
             services.Configure<StringHashOptions, StringHashOptionsValidator>(configure);
             return _AddHashCore(services);
@@ -58,6 +83,11 @@ public static class SecuritySetup
         public IServiceCollection AddStringHashService(Action<StringHashOptions, IServiceProvider> configure)
         {
             Argument.IsNotNull(configure);
+
+            if (_HasStringHashRegistration(services))
+            {
+                return services;
+            }
 
             services.Configure<StringHashOptions, StringHashOptionsValidator>(configure);
             return _AddHashCore(services);
@@ -78,5 +108,15 @@ public static class SecuritySetup
         services.TryAddSingleton<IStringHashService, StringHashService>();
 
         return services;
+    }
+
+    private static bool _HasStringEncryptionRegistration(IServiceCollection services)
+    {
+        return services.Any(service => service.ServiceType == typeof(IStringEncryptionService));
+    }
+
+    private static bool _HasStringHashRegistration(IServiceCollection services)
+    {
+        return services.Any(service => service.ServiceType == typeof(IStringHashService));
     }
 }

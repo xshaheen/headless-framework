@@ -13,20 +13,16 @@ namespace Tests.Setup;
 public sealed class CoreSettingsSetupTests
 {
     [Fact]
-    public void add_settings_management_core_should_not_register_string_encryption_service()
+    public void add_settings_management_core_should_require_string_encryption_service()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
 
         // when
-        builder.Services.AddSettingsManagementCore();
-
-        using var serviceProvider = builder.Services.BuildServiceProvider();
+        var action = () => builder.Services.AddSettingsManagementCore();
 
         // then
-        serviceProvider.GetService<IStringEncryptionService>().Should().BeNull();
-        var action = () => serviceProvider.GetRequiredService<ISettingEncryptionService>();
-        action.Should().Throw<InvalidOperationException>();
+        action.Should().Throw<InvalidOperationException>().WithMessage($"*{nameof(IStringEncryptionService)}*");
     }
 
     [Fact]

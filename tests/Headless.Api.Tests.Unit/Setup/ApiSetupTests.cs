@@ -60,6 +60,7 @@ public sealed class ApiSetupTests
     {
         // given
         var builder = WebApplication.CreateBuilder();
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
         builder.AddHeadlessApi(
@@ -88,10 +89,36 @@ public sealed class ApiSetupTests
     }
 
     [Fact]
+    public void add_headless_api_should_use_default_hash_configuration_when_hash_callback_is_omitted()
+    {
+        // given
+        var builder = WebApplication.CreateBuilder();
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
+
+        // when
+        builder.AddHeadlessApi(encryption =>
+        {
+            encryption.DefaultPassPhrase = "ActionPassPhrase123";
+            encryption.InitVectorBytes = "ActionIV01234567"u8.ToArray();
+            encryption.DefaultSalt = "ActionSalt"u8.ToArray();
+        });
+
+        using var serviceProvider = builder.Services.BuildServiceProvider();
+        var encryptionOptions = serviceProvider.GetRequiredService<IOptions<StringEncryptionOptions>>().Value;
+        var hashOptions = serviceProvider.GetRequiredService<IOptions<StringHashOptions>>().Value;
+
+        // then
+        encryptionOptions.DefaultPassPhrase.Should().Be("ActionPassPhrase123");
+        encryptionOptions.DefaultSalt.Should().BeEquivalentTo("ActionSalt"u8.ToArray());
+        hashOptions.DefaultSalt.Should().Be("TestSalt");
+    }
+
+    [Fact]
     public void add_headless_api_should_allow_service_provider_callbacks()
     {
         // given
         var builder = WebApplication.CreateBuilder();
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
         builder.Services.AddSingleton(
             new SecurityTestValues
             {

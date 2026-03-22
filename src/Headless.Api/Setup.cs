@@ -51,10 +51,8 @@ public static class ApiSetup
     {
         Argument.IsNotNull(builder);
 
-        builder.Services.AddStringEncryptionService(
-            builder.Configuration.GetRequiredSection(_StringEncryptionSectionName)
-        );
-        builder.Services.AddStringHashService(builder.Configuration.GetRequiredSection(_StringHashSectionName));
+        _AddDefaultStringEncryptionService(builder);
+        _AddDefaultStringHashService(builder);
 
         return _AddCore(builder);
     }
@@ -83,10 +81,17 @@ public static class ApiSetup
     {
         Argument.IsNotNull(builder);
         Argument.IsNotNull(configureEncryption);
-        Argument.IsNotNull(configureHash);
 
         builder.Services.AddStringEncryptionService(configureEncryption);
-        builder.Services.AddStringHashService(configureHash);
+
+        if (configureHash is null)
+        {
+            _AddDefaultStringHashService(builder);
+        }
+        else
+        {
+            builder.Services.AddStringHashService(configureHash);
+        }
 
         return _AddCore(builder);
     }
@@ -94,17 +99,36 @@ public static class ApiSetup
     public static WebApplicationBuilder AddHeadlessApi(
         this WebApplicationBuilder builder,
         Action<StringEncryptionOptions, IServiceProvider> configureEncryption,
-        Action<StringHashOptions, IServiceProvider> configureHash
+        Action<StringHashOptions, IServiceProvider>? configureHash = null
     )
     {
         Argument.IsNotNull(builder);
         Argument.IsNotNull(configureEncryption);
-        Argument.IsNotNull(configureHash);
 
         builder.Services.AddStringEncryptionService(configureEncryption);
-        builder.Services.AddStringHashService(configureHash);
+
+        if (configureHash is null)
+        {
+            _AddDefaultStringHashService(builder);
+        }
+        else
+        {
+            builder.Services.AddStringHashService(configureHash);
+        }
 
         return _AddCore(builder);
+    }
+
+    private static void _AddDefaultStringEncryptionService(WebApplicationBuilder builder)
+    {
+        builder.Services.AddStringEncryptionService(
+            builder.Configuration.GetRequiredSection(_StringEncryptionSectionName)
+        );
+    }
+
+    private static void _AddDefaultStringHashService(WebApplicationBuilder builder)
+    {
+        builder.Services.AddStringHashService(builder.Configuration.GetRequiredSection(_StringHashSectionName));
     }
 
     private static WebApplicationBuilder _AddCore(WebApplicationBuilder builder)

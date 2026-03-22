@@ -34,6 +34,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Add required dependencies
 builder.Services.AddCaching();
 builder.Services.AddDistributedLock();
+builder.Services.AddStringEncryptionService(
+    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
+);
 
 // Add settings management
 builder.Services.AddSettingsManagementCore(options =>
