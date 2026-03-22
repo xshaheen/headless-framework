@@ -19,17 +19,22 @@ internal static class LogSanitizer
     /// <summary>
     /// Sanitizes a string value to prevent log injection.
     /// Strips control characters and Unicode bidi overrides (U+202A-U+202E, U+2066-U+2069).
+    /// Optionally truncates to <paramref name="maxLength"/> characters (appending "..." when truncated).
     /// Returns null if input is null.
     /// </summary>
-    internal static string? Sanitize(string? value)
+    internal static string? Sanitize(string? value, int maxLength = int.MaxValue)
     {
         if (value is null)
         {
             return null;
         }
 
+        const string truncationSuffix = "...";
+        var needsTruncation = value.Length > maxLength;
+        var scanLength = needsTruncation ? maxLength : value.Length;
+
         var needsSanitization = false;
-        for (var i = 0; i < value.Length; i++)
+        for (var i = 0; i < scanLength; i++)
         {
             var c = value[i];
             if (char.IsControl(c) || c is (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069'))
@@ -39,21 +44,36 @@ internal static class LogSanitizer
             }
         }
 
-        if (!needsSanitization)
+        if (!needsSanitization && !needsTruncation)
         {
             return value;
         }
 
-        var buffer = new char[value.Length];
+        if (!needsSanitization && needsTruncation)
+        {
+            return string.Concat(
+                value.AsSpan(0, maxLength - truncationSuffix.Length),
+                truncationSuffix
+            );
+        }
+
+        var effectiveMax = needsTruncation ? maxLength - truncationSuffix.Length : scanLength;
+        var buffer = new char[effectiveMax + (needsTruncation ? truncationSuffix.Length : 0)];
         var pos = 0;
 
-        for (var i = 0; i < value.Length; i++)
+        for (var i = 0; i < scanLength && pos < effectiveMax; i++)
         {
             var c = value[i];
             if (!char.IsControl(c) && c is not ((>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069')))
             {
                 buffer[pos++] = c;
             }
+        }
+
+        if (needsTruncation)
+        {
+            truncationSuffix.AsSpan().CopyTo(buffer.AsSpan(pos));
+            pos += truncationSuffix.Length;
         }
 
         return new string(buffer, 0, pos);

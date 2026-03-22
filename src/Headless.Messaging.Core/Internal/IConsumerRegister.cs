@@ -360,7 +360,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             var rawGroup = transportMessage.GetGroup();
             var groupName = rawGroup is not null && _groupHandles.ContainsKey(rawGroup)
                 ? rawGroup
-                : _SanitizeGroupName(rawGroup);
+                : LogSanitizer.Sanitize(rawGroup, 256);
             var probeAcquired = false;
             var probeOutcomeTransferred = false;
             long? tracingTimestamp = null;
@@ -516,72 +516,6 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 }
             }
         };
-    }
-
-    /// <summary>
-    /// Sanitizes a group name from a transport header to prevent log injection and
-    /// unbounded memory growth. Strips control characters and Unicode bidi overrides
-    /// (U+202A-U+202E, U+2066-U+2069), and truncates to 256 chars.
-    /// Returns the original string unchanged when no sanitization is needed (hot-path friendly).
-    /// </summary>
-    private static string? _SanitizeGroupName(string? groupName)
-    {
-        if (groupName is null)
-        {
-            return null;
-        }
-
-        const int maxLength = 256;
-        const string truncationSuffix = "...";
-
-        var needsTruncation = groupName.Length > maxLength;
-        var hasUnsafeChars = false;
-
-        var scanLength = needsTruncation ? maxLength : groupName.Length;
-        for (var i = 0; i < scanLength; i++)
-        {
-            if (char.IsControl(groupName[i]) || groupName[i] is (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069'))
-            {
-                hasUnsafeChars = true;
-                break;
-            }
-        }
-
-        if (!needsTruncation && !hasUnsafeChars)
-        {
-            return groupName;
-        }
-
-        var span = groupName.AsSpan(0, scanLength);
-
-        if (!hasUnsafeChars)
-        {
-            return needsTruncation
-                ? string.Concat(span[..(maxLength - truncationSuffix.Length)], truncationSuffix)
-                : groupName;
-        }
-
-        // Unsafe chars present — build a clean string
-        var effectiveMax = needsTruncation ? maxLength - truncationSuffix.Length : scanLength;
-        var buffer = new char[effectiveMax + (needsTruncation ? truncationSuffix.Length : 0)];
-        var pos = 0;
-
-        for (var i = 0; i < scanLength && pos < effectiveMax; i++)
-        {
-            var c = span[i];
-            if (!char.IsControl(c) && c is not ((>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069')))
-            {
-                buffer[pos++] = c;
-            }
-        }
-
-        if (needsTruncation)
-        {
-            truncationSuffix.AsSpan().CopyTo(buffer.AsSpan(pos));
-            pos += truncationSuffix.Length;
-        }
-
-        return new string(buffer, 0, pos);
     }
 
     private void _WriteLog(LogMessageEventArgs logMessage)

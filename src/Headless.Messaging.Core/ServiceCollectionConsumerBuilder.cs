@@ -82,14 +82,33 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
         Argument.IsNotNull(configure);
 
         _pendingCircuitBreakerConfigure = configure;
-        _ApplyCircuitBreakerRegistration();
+        _ApplyCircuitBreakerOverride();
+        _ReplaceMetadataInServices();
 
         return this;
     }
 
     private void _UpdateMetadataInServices()
     {
-        // Find and replace the existing metadata instance in the service collection
+        _ApplyCircuitBreakerOverride();
+        _ReplaceMetadataInServices();
+    }
+
+    private void _ApplyCircuitBreakerOverride()
+    {
+        if (_pendingCircuitBreakerConfigure is null)
+        {
+            return;
+        }
+
+        var cbOptions = new ConsumerCircuitBreakerOptions();
+        _pendingCircuitBreakerConfigure(cbOptions);
+
+        _metadata = _metadata with { CircuitBreakerOverride = cbOptions };
+    }
+
+    private void _ReplaceMetadataInServices()
+    {
         var existingDescriptor = _services.FirstOrDefault(d =>
             d.ServiceType == typeof(ConsumerMetadata)
             && d.ImplementationInstance is ConsumerMetadata existing
@@ -103,36 +122,5 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
         }
 
         _services.AddSingleton(_metadata);
-
-        _ApplyCircuitBreakerRegistration();
-    }
-
-    private void _ApplyCircuitBreakerRegistration()
-    {
-        if (_pendingCircuitBreakerConfigure is null)
-        {
-            return;
-        }
-
-        // Remove any previously registered circuit breaker registration for this consumer
-        var toRemove = _services
-            .Where(d =>
-                d.ServiceType == typeof(ConsumerCircuitBreakerRegistration)
-                && d.ImplementationInstance is ConsumerCircuitBreakerRegistration reg
-                && (reg.ConsumerType == typeof(TConsumer) && reg.MessageType == _metadata.MessageType)
-            )
-            .ToList();
-
-        foreach (var descriptor in toRemove)
-        {
-            _services.Remove(descriptor);
-        }
-
-        var cbOptions = new ConsumerCircuitBreakerOptions();
-        _pendingCircuitBreakerConfigure(cbOptions);
-
-        _services.AddSingleton(
-            new ConsumerCircuitBreakerRegistration(typeof(TConsumer), _metadata.MessageType, _metadata.Group, cbOptions)
-        );
     }
 }

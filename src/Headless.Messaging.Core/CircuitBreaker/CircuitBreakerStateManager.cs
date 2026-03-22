@@ -14,6 +14,12 @@ namespace Headless.Messaging.CircuitBreaker;
 /// Thread safety is achieved with a per-group <see cref="Lock"/> object (embedded in
 /// <see cref="GroupCircuitState"/>) for all compound check-and-transition operations.
 /// </summary>
+/// <remarks>
+/// This is a custom circuit breaker rather than Polly's <c>CircuitBreakerStrategyOptions</c> because
+/// Polly operates at the per-call pipeline level and cannot coordinate transport-level pause/resume
+/// across a consumer group. This implementation provides per-group state tracking, escalating open
+/// durations, and direct integration with the transport pause/resume lifecycle and OTel metrics.
+/// </remarks>
 internal sealed class CircuitBreakerStateManager(
     IOptions<CircuitBreakerOptions> options,
     ConsumerCircuitBreakerRegistry registry,
@@ -85,7 +91,7 @@ internal sealed class CircuitBreakerStateManager(
     public void RegisterKnownGroups(IEnumerable<string> groups)
     {
         var frozen = new HashSet<string>(groups, StringComparer.Ordinal);
-        _knownGroups = frozen;
+        Volatile.Write(ref _knownGroups, frozen);
 
         // Pre-populate state for all known groups so GetAllStates() returns them immediately
         foreach (var group in frozen)
@@ -115,7 +121,7 @@ internal sealed class CircuitBreakerStateManager(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "IsTransientException predicate threw for group {Group}; treating as non-transient", groupName);
+            logger.LogWarning(ex, "IsTransientException predicate threw for group {Group}; treating as non-transient", LogSanitizer.Sanitize(groupName));
             isTransient = false;
         }
 
@@ -318,12 +324,36 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public IReadOnlySet<string>? KnownGroups => _knownGroups;
+    public IReadOnlySet<string>? KnownGroups => Volatile.Read(ref _knownGroups);
 
     /// <inheritdoc />
     public IReadOnlyList<KeyValuePair<string, CircuitBreakerState>> GetAllStates()
     {
-        return _groups.Select(kvp => new KeyValuePair<string, CircuitBreakerState>(kvp.Key, kvp.Value.State)).ToList();
+        var knownGroups = Volatile.Read(ref _knownGroups);
+        var capacity = knownGroups?.Count ?? Volatile.Read(ref _groupCount);
+        var result = new List<KeyValuePair<string, CircuitBreakerState>>(capacity);
+
+        if (knownGroups is not null)
+        {
+            // Emit all known groups to guarantee OTel gauge shape even before first message.
+            // Groups already in _groups get their real state; others default to Closed.
+            foreach (var group in knownGroups)
+            {
+                var state = _groups.TryGetValue(group, out var s)
+                    ? s.State
+                    : CircuitBreakerState.Closed;
+                result.Add(new KeyValuePair<string, CircuitBreakerState>(group, state));
+            }
+        }
+        else
+        {
+            foreach (var kvp in _groups)
+            {
+                result.Add(new KeyValuePair<string, CircuitBreakerState>(kvp.Key, kvp.Value.State));
+            }
+        }
+
+        return result;
     }
 
     /// <inheritdoc />
@@ -362,7 +392,7 @@ internal sealed class CircuitBreakerStateManager(
     public async ValueTask<bool> ResetAsync(string groupName, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(groupName);
-        Argument.IsLessThanOrEqualTo(groupName.Length, 512);
+        Argument.IsLessThanOrEqualTo(groupName.Length, 256);
 
         if (!_groups.TryGetValue(groupName, out var state))
         {
@@ -504,7 +534,8 @@ internal sealed class CircuitBreakerStateManager(
             return existingState;
         }
 
-        if (_knownGroups is not null && !_knownGroups.Contains(groupName))
+        var knownGroups = Volatile.Read(ref _knownGroups);
+        if (knownGroups is not null && !knownGroups.Contains(groupName))
         {
             logger.LogWarning(
                 "Unrecognized consumer group '{Group}' — returning no-op circuit state to prevent unbounded cardinality",
@@ -581,7 +612,7 @@ internal sealed class CircuitBreakerStateManager(
         logger.LogWarning(
             "Circuit breaker {PreviousState} → Open for group {Group} (failures: {Failures}, escalation: {Escalation}, open for {Duration})",
             previousState,
-            groupName,
+            LogSanitizer.Sanitize(groupName),
             state.ConsecutiveFailures,
             state.EscalationLevel,
             openDuration
@@ -652,14 +683,14 @@ internal sealed class CircuitBreakerStateManager(
         {
             logger.LogInformation(
                 "Circuit breaker HalfOpen → Closed for group {Group} (probe succeeded)",
-                groupName
+                LogSanitizer.Sanitize(groupName)
             );
         }
         else
         {
             logger.LogWarning(
                 "Circuit breaker HalfOpen → Closed for group {Group} (non-transient failure, dependency considered healthy)",
-                groupName
+                LogSanitizer.Sanitize(groupName)
             );
         }
 
@@ -694,7 +725,7 @@ internal sealed class CircuitBreakerStateManager(
 
             logger.LogWarning(
                 "Circuit breaker Open → HalfOpen for group {Group}",
-                groupName
+                LogSanitizer.Sanitize(groupName)
             );
         }
 
@@ -717,14 +748,14 @@ internal sealed class CircuitBreakerStateManager(
                 {
                     if (ct.IsCancellationRequested) return;
 
-                    logger.LogError(ex, "Resume callback failed for group {Group} during HalfOpen transition", groupName);
+                    logger.LogError(ex, "Resume callback failed for group {Group} during HalfOpen transition", LogSanitizer.Sanitize(groupName));
                     await _ReopenAfterResumeFailureAsync(groupName).ConfigureAwait(false);
                 }
             }, ct).ContinueWith(
                 static (t, s) =>
                 {
                     var (log, group) = ((ILogger, string))s!;
-                    log.LogError(t.Exception, "Unobserved exception in HalfOpen resume for group {Group}", group);
+                    log.LogError(t.Exception, "Unobserved exception in HalfOpen resume for group {Group}", LogSanitizer.Sanitize(group));
                 },
                 (logger as ILogger, groupName),
                 CancellationToken.None,
@@ -780,7 +811,7 @@ internal sealed class CircuitBreakerStateManager(
                     ex,
                     "Pause callback failed while re-opening circuit for group {Group}. "
                     + "Circuit is Open but transport may not be paused — manual ResetAsync may be required (escalation: {Escalation})",
-                    groupName,
+                    LogSanitizer.Sanitize(groupName),
                     state.EscalationLevel
                 );
             }
@@ -789,18 +820,10 @@ internal sealed class CircuitBreakerStateManager(
 
     private TimeSpan _GetOpenDuration(GroupCircuitState state)
     {
-        var safeLevel = Math.Min(state.EscalationLevel - 1, 62);
-        var baseSeconds = state.EffectiveOpenDuration.TotalSeconds;
-        var maxSeconds = _options.MaxOpenDuration.TotalSeconds;
+        var exponent = Math.Max(0, state.EscalationLevel - 1);
+        var scaledSeconds = state.EffectiveOpenDuration.TotalSeconds * Math.Pow(2, exponent);
 
-        // At safeLevel >= 53 the bit-shift exceeds 2^53, which is beyond double
-        // precision — the multiplication would produce +Infinity. Short-circuit
-        // to maxSeconds instead of relying on Math.Min(+Inf, max) by accident.
-        var scaledSeconds = safeLevel >= 53
-            ? maxSeconds
-            : Math.Min(baseSeconds * (1L << safeLevel), maxSeconds);
-
-        return TimeSpan.FromSeconds(scaledSeconds);
+        return TimeSpan.FromSeconds(Math.Min(scaledSeconds, _options.MaxOpenDuration.TotalSeconds));
     }
 
     // -------------------------------------------------------------------------

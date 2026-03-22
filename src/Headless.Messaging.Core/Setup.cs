@@ -77,9 +77,6 @@ public static class Setup
         // Discover consumers registered via AddConsumer<TConsumer, TMessage>()
         _DiscoverConsumersFromDI(services, options, registry);
 
-        // Discover per-consumer circuit breaker registrations added via AddConsumer().WithCircuitBreaker()
-        _DiscoverCircuitBreakerRegistrationsFromDI(services, options, options.CircuitBreakerRegistry);
-
         return _RegisterCoreMessagingServices(services, options);
     }
 
@@ -215,6 +212,7 @@ public static class Setup
 
     /// <summary>
     /// Discovers and registers consumer metadata instances added via AddConsumer extension method.
+    /// Also applies any per-consumer circuit breaker overrides carried on the metadata.
     /// </summary>
     private static void _DiscoverConsumersFromDI(
         IServiceCollection services,
@@ -229,49 +227,18 @@ public static class Setup
 
         foreach (var descriptor in metadataDescriptors)
         {
-            if (descriptor.ImplementationInstance is ConsumerMetadata metadata)
-            {
-                registry.Register(_ResolveDiscoveredMetadata(metadata, options));
-            }
-        }
-    }
-
-    /// <summary>
-    /// Discovers per-consumer circuit breaker registrations added via
-    /// <c>AddConsumer().WithCircuitBreaker()</c> and applies them to the registry.
-    /// </summary>
-    private static void _DiscoverCircuitBreakerRegistrationsFromDI(
-        IServiceCollection services,
-        MessagingOptions options,
-        ConsumerCircuitBreakerRegistry circuitBreakerRegistry
-    )
-    {
-        var registrationDescriptors = services
-            .Where(d =>
-                d.ServiceType == typeof(ConsumerCircuitBreakerRegistration)
-                && d.Lifetime == ServiceLifetime.Singleton
-            )
-            .ToList();
-
-        foreach (var descriptor in registrationDescriptors)
-        {
-            if (descriptor.ImplementationInstance is not ConsumerCircuitBreakerRegistration registration)
+            if (descriptor.ImplementationInstance is not ConsumerMetadata metadata)
             {
                 continue;
             }
 
-            var groupName = registration.GroupName;
+            var resolved = _ResolveDiscoveredMetadata(metadata, options);
+            registry.Register(resolved);
 
-            // If no group was set on the builder, resolve from the final consumer metadata in the registry
-            if (string.IsNullOrWhiteSpace(groupName))
+            // Apply per-consumer circuit breaker overrides inline
+            if (resolved.CircuitBreakerOverride is not null && !string.IsNullOrWhiteSpace(resolved.Group))
             {
-                var metadata = options.Registry?.FindByTypes(registration.ConsumerType, registration.MessageType);
-                groupName = metadata?.Group;
-            }
-
-            if (!string.IsNullOrWhiteSpace(groupName))
-            {
-                circuitBreakerRegistry.Register(groupName, registration.Options);
+                options.CircuitBreakerRegistry.Register(resolved.Group, resolved.CircuitBreakerOverride);
             }
         }
     }
