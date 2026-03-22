@@ -120,6 +120,8 @@ internal sealed class PulsarConsumerClient(
 
     public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
+
         if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
         {
             _pauseGate.TrySetResult(true);

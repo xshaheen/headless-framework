@@ -24,6 +24,7 @@ internal sealed class KafkaConsumerClient(
     private volatile TaskCompletionSource<bool> _pauseGate = _CreateCompletedGate();
     private IConsumer<string, byte[]>? _consumerClient;
     private int _paused; // 0 = running, 1 = paused
+    private int _disposed;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -159,6 +160,8 @@ internal sealed class KafkaConsumerClient(
 
     public ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
+
         if (Interlocked.CompareExchange(ref _paused, 1, 0) == 0)
         {
             _pauseGate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -174,6 +177,8 @@ internal sealed class KafkaConsumerClient(
 
     public ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0) return ValueTask.CompletedTask;
+
         if (Interlocked.CompareExchange(ref _paused, 0, 1) == 1)
         {
             if (_consumerClient is not null)
@@ -189,6 +194,7 @@ internal sealed class KafkaConsumerClient(
 
     public ValueTask DisposeAsync()
     {
+        Interlocked.Exchange(ref _disposed, 1);
         _pauseGate.TrySetResult(true);
         _semaphore.Dispose();
         _consumerClient?.Dispose();

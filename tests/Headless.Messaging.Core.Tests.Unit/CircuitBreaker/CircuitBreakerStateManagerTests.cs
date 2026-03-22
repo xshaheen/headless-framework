@@ -692,4 +692,301 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             // no exception = pass
         }
     }
+
+    // -------------------------------------------------------------------------
+    // ResetAsync tests
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task reset_returns_false_when_group_not_found()
+    {
+        // given
+        var sut = _Create();
+
+        // when
+        var result = await sut.ResetAsync("unknown.group");
+
+        // then
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task reset_returns_false_when_group_already_closed()
+    {
+        // given — register group by reporting a non-transient failure (stays Closed)
+        var sut = _Create(failureThreshold: 5);
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () => ValueTask.CompletedTask
+        );
+
+        sut.GetState(Group).Should().Be(CircuitBreakerState.Closed);
+
+        // when
+        var result = await sut.ResetAsync(Group);
+
+        // then
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task reset_transitions_open_to_closed_and_returns_true()
+    {
+        // given — trip circuit to Open
+        var sut = _Create(failureThreshold: 1);
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () => ValueTask.CompletedTask
+        );
+
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+        sut.GetState(Group).Should().Be(CircuitBreakerState.Open);
+
+        // when
+        var result = await sut.ResetAsync(Group);
+
+        // then
+        result.Should().BeTrue();
+        sut.GetState(Group).Should().Be(CircuitBreakerState.Closed);
+        sut.IsOpen(Group).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task reset_resets_escalation_level()
+    {
+        // given — trip circuit multiple times to escalate
+        var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMilliseconds(20),
+            maxOpenDuration: TimeSpan.FromSeconds(60)
+        );
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () =>
+            {
+                halfOpenTcs.TrySetResult();
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        // first open → escalation level 1
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // re-open from HalfOpen → escalation level 2
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+
+        sut.GetState(Group).Should().Be(CircuitBreakerState.Open);
+        sut.GetSnapshot(Group)!.EscalationLevel.Should().BeGreaterThan(1);
+
+        // when — manual reset
+        var result = await sut.ResetAsync(Group);
+
+        // then
+        result.Should().BeTrue();
+        sut.GetSnapshot(Group)!.EscalationLevel.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task reset_invokes_resume_callback()
+    {
+        // given — trip circuit to Open
+        var resumeCalledOnReset = false;
+        var sut = _Create(failureThreshold: 1);
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () =>
+            {
+                resumeCalledOnReset = true;
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+        sut.IsOpen(Group).Should().BeTrue();
+
+        // clear the flag set during timer-based transition (if any)
+        resumeCalledOnReset = false;
+
+        // when
+        await sut.ResetAsync(Group);
+
+        // then
+        resumeCalledOnReset.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task reset_validates_null_group_name()
+    {
+        // given
+        var sut = _Create();
+
+        // when / then
+        var act = async () => await sut.ResetAsync(null!);
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task reset_validates_group_name_length()
+    {
+        // given
+        var sut = _Create();
+        var longName = new string('x', 513);
+
+        // when / then
+        var act = async () => await sut.ResetAsync(longName);
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    // -------------------------------------------------------------------------
+    // GetSnapshot tests
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void get_snapshot_returns_null_for_unknown_group()
+    {
+        // given
+        var sut = _Create();
+
+        // when / then
+        sut.GetSnapshot("never-registered").Should().BeNull();
+    }
+
+    [Fact]
+    public void get_snapshot_returns_closed_state_for_new_group()
+    {
+        // given — register the group via callbacks
+        var sut = _Create();
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () => ValueTask.CompletedTask
+        );
+
+        // when
+        var snapshot = sut.GetSnapshot(Group);
+
+        // then
+        snapshot.Should().NotBeNull();
+        snapshot!.State.Should().Be(CircuitBreakerState.Closed);
+        snapshot.EscalationLevel.Should().Be(0);
+        snapshot.OpenedAt.Should().BeNull();
+        snapshot.EstimatedRemainingOpenDuration.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task get_snapshot_returns_open_state_with_opened_at()
+    {
+        // given — trip circuit to Open
+        var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromSeconds(30));
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () => ValueTask.CompletedTask
+        );
+
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+
+        // when
+        var snapshot = sut.GetSnapshot(Group);
+
+        // then
+        snapshot.Should().NotBeNull();
+        snapshot!.State.Should().Be(CircuitBreakerState.Open);
+        snapshot.OpenedAt.Should().NotBeNull();
+        snapshot.EstimatedRemainingOpenDuration.Should().NotBeNull();
+        snapshot.EstimatedRemainingOpenDuration!.Value.Should().BeGreaterThan(TimeSpan.Zero);
+        snapshot.EstimatedRemainingOpenDuration.Value.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task get_snapshot_remaining_duration_is_positive_and_bounded()
+    {
+        // given — trip circuit with a known open duration
+        var openDuration = TimeSpan.FromSeconds(10);
+        var sut = _Create(failureThreshold: 1, openDuration: openDuration);
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () => ValueTask.CompletedTask
+        );
+
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+
+        // when — take two snapshots with a small delay between them
+        var snapshot1 = sut.GetSnapshot(Group);
+        await Task.Delay(50);
+        var snapshot2 = sut.GetSnapshot(Group);
+
+        // then — remaining duration should be positive and ≤ configured open duration
+        snapshot1!.EstimatedRemainingOpenDuration.Should().NotBeNull();
+        snapshot2!.EstimatedRemainingOpenDuration.Should().NotBeNull();
+
+        snapshot1.EstimatedRemainingOpenDuration!.Value.Should().BeGreaterThan(TimeSpan.Zero);
+        snapshot2.EstimatedRemainingOpenDuration!.Value.Should().BeGreaterThan(TimeSpan.Zero);
+
+        snapshot1.EstimatedRemainingOpenDuration.Value.Should().BeLessThanOrEqualTo(openDuration);
+        snapshot2.EstimatedRemainingOpenDuration.Value.Should().BeLessThanOrEqualTo(openDuration);
+
+        // second snapshot should have less or equal remaining time
+        snapshot2.EstimatedRemainingOpenDuration.Value
+            .Should().BeLessThanOrEqualTo(snapshot1.EstimatedRemainingOpenDuration.Value);
+    }
+
+    // -------------------------------------------------------------------------
+    // RegisterKnownGroups guard tests
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task known_groups_rejects_unknown_group_after_registration()
+    {
+        // given — register known groups
+        var sut = _Create(failureThreshold: 1);
+        sut.RegisterKnownGroups(["group.a", "group.b"]);
+
+        // when — report failure for an unknown group
+        await sut.ReportFailureAsync("unknown.group", new TimeoutException());
+
+        // then — unknown group should not appear in tracked states
+        var allStates = sut.GetAllStates();
+        allStates.Should().NotContain(kvp => kvp.Key == "unknown.group");
+
+        // known groups should be present
+        allStates.Should().Contain(kvp => kvp.Key == "group.a");
+        allStates.Should().Contain(kvp => kvp.Key == "group.b");
+    }
+
+    [Fact]
+    public async Task max_tracked_groups_cap_prevents_unbounded_growth()
+    {
+        // given — no known groups registered, so cap logic applies at MaxTrackedGroups (1000)
+        var sut = _Create(failureThreshold: 1);
+
+        // when — register exactly MaxTrackedGroups (1000) groups via ReportFailureAsync
+        for (var i = 0; i < 1000; i++)
+        {
+            sut.RegisterGroupCallbacks(
+                $"group.{i}",
+                onPause: () => ValueTask.CompletedTask,
+                onResume: () => ValueTask.CompletedTask
+            );
+        }
+
+        var countBefore = sut.GetAllStates().Count;
+        countBefore.Should().Be(1000);
+
+        // try to add one more beyond the cap
+        await sut.ReportFailureAsync("overflow.group", new TimeoutException());
+
+        // then — count should not have increased
+        var countAfter = sut.GetAllStates().Count;
+        countAfter.Should().Be(1000);
+        sut.GetAllStates().Should().NotContain(kvp => kvp.Key == "overflow.group");
+    }
 }

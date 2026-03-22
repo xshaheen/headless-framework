@@ -24,10 +24,10 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Succeeded.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
     }
 
     [Fact]
@@ -45,10 +45,10 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Succeeded.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
     }
 
     [Theory]
@@ -69,11 +69,11 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("HostName is required");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("HostName is required"));
     }
 
     [Theory]
@@ -95,11 +95,11 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Port must be -1");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("Port must be -1"));
     }
 
     [Theory]
@@ -120,10 +120,10 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Succeeded.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
     }
 
     [Theory]
@@ -144,11 +144,11 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("VirtualHost is required");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("VirtualHost is required"));
     }
 
     [Theory]
@@ -169,11 +169,11 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("ExchangeName is required");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("ExchangeName is required"));
     }
 
     [Fact]
@@ -191,11 +191,11 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Invalid ExchangeName");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("Invalid ExchangeName"));
     }
 
     [Fact]
@@ -213,11 +213,11 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Invalid ExchangeName");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("Invalid ExchangeName"));
     }
 
     [Theory]
@@ -238,11 +238,11 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("UserName is required");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("UserName is required"));
     }
 
     [Theory]
@@ -263,11 +263,11 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("UserName cannot be 'guest'");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("UserName cannot be 'guest'"));
     }
 
     [Theory]
@@ -288,11 +288,11 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Password is required");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("Password is required"));
     }
 
     [Theory]
@@ -313,10 +313,10 @@ public sealed class RabbitMqOptionsValidatorTests : TestBase
         };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("Password cannot be 'guest'");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("Password cannot be 'guest'"));
     }
 }
