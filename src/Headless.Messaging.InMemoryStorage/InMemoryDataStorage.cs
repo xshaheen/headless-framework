@@ -23,6 +23,9 @@ internal sealed class InMemoryDataStorage(
 
     public static ConcurrentDictionary<string, MemoryMessage> ReceivedMessages { get; } = new(StringComparer.Ordinal);
 
+    internal static ConcurrentDictionary<string, (string Instance, DateTime ExpiresAt)> Locks { get; } =
+        new(StringComparer.Ordinal);
+
     public ValueTask<bool> AcquireLockAsync(
         string key,
         TimeSpan ttl,
@@ -30,11 +33,54 @@ internal sealed class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return ValueTask.FromResult(true);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var expiresAt = now.Add(ttl);
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!Locks.TryGetValue(key, out var current))
+            {
+                if (Locks.TryAdd(key, (instance, expiresAt)))
+                {
+                    return ValueTask.FromResult(true);
+                }
+
+                continue;
+            }
+
+            if (current.ExpiresAt > now)
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            if (Locks.TryUpdate(key, (instance, expiresAt), current))
+            {
+                return ValueTask.FromResult(true);
+            }
+        }
     }
 
     public ValueTask ReleaseLockAsync(string key, string instance, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        while (Locks.TryGetValue(key, out var current))
+        {
+            if (!string.Equals(current.Instance, instance, StringComparison.Ordinal))
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            if (Locks.TryUpdate(key, (string.Empty, DateTime.MinValue), current))
+            {
+                return ValueTask.CompletedTask;
+            }
+        }
+
         return ValueTask.CompletedTask;
     }
 
@@ -45,6 +91,21 @@ internal sealed class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        while (Locks.TryGetValue(key, out var current))
+        {
+            if (!string.Equals(current.Instance, instance, StringComparison.Ordinal))
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            if (Locks.TryUpdate(key, (instance, current.ExpiresAt.Add(ttl)), current))
+            {
+                return ValueTask.CompletedTask;
+            }
+        }
+
         return ValueTask.CompletedTask;
     }
 
@@ -95,6 +156,8 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _ValidatePublishedMessageId(content.GetId());
+
         var message = new MediumMessage
         {
             DbId = content.GetId(),
@@ -195,13 +258,25 @@ internal sealed class InMemoryDataStorage(
         var removed = 0;
         if (string.Equals(table, nameof(PublishedMessages), StringComparison.Ordinal))
         {
-            var ids = PublishedMessages.Values.Where(x => x.ExpiresAt < timeout).Select(x => x.DbId).Take(batchCount);
+            var ids = PublishedMessages
+                .Values.Where(x =>
+                    x.ExpiresAt < timeout
+                    && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
+                )
+                .Select(x => x.DbId)
+                .Take(batchCount);
 
             removed += ids.Count(id => PublishedMessages.TryRemove(id, out _));
         }
         else
         {
-            var ids = ReceivedMessages.Values.Where(x => x.ExpiresAt < timeout).Select(x => x.DbId).Take(batchCount);
+            var ids = ReceivedMessages
+                .Values.Where(x =>
+                    x.ExpiresAt < timeout
+                    && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
+                )
+                .Select(x => x.DbId)
+                .Take(batchCount);
 
             removed += ids.Count(id => ReceivedMessages.TryRemove(id, out _));
         }
@@ -289,5 +364,16 @@ internal sealed class InMemoryDataStorage(
     public IMonitoringApi GetMonitoringApi()
     {
         return new InMemoryMonitoringApi(timeProvider);
+    }
+
+    private static void _ValidatePublishedMessageId(string messageId)
+    {
+        if (!long.TryParse(messageId, NumberStyles.None, CultureInfo.InvariantCulture, out _))
+        {
+            throw new ArgumentException(
+                "Published message IDs must be numeric to support all storage providers.",
+                nameof(messageId)
+            );
+        }
     }
 }

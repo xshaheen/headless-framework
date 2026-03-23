@@ -316,8 +316,11 @@ internal class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
+        var exceptionInfoSql = string.Equals(tableName, _recName, StringComparison.Ordinal)
+            ? "ExceptionInfo"
+            : "CAST(NULL AS nvarchar(max)) AS ExceptionInfo";
         var sql =
-            $"SELECT TOP(1) Id AS DbId, Content, Added, ExpiresAt, Retries, ExceptionInfo FROM {tableName} WITH (READPAST) WHERE Id={id}";
+            $"SELECT TOP(1) Id AS DbId, Content, Added, ExpiresAt, Retries, {exceptionInfoSql} FROM {tableName} WITH (READPAST) WHERE Id={id}";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 

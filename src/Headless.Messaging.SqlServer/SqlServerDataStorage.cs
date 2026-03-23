@@ -118,7 +118,7 @@ public sealed class SqlServerDataStorage(
         for (var i = 0; i < ids.Length; i++)
         {
             paramNames[i] = $"@Id{i}";
-            parameters[i] = new SqlParameter($"@Id{i}", long.Parse(ids[i], CultureInfo.InvariantCulture));
+            parameters[i] = new SqlParameter($"@Id{i}", _ParseStorageId(ids[i]));
         }
 
         parameters[^1] = new SqlParameter("@StatusName", nameof(StatusName.Delayed));
@@ -152,7 +152,7 @@ public sealed class SqlServerDataStorage(
 
         object[] sqlParams =
         [
-            new SqlParameter("@Id", long.Parse(message.DbId, CultureInfo.InvariantCulture)),
+            new SqlParameter("@Id", _ParseStorageId(message.DbId)),
             new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? (object)message.ExpiresAt.Value : DBNull.Value),
@@ -189,7 +189,7 @@ public sealed class SqlServerDataStorage(
 
         object[] sqlParams =
         [
-            new SqlParameter("@Id", long.Parse(message.DbId, CultureInfo.InvariantCulture)),
+            new SqlParameter("@Id", _ParseStorageId(message.DbId)),
             new SqlParameter("@Name", name),
             new SqlParameter("@Content", message.Content),
             new SqlParameter("@Retries", message.Retries),
@@ -436,7 +436,7 @@ public sealed class SqlServerDataStorage(
 
         object[] sqlParams =
         [
-            new SqlParameter("@Id", long.Parse(message.DbId, CultureInfo.InvariantCulture)),
+            new SqlParameter("@Id", _ParseStorageId(message.DbId)),
             new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
@@ -476,6 +476,19 @@ public sealed class SqlServerDataStorage(
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
             .ConfigureAwait(false);
+    }
+
+    private static long _ParseStorageId(string id)
+    {
+        if (long.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
+        {
+            return value;
+        }
+
+        throw new ArgumentException(
+            "Published message IDs must be numeric to support all storage providers.",
+            nameof(id)
+        );
     }
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
