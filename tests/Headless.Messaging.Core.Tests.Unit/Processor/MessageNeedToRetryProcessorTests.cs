@@ -81,9 +81,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
     private static ProcessingContext _CreateContext(IServiceProvider? provider = null)
     {
-        provider ??= new ServiceCollection()
-            .AddSingleton(Substitute.For<IDataStorage>())
-            .BuildServiceProvider();
+        provider ??= new ServiceCollection().AddSingleton(Substitute.For<IDataStorage>()).BuildServiceProvider();
 
         return new ProcessingContext(provider, CancellationToken.None);
     }
@@ -101,17 +99,18 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
     // Helpers use internal members exposed via InternalsVisibleTo — no reflection needed.
 
-    private static TimeSpan _GetCurrentInterval(MessageNeedToRetryProcessor sut) =>
-        sut.CurrentPollingInterval;
+    private static TimeSpan _GetCurrentInterval(MessageNeedToRetryProcessor sut) => sut.CurrentPollingInterval;
 
     private static void _SetCurrentInterval(MessageNeedToRetryProcessor sut, TimeSpan value) =>
         sut.SetCurrentIntervalForTest(value);
 
-    private static void _InvokeAdjustPollingInterval(MessageNeedToRetryProcessor sut, int enqueued, int skippedCircuitOpen) =>
-        sut._AdjustPollingInterval(enqueued, skippedCircuitOpen);
+    private static void _InvokeAdjustPollingInterval(
+        MessageNeedToRetryProcessor sut,
+        int enqueued,
+        int skippedCircuitOpen
+    ) => sut._AdjustPollingInterval(enqueued, skippedCircuitOpen);
 
-    private static TimeSpan _GetLockTtl(MessageNeedToRetryProcessor sut) =>
-        sut._GetLockTtl();
+    private static TimeSpan _GetLockTtl(MessageNeedToRetryProcessor sut) => sut._GetLockTtl();
 
     // -------------------------------------------------------------------------
     // US-012: Circuit-state awareness
@@ -132,9 +131,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, msg1, msg2, msg3);
 
-        var context = _CreateContext(
-            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
-        );
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act
         await sut.ProcessAsync(context);
@@ -167,9 +164,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var msg1 = _CreateMessage("group-a");
         var msg2 = _CreateMessage("group-b");
         _SetupReceivedMessages(dataStorage, msg1, msg2);
-        var context = _CreateContext(
-            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
-        );
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act
         await sut.ProcessAsync(context);
@@ -190,9 +185,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, msg);
-        var context = _CreateContext(
-            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
-        );
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act
         await sut.ProcessAsync(context);
@@ -227,9 +220,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, messages);
-        var context = _CreateContext(
-            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
-        );
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act — first cycle
         await sut.ProcessAsync(context);
@@ -238,11 +229,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var currentInterval = _GetCurrentInterval(sut);
         currentInterval.Should().Be(baseInterval * 2);
 
-        await dispatcher.Received(1).EnqueueToExecute(
-            Arg.Is<MediumMessage>(m => m.Origin.GetGroup() == "healthy-group"),
-            null,
-            Arg.Any<CancellationToken>()
-        );
+        await dispatcher
+            .Received(1)
+            .EnqueueToExecute(
+                Arg.Is<MediumMessage>(m => m.Origin.GetGroup() == "healthy-group"),
+                null,
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -259,9 +252,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         // All cycles return empty — clean cycles
         _SetupReceivedMessages(dataStorage);
-        var context = _CreateContext(
-            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
-        );
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act — 3 clean cycles
         await sut.ProcessAsync(context);
@@ -273,11 +264,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var currentInterval = _GetCurrentInterval(sut);
         currentInterval.Should().Be(baseInterval);
 
-        await dispatcher.DidNotReceive().EnqueueToExecute(
-            Arg.Any<MediumMessage>(),
-            Arg.Any<ConsumerExecutorDescriptor>(),
-            Arg.Any<CancellationToken>()
-        );
+        await dispatcher
+            .DidNotReceive()
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -292,20 +285,20 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, messages);
-        var context = _CreateContext(
-            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
-        );
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act — all skipped, but adaptive polling is off
         await sut.ProcessAsync(context);
         await sut.ProcessAsync(context);
 
         // Assert — no crashes, messages still skipped due to circuit breaker
-        await dispatcher.DidNotReceive().EnqueueToExecute(
-            Arg.Any<MediumMessage>(),
-            Arg.Any<ConsumerExecutorDescriptor>(),
-            Arg.Any<CancellationToken>()
-        );
+        await dispatcher
+            .DidNotReceive()
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -322,9 +315,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, _CreateMessage("open-group"));
-        var context = _CreateContext(
-            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
-        );
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act — 10 cycles, each doubles interval, should cap at maxPollingInterval (2s)
         for (var i = 0; i < 10; i++)
@@ -337,11 +328,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var currentInterval = _GetCurrentInterval(sut);
         currentInterval.Should().Be(maxPollingInterval);
 
-        await dispatcher.DidNotReceive().EnqueueToExecute(
-            Arg.Any<MediumMessage>(),
-            null,
-            Arg.Any<CancellationToken>()
-        );
+        await dispatcher.DidNotReceive().EnqueueToExecute(Arg.Any<MediumMessage>(), null, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -355,14 +342,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         var dataStorage = Substitute.For<IDataStorage>();
-        var context = _CreateContext(
-            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
-        );
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Cycle 1: High transient rate → doubles interval
         cb.IsOpen("open-group").Returns(true);
         cb.IsOpen("healthy-group").Returns(false);
-        _SetupReceivedMessages(dataStorage,
+        _SetupReceivedMessages(
+            dataStorage,
             _CreateMessage("open-group"),
             _CreateMessage("open-group"),
             _CreateMessage("open-group"),
@@ -372,19 +358,12 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         // Cycle 2-3: All healthy (no open circuits) → 2 consecutive healthy cycles
         cb.IsOpen("open-group").Returns(false);
-        _SetupReceivedMessages(dataStorage,
-            _CreateMessage("healthy-group"),
-            _CreateMessage("healthy-group")
-        );
+        _SetupReceivedMessages(dataStorage, _CreateMessage("healthy-group"), _CreateMessage("healthy-group"));
         await sut.ProcessAsync(context);
         await sut.ProcessAsync(context);
 
         // Assert — processor functions without crashes through full escalate/recover cycle
-        await dispatcher.Received().EnqueueToExecute(
-            Arg.Any<MediumMessage>(),
-            null,
-            Arg.Any<CancellationToken>()
-        );
+        await dispatcher.Received().EnqueueToExecute(Arg.Any<MediumMessage>(), null, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -469,31 +448,52 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task ProcessAsync_MidRangeRate_ResetsCountersWithoutChangingInterval()
     {
         // Arrange — rate between 0.5 and threshold (0.8): e.g., 6 skipped out of 10 = 60%
-        var (sut, dispatcher, cb) = _Create(
-            failedRetryInterval: 1,
-            circuitOpenRateThreshold: 0.8
-        );
+        var (sut, dispatcher, cb) = _Create(failedRetryInterval: 1, circuitOpenRateThreshold: 0.8);
         cb.IsOpen("open-group").Returns(true);
         cb.IsOpen("healthy-group").Returns(false);
 
         var dataStorage = Substitute.For<IDataStorage>();
         // 6 open + 4 healthy = 60% transient rate → mid-range
-        var messages = Enumerable.Range(0, 6).Select(_ => _CreateMessage("open-group"))
+        var messages = Enumerable
+            .Range(0, 6)
+            .Select(_ => _CreateMessage("open-group"))
             .Concat(Enumerable.Range(0, 4).Select(_ => _CreateMessage("healthy-group")))
             .ToArray();
         _SetupReceivedMessages(dataStorage, messages);
-        var context = _CreateContext(
-            new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
-        );
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Act — mid-range cycle
         await sut.ProcessAsync(context);
 
         // Assert — healthy messages still enqueued, processor doesn't crash
-        await dispatcher.Received(4).EnqueueToExecute(
-            Arg.Is<MediumMessage>(m => m.Origin.GetGroup() == "healthy-group"),
-            null,
-            Arg.Any<CancellationToken>()
-        );
+        await dispatcher
+            .Received(4)
+            .EnqueueToExecute(
+                Arg.Is<MediumMessage>(m => m.Origin.GetGroup() == "healthy-group"),
+                null,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task reset_backpressure_concurrent_with_adjust_does_not_produce_invalid_counts()
+    {
+        var (sut, _, _) = _Create(adaptivePolling: true);
+
+        // Run resets and adjustments concurrently
+        var tasks = Enumerable
+            .Range(0, 50)
+            .Select(i =>
+                i % 2 == 0
+                    ? Task.Run(() => _InvokeAdjustPollingInterval(sut, 0, 10)) // backoff path
+                    : sut.ResetBackpressureAsync().AsTask()
+            )
+            .ToArray();
+
+        await Task.WhenAll(tasks);
+
+        // After all operations, interval should be within valid bounds
+        sut.CurrentPollingInterval.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(60));
+        sut.CurrentPollingInterval.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(900));
     }
 }

@@ -41,13 +41,12 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     //   ResetBackpressureAsync (callable from any thread). All mutations use CAS loops
     //   (Interlocked.CompareExchange) to avoid non-atomic read-modify-write races.
     // - _consecutiveHealthyCycles and _consecutiveCleanCycles are written by both ProcessAsync
-    //   (sequential) and ResetBackpressureAsync (callable from any thread). Declared volatile
-    //   for cross-thread visibility of plain reads/writes. The compound increment (read + write)
-    //   is not atomic, but this is accepted as a benign approximation — a missed or duplicated
-    //   increment only slightly delays adaptive polling transitions.
+    //   (sequential) and ResetBackpressureAsync (callable from any thread). All increments use
+    //   Interlocked.Increment and all resets use Interlocked.Exchange to avoid non-atomic
+    //   read-modify-write races. Direct reads (comparisons) are safe for aligned int fields.
     private long _currentIntervalTicks;
-    private volatile int _consecutiveHealthyCycles;
-    private volatile int _consecutiveCleanCycles;
+    private int _consecutiveHealthyCycles;
+    private int _consecutiveCleanCycles;
 
     public MessageNeedToRetryProcessor(
         IOptions<MessagingOptions> options,
@@ -92,8 +91,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     public ValueTask ResetBackpressureAsync(CancellationToken ct = default)
     {
         Interlocked.Exchange(ref _currentIntervalTicks, _baseInterval.Ticks);
-        _consecutiveHealthyCycles = 0;
-        _consecutiveCleanCycles = 0;
+        Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
+        Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
         return ValueTask.CompletedTask;
     }
 
@@ -127,7 +126,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 context.CancellationToken
             );
 
-            await context.WaitAsync(TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks))).ConfigureAwait(false);
+            await context
+                .WaitAsync(TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks)))
+                .ConfigureAwait(false);
 
             return;
         }
@@ -141,13 +142,12 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             )
             .Unwrap();
 
-        _ = _failedRetryConsumeTask
-            .ContinueWith(
-                t => _logger.LogError(t.Exception, "Unhandled exception in received-message retry processing"),
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted,
-                TaskScheduler.Default
-            );
+        _ = _failedRetryConsumeTask.ContinueWith(
+            t => _logger.LogError(t.Exception, "Unhandled exception in received-message retry processing"),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default
+        );
 
         _ = _failedRetryConsumeTask.ContinueWith(
             _ => _failedRetryConsumeTask = null,
@@ -294,14 +294,14 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         // a full reset priority over gradual step-down when the system is completely idle.
         if (total == 0)
         {
-            _consecutiveCleanCycles++;
-            _consecutiveHealthyCycles++;
+            Interlocked.Increment(ref _consecutiveCleanCycles);
+            Interlocked.Increment(ref _consecutiveHealthyCycles);
 
             if (_consecutiveCleanCycles >= 3)
             {
                 Interlocked.Exchange(ref _currentIntervalTicks, _baseInterval.Ticks);
-                _consecutiveCleanCycles = 0;
-                _consecutiveHealthyCycles = 0;
+                Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
+                Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
             }
             else if (_consecutiveHealthyCycles >= 2)
             {
@@ -316,28 +316,28 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         if (circuitOpenSkipRate > _circuitOpenRateThreshold)
         {
             // High circuit-open rate — back off
-            _consecutiveHealthyCycles = 0;
-            _consecutiveCleanCycles = 0;
+            Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
+            Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
 
             _CompareExchangeDouble();
         }
         else if (circuitOpenSkipRate <= _circuitOpenRateThreshold / 2.0)
         {
             // Healthy cycle — well below backoff threshold
-            _consecutiveHealthyCycles++;
-            _consecutiveCleanCycles = 0;
+            Interlocked.Increment(ref _consecutiveHealthyCycles);
+            Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
 
             if (_consecutiveHealthyCycles >= 2)
             {
                 _CompareExchangeHalve();
-                _consecutiveHealthyCycles = 0;
+                Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
             }
         }
         else
         {
             // Between backoff threshold and recovery threshold — hold steady
-            _consecutiveHealthyCycles = 0;
-            _consecutiveCleanCycles = 0;
+            Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
+            Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
         }
     }
 

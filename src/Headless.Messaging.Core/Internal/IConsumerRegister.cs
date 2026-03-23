@@ -198,7 +198,10 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             await handle.DisposeAsync();
             if (removeCircuitState)
             {
-                _circuitBreakerStateManager?.RemoveGroup(handle.GroupName);
+                if (_circuitBreakerStateManager is not null)
+                {
+                    await _circuitBreakerStateManager.RemoveGroup(handle.GroupName).ConfigureAwait(false);
+                }
             }
         }
 
@@ -251,6 +254,20 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 onPause: () => _PauseGroupAsync(handle),
                 onResume: () => _ResumeGroupAsync(handle)
             );
+
+            // Normalize HalfOpen → Open: the aborted probe is invalid on rebuilt transport clients.
+            // This is a no-op during initial startup (no groups are in HalfOpen then).
+            if (_circuitBreakerStateManager is not null)
+            {
+                await _circuitBreakerStateManager.AbortHalfOpenProbeAsync(groupName).ConfigureAwait(false);
+
+                // If the circuit is Open (or was just re-normalized from HalfOpen),
+                // pre-pause the new handle so newly created clients get paused via AddClientAsync.
+                if (_circuitBreakerStateManager.IsOpen(groupName))
+                {
+                    handle.IsPaused = true;
+                }
+            }
 
             for (var i = 0; i < _options.ConsumerThreadCount; i++)
             {
@@ -308,25 +325,24 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         handle.IsPaused = true;
         var snapshot = handle.SnapshotClients();
 
-        await Task.WhenAll(snapshot.Select(async client =>
-        {
-            try
+        await Task.WhenAll(
+            snapshot.Select(async client =>
             {
-                await client.PauseAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to pause consumer client for group '{GroupName}'.", handle.GroupName);
-            }
-        }));
+                try
+                {
+                    await client.PauseAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to pause consumer client for group '{GroupName}'.", handle.GroupName);
+                }
+            })
+        );
     }
 
     private async ValueTask _ResumeGroupAsync(GroupHandle handle)
     {
-        _logger.LogDebug(
-            "Resuming consumers for group '{GroupName}' (half-open).",
-            handle.GroupName
-        );
+        _logger.LogDebug("Resuming consumers for group '{GroupName}' (half-open).", handle.GroupName);
 
         // No CTS recreation needed — the original CTS was never cancelled during pause,
         // so ListeningAsync loops are still running. Just un-gate the transport.
@@ -334,18 +350,20 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         var snapshot = handle.SnapshotClients();
         ConcurrentBag<Exception> failures = [];
 
-        await Task.WhenAll(snapshot.Select(async client =>
-        {
-            try
+        await Task.WhenAll(
+            snapshot.Select(async client =>
             {
-                await client.ResumeAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to resume consumer client for group '{GroupName}'.", handle.GroupName);
-                failures.Add(ex);
-            }
-        }));
+                try
+                {
+                    await client.ResumeAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to resume consumer client for group '{GroupName}'.", handle.GroupName);
+                    failures.Add(ex);
+                }
+            })
+        );
 
         if (failures.IsEmpty)
         {
@@ -372,9 +390,10 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         {
             // Fast path: skip sanitization for groups registered at startup (trusted config).
             var rawGroup = transportMessage.GetGroup();
-            var groupName = rawGroup is not null && _groupHandles.ContainsKey(rawGroup)
-                ? rawGroup
-                : LogSanitizer.Sanitize(rawGroup, 256);
+            var groupName =
+                rawGroup is not null && _groupHandles.ContainsKey(rawGroup)
+                    ? rawGroup
+                    : LogSanitizer.Sanitize(rawGroup, 256);
             var probeAcquired = false;
             var probeOutcomeTransferred = false;
             long? tracingTimestamp = null;
@@ -466,7 +485,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 {
                     if (dispatchBypassException is not null && _circuitBreakerStateManager is not null)
                     {
-                        await _circuitBreakerStateManager.ReportFailureAsync(group, dispatchBypassException)
+                        await _circuitBreakerStateManager
+                            .ReportFailureAsync(group, dispatchBypassException)
                             .ConfigureAwait(false);
                         probeOutcomeTransferred = true;
                     }
@@ -619,8 +639,20 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
         public bool IsPaused
         {
-            get { lock (_clientsLock) { return _isPaused; } }
-            set { lock (_clientsLock) { _isPaused = value; } }
+            get
+            {
+                lock (_clientsLock)
+                {
+                    return _isPaused;
+                }
+            }
+            set
+            {
+                lock (_clientsLock)
+                {
+                    _isPaused = value;
+                }
+            }
         }
 
         public async ValueTask AddClientAsync(IConsumerClient client)

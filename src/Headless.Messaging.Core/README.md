@@ -277,7 +277,7 @@ var isOpen = monitor.IsOpen("payments");
 var state = monitor.GetState("payments"); // Closed, Open, or HalfOpen
 
 // Manual recovery (operator/agent action)
-var wasReset = await monitor.ResetAsync("payments", cancellationToken); // true if reset performed
+var wasReset = await monitor.ResetAsync("payments"); // true if reset performed
 ```
 
 Inject `IRetryProcessorMonitor` for adaptive retry backpressure inspection and reset:

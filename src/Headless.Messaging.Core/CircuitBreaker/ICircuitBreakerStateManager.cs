@@ -64,5 +64,14 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
     /// Intended for consumer teardown/restart paths.
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
-    void RemoveGroup(string groupName);
+    ValueTask RemoveGroup(string groupName);
+
+    /// <summary>
+    /// Called during transport restart when a group is in <see cref="CircuitBreakerState.HalfOpen"/>.
+    /// Invalidates the aborted probe and transitions back to <see cref="CircuitBreakerState.Open"/>,
+    /// preserving all failure and escalation history. Does NOT invoke the pause callback — the caller
+    /// is responsible for pausing the new transport.
+    /// </summary>
+    /// <param name="groupName">The consumer group name.</param>
+    ValueTask AbortHalfOpenProbeAsync(string groupName);
 }

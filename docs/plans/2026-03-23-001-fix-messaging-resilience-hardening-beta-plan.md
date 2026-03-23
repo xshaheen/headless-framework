@@ -1,7 +1,7 @@
 ---
 title: fix: Finish messaging resilience hardening
 type: fix
-status: active
+status: completed
 date: 2026-03-23
 ---
 

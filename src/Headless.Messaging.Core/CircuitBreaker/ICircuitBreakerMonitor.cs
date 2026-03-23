@@ -3,15 +3,15 @@
 namespace Headless.Messaging.CircuitBreaker;
 
 /// <summary>
-/// Read-only view of circuit breaker state for observability and health checks.
-/// Also provides operator-level control for manual recovery.
+/// Observability and operator-control surface for the per-group circuit breaker.
+/// Exposes read access to circuit state and manual recovery actions (reset and force-open).
 /// </summary>
 /// <remarks>
-/// This is the public-facing interface for circuit breaker observability. The internal
-/// <c>ICircuitBreakerStateManager</c> extends this interface with mutation methods
-/// (failure reporting, group registration, etc.) used only by the framework's internal
-/// pipeline. The split is intentional: consumers inject <see cref="ICircuitBreakerMonitor"/>
-/// to query state and trigger manual resets without access to the internal write surface.
+/// This is the public-facing interface for circuit breaker observability and operator control.
+/// The internal <c>ICircuitBreakerStateManager</c> extends this interface with pipeline-internal
+/// mutation methods (failure reporting, group registration, etc.) not intended for application code.
+/// The split is intentional: application code injects <see cref="ICircuitBreakerMonitor"/>
+/// to observe state and trigger manual recovery without access to the internal write surface.
 /// </remarks>
 public interface ICircuitBreakerMonitor
 {
@@ -109,14 +109,21 @@ public interface ICircuitBreakerMonitor
 
     /// <summary>
     /// Force-resets the circuit for the specified consumer group to <see cref="CircuitBreakerState.Closed"/>,
-    /// cancelling any open timer and resetting escalation. Invokes the resume callback if the circuit
-    /// was previously Open or HalfOpen. This is the operator/agent manual recovery path.
+    /// cancelling any open timer and resetting the escalation level to zero. Invokes the resume callback
+    /// if the circuit was previously Open or HalfOpen. This is the operator/agent manual recovery path.
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
     /// <returns>
     /// <see langword="true"/> if a reset was performed (the group was found and was Open or HalfOpen);
     /// <see langword="false"/> if the group was not found or was already Closed.
     /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <strong>Authorization required:</strong> This method resumes all message consumption for the group.
+    /// HTTP or gRPC endpoints that expose this operation MUST require authorization to prevent
+    /// denial-of-service attacks where an unauthenticated caller prematurely re-opens a closed circuit.
+    /// </para>
+    /// </remarks>
     ValueTask<bool> ResetAsync(string groupName);
 
     /// <summary>
@@ -129,5 +136,12 @@ public interface ICircuitBreakerMonitor
     /// <see langword="true"/> if the circuit was force-opened (group was found and was Closed or HalfOpen);
     /// <see langword="false"/> if the group was not found or was already Open.
     /// </returns>
+    /// <remarks>
+    /// <para>
+    /// <strong>Authorization required:</strong> This method halts all message consumption for the group.
+    /// HTTP or gRPC endpoints that expose this operation MUST require authorization to prevent
+    /// denial-of-service attacks where an unauthenticated caller can arbitrarily pause consumers.
+    /// </para>
+    /// </remarks>
     ValueTask<bool> ForceOpenAsync(string groupName);
 }

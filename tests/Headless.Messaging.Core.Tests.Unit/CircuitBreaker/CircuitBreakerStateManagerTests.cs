@@ -44,11 +44,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         );
     }
 
-    private static async Task _ReportTransientFailuresAsync(
-        ICircuitBreakerStateManager sut,
-        string group,
-        int count
-    )
+    private static async Task _ReportTransientFailuresAsync(ICircuitBreakerStateManager sut, string group, int count)
     {
         for (var i = 0; i < count; i++)
         {
@@ -397,7 +393,6 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.GetState(Group).Should().Be(CircuitBreakerState.Open);
     }
 
-
     [Fact]
     public async Task repeated_non_transient_close_should_not_reset_escalation()
     {
@@ -540,7 +535,6 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.IsOpen("never-registered").Should().BeFalse();
     }
 
-
     [Fact]
     public async Task ReportSuccessAsync_is_noop_for_unregistered_group()
     {
@@ -628,11 +622,16 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // when — launch N parallel tasks all racing to acquire the probe
         using var barrier = new Barrier(parallelTasks);
         var results = new bool[parallelTasks];
-        var tasks = Enumerable.Range(0, parallelTasks).Select(i => Task.Run(() =>
-        {
-            barrier.SignalAndWait(); // maximize contention
-            results[i] = sut.TryAcquireHalfOpenProbe(Group);
-        })).ToArray();
+        var tasks = Enumerable
+            .Range(0, parallelTasks)
+            .Select(i =>
+                Task.Run(() =>
+                {
+                    barrier.SignalAndWait(); // maximize contention
+                    results[i] = sut.TryAcquireHalfOpenProbe(Group);
+                })
+            )
+            .ToArray();
 
         await Task.WhenAll(tasks);
 
@@ -723,10 +722,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
             await sut.ReportFailureAsync(Group, new TimeoutException());
 
-            await Task.WhenAll(
-                Task.Run(() => sut.Dispose()),
-                Task.Run(() => sut.Dispose())
-            );
+            await Task.WhenAll(Task.Run(() => sut.Dispose()), Task.Run(() => sut.Dispose()));
             // no exception = pass
         }
     }
@@ -976,8 +972,9 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         snapshot2.EstimatedRemainingOpenDuration.Value.Should().BeLessThanOrEqualTo(openDuration);
 
         // second snapshot should have less or equal remaining time
-        snapshot2.EstimatedRemainingOpenDuration.Value
-            .Should().BeLessThanOrEqualTo(snapshot1.EstimatedRemainingOpenDuration.Value);
+        snapshot2
+            .EstimatedRemainingOpenDuration.Value.Should()
+            .BeLessThanOrEqualTo(snapshot1.EstimatedRemainingOpenDuration.Value);
     }
 
     // -------------------------------------------------------------------------
@@ -1295,5 +1292,96 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         sut.KnownGroups.Should().HaveCount(2);
         sut.KnownGroups.Should().Contain("group.a");
         sut.KnownGroups.Should().Contain("group.b");
+    }
+
+    // -------------------------------------------------------------------------
+    // AbortHalfOpenProbeAsync tests
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task abort_halfopen_probe_transitions_back_to_open_preserving_history()
+    {
+        // given — trip circuit and wait for HalfOpen
+        var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(30));
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () =>
+            {
+                halfOpenTcs.TrySetResult();
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        sut.GetState(Group).Should().Be(CircuitBreakerState.HalfOpen);
+
+        var escalationBefore = sut.GetSnapshot(Group)!.EscalationLevel;
+        escalationBefore.Should().Be(1); // first open sets escalation to 1
+
+        // when — abort the probe (as if transport is restarting)
+        await sut.AbortHalfOpenProbeAsync(Group);
+
+        // then — state transitions back to Open, escalation is NOT incremented further
+        sut.GetState(Group).Should().Be(CircuitBreakerState.Open);
+        sut.IsOpen(Group).Should().BeTrue();
+        sut.GetSnapshot(Group)!.EscalationLevel.Should().Be(escalationBefore);
+    }
+
+    [Fact]
+    public async Task abort_halfopen_probe_is_noop_when_not_in_halfopen()
+    {
+        // given
+        var sut = _Create(failureThreshold: 1);
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () => ValueTask.CompletedTask
+        );
+
+        // circuit is Closed → abort should be a no-op
+        sut.GetState(Group).Should().Be(CircuitBreakerState.Closed);
+        await sut.AbortHalfOpenProbeAsync(Group);
+        sut.GetState(Group).Should().Be(CircuitBreakerState.Closed);
+
+        // trip circuit to Open → abort should also be a no-op
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+        sut.GetState(Group).Should().Be(CircuitBreakerState.Open);
+        await sut.AbortHalfOpenProbeAsync(Group);
+        sut.GetState(Group).Should().Be(CircuitBreakerState.Open);
+    }
+
+    [Fact]
+    public async Task dispose_blocks_on_resumetask_before_disposing_cts()
+    {
+        // given — a resume callback that delays long enough to overlap with Dispose
+        var resumeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sut = _Create(failureThreshold: 1, openDuration: TimeSpan.FromMilliseconds(20));
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: async () =>
+            {
+                resumeStarted.TrySetResult();
+                halfOpenTcs.TrySetResult();
+                await Task.Delay(50); // simulate slow resume work
+            }
+        );
+
+        // trip circuit so the timer fires and the resume task is in-flight
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // wait until resume has actually started running
+        await resumeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // when — call synchronous Dispose while resume is in progress
+        var act = () => sut.Dispose();
+
+        // then — should not throw ObjectDisposedException
+        act.Should().NotThrow();
     }
 }

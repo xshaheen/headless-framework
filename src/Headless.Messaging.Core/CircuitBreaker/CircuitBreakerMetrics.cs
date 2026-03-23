@@ -24,7 +24,7 @@ internal sealed class CircuitBreakerMetrics
     private readonly Histogram<double> _openDuration;
 
     private Func<IReadOnlyList<KeyValuePair<string, CircuitBreakerState>>>? _stateSnapshot;
-    private IReadOnlySet<string> _knownGroups = ImmutableHashSet<string>.Empty;
+    private IReadOnlyDictionary<string, string> _safeTagCache = ImmutableDictionary<string, string>.Empty;
 
     public CircuitBreakerMetrics(IMeterFactory meterFactory)
     {
@@ -65,7 +65,14 @@ internal sealed class CircuitBreakerMetrics
     /// </summary>
     public void SetKnownGroups(IReadOnlySet<string> knownGroups)
     {
-        _knownGroups = knownGroups;
+        var cache = new Dictionary<string, string>(knownGroups.Count, StringComparer.Ordinal);
+
+        foreach (var group in knownGroups)
+        {
+            cache[group] = group;
+        }
+
+        _safeTagCache = cache;
     }
 
     /// <summary>Records a circuit trip (Closed → Open or HalfOpen → Open).</summary>
@@ -82,9 +89,10 @@ internal sealed class CircuitBreakerMetrics
 
     private string _SafeTag(string groupName)
     {
-        var known = _knownGroups;
-        if (known.Count == 0) return groupName;
-        return known.Contains(groupName) ? groupName : UnknownGroupTag;
+        var cache = _safeTagCache;
+        if (cache.Count == 0)
+            return groupName;
+        return cache.TryGetValue(groupName, out var safe) ? safe : UnknownGroupTag;
     }
 
     private IEnumerable<Measurement<int>> _ObserveCircuitStates()
@@ -98,10 +106,7 @@ internal sealed class CircuitBreakerMetrics
 
         foreach (var (group, state) in snapshot)
         {
-            yield return new Measurement<int>(
-                (int)state,
-                new TagList { { GroupTagKey, _SafeTag(group) } }
-            );
+            yield return new Measurement<int>((int)state, new TagList { { GroupTagKey, _SafeTag(group) } });
         }
     }
 }
