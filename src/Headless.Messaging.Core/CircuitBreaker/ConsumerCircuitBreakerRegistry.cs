@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using Headless.Checks;
+using FluentValidation;
 
 namespace Headless.Messaging.CircuitBreaker;
 
@@ -16,8 +16,8 @@ namespace Headless.Messaging.CircuitBreaker;
 /// </remarks>
 internal sealed class ConsumerCircuitBreakerRegistry
 {
-    private readonly ConcurrentDictionary<string, ConsumerCircuitBreakerOptions> _options =
-        new(StringComparer.Ordinal);
+    private static readonly ConsumerCircuitBreakerOptionsValidator _Validator = new();
+    private readonly ConcurrentDictionary<string, ConsumerCircuitBreakerOptions> _options = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Registers circuit breaker options for the specified consumer group.
@@ -32,15 +32,15 @@ internal sealed class ConsumerCircuitBreakerRegistry
     /// </exception>
     internal void Register(string groupName, ConsumerCircuitBreakerOptions options)
     {
-        _ValidateOptions(options);
+        _Validator.ValidateAndThrow(options);
 
         if (!_options.TryAdd(groupName, options))
         {
             throw new InvalidOperationException(
                 $"Circuit breaker already registered for group '{groupName}'. "
-                + "Each consumer group can only have one circuit breaker override. "
-                + "Check that you haven't configured the same group via both "
-                + "Subscribe<T>().WithCircuitBreaker() and AddConsumer<T,M>().WithCircuitBreaker()."
+                    + "Each consumer group can only have one circuit breaker override. "
+                    + "Check that you haven't configured the same group via both "
+                    + "Subscribe<T>().WithCircuitBreaker() and AddConsumer<T,M>().WithCircuitBreaker()."
             );
         }
     }
@@ -51,7 +51,7 @@ internal sealed class ConsumerCircuitBreakerRegistry
     /// </summary>
     internal void RegisterOrUpdate(string groupName, ConsumerCircuitBreakerOptions options)
     {
-        _ValidateOptions(options);
+        _Validator.ValidateAndThrow(options);
         _options[groupName] = options;
     }
 
@@ -76,18 +76,5 @@ internal sealed class ConsumerCircuitBreakerRegistry
     internal bool TryGet(string groupName, out ConsumerCircuitBreakerOptions? options)
     {
         return _options.TryGetValue(groupName, out options);
-    }
-
-    private static void _ValidateOptions(ConsumerCircuitBreakerOptions options)
-    {
-        if (options.FailureThreshold is not null)
-        {
-            Argument.IsGreaterThan(options.FailureThreshold.Value, 0, "FailureThreshold must be greater than 0 when set.");
-        }
-
-        if (options.OpenDuration is not null)
-        {
-            Argument.IsGreaterThan(options.OpenDuration.Value, TimeSpan.Zero, "OpenDuration must be greater than TimeSpan.Zero when set.");
-        }
     }
 }

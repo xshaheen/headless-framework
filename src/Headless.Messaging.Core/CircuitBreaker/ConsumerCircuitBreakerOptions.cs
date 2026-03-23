@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
+
 namespace Headless.Messaging.CircuitBreaker;
 
 /// <summary>
@@ -36,4 +38,14 @@ public sealed class ConsumerCircuitBreakerOptions
     /// predicate is used.
     /// </summary>
     public Func<Exception, bool>? IsTransientException { get; set; }
+}
+
+internal sealed class ConsumerCircuitBreakerOptionsValidator : AbstractValidator<ConsumerCircuitBreakerOptions>
+{
+    public ConsumerCircuitBreakerOptionsValidator()
+    {
+        RuleFor(x => x.FailureThreshold).GreaterThan(0);
+
+        RuleFor(x => x.OpenDuration).GreaterThan(TimeSpan.Zero);
+    }
 }
