@@ -58,6 +58,22 @@ public sealed class AmazonSqsTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_use_partition_dns_suffix_for_non_standard_regions()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsTransport>>();
+        var options = Options.Create(new AmazonSqsOptions { Region = Amazon.RegionEndpoint.CNNorth1 });
+        await using var transport = new AmazonSqsTransport(logger, options);
+
+        // when
+        var brokerAddress = transport.BrokerAddress;
+
+        // then
+        brokerAddress.Name.Should().Be("aws_sqs");
+        brokerAddress.Endpoint.Should().Be("sns.cn-north-1.amazonaws.com.cn");
+    }
+
+    [Fact]
     public async Task should_send_message_to_topic()
     {
         // given

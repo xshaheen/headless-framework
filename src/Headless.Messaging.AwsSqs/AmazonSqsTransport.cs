@@ -193,6 +193,6 @@ internal sealed class AmazonSqsTransport(
             return serviceUri.IsDefaultPort ? serviceUri.Host : $"{serviceUri.Host}:{serviceUri.Port}";
         }
 
-        return $"sns.{options.Region.SystemName}.amazonaws.com";
+        return $"sns.{options.Region.SystemName}.{options.Region.PartitionDnsSuffix}";
     }
 }
