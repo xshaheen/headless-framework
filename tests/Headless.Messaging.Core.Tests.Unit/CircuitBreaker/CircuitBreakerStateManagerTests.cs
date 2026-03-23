@@ -399,6 +399,54 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
 
 
     [Fact]
+    public async Task repeated_non_transient_close_should_not_reset_escalation()
+    {
+        // given — 3 successful cycles normally resets escalation, but non-transient
+        // failure closes are NOT recovery signals and must not count toward that threshold.
+        var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sut = _Create(
+            failureThreshold: 1,
+            openDuration: TimeSpan.FromMilliseconds(20),
+            successfulCyclesToResetEscalation: 3
+        );
+        sut.RegisterGroupCallbacks(
+            Group,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () =>
+            {
+                halfOpenTcs.TrySetResult();
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        // Escalate: open → half-open → transient failure (re-open) to bump escalation
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await sut.ReportFailureAsync(Group, new TimeoutException());
+        await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var escalationBefore = sut.GetSnapshot(Group)!.EscalationLevel;
+        escalationBefore.Should().BeGreaterThan(0);
+
+        // Close via non-transient failure × 3 — should NOT reset escalation
+        for (var i = 0; i < 3; i++)
+        {
+            await sut.ReportFailureAsync(Group, new ArgumentException("bad payload"));
+            sut.IsOpen(Group).Should().BeFalse();
+
+            // Re-open for the next cycle
+            await sut.ReportFailureAsync(Group, new TimeoutException());
+            await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        // then — escalation must still be present (not reset by non-transient closes)
+        sut.GetSnapshot(Group)!.EscalationLevel.Should().BeGreaterThanOrEqualTo(escalationBefore);
+    }
+
+    [Fact]
     public async Task should_dispose_stale_timer_on_reopen()
     {
         // given — first open duration is short enough to fire; second open duration is longer

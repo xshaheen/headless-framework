@@ -133,9 +133,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0 || _pauseGate.IsPaused) return;
-
-        await _pauseGate.PauseAsync();
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (!await _pauseGate.PauseAsync()) return;
 
         if (_consumerTag is not null)
         {
@@ -145,16 +144,15 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0 || !_pauseGate.IsPaused) return;
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (!await _pauseGate.ResumeAsync()) return;
 
-        // Re-register consumer BEFORE releasing the gate so the broker is
+        // Re-register consumer after transitioning so the broker is
         // delivering messages when the gate unblocks waiters.
         if (_consumerTag is not null)
         {
             _consumerTag = await _channel!.BasicConsumeAsync(_groupName, false, _consumer!, cancellationToken);
         }
-
-        await _pauseGate.ResumeAsync();
     }
 
     public ValueTask DisposeAsync()

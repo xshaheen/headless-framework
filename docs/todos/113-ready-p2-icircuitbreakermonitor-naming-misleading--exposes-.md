@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "113"
 tags: ["code-review","architecture","api-design"]
@@ -41,3 +41,9 @@ Three reviewers independently flagged this. The public/internal API split intent
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-23 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

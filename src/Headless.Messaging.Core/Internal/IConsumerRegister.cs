@@ -410,8 +410,10 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 {
                     if (!canFindSubscriber)
                     {
+                        var safeName = LogSanitizer.Sanitize(name);
+                        var safeGroup = LogSanitizer.Sanitize(group);
                         var error =
-                            $"Message can not be found subscriber. Name:{name}, Group:{group}. {Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.";
+                            $"Message can not be found subscriber. Name:{safeName}, Group:{safeGroup}. {Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.";
                         var ex = new SubscriberNotFoundException(error);
 
                         _TracingError(tracingTimestamp, transportMessage, client.BrokerAddress, ex);
@@ -492,7 +494,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                     }
                     catch (Exception e)
                     {
-                        _logger.ExecutedThresholdCallbackFailed(e, e.Message);
+                        _logger.ExecutedThresholdCallbackFailed(e, LogSanitizer.Sanitize(e.Message) ?? "");
                     }
 
                     _TracingAfter(tracingTimestamp, transportMessage, _serverAddress);

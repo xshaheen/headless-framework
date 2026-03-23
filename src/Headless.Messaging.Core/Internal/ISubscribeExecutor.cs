@@ -227,7 +227,7 @@ internal sealed class SubscribeExecutor(
                 }
                 catch (Exception callbackEx)
                 {
-                    logger.ExecutedThresholdCallbackFailed(callbackEx, callbackEx.Message);
+                    logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message) ?? "");
                 }
             }
 
@@ -283,7 +283,7 @@ internal sealed class SubscribeExecutor(
             // App-shutdown cancellations (IsCancellationRequested = true) continue to be swallowed.
             if (oce is TaskCanceledException && !oce.CancellationToken.IsCancellationRequested)
             {
-                var e = new SubscriberExecutionFailedException(oce.Message, oce);
+                var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(oce.Message) ?? "", oce);
                 _TracingError(tracingTimestamp, message.Origin, descriptor.MethodInfo, e);
                 e.ReThrow();
             }
@@ -291,7 +291,7 @@ internal sealed class SubscribeExecutor(
         }
         catch (Exception ex)
         {
-            var e = new SubscriberExecutionFailedException(ex.Message, ex);
+            var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(ex.Message) ?? "", ex);
 
             _TracingError(tracingTimestamp, message.Origin, descriptor.MethodInfo, e);
 

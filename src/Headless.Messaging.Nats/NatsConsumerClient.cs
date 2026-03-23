@@ -308,9 +308,8 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0 || _pauseGate.IsPaused) return;
-
-        await _pauseGate.PauseAsync();
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (!await _pauseGate.PauseAsync()) return;
 
         // Unsubscribe without drain — the circuit is opening because messages are
         // already failing, so a synchronous 5-second drain adds latency with no
@@ -320,14 +319,13 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0 || !_pauseGate.IsPaused) return;
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (!await _pauseGate.ResumeAsync()) return;
 
         if (_subscribedTopics is not null)
         {
             _CreateSubscriptions(_subscribedTopics);
         }
-
-        await _pauseGate.ResumeAsync();
     }
 
     private void _UnsubscribeWithoutDrain()

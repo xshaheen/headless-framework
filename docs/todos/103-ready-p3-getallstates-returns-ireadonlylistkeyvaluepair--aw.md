@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "103"
 tags: ["code-review","dotnet","api-design"]
@@ -40,3 +40,9 @@ Agent-native reviewer also flagged need for GetAllSnapshots bulk method.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-23 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

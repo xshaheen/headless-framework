@@ -763,11 +763,20 @@ internal sealed class CircuitBreakerStateManager(
         state.ConsecutiveFailures = 0;
         var timerToDispose = state.OpenTimer;
         state.OpenTimer = null;
-        state.SuccessfulCyclesAfterClose++;
 
-        if (state.SuccessfulCyclesAfterClose >= _options.SuccessfulCyclesToResetEscalation)
+        if (probeSucceeded)
         {
-            state.EscalationLevel = 0;
+            state.SuccessfulCyclesAfterClose++;
+
+            if (state.SuccessfulCyclesAfterClose >= _options.SuccessfulCyclesToResetEscalation)
+            {
+                state.EscalationLevel = 0;
+                state.SuccessfulCyclesAfterClose = 0;
+            }
+        }
+        else
+        {
+            // Non-transient failure close is not a recovery signal — reset the streak.
             state.SuccessfulCyclesAfterClose = 0;
         }
 

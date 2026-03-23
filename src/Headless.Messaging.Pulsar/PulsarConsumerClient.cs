@@ -130,9 +130,9 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
-    public ValueTask PauseAsync(CancellationToken cancellationToken = default) => _pauseGate.PauseAsync();
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) => await _pauseGate.PauseAsync();
 
-    public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => _pauseGate.ResumeAsync();
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) => await _pauseGate.ResumeAsync();
 
     public ValueTask DisposeAsync()
     {

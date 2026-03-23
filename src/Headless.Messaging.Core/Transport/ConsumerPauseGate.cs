@@ -24,28 +24,38 @@ internal sealed class ConsumerPauseGate
             : new ValueTask(gate.Task.WaitAsync(ct));
     }
 
-    public ValueTask PauseAsync()
+    /// <summary>
+    /// Transitions the gate to the paused state.
+    /// Returns <c>true</c> if this call actually transitioned from unpaused to paused;
+    /// <c>false</c> if already paused or disposed.
+    /// </summary>
+    public ValueTask<bool> PauseAsync()
     {
         lock (_lock)
         {
-            if (_disposed || _paused) return ValueTask.CompletedTask;
+            if (_disposed || _paused) return new ValueTask<bool>(false);
             _paused = true;
             _gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
-        return ValueTask.CompletedTask;
+        return new ValueTask<bool>(true);
     }
 
-    public ValueTask ResumeAsync()
+    /// <summary>
+    /// Transitions the gate to the resumed state.
+    /// Returns <c>true</c> if this call actually transitioned from paused to resumed;
+    /// <c>false</c> if already resumed or disposed.
+    /// </summary>
+    public ValueTask<bool> ResumeAsync()
     {
         TaskCompletionSource<bool> gateToComplete;
         lock (_lock)
         {
-            if (_disposed || !_paused) return ValueTask.CompletedTask;
+            if (_disposed || !_paused) return new ValueTask<bool>(false);
             _paused = false;
             gateToComplete = _gate;
         }
         gateToComplete.TrySetResult(true);
-        return ValueTask.CompletedTask;
+        return new ValueTask<bool>(true);
     }
 
     public void Release()
