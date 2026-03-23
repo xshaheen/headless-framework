@@ -17,6 +17,8 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
+- **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
+- **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
 
 ## Installation
 
@@ -207,6 +209,93 @@ Message ordering guarantees depend on the transport provider and configuration:
 - For strict ordering: Use `ConsumerThreadCount = 1` with Kafka (partition key), Azure Service Bus (sessions), or AWS SQS (FIFO)
 - For high throughput: Use parallel processing; design consumers to be order-independent
 - Test ordering behavior with your specific transport and configuration
+
+## Circuit Breaker
+
+Per-consumer-group circuit breaker that pauses transport consumption when a dependency is unhealthy, preventing message-retry storms.
+
+**State machine:** Closed → Open (pause transport) → HalfOpen (probe) → Closed (resume) or Open (re-trip). Open duration escalates exponentially on repeated trips and resets after consecutive successful close cycles.
+
+### Global Configuration
+
+```csharp
+builder.Services.AddHeadlessMessaging(options =>
+{
+    // Circuit breaker (applies to all consumer groups)
+    options.CircuitBreaker.FailureThreshold = 5;                       // consecutive transient failures to trip
+    options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);    // initial open duration
+    options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
+
+    // Adaptive retry backpressure
+    options.RetryProcessor.AdaptivePolling = true;
+    options.RetryProcessor.MaxPollingInterval = TimeSpan.FromMinutes(15); // 15 min cap
+    options.RetryProcessor.CircuitOpenRateThreshold = 0.8;              // back off above 80% circuit-open rate
+});
+```
+
+### Per-Consumer Override
+
+```csharp
+options.Subscribe<PaymentHandler>()
+    .Topic("payments.process")
+    .WithCircuitBreaker(cb =>
+    {
+        cb.FailureThreshold = 3;                    // more sensitive
+        cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
+    });
+
+// Disable circuit breaker for a best-effort consumer
+options.Subscribe<MetricsHandler>()
+    .WithCircuitBreaker(cb => cb.Enabled = false);
+```
+
+### Custom Exception Predicate
+
+```csharp
+options.CircuitBreaker.IsTransientException = ex =>
+    CircuitBreakerDefaults.IsTransient(ex) || ex is MyCustomTransientException;
+```
+
+Default `CircuitBreakerDefaults.IsTransient` covers: `TimeoutException`, `HttpRequestException` (5xx), `SocketException`, `BrokerConnectionException`, `TaskCanceledException` (timeout-only).
+
+### Observability
+
+- **OTel counter**: `messaging.circuit_breaker.trips` (tagged by group)
+- **OTel histogram**: `messaging.circuit_breaker.open_duration` (tagged by group)
+- State transitions logged at Warning level
+
+### Programmatic Control
+
+Inject `ICircuitBreakerMonitor` for runtime observation and manual recovery:
+
+```csharp
+var monitor = app.Services.GetRequiredService<ICircuitBreakerMonitor>();
+
+// Check state
+var states = monitor.GetAllStates(); // all groups with current state
+var isOpen = monitor.IsOpen("payments");
+var state = monitor.GetState("payments"); // Closed, Open, or HalfOpen
+
+// Manual recovery (operator/agent action)
+var wasReset = await monitor.ResetAsync("payments", cancellationToken); // true if reset performed
+```
+
+Inject `IRetryProcessorMonitor` for adaptive retry backpressure inspection and reset:
+
+```csharp
+var retryMonitor = app.Services.GetRequiredService<IRetryProcessorMonitor>();
+
+// Inspect backpressure state
+var pollingInterval = retryMonitor.CurrentPollingInterval;
+var isBackedOff = retryMonitor.IsBackedOff;
+
+// Manual recovery (operator/agent action)
+await retryMonitor.ResetBackpressureAsync(cancellationToken);
+```
+
+### Cluster Scope Limitation
+
+The circuit breaker operates **per-process only**. There is no cross-instance coordination — each application instance maintains its own circuit state. In a multi-replica deployment, one instance may have an open circuit while others remain closed.
 
 ## Dependencies
 

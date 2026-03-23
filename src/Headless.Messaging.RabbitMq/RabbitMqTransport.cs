@@ -22,7 +22,7 @@ internal sealed class RabbitMqTransport : ITransport
         _exchange = _connectionChannelPool.Exchange;
     }
 
-    public BrokerAddress BrokerAddress => new("RabbitMQ", _connectionChannelPool.HostAddress);
+    public BrokerAddress BrokerAddress => new("rabbitmq", _connectionChannelPool.HostAddress);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
@@ -53,6 +53,10 @@ internal sealed class RabbitMqTransport : ITransport
             );
 
             return OperateResult.Success;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

@@ -131,7 +131,7 @@ public sealed class PostgreSqlDataStorage(
         for (var i = 0; i < ids.Length; i++)
         {
             paramNames[i] = $"@Id{i}";
-            parameters[i] = new NpgsqlParameter($"@Id{i}", long.Parse(ids[i], CultureInfo.InvariantCulture));
+            parameters[i] = new NpgsqlParameter($"@Id{i}", _ParseStorageId(ids[i]));
         }
 
         parameters[^1] = new NpgsqlParameter("@StatusName", nameof(StatusName.Delayed));
@@ -166,7 +166,7 @@ public sealed class PostgreSqlDataStorage(
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Id", long.Parse(message.DbId, CultureInfo.InvariantCulture)),
+            new NpgsqlParameter("@Id", _ParseStorageId(message.DbId)),
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? (object)message.ExpiresAt.Value : DBNull.Value),
@@ -203,7 +203,7 @@ public sealed class PostgreSqlDataStorage(
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Id", long.Parse(message.DbId, CultureInfo.InvariantCulture)),
+            new NpgsqlParameter("@Id", _ParseStorageId(message.DbId)),
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Content", message.Content),
             new NpgsqlParameter("@Retries", message.Retries),
@@ -442,7 +442,7 @@ public sealed class PostgreSqlDataStorage(
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Id", long.Parse(message.DbId, CultureInfo.InvariantCulture)),
+            new NpgsqlParameter("@Id", _ParseStorageId(message.DbId)),
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
@@ -484,6 +484,19 @@ public sealed class PostgreSqlDataStorage(
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
             .ConfigureAwait(false);
+    }
+
+    private static long _ParseStorageId(string id)
+    {
+        if (long.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
+        {
+            return value;
+        }
+
+        throw new ArgumentException(
+            "Published message IDs must be numeric to support all storage providers.",
+            nameof(id)
+        );
     }
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(

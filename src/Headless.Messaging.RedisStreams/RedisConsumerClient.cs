@@ -9,7 +9,7 @@ using StackExchange.Redis;
 
 namespace Headless.Messaging.RedisStreams;
 
-internal class RedisConsumerClient(
+internal sealed class RedisConsumerClient(
     string groupId,
     byte groupConcurrent,
     IRedisStreamManager redis,
@@ -18,6 +18,8 @@ internal class RedisConsumerClient(
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly ConsumerPauseGate _pauseGate = new();
+    private int _disposed;
     private string[] _topics = null!;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -57,20 +59,39 @@ internal class RedisConsumerClient(
         var (stream, group, id) = ((string stream, string group, string id))sender!;
 
         await redis.Ack(stream, group, id);
-
-        _semaphore.Release();
     }
 
     public ValueTask RejectAsync(object? sender)
     {
-        _semaphore.Release();
         return ValueTask.CompletedTask;
     }
 
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) => await _pauseGate.PauseAsync();
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) => await _pauseGate.ResumeAsync();
+
     public ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+
+        _pauseGate.Release();
         _semaphore.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        if (groupConcurrent > 0)
+        {
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
+            }
+        }
     }
 
     private async Task _ListeningForMessagesAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -98,6 +119,7 @@ internal class RedisConsumerClient(
             {
                 foreach (var entry in stream.Entries)
                 {
+                    await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
                     if (entry.IsNull)
                     {
                         return;
@@ -106,8 +128,20 @@ internal class RedisConsumerClient(
                     if (groupConcurrent > 0)
                     {
                         await _semaphore.WaitAsync(cancellationToken);
-                        _ = Task.Run(() => consumeAsync(position, stream, entry), cancellationToken)
-                            .ConfigureAwait(false);
+                        _ = Task.Run(
+                            async () =>
+                            {
+                                try
+                                {
+                                    await consumeAsync(position, stream, entry);
+                                }
+                                finally
+                                {
+                                    _ReleaseSemaphore();
+                                }
+                            },
+                            cancellationToken
+                        ).ConfigureAwait(false);
                     }
                     else
                     {

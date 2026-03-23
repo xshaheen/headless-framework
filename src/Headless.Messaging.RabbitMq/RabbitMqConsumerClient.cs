@@ -18,8 +18,11 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly IServiceProvider _serviceProvider;
     private readonly string _exchangeName;
     private readonly RabbitMqOptions _rabbitMqOptions;
+    private readonly ConsumerPauseGate _pauseGate = new();
     private RabbitMqBasicConsumer? _consumer;
     private IChannel? _channel;
+    private string? _consumerTag;
+    private int _disposed;
 
     public RabbitMqConsumerClient(
         string groupName,
@@ -77,6 +80,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             await _channel!.BasicQosAsync(prefetchSize: 0, prefetchCount: prefetch, global: false, cancellationToken);
         }
 
+        await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+
         _consumer = new RabbitMqBasicConsumer(
             _channel!,
             _groupConcurrent,
@@ -89,7 +94,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         try
         {
-            await _channel!.BasicConsumeAsync(_groupName, false, _consumer, cancellationToken);
+            _consumerTag = await _channel!.BasicConsumeAsync(_groupName, false, _consumer, cancellationToken);
         }
         catch (TimeoutException ex)
         {
@@ -103,11 +108,17 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             );
         }
 
-        while (!cancellationToken.IsCancellationRequested)
+        // RabbitMQ is push-based — after BasicConsumeAsync the broker delivers messages
+        // via the consumer callback. We just need to keep this task alive until shutdown.
+        // Using Timeout.Infinite avoids repeated timer+task allocations from a polling loop.
+        try
         {
-            await Task.Delay(timeout, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
         }
-        // ReSharper disable once FunctionNeverReturns
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Normal shutdown
+        }
     }
 
     public async ValueTask CommitAsync(object? sender)
@@ -120,8 +131,36 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         await _consumer!.BasicReject((ulong)sender!);
     }
 
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (!await _pauseGate.PauseAsync()) return;
+
+        if (_consumerTag is not null)
+        {
+            await _channel!.BasicCancelAsync(_consumerTag, cancellationToken: cancellationToken);
+        }
+    }
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (!await _pauseGate.ResumeAsync()) return;
+
+        // Re-register consumer after transitioning so the broker is
+        // delivering messages when the gate unblocks waiters.
+        if (_consumerTag is not null)
+        {
+            _consumerTag = await _channel!.BasicConsumeAsync(_groupName, false, _consumer!, cancellationToken);
+        }
+    }
+
     public ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+
+        _pauseGate.Release();
+
         _consumer?.Dispose();
         _channel?.Dispose();
         _semaphore.Dispose();
@@ -181,4 +220,5 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         _semaphore.Release();
     }
+
 }

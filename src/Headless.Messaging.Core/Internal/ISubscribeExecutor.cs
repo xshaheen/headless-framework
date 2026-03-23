@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using Headless.Checks;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Exceptions;
@@ -27,41 +28,24 @@ public interface ISubscribeExecutor
     );
 }
 
-internal sealed class SubscribeExecutor : ISubscribeExecutor
+internal sealed class SubscribeExecutor(
+    IServiceProvider provider,
+    IDataStorage dataStorage,
+    ISubscribeInvoker invoker,
+    TimeProvider timeProvider,
+    ILogger<SubscribeExecutor> logger,
+    IOptions<MessagingOptions> options,
+    ICircuitBreakerStateManager? circuitBreakerStateManager = null
+) : ISubscribeExecutor
 {
     // Diagnostics listener
     private static readonly DiagnosticListener _DiagnosticListener = new(
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
-    private readonly string? _hostName;
-    private readonly IServiceProvider _provider;
-    private readonly IDataStorage _dataStorage;
-    private readonly ISubscribeInvoker _invoker;
-    private readonly IRetryBackoffStrategy _backoffStrategy;
-    private readonly TimeProvider _timeProvider;
-    private readonly ILogger<SubscribeExecutor> _logger;
-    private readonly MessagingOptions _options;
-
-    public SubscribeExecutor(
-        IServiceProvider provider,
-        IDataStorage dataStorage,
-        ISubscribeInvoker invoker,
-        TimeProvider timeProvider,
-        ILogger<SubscribeExecutor> logger,
-        IOptions<MessagingOptions> options
-    )
-    {
-        _provider = provider;
-        _logger = logger;
-        _options = options.Value;
-
-        _dataStorage = dataStorage;
-        _invoker = invoker;
-        _timeProvider = timeProvider;
-        _hostName = Helper.GetInstanceHostname();
-        _backoffStrategy = _options.RetryBackoffStrategy;
-    }
+    private readonly string? _hostName = Helper.GetInstanceHostname();
+    private readonly MessagingOptions _options = options.Value;
+    private readonly IRetryBackoffStrategy _backoffStrategy = options.Value.RetryBackoffStrategy;
 
     public async Task<OperateResult> ExecuteAsync(
         MediumMessage message,
@@ -71,22 +55,25 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
     {
         if (descriptor == null)
         {
-            var selector = _provider.GetRequiredService<MethodMatcherCache>();
+            var selector = provider.GetRequiredService<MethodMatcherCache>();
             if (!selector.TryGetTopicExecutor(message.Origin.GetName(), message.Origin.GetGroup()!, out descriptor))
             {
-                _logger.LogError(
+                var safeName = LogSanitizer.Sanitize(message.Origin.GetName());
+                var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup());
+
+                logger.LogError(
                     "Message (Name:{GetName},Group:{GetGroup}) can not be found subscriber. Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.",
-                    message.Origin.GetName(),
-                    message.Origin.GetGroup()
+                    safeName,
+                    safeGroup
                 );
 
                 var exception = new SubscriberNotFoundException(
-                    $"Message (Name:{message.Origin.GetName()},Group:{message.Origin.GetGroup()}) can not be found subscriber."
+                    $"Message (Name:{safeName},Group:{safeGroup}) can not be found subscriber."
                         + $"{Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches."
                 );
 
                 _TracingError(
-                    _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
+                    timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
                     message.Origin,
                     method: null,
                     exception
@@ -131,7 +118,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
 
         try
         {
-            _logger.ConsumerExecuting(descriptor.ImplTypeInfo.Name, descriptor.MethodInfo.Name, descriptor.GroupName);
+            logger.ConsumerExecuting(descriptor.ImplTypeInfo.Name, descriptor.MethodInfo.Name, descriptor.GroupName);
 
             var sp = Stopwatch.StartNew();
 
@@ -142,7 +129,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
             await _SetSuccessfulState(message).ConfigureAwait(false);
 
             MessageEventCounterSource.Log.WriteInvokeTimeMetrics(sp.Elapsed.TotalMilliseconds);
-            _logger.ConsumerExecuted(
+            logger.ConsumerExecuted(
                 descriptor.ImplTypeInfo.Name,
                 descriptor.MethodInfo.Name,
                 descriptor.GroupName,
@@ -154,9 +141,9 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         }
         catch (Exception ex)
         {
-            _logger.ConsumerExecuteFailed(
+            logger.ConsumerExecuteFailed(
                 ex,
-                message.Origin.GetName(),
+                LogSanitizer.Sanitize(message.Origin.GetName()) ?? "",
                 message.DbId,
                 message.Origin.GetExecutionInstanceId()
             );
@@ -165,11 +152,16 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         }
     }
 
-    private ValueTask _SetSuccessfulState(MediumMessage message)
+    private async ValueTask _SetSuccessfulState(MediumMessage message)
     {
-        message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
+        message.ExpiresAt = timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
 
-        return _dataStorage.ChangeReceiveStateAsync(message, StatusName.Succeeded);
+        await dataStorage.ChangeReceiveStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
+
+        if (circuitBreakerStateManager is not null)
+        {
+            await circuitBreakerStateManager.ReportSuccessAsync(message.Origin.GetGroup()!).ConfigureAwait(false);
+        }
     }
 
     private async Task<bool> _SetFailedState(MediumMessage message, Exception ex)
@@ -185,7 +177,16 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         message.ExceptionInfo = ex.ExpandMessage();
         message.ExpiresAt = message.Added.AddSeconds(_options.FailedMessageExpiredAfter);
 
-        await _dataStorage.ChangeReceiveStateAsync(message, StatusName.Failed).ConfigureAwait(false);
+        await dataStorage.ChangeReceiveStateAsync(message, StatusName.Failed).ConfigureAwait(false);
+
+        // Report the original (inner) exception to the circuit breaker so transient-classification
+        // predicates see the real exception type, not the SubscriberExecutionFailedException wrapper.
+        if (circuitBreakerStateManager is not null)
+        {
+            var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
+            await circuitBreakerStateManager.ReportFailureAsync(message.Origin.GetGroup()!, reportedException)
+                .ConfigureAwait(false);
+        }
 
         return needRetry;
     }
@@ -196,7 +197,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         if (!_backoffStrategy.ShouldRetry(ex))
         {
             message.Retries = _options.FailedRetryCount; // Mark as exhausted
-            _logger.LogWarning(
+            logger.LogWarning(
                 "Message {MessageId} failed with non-retryable exception: {ExceptionType}. Skipping retries.",
                 message.DbId,
                 ex.GetType().Name
@@ -216,24 +217,24 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
                     _options.FailedThresholdCallback?.Invoke(
                         new FailedInfo
                         {
-                            ServiceProvider = _provider,
+                            ServiceProvider = provider,
                             MessageType = MessageType.Subscribe,
                             Message = message.Origin,
                         }
                     );
 
-                    _logger.ConsumerExecutedAfterThreshold(message.DbId, _options.FailedRetryCount);
+                    logger.ConsumerExecutedAfterThreshold(message.DbId, _options.FailedRetryCount);
                 }
                 catch (Exception callbackEx)
                 {
-                    _logger.ExecutedThresholdCallbackFailed(callbackEx, callbackEx.Message);
+                    logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message) ?? "");
                 }
             }
 
             return false;
         }
 
-        _logger.ConsumerExecutionRetrying(message.DbId, retries);
+        logger.ConsumerExecutionRetrying(message.DbId, retries);
 
         return true;
     }
@@ -248,7 +249,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
         var tracingTimestamp = _TracingBefore(message.Origin, descriptor.MethodInfo);
         try
         {
-            var ret = await _invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
+            var ret = await invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
 
             _TracingAfter(tracingTimestamp, message.Origin, descriptor.MethodInfo);
 
@@ -265,7 +266,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
                     ret.CallbackHeader[Headers.TraceParent] = traceParent;
                 }
 
-                await _provider
+                await provider
                     .GetRequiredService<IOutboxPublisher>()
                     .PublishAsync(
                         ret.Result,
@@ -275,13 +276,22 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
                     .ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException oce)
         {
-            //ignore
+            // Re-throw TaskCanceledException from handler timeouts (HttpClient, etc.)
+            // so they propagate to _SetFailedState and are reported to the circuit breaker.
+            // App-shutdown cancellations (IsCancellationRequested = true) continue to be swallowed.
+            if (oce is TaskCanceledException && !oce.CancellationToken.IsCancellationRequested)
+            {
+                var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(oce.Message) ?? "", oce);
+                _TracingError(tracingTimestamp, message.Origin, descriptor.MethodInfo, e);
+                e.ReThrow();
+            }
+            // Otherwise: app shutdown cancellation — swallow as before
         }
         catch (Exception ex)
         {
-            var e = new SubscriberExecutionFailedException(ex.Message, ex);
+            var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(ex.Message) ?? "", ex);
 
             _TracingError(tracingTimestamp, message.Origin, descriptor.MethodInfo, e);
 
@@ -340,7 +350,7 @@ internal sealed class SubscribeExecutor : ISubscribeExecutor
             return;
         }
 
-        var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
 
         var eventData = new MessageEventDataSubExecute
         {

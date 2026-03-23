@@ -24,6 +24,8 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly AmazonSqsOptions _amazonSqsOptions = options.Value;
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly ConsumerPauseGate _pauseGate = new();
+    private int _disposed;
     private string _queueUrl = string.Empty;
 
     private IAmazonSimpleNotificationService? _snsClient;
@@ -73,6 +75,8 @@ internal sealed class AmazonSqsConsumerClient(
 
         while (true)
         {
+            await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+
             var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
 
             if (response?.Messages?.Count > 0)
@@ -92,6 +96,10 @@ internal sealed class AmazonSqsConsumerClient(
                                     catch (Exception ex)
                                     {
                                         _logger.LogError(ex, "Error consuming message for group {GroupId}", groupId);
+                                    }
+                                    finally
+                                    {
+                                        _ReleaseSemaphore();
                                     }
                                 },
                                 cancellationToken
@@ -160,10 +168,6 @@ internal sealed class AmazonSqsConsumerClient(
         {
             _InvalidIdFormatLog(ex.Message);
         }
-        finally
-        {
-            _semaphore.Release();
-        }
     }
 
     public async ValueTask RejectAsync(object? sender)
@@ -176,14 +180,32 @@ internal sealed class AmazonSqsConsumerClient(
         {
             _MessageNotInflightLog(ex.Message);
         }
-        finally
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        if (groupConcurrent > 0)
         {
-            _semaphore.Release();
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
+            }
         }
     }
 
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) => await _pauseGate.PauseAsync();
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) => await _pauseGate.ResumeAsync();
+
     public ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+
+        _pauseGate.Release();
         _sqsClient?.Dispose();
         _snsClient?.Dispose();
         _semaphore.Dispose();
@@ -201,7 +223,7 @@ internal sealed class AmazonSqsConsumerClient(
                 lock (_connectionLock)
                 {
 #pragma warning disable CA1508 // Justification: other thread can initialize it
-                    if (_sqsClient == null)
+                    if (_snsClient == null)
 #pragma warning restore CA1508
                     {
                         _snsClient = AwsClientFactory.CreateSnsClient(_amazonSqsOptions);

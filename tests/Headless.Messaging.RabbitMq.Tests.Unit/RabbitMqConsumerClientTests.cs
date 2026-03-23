@@ -353,4 +353,119 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         // then - should be idempotent (calling dispose again should not throw)
         await client.DisposeAsync();
     }
+
+    // -------------------------------------------------------------------------
+    // PauseAsync / ResumeAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PauseAsync_is_noop_when_consumer_tag_is_null()
+    {
+        // _consumerTag is null before ListeningAsync — PauseAsync should be a no-op
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await client.ConnectAsync();
+
+        await client.PauseAsync();
+
+        // BasicCancelAsync should NOT have been called
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_when_not_paused()
+    {
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+
+        // not paused — ResumeAsync should be no-op, no BasicConsumeAsync call
+        await client.ResumeAsync();
+
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+    }
+
+    [Fact]
+    public async Task PauseAsync_is_idempotent_when_called_twice()
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await client.ConnectAsync();
+
+        // when
+        await client.PauseAsync();
+        _channel.ClearReceivedCalls();
+        await client.PauseAsync(); // second call — should be a no-op
+
+        // then — no broker interaction on the second call
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_idempotent_after_resume()
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+
+        await client.PauseAsync();
+        await client.ResumeAsync();
+        _channel.ClearReceivedCalls();
+
+        // when — second resume should be a no-op
+        await client.ResumeAsync();
+
+        // then
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+    }
+
+    [Fact]
+    public async Task PauseAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await client.DisposeAsync();
+
+        // when — should not throw or interact with channel
+        await client.PauseAsync();
+
+        // then
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await client.DisposeAsync();
+
+        // when — should not throw or interact with channel
+        await client.ResumeAsync();
+
+        // then
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+    }
+
+    [Fact]
+    public async Task ListeningAsync_should_wait_for_resume_when_group_is_paused_before_startup()
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        _channel.IsClosed.Returns(false);
+
+        using var cts = new CancellationTokenSource();
+        await client.PauseAsync();
+
+        // when
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        // then - startup remains gated while paused
+        await Task.Delay(100);
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+
+        await client.ResumeAsync();
+
+        await Task.Delay(100);
+        _channel.ReceivedCalls().Should().Contain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+
+        await cts.CancelAsync();
+        await listeningTask; // Should complete gracefully — no OperationCanceledException
+    }
 }

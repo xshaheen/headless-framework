@@ -149,6 +149,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_store_published_message() => base.should_store_published_message();
 
     [Fact]
+    public override Task should_reject_non_numeric_published_message_id() =>
+        base.should_reject_non_numeric_published_message_id();
+
+    [Fact]
     public override Task should_store_received_message() => base.should_store_received_message();
 
     [Fact]

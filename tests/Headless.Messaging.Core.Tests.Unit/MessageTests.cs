@@ -220,7 +220,7 @@ public sealed class MessageTests : TestBase
         // given
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            [Headers.Exception] = "InvalidOperationException-->Something failed",
+            [Headers.Exception] = "InvalidOperationException",
         };
         var message = new Message(headers, null);
 
@@ -258,7 +258,7 @@ public sealed class MessageTests : TestBase
 
         // then
         message.Headers.Should().ContainKey(Headers.Exception);
-        message.Headers[Headers.Exception].Should().Be("InvalidOperationException-->Something went wrong");
+        message.Headers[Headers.Exception].Should().Be("InvalidOperationException");
     }
 
     [Fact]
@@ -267,7 +267,7 @@ public sealed class MessageTests : TestBase
         // given
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            [Headers.Exception] = "OldException-->Old message",
+            [Headers.Exception] = "OldException",
         };
         var message = new Message(headers, null);
         var exception = new ArgumentException("New error", "testParam");
@@ -276,7 +276,7 @@ public sealed class MessageTests : TestBase
         message.AddOrUpdateException(exception);
 
         // then
-        message.Headers[Headers.Exception].Should().Be("ArgumentException-->New error (Parameter 'testParam')");
+        message.Headers[Headers.Exception].Should().Be("ArgumentException");
     }
 
     [Fact]
@@ -285,7 +285,7 @@ public sealed class MessageTests : TestBase
         // given
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
-            [Headers.Exception] = "SomeException-->Error message",
+            [Headers.Exception] = "SomeException",
         };
         var message = new Message(headers, null);
 

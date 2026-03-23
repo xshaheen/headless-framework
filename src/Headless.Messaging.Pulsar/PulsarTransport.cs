@@ -12,15 +12,15 @@ internal sealed class PulsarTransport(ILogger<PulsarTransport> logger, IConnecti
 {
     private readonly ILogger _logger = logger;
 
-    public BrokerAddress BrokerAddress => new("Pulsar", connectionFactory.ServersAddress);
+    public BrokerAddress BrokerAddress => new("pulsar", connectionFactory.ServersAddress);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        var producer = await connectionFactory.CreateProducerAsync(message.GetName()).ConfigureAwait(false);
-
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var producer = await connectionFactory.CreateProducerAsync(message.GetName()).ConfigureAwait(false);
             var headerDic = new Dictionary<string, string?>(message.Headers, StringComparer.Ordinal);
             headerDic.TryGetValue(PulsarHeaders.PulsarKey, out var key);
             var pulsarMessage = producer.NewMessage(message.Body.ToArray(), key, headerDic);
@@ -34,6 +34,10 @@ internal sealed class PulsarTransport(ILogger<PulsarTransport> logger, IConnecti
             }
 
             throw new PublisherSentFailedException("pulsar message persisted failed!");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

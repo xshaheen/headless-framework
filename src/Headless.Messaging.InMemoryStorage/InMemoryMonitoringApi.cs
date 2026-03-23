@@ -7,7 +7,7 @@ using Headless.Primitives;
 
 namespace Headless.Messaging.InMemoryStorage;
 
-internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
+internal sealed class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
 {
     public ValueTask<MediumMessage?> GetPublishedMessageAsync(long id, CancellationToken cancellationToken = default)
     {

@@ -16,13 +16,13 @@ internal sealed class MessageObservationStore
     private readonly List<WaiterEntry> _waiters = [];
     private readonly Lock _waitersLock = new();
 
-    /// <summary>Gets all published messages recorded so far.</summary>
+    /// <summary>Gets all published messages recorded so far. Each access allocates a snapshot array.</summary>
     public IReadOnlyCollection<RecordedMessage> Published => _published.ToArray();
 
-    /// <summary>Gets all consumed messages recorded so far.</summary>
+    /// <summary>Gets all consumed messages recorded so far. Each access allocates a snapshot array.</summary>
     public IReadOnlyCollection<RecordedMessage> Consumed => _consumed.ToArray();
 
-    /// <summary>Gets all faulted messages recorded so far.</summary>
+    /// <summary>Gets all faulted messages recorded so far. Each access allocates a snapshot array.</summary>
     public IReadOnlyCollection<RecordedMessage> Faulted => _faulted.ToArray();
 
     /// <summary>Records a message and signals any waiting tasks that match.</summary>
@@ -31,21 +31,33 @@ internal sealed class MessageObservationStore
         var queue = _GetQueue(type);
         queue.Enqueue(message);
 
+        // Snapshot candidates under lock, evaluate predicates outside to avoid
+        // holding the lock during potentially expensive user predicates.
+        List<WaiterEntry>? candidates;
+
         lock (_waitersLock)
         {
-            for (var i = _waiters.Count - 1; i >= 0; i--)
-            {
-                var waiter = _waiters[i];
+            candidates = _waiters.Count == 0 ? null : [.. _waiters];
+        }
 
-                if (
-                    waiter.Type == type
-                    && waiter.MessageType.IsAssignableFrom(message.MessageType)
-                    && (waiter.Predicate == null || waiter.Predicate(message.Message))
-                )
+        if (candidates is null)
+        {
+            return;
+        }
+
+        foreach (var waiter in candidates)
+        {
+            if (
+                waiter.Type == type
+                && waiter.MessageType.IsAssignableFrom(message.MessageType)
+                && (waiter.Predicate == null || waiter.Predicate(message.Message))
+            )
+            {
+                if (waiter.Tcs.TrySetResult(message))
                 {
-                    if (waiter.Tcs.TrySetResult(message))
+                    lock (_waitersLock)
                     {
-                        _waiters.RemoveAt(i);
+                        _waiters.Remove(waiter);
                     }
                 }
             }
@@ -58,7 +70,7 @@ internal sealed class MessageObservationStore
     /// </summary>
     /// <param name="messageType">The CLR type to match (assignability check).</param>
     /// <param name="type">The observation bucket to search.</param>
-    /// <param name="predicate">Optional additional filter applied to the deserialized payload.</param>
+    /// <param name="predicate">Optional additional filter applied to the deserialized payload. Must be side-effect-free.</param>
     /// <param name="timeout">Maximum time to wait before throwing <see cref="MessageObservationTimeoutException"/>.</param>
     /// <param name="cancellationToken">Token to cancel the wait (propagates as <see cref="OperationCanceledException"/>).</param>
     /// <returns>The first matching <see cref="RecordedMessage"/>.</returns>
@@ -82,6 +94,10 @@ internal sealed class MessageObservationStore
 
         var entry = new WaiterEntry(messageType, type, predicate, tcs);
 
+        // Create CTS before registering waiter to ensure timeout is armed before Record() can signal.
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(timeout);
+
         lock (_waitersLock)
         {
             // Double-check after acquiring lock to avoid a race with Record()
@@ -93,9 +109,6 @@ internal sealed class MessageObservationStore
 
             _waiters.Add(entry);
         }
-
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(timeout);
 
         var startTime = DateTimeOffset.UtcNow;
 
@@ -109,11 +122,6 @@ internal sealed class MessageObservationStore
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             // Timeout — not cancelled externally
-            lock (_waitersLock)
-            {
-                _waiters.Remove(entry);
-            }
-
             var elapsed = DateTimeOffset.UtcNow - startTime;
             var observed = _GetQueue(type).ToArray();
             throw new MessageObservationTimeoutException(
@@ -146,7 +154,11 @@ internal sealed class MessageObservationStore
         {
             foreach (var waiter in _waiters)
             {
-                waiter.Tcs.TrySetCanceled();
+                waiter.Tcs.TrySetException(
+                    new InvalidOperationException(
+                        "MessagingTestHarness.Clear() was called while a WaitFor* operation was pending."
+                    )
+                );
             }
 
             _waiters.Clear();

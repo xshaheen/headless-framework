@@ -164,6 +164,23 @@ public sealed class ConsumerRegistry : IConsumerRegistry
     }
 
     /// <summary>
+    /// Finds a consumer by consumer type and message type without freezing the registry.
+    /// Used internally during setup to resolve group names for deferred registrations.
+    /// </summary>
+    internal ConsumerMetadata? FindByTypes(Type consumerType, Type messageType)
+    {
+        if (_frozen != null)
+        {
+            return _frozen.FirstOrDefault(m => m.ConsumerType == consumerType && m.MessageType == messageType);
+        }
+
+        lock (_lock)
+        {
+            return _consumers?.FirstOrDefault(m => m.ConsumerType == consumerType && m.MessageType == messageType);
+        }
+    }
+
+    /// <summary>
     /// Checks if a consumer is already registered for the specified message type.
     /// </summary>
     /// <param name="messageType">The message type to check.</param>

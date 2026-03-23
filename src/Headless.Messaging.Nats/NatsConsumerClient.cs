@@ -22,6 +22,11 @@ internal sealed class NatsConsumerClient(
     private readonly MessagingNatsOptions _natsOptions =
         options.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly List<IJetStreamPushAsyncSubscription> _subscriptions = [];
+    private IEnumerable<string>? _subscribedTopics;
+    private int _disposed;
+    private CancellationToken _cancellationToken;
     private IConnection? _consumerClient;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -83,6 +88,21 @@ internal sealed class NatsConsumerClient(
     {
         Argument.IsNotNull(topics);
 
+        // Materialize and store topics for re-subscription on resume
+        _subscribedTopics = topics.ToList();
+
+        if (_pauseGate.IsPaused)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        _CreateSubscriptions(_subscribedTopics);
+
+        return ValueTask.CompletedTask;
+    }
+
+    private void _CreateSubscriptions(IEnumerable<string> topics)
+    {
         Connect();
 
         var js = _consumerClient!.CreateJetStreamContext();
@@ -113,7 +133,8 @@ internal sealed class NatsConsumerClient(
                             .WithConfiguration(consumerConfig.Build())
                             .Build();
 
-                        js.PushSubscribeAsync(subject, groupName, _SubscriptionMessageHandler, false, pso);
+                        var sub = js.PushSubscribeAsync(subject, groupName, _SubscriptionMessageHandler, false, pso);
+                        _subscriptions.Add(sub);
                     }
 #pragma warning disable ERP022
                     catch (Exception e)
@@ -132,11 +153,12 @@ internal sealed class NatsConsumerClient(
                 }
             }
         }
-        return ValueTask.CompletedTask;
     }
 
     public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
+        _cancellationToken = cancellationToken;
+
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -150,25 +172,24 @@ internal sealed class NatsConsumerClient(
     {
         try
         {
+            await _pauseGate.WaitIfPausedAsync(_cancellationToken).ConfigureAwait(false);
+
             if (groupConcurrent > 0)
             {
-                await _semaphore.WaitAsync();
-                _ = Task.Run(consumeAsync)
-                    .ContinueWith(
-                        static (t, state) =>
+                _ = Task.Run(
+                        async () =>
                         {
-                            ((Action<LogMessageEventArgs>?)state)?.Invoke(
-                                new LogMessageEventArgs
-                                {
-                                    LogType = MqLogType.ExceptionReceived,
-                                    Reason = $"Unhandled exception in message handler: {t.Exception}",
-                                }
-                            );
+                            await _semaphore.WaitAsync(_cancellationToken).ConfigureAwait(false);
+                            try
+                            {
+                                await consumeAsync().ConfigureAwait(false);
+                            }
+                            finally
+                            {
+                                _ReleaseSemaphore();
+                            }
                         },
-                        OnLogCallback,
-                        CancellationToken.None,
-                        TaskContinuationOptions.OnlyOnFaulted,
-                        TaskScheduler.Default
+                        CancellationToken.None
                     );
             }
             else
@@ -243,10 +264,6 @@ internal sealed class NatsConsumerClient(
                 }
             );
         }
-        finally
-        {
-            _ReleaseSemaphore();
-        }
 
         return ValueTask.CompletedTask;
     }
@@ -270,10 +287,6 @@ internal sealed class NatsConsumerClient(
                 }
             );
         }
-        finally
-        {
-            _ReleaseSemaphore();
-        }
 
         return ValueTask.CompletedTask;
     }
@@ -293,8 +306,78 @@ internal sealed class NatsConsumerClient(
         }
     }
 
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (!await _pauseGate.PauseAsync()) return;
+
+        // Unsubscribe without drain — the circuit is opening because messages are
+        // already failing, so a synchronous 5-second drain adds latency with no
+        // safety benefit. Consistent with RabbitMQ/Kafka/Azure pause semantics.
+        _UnsubscribeWithoutDrain();
+    }
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (!await _pauseGate.ResumeAsync()) return;
+
+        if (_subscribedTopics is not null)
+        {
+            _CreateSubscriptions(_subscribedTopics);
+        }
+    }
+
+    private void _UnsubscribeWithoutDrain()
+    {
+        lock (_connectionLock)
+        {
+            foreach (var sub in _subscriptions)
+            {
+                try
+                {
+                    sub.Unsubscribe();
+                }
+#pragma warning disable ERP022
+                catch
+                {
+                    // Best-effort unsubscribe; subscription may already be closed
+                }
+#pragma warning restore ERP022
+            }
+
+            _subscriptions.Clear();
+        }
+    }
+
+    private void _DrainSubscriptions()
+    {
+        lock (_connectionLock)
+        {
+            foreach (var sub in _subscriptions)
+            {
+                try
+                {
+                    sub.Drain((int)TimeSpan.FromSeconds(5).TotalMilliseconds);
+                }
+#pragma warning disable ERP022
+                catch
+                {
+                    // Best-effort drain; subscription may already be closed
+                }
+#pragma warning restore ERP022
+            }
+
+            _subscriptions.Clear();
+        }
+    }
+
     public ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+
+        _pauseGate.Release();
+        _DrainSubscriptions();
         _consumerClient?.Dispose();
         _semaphore.Dispose();
         return ValueTask.CompletedTask;
@@ -342,4 +425,5 @@ internal sealed class NatsConsumerClient(
         var logArgs = new LogMessageEventArgs { LogType = MqLogType.AsyncErrorEvent, Reason = e.Error };
         OnLogCallback!(logArgs);
     }
+
 }

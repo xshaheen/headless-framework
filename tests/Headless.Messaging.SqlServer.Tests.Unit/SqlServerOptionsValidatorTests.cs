@@ -2,7 +2,6 @@
 
 using Headless.Messaging.SqlServer;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -17,11 +16,11 @@ public sealed class SqlServerOptionsValidatorTests : TestBase
         var options = new SqlServerOptions { ConnectionString = null! };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("ConnectionString");
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("ConnectionString"));
     }
 
     [Fact]
@@ -31,10 +30,10 @@ public sealed class SqlServerOptionsValidatorTests : TestBase
         var options = new SqlServerOptions { ConnectionString = "" };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
+        result.IsValid.Should().BeFalse();
     }
 
     [Fact]
@@ -44,10 +43,10 @@ public sealed class SqlServerOptionsValidatorTests : TestBase
         var options = new SqlServerOptions { ConnectionString = "   " };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Failed.Should().BeTrue();
+        result.IsValid.Should().BeFalse();
     }
 
     [Fact]
@@ -57,10 +56,10 @@ public sealed class SqlServerOptionsValidatorTests : TestBase
         var options = new SqlServerOptions { ConnectionString = "Server=localhost;Database=test" };
 
         // when
-        var result = _validator.Validate(null, options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Succeeded.Should().BeTrue();
+        result.IsValid.Should().BeTrue();
     }
 
     [Fact]
@@ -70,9 +69,9 @@ public sealed class SqlServerOptionsValidatorTests : TestBase
         var options = new SqlServerOptions { ConnectionString = "Server=localhost" };
 
         // when
-        var result = _validator.Validate("TestOptions", options);
+        var result = _validator.Validate(options);
 
         // then
-        result.Should().Be(ValidateOptionsResult.Success);
+        result.IsValid.Should().BeTrue();
     }
 }

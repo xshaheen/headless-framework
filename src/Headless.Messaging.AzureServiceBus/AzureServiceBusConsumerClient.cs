@@ -23,7 +23,10 @@ internal sealed class AzureServiceBusConsumerClient(
         options.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly ConsumerPauseGate _pauseGate = new();
 
+    private int _disposed;
+    private int _hasStartedProcessing;
     private ServiceBusAdministrationClient? _administrationClient;
     private ServiceBusClient? _serviceBusClient;
     private ServiceBusProcessorFacade? _serviceBusProcessor;
@@ -119,7 +122,9 @@ internal sealed class AzureServiceBusConsumerClient(
 
         _serviceBusProcessor.ProcessErrorAsync += _serviceBusProcessor_ProcessErrorAsync;
 
+        await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
         await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
+        Volatile.Write(ref _hasStartedProcessing, 1);
     }
 
     public async ValueTask CommitAsync(object? sender)
@@ -129,20 +134,53 @@ internal sealed class AzureServiceBusConsumerClient(
         {
             await commitInput.CompleteMessageAsync();
         }
-
-        _semaphore.Release();
     }
 
     public async ValueTask RejectAsync(object? sender)
     {
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
         await commitInput.AbandonMessageAsync();
-        _semaphore.Release();
+    }
+
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (!await _pauseGate.PauseAsync()) return;
+
+        if (_serviceBusProcessor is not null)
+        {
+            await _serviceBusProcessor.StopProcessingAsync(cancellationToken);
+        }
+    }
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+
+        // ASB is push-based — release the gate first (only affects startup gating),
+        // then restart the processor which delivers messages via callbacks.
+        if (!await _pauseGate.ResumeAsync()) return;
+
+        if (_serviceBusProcessor is null || Volatile.Read(ref _hasStartedProcessing) == 0)
+        {
+            return;
+        }
+
+        if (_serviceBusProcessor.IsProcessing)
+        {
+            return;
+        }
+
+        await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_serviceBusProcessor is not null && !_serviceBusProcessor.IsProcessing)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+
+        _pauseGate.Release();
+
+        if (_serviceBusProcessor is not null)
         {
             await _serviceBusProcessor.DisposeAsync();
         }
@@ -154,6 +192,21 @@ internal sealed class AzureServiceBusConsumerClient(
 
         _connectionLock.Dispose();
         _semaphore.Dispose();
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        if (groupConcurrent > 0)
+        {
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
+            }
+        }
     }
 
     private Task _serviceBusProcessor_ProcessErrorAsync(ProcessErrorEventArgs args)
@@ -181,8 +234,19 @@ internal sealed class AzureServiceBusConsumerClient(
         if (groupConcurrent > 0)
         {
             await _semaphore.WaitAsync();
-            _ = Task.Run(() => OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)))
-                .ConfigureAwait(false);
+            _ = Task.Run(
+                async () =>
+                {
+                    try
+                    {
+                        await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg));
+                    }
+                    finally
+                    {
+                        _ReleaseSemaphore();
+                    }
+                }
+            ).ConfigureAwait(false);
         }
         else
         {

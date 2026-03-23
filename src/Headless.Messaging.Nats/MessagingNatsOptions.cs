@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Messaging.Messages;
 using NATS.Client;
 using NATS.Client.JetStream;
@@ -9,7 +10,7 @@ namespace Headless.Messaging.Nats;
 /// <summary>
 /// Provides programmatic configuration for the messaging NATS project.
 /// </summary>
-public class MessagingNatsOptions
+public sealed class MessagingNatsOptions
 {
     /// <summary>
     /// Gets or sets the server url/urls used to connect to the NATs server.
@@ -46,4 +47,13 @@ public class MessagingNatsOptions
     >? CustomHeadersBuilder { get; set; }
 
     public Func<string, string> NormalizeStreamName { get; set; } = origin => origin.Split('.')[0];
+}
+
+internal sealed class MessagingNatsOptionsValidator : AbstractValidator<MessagingNatsOptions>
+{
+    public MessagingNatsOptionsValidator()
+    {
+        RuleFor(x => x.Servers).NotEmpty();
+        RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
+    }
 }

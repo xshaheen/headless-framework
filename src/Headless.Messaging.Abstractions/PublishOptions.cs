@@ -19,6 +19,7 @@ public sealed class PublishOptions
 
     /// <summary>
     /// Gets the explicit message identifier override.
+    /// Use a numeric string when publishing through storage-backed outbox providers.
     /// </summary>
     public string? MessageId { get; init; }
 

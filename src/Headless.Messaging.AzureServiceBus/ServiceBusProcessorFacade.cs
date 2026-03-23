@@ -4,7 +4,7 @@ using Azure.Messaging.ServiceBus;
 
 namespace Headless.Messaging.AzureServiceBus;
 
-public class ServiceBusProcessorFacade : IAsyncDisposable
+public sealed class ServiceBusProcessorFacade : IAsyncDisposable
 {
     private readonly ServiceBusProcessor? _serviceBusProcessor;
     private readonly ServiceBusSessionProcessor? _serviceBusSessionProcessor;
@@ -43,6 +43,13 @@ public class ServiceBusProcessorFacade : IAsyncDisposable
         return IsSessionProcessor
             ? _serviceBusSessionProcessor!.StartProcessingAsync(cancellationToken)
             : _serviceBusProcessor!.StartProcessingAsync(cancellationToken);
+    }
+
+    public Task StopProcessingAsync(CancellationToken cancellationToken = default)
+    {
+        return IsSessionProcessor
+            ? _serviceBusSessionProcessor!.StopProcessingAsync(cancellationToken)
+            : _serviceBusProcessor!.StopProcessingAsync(cancellationToken);
     }
 
 #pragma warning disable CA1003, MA0046
@@ -86,10 +93,7 @@ public class ServiceBusProcessorFacade : IAsyncDisposable
     }
 #pragma warning restore CA1003, MA0046
 
-#pragma warning disable CA1816
-    // CA1816: Class is not sealed; SuppressFinalize helps derived types avoid re-implementing IDisposable
     public async ValueTask DisposeAsync()
-#pragma warning restore CA1816
     {
         if (_serviceBusProcessor is not null)
         {

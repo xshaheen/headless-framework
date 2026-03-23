@@ -13,7 +13,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
 {
     private readonly ILogger _logger = logger;
 
-    public BrokerAddress BrokerAddress => new("Kafka", connectionPool.ServersAddress);
+    public BrokerAddress BrokerAddress => new("kafka", connectionPool.ServersAddress);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
@@ -62,6 +62,10 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
             }
 
             throw new PublisherSentFailedException("kafka message persisted failed!");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception e)
         {

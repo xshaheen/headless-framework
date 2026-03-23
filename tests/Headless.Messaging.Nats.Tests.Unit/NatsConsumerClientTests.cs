@@ -226,6 +226,120 @@ public sealed class NatsConsumerClientTests : TestBase
             );
     }
 
+    // -------------------------------------------------------------------------
+    // PauseAsync / ResumeAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void PauseGate_should_use_async_gate_not_ManualResetEventSlim()
+    {
+        // given
+        var clientType = typeof(NatsConsumerClient);
+        var field = clientType.GetField("_pauseGate", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        // then
+        field.Should().NotBeNull("_pauseGate field should exist");
+        field!.FieldType.Name.Should().Be(
+            "ConsumerPauseGate",
+            "pause gate must use async ConsumerPauseGate (TCS-based) to avoid blocking ThreadPool threads"
+        );
+    }
+
+    [Fact]
+    public async Task PauseAsync_is_idempotent_when_called_twice()
+    {
+        // given
+        await using var client = _CreateClient("test-group");
+
+        // when
+        await client.PauseAsync();
+        await client.PauseAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_when_not_paused()
+    {
+        // given
+        await using var client = _CreateClient("test-group");
+
+        // when
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    {
+        // given
+        await using var client = _CreateClient("test-group");
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_idempotent_after_resume()
+    {
+        // given
+        await using var client = _CreateClient("test-group");
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+        await client.ResumeAsync(); // second resume is no-op
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = _CreateClient("test-group");
+        await client.DisposeAsync();
+
+        // when — should not throw
+        await client.PauseAsync();
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = _CreateClient("test-group");
+        await client.DisposeAsync();
+
+        // when — should not throw
+        await client.ResumeAsync();
+    }
+
+    [Fact]
+    public async Task SubscribeAsync_should_defer_initial_subscription_when_client_is_paused()
+    {
+        // given
+        await using var client = _CreateClient("test-group");
+        var connection = Substitute.For<IConnection>();
+        typeof(NatsConsumerClient)
+            .GetField("_consumerClient", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(client, connection);
+
+        var topics = new[] { "topic-1" };
+
+        await client.PauseAsync();
+
+        // when
+        await client.SubscribeAsync(topics);
+
+        // then - paused startup should not touch the connection path yet
+        connection.ReceivedCalls().Should().BeEmpty();
+    }
+
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)
     {
         return new NatsConsumerClient(groupName, groupConcurrent, _options, _serviceProvider);

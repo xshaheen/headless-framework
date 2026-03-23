@@ -98,6 +98,22 @@ public abstract class DataStorageTestsBase : TestBase
         result.Origin.Should().BeSameAs(message);
     }
 
+    public virtual async Task should_reject_non_numeric_published_message_id()
+    {
+        // given
+        var storage = GetStorage();
+        var message = CreateMessage("non-numeric-id");
+
+        // when
+        var act = async () => await storage.StoreMessageAsync("test-published-message", message, cancellationToken: AbortToken);
+
+        // then
+        await act
+            .Should()
+            .ThrowAsync<ArgumentException>()
+            .WithMessage("Published message IDs must be numeric*");
+    }
+
     public virtual async Task should_store_received_message()
     {
         // given

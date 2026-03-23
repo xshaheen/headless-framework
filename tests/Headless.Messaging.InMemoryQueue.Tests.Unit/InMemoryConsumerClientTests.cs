@@ -412,6 +412,81 @@ public sealed class InMemoryConsumerClientTests : TestBase
         receivedMessage!.Value.GetGroup().Should().Be("test-group");
     }
 
+    // -------------------------------------------------------------------------
+    // PauseAsync / ResumeAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PauseAsync_is_idempotent_when_called_twice()
+    {
+        // when
+        await _client.PauseAsync();
+        await _client.PauseAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_when_not_paused()
+    {
+        // when
+        await _client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    {
+        // when
+        await _client.PauseAsync();
+        await _client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_blocks_message_delivery()
+    {
+        // given
+        await _client.SubscribeAsync(["test-topic"]);
+
+        var receivedCount = 0;
+        _client.OnMessageCallback = (_, _) =>
+        {
+            Interlocked.Increment(ref receivedCount);
+            return Task.CompletedTask;
+        };
+
+        using var cts = new CancellationTokenSource();
+        var listenTask = Task.Run(
+            async () =>
+            {
+                try { await _client.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token); }
+                catch (OperationCanceledException) { }
+            },
+            AbortToken
+        );
+
+        await Task.Delay(50, AbortToken);
+
+        // when — pause then send
+        await _client.PauseAsync();
+        _queue.Send(_CreateTestMessage("paused-msg", "test-topic"));
+        await Task.Delay(200, AbortToken);
+
+        // then — message not delivered while paused
+        receivedCount.Should().Be(0);
+
+        // cleanup — resume and cancel
+        await _client.ResumeAsync();
+        await Task.Delay(200, AbortToken);
+        await cts.CancelAsync();
+
+        // message should now have been delivered after resume
+        receivedCount.Should().Be(1);
+    }
+
     private static TransportMessage _CreateTestMessage(string id, string topic)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)

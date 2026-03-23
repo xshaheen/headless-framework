@@ -11,7 +11,7 @@ using Headers = Headless.Messaging.Headers;
 
 namespace Headless.Messaging.Kafka;
 
-public sealed class KafkaConsumerClient(
+internal sealed class KafkaConsumerClient(
     string groupId,
     byte groupConcurrent,
     IOptions<MessagingKafkaOptions> options,
@@ -21,7 +21,9 @@ public sealed class KafkaConsumerClient(
     private readonly Lock _lock = new();
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly MessagingKafkaOptions _kafkaOptions = Argument.IsNotNull(options.Value);
+    private readonly ConsumerPauseGate _pauseGate = new();
     private IConsumer<string, byte[]>? _consumerClient;
+    private int _disposed;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -98,6 +100,8 @@ public sealed class KafkaConsumerClient(
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+
             ConsumeResult<string, byte[]> consumerResult;
 
             try
@@ -129,7 +133,20 @@ public sealed class KafkaConsumerClient(
             if (groupConcurrent > 0)
             {
                 await _semaphore.WaitAsync(cancellationToken);
-                _ = Task.Run(() => _ConsumeAsync(consumerResult), cancellationToken).ConfigureAwait(false);
+                _ = Task.Run(
+                    async () =>
+                    {
+                        try
+                        {
+                            await _ConsumeAsync(consumerResult);
+                        }
+                        finally
+                        {
+                            _ReleaseSemaphore();
+                        }
+                    },
+                    cancellationToken
+                ).ConfigureAwait(false);
             }
             else
             {
@@ -142,19 +159,36 @@ public sealed class KafkaConsumerClient(
     public ValueTask CommitAsync(object? sender)
     {
         _consumerClient!.Commit((ConsumeResult<string, byte[]>)sender!);
-        _semaphore.Release();
         return ValueTask.CompletedTask;
     }
 
     public ValueTask RejectAsync(object? sender)
     {
         _consumerClient!.Assign(_consumerClient.Assignment);
-        _semaphore.Release();
         return ValueTask.CompletedTask;
+    }
+
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (!await _pauseGate.PauseAsync()) return;
+
+        _consumerClient?.Pause(_consumerClient.Assignment);
+    }
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+        if (!await _pauseGate.ResumeAsync()) return;
+
+        _consumerClient?.Resume(_consumerClient.Assignment);
     }
 
     public ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+
+        _pauseGate.Release();
         _semaphore.Dispose();
         _consumerClient?.Dispose();
         return ValueTask.CompletedTask;
@@ -184,6 +218,21 @@ public sealed class KafkaConsumerClient(
                 config.LogConnectionClose ??= false;
 
                 _consumerClient = _BuildConsumer(config);
+            }
+        }
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        if (groupConcurrent > 0)
+        {
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
             }
         }
     }
@@ -227,4 +276,5 @@ public sealed class KafkaConsumerClient(
         };
         OnLogCallback!(logArgs);
     }
+
 }

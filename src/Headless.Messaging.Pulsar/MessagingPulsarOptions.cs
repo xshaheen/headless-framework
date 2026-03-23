@@ -2,6 +2,7 @@
 
 using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
+using FluentValidation;
 using Pulsar.Client.Api;
 
 namespace Headless.Messaging.Pulsar;
@@ -9,7 +10,7 @@ namespace Headless.Messaging.Pulsar;
 /// <summary>
 /// Provides programmatic configuration for the messaging pulsar project.
 /// </summary>
-public class MessagingPulsarOptions
+public sealed class MessagingPulsarOptions
 {
     public required string ServiceUrl { get; set; }
 
@@ -18,7 +19,7 @@ public class MessagingPulsarOptions
     public PulsarTlsOptions? TlsOptions { get; set; }
 }
 
-public class PulsarTlsOptions
+public sealed class PulsarTlsOptions
 {
     private static readonly PulsarClientConfiguration _Default = PulsarClientConfiguration.Default;
 
@@ -28,4 +29,12 @@ public class PulsarTlsOptions
     public X509Certificate2 TlsTrustCertificate { get; set; } = _Default.TlsTrustCertificate;
     public Authentication Authentication { get; set; } = _Default.Authentication;
     public SslProtocols TlsProtocols { get; set; } = _Default.TlsProtocols;
+}
+
+internal sealed class MessagingPulsarOptionsValidator : AbstractValidator<MessagingPulsarOptions>
+{
+    public MessagingPulsarOptionsValidator()
+    {
+        RuleFor(x => x.ServiceUrl).NotEmpty();
+    }
 }

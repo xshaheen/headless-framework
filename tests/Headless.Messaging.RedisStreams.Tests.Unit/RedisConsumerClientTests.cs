@@ -125,4 +125,49 @@ public sealed class RedisConsumerClientTests : TestBase
         client.OnMessageCallback.Should().BeSameAs(messageCallback);
         client.OnLogCallback.Should().BeSameAs(logCallback);
     }
+
+    // -------------------------------------------------------------------------
+    // PauseAsync / ResumeAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PauseAsync_is_idempotent_when_called_twice()
+    {
+        // given
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
+
+        // when
+        await client.PauseAsync();
+        await client.PauseAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_when_not_paused()
+    {
+        // given
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
+
+        // when
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    {
+        // given
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
 }

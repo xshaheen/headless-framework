@@ -77,9 +77,8 @@ public static class MessagesSqlServerSetup
             services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IProcessingServer, DiagnosticRegister>());
 
-            services.Configure(configure);
+            services.Configure<SqlServerOptions, SqlServerOptionsValidator>(configure);
             services.AddSingleton<IConfigureOptions<SqlServerOptions>, ConfigureSqlServerOptions>();
-            services.AddSingleton<IValidateOptions<SqlServerOptions>, SqlServerOptionsValidator>();
         }
     }
 }

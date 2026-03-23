@@ -44,8 +44,34 @@ public sealed class RabbitMqTransportTests : TestBase
         await using var transport = new RabbitMqTransport(_logger, _pool);
 
         // then
-        transport.BrokerAddress.Name.Should().Be("RabbitMQ");
+        transport.BrokerAddress.Name.Should().Be("rabbitmq");
         transport.BrokerAddress.Endpoint.Should().Be("localhost:5672");
+    }
+
+    [Fact]
+    public async Task should_propagate_cancellation_before_renting_channel()
+    {
+        // given
+        await using var transport = new RabbitMqTransport(_logger, _pool);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
+            },
+            body: "test-body"u8.ToArray()
+        );
+
+        // when
+        var act = async () => await transport.SendAsync(message, cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _pool.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == nameof(IConnectionChannelPool.Rent));
+        _pool.DidNotReceive().Return(Arg.Any<IChannel>());
     }
 
     [Fact]

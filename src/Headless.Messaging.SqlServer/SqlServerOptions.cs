@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Messaging.Internal;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +14,19 @@ public sealed class SqlServerOptions : SqlServerEntityFrameworkMessagingOptions
     /// Gets or sets the database's connection string that will be used to store database entities.
     /// </summary>
     public required string ConnectionString { get; set; }
+}
+
+internal sealed class SqlServerOptionsValidator : AbstractValidator<SqlServerOptions>
+{
+    public SqlServerOptionsValidator()
+    {
+        RuleFor(x => x)
+            .Must(x => x.DbContextType is not null || !string.IsNullOrWhiteSpace(x.ConnectionString))
+            .WithMessage(
+                "SQL Server messaging storage requires either a DbContextType or ConnectionString. "
+                    + "Configure via UseSqlServer(connectionString) or UseSqlServer(options => options.ConnectionString = ...)"
+            );
+    }
 }
 
 internal sealed class ConfigureSqlServerOptions(IServiceScopeFactory serviceScopeFactory)

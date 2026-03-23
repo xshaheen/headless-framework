@@ -38,7 +38,10 @@ public sealed record RecordedMessage
     /// <summary>The topic the message was published to or consumed from.</summary>
     public required string Topic { get; init; }
 
-    /// <summary>UTC timestamp when the message was observed.</summary>
+    /// <summary>
+    /// UTC wall-clock time when the observation was recorded — publish acknowledgment
+    /// or consume completion, not the original message creation time.
+    /// </summary>
     public required DateTimeOffset Timestamp { get; init; }
 
     /// <summary>The exception, if any (set for Faulted messages only).</summary>

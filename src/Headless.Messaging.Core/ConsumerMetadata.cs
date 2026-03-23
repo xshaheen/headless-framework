@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.CircuitBreaker;
+
 namespace Headless.Messaging;
 
 /// <summary>
@@ -31,4 +33,11 @@ public sealed record ConsumerMetadata(
         string.IsNullOrWhiteSpace(HandlerId)
             ? MessagingConventions.GetDefaultHandlerId(ConsumerType, MessageType)
             : HandlerId!;
+
+    /// <summary>
+    /// Per-consumer circuit breaker overrides registered via
+    /// <c>AddConsumer().WithCircuitBreaker()</c>. Applied to the
+    /// <see cref="ConsumerCircuitBreakerRegistry"/> during startup discovery.
+    /// </summary>
+    internal ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; init; }
 }
