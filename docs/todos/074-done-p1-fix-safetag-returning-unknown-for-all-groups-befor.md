@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "074"
 tags: ["code-review","messaging","observability"]
@@ -49,3 +49,15 @@ PR #194 code review finding. Fix: `if (known.Count == 0) return groupName;`
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-23 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-23 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

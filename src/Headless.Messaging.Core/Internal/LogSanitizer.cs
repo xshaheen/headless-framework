@@ -11,16 +11,19 @@ namespace Headless.Messaging.Internal;
 /// paths, configuration, and storage operations log trusted application data and do not
 /// need sanitization.
 /// <para>
-/// Strips control characters (which enable log-line forging in text-based log sinks) and
-/// Unicode bidi overrides U+202A–U+202E / U+2066–U+2069 (which can visually reorder text
-/// in log viewers to hide malicious content).
+/// Strips control characters (which enable log-line forging in text-based log sinks),
+/// Unicode line/paragraph separators U+2028/U+2029 (which cause line-splitting in
+/// structured log sinks), lone surrogates U+D800–U+DFFF (invalid UTF-16 that can corrupt
+/// log output), and Unicode bidi overrides U+202A–U+202E / U+2066–U+2069 (which can
+/// visually reorder text in log viewers to hide malicious content).
 /// </para>
 /// </summary>
 internal static class LogSanitizer
 {
     /// <summary>
     /// Sanitizes a string value to prevent log injection.
-    /// Strips control characters and Unicode bidi overrides (U+202A-U+202E, U+2066-U+2069).
+    /// Strips control characters, Unicode line/paragraph separators (U+2028, U+2029),
+    /// lone surrogates (U+D800-U+DFFF), and Unicode bidi overrides (U+202A-U+202E, U+2066-U+2069).
     /// Optionally truncates to <paramref name="maxLength"/> characters (appending "..." when truncated).
     /// Returns null if input is null.
     /// </summary>
@@ -39,8 +42,7 @@ internal static class LogSanitizer
         var needsSanitization = false;
         for (var i = 0; i < scanLength; i++)
         {
-            var c = value[i];
-            if (char.IsControl(c) || c is (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069'))
+            if (ShouldStrip(value[i]))
             {
                 needsSanitization = true;
                 break;
@@ -54,20 +56,20 @@ internal static class LogSanitizer
 
         if (!needsSanitization && needsTruncation)
         {
-            return string.Concat(
-                value.AsSpan(0, maxLength - truncationSuffix.Length),
-                truncationSuffix
-            );
+            var truncLen = Math.Max(maxLength - truncationSuffix.Length, 0);
+            return string.Concat(value.AsSpan(0, truncLen), truncationSuffix);
         }
 
-        var effectiveMax = needsTruncation ? maxLength - truncationSuffix.Length : scanLength;
+        var effectiveMax = needsTruncation
+            ? Math.Max(maxLength - truncationSuffix.Length, 0)
+            : scanLength;
         var buffer = new char[effectiveMax + (needsTruncation ? truncationSuffix.Length : 0)];
         var pos = 0;
 
         for (var i = 0; i < scanLength && pos < effectiveMax; i++)
         {
             var c = value[i];
-            if (!char.IsControl(c) && c is not ((>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069')))
+            if (!ShouldStrip(c))
             {
                 buffer[pos++] = c;
             }
@@ -81,4 +83,17 @@ internal static class LogSanitizer
 
         return new string(buffer, 0, pos);
     }
+
+  /// <summary>
+  /// Returns true if the character should be stripped from log output.
+  /// </summary>
+  private static bool ShouldStrip(char c)
+  {
+    return char.IsControl(c) ||
+      c is '\u2028'                                          // Line Separator
+          or '\u2029'                                        // Paragraph Separator
+          or (>= '\uD800' and <= '\uDFFF')                   // Lone surrogates
+          or (>= '\u202A' and <= '\u202E')                   // Bidi overrides
+          or (>= '\u2066' and <= '\u2069');                   // Bidi isolates
+  }
 }

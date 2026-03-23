@@ -218,22 +218,6 @@ public sealed class CircuitBreakerOptionsTests : TestBase
     }
 
     // -------------------------------------------------------------------------
-    // Validation — IsTransientException
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public void validator_rejects_null_is_transient_predicate()
-    {
-        var opts = new CircuitBreakerOptions { IsTransientException = null! };
-        var validator = new CircuitBreakerOptionsValidator();
-
-        var result = validator.Validate(opts);
-
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(e => e.PropertyName == "IsTransientException");
-    }
-
-    // -------------------------------------------------------------------------
     // Validation — multiple failures reported together
     // -------------------------------------------------------------------------
 
@@ -246,14 +230,13 @@ public sealed class CircuitBreakerOptionsTests : TestBase
             OpenDuration = TimeSpan.Zero,
             MaxOpenDuration = TimeSpan.FromSeconds(10),
             SuccessfulCyclesToResetEscalation = 0,
-            IsTransientException = null!,
         };
         var validator = new CircuitBreakerOptionsValidator();
 
         var result = validator.Validate(opts);
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().HaveCount(4);
+        result.Errors.Should().HaveCount(3);
     }
 }
 

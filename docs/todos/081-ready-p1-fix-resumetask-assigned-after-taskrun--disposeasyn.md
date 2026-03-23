@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "081"
 tags: ["code-review","messaging","concurrency","correctness"]
@@ -56,3 +56,9 @@ PR #194 code review finding.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-23 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

@@ -106,7 +106,7 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public async ValueTask ReportFailureAsync(string groupName, Exception exception)
+    public async ValueTask ReportFailureAsync(string groupName, Exception exception, CancellationToken cancellationToken = default)
     {
         var state = _GetOrAddState(groupName);
 
@@ -249,7 +249,7 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public async ValueTask ReportSuccessAsync(string groupName)
+    public async ValueTask ReportSuccessAsync(string groupName, CancellationToken cancellationToken = default)
     {
         if (!_groups.TryGetValue(groupName, out var state))
         {
@@ -262,13 +262,17 @@ internal sealed class CircuitBreakerStateManager(
 
         lock (groupLock)
         {
-            state.ConsecutiveFailures = 0;
-
-            if (state.State is CircuitBreakerState.HalfOpen)
+            if (state.State is CircuitBreakerState.Closed)
+            {
+                state.ConsecutiveFailures = 0;
+            }
+            else if (state.State is CircuitBreakerState.HalfOpen)
             {
                 state.ProbeAcquired = false;
                 (openDuration, closedTimerToDispose) = _TransitionToClosed(state, groupName, probeSucceeded: true);
             }
+            // Open state: do NOT reset ConsecutiveFailures — preserve failure history
+            // so the circuit doesn't close prematurely when the timer transitions to HalfOpen.
         }
 
         if (closedTimerToDispose is not null)

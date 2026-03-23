@@ -436,13 +436,23 @@ Inject `ICircuitBreakerMonitor` for runtime observation and manual recovery:
 ```csharp
 var monitor = app.Services.GetRequiredService<ICircuitBreakerMonitor>();
 
+// Enumerate registered group names (available before any messages are processed)
+IReadOnlySet<string> groups = monitor.KnownGroups;
+
 // Check state
 var states = monitor.GetAllStates(); // all groups with current state
 var isOpen = monitor.IsOpen("payments");
 var state = monitor.GetState("payments"); // Closed, Open, HalfOpen, or null if unregistered
 
+// Rich snapshot with escalation and timing details
+CircuitBreakerSnapshot? snapshot = monitor.GetSnapshot("payments");
+// snapshot.State, snapshot.EscalationLevel, snapshot.ConsecutiveFailures,
+// snapshot.FailureThreshold, snapshot.OpenedAt, snapshot.EstimatedRemainingOpenDuration,
+// snapshot.EffectiveOpenDuration
+
 // Manual recovery (operator/agent action)
-var wasReset = await monitor.ResetAsync("payments", cancellationToken); // true if reset performed
+var wasReset = await monitor.ResetAsync("payments"); // true if reset performed
+var wasOpened = await monitor.ForceOpenAsync("payments"); // true if force-opened
 ```
 
 Inject `IRetryProcessorMonitor` for adaptive retry backpressure inspection and reset:

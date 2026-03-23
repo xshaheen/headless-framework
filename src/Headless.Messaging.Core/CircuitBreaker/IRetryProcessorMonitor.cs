@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging;
+namespace Headless.Messaging.CircuitBreaker;
 
 /// <summary>
 /// Provides runtime observability into the adaptive retry polling state.

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "089"
 tags: ["code-review","messaging","correctness","plan-conformance"]
@@ -56,3 +56,9 @@ PR #194 plan conformance finding.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-23 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

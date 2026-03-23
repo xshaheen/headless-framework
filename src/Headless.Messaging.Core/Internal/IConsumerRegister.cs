@@ -302,7 +302,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         handle.IsPaused = true;
         var snapshot = handle.SnapshotClients();
 
-        foreach (var client in snapshot)
+        await Task.WhenAll(snapshot.Select(async client =>
         {
             try
             {
@@ -312,7 +312,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             {
                 _logger.LogError(ex, "Failed to pause consumer client for group '{GroupName}'.", handle.GroupName);
             }
-        }
+        }));
     }
 
     private async ValueTask _ResumeGroupAsync(GroupHandle handle)
@@ -326,9 +326,9 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         // so ListeningAsync loops are still running. Just un-gate the transport.
         handle.IsPaused = false;
         var snapshot = handle.SnapshotClients();
-        List<Exception>? failures = null;
+        ConcurrentBag<Exception> failures = [];
 
-        foreach (var client in snapshot)
+        await Task.WhenAll(snapshot.Select(async client =>
         {
             try
             {
@@ -337,24 +337,25 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to resume consumer client for group '{GroupName}'.", handle.GroupName);
-                failures ??= [];
                 failures.Add(ex);
             }
-        }
+        }));
 
-        if (failures is null)
+        if (failures.IsEmpty)
         {
             return;
         }
 
-        if (failures.Count == 1)
+        var failureList = failures.ToArray();
+
+        if (failureList.Length == 1)
         {
-            throw failures[0];
+            throw failureList[0];
         }
 
         throw new AggregateException(
             $"Failed to resume one or more consumer clients for group '{handle.GroupName}'.",
-            failures
+            failureList
         );
     }
 

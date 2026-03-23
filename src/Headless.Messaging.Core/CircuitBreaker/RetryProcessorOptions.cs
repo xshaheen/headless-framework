@@ -34,6 +34,13 @@ public sealed class RetryProcessorOptions
     /// its polling to reduce amplification of an unhealthy dependency.
     /// Default is 0.8 (80%).
     /// </summary>
+    /// <remarks>
+    /// The recovery threshold is implicitly <c>CircuitOpenRateThreshold / 2.0</c>. When the
+    /// circuit-open skip rate drops to or below half of this threshold, the processor returns
+    /// to its normal polling interval. For the default value of 0.8, backpressure engages
+    /// above 80% and recovers below 40%. This hysteresis prevents rapid oscillation between
+    /// normal and backed-off polling states.
+    /// </remarks>
     public double CircuitOpenRateThreshold { get; set; } = 0.8;
 }
 

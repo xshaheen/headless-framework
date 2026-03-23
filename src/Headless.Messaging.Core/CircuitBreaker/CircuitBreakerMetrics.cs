@@ -81,7 +81,7 @@ internal sealed class CircuitBreakerMetrics
     private string _SafeTag(string groupName)
     {
         var known = _knownGroups;
-        if (known.Count == 0) return UnknownGroupTag;
+        if (known.Count == 0) return groupName;
         return known.Contains(groupName) ? groupName : UnknownGroupTag;
     }
 

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "090"
 tags: ["code-review","simplicity","messaging"]
@@ -49,3 +49,9 @@ PR #194 code review finding. Low priority — purely cosmetic simplification.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-23 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready

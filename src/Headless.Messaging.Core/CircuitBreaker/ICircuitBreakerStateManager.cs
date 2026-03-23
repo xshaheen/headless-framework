@@ -32,7 +32,8 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
     /// <param name="exception">The exception that caused the failure.</param>
-    ValueTask ReportFailureAsync(string groupName, Exception exception);
+    /// <param name="cancellationToken">Token to cancel the operation (e.g. transport pause callback).</param>
+    ValueTask ReportFailureAsync(string groupName, Exception exception, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Attempts to acquire the single HalfOpen probe slot for the specified group.
@@ -55,7 +56,8 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
     /// Resets the consecutive failure counter and, if in half-open state, closes the circuit.
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
-    ValueTask ReportSuccessAsync(string groupName);
+    /// <param name="cancellationToken">Token to cancel the operation.</param>
+    ValueTask ReportSuccessAsync(string groupName, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Removes all tracked state for the specified group, including timers and callbacks.
