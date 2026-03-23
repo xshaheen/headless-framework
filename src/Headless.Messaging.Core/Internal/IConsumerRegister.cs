@@ -200,7 +200,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             {
                 if (_circuitBreakerStateManager is not null)
                 {
-                    await _circuitBreakerStateManager.RemoveGroup(handle.GroupName).ConfigureAwait(false);
+                    await _circuitBreakerStateManager.RemoveGroupAsync(handle.GroupName).ConfigureAwait(false);
                 }
             }
         }

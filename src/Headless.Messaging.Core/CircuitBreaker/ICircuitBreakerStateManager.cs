@@ -64,7 +64,7 @@ internal interface ICircuitBreakerStateManager : ICircuitBreakerMonitor
     /// Intended for consumer teardown/restart paths.
     /// </summary>
     /// <param name="groupName">The consumer group name.</param>
-    ValueTask RemoveGroup(string groupName);
+    ValueTask RemoveGroupAsync(string groupName);
 
     /// <summary>
     /// Called during transport restart when a group is in <see cref="CircuitBreakerState.HalfOpen"/>.

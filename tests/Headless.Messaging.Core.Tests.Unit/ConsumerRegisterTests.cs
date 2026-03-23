@@ -146,7 +146,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         mockCb.IsOpen(groupName).Returns(true);
         mockCb.AbortHalfOpenProbeAsync(groupName).Returns(ValueTask.CompletedTask);
-        mockCb.RemoveGroup(Arg.Any<string>()).Returns(ValueTask.CompletedTask);
+        mockCb.RemoveGroupAsync(Arg.Any<string>()).Returns(ValueTask.CompletedTask);
         mockCb.RegisterKnownGroups(Arg.Any<IEnumerable<string>>());
 
         await using var provider = _CreateProvider(mockCb);

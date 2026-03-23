@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Collections.Immutable;
+using System.Collections.Frozen;
 using Headless.Checks;
 using Headless.Messaging.Internal;
 using Microsoft.Extensions.Logging;
@@ -48,7 +48,7 @@ internal sealed class CircuitBreakerStateManager(
     /// <see cref="_GetOrAddState"/> returns a static no-op state for unrecognized names
     /// to prevent unbounded OTel cardinality. Empty before <see cref="RegisterKnownGroups"/> is called.
     /// </summary>
-    private IReadOnlySet<string> _knownGroups = ImmutableHashSet<string>.Empty;
+    private FrozenSet<string> _knownGroups = FrozenSet<string>.Empty;
 
     /// <summary>
     /// Static no-op state returned for unrecognized group names. Permanently Closed,
@@ -83,7 +83,7 @@ internal sealed class CircuitBreakerStateManager(
     /// </summary>
     public void RegisterKnownGroups(IEnumerable<string> groups)
     {
-        var frozen = new HashSet<string>(groups, StringComparer.Ordinal);
+        var frozen = groups.ToFrozenSet(StringComparer.Ordinal);
         Volatile.Write(ref _knownGroups, frozen);
 
         // Pre-populate state for all known groups so GetAllStates() returns them immediately
@@ -126,14 +126,21 @@ internal sealed class CircuitBreakerStateManager(
             isTransient = false;
         }
 
-        var safeGroupName = LogSanitizer.Sanitize(groupName);
         var groupLock = state.SyncLock;
         Func<ValueTask>? pauseCallback = null;
         var tripped = false;
+        var closedProbeSucceeded = false;
         TimeSpan? openDuration = null;
         Timer? closedTimerToDispose = null;
         Timer? openTimerToDispose = null;
-        (TimeSpan OpenDuration, int Generation, Timer? OldTimerToDispose) timerInfo = default;
+        (
+            CircuitBreakerState PreviousState,
+            TimeSpan OpenDuration,
+            int Generation,
+            int Failures,
+            int Escalation,
+            Timer? OldTimerToDispose
+        ) openInfo = default;
 
         lock (groupLock)
         {
@@ -143,18 +150,14 @@ internal sealed class CircuitBreakerStateManager(
                     // Non-transient failure during probe: the message is bad but the dependency is healthy.
                     // Close the circuit so normal processing resumes.
                     state.ProbeAcquired = false;
-                    (openDuration, closedTimerToDispose) = _TransitionToClosed(
-                        state,
-                        safeGroupName,
-                        probeSucceeded: false
-                    );
+                    (openDuration, closedTimerToDispose) = _TransitionToClosed(state, probeSucceeded: false);
                     break;
 
                 case CircuitBreakerState.HalfOpen when isTransient:
                     // Transient failure during probe: dependency still unhealthy — re-open.
                     state.ProbeAcquired = false;
-                    timerInfo = _TransitionToOpen(state, safeGroupName);
-                    openTimerToDispose = timerInfo.OldTimerToDispose;
+                    openInfo = _TransitionToOpen(state);
+                    openTimerToDispose = openInfo.OldTimerToDispose;
                     pauseCallback = state.OnPause;
                     tripped = true;
                     break;
@@ -171,8 +174,8 @@ internal sealed class CircuitBreakerStateManager(
 
                     if (state.ConsecutiveFailures >= state.EffectiveFailureThreshold)
                     {
-                        timerInfo = _TransitionToOpen(state, safeGroupName);
-                        openTimerToDispose = timerInfo.OldTimerToDispose;
+                        openInfo = _TransitionToOpen(state);
+                        openTimerToDispose = openInfo.OldTimerToDispose;
                         pauseCallback = state.OnPause;
                         tripped = true;
                     }
@@ -181,23 +184,43 @@ internal sealed class CircuitBreakerStateManager(
             }
         }
 
-        // Dispose the timer from _TransitionToClosed outside the lock
+        // Log transitions outside the lock
+        if (tripped)
+        {
+            var safeGroupName = LogSanitizer.Sanitize(groupName);
+            logger.LogWarning(
+                "Circuit breaker {PreviousState} → Open for group {Group} (failures: {Failures}, escalation: {Escalation}, open for {Duration})",
+                openInfo.PreviousState,
+                safeGroupName,
+                openInfo.Failures,
+                openInfo.Escalation,
+                openInfo.OpenDuration
+            );
+        }
+        else if (closedTimerToDispose is not null || openDuration is not null)
+        {
+            var safeGroupName = LogSanitizer.Sanitize(groupName);
+            logger.LogWarning(
+                "Circuit breaker HalfOpen → Closed for group {Group} (non-transient failure, dependency considered healthy)",
+                safeGroupName
+            );
+        }
+
+        // Dispose timers outside the lock
         if (closedTimerToDispose is not null)
         {
             await closedTimerToDispose.DisposeAsync().ConfigureAwait(false);
         }
 
-        // Dispose the old timer from _TransitionToOpen outside the lock
         if (openTimerToDispose is not null)
         {
             await openTimerToDispose.DisposeAsync().ConfigureAwait(false);
         }
 
-        // Create timer and emit metrics outside the lock to avoid heap allocation,
-        // TimerQueue registration, and potentially slow I/O while holding it.
+        // Create timer and emit metrics outside the lock
         if (tripped)
         {
-            _CreateAndAssignOpenTimer(state, groupName, timerInfo.OpenDuration, timerInfo.Generation);
+            _CreateAndAssignOpenTimer(state, groupName, openInfo.OpenDuration, openInfo.Generation);
             metrics.RecordTrip(groupName);
         }
 
@@ -273,6 +296,7 @@ internal sealed class CircuitBreakerStateManager(
         var groupLock = state.SyncLock;
         TimeSpan? openDuration = null;
         Timer? closedTimerToDispose = null;
+        var transitionedToClosed = false;
 
         lock (groupLock)
         {
@@ -283,11 +307,19 @@ internal sealed class CircuitBreakerStateManager(
             else if (state.State is CircuitBreakerState.HalfOpen)
             {
                 state.ProbeAcquired = false;
-                var safeGroupName = LogSanitizer.Sanitize(groupName);
-                (openDuration, closedTimerToDispose) = _TransitionToClosed(state, safeGroupName, probeSucceeded: true);
+                (openDuration, closedTimerToDispose) = _TransitionToClosed(state, probeSucceeded: true);
+                transitionedToClosed = true;
             }
             // Open state: do NOT reset ConsecutiveFailures — preserve failure history
             // so the circuit doesn't close prematurely when the timer transitions to HalfOpen.
+        }
+
+        if (transitionedToClosed)
+        {
+            logger.LogInformation(
+                "Circuit breaker HalfOpen → Closed for group {Group} (probe succeeded)",
+                LogSanitizer.Sanitize(groupName)
+            );
         }
 
         if (closedTimerToDispose is not null)
@@ -317,7 +349,7 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public async ValueTask RemoveGroup(string groupName)
+    public async ValueTask RemoveGroupAsync(string groupName)
     {
         if (!_groups.TryRemove(groupName, out var state))
         {
@@ -491,14 +523,14 @@ internal sealed class CircuitBreakerStateManager(
             return false;
         }
 
-        var safeGroupName = LogSanitizer.Sanitize(groupName);
         var groupLock = state.SyncLock;
         Func<ValueTask>? resumeCallback = null;
         Timer? timerToDispose = null;
+        CircuitBreakerState previousState;
 
         lock (groupLock)
         {
-            var previousState = state.State;
+            previousState = state.State;
 
             if (previousState is CircuitBreakerState.Closed)
             {
@@ -516,13 +548,13 @@ internal sealed class CircuitBreakerStateManager(
             state.OpenTimer = null;
 
             resumeCallback = state.OnResume;
-
-            logger.LogWarning(
-                "Circuit breaker {PreviousState} → Closed (manual reset) for group {Group}",
-                previousState,
-                safeGroupName
-            );
         }
+
+        logger.LogWarning(
+            "Circuit breaker {PreviousState} → Closed (manual reset) for group {Group}",
+            previousState,
+            LogSanitizer.Sanitize(groupName)
+        );
 
         if (timerToDispose is not null)
         {
@@ -548,11 +580,12 @@ internal sealed class CircuitBreakerStateManager(
             return false;
         }
 
-        var safeGroupName = LogSanitizer.Sanitize(groupName);
         var groupLock = state.SyncLock;
         Func<ValueTask>? pauseCallback = null;
         Timer? timerToDispose = null;
         (TimeSpan OpenDuration, int Generation) timerInfo = default;
+        CircuitBreakerState previousState;
+        int escalationLevel;
 
         lock (groupLock)
         {
@@ -561,7 +594,7 @@ internal sealed class CircuitBreakerStateManager(
                 return false;
             }
 
-            var previousState = state.State;
+            previousState = state.State;
 
             // Force open without incrementing escalation — this is an operator action,
             // not a natural failure. Preserve existing escalation level.
@@ -581,15 +614,16 @@ internal sealed class CircuitBreakerStateManager(
             state.OpenTimer = null;
 
             pauseCallback = state.OnPause;
-
-            logger.LogWarning(
-                "Circuit breaker {PreviousState} → Open (forced) for group {Group} (escalation: {Escalation}, open for {Duration})",
-                previousState,
-                safeGroupName,
-                state.EscalationLevel,
-                openDuration
-            );
+            escalationLevel = state.EscalationLevel;
         }
+
+        logger.LogWarning(
+            "Circuit breaker {PreviousState} → Open (forced) for group {Group} (escalation: {Escalation}, open for {Duration})",
+            previousState,
+            LogSanitizer.Sanitize(groupName),
+            escalationLevel,
+            timerInfo.OpenDuration
+        );
 
         if (timerToDispose is not null)
         {
@@ -778,16 +812,18 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <summary>
-    /// Must be called while holding the group lock.
-    /// Callers must invoke <c>metrics.RecordTrip(groupName)</c> after releasing the lock.
-    /// Returns the open duration, timer generation, and the old timer so the caller can create
-    /// the new timer and dispose the old one outside the lock (to avoid heap allocation and
-    /// TimerQueue registration while holding it, and to avoid lock-ordering issues with Timer internals).
+    /// Must be called while holding the group lock. Performs no logging or I/O.
+    /// Callers must log the transition and invoke <c>metrics.RecordTrip(groupName)</c>
+    /// after releasing the lock.
     /// </summary>
-    private (TimeSpan OpenDuration, int Generation, Timer? OldTimerToDispose) _TransitionToOpen(
-        GroupCircuitState state,
-        string safeGroupName
-    )
+    private (
+        CircuitBreakerState PreviousState,
+        TimeSpan OpenDuration,
+        int Generation,
+        int Failures,
+        int Escalation,
+        Timer? OldTimerToDispose
+    ) _TransitionToOpen(GroupCircuitState state)
     {
         var previousState = state.State;
         state.State = CircuitBreakerState.Open;
@@ -809,16 +845,7 @@ internal sealed class CircuitBreakerStateManager(
         var oldTimer = state.OpenTimer;
         state.OpenTimer = null;
 
-        logger.LogWarning(
-            "Circuit breaker {PreviousState} → Open for group {Group} (failures: {Failures}, escalation: {Escalation}, open for {Duration})",
-            previousState,
-            safeGroupName,
-            state.ConsecutiveFailures,
-            state.EscalationLevel,
-            openDuration
-        );
-
-        return (openDuration, generation, oldTimer);
+        return (previousState, openDuration, generation, state.ConsecutiveFailures, state.EscalationLevel, oldTimer);
     }
 
     /// <summary>
@@ -852,13 +879,11 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <summary>
-    /// Must be called while holding the group lock.
-    /// Returns the open duration (or <see langword="null"/> if not tracked) so the caller
-    /// can invoke <c>metrics.RecordOpenDuration</c> after releasing the lock.
+    /// Must be called while holding the group lock. Performs no logging or I/O.
+    /// Callers must log the transition after releasing the lock.
     /// </summary>
     private (TimeSpan? OpenDuration, Timer? TimerToDispose) _TransitionToClosed(
         GroupCircuitState state,
-        string safeGroupName,
         bool probeSucceeded
     )
     {
@@ -890,21 +915,6 @@ internal sealed class CircuitBreakerStateManager(
             openDuration = TimeSpan.FromMilliseconds(Environment.TickCount64 - state.OpenedAt);
             state.OpenedAt = 0;
             state.OpenedAtUtc = null;
-        }
-
-        if (probeSucceeded)
-        {
-            logger.LogInformation(
-                "Circuit breaker HalfOpen → Closed for group {Group} (probe succeeded)",
-                safeGroupName
-            );
-        }
-        else
-        {
-            logger.LogWarning(
-                "Circuit breaker HalfOpen → Closed for group {Group} (non-transient failure, dependency considered healthy)",
-                safeGroupName
-            );
         }
 
         return (openDuration, timerToDispose);
@@ -947,12 +957,9 @@ internal sealed class CircuitBreakerStateManager(
                 state.ResumeTask = tcs.Task;
                 resumeTcs = tcs;
             }
-
-            logger.LogInformation(
-                "Circuit breaker Open → HalfOpen for group {Group}",
-                LogSanitizer.Sanitize(groupName)
-            );
         }
+
+        logger.LogInformation("Circuit breaker Open → HalfOpen for group {Group}", LogSanitizer.Sanitize(groupName));
 
         if (resumeCallback is not null)
         {
@@ -1017,11 +1024,16 @@ internal sealed class CircuitBreakerStateManager(
             return;
         }
 
-        var safeGroupName = LogSanitizer.Sanitize(groupName);
         var groupLock = state.SyncLock;
         Func<ValueTask>? pauseCallback = null;
-        (TimeSpan OpenDuration, int Generation, Timer? OldTimerToDispose) timerInfo;
-        int escalationLevel;
+        (
+            CircuitBreakerState PreviousState,
+            TimeSpan OpenDuration,
+            int Generation,
+            int Failures,
+            int Escalation,
+            Timer? OldTimerToDispose
+        ) openInfo;
 
         lock (groupLock)
         {
@@ -1031,18 +1043,26 @@ internal sealed class CircuitBreakerStateManager(
             }
 
             state.ProbeAcquired = false;
-            timerInfo = _TransitionToOpen(state, safeGroupName);
+            openInfo = _TransitionToOpen(state);
             pauseCallback = state.OnPause;
-            escalationLevel = state.EscalationLevel;
         }
+
+        logger.LogWarning(
+            "Circuit breaker {PreviousState} → Open for group {Group} (failures: {Failures}, escalation: {Escalation}, open for {Duration})",
+            openInfo.PreviousState,
+            LogSanitizer.Sanitize(groupName),
+            openInfo.Failures,
+            openInfo.Escalation,
+            openInfo.OpenDuration
+        );
 
         // Dispose old timer outside the lock
-        if (timerInfo.OldTimerToDispose is not null)
+        if (openInfo.OldTimerToDispose is not null)
         {
-            await timerInfo.OldTimerToDispose.DisposeAsync().ConfigureAwait(false);
+            await openInfo.OldTimerToDispose.DisposeAsync().ConfigureAwait(false);
         }
 
-        _CreateAndAssignOpenTimer(state, groupName, timerInfo.OpenDuration, timerInfo.Generation);
+        _CreateAndAssignOpenTimer(state, groupName, openInfo.OpenDuration, openInfo.Generation);
         metrics.RecordTrip(groupName);
 
         if (pauseCallback is not null)
@@ -1065,7 +1085,7 @@ internal sealed class CircuitBreakerStateManager(
                     "Pause callback failed while re-opening circuit for group {Group}. "
                         + "Circuit is Open but transport may not be paused — manual ResetAsync may be required (escalation: {Escalation})",
                     LogSanitizer.Sanitize(groupName),
-                    escalationLevel
+                    openInfo.Escalation
                 );
             }
         }
