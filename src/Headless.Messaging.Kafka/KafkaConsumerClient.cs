@@ -133,7 +133,20 @@ internal sealed class KafkaConsumerClient(
             if (groupConcurrent > 0)
             {
                 await _semaphore.WaitAsync(cancellationToken);
-                _ = Task.Run(() => _ConsumeAsync(consumerResult), cancellationToken).ConfigureAwait(false);
+                _ = Task.Run(
+                    async () =>
+                    {
+                        try
+                        {
+                            await _ConsumeAsync(consumerResult);
+                        }
+                        finally
+                        {
+                            _ReleaseSemaphore();
+                        }
+                    },
+                    cancellationToken
+                ).ConfigureAwait(false);
             }
             else
             {
@@ -146,14 +159,12 @@ internal sealed class KafkaConsumerClient(
     public ValueTask CommitAsync(object? sender)
     {
         _consumerClient!.Commit((ConsumeResult<string, byte[]>)sender!);
-        _semaphore.Release();
         return ValueTask.CompletedTask;
     }
 
     public ValueTask RejectAsync(object? sender)
     {
         _consumerClient!.Assign(_consumerClient.Assignment);
-        _semaphore.Release();
         return ValueTask.CompletedTask;
     }
 
@@ -177,7 +188,8 @@ internal sealed class KafkaConsumerClient(
 
     public ValueTask DisposeAsync()
     {
-        Interlocked.Exchange(ref _disposed, 1);
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+
         _pauseGate.Release();
         _semaphore.Dispose();
         _consumerClient?.Dispose();
@@ -208,6 +220,21 @@ internal sealed class KafkaConsumerClient(
                 config.LogConnectionClose ??= false;
 
                 _consumerClient = _BuildConsumer(config);
+            }
+        }
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        if (groupConcurrent > 0)
+        {
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
             }
         }
     }

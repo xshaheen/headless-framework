@@ -2,14 +2,14 @@
 
 namespace Headless.Messaging.AwsSqs;
 
-internal class SqsReceivedMessage
+internal sealed class SqsReceivedMessage
 {
     public string? Message { get; set; }
 
     public Dictionary<string, SqsReceivedMessageAttributes> MessageAttributes { get; set; } = default!;
 }
 
-internal class SqsReceivedMessageAttributes
+internal sealed class SqsReceivedMessageAttributes
 {
     public string? Type { get; set; }
 

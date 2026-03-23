@@ -85,8 +85,20 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
             if (_groupConcurrent > 0)
             {
                 await _semaphore.WaitAsync(cancellationToken);
-                _ = Task.Run(() => OnMessageCallback?.Invoke(message, null) ?? Task.CompletedTask, cancellationToken)
-                    .ConfigureAwait(false);
+                _ = Task.Run(
+                    async () =>
+                    {
+                        try
+                        {
+                            await (OnMessageCallback?.Invoke(message, null) ?? Task.CompletedTask);
+                        }
+                        finally
+                        {
+                            _ReleaseSemaphore();
+                        }
+                    },
+                    cancellationToken
+                ).ConfigureAwait(false);
             }
             else
             {
@@ -105,7 +117,6 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <returns>A completed task</returns>
     public ValueTask CommitAsync(object? sender)
     {
-        _semaphore.Release();
         return ValueTask.CompletedTask;
     }
 
@@ -116,8 +127,22 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <returns>A completed task</returns>
     public ValueTask RejectAsync(object? sender)
     {
-        _semaphore.Release();
         return ValueTask.CompletedTask;
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        if (_groupConcurrent > 0)
+        {
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -132,7 +157,8 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <returns>A value task representing the disposal</returns>
     public ValueTask DisposeAsync()
     {
-        Interlocked.Exchange(ref _disposed, 1);
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+
         _pauseGate.Release();
         _semaphore.Dispose();
         _messageQueue.Dispose();

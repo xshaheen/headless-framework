@@ -6,7 +6,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.RedisStreams;
 
-internal class RedisConsumerClientFactory(
+internal sealed class RedisConsumerClientFactory(
     IOptions<MessagingRedisOptions> redisOptions,
     IRedisStreamManager redis,
     ILogger<RedisConsumerClient> logger

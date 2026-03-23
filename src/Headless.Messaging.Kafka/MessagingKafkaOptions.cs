@@ -68,15 +68,6 @@ public sealed class MessagingKafkaOptions
     }
 }
 
-internal sealed class MessagingKafkaOptionsValidator : AbstractValidator<MessagingKafkaOptions>
-{
-    public MessagingKafkaOptionsValidator()
-    {
-        RuleFor(x => x.Servers).NotEmpty();
-        RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
-    }
-}
-
 public sealed class KafkaTopicOptions
 {
     /// <summary>
@@ -88,4 +79,13 @@ public sealed class KafkaTopicOptions
     /// The replication factor for the new topic
     /// </summary>
     public short ReplicationFactor { get; set; } = -1;
+}
+
+internal sealed class MessagingKafkaOptionsValidator : AbstractValidator<MessagingKafkaOptions>
+{
+    public MessagingKafkaOptionsValidator()
+    {
+        RuleFor(x => x.Servers).NotEmpty();
+        RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
+    }
 }

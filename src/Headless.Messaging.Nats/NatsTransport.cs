@@ -9,7 +9,7 @@ using NATS.Client.JetStream;
 
 namespace Headless.Messaging.Nats;
 
-internal class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool connectionPool) : ITransport
+internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool connectionPool) : ITransport
 {
     private readonly JetStreamOptions _jetStreamOptions = JetStreamOptions
         .Builder()

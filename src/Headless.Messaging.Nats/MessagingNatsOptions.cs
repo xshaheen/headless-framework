@@ -10,7 +10,7 @@ namespace Headless.Messaging.Nats;
 /// <summary>
 /// Provides programmatic configuration for the messaging NATS project.
 /// </summary>
-public class MessagingNatsOptions
+public sealed class MessagingNatsOptions
 {
     /// <summary>
     /// Gets or sets the server url/urls used to connect to the NATs server.

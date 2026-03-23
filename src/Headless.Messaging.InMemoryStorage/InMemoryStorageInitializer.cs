@@ -4,7 +4,7 @@ using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.InMemoryStorage;
 
-internal class InMemoryStorageInitializer : IStorageInitializer
+internal sealed class InMemoryStorageInitializer : IStorageInitializer
 {
     public string GetPublishedTableName()
     {

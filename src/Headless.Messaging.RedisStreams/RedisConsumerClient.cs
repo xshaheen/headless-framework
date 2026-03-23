@@ -59,13 +59,10 @@ internal sealed class RedisConsumerClient(
         var (stream, group, id) = ((string stream, string group, string id))sender!;
 
         await redis.Ack(stream, group, id);
-
-        _semaphore.Release();
     }
 
     public ValueTask RejectAsync(object? sender)
     {
-        _semaphore.Release();
         return ValueTask.CompletedTask;
     }
 
@@ -75,10 +72,26 @@ internal sealed class RedisConsumerClient(
 
     public ValueTask DisposeAsync()
     {
-        Interlocked.Exchange(ref _disposed, 1);
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+
         _pauseGate.Release();
         _semaphore.Dispose();
         return ValueTask.CompletedTask;
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        if (groupConcurrent > 0)
+        {
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
+            }
+        }
     }
 
     private async Task _ListeningForMessagesAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -115,8 +128,20 @@ internal sealed class RedisConsumerClient(
                     if (groupConcurrent > 0)
                     {
                         await _semaphore.WaitAsync(cancellationToken);
-                        _ = Task.Run(() => consumeAsync(position, stream, entry), cancellationToken)
-                            .ConfigureAwait(false);
+                        _ = Task.Run(
+                            async () =>
+                            {
+                                try
+                                {
+                                    await consumeAsync(position, stream, entry);
+                                }
+                                finally
+                                {
+                                    _ReleaseSemaphore();
+                                }
+                            },
+                            cancellationToken
+                        ).ConfigureAwait(false);
                     }
                     else
                     {

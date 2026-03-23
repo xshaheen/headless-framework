@@ -134,15 +134,12 @@ internal sealed class AzureServiceBusConsumerClient(
         {
             await commitInput.CompleteMessageAsync();
         }
-
-        _semaphore.Release();
     }
 
     public async ValueTask RejectAsync(object? sender)
     {
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
         await commitInput.AbandonMessageAsync();
-        _semaphore.Release();
     }
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
@@ -198,6 +195,21 @@ internal sealed class AzureServiceBusConsumerClient(
         _semaphore.Dispose();
     }
 
+    private void _ReleaseSemaphore()
+    {
+        if (groupConcurrent > 0)
+        {
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
+            }
+        }
+    }
+
     private Task _serviceBusProcessor_ProcessErrorAsync(ProcessErrorEventArgs args)
     {
         var exceptionMessage =
@@ -223,8 +235,19 @@ internal sealed class AzureServiceBusConsumerClient(
         if (groupConcurrent > 0)
         {
             await _semaphore.WaitAsync();
-            _ = Task.Run(() => OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)))
-                .ConfigureAwait(false);
+            _ = Task.Run(
+                async () =>
+                {
+                    try
+                    {
+                        await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg));
+                    }
+                    finally
+                    {
+                        _ReleaseSemaphore();
+                    }
+                }
+            ).ConfigureAwait(false);
         }
         else
         {

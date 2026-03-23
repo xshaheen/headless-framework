@@ -97,6 +97,10 @@ internal sealed class AmazonSqsConsumerClient(
                                     {
                                         _logger.LogError(ex, "Error consuming message for group {GroupId}", groupId);
                                     }
+                                    finally
+                                    {
+                                        _ReleaseSemaphore();
+                                    }
                                 },
                                 cancellationToken
                             )
@@ -164,10 +168,6 @@ internal sealed class AmazonSqsConsumerClient(
         {
             _InvalidIdFormatLog(ex.Message);
         }
-        finally
-        {
-            _semaphore.Release();
-        }
     }
 
     public async ValueTask RejectAsync(object? sender)
@@ -180,9 +180,20 @@ internal sealed class AmazonSqsConsumerClient(
         {
             _MessageNotInflightLog(ex.Message);
         }
-        finally
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        if (groupConcurrent > 0)
         {
-            _semaphore.Release();
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
+            }
         }
     }
 
@@ -192,7 +203,8 @@ internal sealed class AmazonSqsConsumerClient(
 
     public ValueTask DisposeAsync()
     {
-        Interlocked.Exchange(ref _disposed, 1);
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+
         _pauseGate.Release();
         _sqsClient?.Dispose();
         _snsClient?.Dispose();

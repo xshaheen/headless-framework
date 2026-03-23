@@ -376,7 +376,8 @@ internal sealed class NatsConsumerClient(
 
     public ValueTask DisposeAsync()
     {
-        Interlocked.Exchange(ref _disposed, 1);
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+
         _pauseGate.Release();
         _DrainSubscriptions();
         _consumerClient?.Dispose();

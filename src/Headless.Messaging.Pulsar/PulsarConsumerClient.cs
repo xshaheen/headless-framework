@@ -57,7 +57,20 @@ internal sealed class PulsarConsumerClient(
                 if (groupConcurrent > 0)
                 {
                     await _semaphore.WaitAsync(cancellationToken);
-                    _ = Task.Run(consumeAsync, cancellationToken).ConfigureAwait(false);
+                    _ = Task.Run(
+                        async () =>
+                        {
+                            try
+                            {
+                                await consumeAsync();
+                            }
+                            finally
+                            {
+                                _ReleaseSemaphore();
+                            }
+                        },
+                        cancellationToken
+                    ).ConfigureAwait(false);
                 }
                 else
                 {
@@ -92,7 +105,6 @@ internal sealed class PulsarConsumerClient(
     public async ValueTask CommitAsync(object? sender)
     {
         await _consumerClient!.AcknowledgeAsync((MessageId)sender!);
-        _semaphore.Release();
     }
 
     public async ValueTask RejectAsync(object? sender)
@@ -101,8 +113,21 @@ internal sealed class PulsarConsumerClient(
         {
             await _consumerClient!.NegativeAcknowledge(id);
         }
+    }
 
-        _semaphore.Release();
+    private void _ReleaseSemaphore()
+    {
+        if (groupConcurrent > 0)
+        {
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
+            }
+        }
     }
 
     public ValueTask PauseAsync(CancellationToken cancellationToken = default) => _pauseGate.PauseAsync();
@@ -111,7 +136,8 @@ internal sealed class PulsarConsumerClient(
 
     public ValueTask DisposeAsync()
     {
-        Interlocked.Exchange(ref _disposed, 1);
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+
         _pauseGate.Release();
         _semaphore.Dispose();
         return _consumerClient?.DisposeAsync() ?? ValueTask.CompletedTask;

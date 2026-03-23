@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.InMemoryStorage;
 
-internal class InMemoryDataStorage(
+internal sealed class InMemoryDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     ISerializer serializer,
     ILongIdGenerator longIdGenerator,
