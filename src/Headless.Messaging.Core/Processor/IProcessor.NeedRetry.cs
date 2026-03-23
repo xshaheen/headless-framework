@@ -84,6 +84,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     /// <inheritdoc />
     public bool IsBackedOff => Interlocked.Read(ref _currentIntervalTicks) > _baseInterval.Ticks;
 
+    /// <summary>Sets the current polling interval. Exposed for testing via InternalsVisibleTo.</summary>
+    internal void SetCurrentIntervalForTest(TimeSpan value) =>
+        Interlocked.Exchange(ref _currentIntervalTicks, value.Ticks);
+
     /// <inheritdoc />
     public ValueTask ResetBackpressureAsync(CancellationToken ct = default)
     {
@@ -279,7 +283,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     /// All mutations of _currentIntervalTicks use CAS (CompareExchange) loops to avoid
     /// non-atomic read-modify-write races with concurrent ResetBackpressureAsync calls.
     /// </summary>
-    private void _AdjustPollingInterval(int enqueued, int skippedCircuitOpen)
+    internal void _AdjustPollingInterval(int enqueued, int skippedCircuitOpen)
     {
         var total = enqueued + skippedCircuitOpen;
 
@@ -395,7 +399,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         return isOpen;
     }
 
-    private TimeSpan _GetLockTtl()
+    internal TimeSpan _GetLockTtl()
     {
         var ticks = Interlocked.Read(ref _currentIntervalTicks);
         var effectiveTicks = ticks > _baseInterval.Ticks ? ticks : _baseInterval.Ticks;

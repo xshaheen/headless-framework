@@ -821,6 +821,7 @@ internal sealed class CircuitBreakerStateManager(
 
         var groupLock = state.SyncLock;
         Func<ValueTask>? resumeCallback = null;
+        TaskCompletionSource? resumeTcs = null;
 
         lock (groupLock)
         {
@@ -835,6 +836,17 @@ internal sealed class CircuitBreakerStateManager(
             state.State = CircuitBreakerState.HalfOpen;
             resumeCallback = state.OnResume;
 
+            // Pre-assign ResumeTask BEFORE launching Task.Run so that DisposeAsync always
+            // sees the in-flight task. Without this, DisposeAsync could acquire the lock
+            // between Task.Run launch and the assignment, see null, and return — allowing
+            // the resume callback to run after disposal.
+            if (resumeCallback is not null)
+            {
+                var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                state.ResumeTask = tcs.Task;
+                resumeTcs = tcs;
+            }
+
             logger.LogInformation(
                 "Circuit breaker Open → HalfOpen for group {Group}",
                 LogSanitizer.Sanitize(groupName)
@@ -848,29 +860,39 @@ internal sealed class CircuitBreakerStateManager(
             // can race with Dispose (callback captures resumeCallback before Dispose nulls it).
             var ct = _disposalCts.Token;
 
-            var task = Task.Run(async () =>
+            // Fire-and-forget: the work is tracked via resumeTcs.Task (assigned to state.ResumeTask),
+            // not the Task.Run return value. The discard suppresses VSTHRD110/MA0134.
+            _ = Task.Run(async () =>
             {
-                if (ct.IsCancellationRequested) return;
-
                 try
-                {
-                    await resumeCallback().ConfigureAwait(false);
-                }
-                catch (Exception ex)
                 {
                     if (ct.IsCancellationRequested) return;
 
-                    logger.LogError(ex, "Resume callback failed for group {Group} during HalfOpen transition", LogSanitizer.Sanitize(groupName));
-                    await _ReopenAfterResumeFailureAsync(groupName).ConfigureAwait(false);
-                }
-            }, ct);
+                    try
+                    {
+                        await resumeCallback().ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (ct.IsCancellationRequested) return;
 
-            // Store the task reference so DisposeAsync can await it
-            // to prevent the callback from running after disposal.
-            lock (groupLock)
-            {
-                state.ResumeTask = task;
-            }
+                        logger.LogError(ex, "Resume callback failed for group {Group} during HalfOpen transition", LogSanitizer.Sanitize(groupName));
+                        await _ReopenAfterResumeFailureAsync(groupName).ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    resumeTcs!.TrySetResult();
+                }
+            }, ct).ContinueWith(
+                // If Task.Run itself is cancelled before the body runs (ct already cancelled),
+                // the TCS would never complete — complete it here as a fallback.
+                static (_, s) => ((TaskCompletionSource)s!).TrySetResult(),
+                resumeTcs,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnCanceled,
+                TaskScheduler.Default
+            );
         }
     }
 

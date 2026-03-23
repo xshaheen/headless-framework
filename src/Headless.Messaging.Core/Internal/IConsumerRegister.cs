@@ -79,7 +79,9 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     {
         if (!IsHealthy() || force)
         {
-            await PulseAsync();
+            // Preserve circuit breaker state across transport restarts — broker reconnects
+            // are orthogonal to handler failures tracked by the circuit breaker.
+            await PulseAsync(removeCircuitState: false);
 
             _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(_hostStoppingToken);
             _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
@@ -168,7 +170,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         }
     }
 
-    public async Task PulseAsync()
+    public async Task PulseAsync(bool removeCircuitState = true)
     {
         // Cancel all group CTSes
         foreach (var handle in _groupHandles.Values)
@@ -189,11 +191,15 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 #pragma warning restore ERP022, RCS1075
         }
 
-        // Dispose all handles
+        // Dispose all handles; only remove circuit state on final teardown,
+        // not on transport restarts where state must survive broker reconnects.
         foreach (var handle in _groupHandles.Values)
         {
             await handle.DisposeAsync();
-            _circuitBreakerStateManager?.RemoveGroup(handle.GroupName);
+            if (removeCircuitState)
+            {
+                _circuitBreakerStateManager?.RemoveGroup(handle.GroupName);
+            }
         }
 
         _groupHandles.Clear();

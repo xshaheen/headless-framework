@@ -99,41 +99,19 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
     }
 
-    private static TimeSpan _GetCurrentInterval(MessageNeedToRetryProcessor sut)
-    {
-        var field = typeof(MessageNeedToRetryProcessor).GetField(
-            "_currentIntervalTicks",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
-        );
-        return TimeSpan.FromTicks((long)field!.GetValue(sut)!);
-    }
+    // Helpers use internal members exposed via InternalsVisibleTo — no reflection needed.
 
-    private static void _SetCurrentInterval(MessageNeedToRetryProcessor sut, TimeSpan value)
-    {
-        var field = typeof(MessageNeedToRetryProcessor).GetField(
-            "_currentIntervalTicks",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
-        );
-        field!.SetValue(sut, value.Ticks);
-    }
+    private static TimeSpan _GetCurrentInterval(MessageNeedToRetryProcessor sut) =>
+        sut.CurrentPollingInterval;
 
-    private static void _InvokeAdjustPollingInterval(MessageNeedToRetryProcessor sut, int enqueued, int skippedCircuitOpen)
-    {
-        var method = typeof(MessageNeedToRetryProcessor).GetMethod(
-            "_AdjustPollingInterval",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
-        );
-        method!.Invoke(sut, [enqueued, skippedCircuitOpen]);
-    }
+    private static void _SetCurrentInterval(MessageNeedToRetryProcessor sut, TimeSpan value) =>
+        sut.SetCurrentIntervalForTest(value);
 
-    private static TimeSpan _GetLockTtl(MessageNeedToRetryProcessor sut)
-    {
-        var method = typeof(MessageNeedToRetryProcessor).GetMethod(
-            "_GetLockTtl",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
-        );
-        return (TimeSpan)method!.Invoke(sut, null)!;
-    }
+    private static void _InvokeAdjustPollingInterval(MessageNeedToRetryProcessor sut, int enqueued, int skippedCircuitOpen) =>
+        sut._AdjustPollingInterval(enqueued, skippedCircuitOpen);
+
+    private static TimeSpan _GetLockTtl(MessageNeedToRetryProcessor sut) =>
+        sut._GetLockTtl();
 
     // -------------------------------------------------------------------------
     // US-012: Circuit-state awareness
