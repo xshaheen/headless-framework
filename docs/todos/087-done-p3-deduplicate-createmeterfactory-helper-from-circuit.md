@@ -1,5 +1,5 @@
 ---
-status: ready
+status: done
 priority: p3
 issue_id: "087"
 tags: ["code-review","testing","simplicity","messaging"]
@@ -33,9 +33,9 @@ Extract _CreateMeterFactory() to a static CircuitBreakerTestHelpers class in the
 
 ## Acceptance Criteria
 
-- [ ] _CreateMeterFactory() defined once
-- [ ] Both test files use the shared helper
-- [ ] Tests still pass
+- [x] _CreateMeterFactory() defined once
+- [x] Both test files use the shared helper
+- [x] Tests still pass
 
 ## Notes
 
@@ -54,3 +54,9 @@ PR #194 code review finding.
 **By:** Triage Agent
 **Actions:**
 - Status changed: pending → ready
+
+### 2026-03-23 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

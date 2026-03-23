@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.Metrics;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -32,14 +31,6 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static IMeterFactory _CreateMeterFactory()
-    {
-        var meter = new Meter("Headless.Messaging.Test.Integration");
-        var factory = Substitute.For<IMeterFactory>();
-        factory.Create(Arg.Any<MeterOptions>()).Returns(meter);
-        return factory;
-    }
-
     private static CircuitBreakerStateManager _CreateStateManager(
         int failureThreshold = 3,
         TimeSpan? openDuration = null,
@@ -59,7 +50,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             Options.Create(opts),
             new ConsumerCircuitBreakerRegistry(),
             new NullLogger<CircuitBreakerStateManager>(),
-            new CircuitBreakerMetrics(_CreateMeterFactory())
+            new CircuitBreakerMetrics(CircuitBreakerTestHelpers.CreateMeterFactory())
         );
     }
 

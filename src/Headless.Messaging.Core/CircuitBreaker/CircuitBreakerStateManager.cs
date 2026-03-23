@@ -38,19 +38,9 @@ internal sealed class CircuitBreakerStateManager(
     private int _disposed;
 
     /// <summary>
-    /// Atomic counter tracking the number of entries in <see cref="_groups"/>.
-    /// Replaces <c>ConcurrentDictionary.Count</c> on the hot path — <c>.Count</c> is O(N) and
-    /// takes a full lock sweep across all segments, creating a global serialization point.
-    /// Incremented only when <see cref="object.ReferenceEquals"/> confirms our instance won the
-    /// <c>GetOrAdd</c> race, so the count stays accurate even under contention.
-    /// </summary>
-    private int _groupCount;
-
-    /// <summary>
     /// Flag to ensure the cap-reached warning is logged at most once.
-    /// Uses <see cref="Interlocked.CompareExchange(ref int, int, int)"/> for lock-free one-shot logging.
     /// </summary>
-    private int _capWarningLogged;
+    private volatile bool _capWarningLogged;
 
     /// <summary>
     /// Known consumer group names registered at startup. When populated (non-empty),
@@ -309,8 +299,6 @@ internal sealed class CircuitBreakerStateManager(
             return;
         }
 
-        Interlocked.Decrement(ref _groupCount);
-
         var groupLock = state.SyncLock;
 
         lock (groupLock)
@@ -344,7 +332,7 @@ internal sealed class CircuitBreakerStateManager(
     public IReadOnlyList<KeyValuePair<string, CircuitBreakerState>> GetAllStates()
     {
         var knownGroups = Volatile.Read(ref _knownGroups);
-        var capacity = knownGroups.Count > 0 ? knownGroups.Count : Volatile.Read(ref _groupCount);
+        var capacity = knownGroups.Count > 0 ? knownGroups.Count : _groups.Count;
         var result = new List<KeyValuePair<string, CircuitBreakerState>>(capacity);
 
         if (knownGroups.Count > 0)
@@ -658,10 +646,11 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         // Slow path: group not yet tracked
-        if (Volatile.Read(ref _groupCount) >= MaxTrackedGroups)
+        if (_groups.Count >= MaxTrackedGroups)
         {
-            if (Interlocked.CompareExchange(ref _capWarningLogged, 1, 0) == 0)
+            if (!_capWarningLogged)
             {
+                _capWarningLogged = true;
                 logger.LogWarning(
                     "Circuit breaker group count cap ({Cap}) reached — returning no-op state for new groups",
                     MaxTrackedGroups
@@ -682,15 +671,7 @@ internal sealed class CircuitBreakerStateManager(
             EffectiveIsTransient = perGroup?.IsTransientException ?? _options.IsTransientException,
         };
 
-        var state = _groups.GetOrAdd(groupName, newState);
-
-        // Only increment if our instance won the race (was actually stored)
-        if (ReferenceEquals(state, newState))
-        {
-            Interlocked.Increment(ref _groupCount);
-        }
-
-        return state;
+        return _groups.GetOrAdd(groupName, newState);
     }
 
     /// <summary>

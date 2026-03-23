@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.Metrics;
 using System.Net.Sockets;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Exceptions;
@@ -8,7 +7,6 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 
 namespace Tests;
 
@@ -36,7 +34,7 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             SuccessfulCyclesToResetEscalation = successfulCyclesToResetEscalation,
         };
 
-        var meterFactory = _CreateMeterFactory();
+        var meterFactory = CircuitBreakerTestHelpers.CreateMeterFactory();
 
         return new CircuitBreakerStateManager(
             Options.Create(opts),
@@ -44,14 +42,6 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
             new NullLogger<CircuitBreakerStateManager>(),
             new CircuitBreakerMetrics(meterFactory)
         );
-    }
-
-    private static IMeterFactory _CreateMeterFactory()
-    {
-        var meter = new Meter("Headless.Messaging.Test");
-        var factory = Substitute.For<IMeterFactory>();
-        factory.Create(Arg.Any<MeterOptions>()).Returns(meter);
-        return factory;
     }
 
     private static async Task _ReportTransientFailuresAsync(
