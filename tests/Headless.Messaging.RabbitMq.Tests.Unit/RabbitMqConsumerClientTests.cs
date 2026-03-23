@@ -383,6 +383,39 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task PauseAsync_is_idempotent_when_called_twice()
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await client.ConnectAsync();
+
+        // when
+        await client.PauseAsync();
+        _channel.ClearReceivedCalls();
+        await client.PauseAsync(); // second call — should be a no-op
+
+        // then — no broker interaction on the second call
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_idempotent_after_resume()
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+
+        await client.PauseAsync();
+        await client.ResumeAsync();
+        _channel.ClearReceivedCalls();
+
+        // when — second resume should be a no-op
+        await client.ResumeAsync();
+
+        // then
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+    }
+
+    [Fact]
     public async Task PauseAsync_is_noop_after_disposal()
     {
         // given

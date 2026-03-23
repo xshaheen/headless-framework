@@ -205,6 +205,20 @@ public sealed class AzureServiceBusConsumerClientTests
     }
 
     [Fact]
+    public async Task ResumeAsync_is_idempotent_after_resume()
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+        await client.ResumeAsync(); // second resume is no-op
+
+        // then — no exception
+    }
+
+    [Fact]
     public async Task PauseAsync_is_noop_after_disposal()
     {
         // given

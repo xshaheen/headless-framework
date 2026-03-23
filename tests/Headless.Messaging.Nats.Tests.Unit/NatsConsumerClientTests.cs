@@ -284,6 +284,20 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task ResumeAsync_is_idempotent_after_resume()
+    {
+        // given
+        await using var client = _CreateClient("test-group");
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+        await client.ResumeAsync(); // second resume is no-op
+
+        // then — no exception
+    }
+
+    [Fact]
     public async Task PauseAsync_is_noop_after_disposal()
     {
         // given
