@@ -193,17 +193,11 @@ internal sealed class CircuitBreakerStateManager(
             await openTimerToDispose.DisposeAsync().ConfigureAwait(false);
         }
 
-        // Create timer outside the lock to avoid heap allocation and TimerQueue registration
-        // while holding it. The generation check inside _CreateAndAssignOpenTimer handles the
-        // race where another thread transitions the state between the two lock acquisitions.
+        // Create timer and emit metrics outside the lock to avoid heap allocation,
+        // TimerQueue registration, and potentially slow I/O while holding it.
         if (tripped)
         {
             _CreateAndAssignOpenTimer(state, groupName, timerInfo.OpenDuration, timerInfo.Generation);
-        }
-
-        // Emit metrics outside the lock to avoid holding the lock during potentially slow I/O
-        if (tripped)
-        {
             metrics.RecordTrip(groupName);
         }
 
@@ -270,14 +264,12 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         // Fast path: skip lock when circuit is Closed and no failures to reset.
-        // Volatile read of State + non-locked ConsecutiveFailures is acceptable as
-        // a best-effort optimization — the worst case is one extra lock acquisition.
+        // Both State and ConsecutiveFailures use Volatile reads for ARM64 visibility.
         if (state.State is CircuitBreakerState.Closed && state.ConsecutiveFailures == 0)
         {
             return;
         }
 
-        var safeGroupName = LogSanitizer.Sanitize(groupName);
         var groupLock = state.SyncLock;
         TimeSpan? openDuration = null;
         Timer? closedTimerToDispose = null;
@@ -291,6 +283,7 @@ internal sealed class CircuitBreakerStateManager(
             else if (state.State is CircuitBreakerState.HalfOpen)
             {
                 state.ProbeAcquired = false;
+                var safeGroupName = LogSanitizer.Sanitize(groupName);
                 (openDuration, closedTimerToDispose) = _TransitionToClosed(state, safeGroupName, probeSucceeded: true);
             }
             // Open state: do NOT reset ConsecutiveFailures — preserve failure history
@@ -359,7 +352,6 @@ internal sealed class CircuitBreakerStateManager(
         var groupLock = state.SyncLock;
         Timer? oldTimer = null;
         (TimeSpan OpenDuration, int Generation) timerInfo = default;
-        var transitioned = false;
 
         lock (groupLock)
         {
@@ -385,16 +377,12 @@ internal sealed class CircuitBreakerStateManager(
             state.OpenTimer = null;
 
             timerInfo = (openDuration, gen);
-            transitioned = true;
-
-            logger.LogInformation(
-                "Circuit breaker HalfOpen → Open (probe aborted by transport restart) for group {Group}",
-                safeGroupName
-            );
         }
 
-        if (!transitioned)
-            return;
+        logger.LogInformation(
+            "Circuit breaker HalfOpen → Open (probe aborted by transport restart) for group {Group}",
+            safeGroupName
+        );
 
         // Await timer disposal outside the lock
         if (oldTimer is not null)
@@ -1116,7 +1104,17 @@ internal sealed class CircuitBreakerStateManager(
             get => (CircuitBreakerState)Volatile.Read(ref _state);
             set => Volatile.Write(ref _state, (int)value);
         }
-        public int ConsecutiveFailures { get; set; }
+        private int _consecutiveFailures;
+
+        /// <summary>
+        /// Uses <see cref="Volatile"/> read/write for cross-thread visibility on the
+        /// fast path in <see cref="ReportSuccessAsync"/> (read outside the lock).
+        /// </summary>
+        public int ConsecutiveFailures
+        {
+            get => Volatile.Read(ref _consecutiveFailures);
+            set => Volatile.Write(ref _consecutiveFailures, value);
+        }
 
         /// <summary>
         /// Number of times the circuit has opened (including current). Used by <see cref="_GetOpenDuration"/>

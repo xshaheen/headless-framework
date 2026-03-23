@@ -56,7 +56,7 @@ internal sealed class CircuitBreakerMetrics
     /// </summary>
     public void RegisterStateCallback(Func<IReadOnlyDictionary<string, CircuitBreakerState>> callback)
     {
-        _stateSnapshot = callback;
+        Volatile.Write(ref _stateSnapshot, callback);
     }
 
     /// <summary>
@@ -72,7 +72,7 @@ internal sealed class CircuitBreakerMetrics
             cache[group] = group;
         }
 
-        _safeTagCache = cache;
+        Volatile.Write(ref _safeTagCache, cache);
     }
 
     /// <summary>Records a circuit trip (Closed → Open or HalfOpen → Open).</summary>
@@ -89,7 +89,7 @@ internal sealed class CircuitBreakerMetrics
 
     private string _SafeTag(string groupName)
     {
-        var cache = _safeTagCache;
+        var cache = Volatile.Read(ref _safeTagCache);
         if (cache.Count == 0)
             return groupName;
         return cache.TryGetValue(groupName, out var safe) ? safe : UnknownGroupTag;
@@ -97,7 +97,7 @@ internal sealed class CircuitBreakerMetrics
 
     private IEnumerable<Measurement<int>> _ObserveCircuitStates()
     {
-        var snapshot = _stateSnapshot?.Invoke();
+        var snapshot = Volatile.Read(ref _stateSnapshot)?.Invoke();
 
         if (snapshot is null)
         {
