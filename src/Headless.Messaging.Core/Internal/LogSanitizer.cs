@@ -60,22 +60,25 @@ internal static class LogSanitizer
             return string.Concat(value.AsSpan(0, truncLen), truncationSuffix);
         }
 
-        var effectiveMax = needsTruncation
-            ? Math.Max(maxLength - truncationSuffix.Length, 0)
-            : scanLength;
-        var buffer = new char[effectiveMax + (needsTruncation ? truncationSuffix.Length : 0)];
+        var effectiveMax = needsTruncation ? Math.Max(maxLength - truncationSuffix.Length, 0) : scanLength;
+        var buffer = new char[effectiveMax + truncationSuffix.Length];
         var pos = 0;
+        var src = 0;
 
-        for (var i = 0; i < scanLength && pos < effectiveMax; i++)
+        for (; src < scanLength && pos < effectiveMax; src++)
         {
-            var c = value[i];
+            var c = value[src];
             if (!ShouldStrip(c))
             {
                 buffer[pos++] = c;
             }
         }
 
-        if (needsTruncation)
+        // Append '...' only when we genuinely didn't consume the entire input.
+        // When needsTruncation is true but stripped characters are dense, the
+        // sanitized output may fit within the limit — don't mislead with '...'.
+        var wasTruncated = src < value.Length;
+        if (wasTruncated)
         {
             truncationSuffix.AsSpan().CopyTo(buffer.AsSpan(pos));
             pos += truncationSuffix.Length;
@@ -84,16 +87,17 @@ internal static class LogSanitizer
         return new string(buffer, 0, pos);
     }
 
-  /// <summary>
-  /// Returns true if the character should be stripped from log output.
-  /// </summary>
-  private static bool ShouldStrip(char c)
-  {
-    return char.IsControl(c) ||
-      c is '\u2028'                                          // Line Separator
-          or '\u2029'                                        // Paragraph Separator
-          or (>= '\uD800' and <= '\uDFFF')                   // Lone surrogates
-          or (>= '\u202A' and <= '\u202E')                   // Bidi overrides
-          or (>= '\u2066' and <= '\u2069');                   // Bidi isolates
-  }
+    /// <summary>
+    /// Returns true if the character should be stripped from log output.
+    /// </summary>
+    private static bool ShouldStrip(char c)
+    {
+        return char.IsControl(c)
+            || c
+                is '\u2028' // Line Separator
+                    or '\u2029' // Paragraph Separator
+                    or (>= '\uD800' and <= '\uDFFF') // Lone surrogates
+                    or (>= '\u202A' and <= '\u202E') // Bidi overrides
+                    or (>= '\u2066' and <= '\u2069'); // Bidi isolates
+    }
 }
