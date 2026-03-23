@@ -10,18 +10,25 @@ namespace Headless.Messaging.Transport;
 internal sealed class ConsumerPauseGate
 {
     private readonly Lock _lock = new();
-    private volatile TaskCompletionSource<bool> _gate = _CreateCompletedGate();
+    private volatile TaskCompletionSource _gate = _CreateCompletedGate();
     private bool _paused;
     private bool _disposed;
 
-    public bool IsPaused { get { lock (_lock) { return _paused; } } }
+    public bool IsPaused
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _paused;
+            }
+        }
+    }
 
     public ValueTask WaitIfPausedAsync(CancellationToken ct)
     {
         var gate = _gate; // snapshot under volatile read
-        return gate.Task.IsCompleted
-            ? ValueTask.CompletedTask
-            : new ValueTask(gate.Task.WaitAsync(ct));
+        return gate.Task.IsCompleted ? ValueTask.CompletedTask : new ValueTask(gate.Task.WaitAsync(ct));
     }
 
     /// <summary>
@@ -33,9 +40,10 @@ internal sealed class ConsumerPauseGate
     {
         lock (_lock)
         {
-            if (_disposed || _paused) return new ValueTask<bool>(false);
+            if (_disposed || _paused)
+                return new ValueTask<bool>(false);
             _paused = true;
-            _gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
         return new ValueTask<bool>(true);
     }
@@ -47,33 +55,34 @@ internal sealed class ConsumerPauseGate
     /// </summary>
     public ValueTask<bool> ResumeAsync()
     {
-        TaskCompletionSource<bool> gateToComplete;
+        TaskCompletionSource gateToComplete;
         lock (_lock)
         {
-            if (_disposed || !_paused) return new ValueTask<bool>(false);
+            if (_disposed || !_paused)
+                return new ValueTask<bool>(false);
             _paused = false;
             gateToComplete = _gate;
         }
-        gateToComplete.TrySetResult(true);
+        gateToComplete.TrySetResult();
         return new ValueTask<bool>(true);
     }
 
     public void Release()
     {
-        TaskCompletionSource<bool> gateToComplete;
+        TaskCompletionSource gateToComplete;
         lock (_lock)
         {
             _disposed = true;
             _paused = false;
             gateToComplete = _gate;
         }
-        gateToComplete.TrySetResult(true);
+        gateToComplete.TrySetResult();
     }
 
-    private static TaskCompletionSource<bool> _CreateCompletedGate()
+    private static TaskCompletionSource _CreateCompletedGate()
     {
-        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        tcs.SetResult(true);
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        tcs.SetResult();
         return tcs;
     }
 }

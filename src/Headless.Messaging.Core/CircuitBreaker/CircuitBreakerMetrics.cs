@@ -23,7 +23,7 @@ internal sealed class CircuitBreakerMetrics
     private readonly Counter<long> _circuitTrips;
     private readonly Histogram<double> _openDuration;
 
-    private Func<IReadOnlyList<KeyValuePair<string, CircuitBreakerState>>>? _stateSnapshot;
+    private Func<IReadOnlyDictionary<string, CircuitBreakerState>>? _stateSnapshot;
     private IReadOnlyDictionary<string, string> _safeTagCache = ImmutableDictionary<string, string>.Empty;
 
     public CircuitBreakerMetrics(IMeterFactory meterFactory)
@@ -54,7 +54,7 @@ internal sealed class CircuitBreakerMetrics
     /// <summary>
     /// Registers the callback used by the observable gauge to pull current circuit states.
     /// </summary>
-    public void RegisterStateCallback(Func<IReadOnlyList<KeyValuePair<string, CircuitBreakerState>>> callback)
+    public void RegisterStateCallback(Func<IReadOnlyDictionary<string, CircuitBreakerState>> callback)
     {
         _stateSnapshot = callback;
     }

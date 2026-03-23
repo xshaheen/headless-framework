@@ -88,9 +88,9 @@ public interface ICircuitBreakerMonitor
 
     /// <summary>
     /// Returns a snapshot of current circuit breaker states for all tracked consumer groups.
-    /// The returned list is materialized at call time and safe to hold across async boundaries.
+    /// The returned dictionary is materialized at call time and safe to hold across async boundaries.
     /// </summary>
-    IReadOnlyList<KeyValuePair<string, CircuitBreakerState>> GetAllStates();
+    IReadOnlyDictionary<string, CircuitBreakerState> GetAllStates();
 
     /// <summary>
     /// Gets a rich snapshot of the circuit breaker state for a consumer group.
