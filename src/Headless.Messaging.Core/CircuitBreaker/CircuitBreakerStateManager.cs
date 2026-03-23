@@ -246,6 +246,14 @@ internal sealed class CircuitBreakerStateManager(
             return;
         }
 
+        // Fast path: skip lock when circuit is Closed and no failures to reset.
+        // Volatile read of State + non-locked ConsecutiveFailures is acceptable as
+        // a best-effort optimization — the worst case is one extra lock acquisition.
+        if (state.State is CircuitBreakerState.Closed && state.ConsecutiveFailures == 0)
+        {
+            return;
+        }
+
         var groupLock = state.SyncLock;
         TimeSpan? openDuration = null;
         Timer? closedTimerToDispose = null;
