@@ -48,6 +48,33 @@ public sealed class RedisTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_propagate_cancellation()
+    {
+        // given
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var message = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "test-id-123",
+                [Headers.MessageName] = "test-topic",
+            },
+            "test-body"u8.ToArray()
+        );
+
+        // when
+        var act = async () => await _sut.SendAsync(message, cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _mockStreamManager
+            .ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IRedisStreamManager.PublishAsync));
+    }
+
+    [Fact]
     public async Task should_publish_message_to_stream()
     {
         // given

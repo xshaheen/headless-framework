@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Pulsar;
 using Headless.Testing.Tests;
@@ -29,7 +30,7 @@ public sealed class PulsarTransportTests : TestBase
         await using var transport = new PulsarTransport(_logger, _connectionFactory);
 
         // then
-        transport.BrokerAddress.Name.Should().Be("Pulsar");
+        transport.BrokerAddress.Name.Should().Be("pulsar");
         transport.BrokerAddress.Endpoint.Should().Be("pulsar://localhost:6650");
     }
 
@@ -40,25 +41,19 @@ public sealed class PulsarTransportTests : TestBase
         await using var transport = new PulsarTransport(_logger, _connectionFactory);
         var message = _CreateTransportMessage("msg-123", "TestTopic");
 
-        // CreateProducerAsync will throw since we can't mock IProducer<byte[]>
-        // BUG: Exception from CreateProducerAsync is NOT caught by the try-catch in SendAsync
         _connectionFactory.CreateProducerAsync("TestTopic").ThrowsAsync(new InvalidOperationException("Expected"));
 
         // when
-        var act = async () => await transport.SendAsync(message);
+        var result = await transport.SendAsync(message);
 
-        // then - the exception propagates because CreateProducerAsync is outside the try-catch block
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        // then
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<PublisherSentFailedException>();
         await _connectionFactory.Received(1).CreateProducerAsync("TestTopic");
     }
 
-    /// <summary>
-    /// DESIGN ISSUE TEST: CreateProducerAsync exceptions are not caught by SendAsync.
-    /// The try-catch block in SendAsync only wraps producer.NewMessage and producer.SendAsync,
-    /// but CreateProducerAsync is called before the try block, so its exceptions propagate unwrapped.
-    /// </summary>
     [Fact]
-    public async Task should_propagate_exception_from_create_producer_unwrapped()
+    public async Task should_wrap_exception_from_create_producer()
     {
         // given
         await using var transport = new PulsarTransport(_logger, _connectionFactory);
@@ -69,11 +64,12 @@ public sealed class PulsarTransportTests : TestBase
             .ThrowsAsync(new InvalidOperationException("Connection failed"));
 
         // when
-        var act = async () => await transport.SendAsync(message);
+        var result = await transport.SendAsync(message);
 
-        // then - BUG: Exception is NOT wrapped in PublisherSentFailedException
-        // because CreateProducerAsync is called before the try-catch block
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Connection failed");
+        // then
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<PublisherSentFailedException>();
+        result.Exception!.InnerException.Should().BeOfType<InvalidOperationException>();
     }
 
     [Fact]
@@ -101,17 +97,29 @@ public sealed class PulsarTransportTests : TestBase
             .ThrowsAsync(new InvalidOperationException("Expected"));
 
         // when
-        try
-        {
-            await transport.SendAsync(message);
-        }
-        catch (InvalidOperationException)
-        {
-            // Expected since CreateProducerAsync throws outside try-catch
-        }
+        await transport.SendAsync(message);
 
         // then
         await _connectionFactory.Received(1).CreateProducerAsync("orders.created");
+    }
+
+    [Fact]
+    public async Task should_propagate_cancellation()
+    {
+        // given
+        await using var transport = new PulsarTransport(_logger, _connectionFactory);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = async () => await transport.SendAsync(_CreateTransportMessage("msg-123", "TestTopic"), cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _connectionFactory
+            .ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IConnectionFactory.CreateProducerAsync));
     }
 
     private static TransportMessage _CreateTransportMessage(string messageId, string messageName)

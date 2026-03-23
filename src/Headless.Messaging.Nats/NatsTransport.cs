@@ -17,7 +17,7 @@ internal class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool 
         .WithRequestTimeout(3000)
         .Build();
 
-    public BrokerAddress BrokerAddress => new("NATS", connectionPool.ServersAddress);
+    public BrokerAddress BrokerAddress => new("nats", connectionPool.ServersAddress);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
@@ -51,6 +51,10 @@ internal class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool 
             }
 
             throw new PublisherSentFailedException("NATS message send failed, no consumer reply!");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

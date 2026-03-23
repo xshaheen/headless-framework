@@ -35,8 +35,27 @@ public sealed class NatsTransportTests : TestBase
         await using var transport = new NatsTransport(_logger, _pool);
 
         // then
-        transport.BrokerAddress.Name.Should().Be("NATS");
+        transport.BrokerAddress.Name.Should().Be("nats");
         transport.BrokerAddress.Endpoint.Should().Be("nats://localhost:4222");
+    }
+
+    [Fact]
+    public async Task should_propagate_cancellation()
+    {
+        // given
+        await using var transport = new NatsTransport(_logger, _pool);
+        var connection = Substitute.For<IConnection>();
+        _pool.RentConnection().Returns(connection);
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = async () => await transport.SendAsync(_CreateTransportMessage("msg-123", "TestMessage"), cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _pool.Received(1).Return(connection);
     }
 
     [Fact]

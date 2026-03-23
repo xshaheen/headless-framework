@@ -28,6 +28,10 @@ internal sealed class RedisTransport(
 
             return OperateResult.Success;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             var wrapperEx = new PublisherSentFailedException(ex.Message, ex);

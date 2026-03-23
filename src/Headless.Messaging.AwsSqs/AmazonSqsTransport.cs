@@ -21,7 +21,7 @@ internal sealed class AmazonSqsTransport(
     private IAmazonSimpleNotificationService? _snsClient;
     private ConcurrentDictionary<string, string>? _topicArnMaps;
 
-    public BrokerAddress BrokerAddress => new("AmazonSQS", string.Empty);
+    public BrokerAddress BrokerAddress => new("aws_sqs", _GetBrokerEndpoint());
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
@@ -179,5 +179,20 @@ internal sealed class AmazonSqsTransport(
             resource.Dispose();
             return ValueTask.CompletedTask;
         }
+    }
+
+    private string _GetBrokerEndpoint()
+    {
+        var options = sqsOptionsAccessor.Value;
+
+        if (
+            Uri.TryCreate(options.SnsServiceUrl, UriKind.Absolute, out var serviceUri)
+            && !string.IsNullOrWhiteSpace(serviceUri.Host)
+        )
+        {
+            return serviceUri.IsDefaultPort ? serviceUri.Host : $"{serviceUri.Host}:{serviceUri.Port}";
+        }
+
+        return $"sns.{options.Region.SystemName}.amazonaws.com";
     }
 }

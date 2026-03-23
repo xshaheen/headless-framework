@@ -37,7 +37,24 @@ public sealed class AmazonSqsTransportTests : TestBase
         var brokerAddress = transport.BrokerAddress;
 
         // then
-        brokerAddress.Name.Should().Be("AmazonSQS");
+        brokerAddress.Name.Should().Be("aws_sqs");
+        brokerAddress.Endpoint.Should().Be("localhost:4566");
+    }
+
+    [Fact]
+    public async Task should_use_region_based_broker_endpoint_when_service_url_not_configured()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsTransport>>();
+        var options = Options.Create(new AmazonSqsOptions { Region = Amazon.RegionEndpoint.USEast1 });
+        await using var transport = new AmazonSqsTransport(logger, options);
+
+        // when
+        var brokerAddress = transport.BrokerAddress;
+
+        // then
+        brokerAddress.Name.Should().Be("aws_sqs");
+        brokerAddress.Endpoint.Should().Be("sns.us-east-1.amazonaws.com");
     }
 
     [Fact]
