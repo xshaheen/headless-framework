@@ -205,6 +205,28 @@ public sealed class AzureServiceBusConsumerClientTests
     }
 
     [Fact]
+    public async Task PauseAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await client.DisposeAsync();
+
+        // when — should not throw
+        await client.PauseAsync();
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await client.DisposeAsync();
+
+        // when — should not throw
+        await client.ResumeAsync();
+    }
+
+    [Fact]
     public async Task PauseAsync_and_ResumeAsync_should_toggle_the_startup_gate_before_processing_starts()
     {
         // given
@@ -213,21 +235,23 @@ public sealed class AzureServiceBusConsumerClientTests
             "_pauseGate",
             BindingFlags.NonPublic | BindingFlags.Instance
         )!;
+        var gate = gateField.GetValue(client)!;
+        var isPausedProp = gate.GetType().GetProperty("IsPaused", BindingFlags.Public | BindingFlags.Instance)!;
 
         // then - gate starts open
-        ((TaskCompletionSource<bool>)gateField.GetValue(client)!).Task.IsCompleted.Should().BeTrue();
+        ((bool)isPausedProp.GetValue(gate)!).Should().BeFalse();
 
         // when
         await client.PauseAsync();
 
         // then - startup gate closes while paused
-        ((TaskCompletionSource<bool>)gateField.GetValue(client)!).Task.IsCompleted.Should().BeFalse();
+        ((bool)isPausedProp.GetValue(gate)!).Should().BeTrue();
 
         // when
         await client.ResumeAsync();
 
         // then - gate reopens for late-starting listeners
-        ((TaskCompletionSource<bool>)gateField.GetValue(client)!).Task.IsCompleted.Should().BeTrue();
+        ((bool)isPausedProp.GetValue(gate)!).Should().BeFalse();
     }
 
     [Fact]

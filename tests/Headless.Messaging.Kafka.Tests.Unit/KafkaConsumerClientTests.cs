@@ -231,6 +231,28 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task PauseAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
+        await client.DisposeAsync();
+
+        // when — should not throw
+        await client.PauseAsync();
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
+        await client.DisposeAsync();
+
+        // when — should not throw
+        await client.ResumeAsync();
+    }
+
+    [Fact]
     public async Task ResumeAsync_is_idempotent_after_resume()
     {
         // given

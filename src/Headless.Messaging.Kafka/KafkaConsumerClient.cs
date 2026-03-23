@@ -159,6 +159,8 @@ internal sealed class KafkaConsumerClient(
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0 || _pauseGate.IsPaused) return;
+
         await _pauseGate.PauseAsync();
 
         _consumerClient?.Pause(_consumerClient.Assignment);
@@ -166,6 +168,8 @@ internal sealed class KafkaConsumerClient(
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0 || !_pauseGate.IsPaused) return;
+
         _consumerClient?.Resume(_consumerClient.Assignment);
 
         await _pauseGate.ResumeAsync();

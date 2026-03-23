@@ -383,6 +383,34 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task PauseAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await client.DisposeAsync();
+
+        // when — should not throw or interact with channel
+        await client.PauseAsync();
+
+        // then
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicCancelAsync));
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+        await client.DisposeAsync();
+
+        // when — should not throw or interact with channel
+        await client.ResumeAsync();
+
+        // then
+        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+    }
+
+    [Fact]
     public async Task ListeningAsync_should_wait_for_resume_when_group_is_paused_before_startup()
     {
         // given

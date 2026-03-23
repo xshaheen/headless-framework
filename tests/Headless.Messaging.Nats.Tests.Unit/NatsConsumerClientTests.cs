@@ -231,7 +231,7 @@ public sealed class NatsConsumerClientTests : TestBase
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void PauseGate_should_use_TaskCompletionSource_not_ManualResetEventSlim()
+    public void PauseGate_should_use_async_gate_not_ManualResetEventSlim()
     {
         // given
         var clientType = typeof(NatsConsumerClient);
@@ -239,9 +239,9 @@ public sealed class NatsConsumerClientTests : TestBase
 
         // then
         field.Should().NotBeNull("_pauseGate field should exist");
-        field!.FieldType.Should().Be(
-            typeof(TaskCompletionSource<bool>),
-            "pause gate must use TaskCompletionSource<bool> to avoid blocking ThreadPool threads"
+        field!.FieldType.Name.Should().Be(
+            "ConsumerPauseGate",
+            "pause gate must use async ConsumerPauseGate (TCS-based) to avoid blocking ThreadPool threads"
         );
     }
 
@@ -281,6 +281,28 @@ public sealed class NatsConsumerClientTests : TestBase
         await client.ResumeAsync();
 
         // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = _CreateClient("test-group");
+        await client.DisposeAsync();
+
+        // when — should not throw
+        await client.PauseAsync();
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = _CreateClient("test-group");
+        await client.DisposeAsync();
+
+        // when — should not throw
+        await client.ResumeAsync();
     }
 
     [Fact]
