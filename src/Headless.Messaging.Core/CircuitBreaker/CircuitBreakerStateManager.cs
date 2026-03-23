@@ -129,7 +129,7 @@ internal sealed class CircuitBreakerStateManager(
         var groupLock = state.SyncLock;
         Func<ValueTask>? pauseCallback = null;
         var tripped = false;
-        var closedProbeSucceeded = false;
+        var closedFromHalfOpen = false;
         TimeSpan? openDuration = null;
         Timer? closedTimerToDispose = null;
         Timer? openTimerToDispose = null;
@@ -151,6 +151,7 @@ internal sealed class CircuitBreakerStateManager(
                     // Close the circuit so normal processing resumes.
                     state.ProbeAcquired = false;
                     (openDuration, closedTimerToDispose) = _TransitionToClosed(state, probeSucceeded: false);
+                    closedFromHalfOpen = true;
                     break;
 
                 case CircuitBreakerState.HalfOpen when isTransient:
@@ -197,7 +198,7 @@ internal sealed class CircuitBreakerStateManager(
                 openInfo.OpenDuration
             );
         }
-        else if (closedTimerToDispose is not null || openDuration is not null)
+        else if (closedFromHalfOpen)
         {
             var safeGroupName = LogSanitizer.Sanitize(groupName);
             logger.LogWarning(
@@ -220,7 +221,7 @@ internal sealed class CircuitBreakerStateManager(
         // Create timer and emit metrics outside the lock
         if (tripped)
         {
-            _CreateAndAssignOpenTimer(state, groupName, openInfo.OpenDuration, openInfo.Generation);
+            _CreateAndAssignOpenTimer(state, openInfo.OpenDuration, openInfo.Generation);
             metrics.RecordTrip(groupName);
         }
 
@@ -422,7 +423,7 @@ internal sealed class CircuitBreakerStateManager(
             await oldTimer.DisposeAsync().ConfigureAwait(false);
         }
 
-        _CreateAndAssignOpenTimer(state, groupName, timerInfo.OpenDuration, timerInfo.Generation);
+        _CreateAndAssignOpenTimer(state, timerInfo.OpenDuration, timerInfo.Generation);
 
         // Record a trip metric — we are re-entering Open (counts for operator visibility)
         metrics.RecordTrip(groupName);
@@ -630,7 +631,7 @@ internal sealed class CircuitBreakerStateManager(
             await timerToDispose.DisposeAsync().ConfigureAwait(false);
         }
 
-        _CreateAndAssignOpenTimer(state, groupName, timerInfo.OpenDuration, timerInfo.Generation);
+        _CreateAndAssignOpenTimer(state, timerInfo.OpenDuration, timerInfo.Generation);
         metrics.RecordTrip(groupName);
 
         if (pauseCallback is not null)
@@ -853,14 +854,10 @@ internal sealed class CircuitBreakerStateManager(
     /// to store it. This avoids holding the lock during Timer construction (heap allocation
     /// and TimerQueue registration which may acquire internal runtime locks).
     /// </summary>
-    private void _CreateAndAssignOpenTimer(
-        GroupCircuitState state,
-        string groupName,
-        TimeSpan openDuration,
-        int generation
-    )
+    private void _CreateAndAssignOpenTimer(GroupCircuitState state, TimeSpan openDuration, int generation)
     {
-        var timer = new Timer(_OnOpenTimerElapsed, state, openDuration, Timeout.InfiniteTimeSpan);
+        var callbackState = new TimerCallbackState(state, generation);
+        var timer = new Timer(_OnOpenTimerElapsed, callbackState, openDuration, Timeout.InfiniteTimeSpan);
 
         var groupLock = state.SyncLock;
 
@@ -927,7 +924,7 @@ internal sealed class CircuitBreakerStateManager(
             return;
         }
 
-        var state = (GroupCircuitState)timerState!;
+        var (state, expectedGeneration) = (TimerCallbackState)timerState!;
         var groupName = state.GroupName;
 
         var groupLock = state.SyncLock;
@@ -936,11 +933,12 @@ internal sealed class CircuitBreakerStateManager(
 
         lock (groupLock)
         {
-            if (state.State is not CircuitBreakerState.Open)
+            if (state.State is not CircuitBreakerState.Open || state.TimerGeneration != expectedGeneration)
             {
                 // Circuit was already closed or re-opened — ignore stale timer callback.
-                // This guard is the safety net for Timer.Dispose() not guaranteeing that
-                // in-flight callbacks are cancelled (see _TransitionToOpen timer disposal).
+                // The generation check prevents a queued callback from a previous timer
+                // (which Timer.Dispose does not cancel) from prematurely transitioning
+                // a circuit that has since re-opened with a new generation.
                 return;
             }
 
@@ -1062,7 +1060,7 @@ internal sealed class CircuitBreakerStateManager(
             await openInfo.OldTimerToDispose.DisposeAsync().ConfigureAwait(false);
         }
 
-        _CreateAndAssignOpenTimer(state, groupName, openInfo.OpenDuration, openInfo.Generation);
+        _CreateAndAssignOpenTimer(state, openInfo.OpenDuration, openInfo.Generation);
         metrics.RecordTrip(groupName);
 
         if (pauseCallback is not null)
@@ -1100,8 +1098,15 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     // -------------------------------------------------------------------------
-    // Inner state type
+    // Inner types
     // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Callback state for <see cref="_OnOpenTimerElapsed"/>. Captures the expected
+    /// <see cref="GroupCircuitState.TimerGeneration"/> so stale timer callbacks from
+    /// a previous Open cycle are rejected even when the circuit has re-opened.
+    /// </summary>
+    private sealed record TimerCallbackState(GroupCircuitState State, int Generation);
 
     private sealed class GroupCircuitState
     {
