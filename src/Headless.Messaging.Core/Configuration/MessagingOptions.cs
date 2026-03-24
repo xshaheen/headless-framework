@@ -18,6 +18,9 @@ namespace Headless.Messaging.Configuration;
 /// </summary>
 public class MessagingOptions : IMessagingBuilder
 {
+    private string _defaultGroupName =
+        "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
+
     internal IServiceCollection? Services { get; set; }
     internal ConsumerRegistry? Registry { get; set; }
     internal ConsumerCircuitBreakerRegistry CircuitBreakerRegistry { get; } = new();
@@ -30,8 +33,17 @@ public class MessagingOptions : IMessagingBuilder
     /// In Kafka, this corresponds to the consumer group name; in RabbitMQ, it corresponds to the queue name.
     /// Default value is "headless.queue." followed by the entry assembly name in lowercase.
     /// </summary>
-    public string DefaultGroupName { get; set; } =
-        "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
+    public string DefaultGroupName
+    {
+        get => _defaultGroupName;
+        set
+        {
+            _defaultGroupName = value;
+            IsDefaultGroupNameConfigured = true;
+        }
+    }
+
+    internal bool IsDefaultGroupNameConfigured { get; set; }
 
     /// <summary>
     /// Gets or sets an optional prefix to be prepended to all consumer group names.
@@ -335,6 +347,13 @@ public class MessagingOptions : IMessagingBuilder
         return string.IsNullOrWhiteSpace(TopicNamePrefix) ? topic : string.Concat(TopicNamePrefix, ".", topic);
     }
 
+    internal string ApplyGroupNamePrefix(string group)
+    {
+        Argument.IsNotNullOrWhiteSpace(group);
+
+        return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : string.Concat(GroupNamePrefix, ".", group);
+    }
+
     private static Type _ResolveExplicitMessageType(Type consumerType)
     {
         var consumeInterfaces = consumerType
@@ -409,9 +428,24 @@ public class MessagingOptions : IMessagingBuilder
             ?? conventions.GetTopicName(messageType)
             ?? messageType.Name;
         var finalTopic = ApplyTopicNamePrefix(resolvedTopic);
-        var finalGroup = group ?? conventions.GetGroupName(finalHandlerId);
+        var finalGroup = ResolveGroupName(finalHandlerId, group);
 
         return new ConsumerMetadata(messageType, consumerType, finalTopic, finalGroup, concurrency, finalHandlerId);
+    }
+
+    internal string ResolveGroupName(string handlerId, string? explicitGroup = null)
+    {
+        Argument.IsNotNullOrWhiteSpace(handlerId);
+
+        Conventions.Version = Version;
+
+        var resolvedGroup =
+            !string.IsNullOrWhiteSpace(explicitGroup) ? explicitGroup!
+            : !string.IsNullOrWhiteSpace(Conventions.DefaultGroup) ? Conventions.DefaultGroup!
+            : IsDefaultGroupNameConfigured ? DefaultGroupName
+            : Conventions.GetGroupName(handlerId);
+
+        return ApplyGroupNamePrefix(resolvedGroup);
     }
 
     /// <summary>

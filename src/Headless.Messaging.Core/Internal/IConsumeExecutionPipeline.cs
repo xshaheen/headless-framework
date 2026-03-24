@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 using FastExpressionCompiler;
@@ -36,7 +37,8 @@ internal sealed class ConsumeExecutionPipeline(
         cancellationToken.ThrowIfCancellationRequested();
 
         var descriptor = context.ConsumerDescriptor;
-        var consumeContext = _BuildConsumeContext(messageInstance, context.MediumMessage, messageType);
+        var consumeHeaders = new MessageHeader(context.MediumMessage.Origin.Headers);
+        var consumeContext = _BuildConsumeContext(messageInstance, context.MediumMessage, messageType, consumeHeaders);
 
         await using var scope = serviceProvider.CreateAsyncScope();
         var provider = scope.ServiceProvider;
@@ -101,18 +103,29 @@ internal sealed class ConsumeExecutionPipeline(
         }
 
         var callbackName = context.MediumMessage.Origin.GetCallbackName();
+        var callbackHeaders = consumeHeaders.ResponseHeader;
         return string.IsNullOrEmpty(callbackName)
-            ? new ConsumerExecutedResult(resultObj, context.MediumMessage.Origin.GetId(), null, null)
-            : new ConsumerExecutedResult(resultObj, context.MediumMessage.Origin.GetId(), callbackName, null);
+            ? new ConsumerExecutedResult(resultObj, context.MediumMessage.Origin.GetId(), null, callbackHeaders)
+            : new ConsumerExecutedResult(
+                resultObj,
+                context.MediumMessage.Origin.GetId(),
+                callbackName,
+                callbackHeaders
+            );
     }
 
-    private object _BuildConsumeContext(object messageInstance, MediumMessage mediumMessage, Type messageType)
+    private object _BuildConsumeContext(
+        object messageInstance,
+        MediumMessage mediumMessage,
+        Type messageType,
+        MessageHeader headers
+    )
     {
         var factory =
-            (Func<object, MediumMessage, object>)
+            (Func<object, MediumMessage, MessageHeader, object>)
                 _compiledConsumeContextFactories.GetOrAdd(messageType, _CompileFactory);
 
-        return factory(messageInstance, mediumMessage);
+        return factory(messageInstance, mediumMessage, headers);
     }
 
     private static Delegate _CompileFactory(Type messageType)
@@ -120,6 +133,7 @@ internal sealed class ConsumeExecutionPipeline(
         var consumeContextType = typeof(ConsumeContext<>).MakeGenericType(messageType);
         var messageParam = Expression.Parameter(typeof(object), "message");
         var mediumParam = Expression.Parameter(typeof(MediumMessage), "medium");
+        var consumeHeadersParam = Expression.Parameter(typeof(MessageHeader), "headers");
         var originProperty = Expression.Property(mediumParam, nameof(MediumMessage.Origin));
         var addedProperty = Expression.Property(mediumParam, nameof(MediumMessage.Added));
         var headersProperty = Expression.Property(originProperty, nameof(Message.Headers));
@@ -169,16 +183,16 @@ internal sealed class ConsumeExecutionPipeline(
 
         var correlationIdBinding = Expression.Bind(correlationIdProperty, correlationIdExpression);
 
-        var messageHeaderCtor = typeof(MessageHeader).GetConstructor([typeof(IDictionary<string, string?>)])!;
-        var headersBinding = Expression.Bind(headersCtxProperty, Expression.New(messageHeaderCtor, headersProperty));
+        var headersBinding = Expression.Bind(headersCtxProperty, consumeHeadersParam);
 
-        var dateTimeOffsetCtor = typeof(DateTimeOffset).GetConstructor([typeof(DateTime), typeof(TimeSpan)])!;
         var timestampBinding = Expression.Bind(
             timestampProperty,
-            Expression.New(
-                dateTimeOffsetCtor,
-                addedProperty,
-                Expression.Field(null, typeof(TimeSpan), nameof(TimeSpan.Zero))
+            Expression.Call(
+                typeof(ConsumeExecutionPipeline),
+                nameof(_ResolveTimestamp),
+                null,
+                headersProperty,
+                addedProperty
             )
         );
 
@@ -201,8 +215,32 @@ internal sealed class ConsumeExecutionPipeline(
             topicBinding
         );
 
-        var lambda = Expression.Lambda<Func<object, MediumMessage, object>>(newExpr, messageParam, mediumParam);
+        var lambda = Expression.Lambda<Func<object, MediumMessage, MessageHeader, object>>(
+            newExpr,
+            messageParam,
+            mediumParam,
+            consumeHeadersParam
+        );
         return lambda.CompileFast();
+    }
+
+    private static DateTimeOffset _ResolveTimestamp(IDictionary<string, string?> headers, DateTime added)
+    {
+        if (
+            headers.TryGetValue(Headers.SentTime, out var sentTime)
+            && !string.IsNullOrWhiteSpace(sentTime)
+            && DateTimeOffset.TryParse(
+                sentTime,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out var parsed
+            )
+        )
+        {
+            return parsed;
+        }
+
+        return new DateTimeOffset(DateTime.SpecifyKind(added, DateTimeKind.Utc), TimeSpan.Zero);
     }
 
     private static async Task _DispatchAsync(

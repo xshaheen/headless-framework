@@ -20,7 +20,6 @@ Prefer simpler, cleaner APIs even when that requires breaking changes. Do not pr
 Each feature follows **abstraction + provider pattern**:
 - `Headless.*.Abstractions` — interfaces and contracts
 - `Headless.*.<Provider>` — concrete implementation
-
 Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 
 ## Test Structure
@@ -31,22 +30,28 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 
 **Stack**: xUnit, AwesomeAssertions (fork of FluentAssertions), NSubstitute, Bogus
 
-## Code Conventions (Strictly Enforced)
+## Conventions
 
-**Required C# features**:
+**Argument Validation:**
 
-- File-scoped namespaces: `namespace X;`
-- Primary constructors for DI
-- `required`/`init` for properties
-- `sealed` by default if not designed for inheritance
-- Collection expressions: `[]`
-- Pattern matching over old-style checks
-- Use `Headless.Checks` guards (`Argument.*`, `Ensure.*`) for validation. Do not use `ArgumentNullException.ThrowIfNull`, `ArgumentOutOfRangeException.ThrowIfGreaterThan` and similars.
-- Validate options only when needed, and when you do, use FluentValidation through the existing hosting/options extensions.
-- For options with FluentValidation, use the existing hosting extensions: `AddOptions<TOptions, TValidator>()` and `Configure<TOptions, TValidator>(...)`. Do not add custom `IValidateOptions<T>` implementations when the hosting pattern already covers the case.
-- When adding a DI registration method that configures options, provide all three overloads by default: `IConfiguration`, `Action<TOptions>`, and `Action<TOptions, IServiceProvider>`. Keep the shared registration in a private/core helper instead of duplicating service registration across overloads.
-- Higher-level bootstrap APIs may also auto-bind required options from their owned default configuration sections, like `Headless:*`, when that convention is part of the package contract.
-- If a feature requires options, do not expose a misleading parameterless registration overload. Higher-level APIs should accept the options they need and delegate to the optioned registration path.
+- Use `Headless.Checks` (`Argument.*`, `Ensure.*`) for argument validation; avoid `ArgumentNullException.ThrowIfNull`, `ArgumentOutOfRangeException.ThrowIfGreaterThan`, etc.
+
+**Options Pattern**:
+
+- Validate options with FluentValidation + hosting extensions: `AddOptions<TOptions, TValidator>()` / `Configure<TOptions, TValidator>(...)`. Avoid custom `IValidateOptions<T>` when hosting covers it.
+- Create an `internal sealed class {OptionsName}Validator : AbstractValidator<{OptionsName}>` in the same file as the options class, directly below it.
+- Register validators via DI using `services.Configure<TOption, TValidator>(action)` or `services.AddOptions<TOption, TValidator>()` from `Headless.Hosting`; these wire up FluentValidation + `ValidateOnStart()` automatically.
+- DI option registration must expose 3 overloads: `IConfiguration`, `Action<TOptions>`, `Action<TOptions, IServiceProvider>`. Share wiring in one private/core helper.
+- Higher-level bootstrap APIs may auto-bind required options from owned default sections (for example `Headless:*`) when part of the package contract.
+- If options are required, do not offer a parameterless registration overload; require options and delegate to the optioned path.
+- Never call `new Validator().ValidateAndThrow()` manually; use the DI pipeline.
+
+** Input Validation Responsibility:**
+
+This framework delegates certain input validation to consuming applications:
+
+- **Cache key length limits**: Not enforced by `ICache` implementations. Consumers should validate key lengths at their application boundaries if DoS protection is needed.
+- **Message payload sizes**: `CacheInvalidationMessage` and similar DTOs don't enforce size limits. Consumers should configure their messaging infrastructure (RabbitMQ, Redis, etc.) with appropriate limits.
 
 ## Package Management
 
@@ -54,36 +59,5 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 
 ## Documentation
 
-- Make sure to sync XML docs of the public APIs.
-- Make sure to sync project README.md files for each package (exist in `src/Headless.*` folders).
-
-## Tools
-
-```bash
-dotnet tool restore  # Install: csharpier, dotnet-ef, minver-cli, husky
-```
-
-## Build Validation
-
-- To validate build warnings, use `dotnet build --no-incremental`.
-- Use plain `dotnet build` only for quick feedback, not final warning verification.
-
-## Design Decisions
-
-- All NuGet versions are in `Directory.Packages.props` — never add `Version` in `.csproj`
-- Public APIs must have XML docs, and README.md files for each package must be kept up to date.
-
-### Options Validation
-
-Always validate options classes with **FluentValidation** (`AbstractValidator<T>`). Never use `IValidateOptions<T>`.
-
-- Create an `internal sealed class {OptionsName}Validator : AbstractValidator<{OptionsName}>` in the same file as the options class, directly below it.
-- Register via DI using `services.Configure<TOption, TValidator>(action)` or `services.AddOptions<TOption, TValidator>()` from `Headless.Hosting` — these wire up FluentValidation + `ValidateOnStart()` automatically.
-- Never call `new Validator().ValidateAndThrow()` manually — use the DI pipeline.
-
-### Input Validation Responsibility
-
-This framework delegates certain input validation to consuming applications:
-
-- **Cache key length limits**: Not enforced by `ICache` implementations. Consumers should validate key lengths at their application boundaries if DoS protection is needed.
-- **Message payload sizes**: `CacheInvalidationMessage` and similar DTOs don't enforce size limits. Consumers should configure their messaging infrastructure (RabbitMQ, Redis, etc.) with appropriate limits.
+- Keep public API XML docs in sync with the code.
+- Keep each package `README.md` in sync with the code; package READMEs live under `src/Headless.*`.

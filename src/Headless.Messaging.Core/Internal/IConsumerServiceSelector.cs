@@ -30,6 +30,11 @@ public interface IConsumerServiceSelector
     /// <param name="key">topic or exchange router key.</param>
     /// <param name="candidates">the set of <see cref="ConsumerExecutorDescriptor" /> candidates.</param>
     ConsumerExecutorDescriptor? SelectBestCandidate(string key, IReadOnlyList<ConsumerExecutorDescriptor> candidates);
+
+    /// <summary>
+    /// Clears any cached candidate data, forcing re-evaluation on the next selection.
+    /// </summary>
+    void Invalidate();
 }
 
 public sealed class ConsumerServiceSelector : IConsumerServiceSelector
@@ -57,6 +62,11 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         _cacheList = new ConcurrentDictionary<string, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>>(
             StringComparer.Ordinal
         );
+    }
+
+    public void Invalidate()
+    {
+        _cacheList.Clear();
     }
 
     public IReadOnlyList<ConsumerExecutorDescriptor> SelectCandidates()

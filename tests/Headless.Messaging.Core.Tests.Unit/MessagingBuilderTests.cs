@@ -465,6 +465,53 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
+    public void should_use_explicit_default_group_name_when_configured()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.DefaultGroupName = "shared-group";
+            messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        // then
+        registry.GetAll().Single().Group.Should().Be("shared-group");
+    }
+
+    [Fact]
+    public void should_apply_group_name_prefix_to_generated_groups()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.GroupNamePrefix = "tenant-a";
+            messaging.UseConventions(conventions =>
+            {
+                conventions.UseApplicationId("orders");
+                conventions.UseVersion("v1");
+            });
+            messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        // then
+        var handlerId = MessagingConventions.GetDefaultHandlerId(typeof(TestOrderConsumer), typeof(TestOrderMessage));
+        var conventions = new MessagingConventions().UseApplicationId("orders").UseVersion("v1");
+        registry.GetAll().Single().Group.Should().Be($"tenant-a.{conventions.GetGroupName(handlerId)}");
+    }
+
+    [Fact]
     public void should_allow_chaining_with_implicit_topic_mapping()
     {
         // given

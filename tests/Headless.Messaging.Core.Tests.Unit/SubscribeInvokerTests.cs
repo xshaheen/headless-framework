@@ -241,11 +241,71 @@ public sealed class SubscribeInvokerTests : TestBase
         consumed.CorrelationId.Should().BeNull();
     }
 
+    [Fact]
+    public async Task should_propagate_response_headers_added_by_consumer_to_callback_result()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.Subscribe<ResponseHeaderConsumer>().Topic("test.topic");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+
+        var mediumMessage = _CreateMediumMessage(
+            new InvokerTestMessage("callback"),
+            "test.topic",
+            callbackName: "callbacks.topic"
+        );
+        var descriptor = _CreateDescriptor<InvokerTestMessage, ResponseHeaderConsumer>();
+        var context = new ConsumerContext(descriptor, mediumMessage);
+
+        // when
+        var result = await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        result.CallbackName.Should().Be("callbacks.topic");
+        result.CallbackHeader.Should().NotBeNull();
+        result.CallbackHeader!["response-key"].Should().Be("response-value");
+    }
+
+    [Fact]
+    public async Task should_use_sent_time_header_for_consume_context_timestamp()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+        var sentTime = new DateTimeOffset(2026, 3, 24, 10, 11, 12, TimeSpan.Zero);
+
+        var mediumMessage = _CreateMediumMessage(new InvokerTestMessage("timestamp"), "test.topic", sentTime: sentTime);
+        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var context = new ConsumerContext(descriptor, mediumMessage);
+
+        // when
+        await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        InvokerTestConsumer.LastConsumed.Should().NotBeNull();
+        InvokerTestConsumer.LastConsumed!.Timestamp.Should().Be(sentTime);
+    }
+
     private static MediumMessage _CreateMediumMessage<T>(
         T message,
         string topicName,
         string? messageId = null,
-        Guid? correlationId = null
+        Guid? correlationId = null,
+        string? callbackName = null,
+        DateTimeOffset? sentTime = null
     )
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -257,6 +317,16 @@ public sealed class SubscribeInvokerTests : TestBase
         if (correlationId.HasValue)
         {
             headers[Headers.CorrelationId] = correlationId.Value.ToString();
+        }
+
+        if (!string.IsNullOrWhiteSpace(callbackName))
+        {
+            headers[Headers.CallbackName] = callbackName;
+        }
+
+        if (sentTime.HasValue)
+        {
+            headers[Headers.SentTime] = sentTime.Value.UtcDateTime.ToString(CultureInfo.InvariantCulture);
         }
 
         var json = JsonSerializer.Serialize(message);
@@ -357,6 +427,15 @@ public sealed class CancellableConsumer : IConsume<InvokerTestMessage>
     public ValueTask Consume(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class ResponseHeaderConsumer : IConsume<InvokerTestMessage>
+{
+    public ValueTask Consume(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
+    {
+        context.Headers.AddResponseHeader("response-key", "response-value");
         return ValueTask.CompletedTask;
     }
 }

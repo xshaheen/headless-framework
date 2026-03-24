@@ -1,0 +1,8 @@
+{
+  "lsp": {
+    "csharp": {
+      "command": "csharp-ls",
+      "args": ["--solution", "./headless-framework.slnx"]
+    }
+  }
+}

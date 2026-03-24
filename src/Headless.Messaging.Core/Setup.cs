@@ -161,6 +161,7 @@ public static class Setup
 
             // Copy public properties
             opt.DefaultGroupName = options.DefaultGroupName;
+            opt.IsDefaultGroupNameConfigured = options.IsDefaultGroupNameConfigured;
             opt.GroupNamePrefix = options.GroupNamePrefix;
             opt.TopicNamePrefix = options.TopicNamePrefix;
             opt.Version = options.Version;

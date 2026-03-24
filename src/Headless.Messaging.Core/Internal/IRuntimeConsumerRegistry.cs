@@ -244,8 +244,7 @@ internal sealed class RuntimeConsumerRegistry(
 
     private string _ResolveGroup(string handlerId, string? explicitGroup)
     {
-        _options.Conventions.Version = _options.Version;
-        return string.IsNullOrWhiteSpace(explicitGroup) ? _options.Conventions.GetGroupName(handlerId) : explicitGroup!;
+        return _options.ResolveGroupName(handlerId, explicitGroup);
     }
 
     private static byte _ResolveConcurrency(byte concurrency)
