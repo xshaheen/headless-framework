@@ -116,7 +116,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         var mediumMessage = new MediumMessage
         {
-            DbId = "1",
+            StorageId = 1L,
             Origin = new Message(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
@@ -333,7 +333,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         return new MediumMessage
         {
-            DbId = "1",
+            StorageId = 1L,
             Origin = new Message(headers, json),
             Content = json,
             Added = DateTime.UtcNow,

@@ -27,7 +27,7 @@ public sealed class MessageSenderTests : TestBase
 
         return new MediumMessage
         {
-            DbId = Guid.NewGuid().ToString(),
+            StorageId = 1L,
             Origin = new Message(headers, "{}"),
             Content = "{}",
             Added = DateTime.UtcNow,

@@ -10,7 +10,7 @@ public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDi
             (a, b) =>
             {
                 var result = a.Item1.CompareTo(b.Item1);
-                return result == 0 ? string.CompareOrdinal(a.Item2.DbId, b.Item2.DbId) : result;
+                return result == 0 ? a.Item2.StorageId.CompareTo(b.Item2.StorageId) : result;
             }
         )
     );

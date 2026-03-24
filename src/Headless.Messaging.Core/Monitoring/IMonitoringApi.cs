@@ -7,9 +7,9 @@ namespace Headless.Messaging.Monitoring;
 
 public interface IMonitoringApi
 {
-    ValueTask<MediumMessage?> GetPublishedMessageAsync(long id, CancellationToken cancellationToken = default);
+    ValueTask<MediumMessage?> GetPublishedMessageAsync(long storageId, CancellationToken cancellationToken = default);
 
-    ValueTask<MediumMessage?> GetReceivedMessageAsync(long id, CancellationToken cancellationToken = default);
+    ValueTask<MediumMessage?> GetReceivedMessageAsync(long storageId, CancellationToken cancellationToken = default);
 
     ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default);
 

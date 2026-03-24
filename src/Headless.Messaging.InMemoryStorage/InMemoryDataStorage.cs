@@ -19,9 +19,9 @@ internal sealed class InMemoryDataStorage(
     TimeProvider timeProvider
 ) : IDataStorage
 {
-    public static ConcurrentDictionary<string, MemoryMessage> PublishedMessages { get; } = new(StringComparer.Ordinal);
+    public static ConcurrentDictionary<long, MemoryMessage> PublishedMessages { get; } = new();
 
-    public static ConcurrentDictionary<string, MemoryMessage> ReceivedMessages { get; } = new(StringComparer.Ordinal);
+    public static ConcurrentDictionary<long, MemoryMessage> ReceivedMessages { get; } = new();
 
     internal static ConcurrentDictionary<string, (string Instance, DateTime ExpiresAt)> Locks { get; } =
         new(StringComparer.Ordinal);
@@ -109,12 +109,12 @@ internal sealed class InMemoryDataStorage(
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ChangePublishStateToDelayedAsync(string[] ids, CancellationToken cancellationToken = default)
+    public ValueTask ChangePublishStateToDelayedAsync(long[] storageIds, CancellationToken cancellationToken = default)
     {
-        foreach (var id in ids)
+        foreach (var storageId in storageIds)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            PublishedMessages[id].StatusName = StatusName.Delayed;
+            PublishedMessages[storageId].StatusName = StatusName.Delayed;
         }
 
         return ValueTask.CompletedTask;
@@ -128,9 +128,9 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        PublishedMessages[message.DbId].StatusName = state;
-        PublishedMessages[message.DbId].ExpiresAt = message.ExpiresAt;
-        PublishedMessages[message.DbId].Content = serializer.Serialize(message.Origin);
+        PublishedMessages[message.StorageId].StatusName = state;
+        PublishedMessages[message.StorageId].ExpiresAt = message.ExpiresAt;
+        PublishedMessages[message.StorageId].Content = serializer.Serialize(message.Origin);
         return ValueTask.CompletedTask;
     }
 
@@ -141,10 +141,10 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ReceivedMessages[message.DbId].StatusName = state;
-        ReceivedMessages[message.DbId].ExpiresAt = message.ExpiresAt;
-        ReceivedMessages[message.DbId].Content = serializer.Serialize(message.Origin);
-        ReceivedMessages[message.DbId].ExceptionInfo = message.ExceptionInfo;
+        ReceivedMessages[message.StorageId].StatusName = state;
+        ReceivedMessages[message.StorageId].ExpiresAt = message.ExpiresAt;
+        ReceivedMessages[message.StorageId].Content = serializer.Serialize(message.Origin);
+        ReceivedMessages[message.StorageId].ExceptionInfo = message.ExceptionInfo;
         return ValueTask.CompletedTask;
     }
 
@@ -156,11 +156,10 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _ValidatePublishedMessageId(content.GetId());
 
         var message = new MediumMessage
         {
-            DbId = content.GetId(),
+            StorageId = longIdGenerator.Create(),
             Origin = content,
             Content = serializer.Serialize(content),
             Added = timeProvider.GetUtcNow().UtcDateTime,
@@ -168,9 +167,9 @@ internal sealed class InMemoryDataStorage(
             Retries = 0,
         };
 
-        PublishedMessages[message.DbId] = new MemoryMessage
+        PublishedMessages[message.StorageId] = new MemoryMessage
         {
-            DbId = message.DbId,
+            StorageId = message.StorageId,
             Name = name,
             Origin = message.Origin,
             Content = message.Content,
@@ -192,13 +191,13 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var id = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var id = longIdGenerator.Create();
 
         ReceivedMessages[id] = new MemoryMessage
         {
-            DbId = id,
+            StorageId = id,
             Group = group,
-            Origin = null!,
+            Origin = serializer.Deserialize(content)!,
             Name = name,
             Content = content,
             Retries = messagingOptions.Value.FailedRetryCount,
@@ -223,7 +222,7 @@ internal sealed class InMemoryDataStorage(
         cancellationToken.ThrowIfCancellationRequested();
         var mdMessage = new MediumMessage
         {
-            DbId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture),
+            StorageId = longIdGenerator.Create(),
             Origin = message,
             Content = serializer.Serialize(message),
             Added = timeProvider.GetUtcNow().UtcDateTime,
@@ -231,9 +230,9 @@ internal sealed class InMemoryDataStorage(
             Retries = 0,
         };
 
-        ReceivedMessages[mdMessage.DbId] = new MemoryMessage
+        ReceivedMessages[mdMessage.StorageId] = new MemoryMessage
         {
-            DbId = mdMessage.DbId,
+            StorageId = mdMessage.StorageId,
             Origin = mdMessage.Origin,
             Group = group,
             Name = name,
@@ -260,10 +259,9 @@ internal sealed class InMemoryDataStorage(
         {
             var ids = PublishedMessages
                 .Values.Where(x =>
-                    x.ExpiresAt < timeout
-                    && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
+                    x.ExpiresAt < timeout && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
                 )
-                .Select(x => x.DbId)
+                .Select(x => x.StorageId)
                 .Take(batchCount);
 
             removed += ids.Count(id => PublishedMessages.TryRemove(id, out _));
@@ -272,10 +270,9 @@ internal sealed class InMemoryDataStorage(
         {
             var ids = ReceivedMessages
                 .Values.Where(x =>
-                    x.ExpiresAt < timeout
-                    && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
+                    x.ExpiresAt < timeout && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
                 )
-                .Select(x => x.DbId)
+                .Select(x => x.StorageId)
                 .Take(batchCount);
 
             removed += ids.Count(id => ReceivedMessages.TryRemove(id, out _));
@@ -330,14 +327,14 @@ internal sealed class InMemoryDataStorage(
     public ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var deleteResult = ReceivedMessages.TryRemove(id.ToString(CultureInfo.InvariantCulture), out _);
+        var deleteResult = ReceivedMessages.TryRemove(id, out _);
         return ValueTask.FromResult(deleteResult ? 1 : 0);
     }
 
     public ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var deleteResult = PublishedMessages.TryRemove(id.ToString(CultureInfo.InvariantCulture), out _);
+        var deleteResult = PublishedMessages.TryRemove(id, out _);
         return ValueTask.FromResult(deleteResult ? 1 : 0);
     }
 
@@ -364,16 +361,5 @@ internal sealed class InMemoryDataStorage(
     public IMonitoringApi GetMonitoringApi()
     {
         return new InMemoryMonitoringApi(timeProvider);
-    }
-
-    private static void _ValidatePublishedMessageId(string messageId)
-    {
-        if (!long.TryParse(messageId, NumberStyles.None, CultureInfo.InvariantCulture, out _))
-        {
-            throw new ArgumentException(
-                "Published message IDs must be numeric to support all storage providers.",
-                nameof(messageId)
-            );
-        }
     }
 }

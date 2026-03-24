@@ -86,6 +86,10 @@ internal class SqlServerMonitoringApi(
     )
     {
         var tableName = query.MessageType == MessageType.Publish ? _pubName : _recName;
+        var selectColumns =
+            query.MessageType == MessageType.Publish
+                ? "[Id],[MessageId],[Version],[Name],CAST(NULL AS nvarchar(200)) AS [Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName]"
+                : "[Id],[MessageId],[Version],[Name],[Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName]";
         var where = string.Empty;
         if (!string.IsNullOrEmpty(query.StatusName))
         {
@@ -108,7 +112,7 @@ internal class SqlServerMonitoringApi(
         }
 
         var sqlQuery =
-            $"SELECT * FROM {tableName} WHERE 1=1 {where} ORDER BY Added DESC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY";
+            $"SELECT {selectColumns} FROM {tableName} WHERE 1=1 {where} ORDER BY Added DESC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY";
 
         object[] sqlParams =
         [
@@ -149,11 +153,16 @@ internal class SqlServerMonitoringApi(
                         messages.Add(
                             new MessageView
                             {
-                                Id = reader.GetInt64(index++).ToString(CultureInfo.InvariantCulture),
+                                StorageId = reader.GetInt64(index++),
+                                MessageId = reader.GetString(index++),
                                 Version = reader.GetString(index++),
                                 Name = reader.GetString(index++),
-                                Group = query.MessageType == MessageType.Subscribe ? reader.GetString(index++) : null,
-                                Content = reader.GetString(index++),
+                                Group = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(index - 1),
+                                Content = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(index - 1),
                                 Retries = reader.GetInt32(index++),
                                 Added = reader.GetDateTime(index++),
                                 ExpiresAt = await reader.IsDBNullAsync(index++) ? null : reader.GetDateTime(index - 1),
@@ -320,7 +329,7 @@ internal class SqlServerMonitoringApi(
             ? "ExceptionInfo"
             : "CAST(NULL AS nvarchar(max)) AS ExceptionInfo";
         var sql =
-            $"SELECT TOP(1) Id AS DbId, Content, Added, ExpiresAt, Retries, {exceptionInfoSql} FROM {tableName} WITH (READPAST) WHERE Id={id}";
+            $"SELECT TOP(1) Id, Content, Added, ExpiresAt, Retries, {exceptionInfoSql} FROM {tableName} WITH (READPAST) WHERE Id=@Id";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 
@@ -336,7 +345,7 @@ internal class SqlServerMonitoringApi(
                         var expiresAtIsNull = await reader.IsDBNullAsync(3, ct).ConfigureAwait(false);
                         message = new MediumMessage
                         {
-                            DbId = reader.GetInt64(0).ToString(CultureInfo.InvariantCulture),
+                            StorageId = reader.GetInt64(0),
                             Origin = serializer.Deserialize(reader.GetString(1))!,
                             Content = reader.GetString(1),
                             Added = reader.GetDateTime(2),
@@ -350,7 +359,8 @@ internal class SqlServerMonitoringApi(
 
                     return message;
                 },
-                cancellationToken: cancellationToken
+                cancellationToken: cancellationToken,
+                sqlParams: [new SqlParameter("@Id", id)]
             )
             .ConfigureAwait(false);
 

@@ -22,7 +22,7 @@ public interface IDataStorage
 
     ValueTask RenewLockAsync(string key, TimeSpan ttl, string instance, CancellationToken cancellationToken = default);
 
-    ValueTask ChangePublishStateToDelayedAsync(string[] ids, CancellationToken cancellationToken = default);
+    ValueTask ChangePublishStateToDelayedAsync(long[] storageIds, CancellationToken cancellationToken = default);
 
     ValueTask ChangePublishStateAsync(
         MediumMessage message,

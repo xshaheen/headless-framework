@@ -4,7 +4,7 @@ namespace Headless.Messaging.Messages;
 
 public class MediumMessage
 {
-    public required string DbId { get; set; }
+    public required long StorageId { get; set; }
 
     public required Message Origin { get; set; }
 

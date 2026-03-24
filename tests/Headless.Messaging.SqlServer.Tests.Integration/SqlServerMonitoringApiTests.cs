@@ -182,14 +182,14 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     {
         // given
         var stored = await _CreatePublishedMessage(StatusName.Scheduled);
-        var id = long.Parse(stored.DbId, CultureInfo.InvariantCulture);
+        var id = stored.StorageId;
 
         // when
         var retrieved = await _monitoringApi.GetPublishedMessageAsync(id, AbortToken);
 
         // then
         retrieved.Should().NotBeNull();
-        retrieved!.DbId.Should().Be(stored.DbId);
+        retrieved!.StorageId.Should().Be(stored.StorageId);
     }
 
     [Fact]
@@ -207,14 +207,14 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     {
         // given
         var stored = await _CreateReceivedMessage(StatusName.Scheduled);
-        var id = long.Parse(stored.DbId, CultureInfo.InvariantCulture);
+        var id = stored.StorageId;
 
         // when
         var retrieved = await _monitoringApi.GetReceivedMessageAsync(id, AbortToken);
 
         // then
         retrieved.Should().NotBeNull();
-        retrieved!.DbId.Should().Be(stored.DbId);
+        retrieved!.StorageId.Should().Be(stored.StorageId);
     }
 
     #endregion

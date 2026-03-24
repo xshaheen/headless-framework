@@ -240,8 +240,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 {
                     skippedCircuitOpen++;
                     _logger.LogDebug(
-                        "Skipping retry for message {DbId} — circuit open for group {Group}",
-                        message.DbId,
+                        "Skipping retry for message {StorageId} — circuit open for group {Group}",
+                        message.StorageId,
                         LogSanitizer.Sanitize(group)
                     );
                     continue;

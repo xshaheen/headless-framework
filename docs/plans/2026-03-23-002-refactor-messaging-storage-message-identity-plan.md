@@ -1,7 +1,7 @@
 ---
 title: refactor: separate messaging storage and logical identity
 type: refactor
-status: active
+status: completed
 date: 2026-03-23
 ---
 
@@ -197,7 +197,7 @@ The following surfaces need the same identity split or a naming cleanup:
 
 ## Implementation Units
 
-- [ ] **Unit 1: Replace ambiguous identity types in core contracts**
+- [x] **Unit 1: Replace ambiguous identity types in core contracts**
 
   **Goal:** Make storage identity explicit in runtime and monitoring contracts.
 
@@ -214,7 +214,7 @@ The following surfaces need the same identity split or a naming cleanup:
   - Keep logical message identity string-based in message headers and publish options.
   - Update dashboard/detail payloads to surface both storage and logical IDs where needed.
 
-- [ ] **Unit 2: Redesign published-row persistence in durable providers**
+- [x] **Unit 2: Redesign published-row persistence in durable providers**
 
   **Goal:** Persist published rows with generated numeric storage IDs plus separate logical `MessageId`.
 
@@ -232,7 +232,7 @@ The following surfaces need the same identity split or a naming cleanup:
   - Backfill existing published rows deterministically.
   - Remove `_ParseStorageId(message.GetId())` from published insert paths.
 
-- [ ] **Unit 3: Align in-memory storage, docs, and tests**
+- [x] **Unit 3: Align in-memory storage, docs, and tests**
 
   **Goal:** Keep all providers and operator docs consistent with the new identity model.
 
@@ -253,12 +253,12 @@ The following surfaces need the same identity split or a naming cleanup:
 
 ## Acceptance Criteria
 
-- [ ] `PublishOptions.MessageId` no longer documents a numeric-string restriction.
-- [ ] Published SQL Server rows persist `Id` and `MessageId` separately.
-- [ ] Published PostgreSQL rows persist `Id` and `MessageId` separately.
-- [ ] In-memory storage matches the same identity model.
-- [ ] Dashboard and monitoring APIs remain row-oriented and expose logical `MessageId` clearly.
-- [ ] Integration coverage proves non-numeric logical message IDs work for published storage.
+- [x] `PublishOptions.MessageId` no longer documents a numeric-string restriction.
+- [x] Published SQL Server rows persist `Id` and `MessageId` separately.
+- [x] Published PostgreSQL rows persist `Id` and `MessageId` separately.
+- [x] In-memory storage matches the same identity model.
+- [x] Dashboard and monitoring APIs remain row-oriented and expose logical `MessageId` clearly.
+- [x] Integration coverage proves non-numeric logical message IDs work for published storage.
 
 ## Sources & References
 

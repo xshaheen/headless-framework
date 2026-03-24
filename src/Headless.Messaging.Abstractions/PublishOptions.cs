@@ -18,8 +18,7 @@ public sealed class PublishOptions
     public IDictionary<string, string?>? Headers { get; init; }
 
     /// <summary>
-    /// Gets the explicit message identifier override.
-    /// Use a numeric string when publishing through storage-backed outbox providers.
+    /// Gets the explicit logical message identifier override.
     /// </summary>
     public string? MessageId { get; init; }
 

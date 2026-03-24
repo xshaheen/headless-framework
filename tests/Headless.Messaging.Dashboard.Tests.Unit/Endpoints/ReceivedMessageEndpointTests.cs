@@ -3,6 +3,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Headless.Dashboard.Authentication;
+using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
@@ -29,10 +30,15 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         const long messageId = 456;
         var message = new MediumMessage
         {
-            DbId = messageId.ToString(CultureInfo.InvariantCulture),
+            StorageId = messageId,
             Content = "{\"received\":\"data\"}",
             Origin = new Message(
-                new Dictionary<string, string?>(StringComparer.Ordinal) { { "test", "header" } },
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = "logical-rec-456",
+                    [Headers.MessageName] = "orders.received",
+                    [Headers.Group] = "workers",
+                },
                 new { Data = "received" }
             ),
         };
@@ -51,6 +57,9 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         // then
         response.StatusCode.Should().NotBe(HttpStatusCode.NotFound);
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>();
+        payload.Should().ContainKey("storageId");
+        payload.Should().ContainKey("messageId");
     }
 
     [Fact]

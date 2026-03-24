@@ -97,6 +97,10 @@ public sealed class PostgreSqlMonitoringApi(
     )
     {
         var tableName = query.MessageType == MessageType.Publish ? _pubName : _recName;
+        var selectColumns =
+            query.MessageType == MessageType.Publish
+                ? @"""Id"",""MessageId"",""Version"",""Name"",CAST(NULL AS VARCHAR(200)) AS ""Group"",""Content"",""Retries"",""Added"",""ExpiresAt"",""StatusName"""
+                : @"""Id"",""MessageId"",""Version"",""Name"",""Group"",""Content"",""Retries"",""Added"",""ExpiresAt"",""StatusName""";
         var where = string.Empty;
 
         if (!string.IsNullOrEmpty(query.StatusName))
@@ -120,7 +124,7 @@ public sealed class PostgreSqlMonitoringApi(
         }
 
         var sqlQuery =
-            $"SELECT * FROM {tableName} WHERE 1=1 {where} ORDER BY \"Added\" DESC OFFSET @Offset LIMIT @Limit";
+            $"SELECT {selectColumns} FROM {tableName} WHERE 1=1 {where} ORDER BY \"Added\" DESC OFFSET @Offset LIMIT @Limit";
 
         await using var connection = _options.CreateConnection();
 
@@ -163,11 +167,16 @@ public sealed class PostgreSqlMonitoringApi(
                         messages.Add(
                             new MessageView
                             {
-                                Id = reader.GetInt64(index++).ToString(CultureInfo.InvariantCulture),
+                                StorageId = reader.GetInt64(index++),
+                                MessageId = reader.GetString(index++),
                                 Version = reader.GetString(index++),
                                 Name = reader.GetString(index++),
-                                Group = query.MessageType is MessageType.Subscribe ? reader.GetString(index++) : null,
-                                Content = reader.GetString(index++),
+                                Group = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(index - 1),
+                                Content = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(index - 1),
                                 Retries = reader.GetInt32(index++),
                                 Added = reader.GetDateTime(index++),
                                 ExpiresAt = await reader.IsDBNullAsync(index++) ? null : reader.GetDateTime(index - 1),
@@ -325,7 +334,7 @@ public sealed class PostgreSqlMonitoringApi(
     )
     {
         var sql =
-            $@"SELECT ""Id"" AS ""DbId"", ""Content"", ""Added"", ""ExpiresAt"", ""Retries"", ""ExceptionInfo"" FROM {tableName} WHERE ""Id""=@Id";
+            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""Added"", ""ExpiresAt"", ""Retries"", ""ExceptionInfo"" FROM {tableName} WHERE ""Id""=@Id";
 
         await using var connection = _options.CreateConnection();
 
@@ -340,13 +349,17 @@ public sealed class PostgreSqlMonitoringApi(
                     {
                         message = new MediumMessage
                         {
-                            DbId = reader.GetInt64(0).ToString(CultureInfo.InvariantCulture),
+                            StorageId = reader.GetInt64(0),
                             Origin = serializer.Deserialize(reader.GetString(1))!,
                             Content = reader.GetString(1),
                             Added = reader.GetDateTime(2),
-                            ExpiresAt = reader.GetDateTime(3),
+                            ExpiresAt = await reader.IsDBNullAsync(3, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(3),
                             Retries = reader.GetInt32(4),
-                            ExceptionInfo = await reader.IsDBNullAsync(5).ConfigureAwait(false) ? null : reader.GetString(5),
+                            ExceptionInfo = await reader.IsDBNullAsync(5).ConfigureAwait(false)
+                                ? null
+                                : reader.GetString(5),
                         };
                     }
 

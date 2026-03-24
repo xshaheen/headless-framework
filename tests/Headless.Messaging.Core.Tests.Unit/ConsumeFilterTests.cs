@@ -208,7 +208,7 @@ public sealed class ConsumeFilterTests : TestBase
 
         var mediumMessage = new MediumMessage
         {
-            DbId = Faker.Random.Guid().ToString(),
+            StorageId = 1L,
             Origin = message,
             Content = "{}",
             Added = DateTime.UtcNow,

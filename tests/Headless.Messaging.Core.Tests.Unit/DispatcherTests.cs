@@ -35,16 +35,16 @@ public sealed class DispatcherTests : TestBase
         await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
 
         using var cts = new CancellationTokenSource();
-        const string messageId = "testId";
+        const long storageId = 1L;
 
         // when
         await dispatcher.StartAsync(cts.Token);
-        await dispatcher.EnqueueToPublish(_CreateTestMessage(messageId), AbortToken);
+        await dispatcher.EnqueueToPublish(_CreateTestMessage(storageId), AbortToken);
         await cts.CancelAsync();
 
         // then
         sender.Count.Should().Be(1);
-        sender.ReceivedMessages[0].DbId.Should().Be(messageId);
+        sender.ReceivedMessages[0].StorageId.Should().Be(storageId);
     }
 
     [Fact]
@@ -65,10 +65,7 @@ public sealed class DispatcherTests : TestBase
         await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable
-            .Range(1, 100)
-            .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
-            .ToArray();
+        var messages = Enumerable.Range(1, 100).Select(i => _CreateTestMessage(i)).ToArray();
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -79,8 +76,8 @@ public sealed class DispatcherTests : TestBase
 
         // then
         sender.Count.Should().Be(100);
-        var receivedMessages = sender.ReceivedMessages.Select(m => m.DbId).Order(StringComparer.Ordinal).ToList();
-        var expected = messages.Select(m => m.DbId).Order(StringComparer.Ordinal).ToList();
+        var receivedMessages = sender.ReceivedMessages.Select(m => m.StorageId).Order().ToList();
+        var expected = messages.Select(m => m.StorageId).Order().ToList();
         expected.Should().Equal(receivedMessages);
     }
 
@@ -102,10 +99,7 @@ public sealed class DispatcherTests : TestBase
         await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable
-            .Range(1, 10000)
-            .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
-            .ToArray();
+        var messages = Enumerable.Range(1, 10000).Select(i => _CreateTestMessage(i)).ToArray();
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -126,8 +120,8 @@ public sealed class DispatcherTests : TestBase
         // then
         sender.Count.Should().Be(10000);
 
-        var receivedMessages = sender.ReceivedMessages.Select(m => m.DbId).Order(StringComparer.Ordinal).ToList();
-        var expected = messages.Select(m => m.DbId).Order(StringComparer.Ordinal).ToList();
+        var receivedMessages = sender.ReceivedMessages.Select(m => m.StorageId).Order().ToList();
+        var expected = messages.Select(m => m.StorageId).Order().ToList();
         expected.Should().Equal(receivedMessages);
     }
 
@@ -149,10 +143,7 @@ public sealed class DispatcherTests : TestBase
         await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable
-            .Range(1, 3)
-            .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
-            .ToArray();
+        var messages = Enumerable.Range(1, 3).Select(i => _CreateTestMessage(i)).ToArray();
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -166,7 +157,7 @@ public sealed class DispatcherTests : TestBase
         await cts.CancelAsync();
 
         // then
-        sender.ReceivedMessages.Select(m => m.DbId).Should().Equal(["3", "2", "1"]);
+        sender.ReceivedMessages.Select(m => m.StorageId).Should().Equal([3L, 2L, 1L]);
     }
 
     [Fact]
@@ -187,10 +178,7 @@ public sealed class DispatcherTests : TestBase
         await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable
-            .Range(1, 10000)
-            .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
-            .ToArray();
+        var messages = Enumerable.Range(1, 10000).Select(i => _CreateTestMessage(i)).ToArray();
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -212,8 +200,8 @@ public sealed class DispatcherTests : TestBase
         // then
         sender.Count.Should().Be(10000);
 
-        var receivedMessages = sender.ReceivedMessages.Select(m => m.DbId).Order(StringComparer.Ordinal).ToList();
-        var expected = messages.Select(m => m.DbId).Order(StringComparer.Ordinal).ToList();
+        var receivedMessages = sender.ReceivedMessages.Select(m => m.StorageId).Order().ToList();
+        var expected = messages.Select(m => m.StorageId).Order().ToList();
         expected.Should().Equal(receivedMessages);
     }
 
@@ -235,10 +223,7 @@ public sealed class DispatcherTests : TestBase
         await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable
-            .Range(1, 3)
-            .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
-            .ToArray();
+        var messages = Enumerable.Range(1, 3).Select(i => _CreateTestMessage(i)).ToArray();
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -252,7 +237,7 @@ public sealed class DispatcherTests : TestBase
         await cts.CancelAsync();
 
         // then
-        sender.ReceivedMessages.Select(m => m.DbId).Should().Equal(["3", "2", "1"]);
+        sender.ReceivedMessages.Select(m => m.StorageId).Should().Equal([3L, 2L, 1L]);
     }
 
     [Fact]
@@ -265,10 +250,7 @@ public sealed class DispatcherTests : TestBase
         await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable
-            .Range(1, 100)
-            .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
-            .ToArray();
+        var messages = Enumerable.Range(1, 100).Select(i => _CreateTestMessage(i)).ToArray();
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -297,10 +279,7 @@ public sealed class DispatcherTests : TestBase
         await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
         using var cts = new CancellationTokenSource();
 
-        var messages = Enumerable
-            .Range(1, 500)
-            .Select(i => _CreateTestMessage(i.ToString(CultureInfo.InvariantCulture)))
-            .ToArray();
+        var messages = Enumerable.Range(1, 500).Select(i => _CreateTestMessage(i)).ToArray();
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -317,16 +296,17 @@ public sealed class DispatcherTests : TestBase
         sender.Count.Should().Be(500);
     }
 
-    private static MediumMessage _CreateTestMessage(string id = "1")
+    private static MediumMessage _CreateTestMessage(long storageId = 1)
     {
+        var messageId = storageId.ToString(CultureInfo.InvariantCulture);
         var message = new Message(
-            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { { "headless-msg-id", id } },
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { { "headless-msg-id", messageId } },
             value: new MessageValue("test@test.com", "User")
         );
 
         return new MediumMessage
         {
-            DbId = id,
+            StorageId = storageId,
             Origin = message,
             Content = JsonSerializer.Serialize(message),
         };

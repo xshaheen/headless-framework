@@ -40,7 +40,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         return new MediumMessage
         {
-            DbId = Guid.NewGuid().ToString(),
+            StorageId = 1L,
             Origin = new Message(headers, null),
             Content = "{}",
         };

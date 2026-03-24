@@ -110,7 +110,7 @@ public sealed class ConsumerContextTests : TestBase
 
         return new MediumMessage
         {
-            DbId = Faker.Random.Guid().ToString(),
+            StorageId = 1L,
             Origin = message,
             Content = "{}",
             Added = DateTime.UtcNow,
