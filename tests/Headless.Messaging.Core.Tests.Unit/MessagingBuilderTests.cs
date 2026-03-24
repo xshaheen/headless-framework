@@ -221,6 +221,29 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
+    public void should_apply_topic_name_prefix_to_addconsumer_registrations()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
+
+        // when
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemoryStorage();
+            messaging.TopicNamePrefix = "billing";
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        // then
+        registry.GetAll().Single().Topic.Should().Be("billing.orders.placed");
+    }
+
+    [Fact]
     public void should_throw_when_consumer_does_not_implement_consume()
     {
         // given

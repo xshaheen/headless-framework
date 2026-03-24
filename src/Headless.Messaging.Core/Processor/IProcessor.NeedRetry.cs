@@ -163,36 +163,41 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     {
         context.ThrowIfStopping();
 
+        var lockName = $"publish_retry_{_options.Value.Version}";
+        var lockAcquired = false;
         if (
             _options.Value.UseStorageLock
-            && !await connection.AcquireLockAsync(
-                $"publish_retry_{_options.Value.Version}",
-                _GetLockTtl(),
-                _instance,
-                context.CancellationToken
+            && !(
+                lockAcquired = await connection.AcquireLockAsync(
+                    lockName,
+                    _GetLockTtl(),
+                    _instance,
+                    context.CancellationToken
+                )
             )
         )
         {
             return;
         }
 
-        var messages = await _GetSafelyAsync(connection.GetPublishedMessagesOfNeedRetry, _lookbackWindow)
-            .ConfigureAwait(false);
-
-        foreach (var message in messages)
+        try
         {
-            context.ThrowIfStopping();
+            var messages = await _GetSafelyAsync(connection.GetPublishedMessagesOfNeedRetry, _lookbackWindow)
+                .ConfigureAwait(false);
 
-            await _dispatcher.EnqueueToPublish(message, context.CancellationToken).ConfigureAwait(false);
+            foreach (var message in messages)
+            {
+                context.ThrowIfStopping();
+
+                await _dispatcher.EnqueueToPublish(message, context.CancellationToken).ConfigureAwait(false);
+            }
         }
-
-        if (_options.Value.UseStorageLock)
+        finally
         {
-            await connection.ReleaseLockAsync(
-                $"publish_retry_{_options.Value.Version}",
-                _instance,
-                context.CancellationToken
-            );
+            if (lockAcquired)
+            {
+                await connection.ReleaseLockAsync(lockName, _instance, CancellationToken.None).ConfigureAwait(false);
+            }
         }
     }
 
@@ -200,58 +205,63 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     {
         context.ThrowIfStopping();
 
+        var lockName = $"received_retry_{_options.Value.Version}";
+        var lockAcquired = false;
         if (
             _options.Value.UseStorageLock
-            && !await connection.AcquireLockAsync(
-                $"received_retry_{_options.Value.Version}",
-                _GetLockTtl(),
-                _instance,
-                context.CancellationToken
+            && !(
+                lockAcquired = await connection.AcquireLockAsync(
+                    lockName,
+                    _GetLockTtl(),
+                    _instance,
+                    context.CancellationToken
+                )
             )
         )
         {
             return;
         }
 
-        var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry, _lookbackWindow)
-            .ConfigureAwait(false);
-
-        var enqueued = 0;
-        var skippedCircuitOpen = 0;
-        var circuitOpenCache = new Dictionary<string, bool>(StringComparer.Ordinal);
-
-        foreach (var message in messages)
+        try
         {
-            context.ThrowIfStopping();
+            var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry, _lookbackWindow)
+                .ConfigureAwait(false);
 
-            var group = message.Origin.GetGroup();
-            if (group is not null && _IsCircuitOpen(group, circuitOpenCache))
+            var enqueued = 0;
+            var skippedCircuitOpen = 0;
+            var circuitOpenCache = new Dictionary<string, bool>(StringComparer.Ordinal);
+
+            foreach (var message in messages)
             {
-                skippedCircuitOpen++;
-                _logger.LogDebug(
-                    "Skipping retry for message {DbId} — circuit open for group {Group}",
-                    message.DbId,
-                    LogSanitizer.Sanitize(group)
-                );
-                continue;
+                context.ThrowIfStopping();
+
+                var group = message.Origin.GetGroup();
+                if (group is not null && _IsCircuitOpen(group, circuitOpenCache))
+                {
+                    skippedCircuitOpen++;
+                    _logger.LogDebug(
+                        "Skipping retry for message {DbId} — circuit open for group {Group}",
+                        message.DbId,
+                        LogSanitizer.Sanitize(group)
+                    );
+                    continue;
+                }
+
+                await _dispatcher.EnqueueToExecute(message, null, context.CancellationToken).ConfigureAwait(false);
+                enqueued++;
             }
 
-            await _dispatcher.EnqueueToExecute(message, null, context.CancellationToken).ConfigureAwait(false);
-            enqueued++;
+            if (_adaptivePolling)
+            {
+                _AdjustPollingInterval(enqueued, skippedCircuitOpen);
+            }
         }
-
-        if (_adaptivePolling)
+        finally
         {
-            _AdjustPollingInterval(enqueued, skippedCircuitOpen);
-        }
-
-        if (_options.Value.UseStorageLock)
-        {
-            await connection.ReleaseLockAsync(
-                $"received_retry_{_options.Value.Version}",
-                _instance,
-                context.CancellationToken
-            );
+            if (lockAcquired)
+            {
+                await connection.ReleaseLockAsync(lockName, _instance, CancellationToken.None).ConfigureAwait(false);
+            }
         }
     }
 

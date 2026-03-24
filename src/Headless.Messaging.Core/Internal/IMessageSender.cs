@@ -44,17 +44,24 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
         OperateResult result;
         do
         {
-            (retry, result) = await _SendWithoutRetryAsync(message).ConfigureAwait(false);
+            var (retryDecision, operateResult) = await _SendWithoutRetryAsync(message).ConfigureAwait(false);
+            retry = retryDecision.ShouldRetry;
+            result = operateResult;
             if (result.Equals(OperateResult.Success))
             {
                 return result;
+            }
+
+            if (retry)
+            {
+                await Task.Delay(retryDecision.Delay).ConfigureAwait(false);
             }
         } while (retry);
 
         return result;
     }
 
-    private async Task<(bool, OperateResult)> _SendWithoutRetryAsync(MediumMessage message)
+    private async Task<(RetryDecision, OperateResult)> _SendWithoutRetryAsync(MediumMessage message)
     {
         var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).ConfigureAwait(false);
 
@@ -69,7 +76,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
 
             _TracingAfter(tracingTimestamp, transportMsg, _transport.BrokerAddress);
 
-            return (false, OperateResult.Success);
+            return (RetryDecision.Stop, OperateResult.Success);
         }
 
         _TracingError(tracingTimestamp, transportMsg, _transport.BrokerAddress, result);
@@ -85,7 +92,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
         await _dataStorage.ChangePublishStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
     }
 
-    private async Task<bool> _SetFailedState(MediumMessage message, Exception ex)
+    private async Task<RetryDecision> _SetFailedState(MediumMessage message, Exception ex)
     {
         var needRetry = _UpdateMessageForRetry(message, ex);
 
@@ -97,7 +104,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
         return needRetry;
     }
 
-    private bool _UpdateMessageForRetry(MediumMessage message, Exception ex)
+    private RetryDecision _UpdateMessageForRetry(MediumMessage message, Exception ex)
     {
         // Check if exception is retryable
         if (!_backoffStrategy.ShouldRetry(ex))
@@ -108,40 +115,63 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
                 message.DbId,
                 ex.GetType().Name
             );
-            return false;
+            return RetryDecision.Stop;
         }
 
         var retries = ++message.Retries;
-        var retryCount = Math.Min(_options.Value.FailedRetryCount, 3);
-        if (retries >= retryCount)
+        if (retries >= _options.Value.FailedRetryCount)
         {
-            if (retries == _options.Value.FailedRetryCount)
+            try
             {
-                try
-                {
-                    _options.Value.FailedThresholdCallback?.Invoke(
-                        new FailedInfo
-                        {
-                            ServiceProvider = serviceProvider,
-                            MessageType = MessageType.Publish,
-                            Message = message.Origin,
-                        }
-                    );
+                _options.Value.FailedThresholdCallback?.Invoke(
+                    new FailedInfo
+                    {
+                        ServiceProvider = serviceProvider,
+                        MessageType = MessageType.Publish,
+                        Message = message.Origin,
+                    }
+                );
 
-                    _logger.SenderAfterThreshold(message.DbId, _options.Value.FailedRetryCount);
-                }
-                catch (Exception callbackEx)
-                {
-                    _logger.ExecutedThresholdCallbackFailed(callbackEx, callbackEx.Message);
-                }
+                _logger.SenderAfterThreshold(message.DbId, _options.Value.FailedRetryCount);
+            }
+            catch (Exception callbackEx)
+            {
+                _logger.ExecutedThresholdCallbackFailed(callbackEx, callbackEx.Message);
             }
 
-            return false;
+            return RetryDecision.Stop;
         }
 
         _logger.SenderRetrying(message.DbId, retries);
 
-        return true;
+        var nextDelay = _backoffStrategy.GetNextDelay(retries - 1, ex);
+        if (nextDelay is null)
+        {
+            // Strategy declined further retries — treat as threshold reached.
+            message.Retries = _options.Value.FailedRetryCount;
+
+            try
+            {
+                _options.Value.FailedThresholdCallback?.Invoke(
+                    new FailedInfo
+                    {
+                        ServiceProvider = serviceProvider,
+                        MessageType = MessageType.Publish,
+                        Message = message.Origin,
+                    }
+                );
+
+                _logger.SenderAfterThreshold(message.DbId, _options.Value.FailedRetryCount);
+            }
+            catch (Exception callbackEx)
+            {
+                _logger.ExecutedThresholdCallbackFailed(callbackEx, callbackEx.Message);
+            }
+
+            return RetryDecision.Stop;
+        }
+
+        return RetryDecision.Continue(nextDelay.Value);
     }
 
     #region tracing

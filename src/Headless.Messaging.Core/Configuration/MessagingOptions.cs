@@ -249,9 +249,9 @@ public class MessagingOptions : IMessagingBuilder
 
         var messageType = _ResolveExplicitMessageType(typeof(TConsumer));
 
-        RegisterConsumer(typeof(TConsumer), messageType, topic: null, group: null, concurrency: 1);
+        var metadata = RegisterConsumer(typeof(TConsumer), messageType, topic: null, group: null, concurrency: 1);
 
-        return new ConsumerBuilder<TConsumer>(this, Registry, CircuitBreakerRegistry, messageType, autoRegistered: true);
+        return new ConsumerBuilder<TConsumer>(this, Registry, CircuitBreakerRegistry, metadata, autoRegistered: true);
     }
 
     /// <inheritdoc />
@@ -267,10 +267,17 @@ public class MessagingOptions : IMessagingBuilder
         _WithTopicMapping(messageType, topic);
 
         // Immediately register with default settings (concurrency=1, group=null)
-        RegisterConsumer(typeof(TConsumer), messageType, topic, group: null, concurrency: 1);
+        var metadata = RegisterConsumer(typeof(TConsumer), messageType, topic, group: null, concurrency: 1);
 
         // Return builder that can update the registration if further configuration is needed
-        return new ConsumerBuilder<TConsumer>(this, Registry, CircuitBreakerRegistry, messageType, topic, autoRegistered: true);
+        return new ConsumerBuilder<TConsumer>(
+            this,
+            Registry,
+            CircuitBreakerRegistry,
+            metadata,
+            topic,
+            autoRegistered: true
+        );
     }
 
     /// <inheritdoc />
@@ -410,7 +417,13 @@ public class MessagingOptions : IMessagingBuilder
     /// <summary>
     /// Registers a consumer with the specified metadata.
     /// </summary>
-    internal void RegisterConsumer(Type consumerType, Type messageType, string? topic, string? group, byte concurrency)
+    internal ConsumerMetadata RegisterConsumer(
+        Type consumerType,
+        Type messageType,
+        string? topic,
+        string? group,
+        byte concurrency
+    )
     {
         Argument.IsNotNull(Services, "Services must be initialized before calling _RegisterConsumer");
         Argument.IsNotNull(Registry, "Registry must be initialized before calling _RegisterConsumer");
@@ -425,5 +438,7 @@ public class MessagingOptions : IMessagingBuilder
         Services.TryAdd(
             new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
         );
+
+        return metadata;
     }
 }

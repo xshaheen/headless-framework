@@ -19,6 +19,7 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
     where TConsumer : class
 {
     private readonly IServiceCollection _services;
+    private ConsumerMetadata _registeredMetadata;
     private ConsumerMetadata _metadata;
     private Action<ConsumerCircuitBreakerOptions>? _pendingCircuitBreakerConfigure;
 
@@ -30,6 +31,7 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
     internal ServiceCollectionConsumerBuilder(IServiceCollection services, ConsumerMetadata metadata)
     {
         _services = services;
+        _registeredMetadata = metadata;
         _metadata = metadata;
     }
 
@@ -112,8 +114,7 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
         var existingDescriptor = _services.FirstOrDefault(d =>
             d.ServiceType == typeof(ConsumerMetadata)
             && d.ImplementationInstance is ConsumerMetadata existing
-            && existing.ConsumerType == typeof(TConsumer)
-            && existing.MessageType == _metadata.MessageType
+            && ReferenceEquals(existing, _registeredMetadata)
         );
 
         if (existingDescriptor != null)
@@ -122,5 +123,6 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
         }
 
         _services.AddSingleton(_metadata);
+        _registeredMetadata = _metadata;
     }
 }

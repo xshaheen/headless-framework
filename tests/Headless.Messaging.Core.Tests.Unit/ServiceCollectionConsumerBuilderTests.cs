@@ -298,6 +298,27 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
     }
 
     [Fact]
+    public void should_update_only_the_target_registration_when_same_consumer_is_registered_twice()
+    {
+        // given
+        var services = new ServiceCollection();
+        var first = services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed");
+        var second = services.AddConsumer<TestOrderHandler, TestOrderEvent>("orders.created");
+
+        // when
+        first.Group("first-group");
+        second.Topic("orders.created.v2");
+
+        var provider = services.BuildServiceProvider();
+
+        // then
+        var metadata = provider.GetServices<ConsumerMetadata>().OrderBy(x => x.Topic, StringComparer.Ordinal).ToList();
+        metadata.Should().HaveCount(2);
+        metadata.Should().Contain(x => x.Topic == "orders.placed" && x.Group == "first-group");
+        metadata.Should().Contain(x => x.Topic == "orders.created.v2" && x.Group == null);
+    }
+
+    [Fact]
     public void should_chain_multiple_configuration_changes()
     {
         // given
@@ -382,9 +403,10 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var services = new ServiceCollection();
 
         // when — WithCircuitBreaker without Group() should not throw
-        var act = () => services
-            .AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
-            .WithCircuitBreaker(cb => cb.FailureThreshold = 3);
+        var act = () =>
+            services
+                .AddConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
+                .WithCircuitBreaker(cb => cb.FailureThreshold = 3);
 
         // then
         act.Should().NotThrow();

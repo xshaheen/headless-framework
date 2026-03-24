@@ -16,6 +16,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     private readonly MessagingOptions _parent;
     private readonly ConsumerRegistry _registry;
     private readonly ConsumerCircuitBreakerRegistry _circuitBreakerRegistry;
+    private ConsumerMetadata _registeredMetadata;
     private readonly Type _messageType;
     private readonly bool _autoRegistered;
     private string? _topic;
@@ -29,7 +30,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
         MessagingOptions parent,
         ConsumerRegistry registry,
         ConsumerCircuitBreakerRegistry circuitBreakerRegistry,
-        Type messageType,
+        ConsumerMetadata registeredMetadata,
         string? topic = null,
         bool autoRegistered = false
     )
@@ -37,7 +38,8 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
         _parent = parent;
         _registry = registry;
         _circuitBreakerRegistry = circuitBreakerRegistry;
-        _messageType = messageType;
+        _registeredMetadata = registeredMetadata;
+        _messageType = registeredMetadata.MessageType;
         _topic = topic;
         _autoRegistered = autoRegistered;
     }
@@ -103,10 +105,17 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
             return;
         }
 
-        _registry.Update(
-            m => m.ConsumerType == typeof(TConsumer) && m.MessageType == _messageType,
-            _parent.CreateConsumerMetadata(typeof(TConsumer), _messageType, _topic, _group, _concurrency, _handlerId)
+        var metadata = _parent.CreateConsumerMetadata(
+            typeof(TConsumer),
+            _messageType,
+            _topic,
+            _group,
+            _concurrency,
+            _handlerId
         );
+
+        _registry.Update(m => ReferenceEquals(m, _registeredMetadata), metadata);
+        _registeredMetadata = metadata;
 
         _ApplyCircuitBreakerRegistration();
     }

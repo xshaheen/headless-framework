@@ -7,6 +7,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -67,7 +68,12 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         };
     }
 
-    private SubscribeExecutor _CreateExecutor(ISubscribeInvoker invoker, IDataStorage storage)
+    private SubscribeExecutor _CreateExecutor(
+        ISubscribeInvoker invoker,
+        IDataStorage storage,
+        MessagingOptions? messagingOptions = null,
+        ICircuitBreakerStateManager? circuitBreaker = null
+    )
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -80,9 +86,16 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
         var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILogger<SubscribeExecutor>>();
-        var options = Options.Create(new MessagingOptions());
+        var options = Options.Create(
+            messagingOptions
+                ?? new MessagingOptions
+                {
+                    FailedRetryCount = 1,
+                    RetryBackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
+                }
+        );
 
-        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        circuitBreaker ??= Substitute.For<ICircuitBreakerStateManager>();
         return new SubscribeExecutor(provider, storage, invoker, TimeProvider.System, logger, options, circuitBreaker);
     }
 
@@ -113,13 +126,11 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
         // then — must be a failure, not swallowed
         result.Succeeded.Should().BeFalse();
-        await storage
-            .Received()
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
     }
 
     [Fact]
-    public async Task OperationCanceledException_WithRequestedToken_ShouldBeSwallowed()
+    public async Task OperationCanceledException_WithRequestedToken_ShouldBePersisted_As_Failed()
     {
         // given — simulate app-shutdown cancellation:
         //   OperationCanceledException where CancellationToken.IsCancellationRequested = true
@@ -144,15 +155,14 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         // when
         var result = await executor.ExecuteAsync(message, descriptor, CancellationToken.None);
 
-        // then — swallowed; reported as success (no _SetFailedState)
-        result.Succeeded.Should().BeTrue();
-        await storage
-            .DidNotReceive()
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        // then — persisted as failed so it can be retried after restart
+        result.Succeeded.Should().BeFalse();
+        message.Retries.Should().Be(0);
+        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
     }
 
     [Fact]
-    public async Task TaskCanceledException_WithRequestedToken_ShouldBeSwallowed()
+    public async Task TaskCanceledException_WithRequestedToken_ShouldBePersisted_As_Failed()
     {
         // given — TaskCanceledException but the token IS requested (e.g. handler respected shutdown CT)
         var storage = Substitute.For<IDataStorage>();
@@ -176,11 +186,10 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         // when
         var result = await executor.ExecuteAsync(message, descriptor, CancellationToken.None);
 
-        // then — shutdown-initiated TaskCanceledException is swallowed like other OCEs
-        result.Succeeded.Should().BeTrue();
-        await storage
-            .DidNotReceive()
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        // then — persisted as failed so it can be retried after restart
+        result.Succeeded.Should().BeFalse();
+        message.Retries.Should().Be(0);
+        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
     }
 }
 

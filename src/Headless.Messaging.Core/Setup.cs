@@ -63,7 +63,10 @@ public static class Setup
     /// </code>
     /// </para>
     /// </remarks>
-    public static MessagingBuilder AddHeadlessMessaging(this IServiceCollection services, Action<MessagingOptions> configure)
+    public static MessagingBuilder AddHeadlessMessaging(
+        this IServiceCollection services,
+        Action<MessagingOptions> configure
+    )
     {
         Argument.IsNotNull(configure);
 
@@ -119,8 +122,7 @@ public static class Setup
 
         //Queue's message processor
         services.TryAddSingleton<MessageNeedToRetryProcessor>();
-        services.TryAddSingleton<IRetryProcessorMonitor>(sp =>
-            sp.GetRequiredService<MessageNeedToRetryProcessor>());
+        services.TryAddSingleton<IRetryProcessorMonitor>(sp => sp.GetRequiredService<MessageNeedToRetryProcessor>());
         services.TryAddSingleton<TransportCheckProcessor>();
         services.TryAddSingleton<MessageDelayedProcessor>();
         services.TryAddSingleton<CollectorProcessor>();
@@ -141,7 +143,8 @@ public static class Setup
         services.TryAddSingleton<CircuitBreakerMetrics>();
         services.TryAddSingleton<ICircuitBreakerStateManager, CircuitBreakerStateManager>();
         services.TryAddSingleton<ICircuitBreakerMonitor>(sp =>
-            (ICircuitBreakerMonitor)sp.GetRequiredService<ICircuitBreakerStateManager>());
+            (ICircuitBreakerMonitor)sp.GetRequiredService<ICircuitBreakerStateManager>()
+        );
 
         foreach (var serviceExtension in options.Extensions)
         {
@@ -245,13 +248,20 @@ public static class Setup
 
     private static ConsumerMetadata _ResolveDiscoveredMetadata(ConsumerMetadata metadata, MessagingOptions options)
     {
-        if (!string.IsNullOrWhiteSpace(metadata.Group))
+        var resolved = options.CreateConsumerMetadata(
+            metadata.ConsumerType,
+            metadata.MessageType,
+            metadata.Topic,
+            metadata.Group,
+            metadata.Concurrency,
+            metadata.HandlerId
+        );
+
+        // CreateConsumerMetadata normalizes topic/group but doesn't carry over builder-only
+        // fields. If ConsumerMetadata gains new builder-set fields, copy them here too.
+        return resolved with
         {
-            return metadata;
-        }
-
-        options.Conventions.Version = options.Version;
-        return metadata with { Group = options.Conventions.GetGroupName(metadata.ResolvedHandlerId) };
+            CircuitBreakerOverride = metadata.CircuitBreakerOverride,
+        };
     }
-
 }

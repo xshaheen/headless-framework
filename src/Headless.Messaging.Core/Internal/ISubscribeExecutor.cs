@@ -92,7 +92,7 @@ internal sealed class SubscribeExecutor(
 
         do
         {
-            var (shouldRetry, operateResult) = await _ExecuteWithoutRetryAsync(message, descriptor, cancellationToken)
+            var (retryDecision, operateResult) = await _ExecuteWithoutRetryAsync(message, descriptor, cancellationToken)
                 .ConfigureAwait(false);
             result = operateResult;
             if (result.Equals(OperateResult.Success))
@@ -100,13 +100,17 @@ internal sealed class SubscribeExecutor(
                 return result;
             }
 
-            retry = shouldRetry;
+            retry = retryDecision.ShouldRetry;
+            if (retry)
+            {
+                await Task.Delay(retryDecision.Delay, cancellationToken).ConfigureAwait(false);
+            }
         } while (retry);
 
         return result;
     }
 
-    private async Task<(bool, OperateResult)> _ExecuteWithoutRetryAsync(
+    private async Task<(RetryDecision, OperateResult)> _ExecuteWithoutRetryAsync(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
         CancellationToken cancellationToken
@@ -137,7 +141,7 @@ internal sealed class SubscribeExecutor(
                 message.Origin.GetExecutionInstanceId()
             );
 
-            return (false, OperateResult.Success);
+            return (RetryDecision.Stop, OperateResult.Success);
         }
         catch (Exception ex)
         {
@@ -164,7 +168,7 @@ internal sealed class SubscribeExecutor(
         }
     }
 
-    private async Task<bool> _SetFailedState(MediumMessage message, Exception ex)
+    private async Task<RetryDecision> _SetFailedState(MediumMessage message, Exception ex)
     {
         if (ex is SubscriberNotFoundException)
         {
@@ -181,18 +185,28 @@ internal sealed class SubscribeExecutor(
 
         // Report the original (inner) exception to the circuit breaker so transient-classification
         // predicates see the real exception type, not the SubscriberExecutionFailedException wrapper.
-        if (circuitBreakerStateManager is not null)
+        if (circuitBreakerStateManager is not null && !_IsRequestedCancellation(ex))
         {
             var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
-            await circuitBreakerStateManager.ReportFailureAsync(message.Origin.GetGroup()!, reportedException)
+            await circuitBreakerStateManager
+                .ReportFailureAsync(message.Origin.GetGroup()!, reportedException)
                 .ConfigureAwait(false);
         }
 
         return needRetry;
     }
 
-    private bool _UpdateMessageForRetry(MediumMessage message, Exception ex)
+    private RetryDecision _UpdateMessageForRetry(MediumMessage message, Exception ex)
     {
+        if (_IsRequestedCancellation(ex))
+        {
+            logger.LogInformation(
+                "Message {MessageId} execution was canceled by shutdown. Persisting for later retry.",
+                message.DbId
+            );
+            return RetryDecision.Stop;
+        }
+
         // Check if exception is retryable
         if (!_backoffStrategy.ShouldRetry(ex))
         {
@@ -202,41 +216,63 @@ internal sealed class SubscribeExecutor(
                 message.DbId,
                 ex.GetType().Name
             );
-            return false;
+            return RetryDecision.Stop;
         }
 
         var retries = ++message.Retries;
-
-        var retryCount = Math.Min(_options.FailedRetryCount, 3);
-        if (retries >= retryCount)
+        if (retries >= _options.FailedRetryCount)
         {
-            if (retries == _options.FailedRetryCount)
+            try
             {
-                try
-                {
-                    _options.FailedThresholdCallback?.Invoke(
-                        new FailedInfo
-                        {
-                            ServiceProvider = provider,
-                            MessageType = MessageType.Subscribe,
-                            Message = message.Origin,
-                        }
-                    );
+                _options.FailedThresholdCallback?.Invoke(
+                    new FailedInfo
+                    {
+                        ServiceProvider = provider,
+                        MessageType = MessageType.Subscribe,
+                        Message = message.Origin,
+                    }
+                );
 
-                    logger.ConsumerExecutedAfterThreshold(message.DbId, _options.FailedRetryCount);
-                }
-                catch (Exception callbackEx)
-                {
-                    logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message) ?? "");
-                }
+                logger.ConsumerExecutedAfterThreshold(message.DbId, _options.FailedRetryCount);
+            }
+            catch (Exception callbackEx)
+            {
+                logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message) ?? "");
             }
 
-            return false;
+            return RetryDecision.Stop;
         }
 
         logger.ConsumerExecutionRetrying(message.DbId, retries);
 
-        return true;
+        var nextDelay = _backoffStrategy.GetNextDelay(retries - 1, ex);
+        if (nextDelay is null)
+        {
+            // Strategy declined further retries — treat as threshold reached.
+            message.Retries = _options.FailedRetryCount;
+
+            try
+            {
+                _options.FailedThresholdCallback?.Invoke(
+                    new FailedInfo
+                    {
+                        ServiceProvider = provider,
+                        MessageType = MessageType.Subscribe,
+                        Message = message.Origin,
+                    }
+                );
+
+                logger.ConsumerExecutedAfterThreshold(message.DbId, _options.FailedRetryCount);
+            }
+            catch (Exception callbackEx)
+            {
+                logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message) ?? "");
+            }
+
+            return RetryDecision.Stop;
+        }
+
+        return RetryDecision.Continue(nextDelay.Value);
     }
 
     private async Task _InvokeConsumerMethodAsync(
@@ -280,14 +316,14 @@ internal sealed class SubscribeExecutor(
         {
             // Re-throw TaskCanceledException from handler timeouts (HttpClient, etc.)
             // so they propagate to _SetFailedState and are reported to the circuit breaker.
-            // App-shutdown cancellations (IsCancellationRequested = true) continue to be swallowed.
             if (oce is TaskCanceledException && !oce.CancellationToken.IsCancellationRequested)
             {
                 var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(oce.Message) ?? "", oce);
                 _TracingError(tracingTimestamp, message.Origin, descriptor.MethodInfo, e);
                 e.ReThrow();
             }
-            // Otherwise: app shutdown cancellation — swallow as before
+
+            throw;
         }
         catch (Exception ex)
         {
@@ -297,6 +333,11 @@ internal sealed class SubscribeExecutor(
 
             e.ReThrow();
         }
+    }
+
+    private static bool _IsRequestedCancellation(Exception exception)
+    {
+        return exception is OperationCanceledException { CancellationToken.IsCancellationRequested: true };
     }
 
     #region tracing
