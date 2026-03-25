@@ -94,42 +94,6 @@ public sealed class PostgreSqlStorageInitializer(
                 "MessageId" VARCHAR(200) NOT NULL
             );
 
-            DO $$
-            BEGIN
-                -- MessageId migration: add column, backfill, set NOT NULL (transactional)
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{postgreSqlOptions.Value.Schema}' AND table_name = 'published' AND column_name = 'MessageId'
-                ) THEN
-                    ALTER TABLE {GetPublishedTableName()} ADD COLUMN "MessageId" VARCHAR(200);
-                    UPDATE {GetPublishedTableName()} SET "MessageId" = "Id"::text WHERE "MessageId" IS NULL;
-                    ALTER TABLE {GetPublishedTableName()} ALTER COLUMN "MessageId" SET NOT NULL;
-                ELSIF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{postgreSqlOptions.Value.Schema}' AND table_name = 'published' AND column_name = 'MessageId' AND is_nullable = 'YES'
-                ) THEN
-                    UPDATE {GetPublishedTableName()} SET "MessageId" = "Id"::text WHERE "MessageId" IS NULL;
-                    ALTER TABLE {GetPublishedTableName()} ALTER COLUMN "MessageId" SET NOT NULL;
-                END IF;
-
-                -- TIMESTAMPTZ migration: convert TIMESTAMP columns to TIMESTAMPTZ
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{postgreSqlOptions.Value.Schema}' AND table_name = 'published' AND column_name = 'Added' AND data_type = 'timestamp without time zone'
-                ) THEN
-                    ALTER TABLE {GetPublishedTableName()} ALTER COLUMN "Added" TYPE TIMESTAMPTZ USING "Added" AT TIME ZONE 'UTC';
-                    ALTER TABLE {GetPublishedTableName()} ALTER COLUMN "ExpiresAt" TYPE TIMESTAMPTZ USING "ExpiresAt" AT TIME ZONE 'UTC';
-                END IF;
-
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = '{postgreSqlOptions.Value.Schema}' AND table_name = 'received' AND column_name = 'Added' AND data_type = 'timestamp without time zone'
-                ) THEN
-                    ALTER TABLE {GetReceivedTableName()} ALTER COLUMN "Added" TYPE TIMESTAMPTZ USING "Added" AT TIME ZONE 'UTC';
-                    ALTER TABLE {GetReceivedTableName()} ALTER COLUMN "ExpiresAt" TYPE TIMESTAMPTZ USING "ExpiresAt" AT TIME ZONE 'UTC';
-                END IF;
-            END $$;
-
             CREATE INDEX IF NOT EXISTS "idx_published_ExpiresAt_StatusName" ON {GetPublishedTableName()}("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_published_Version_ExpiresAt_StatusName" ON {GetPublishedTableName()} ("Version","ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_published_retry" ON {GetPublishedTableName()} ("StatusName","Retries","Added") WHERE "StatusName" IN ('Failed','Scheduled');
@@ -144,15 +108,6 @@ public sealed class PostgreSqlStorageInitializer(
                     "Instance" VARCHAR(256),
                 	"LastLockTime" TIMESTAMPTZ NOT NULL
                 );
-                DO $$
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_schema = '{postgreSqlOptions.Value.Schema}' AND table_name = 'lock' AND column_name = 'LastLockTime' AND data_type = 'timestamp without time zone'
-                    ) THEN
-                        ALTER TABLE {GetLockTableName()} ALTER COLUMN "LastLockTime" TYPE TIMESTAMPTZ USING "LastLockTime" AT TIME ZONE 'UTC';
-                    END IF;
-                END $$;
                 INSERT INTO {GetLockTableName()} ("Key","Instance","LastLockTime") VALUES(@PubKey,'',@LastLockTime) ON CONFLICT DO NOTHING;
                 INSERT INTO {GetLockTableName()} ("Key","Instance","LastLockTime") VALUES(@RecKey,'',@LastLockTime) ON CONFLICT DO NOTHING;
                 """;
