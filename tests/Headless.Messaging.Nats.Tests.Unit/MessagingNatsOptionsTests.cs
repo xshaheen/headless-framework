@@ -173,4 +173,52 @@ public sealed class MessagingNatsOptionsTests : TestBase
         var options = new MessagingNatsOptions { CustomHeadersBuilder = null };
         options.CustomHeadersBuilder.Should().BeNull();
     }
+
+    // Validator tests
+
+    [Fact]
+    public void validator_should_pass_for_valid_options()
+    {
+        var options = new MessagingNatsOptions { Servers = "nats://localhost:4222", ConnectionPoolSize = 5 };
+        var validator = new MessagingNatsOptionsValidator();
+
+        var result = validator.Validate(options);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void validator_should_fail_for_empty_servers()
+    {
+        var options = new MessagingNatsOptions { Servers = "" };
+        var validator = new MessagingNatsOptionsValidator();
+
+        var result = validator.Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(MessagingNatsOptions.Servers));
+    }
+
+    [Fact]
+    public void validator_should_fail_for_zero_pool_size()
+    {
+        var options = new MessagingNatsOptions { ConnectionPoolSize = 0 };
+        var validator = new MessagingNatsOptionsValidator();
+
+        var result = validator.Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(MessagingNatsOptions.ConnectionPoolSize));
+    }
+
+    [Fact]
+    public void validator_should_fail_for_negative_pool_size()
+    {
+        var options = new MessagingNatsOptions { ConnectionPoolSize = -1 };
+        var validator = new MessagingNatsOptionsValidator();
+
+        var result = validator.Validate(options);
+
+        result.IsValid.Should().BeFalse();
+    }
 }

@@ -128,6 +128,8 @@ internal sealed class NatsConsumerClient(
         CancellationToken cancellationToken
     )
     {
+        var retryDelay = TimeSpan.FromSeconds(1);
+
         while (!cancellationToken.IsCancellationRequested)
         {
             try
@@ -145,6 +147,9 @@ internal sealed class NatsConsumerClient(
                         .ConfigureAwait(false)
                 )
                 {
+                    // Reset backoff on successful message receive
+                    retryDelay = TimeSpan.FromSeconds(1);
+
                     await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 
                     if (groupConcurrent > 0)
@@ -188,6 +193,7 @@ internal sealed class NatsConsumerClient(
             }
             catch (NatsJSApiException ex)
             {
+                // API errors (stream not ready, deleted, permissions) — longer initial backoff
                 OnLogCallback?.Invoke(
                     new LogMessageEventArgs
                     {
@@ -196,10 +202,13 @@ internal sealed class NatsConsumerClient(
                     }
                 );
 
-                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+                var apiDelay = TimeSpan.FromTicks(Math.Max(retryDelay.Ticks, TimeSpan.FromSeconds(5).Ticks));
+                await Task.Delay(apiDelay, cancellationToken).ConfigureAwait(false);
+                retryDelay = TimeSpan.FromTicks(Math.Min(retryDelay.Ticks * 2, TimeSpan.FromSeconds(30).Ticks));
             }
             catch (Exception ex)
             {
+                // Transient errors (network, timeout) — shorter initial backoff
                 OnLogCallback?.Invoke(
                     new LogMessageEventArgs
                     {
@@ -208,53 +217,39 @@ internal sealed class NatsConsumerClient(
                     }
                 );
 
-                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+                await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
+                retryDelay = TimeSpan.FromTicks(Math.Min(retryDelay.Ticks * 2, TimeSpan.FromSeconds(30).Ticks));
             }
         }
     }
 
     private async Task _ProcessMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg)
     {
-        try
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        if (msg.Headers is { Count: > 0 } natsHeaders)
         {
-            var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
-
-            if (msg.Headers is { Count: > 0 } natsHeaders)
+            foreach (var (key, values) in natsHeaders)
             {
-                foreach (var (key, values) in natsHeaders)
-                {
-                    headers[key] = values.Count > 0 ? values[0] : null;
-                }
-            }
-
-            headers[Headers.Group] = name;
-
-            if (_natsOptions.CustomHeadersBuilder is not null)
-            {
-                var metadata = msg.Metadata;
-                var customHeaders = _natsOptions.CustomHeadersBuilder(metadata, msg.Headers, serviceProvider);
-                foreach (var customHeader in customHeaders)
-                {
-                    headers[customHeader.Key] = customHeader.Value;
-                }
-            }
-
-            if (OnMessageCallback is not null)
-            {
-                // Box the struct for the sender parameter — used by CommitAsync/RejectAsync
-                await OnMessageCallback(new TransportMessage(headers, msg.Data), msg).ConfigureAwait(false);
+                headers[key] = values.Count > 0 ? values[0] : null;
             }
         }
-        catch (Exception ex)
+
+        headers[Headers.Group] = name;
+
+        if (_natsOptions.CustomHeadersBuilder is not null)
         {
-            OnLogCallback?.Invoke(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.ExceptionReceived,
-                    Reason = $"Unhandled exception processing message: {ex}",
-                }
-            );
+            var metadata = msg.Metadata;
+            var customHeaders = _natsOptions.CustomHeadersBuilder(metadata, msg.Headers, serviceProvider);
+            foreach (var customHeader in customHeaders)
+            {
+                headers[customHeader.Key] = customHeader.Value;
+            }
         }
+
+        // Let exceptions propagate — the framework's OnMessageCallback handler
+        // calls CommitAsync on success and RejectAsync on failure.
+        await OnMessageCallback!(new TransportMessage(headers, msg.Data), msg).ConfigureAwait(false);
     }
 
     public async ValueTask CommitAsync(object? sender)

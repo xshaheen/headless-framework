@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Nats;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using NATS.Client.JetStream;
 using MsOptions = Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -136,6 +138,102 @@ public sealed class NatsConsumerClientTests : TestBase
         await client.DisposeAsync();
 
         await client.ResumeAsync();
+    }
+
+    // CommitAsync / RejectAsync tests
+
+    [Fact]
+    public async Task CommitAsync_should_ack_valid_nats_message()
+    {
+        await using var client = _CreateClient("test-group");
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+
+        await client.CommitAsync(msg);
+
+        await msg.Received(1).AckAsync(cancellationToken: Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RejectAsync_should_nak_valid_nats_message()
+    {
+        await using var client = _CreateClient("test-group");
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+
+        await client.RejectAsync(msg);
+
+        await msg.Received(1).NakAsync(cancellationToken: Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CommitAsync_should_not_throw_for_null_sender()
+    {
+        await using var client = _CreateClient("test-group");
+
+        var act = async () => await client.CommitAsync(null);
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task RejectAsync_should_not_throw_for_null_sender()
+    {
+        await using var client = _CreateClient("test-group");
+
+        var act = async () => await client.RejectAsync(null);
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task CommitAsync_should_not_throw_for_non_nats_sender()
+    {
+        await using var client = _CreateClient("test-group");
+
+        var act = async () => await client.CommitAsync("not a nats message");
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task RejectAsync_should_not_throw_for_non_nats_sender()
+    {
+        await using var client = _CreateClient("test-group");
+
+        var act = async () => await client.RejectAsync("not a nats message");
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task CommitAsync_should_log_on_ack_failure()
+    {
+        await using var client = _CreateClient("test-group");
+        LogMessageEventArgs? loggedArgs = null;
+        client.OnLogCallback = args => loggedArgs = args;
+
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+        msg.AckAsync(cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(x => throw new InvalidOperationException("ack failed"));
+
+        await client.CommitAsync(msg);
+
+        loggedArgs.Should().NotBeNull();
+        loggedArgs!.LogType.Should().Be(MqLogType.AsyncErrorEvent);
+        loggedArgs.Reason.Should().Contain("ack failed");
+    }
+
+    [Fact]
+    public async Task RejectAsync_should_log_on_nak_failure()
+    {
+        await using var client = _CreateClient("test-group");
+        LogMessageEventArgs? loggedArgs = null;
+        client.OnLogCallback = args => loggedArgs = args;
+
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+        msg.NakAsync(cancellationToken: Arg.Any<CancellationToken>())
+            .Returns(x => throw new InvalidOperationException("nak failed"));
+
+        await client.RejectAsync(msg);
+
+        loggedArgs.Should().NotBeNull();
+        loggedArgs!.LogType.Should().Be(MqLogType.AsyncErrorEvent);
+        loggedArgs.Reason.Should().Contain("nak failed");
     }
 
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)
