@@ -38,7 +38,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 
         return new MediumMessage
         {
-            DbId = "1",
+            StorageId = 1L,
             Origin = new Message(headers, "{}"),
             Content = "{}",
             Added = DateTime.UtcNow,
@@ -128,9 +128,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var original = new TimeoutException("downstream timeout");
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
-            .Returns<Task<ConsumerExecutedResult>>(
-                _ => Task.FromException<ConsumerExecutedResult>(original)
-            );
+            .Returns<Task<ConsumerExecutedResult>>(_ => Task.FromException<ConsumerExecutedResult>(original));
 
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
@@ -170,9 +168,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var original = new HttpRequestException("connection refused");
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
-            .Returns<Task<ConsumerExecutedResult>>(
-                _ => Task.FromException<ConsumerExecutedResult>(original)
-            );
+            .Returns<Task<ConsumerExecutedResult>>(_ => Task.FromException<ConsumerExecutedResult>(original));
 
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
@@ -180,10 +176,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
 
         // then — must receive HttpRequestException, not SubscriberExecutionFailedException
-        await cbMock.Received(1).ReportFailureAsync(
-            GroupName,
-            Arg.Is<Exception>(e => e is HttpRequestException)
-        );
+        await cbMock.Received(1).ReportFailureAsync(GroupName, Arg.Is<Exception>(e => e is HttpRequestException));
     }
 
     [Fact]
@@ -195,9 +188,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var original = new InvalidOperationException("boom");
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
-            .Returns<Task<ConsumerExecutedResult>>(
-                _ => Task.FromException<ConsumerExecutedResult>(original)
-            );
+            .Returns<Task<ConsumerExecutedResult>>(_ => Task.FromException<ConsumerExecutedResult>(original));
 
         var (executor, _) = _CreateExecutor(invoker, storage);
 
@@ -205,9 +196,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
 
         // then — DB state must still be persisted
-        await storage
-            .Received()
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
     }
 
     [Fact]
@@ -226,9 +215,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
 
         // then — both DB persistence and circuit breaker reporting happen
-        await storage
-            .Received()
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Succeeded);
+        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Succeeded);
         await cbMock.Received(1).ReportSuccessAsync(GroupName);
     }
 }
@@ -239,10 +226,7 @@ public sealed record CbTestMessage(string Id);
 
 public sealed class CbTestConsumer : IConsume<CbTestMessage>
 {
-    public ValueTask Consume(
-        ConsumeContext<CbTestMessage> context,
-        CancellationToken cancellationToken
-    )
+    public ValueTask Consume(ConsumeContext<CbTestMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }

@@ -36,6 +36,9 @@ public sealed class InMemoryMonitoringApiTests : TestBase
 
         _timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 15, 10, 0, 0, TimeSpan.Zero));
         _serializer.Serialize(Arg.Any<Message>()).Returns(call => JsonSerializer.Serialize(call.Arg<Message>()));
+        _serializer
+            .Deserialize(Arg.Any<string>())
+            .Returns(call => JsonSerializer.Deserialize<Message>(call.Arg<string>()));
         _idGenerator.Create().Returns(_ => Interlocked.Increment(ref _idCounter));
 
         _storage = new InMemoryDataStorage(_options, _serializer, _idGenerator, _timeProvider);
@@ -47,14 +50,15 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     {
         // given
         var message = _CreateMessage("123");
-        await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
+        var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
 
         // when
-        var result = await _sut.GetPublishedMessageAsync(123, AbortToken);
+        var result = await _sut.GetPublishedMessageAsync(stored.StorageId, AbortToken);
 
         // then
         result.Should().NotBeNull();
-        result!.DbId.Should().Be("123");
+        result!.StorageId.Should().Be(stored.StorageId);
+        result.Origin.GetId().Should().Be("123");
     }
 
     [Fact]
@@ -73,14 +77,37 @@ public sealed class InMemoryMonitoringApiTests : TestBase
         // given
         var message = _CreateMessage("recv-456");
         var stored = await _storage.StoreReceivedMessageAsync("test.topic", "group", message, AbortToken);
-        var id = long.Parse(stored.DbId, CultureInfo.InvariantCulture);
+        var id = stored.StorageId;
 
         // when
         var result = await _sut.GetReceivedMessageAsync(id, AbortToken);
 
         // then
         result.Should().NotBeNull();
-        result!.DbId.Should().Be(stored.DbId);
+        result!.StorageId.Should().Be(stored.StorageId);
+    }
+
+    [Fact]
+    public async Task should_get_received_exception_message_by_id()
+    {
+        // given
+        var message = _CreateMessage("recv-exception-1");
+        var content = _serializer.Serialize(message);
+        await _storage.StoreReceivedExceptionMessageAsync(
+            "failed.topic",
+            "group",
+            content,
+            cancellationToken: AbortToken
+        );
+        var id = InMemoryDataStorage.ReceivedMessages.Values.Single().StorageId;
+
+        // when
+        var result = await _sut.GetReceivedMessageAsync(id, AbortToken);
+
+        // then
+        result.Should().NotBeNull();
+        result!.StorageId.Should().Be(id);
+        result.Origin.GetId().Should().Be(message.GetId());
     }
 
     [Fact]
@@ -228,7 +255,8 @@ public sealed class InMemoryMonitoringApiTests : TestBase
 
         // then
         result.Items.Should().ContainSingle();
-        result.Items[0].Id.Should().Be("2007");
+        result.Items[0].StorageId.Should().Be(msg1.StorageId);
+        result.Items[0].MessageId.Should().Be("2007");
         result.Items[0].StatusName.Should().Be("Succeeded");
     }
 
@@ -265,7 +293,7 @@ public sealed class InMemoryMonitoringApiTests : TestBase
         _serializer.Serialize(Arg.Is<Message>(m => m == msg1)).Returns("{\"searchterm\":\"findme\"}");
         _serializer.Serialize(Arg.Is<Message>(m => m == msg2)).Returns("{\"data\":\"other\"}");
 
-        await _storage.StoreMessageAsync("topic", msg1, cancellationToken: AbortToken);
+        var stored1 = await _storage.StoreMessageAsync("topic", msg1, cancellationToken: AbortToken);
         await _storage.StoreMessageAsync("topic", msg2, cancellationToken: AbortToken);
 
         var query = new MessageQuery
@@ -281,7 +309,8 @@ public sealed class InMemoryMonitoringApiTests : TestBase
 
         // then
         result.Items.Should().ContainSingle();
-        result.Items[0].Id.Should().Be("2011");
+        result.Items[0].StorageId.Should().Be(stored1.StorageId);
+        result.Items[0].MessageId.Should().Be("2011");
     }
 
     [Fact]
@@ -396,11 +425,11 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     {
         // given
         var message = _CreateMessage("2014");
-        await _storage.StoreMessageAsync("test.topic.name", message, cancellationToken: AbortToken);
-        InMemoryDataStorage.PublishedMessages["2014"].ExpiresAt = _timeProvider
+        var stored = await _storage.StoreMessageAsync("test.topic.name", message, cancellationToken: AbortToken);
+        InMemoryDataStorage.PublishedMessages[stored.StorageId].ExpiresAt = _timeProvider
             .GetUtcNow()
             .UtcDateTime.AddHours(1);
-        InMemoryDataStorage.PublishedMessages["2014"].Retries = 3;
+        InMemoryDataStorage.PublishedMessages[stored.StorageId].Retries = 3;
 
         var query = new MessageQuery
         {
@@ -414,7 +443,8 @@ public sealed class InMemoryMonitoringApiTests : TestBase
 
         // then
         var view = result.Items[0];
-        view.Id.Should().Be("2014");
+        view.StorageId.Should().Be(stored.StorageId);
+        view.MessageId.Should().Be("2014");
         view.Name.Should().Be("test.topic.name");
         view.Version.Should().Be("N/A");
         view.Retries.Should().Be(3);

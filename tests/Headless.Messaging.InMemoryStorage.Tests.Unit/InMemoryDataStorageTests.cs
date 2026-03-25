@@ -34,6 +34,9 @@ public sealed class InMemoryDataStorageTests : TestBase
 
         _timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 15, 10, 0, 0, TimeSpan.Zero));
         _serializer.Serialize(Arg.Any<Message>()).Returns(call => JsonSerializer.Serialize(call.Arg<Message>()));
+        _serializer
+            .Deserialize(Arg.Any<string>())
+            .Returns(call => JsonSerializer.Deserialize<Message>(call.Arg<string>()));
         _idGenerator.Create().Returns(_ => Interlocked.Increment(ref _idCounter));
 
         _sut = new InMemoryDataStorage(_options, _serializer, _idGenerator, _timeProvider);
@@ -43,20 +46,20 @@ public sealed class InMemoryDataStorageTests : TestBase
     public async Task should_store_published_message()
     {
         // given
-        var message = _CreateMessage("1001");
+        var message = _CreateMessage("msg-1001");
 
         // when
         var result = await _sut.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
 
         // then
-        result.DbId.Should().Be("1001");
+        result.StorageId.Should().Be(1001L);
         result.Origin.Should().BeSameAs(message);
         result.Retries.Should().Be(0);
         result.Added.Should().Be(_timeProvider.GetUtcNow().UtcDateTime);
 
-        InMemoryDataStorage.PublishedMessages.Should().ContainKey("1001");
-        InMemoryDataStorage.PublishedMessages["1001"].Name.Should().Be("test.topic");
-        InMemoryDataStorage.PublishedMessages["1001"].StatusName.Should().Be(StatusName.Scheduled);
+        InMemoryDataStorage.PublishedMessages.Should().ContainKey(result.StorageId);
+        InMemoryDataStorage.PublishedMessages[result.StorageId].Name.Should().Be("test.topic");
+        InMemoryDataStorage.PublishedMessages[result.StorageId].StatusName.Should().Be(StatusName.Scheduled);
     }
 
     [Fact]
@@ -83,7 +86,8 @@ public sealed class InMemoryDataStorageTests : TestBase
     public async Task should_store_received_exception_message()
     {
         // given
-        var content = "Error: Something went wrong";
+        var message = _CreateMessage("exception-1001");
+        var content = _serializer.Serialize(message);
 
         // when
         await _sut.StoreReceivedExceptionMessageAsync(
@@ -98,6 +102,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         storedMessage.Name.Should().Be("failed.topic");
         storedMessage.Group.Should().Be("error-group");
         storedMessage.Content.Should().Be(content);
+        storedMessage.Origin.GetId().Should().Be(message.GetId());
         storedMessage.StatusName.Should().Be(StatusName.Failed);
         storedMessage.Retries.Should().Be(_options.Value.FailedRetryCount);
         storedMessage.ExpiresAt.Should().NotBeNull();
@@ -115,8 +120,8 @@ public sealed class InMemoryDataStorageTests : TestBase
         await _sut.ChangePublishStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // then
-        InMemoryDataStorage.PublishedMessages["1002"].StatusName.Should().Be(StatusName.Succeeded);
-        InMemoryDataStorage.PublishedMessages["1002"].ExpiresAt.Should().Be(stored.ExpiresAt);
+        InMemoryDataStorage.PublishedMessages[stored.StorageId].StatusName.Should().Be(StatusName.Succeeded);
+        InMemoryDataStorage.PublishedMessages[stored.StorageId].ExpiresAt.Should().Be(stored.ExpiresAt);
     }
 
     [Fact]
@@ -131,22 +136,22 @@ public sealed class InMemoryDataStorageTests : TestBase
         await _sut.ChangeReceiveStateAsync(stored, StatusName.Failed, AbortToken);
 
         // then
-        InMemoryDataStorage.ReceivedMessages[stored.DbId].StatusName.Should().Be(StatusName.Failed);
+        InMemoryDataStorage.ReceivedMessages[stored.StorageId].StatusName.Should().Be(StatusName.Failed);
     }
 
     [Fact]
     public async Task should_change_publish_state_to_delayed()
     {
         // given
-        await _sut.StoreMessageAsync("topic", _CreateMessage("1003"), cancellationToken: AbortToken);
-        await _sut.StoreMessageAsync("topic", _CreateMessage("1004"), cancellationToken: AbortToken);
+        var stored1 = await _sut.StoreMessageAsync("topic", _CreateMessage("1003"), cancellationToken: AbortToken);
+        var stored2 = await _sut.StoreMessageAsync("topic", _CreateMessage("1004"), cancellationToken: AbortToken);
 
         // when
-        await _sut.ChangePublishStateToDelayedAsync(["1003", "1004"], AbortToken);
+        await _sut.ChangePublishStateToDelayedAsync([stored1.StorageId, stored2.StorageId], AbortToken);
 
         // then
-        InMemoryDataStorage.PublishedMessages["1003"].StatusName.Should().Be(StatusName.Delayed);
-        InMemoryDataStorage.PublishedMessages["1004"].StatusName.Should().Be(StatusName.Delayed);
+        InMemoryDataStorage.PublishedMessages[stored1.StorageId].StatusName.Should().Be(StatusName.Delayed);
+        InMemoryDataStorage.PublishedMessages[stored2.StorageId].StatusName.Should().Be(StatusName.Delayed);
     }
 
     [Fact]
@@ -192,16 +197,14 @@ public sealed class InMemoryDataStorageTests : TestBase
     }
 
     [Fact]
-    public async Task should_reject_non_numeric_published_message_id()
+    public async Task should_store_published_message_with_non_numeric_logical_message_id()
     {
         // when
-        var act = async () => await _sut.StoreMessageAsync("topic", _CreateMessage("msg-1"), cancellationToken: AbortToken);
+        var result = await _sut.StoreMessageAsync("topic", _CreateMessage("msg-1"), cancellationToken: AbortToken);
 
         // then
-        await act
-            .Should()
-            .ThrowAsync<ArgumentException>()
-            .WithMessage("Published message IDs must be numeric*");
+        result.StorageId.Should().Be(1001L);
+        result.Origin.GetId().Should().Be("msg-1");
     }
 
     [Fact]
@@ -224,8 +227,8 @@ public sealed class InMemoryDataStorageTests : TestBase
         // then
         var messages = result.ToList();
         messages.Should().HaveCount(2);
-        messages.Should().Contain(m => m.DbId == "1005");
-        messages.Should().Contain(m => m.DbId == "1006");
+        messages.Should().Contain(m => m.StorageId == msg1.StorageId);
+        messages.Should().Contain(m => m.StorageId == msg2.StorageId);
     }
 
     [Fact]
@@ -233,10 +236,10 @@ public sealed class InMemoryDataStorageTests : TestBase
     {
         // given
         _timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 15, 10, 0, 0, TimeSpan.Zero));
-        await _sut.StoreMessageAsync("topic", _CreateMessage("1007"), cancellationToken: AbortToken);
+        var stored = await _sut.StoreMessageAsync("topic", _CreateMessage("1007"), cancellationToken: AbortToken);
 
         // Set retries to max
-        InMemoryDataStorage.PublishedMessages["1007"].Retries = _options.Value.FailedRetryCount;
+        InMemoryDataStorage.PublishedMessages[stored.StorageId].Retries = _options.Value.FailedRetryCount;
 
         _timeProvider.Advance(TimeSpan.FromMinutes(5));
 
@@ -260,7 +263,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         var result = await _sut.GetReceivedMessagesOfNeedRetry(TimeSpan.FromMinutes(1), AbortToken);
 
         // then
-        result.Should().ContainSingle().Which.DbId.Should().Be(msg.DbId);
+        result.Should().ContainSingle().Which.StorageId.Should().Be(msg.StorageId);
     }
 
     [Fact]
@@ -272,10 +275,10 @@ public sealed class InMemoryDataStorageTests : TestBase
         await _sut.ChangePublishStateAsync(expired, StatusName.Failed, cancellationToken: AbortToken);
         await _sut.ChangePublishStateAsync(notExpired, StatusName.Succeeded, cancellationToken: AbortToken);
 
-        InMemoryDataStorage.PublishedMessages["1008"].ExpiresAt = _timeProvider
+        InMemoryDataStorage.PublishedMessages[expired.StorageId].ExpiresAt = _timeProvider
             .GetUtcNow()
             .UtcDateTime.AddHours(-1);
-        InMemoryDataStorage.PublishedMessages["1009"].ExpiresAt = _timeProvider
+        InMemoryDataStorage.PublishedMessages[notExpired.StorageId].ExpiresAt = _timeProvider
             .GetUtcNow()
             .UtcDateTime.AddHours(1);
 
@@ -289,8 +292,8 @@ public sealed class InMemoryDataStorageTests : TestBase
 
         // then
         deleted.Should().Be(1);
-        InMemoryDataStorage.PublishedMessages.Should().NotContainKey("1008");
-        InMemoryDataStorage.PublishedMessages.Should().ContainKey("1009");
+        InMemoryDataStorage.PublishedMessages.Should().NotContainKey(expired.StorageId);
+        InMemoryDataStorage.PublishedMessages.Should().ContainKey(notExpired.StorageId);
     }
 
     [Fact]
@@ -307,8 +310,12 @@ public sealed class InMemoryDataStorageTests : TestBase
         await _sut.ChangeReceiveStateAsync(msg1, StatusName.Failed, AbortToken);
         await _sut.ChangeReceiveStateAsync(msg2, StatusName.Succeeded, AbortToken);
 
-        InMemoryDataStorage.ReceivedMessages[msg1.DbId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(-1);
-        InMemoryDataStorage.ReceivedMessages[msg2.DbId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
+        InMemoryDataStorage.ReceivedMessages[msg1.StorageId].ExpiresAt = _timeProvider
+            .GetUtcNow()
+            .UtcDateTime.AddHours(-1);
+        InMemoryDataStorage.ReceivedMessages[msg2.StorageId].ExpiresAt = _timeProvider
+            .GetUtcNow()
+            .UtcDateTime.AddHours(1);
 
         // when
         var deleted = await _sut.DeleteExpiresAsync(
@@ -320,8 +327,8 @@ public sealed class InMemoryDataStorageTests : TestBase
 
         // then
         deleted.Should().Be(1);
-        InMemoryDataStorage.ReceivedMessages.Should().NotContainKey(msg1.DbId);
-        InMemoryDataStorage.ReceivedMessages.Should().ContainKey(msg2.DbId);
+        InMemoryDataStorage.ReceivedMessages.Should().NotContainKey(msg1.StorageId);
+        InMemoryDataStorage.ReceivedMessages.Should().ContainKey(msg2.StorageId);
     }
 
     [Fact]
@@ -336,7 +343,7 @@ public sealed class InMemoryDataStorageTests : TestBase
                 cancellationToken: AbortToken
             );
             await _sut.ChangePublishStateAsync(msg, StatusName.Failed, cancellationToken: AbortToken);
-            InMemoryDataStorage.PublishedMessages[msg.DbId].ExpiresAt = _timeProvider
+            InMemoryDataStorage.PublishedMessages[msg.StorageId].ExpiresAt = _timeProvider
                 .GetUtcNow()
                 .UtcDateTime.AddHours(-1);
         }
@@ -360,7 +367,9 @@ public sealed class InMemoryDataStorageTests : TestBase
         // given
         var delayed = await _sut.StoreMessageAsync("topic", _CreateMessage("1111"), cancellationToken: AbortToken);
         await _sut.ChangePublishStateAsync(delayed, StatusName.Delayed, cancellationToken: AbortToken);
-        InMemoryDataStorage.PublishedMessages["1111"].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(-1);
+        InMemoryDataStorage.PublishedMessages[delayed.StorageId].ExpiresAt = _timeProvider
+            .GetUtcNow()
+            .UtcDateTime.AddHours(-1);
 
         // when
         var deleted = await _sut.DeleteExpiresAsync(
@@ -372,7 +381,7 @@ public sealed class InMemoryDataStorageTests : TestBase
 
         // then
         deleted.Should().Be(0);
-        InMemoryDataStorage.PublishedMessages.Should().ContainKey("1111");
+        InMemoryDataStorage.PublishedMessages.Should().ContainKey(delayed.StorageId);
     }
 
     [Fact]
@@ -380,14 +389,14 @@ public sealed class InMemoryDataStorageTests : TestBase
     {
         // given
         var msg = await _sut.StoreReceivedMessageAsync("topic", "group", _CreateMessage("to-delete"), AbortToken);
-        var id = long.Parse(msg.DbId, CultureInfo.InvariantCulture);
+        var id = msg.StorageId;
 
         // when
         var result = await _sut.DeleteReceivedMessageAsync(id, AbortToken);
 
         // then
         result.Should().Be(1);
-        InMemoryDataStorage.ReceivedMessages.Should().NotContainKey(msg.DbId);
+        InMemoryDataStorage.ReceivedMessages.Should().NotContainKey(msg.StorageId);
     }
 
     [Fact]
@@ -406,14 +415,14 @@ public sealed class InMemoryDataStorageTests : TestBase
         // given
         // Use a numeric ID since DeletePublishedMessageAsync takes a long
         var msg = await _sut.StoreMessageAsync("topic", _CreateMessage("12345"), cancellationToken: AbortToken);
-        var id = long.Parse(msg.DbId, CultureInfo.InvariantCulture);
+        var id = msg.StorageId;
 
         // when
         var result = await _sut.DeletePublishedMessageAsync(id, AbortToken);
 
         // then
         result.Should().Be(1);
-        InMemoryDataStorage.PublishedMessages.Should().NotContainKey("12345");
+        InMemoryDataStorage.PublishedMessages.Should().NotContainKey(msg.StorageId);
     }
 
     [Fact]
@@ -422,7 +431,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         // given
         var msg = await _sut.StoreMessageAsync("topic", _CreateMessage("1010"), cancellationToken: AbortToken);
         await _sut.ChangePublishStateAsync(msg, StatusName.Delayed, cancellationToken: AbortToken);
-        InMemoryDataStorage.PublishedMessages["1010"].ExpiresAt = _timeProvider
+        InMemoryDataStorage.PublishedMessages[msg.StorageId].ExpiresAt = _timeProvider
             .GetUtcNow()
             .UtcDateTime.AddMinutes(1);
 
@@ -439,7 +448,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         );
 
         // then
-        scheduledMessages.Should().ContainSingle().Which.DbId.Should().Be("1010");
+        scheduledMessages.Should().ContainSingle().Which.StorageId.Should().Be(msg.StorageId);
     }
 
     [Fact]
@@ -448,7 +457,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         // given
         var msg = await _sut.StoreMessageAsync("topic", _CreateMessage("1011"), cancellationToken: AbortToken);
         await _sut.ChangePublishStateAsync(msg, StatusName.Queued, cancellationToken: AbortToken);
-        InMemoryDataStorage.PublishedMessages["1011"].ExpiresAt = _timeProvider
+        InMemoryDataStorage.PublishedMessages[msg.StorageId].ExpiresAt = _timeProvider
             .GetUtcNow()
             .UtcDateTime.AddMinutes(-2);
 
@@ -465,7 +474,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         );
 
         // then
-        scheduledMessages.Should().ContainSingle().Which.DbId.Should().Be("1011");
+        scheduledMessages.Should().ContainSingle().Which.StorageId.Should().Be(msg.StorageId);
     }
 
     [Fact]

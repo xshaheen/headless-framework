@@ -90,8 +90,21 @@ public sealed class PostgreSqlStorageInitializer(
             	"Retries" INT NOT NULL,
             	"Added" TIMESTAMP NOT NULL,
                 "ExpiresAt" TIMESTAMP NULL,
-            	"StatusName" VARCHAR(50) NOT NULL
+            	"StatusName" VARCHAR(50) NOT NULL,
+                "MessageId" VARCHAR(200) NOT NULL
             );
+
+            ALTER TABLE {GetPublishedTableName()} ADD COLUMN IF NOT EXISTS "MessageId" VARCHAR(200);
+            UPDATE {GetPublishedTableName()} SET "MessageId" = "Id"::text WHERE "MessageId" IS NULL;
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = '{postgreSqlOptions.Value.Schema}' AND table_name = 'published' AND column_name = 'MessageId' AND is_nullable = 'YES'
+                ) THEN
+                    ALTER TABLE {GetPublishedTableName()} ALTER COLUMN "MessageId" SET NOT NULL;
+                END IF;
+            END $$;
 
             CREATE INDEX IF NOT EXISTS "idx_published_ExpiresAt_StatusName" ON {GetPublishedTableName()}("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_published_Version_ExpiresAt_StatusName" ON {GetPublishedTableName()} ("Version","ExpiresAt","StatusName");

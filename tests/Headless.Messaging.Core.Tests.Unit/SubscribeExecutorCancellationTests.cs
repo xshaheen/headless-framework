@@ -32,7 +32,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
         return new MediumMessage
         {
-            DbId = "1",
+            StorageId = 1L,
             Origin = new Message(headers, "{}"),
             Content = "{}",
             Added = DateTime.UtcNow,

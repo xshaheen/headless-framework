@@ -111,8 +111,8 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
         {
             message.Retries = _options.Value.FailedRetryCount; // Mark as exhausted
             _logger.LogWarning(
-                "Message {MessageId} failed with non-retryable exception: {ExceptionType}. Skipping retries.",
-                message.DbId,
+                "Stored message {StorageId} failed with non-retryable exception: {ExceptionType}. Skipping retries.",
+                message.StorageId,
                 ex.GetType().Name
             );
             return RetryDecision.Stop;
@@ -132,7 +132,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
                     }
                 );
 
-                _logger.SenderAfterThreshold(message.DbId, _options.Value.FailedRetryCount);
+                _logger.SenderStoredMessageAfterThreshold(message.StorageId, _options.Value.FailedRetryCount);
             }
             catch (Exception callbackEx)
             {
@@ -142,7 +142,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
             return RetryDecision.Stop;
         }
 
-        _logger.SenderRetrying(message.DbId, retries);
+        _logger.SenderRetrying(message.StorageId, retries);
 
         var nextDelay = _backoffStrategy.GetNextDelay(retries - 1, ex);
         if (nextDelay is null)
@@ -161,7 +161,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
                     }
                 );
 
-                _logger.SenderAfterThreshold(message.DbId, _options.Value.FailedRetryCount);
+                _logger.SenderStoredMessageAfterThreshold(message.StorageId, _options.Value.FailedRetryCount);
             }
             catch (Exception callbackEx)
             {

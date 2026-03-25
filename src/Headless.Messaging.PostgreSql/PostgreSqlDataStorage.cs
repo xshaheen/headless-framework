@@ -118,20 +118,23 @@ public sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
     }
 
-    public async ValueTask ChangePublishStateToDelayedAsync(string[] ids, CancellationToken cancellationToken = default)
+    public async ValueTask ChangePublishStateToDelayedAsync(
+        long[] storageIds,
+        CancellationToken cancellationToken = default
+    )
     {
-        if (ids.Length == 0)
+        if (storageIds.Length == 0)
         {
             return;
         }
 
-        var parameters = new object[ids.Length + 1];
-        var paramNames = new string[ids.Length];
+        var parameters = new object[storageIds.Length + 1];
+        var paramNames = new string[storageIds.Length];
 
-        for (var i = 0; i < ids.Length; i++)
+        for (var i = 0; i < storageIds.Length; i++)
         {
             paramNames[i] = $"@Id{i}";
-            parameters[i] = new NpgsqlParameter($"@Id{i}", _ParseStorageId(ids[i]));
+            parameters[i] = new NpgsqlParameter($"@Id{i}", storageIds[i]);
         }
 
         parameters[^1] = new NpgsqlParameter("@StatusName", nameof(StatusName.Delayed));
@@ -166,10 +169,13 @@ public sealed class PostgreSqlDataStorage(
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Id", _ParseStorageId(message.DbId)),
+            new NpgsqlParameter("@Id", message.StorageId),
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
-            new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? (object)message.ExpiresAt.Value : DBNull.Value),
+            new NpgsqlParameter(
+                "@ExpiresAt",
+                message.ExpiresAt.HasValue ? (object)message.ExpiresAt.Value : DBNull.Value
+            ),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
             new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -188,12 +194,12 @@ public sealed class PostgreSqlDataStorage(
     )
     {
         var sql =
-            $"INSERT INTO {_pubName} (\"Id\",\"Version\",\"Name\",\"Content\",\"Retries\",\"Added\",\"ExpiresAt\",\"StatusName\")"
-            + $"VALUES(@Id,'{postgreSqlOptions.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@StatusName);";
+            $"INSERT INTO {_pubName} (\"Id\",\"Version\",\"Name\",\"Content\",\"Retries\",\"Added\",\"ExpiresAt\",\"StatusName\",\"MessageId\")"
+            + $"VALUES(@Id,'{postgreSqlOptions.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@StatusName,@MessageId);";
 
         var message = new MediumMessage
         {
-            DbId = content.GetId(),
+            StorageId = longIdGenerator.Create(),
             Origin = content,
             Content = serializer.Serialize(content),
             Added = timeProvider.GetUtcNow().UtcDateTime,
@@ -203,13 +209,14 @@ public sealed class PostgreSqlDataStorage(
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Id", _ParseStorageId(message.DbId)),
+            new NpgsqlParameter("@Id", message.StorageId),
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Content", message.Content),
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@Added", message.Added),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
+            new NpgsqlParameter("@MessageId", content.GetId()),
         ];
 
         if (transaction == null)
@@ -271,7 +278,7 @@ public sealed class PostgreSqlDataStorage(
     {
         var mediumMessage = new MediumMessage
         {
-            DbId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture),
+            StorageId = longIdGenerator.Create(),
             Origin = message,
             Content = serializer.Serialize(message),
             Added = timeProvider.GetUtcNow().UtcDateTime,
@@ -281,7 +288,7 @@ public sealed class PostgreSqlDataStorage(
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Id", long.Parse(mediumMessage.DbId, CultureInfo.InvariantCulture)),
+            new NpgsqlParameter("@Id", mediumMessage.StorageId),
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Group", group),
             new NpgsqlParameter("@Content", mediumMessage.Content),
@@ -405,7 +412,7 @@ public sealed class PostgreSqlDataStorage(
 
                         var mediumMessage = new MediumMessage
                         {
-                            DbId = reader.GetInt64(0).ToString(CultureInfo.InvariantCulture),
+                            StorageId = reader.GetInt64(0),
                             Origin = serializer.Deserialize(content)!,
                             Content = content,
                             Retries = reader.GetInt32(2),
@@ -442,7 +449,7 @@ public sealed class PostgreSqlDataStorage(
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Id", _ParseStorageId(message.DbId)),
+            new NpgsqlParameter("@Id", message.StorageId),
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
@@ -486,19 +493,6 @@ public sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
     }
 
-    private static long _ParseStorageId(string id)
-    {
-        if (long.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
-        {
-            return value;
-        }
-
-        throw new ArgumentException(
-            "Published message IDs must be numeric to support all storage providers.",
-            nameof(id)
-        );
-    }
-
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
         string tableName,
         TimeSpan lookbackSeconds,
@@ -531,7 +525,7 @@ public sealed class PostgreSqlDataStorage(
 
                         var mediumMessage = new MediumMessage
                         {
-                            DbId = reader.GetInt64(0).ToString(CultureInfo.InvariantCulture),
+                            StorageId = reader.GetInt64(0),
                             Origin = serializer.Deserialize(content)!,
                             Content = content,
                             Retries = reader.GetInt32(2),

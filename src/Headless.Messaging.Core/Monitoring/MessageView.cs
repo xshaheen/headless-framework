@@ -4,7 +4,9 @@ namespace Headless.Messaging.Monitoring;
 
 public class MessageView
 {
-    public required string Id { get; set; }
+    public required long StorageId { get; set; }
+
+    public required string MessageId { get; set; }
 
     public required string Version { get; set; }
 

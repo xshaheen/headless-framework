@@ -83,7 +83,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
             "SELECT \"StatusName\" FROM messaging.published WHERE \"Id\"=@Id",
-            new { Id = long.Parse(stored.DbId, CultureInfo.InvariantCulture) }
+            new { Id = stored.StorageId }
         );
         status.Should().Be(nameof(StatusName.Scheduled));
     }
@@ -105,7 +105,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
             "SELECT \"StatusName\" FROM messaging.published WHERE \"Id\"=@Id",
-            new { Id = long.Parse(stored.DbId, CultureInfo.InvariantCulture) }
+            new { Id = stored.StorageId }
         );
         status.Should().Be(nameof(StatusName.Succeeded));
     }
@@ -127,7 +127,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
             "SELECT \"StatusName\" FROM messaging.published WHERE \"Id\"=@Id",
-            new { Id = long.Parse(stored.DbId, CultureInfo.InvariantCulture) }
+            new { Id = stored.StorageId }
         );
         status.Should().Be(nameof(StatusName.Failed));
     }
@@ -152,7 +152,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
             "SELECT \"StatusName\" FROM messaging.received WHERE \"Id\"=@Id",
-            new { Id = long.Parse(stored.DbId, CultureInfo.InvariantCulture) }
+            new { Id = stored.StorageId }
         );
         status.Should().Be(nameof(StatusName.Scheduled));
     }
@@ -178,7 +178,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
             "SELECT \"StatusName\" FROM messaging.received WHERE \"Id\"=@Id",
-            new { Id = long.Parse(stored.DbId, CultureInfo.InvariantCulture) }
+            new { Id = stored.StorageId }
         );
         status.Should().Be(nameof(StatusName.Succeeded));
     }
@@ -204,7 +204,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await connection.OpenAsync(AbortToken);
         var status = await connection.QueryFirstAsync<string>(
             "SELECT \"StatusName\" FROM messaging.received WHERE \"Id\"=@Id",
-            new { Id = long.Parse(stored.DbId, CultureInfo.InvariantCulture) }
+            new { Id = stored.StorageId }
         );
         status.Should().Be(nameof(StatusName.Failed));
     }
@@ -227,7 +227,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await connection.OpenAsync(AbortToken);
         var retries = await connection.QueryFirstAsync<int>(
             "SELECT \"Retries\" FROM messaging.published WHERE \"Id\"=@Id",
-            new { Id = long.Parse(stored.DbId, CultureInfo.InvariantCulture) }
+            new { Id = stored.StorageId }
         );
         retries.Should().Be(3);
     }
@@ -251,7 +251,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await connection.OpenAsync(AbortToken);
         var dbExpiresAt = await connection.QueryFirstAsync<DateTime?>(
             "SELECT \"ExpiresAt\" FROM messaging.published WHERE \"Id\"=@Id",
-            new { Id = long.Parse(stored.DbId, CultureInfo.InvariantCulture) }
+            new { Id = stored.StorageId }
         );
         dbExpiresAt.Should().BeCloseTo(expiresAt, TimeSpan.FromSeconds(1));
     }
@@ -260,14 +260,14 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
     public async Task should_change_multiple_messages_to_delayed_state()
     {
         // given
-        var ids = new List<string>();
+        var ids = new List<long>();
         for (var i = 0; i < 5; i++)
         {
             var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
             var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
             var message = new Message(header, new { Data = $"test{i}" });
             var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
-            ids.Add(stored.DbId);
+            ids.Add(stored.StorageId);
         }
 
         // when
@@ -278,7 +278,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         await connection.OpenAsync(AbortToken);
         var statuses = await connection.QueryAsync<string>(
             "SELECT \"StatusName\" FROM messaging.published WHERE \"Id\" = ANY(@Ids)",
-            new { Ids = ids.Select(id => long.Parse(id, CultureInfo.InvariantCulture)).ToArray() }
+            new { Ids = ids.ToArray() }
         );
         statuses.Should().AllBe(nameof(StatusName.Delayed));
     }

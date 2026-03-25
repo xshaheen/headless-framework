@@ -148,7 +148,7 @@ internal sealed class SubscribeExecutor(
             logger.ConsumerExecuteFailed(
                 ex,
                 LogSanitizer.Sanitize(message.Origin.GetName()) ?? "",
-                message.DbId,
+                message.StorageId,
                 message.Origin.GetExecutionInstanceId()
             );
 
@@ -201,8 +201,8 @@ internal sealed class SubscribeExecutor(
         if (_IsRequestedCancellation(ex))
         {
             logger.LogInformation(
-                "Message {MessageId} execution was canceled by shutdown. Persisting for later retry.",
-                message.DbId
+                "Stored message {StorageId} execution was canceled by shutdown. Persisting for later retry.",
+                message.StorageId
             );
             return RetryDecision.Stop;
         }
@@ -212,8 +212,8 @@ internal sealed class SubscribeExecutor(
         {
             message.Retries = _options.FailedRetryCount; // Mark as exhausted
             logger.LogWarning(
-                "Message {MessageId} failed with non-retryable exception: {ExceptionType}. Skipping retries.",
-                message.DbId,
+                "Stored message {StorageId} failed with non-retryable exception: {ExceptionType}. Skipping retries.",
+                message.StorageId,
                 ex.GetType().Name
             );
             return RetryDecision.Stop;
@@ -233,7 +233,7 @@ internal sealed class SubscribeExecutor(
                     }
                 );
 
-                logger.ConsumerExecutedAfterThreshold(message.DbId, _options.FailedRetryCount);
+                logger.ConsumerStoredMessageAfterThreshold(message.StorageId, _options.FailedRetryCount);
             }
             catch (Exception callbackEx)
             {
@@ -243,7 +243,7 @@ internal sealed class SubscribeExecutor(
             return RetryDecision.Stop;
         }
 
-        logger.ConsumerExecutionRetrying(message.DbId, retries);
+        logger.ConsumerExecutionRetrying(message.StorageId, retries);
 
         var nextDelay = _backoffStrategy.GetNextDelay(retries - 1, ex);
         if (nextDelay is null)
@@ -262,7 +262,7 @@ internal sealed class SubscribeExecutor(
                     }
                 );
 
-                logger.ConsumerExecutedAfterThreshold(message.DbId, _options.FailedRetryCount);
+                logger.ConsumerStoredMessageAfterThreshold(message.StorageId, _options.FailedRetryCount);
             }
             catch (Exception callbackEx)
             {

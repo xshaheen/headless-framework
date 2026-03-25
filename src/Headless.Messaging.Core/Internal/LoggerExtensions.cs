@@ -8,19 +8,15 @@ internal static partial class LoggerExtensions
 {
     [LoggerMessage(
         EventId = 1,
-        EventName = "ConsumerExecutedAfterThreshold",
+        EventName = "ConsumerReceivedMessageAfterThreshold",
         Level = LogLevel.Warning,
-        Message = "The Subscriber of the message({MessageId}) still fails after {Retries}th executions and we will stop retrying."
+        Message = "The subscriber of received message {MessageId} still fails after {Retries} executions and will stop retrying."
     )]
-    public static partial void ConsumerExecutedAfterThreshold(this ILogger logger, string messageId, int retries);
-
-    [LoggerMessage(
-        EventId = 2,
-        EventName = "SenderAfterThreshold",
-        Level = LogLevel.Warning,
-        Message = "The Publisher of the message({MessageId}) still fails after {Retries}th sends and we will stop retrying."
-    )]
-    public static partial void SenderAfterThreshold(this ILogger logger, string messageId, int retries);
+    public static partial void ConsumerReceivedMessageAfterThreshold(
+        this ILogger logger,
+        string messageId,
+        int retries
+    );
 
     [LoggerMessage(
         EventId = 3,
@@ -46,17 +42,17 @@ internal static partial class LoggerExtensions
         EventId = 5,
         EventName = "ConsumerExecutionRetrying",
         Level = LogLevel.Warning,
-        Message = "The {Retries}th retrying consume a message failed. message id: {MessageId}"
+        Message = "The {Retries}th retrying consume of stored message failed. storage id: {StorageId}"
     )]
-    public static partial void ConsumerExecutionRetrying(this ILogger logger, string messageId, int retries);
+    public static partial void ConsumerExecutionRetrying(this ILogger logger, long storageId, int retries);
 
     [LoggerMessage(
         EventId = 6,
         EventName = "SenderRetrying",
         Level = LogLevel.Warning,
-        Message = "The {Retries}th retrying send a message failed. message id: {MessageId} "
+        Message = "The {Retries}th retrying send of stored message failed. storage id: {StorageId} "
     )]
-    public static partial void SenderRetrying(this ILogger logger, string messageId, int retries);
+    public static partial void SenderRetrying(this ILogger logger, long storageId, int retries);
 
     [LoggerMessage(
         EventId = 7,
@@ -111,13 +107,13 @@ internal static partial class LoggerExtensions
         EventId = 11,
         EventName = "ConsumerExecuteFailed",
         Level = LogLevel.Error,
-        Message = "An exception occurred while executing the subscription method. Topic:{Topic}, Id:{Id}, Instance: {Instance}"
+        Message = "An exception occurred while executing the subscription method. Topic:{Topic}, StorageId:{StorageId}, Instance: {Instance}"
     )]
     public static partial void ConsumerExecuteFailed(
         this ILogger logger,
         Exception? exception,
         string topic,
-        string id,
+        long storageId,
         string? instance
     );
 
@@ -209,9 +205,9 @@ internal static partial class LoggerExtensions
         EventId = 22,
         EventName = "SubscriberInvocationFailed",
         Level = LogLevel.Error,
-        Message = "An exception occurred when invoke subscriber. MessageId:{MessageId}"
+        Message = "An exception occurred when invoke subscriber. StorageId:{StorageId}"
     )]
-    public static partial void SubscriberInvocationFailed(this ILogger logger, Exception exception, string messageId);
+    public static partial void SubscriberInvocationFailed(this ILogger logger, Exception exception, long storageId);
 
     [LoggerMessage(
         EventId = 23,
@@ -233,17 +229,17 @@ internal static partial class LoggerExtensions
         EventId = 25,
         EventName = "DelayedMessageSendFailed",
         Level = LogLevel.Error,
-        Message = "Delay message sending failed. MessageId: {MessageId} "
+        Message = "Delay message sending failed. StorageId: {StorageId} "
     )]
-    public static partial void DelayedMessageSendFailed(this ILogger logger, string messageId);
+    public static partial void DelayedMessageSendFailed(this ILogger logger, long storageId);
 
     [LoggerMessage(
         EventId = 26,
         EventName = "ScheduledMessageSendError",
         Level = LogLevel.Error,
-        Message = "Error sending scheduled message. MessageId: {MessageId}"
+        Message = "Error sending scheduled message. StorageId: {StorageId}"
     )]
-    public static partial void ScheduledMessageSendError(this ILogger logger, Exception exception, string messageId);
+    public static partial void ScheduledMessageSendError(this ILogger logger, Exception exception, long storageId);
 
     [LoggerMessage(
         EventId = 27,
@@ -257,9 +253,25 @@ internal static partial class LoggerExtensions
         EventId = 28,
         EventName = "TransportSendError",
         Level = LogLevel.Error,
-        Message = "An exception occurred when sending a message to the transport. Id:{MessageId}"
+        Message = "An exception occurred when sending a message to the transport. StorageId:{StorageId}"
     )]
-    public static partial void TransportSendError(this ILogger logger, Exception exception, string messageId);
+    public static partial void TransportSendError(this ILogger logger, Exception exception, long storageId);
+
+    [LoggerMessage(
+        EventId = 34,
+        EventName = "ConsumerStoredMessageAfterThreshold",
+        Level = LogLevel.Warning,
+        Message = "The subscriber of stored message {StorageId} still fails after {Retries} executions and will stop retrying."
+    )]
+    public static partial void ConsumerStoredMessageAfterThreshold(this ILogger logger, long storageId, int retries);
+
+    [LoggerMessage(
+        EventId = 35,
+        EventName = "SenderStoredMessageAfterThreshold",
+        Level = LogLevel.Warning,
+        Message = "The publisher of stored message {StorageId} still fails after {Retries} sends and will stop retrying."
+    )]
+    public static partial void SenderStoredMessageAfterThreshold(this ILogger logger, long storageId, int retries);
 
     [LoggerMessage(
         EventId = 29,

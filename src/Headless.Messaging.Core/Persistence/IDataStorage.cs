@@ -22,7 +22,7 @@ public interface IDataStorage
 
     ValueTask RenewLockAsync(string key, TimeSpan ttl, string instance, CancellationToken cancellationToken = default);
 
-    ValueTask ChangePublishStateToDelayedAsync(string[] ids, CancellationToken cancellationToken = default);
+    ValueTask ChangePublishStateToDelayedAsync(long[] storageIds, CancellationToken cancellationToken = default);
 
     ValueTask ChangePublishStateAsync(
         MediumMessage message,
@@ -44,6 +44,10 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Stores a failed received message using serialized <see cref="Message"/> JSON so providers can persist message headers.
+    /// </summary>
+    /// <param name="content">Serialized <see cref="Message"/> payload, including headers.</param>
     ValueTask StoreReceivedExceptionMessageAsync(
         string name,
         string group,

@@ -69,7 +69,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         return new MediumMessage
         {
-            DbId = Guid.NewGuid().ToString(),
+            StorageId = 1L,
             Origin = new Message(headers, null),
             Content = "{}",
         };
@@ -77,9 +77,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
     private static ProcessingContext _CreateContext(IServiceProvider? provider = null)
     {
-        provider ??= new ServiceCollection()
-            .AddSingleton(Substitute.For<IDataStorage>())
-            .BuildServiceProvider();
+        provider ??= new ServiceCollection().AddSingleton(Substitute.For<IDataStorage>()).BuildServiceProvider();
 
         return new ProcessingContext(provider, CancellationToken.None);
     }
@@ -281,7 +279,10 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         const string group = "integration.group.lifecycle";
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        await using var stateManager = _CreateStateManager(failureThreshold: 2, openDuration: TimeSpan.FromMilliseconds(30));
+        await using var stateManager = _CreateStateManager(
+            failureThreshold: 2,
+            openDuration: TimeSpan.FromMilliseconds(30)
+        );
 
         stateManager.RegisterGroupCallbacks(
             group,

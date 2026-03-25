@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Text.Json;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
@@ -11,6 +12,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
+using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -295,7 +297,8 @@ public static class MessagingDashboardEndpoints
         return Results.Json(
             new
             {
-                Id = message.DbId,
+                StorageId = message.StorageId.ToString(CultureInfo.InvariantCulture),
+                MessageId = message.Origin.GetId(),
                 Name = message.Origin.GetName(),
                 message.Content,
                 message.Added,
@@ -319,7 +322,8 @@ public static class MessagingDashboardEndpoints
         return Results.Json(
             new
             {
-                Id = message.DbId,
+                StorageId = message.StorageId.ToString(CultureInfo.InvariantCulture),
+                MessageId = message.Origin.GetId(),
                 Name = message.Origin.GetName(),
                 Group = message.Origin.GetGroup(),
                 message.Content,
@@ -333,8 +337,8 @@ public static class MessagingDashboardEndpoints
 
     private static async Task<IResult> _PublishedRequeue(HttpContext httpContext, IServiceProvider sp)
     {
-        var messageIds = await httpContext.Request.ReadFromJsonAsync<long[]>();
-        if (messageIds == null || messageIds.Length == 0)
+        var storageIds = await _ReadStorageIdsAsync(httpContext);
+        if (storageIds == null || storageIds.Length == 0)
         {
             return Results.UnprocessableEntity();
         }
@@ -343,9 +347,9 @@ public static class MessagingDashboardEndpoints
         var monitoringApi = dataStorage.GetMonitoringApi();
         var dispatcher = sp.GetRequiredService<IDispatcher>();
 
-        foreach (var messageId in messageIds)
+        foreach (var storageId in storageIds)
         {
-            var message = await monitoringApi.GetPublishedMessageAsync(messageId);
+            var message = await monitoringApi.GetPublishedMessageAsync(storageId);
             if (message != null)
             {
                 await dispatcher.EnqueueToPublish(message, httpContext.RequestAborted);
@@ -357,17 +361,17 @@ public static class MessagingDashboardEndpoints
 
     private static async Task<IResult> _PublishedDelete(HttpContext httpContext, IServiceProvider sp)
     {
-        var messageIds = await httpContext.Request.ReadFromJsonAsync<long[]>();
-        if (messageIds == null || messageIds.Length == 0)
+        var storageIds = await _ReadStorageIdsAsync(httpContext);
+        if (storageIds == null || storageIds.Length == 0)
         {
             return Results.UnprocessableEntity();
         }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
 
-        foreach (var messageId in messageIds)
+        foreach (var storageId in storageIds)
         {
-            _ = await dataStorage.DeletePublishedMessageAsync(messageId);
+            _ = await dataStorage.DeletePublishedMessageAsync(storageId);
         }
 
         return Results.NoContent();
@@ -375,8 +379,8 @@ public static class MessagingDashboardEndpoints
 
     private static async Task<IResult> _ReceivedRequeue(HttpContext httpContext, IServiceProvider sp)
     {
-        var messageIds = await httpContext.Request.ReadFromJsonAsync<long[]>();
-        if (messageIds == null || messageIds.Length == 0)
+        var storageIds = await _ReadStorageIdsAsync(httpContext);
+        if (storageIds == null || storageIds.Length == 0)
         {
             return Results.UnprocessableEntity();
         }
@@ -385,9 +389,9 @@ public static class MessagingDashboardEndpoints
         var monitoringApi = dataStorage.GetMonitoringApi();
         var dispatcher = sp.GetRequiredService<IDispatcher>();
 
-        foreach (var messageId in messageIds)
+        foreach (var storageId in storageIds)
         {
-            var message = await monitoringApi.GetReceivedMessageAsync(messageId);
+            var message = await monitoringApi.GetReceivedMessageAsync(storageId);
             if (message != null)
             {
                 await dispatcher.EnqueueToExecute(message, null, httpContext.RequestAborted);
@@ -399,17 +403,17 @@ public static class MessagingDashboardEndpoints
 
     private static async Task<IResult> _ReceivedDelete(HttpContext httpContext, IServiceProvider sp)
     {
-        var messageIds = await httpContext.Request.ReadFromJsonAsync<long[]>();
-        if (messageIds == null || messageIds.Length == 0)
+        var storageIds = await _ReadStorageIdsAsync(httpContext);
+        if (storageIds == null || storageIds.Length == 0)
         {
             return Results.UnprocessableEntity();
         }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
 
-        foreach (var messageId in messageIds)
+        foreach (var storageId in storageIds)
         {
-            _ = await dataStorage.DeleteReceivedMessageAsync(messageId);
+            _ = await dataStorage.DeleteReceivedMessageAsync(storageId);
         }
 
         return Results.NoContent();
@@ -440,7 +444,7 @@ public static class MessagingDashboardEndpoints
         };
 
         var result = await monitoringApi.GetMessagesAsync(queryDto);
-        return Results.Json(result);
+        return Results.Json(_MapMessagePage(result));
     }
 
     private static async Task<IResult> _ReceivedList(
@@ -470,7 +474,7 @@ public static class MessagingDashboardEndpoints
         };
 
         var result = await monitoringApi.GetMessagesAsync(queryDto);
-        return Results.Json(result);
+        return Results.Json(_MapMessagePage(result));
     }
 
     private static async Task<IResult> _Subscribers(IServiceProvider sp)
@@ -499,6 +503,82 @@ public static class MessagingDashboardEndpoints
         }
 
         return Results.Json(result);
+    }
+
+    private static object _MapMessageView(MessageView message)
+    {
+        return new
+        {
+            StorageId = message.StorageId.ToString(CultureInfo.InvariantCulture),
+            message.MessageId,
+            message.Group,
+            message.Name,
+            message.Content,
+            message.Added,
+            message.ExpiresAt,
+            message.Retries,
+            message.StatusName,
+        };
+    }
+
+    private static object _MapMessagePage(IndexPage<MessageView> page)
+    {
+        var mapped = page.Select(_MapMessageView);
+        return new
+        {
+            mapped.Items,
+            mapped.Index,
+            mapped.Size,
+            mapped.TotalItems,
+            mapped.TotalPages,
+            mapped.HasPrevious,
+            mapped.HasNext,
+            Totals = mapped.TotalItems,
+        };
+    }
+
+    private static async ValueTask<long[]?> _ReadStorageIdsAsync(HttpContext httpContext)
+    {
+        try
+        {
+            var payload = await httpContext.Request.ReadFromJsonAsync<JsonElement>(httpContext.RequestAborted);
+            if (payload.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var storageIds = new List<long>();
+            foreach (var item in payload.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var numericStorageId))
+                {
+                    storageIds.Add(numericStorageId);
+                    continue;
+                }
+
+                if (
+                    item.ValueKind == JsonValueKind.String
+                    && long.TryParse(
+                        item.GetString(),
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out var stringStorageId
+                    )
+                )
+                {
+                    storageIds.Add(stringStorageId);
+                    continue;
+                }
+
+                return null;
+            }
+
+            return [.. storageIds];
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static async Task<IResult> _Nodes(IServiceProvider sp)

@@ -12,7 +12,7 @@ public sealed class MediumMessageTests : TestBase
     public void should_create_medium_message_with_required_properties()
     {
         // given
-        var dbId = Faker.Random.Guid().ToString();
+        const long storageId = 42L;
         var message = new Message(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -25,13 +25,13 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            DbId = dbId,
+            StorageId = storageId,
             Origin = message,
             Content = content,
         };
 
         // then
-        mediumMessage.DbId.Should().Be(dbId);
+        mediumMessage.StorageId.Should().Be(storageId);
         mediumMessage.Origin.Should().BeSameAs(message);
         mediumMessage.Content.Should().Be(content);
     }
@@ -42,7 +42,7 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            DbId = Faker.Random.Guid().ToString(),
+            StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
         };
@@ -60,7 +60,7 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            DbId = Faker.Random.Guid().ToString(),
+            StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
             Added = addedTime,
@@ -76,7 +76,7 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            DbId = Faker.Random.Guid().ToString(),
+            StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
         };
@@ -94,7 +94,7 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            DbId = Faker.Random.Guid().ToString(),
+            StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
             ExpiresAt = expiresAt,
@@ -110,7 +110,7 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            DbId = Faker.Random.Guid().ToString(),
+            StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
         };
@@ -125,7 +125,7 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            DbId = Faker.Random.Guid().ToString(),
+            StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
             Retries = 5,
@@ -141,7 +141,7 @@ public sealed class MediumMessageTests : TestBase
         // given
         var mediumMessage = new MediumMessage
         {
-            DbId = Faker.Random.Guid().ToString(),
+            StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
             Retries = 0,
@@ -160,7 +160,7 @@ public sealed class MediumMessageTests : TestBase
         // given
         var mediumMessage = new MediumMessage
         {
-            DbId = Faker.Random.Guid().ToString(),
+            StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
         };
@@ -179,7 +179,7 @@ public sealed class MediumMessageTests : TestBase
         // given
         var mediumMessage = new MediumMessage
         {
-            DbId = Faker.Random.Guid().ToString(),
+            StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
         };

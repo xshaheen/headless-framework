@@ -113,12 +113,24 @@ public sealed class SqlServerStorageInitializer(
                     [Added] [datetime2](7) NOT NULL,
                     [ExpiresAt] [datetime2](7) NULL,
                     [StatusName] [nvarchar](50) NOT NULL,
+                    [MessageId] [nvarchar](200) NOT NULL,
                     CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
 
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_RetryQuery] ON {GetPublishedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC);
+            END;
+
+            IF COL_LENGTH('{options.Value.Schema}.Published', 'MessageId') IS NULL
+            BEGIN
+                ALTER TABLE {GetPublishedTableName()} ADD [MessageId] [nvarchar](200) NULL;
+
+                UPDATE {GetPublishedTableName()}
+                SET [MessageId] = CONVERT(nvarchar(200), [Id])
+                WHERE [MessageId] IS NULL;
+
+                ALTER TABLE {GetPublishedTableName()} ALTER COLUMN [MessageId] [nvarchar](200) NOT NULL;
             END;
 
             """;

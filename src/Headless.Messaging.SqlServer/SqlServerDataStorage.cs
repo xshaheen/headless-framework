@@ -105,20 +105,23 @@ public sealed class SqlServerDataStorage(
             .ConfigureAwait(false);
     }
 
-    public async ValueTask ChangePublishStateToDelayedAsync(string[] ids, CancellationToken cancellationToken = default)
+    public async ValueTask ChangePublishStateToDelayedAsync(
+        long[] storageIds,
+        CancellationToken cancellationToken = default
+    )
     {
-        if (ids.Length == 0)
+        if (storageIds.Length == 0)
         {
             return;
         }
 
-        var parameters = new object[ids.Length + 1];
-        var paramNames = new string[ids.Length];
+        var parameters = new object[storageIds.Length + 1];
+        var paramNames = new string[storageIds.Length];
 
-        for (var i = 0; i < ids.Length; i++)
+        for (var i = 0; i < storageIds.Length; i++)
         {
             paramNames[i] = $"@Id{i}";
-            parameters[i] = new SqlParameter($"@Id{i}", _ParseStorageId(ids[i]));
+            parameters[i] = new SqlParameter($"@Id{i}", storageIds[i]);
         }
 
         parameters[^1] = new SqlParameter("@StatusName", nameof(StatusName.Delayed));
@@ -152,7 +155,7 @@ public sealed class SqlServerDataStorage(
 
         object[] sqlParams =
         [
-            new SqlParameter("@Id", _ParseStorageId(message.DbId)),
+            new SqlParameter("@Id", message.StorageId),
             new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? (object)message.ExpiresAt.Value : DBNull.Value),
@@ -174,12 +177,12 @@ public sealed class SqlServerDataStorage(
     )
     {
         var sql =
-            $"INSERT INTO {_pubName} ([Id],[Version],[Name],[Content],[Retries],[Added],[ExpiresAt],[StatusName])"
-            + $"VALUES(@Id,'{options.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@StatusName);";
+            $"INSERT INTO {_pubName} ([Id],[Version],[Name],[Content],[Retries],[Added],[ExpiresAt],[StatusName],[MessageId])"
+            + $"VALUES(@Id,'{options.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@StatusName,@MessageId);";
 
         var message = new MediumMessage
         {
-            DbId = content.GetId(),
+            StorageId = longIdGenerator.Create(),
             Origin = content,
             Content = serializer.Serialize(content),
             Added = timeProvider.GetUtcNow().UtcDateTime,
@@ -189,13 +192,14 @@ public sealed class SqlServerDataStorage(
 
         object[] sqlParams =
         [
-            new SqlParameter("@Id", _ParseStorageId(message.DbId)),
+            new SqlParameter("@Id", message.StorageId),
             new SqlParameter("@Name", name),
             new SqlParameter("@Content", message.Content),
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@Added", message.Added),
             new SqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
+            new SqlParameter("@MessageId", content.GetId()),
         ];
 
         if (transaction == null)
@@ -230,7 +234,7 @@ public sealed class SqlServerDataStorage(
     {
         object[] sqlParams =
         [
-            new SqlParameter("@Id", longIdGenerator.Create().ToString(CultureInfo.InvariantCulture)),
+            new SqlParameter("@Id", longIdGenerator.Create()),
             new SqlParameter("@Name", name),
             new SqlParameter("@Group", group),
             new SqlParameter("@Content", content),
@@ -258,7 +262,7 @@ public sealed class SqlServerDataStorage(
     {
         var mediumMessage = new MediumMessage
         {
-            DbId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture),
+            StorageId = longIdGenerator.Create(),
             Origin = message,
             Content = serializer.Serialize(message),
             Added = timeProvider.GetUtcNow().UtcDateTime,
@@ -268,7 +272,7 @@ public sealed class SqlServerDataStorage(
 
         object[] sqlParams =
         [
-            new SqlParameter("@Id", mediumMessage.DbId),
+            new SqlParameter("@Id", mediumMessage.StorageId),
             new SqlParameter("@Name", name),
             new SqlParameter("@Group", group),
             new SqlParameter("@Content", mediumMessage.Content),
@@ -395,7 +399,7 @@ public sealed class SqlServerDataStorage(
                         messages.Add(
                             new MediumMessage
                             {
-                                DbId = reader.GetInt64(0).ToString(CultureInfo.InvariantCulture),
+                                StorageId = reader.GetInt64(0),
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
                                 Retries = reader.GetInt32(2),
@@ -436,7 +440,7 @@ public sealed class SqlServerDataStorage(
 
         object[] sqlParams =
         [
-            new SqlParameter("@Id", _ParseStorageId(message.DbId)),
+            new SqlParameter("@Id", message.StorageId),
             new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
@@ -478,19 +482,6 @@ public sealed class SqlServerDataStorage(
             .ConfigureAwait(false);
     }
 
-    private static long _ParseStorageId(string id)
-    {
-        if (long.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
-        {
-            return value;
-        }
-
-        throw new ArgumentException(
-            "Published message IDs must be numeric to support all storage providers.",
-            nameof(id)
-        );
-    }
-
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
         string tableName,
         TimeSpan lookbackSeconds,
@@ -524,7 +515,7 @@ public sealed class SqlServerDataStorage(
                         messages.Add(
                             new MediumMessage
                             {
-                                DbId = reader.GetInt64(0).ToString(CultureInfo.InvariantCulture),
+                                StorageId = reader.GetInt64(0),
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
                                 Retries = reader.GetInt32(2),

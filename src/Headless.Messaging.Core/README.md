@@ -100,6 +100,7 @@ Use `IOutboxPublisher` for messages that must not be lost:
 - **Transactional**: Messages are stored in database before sending
 - **At-least-once**: Automatic retries with configurable backoff
 - **Ordering**: Preserves publish order within transactions
+- **Two identities**: durable providers generate an internal numeric storage ID for retries and operator actions while `PublishOptions.MessageId` remains a logical string capped at `PublishOptions.MessageIdMaxLength` characters
 
 ### IScheduledPublisher (Delayed Delivery)
 
