@@ -90,7 +90,7 @@ public sealed class PostgreSqlDataStorage(
         object[] sqlParams =
         [
             new NpgsqlParameter("@Instance", instance),
-            new NpgsqlParameter("@LastLockTime", DateTime.MinValue),
+            new NpgsqlParameter("@LastLockTime", DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc)),
             new NpgsqlParameter("@Key", key),
         ];
 

@@ -208,7 +208,7 @@ public sealed class PostgreSqlMonitoringApi(
     )
     {
         var tableName = type == MessageType.Publish ? _publishedTable : _receivedTable;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded)).ConfigureAwait(false);
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded), cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
@@ -217,7 +217,7 @@ public sealed class PostgreSqlMonitoringApi(
     )
     {
         var tableName = type == MessageType.Publish ? _publishedTable : _receivedTable;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed)).ConfigureAwait(false);
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed), cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<long> _GetNumberOfMessage(
@@ -226,7 +226,7 @@ public sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var sqlQuery = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE Lower(\"StatusName\") = Lower(@State)";
+        var sqlQuery = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE \"StatusName\" = @State";
 
         await using var connection = _options.CreateConnection();
 
