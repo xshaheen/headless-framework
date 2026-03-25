@@ -243,12 +243,11 @@ internal class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var endDate = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
         var dates = new List<DateTime>();
         for (var i = 0; i < 24; i++)
         {
-            dates.Add(endDate);
-            endDate = endDate.AddHours(-1);
+            dates.Add(now.AddHours(-i));
         }
 
         var keyMaps = dates.ToDictionary(
@@ -257,13 +256,15 @@ internal class SqlServerMonitoringApi(
             StringComparer.Ordinal
         );
 
-        return _GetTimelineStats(tableName, statusName, keyMaps, cancellationToken);
+        return _GetTimelineStats(tableName, statusName, keyMaps, dates[^1], now, cancellationToken);
     }
 
     private async Task<Dictionary<DateTime, int>> _GetTimelineStats(
         string tableName,
         string statusName,
         Dictionary<string, DateTime> keyMaps,
+        DateTime minAdded,
+        DateTime maxAdded,
         CancellationToken cancellationToken = default
     )
     {
@@ -273,17 +274,17 @@ internal class SqlServerMonitoringApi(
             SELECT CONVERT(CHAR(10), Added, 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, Added) AS VARCHAR(2)), 2) AS [Key],
                 COUNT(Id) [Count]
             FROM  {tableName}
-            WHERE StatusName = @StatusName
+            WHERE StatusName = @StatusName AND Added >= @MinAdded AND Added <= @MaxAdded
             GROUP BY CONVERT(CHAR(10), Added, 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, Added) AS VARCHAR(2)), 2)
             )
-            SELECT [Key], [Count] FROM Aggr WITH (NOLOCK) WHERE [Key] >= @MinKey AND [Key] <= @MaxKey;
+            SELECT [Key], [Count] FROM Aggr WITH (NOLOCK);
             """;
 
         object[] sqlParams =
         [
             new SqlParameter("@StatusName", statusName),
-            new SqlParameter("@MinKey", keyMaps.Keys.Min()),
-            new SqlParameter("@MaxKey", keyMaps.Keys.Max()),
+            new SqlParameter("@MinAdded", minAdded),
+            new SqlParameter("@MaxAdded", maxAdded),
         ];
 
         Dictionary<string, int> valuesMap;
