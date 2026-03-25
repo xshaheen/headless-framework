@@ -134,7 +134,7 @@ public Task ResumeAsync(CancellationToken cancellationToken)
 
 ---
 
-### Pattern 3: Semaphore acquired before Task.Run → acquire inside lambda
+### Pattern 3: Semaphore acquired before Task.Run → schedule without cancellation
 
 When a `CancellationToken` is cancelled between `await semaphore.WaitAsync()` and the `Task.Run` lambda starting, the semaphore slot is consumed but `Release()` in the `finally` block never executes. The concurrency limiter is permanently decremented.
 
@@ -150,13 +150,21 @@ await Task.Run(async () =>
 }, cancellationToken);
 
 
-// AFTER (semaphore only acquired if lambda executes)
-await Task.Run(async () =>
+// AFTER (scheduling ignores cancellation so finally always runs)
+await _semaphore.WaitAsync(cancellationToken);
+_ = RunConcurrentHandlerIgnoringCancellation(async () =>
 {
-    await _semaphore.WaitAsync(cancellationToken);
     try { /* work */ }
     finally { _semaphore.Release(); }
 }, cancellationToken);
+
+internal static Task RunConcurrentHandlerIgnoringCancellation(
+    Func<Task> handler,
+    CancellationToken cancellationToken)
+{
+    _ = cancellationToken;
+    return Task.Run(handler);
+}
 ```
 
 ---
@@ -414,16 +422,21 @@ public async Task ConcurrentPauseAsync_OnlyOneCallerCreatesGate()
 **Pattern 3 — Semaphore not leaked on cancellation**
 ```csharp
 [Fact]
-public async Task TaskRun_CancelledBeforeExecution_SemaphoreCountRestored()
+public async Task RunConcurrentHandlerIgnoringCancellation_runs_even_when_token_is_canceled()
 {
     using var cts = new CancellationTokenSource();
-    var client = CreateClient();
-    cts.Cancel();
+    await cts.CancelAsync();
+    var ran = false;
 
-    try { await client.ConsumeAsync(cts.Token); } catch (OperationCanceledException) { }
+    await NatsConsumerClient.RunConcurrentHandlerIgnoringCancellation(
+        () =>
+        {
+            ran = true;
+            return Task.CompletedTask;
+        },
+        cts.Token);
 
-    client.InternalSemaphore.CurrentCount
-          .Should().Be(client.InternalSemaphore.MaximumCount);
+    ran.Should().BeTrue();
 }
 ```
 
