@@ -81,7 +81,7 @@ public sealed class SqlServerDataStorage(
         object[] sqlParams =
         [
             new SqlParameter("@Instance", instance),
-            new SqlParameter("@LastLockTime", DateTime.MinValue) { SqlDbType = SqlDbType.DateTime2 },
+            new SqlParameter("@LastLockTime", new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc)) { SqlDbType = SqlDbType.DateTime2 },
             new SqlParameter("@Key", key),
         ];
         await connection

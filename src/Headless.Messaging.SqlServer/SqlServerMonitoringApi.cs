@@ -290,7 +290,7 @@ internal sealed class SqlServerMonitoringApi(
 
                         while (await reader.ReadAsync(ct).ConfigureAwait(false))
                         {
-                            dictionary.Add(reader.GetString(0), reader.GetInt32(1));
+                            dictionary.Add(reader.GetString(0), (int)reader.GetInt64(1));
                         }
 
                         return dictionary;
