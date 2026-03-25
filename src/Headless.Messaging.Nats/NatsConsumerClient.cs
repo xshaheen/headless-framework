@@ -379,6 +379,9 @@ internal sealed class NatsConsumerClient(
         _pauseGate.Release();
         _CancelReceives();
         _receiveCts.Dispose();
+        foreach (var cts in _oldReceiveCts)
+            cts.Dispose();
+        _oldReceiveCts.Clear();
         _semaphore?.Dispose();
 
         if (_connection is not null)

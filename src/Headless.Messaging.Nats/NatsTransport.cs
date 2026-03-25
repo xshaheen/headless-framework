@@ -22,11 +22,12 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
             // NatsJSContext is a stateless wrapper around the connection — safe to create per call
             var js = new NatsJSContext(connection);
 
-            var headers = new NatsHeaders();
+            NatsHeaders? headers = null;
             foreach (var header in message.Headers)
             {
                 if (header.Value is not null)
                 {
+                    headers ??= new NatsHeaders();
                     headers[header.Key] = header.Value;
                 }
             }
@@ -56,6 +57,7 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
         }
         catch (OperationCanceledException)
         {
+            // Don't wrap cancellation as a publish failure
             throw;
         }
         catch (Exception ex)

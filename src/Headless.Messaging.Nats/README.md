@@ -1,18 +1,13 @@
 # Headless.Messaging.NATS
 
-NATS messaging system transport provider for the messaging system.
-
-## Problem Solved
-
-Enables lightweight, cloud-native messaging using NATS with JetStream for persistence, subjects for routing, and NATS Streaming for reliable delivery.
+NATS JetStream transport provider for the Headless messaging system.
 
 ## Key Features
 
-- **Lightweight**: Minimal resource footprint
-- **Cloud-Native**: Kubernetes-friendly, easy clustering
+- **Lightweight**: Minimal resource footprint, cloud-native
 - **JetStream**: Persistent streams with at-least-once delivery
 - **Subject Routing**: Hierarchical topic patterns (e.g., `orders.*.created`)
-- **Request-Reply**: Built-in RPC support
+- **Connection Pooling**: Round-robin pool for publish throughput
 
 ## Installation
 
@@ -27,7 +22,7 @@ builder.Services.AddMessages(options =>
 {
     options.UsePostgreSql("connection_string");
 
-    options.UseNATS(nats =>
+    options.UseNats(nats =>
     {
         nats.Servers = "nats://localhost:4222";
     });
@@ -39,21 +34,42 @@ builder.Services.AddMessages(options =>
 ## Configuration
 
 ```csharp
-options.UseNATS(nats =>
+options.UseNats(nats =>
 {
     nats.Servers = "nats://localhost:4222,nats://localhost:4223";
     nats.ConnectionPoolSize = 10;
-    nats.EnableJetStream = true;
+
+    // Customize stream creation (defaults to File storage)
+    nats.StreamOptions = config =>
+    {
+        config.Storage = StreamConfigStorage.Memory; // for dev/testing
+    };
+
+    // Customize NATS connection
+    nats.ConfigureConnection = opts => opts with
+    {
+        ConnectTimeout = TimeSpan.FromSeconds(10),
+    };
 });
+```
+
+### Stream Auto-Creation
+
+By default, consumer clients create JetStream streams with wildcard subjects on startup
+(`AutoCreateStreams` via `EnableSubscriberClientStreamAndSubjectCreation`). For production
+deployments requiring fine-grained control, disable this and manage streams externally:
+
+```csharp
+nats.EnableSubscriberClientStreamAndSubjectCreation = false;
 ```
 
 ## Dependencies
 
 - `Headless.Messaging.Core`
-- `NATS.Client`
+- `NATS.Net`
 
 ## Side Effects
 
 - Establishes persistent connections to NATS servers
-- Creates JetStream streams if enabled
+- Creates JetStream streams and consumers if enabled
 - Subscribes to subjects for message consumption
