@@ -34,6 +34,21 @@ public sealed class ConnectionFactoryTests : TestBase
     }
 
     [Fact]
+    public async Task should_sanitize_servers_address_when_credentials_are_present()
+    {
+        // given
+        var credentialedOptions = Options.Create(
+            new MessagingPulsarOptions { ServiceUrl = "pulsar://user:secret@localhost:6650" }
+        );
+
+        // when
+        await using var factory = new ConnectionFactory(_logger, credentialedOptions);
+
+        // then
+        factory.ServersAddress.Should().Be("pulsar://localhost:6650");
+    }
+
+    [Fact]
     public async Task should_create_client_with_service_url()
     {
         // given

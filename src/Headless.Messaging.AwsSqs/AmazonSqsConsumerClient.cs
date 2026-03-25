@@ -86,16 +86,13 @@ internal sealed class AmazonSqsConsumerClient(
                     if (groupConcurrent > 0)
                     {
                         await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-                        _ = Task.Run(
+                        _ObserveBackgroundHandler(
+                            _RunConcurrentHandlerIgnoringCancellation(
                                 async () =>
                                 {
                                     try
                                     {
                                         await consumeAsync(sqsMessage).ConfigureAwait(false);
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogError(ex, "Error consuming message for group {GroupId}", groupId);
                                     }
                                     finally
                                     {
@@ -104,7 +101,7 @@ internal sealed class AmazonSqsConsumerClient(
                                 },
                                 cancellationToken
                             )
-                            .ConfigureAwait(false);
+                        );
                     }
                     else
                     {
@@ -123,43 +120,40 @@ internal sealed class AmazonSqsConsumerClient(
         {
             var receiptHandle = sqsMessage.ReceiptHandle;
 
+            SqsReceivedMessage? messageObj;
             try
             {
-                var messageObj = JsonSerializer.Deserialize<SqsReceivedMessage>(sqsMessage.Body);
-
-                if (messageObj?.MessageAttributes == null)
-                {
-                    _logger.LogError(
-                        "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Moving to DLQ."
-                    );
-                    await RejectAsync(receiptHandle).ConfigureAwait(false);
-                    return;
-                }
-
-                var header = messageObj.MessageAttributes.ToDictionary<
-                    KeyValuePair<string, SqsReceivedMessageAttributes>,
-                    string,
-                    string?
-                >(x => x.Key, x => x.Value?.Value ?? string.Empty, StringComparer.Ordinal);
-                var body = messageObj.Message;
-
-                var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null)
-                {
-                    Headers = { [Headers.Group] = groupId },
-                };
-
-                await OnMessageCallback!(message, receiptHandle).ConfigureAwait(false);
+                messageObj = JsonSerializer.Deserialize<SqsReceivedMessage>(sqsMessage.Body);
             }
             catch (JsonException ex)
             {
                 _logger.LogError(ex, "Failed to deserialize SQS message. Moving to DLQ.");
                 await rejectSafelyAsync(receiptHandle).ConfigureAwait(false);
+                return;
             }
-            catch (Exception ex)
+
+            if (messageObj?.MessageAttributes == null)
             {
-                _logger.LogError(ex, "Error consuming message for group {GroupId}", groupId);
+                _logger.LogError(
+                    "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Moving to DLQ."
+                );
                 await rejectSafelyAsync(receiptHandle).ConfigureAwait(false);
+                return;
             }
+
+            var header = messageObj.MessageAttributes.ToDictionary<
+                KeyValuePair<string, SqsReceivedMessageAttributes>,
+                string,
+                string?
+            >(x => x.Key, x => x.Value?.Value ?? string.Empty, StringComparer.Ordinal);
+            var body = messageObj.Message;
+
+            var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null)
+            {
+                Headers = { [Headers.Group] = groupId },
+            };
+
+            await OnMessageCallback!(message, receiptHandle).ConfigureAwait(false);
         }
 
         async Task rejectSafelyAsync(string receiptHandle)
@@ -173,6 +167,29 @@ internal sealed class AmazonSqsConsumerClient(
                 _logger.LogError(ex, "Failed to reject message for group {GroupId}", groupId);
             }
         }
+    }
+
+    private Task _RunConcurrentHandlerIgnoringCancellation(Func<Task> handler, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        return Task.Run(handler);
+    }
+
+    private void _ObserveBackgroundHandler(Task task)
+    {
+        _ = task.ContinueWith(
+            completedTask =>
+            {
+                var exception = completedTask.Exception?.GetBaseException();
+                if (exception is not null)
+                {
+                    _logger.LogError(exception, "Error consuming message for group {GroupId}", groupId);
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     public async ValueTask CommitAsync(object? sender)

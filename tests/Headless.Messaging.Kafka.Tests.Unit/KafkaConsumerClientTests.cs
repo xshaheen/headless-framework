@@ -34,6 +34,20 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_sanitize_broker_address_when_credentials_are_present()
+    {
+        // given
+        var credentialedOptions = Options.Create(new MessagingKafkaOptions { Servers = "user:secret@broker:9092" });
+
+        // when
+        await using var client = new KafkaConsumerClient("test-group", 1, credentialedOptions, _serviceProvider);
+
+        // then
+        client.BrokerAddress.Name.Should().Be("kafka");
+        client.BrokerAddress.Endpoint.Should().Be("broker:9092");
+    }
+
+    [Fact]
     public async Task should_allow_setting_OnMessageCallback()
     {
         // given

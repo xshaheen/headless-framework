@@ -50,6 +50,48 @@ public sealed class MessagingKafkaOptions
 
     public KafkaTopicOptions TopicOptions { get; set; } = new();
 
+    internal string GetSanitizedServersForDisplay()
+    {
+        return string.Join(
+            ",",
+            Servers
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(_SanitizeServerForDisplay)
+        );
+    }
+
+    private static string _SanitizeServerForDisplay(string server)
+    {
+        if (Uri.TryCreate(server, UriKind.Absolute, out var absoluteUri) && !string.IsNullOrEmpty(absoluteUri.UserInfo))
+        {
+            var builder = new UriBuilder(absoluteUri) { UserName = string.Empty, Password = string.Empty };
+            var sanitized = builder.Uri.GetLeftPart(UriPartial.Authority);
+
+            if (absoluteUri.PathAndQuery is { Length: > 1 })
+            {
+                sanitized += absoluteUri.PathAndQuery;
+            }
+
+            if (!string.IsNullOrEmpty(absoluteUri.Fragment))
+            {
+                sanitized += absoluteUri.Fragment;
+            }
+
+            return sanitized;
+        }
+
+        if (
+            !server.Contains("://", StringComparison.Ordinal)
+            && server.Contains('@')
+            && Uri.TryCreate("kafka://" + server, UriKind.Absolute, out var inferredUri)
+        )
+        {
+            return inferredUri.IsDefaultPort ? inferredUri.Host : $"{inferredUri.Host}:{inferredUri.Port}";
+        }
+
+        return server;
+    }
+
     public static List<ErrorCode> GetDefaultRetriableErrorCodes()
     {
         return

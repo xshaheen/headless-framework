@@ -17,6 +17,28 @@ public sealed class MessagingPulsarOptions
     public bool EnableClientLog { get; set; }
 
     public PulsarTlsOptions? TlsOptions { get; set; }
+
+    internal string GetSanitizedServiceUrlForDisplay()
+    {
+        if (!Uri.TryCreate(ServiceUrl, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return ServiceUrl;
+        }
+
+        var builder = new UriBuilder(uri) { UserName = string.Empty, Password = string.Empty };
+        var sanitized = builder.Uri.GetLeftPart(UriPartial.Authority);
+        if (uri.PathAndQuery is { Length: > 1 })
+        {
+            sanitized += uri.PathAndQuery;
+        }
+
+        if (!string.IsNullOrEmpty(uri.Fragment))
+        {
+            sanitized += uri.Fragment;
+        }
+
+        return sanitized;
+    }
 }
 
 public sealed class PulsarTlsOptions

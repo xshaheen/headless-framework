@@ -27,7 +27,7 @@ internal sealed class PulsarConsumerClient(
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-    public BrokerAddress BrokerAddress => new("pulsar", _pulsarOptions.ServiceUrl);
+    public BrokerAddress BrokerAddress => new("pulsar", _pulsarOptions.GetSanitizedServiceUrlForDisplay());
 
     public async ValueTask SubscribeAsync(IEnumerable<string> topics)
     {
@@ -48,21 +48,32 @@ internal sealed class PulsarConsumerClient(
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            Message<byte[]> consumerResult;
             try
             {
                 await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+                consumerResult = await _consumerClient!.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception e)
+            {
+                OnLogCallback!(new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = e.Message });
+                continue;
+            }
 
-                var consumerResult = await _consumerClient!.ReceiveAsync(cancellationToken);
-
-                if (groupConcurrent > 0)
-                {
-                    await _semaphore.WaitAsync(cancellationToken);
-                    _ = Task.Run(
+            if (groupConcurrent > 0)
+            {
+                await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                _ObserveBackgroundHandler(
+                    _RunConcurrentHandlerIgnoringCancellation(
                         async () =>
                         {
                             try
                             {
-                                await consumeAsync();
+                                await consumeAsync(consumerResult).ConfigureAwait(false);
                             }
                             finally
                             {
@@ -70,34 +81,27 @@ internal sealed class PulsarConsumerClient(
                             }
                         },
                         cancellationToken
-                    ).ConfigureAwait(false);
-                }
-                else
-                {
-                    await consumeAsync();
-                }
-
-                Task consumeAsync()
-                {
-                    var headers = new Dictionary<string, string?>(
-                        consumerResult.Properties.Count,
-                        StringComparer.Ordinal
-                    );
-                    foreach (var header in consumerResult.Properties)
-                    {
-                        headers.Add(header.Key, header.Value);
-                    }
-
-                    headers[Headers.Group] = groupName;
-
-                    var message = new TransportMessage(headers, consumerResult.Data);
-
-                    return OnMessageCallback!(message, consumerResult.MessageId);
-                }
+                    )
+                );
             }
-            catch (Exception e)
+            else
             {
-                OnLogCallback!(new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = e.Message });
+                await consumeAsync(consumerResult).ConfigureAwait(false);
+            }
+
+            Task consumeAsync(Message<byte[]> currentMessage)
+            {
+                var headers = new Dictionary<string, string?>(currentMessage.Properties.Count, StringComparer.Ordinal);
+                foreach (var header in currentMessage.Properties)
+                {
+                    headers.Add(header.Key, header.Value);
+                }
+
+                headers[Headers.Group] = groupName;
+
+                var message = new TransportMessage(headers, currentMessage.Data);
+
+                return OnMessageCallback!(message, currentMessage.MessageId);
             }
         }
     }
@@ -130,13 +134,42 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
+    private static Task _RunConcurrentHandlerIgnoringCancellation(
+        Func<Task> handler,
+        CancellationToken cancellationToken
+    )
+    {
+        _ = cancellationToken;
+        return Task.Run(handler);
+    }
+
+    private void _ObserveBackgroundHandler(Task task)
+    {
+        _ = task.ContinueWith(
+            completedTask =>
+            {
+                var exception = completedTask.Exception?.GetBaseException();
+                if (exception is not null)
+                {
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = exception.Message }
+                    );
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+    }
+
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default) => await _pauseGate.PauseAsync();
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) => await _pauseGate.ResumeAsync();
 
     public ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return ValueTask.CompletedTask;
 
         _pauseGate.Release();
         _semaphore.Dispose();

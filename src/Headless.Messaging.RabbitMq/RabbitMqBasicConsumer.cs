@@ -37,7 +37,8 @@ public sealed class RabbitMqBasicConsumer(
             await _semaphore.WaitAsync(cancellationToken);
             // Copy of the body safe to use outside the RabbitMQ thread context
             ReadOnlyMemory<byte> safeBody = body.ToArray();
-            _ = Task.Run(
+            _ObserveBackgroundHandler(
+                _RunConcurrentHandlerIgnoringCancellation(
                     async () =>
                     {
                         try
@@ -53,38 +54,14 @@ public sealed class RabbitMqBasicConsumer(
                                 )
                                 .ConfigureAwait(false);
                         }
-                        catch (Exception ex)
+                        finally
                         {
-                            var args = new LogMessageEventArgs
-                            {
-                                LogType = MqLogType.ConsumeError,
-                                Reason = $"Error consuming message: {ex}",
-                            };
-
-                            logCallback(args);
-
-                            try
-                            {
-                                if (Channel.IsOpen)
-                                {
-                                    await Channel.BasicNackAsync(deliveryTag, multiple: false, requeue: true);
-                                }
-                            }
-#pragma warning disable ERP022
-                            catch
-                            {
-                                // Nack failure already logged via callback
-                            }
-#pragma warning restore ERP022
-                            finally
-                            {
-                                _semaphore.Release();
-                            }
+                            _ReleaseSemaphore();
                         }
                     },
                     cancellationToken
                 )
-                .ConfigureAwait(false);
+            );
         }
         else
         {
@@ -151,8 +128,6 @@ public sealed class RabbitMqBasicConsumer(
         {
             await Channel.BasicAckAsync(deliveryTag, false);
         }
-
-        _semaphore.Release();
     }
 
     public async Task BasicReject(ulong deliveryTag)
@@ -161,8 +136,6 @@ public sealed class RabbitMqBasicConsumer(
         {
             await Channel.BasicRejectAsync(deliveryTag, true);
         }
-
-        _semaphore.Release();
     }
 
     protected override async Task OnCancelAsync(string[] consumerTags, CancellationToken cancellationToken = default)
@@ -209,6 +182,54 @@ public sealed class RabbitMqBasicConsumer(
         var args = new LogMessageEventArgs { LogType = MqLogType.ConsumerShutdown, Reason = reason.ReplyText };
 
         logCallback(args);
+    }
+
+    private static Task _RunConcurrentHandlerIgnoringCancellation(
+        Func<Task> handler,
+        CancellationToken cancellationToken
+    )
+    {
+        _ = cancellationToken;
+        return Task.Run(handler);
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        try
+        {
+            _semaphore.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // Defensive: ignore over-release
+        }
+        catch (ObjectDisposedException)
+        {
+            // Shutdown in progress
+        }
+    }
+
+    private void _ObserveBackgroundHandler(Task task)
+    {
+        _ = task.ContinueWith(
+            completedTask =>
+            {
+                var exception = completedTask.Exception?.GetBaseException();
+                if (exception is not null)
+                {
+                    logCallback(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ConsumeError,
+                            Reason = $"Error consuming message: {exception}",
+                        }
+                    );
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     public void Dispose()

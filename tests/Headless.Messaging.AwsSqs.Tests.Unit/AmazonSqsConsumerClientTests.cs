@@ -130,7 +130,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_error_when_reject_fails_after_consume_error()
+    public async Task should_not_attempt_transport_reject_when_consume_callback_fails()
     {
         // given
         var options = _CreateOptions();
@@ -139,7 +139,6 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await using var client = new AmazonSqsConsumerClient("test-group", 1, options, logger);
 
         var consumeException = new InvalidOperationException("Consume failed");
-        var rejectException = new MessageNotInflightException("Reject failed");
 
         client.OnMessageCallback = (_, _) => throw consumeException;
 
@@ -176,15 +175,6 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
-        sqsClient
-            .ChangeMessageVisibilityAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<int>(),
-                Arg.Any<CancellationToken>()
-            )
-            .ThrowsAsync(rejectException);
-
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when
@@ -200,7 +190,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         await Task.Delay(500, AbortToken);
 
-        // then - Verify both errors were logged
+        // then - Verify only the callback failure was logged. Reject is owned by the framework callback wrapper.
         logger
             .Received(1)
             .Log(
@@ -211,14 +201,13 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                 Arg.Any<Func<object, Exception?, string>>()
             );
 
-        logger
-            .Received(1)
-            .Log(
-                LogLevel.Error,
-                Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString()!.Contains("Failed to reject message for group")),
-                Arg.Is<Exception>(ex => ex == rejectException),
-                Arg.Any<Func<object, Exception?, string>>()
+        await sqsClient
+            .DidNotReceive()
+            .ChangeMessageVisibilityAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
             );
     }
 

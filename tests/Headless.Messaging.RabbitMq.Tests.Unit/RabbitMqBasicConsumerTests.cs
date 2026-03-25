@@ -81,7 +81,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
-    public async Task should_nack_message_when_consume_fails_with_concurrent_processing()
+    public async Task should_not_transport_nack_when_consume_fails_with_concurrent_processing()
     {
         // given
         const byte concurrent = 2;
@@ -120,8 +120,14 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // Allow async task to complete
         await Task.Delay(100, AbortToken);
 
-        // then
-        await _channel.Received(1).BasicNackAsync(deliveryTag, false, requeue: true, CancellationToken.None);
+        // then - reject is owned by the framework callback wrapper, not the transport callback shell
+        await _channel
+            .DidNotReceive()
+            .BasicNackAsync(Arg.Any<ulong>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+
+        _loggedEvents.Should().ContainSingle();
+        _loggedEvents[0].LogType.Should().Be(MqLogType.ConsumeError);
+        _loggedEvents[0].Reason.Should().Contain("Simulated consumption error");
     }
 
     [Fact]

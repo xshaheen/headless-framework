@@ -144,8 +144,10 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
-        if (!await _pauseGate.PauseAsync()) return;
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+        if (!await _pauseGate.PauseAsync())
+            return;
 
         if (_serviceBusProcessor is not null)
         {
@@ -155,11 +157,13 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
 
         // ASB is push-based — release the gate first (only affects startup gating),
         // then restart the processor which delivers messages via callbacks.
-        if (!await _pauseGate.ResumeAsync()) return;
+        if (!await _pauseGate.ResumeAsync())
+            return;
 
         if (_serviceBusProcessor is null || Volatile.Read(ref _hasStartedProcessing) == 0)
         {
@@ -176,7 +180,8 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
 
         _pauseGate.Release();
 
@@ -233,24 +238,28 @@ internal sealed class AzureServiceBusConsumerClient(
 
         if (groupConcurrent > 0)
         {
-            await _semaphore.WaitAsync();
-            _ = Task.Run(
-                async () =>
-                {
-                    try
+            await _semaphore.WaitAsync().ConfigureAwait(false);
+            _ObserveBackgroundHandler(
+                _RunConcurrentHandlerIgnoringCancellation(
+                    async () =>
                     {
-                        await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg));
-                    }
-                    finally
-                    {
-                        _ReleaseSemaphore();
-                    }
-                }
-            ).ConfigureAwait(false);
+                        try
+                        {
+                            await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg))
+                                .ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            _ReleaseSemaphore();
+                        }
+                    },
+                    arg.CancellationToken
+                )
+            );
         }
         else
         {
-            await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg));
+            await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
         }
     }
 
@@ -258,7 +267,40 @@ internal sealed class AzureServiceBusConsumerClient(
     {
         var context = _ConvertMessage(arg.Message);
 
-        await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg));
+        await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
+    }
+
+    private static Task _RunConcurrentHandlerIgnoringCancellation(
+        Func<Task> handler,
+        CancellationToken cancellationToken
+    )
+    {
+        _ = cancellationToken;
+        return Task.Run(handler);
+    }
+
+    private void _ObserveBackgroundHandler(Task task)
+    {
+        _ = task.ContinueWith(
+            completedTask =>
+            {
+                var exception = completedTask.Exception?.GetBaseException();
+                if (exception is not null)
+                {
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ConsumeError,
+                            Reason =
+                                $"Unhandled exception in Azure Service Bus background message handler: {exception}",
+                        }
+                    );
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     public async Task ConnectAsync()
@@ -283,10 +325,7 @@ internal sealed class AzureServiceBusConsumerClient(
                 if (_asbOptions.AutoProvision)
                 {
                     _administrationClient = _asbOptions.TokenCredential is not null
-                        ? new ServiceBusAdministrationClient(
-                            _asbOptions.Namespace,
-                            _asbOptions.TokenCredential
-                        )
+                        ? new ServiceBusAdministrationClient(_asbOptions.Namespace, _asbOptions.TokenCredential)
                         : new ServiceBusAdministrationClient(_asbOptions.ConnectionString);
 
                     var topicConfigs = _asbOptions

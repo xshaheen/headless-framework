@@ -82,6 +82,22 @@ public sealed class MessagingRedisOptionsTests : TestBase
     }
 
     [Fact]
+    public void should_expose_only_endpoints_when_configuration_contains_password()
+    {
+        // given
+        var options = new MessagingRedisOptions
+        {
+            Configuration = ConfigurationOptions.Parse("redis.example.com:6380,password=secret"),
+        };
+
+        // when
+        var endpoint = _GetEndpoint(options);
+
+        // then
+        endpoint.Should().Be("redis.example.com:6380");
+    }
+
+    [Fact]
     public void should_allow_setting_stream_entries_count()
     {
         // given

@@ -170,17 +170,57 @@ internal sealed class NatsConsumerClient(
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
+                    INatsJSMsg<ReadOnlyMemory<byte>>? msg;
                     await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 
                     using var receiveLease = _AcquireReceiveLease(cancellationToken);
 
-                    var msg = await consumer
-                        .NextAsync(
-                            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
-                            opts: nextOpts,
-                            cancellationToken: receiveLease.Token
-                        )
-                        .ConfigureAwait(false);
+                    try
+                    {
+                        msg = await consumer
+                            .NextAsync(
+                                serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+                                opts: nextOpts,
+                                cancellationToken: receiveLease.Token
+                            )
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    catch (OperationCanceledException) when (_pauseGate.IsPaused)
+                    {
+                        continue;
+                    }
+                    catch (NatsJSApiException ex)
+                    {
+                        OnLogCallback?.Invoke(
+                            new LogMessageEventArgs
+                            {
+                                LogType = MqLogType.ConnectError,
+                                Reason = $"JetStream API error for stream '{streamName}', will retry: {ex}",
+                            }
+                        );
+
+                        retryDelay = _NextBackoff(retryDelay, floor: TimeSpan.FromSeconds(5));
+                        await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        OnLogCallback?.Invoke(
+                            new LogMessageEventArgs
+                            {
+                                LogType = MqLogType.ExceptionReceived,
+                                Reason = $"Consumer error for stream '{streamName}', will retry: {ex}",
+                            }
+                        );
+
+                        retryDelay = _NextBackoff(retryDelay);
+                        await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
 
                     if (msg is null)
                     {
@@ -194,24 +234,6 @@ internal sealed class NatsConsumerClient(
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 break;
-            }
-            catch (OperationCanceledException) when (_pauseGate.IsPaused)
-            {
-                continue;
-            }
-            catch (NatsJSApiException ex)
-            {
-                OnLogCallback?.Invoke(
-                    new LogMessageEventArgs
-                    {
-                        LogType = MqLogType.ConnectError,
-                        Reason = $"JetStream API error for stream '{streamName}', will retry: {ex}",
-                    }
-                );
-
-                // API errors use a 5s floor before escalating
-                retryDelay = _NextBackoff(retryDelay, floor: TimeSpan.FromSeconds(5));
-                await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -238,47 +260,26 @@ internal sealed class NatsConsumerClient(
         {
             await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-            _ = RunConcurrentHandlerIgnoringCancellation(
-                async () =>
-                {
-                    try
+            _ObserveBackgroundHandler(
+                RunConcurrentHandlerIgnoringCancellation(
+                    async () =>
                     {
-                        await _ProcessMessageAsync(msg).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        OnLogCallback?.Invoke(
-                            new LogMessageEventArgs
-                            {
-                                LogType = MqLogType.ExceptionReceived,
-                                Reason = $"Unhandled exception in concurrent message handler: {ex}",
-                            }
-                        );
-                    }
-                    finally
-                    {
-                        _ReleaseSemaphore();
-                    }
-                },
-                cancellationToken
+                        try
+                        {
+                            await _ProcessMessageAsync(msg).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            _ReleaseSemaphore();
+                        }
+                    },
+                    cancellationToken
+                )
             );
         }
         else
         {
-            try
-            {
-                await _ProcessMessageAsync(msg).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                OnLogCallback?.Invoke(
-                    new LogMessageEventArgs
-                    {
-                        LogType = MqLogType.ExceptionReceived,
-                        Reason = $"Unhandled exception in sequential message handler: {ex}",
-                    }
-                );
-            }
+            await _ProcessMessageAsync(msg).ConfigureAwait(false);
         }
     }
 
@@ -291,6 +292,29 @@ internal sealed class NatsConsumerClient(
 
         // Scheduling must ignore cancellation so the release finally always runs.
         return Task.Run(handler);
+    }
+
+    private void _ObserveBackgroundHandler(Task task)
+    {
+        _ = task.ContinueWith(
+            completedTask =>
+            {
+                var exception = completedTask.Exception?.GetBaseException();
+                if (exception is not null)
+                {
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ExceptionReceived,
+                            Reason = $"Unhandled exception in concurrent message handler: {exception}",
+                        }
+                    );
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     private static TimeSpan _NextBackoff(TimeSpan current, TimeSpan floor = default)

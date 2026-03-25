@@ -94,6 +94,17 @@ options.EnableSubscriberParallelExecute = false;
 - **Sessions disabled**: No ordering guarantees
 - **Multiple concurrent sessions**: Each session is ordered independently
 
+## Messaging Semantics
+
+- Publish forwards the serialized body and headers as Service Bus messages.
+- Delay stays in the core pipeline unless you add broker scheduling separately.
+- Commit completes the message.
+- Reject abandons the message. Redelivery and dead-lettering follow entity lock and delivery settings.
+- `AutoProvision` creates topics, subscriptions, and rules when enabled.
+- `SubscribeAsync(...)` keeps subscription rules aligned with topic names and SQL filters.
+- Use `AzureServiceBusHeaders.SessionId` for ordered delivery. `ConsumerThreadCount` only affects parallelism around those sessions.
+- Entity names, property sizes, and payload limits follow Azure Service Bus limits.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

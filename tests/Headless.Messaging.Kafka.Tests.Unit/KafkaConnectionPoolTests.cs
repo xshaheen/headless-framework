@@ -27,6 +27,19 @@ public sealed class KafkaConnectionPoolTests : TestBase
     }
 
     [Fact]
+    public void should_sanitize_servers_address_when_credentials_are_present()
+    {
+        // given
+        var credentialedOptions = Options.Create(new MessagingKafkaOptions { Servers = "user:secret@broker:9092" });
+
+        // when
+        using var pool = new KafkaConnectionPool(_logger, credentialedOptions);
+
+        // then
+        pool.ServersAddress.Should().Be("broker:9092");
+    }
+
+    [Fact]
     public void should_return_producer_to_pool_when_under_max_size()
     {
         // given

@@ -49,6 +49,17 @@ options.UseAmazonSqs(sqs =>
 });
 ```
 
+## Messaging Semantics
+
+- Publish sends the serialized body through SNS and preserves message headers.
+- Delay stays in the core pipeline. This provider does not add broker-native scheduling.
+- Commit deletes the SQS message.
+- Reject shortens visibility to trigger SQS redelivery. Dead-lettering follows queue redrive policy.
+- `FetchTopicsAsync(...)` creates SNS topics and returns ARNs.
+- Consumer startup creates the queue, updates its access policy, and `SubscribeAsync(...)` binds the queue.
+- Ordering follows the configured SQS/SNS resources. Do not assume FIFO unless AWS FIFO entities are used.
+- Topic names, payload size, and header limits follow AWS SNS and SQS broker limits.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

@@ -30,11 +30,11 @@ public sealed class KafkaConnectionPool : IKafkaConnectionPool, IDisposable
         _maxSize = _options.ConnectionPoolSize;
         if (logger.IsEnabled(LogLevel.Debug))
         {
-            logger.LogDebug("Kafka servers for messaging: {Servers}", _options.Servers);
+            logger.LogDebug("Kafka servers for messaging: {Servers}", _options.GetSanitizedServersForDisplay());
         }
     }
 
-    public string ServersAddress => _options.Servers;
+    public string ServersAddress => _options.GetSanitizedServersForDisplay();
 
     public IProducer<string, byte[]> RentProducer()
     {

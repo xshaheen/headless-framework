@@ -40,7 +40,7 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
         {
             _logger.LogDebug(
                 "Messaging Pulsar configuration: ServiceUrl={ServiceUrl}, EnableClientLog={EnableClientLog}, HasTlsOptions={HasTlsOptions}",
-                _options.ServiceUrl,
+                _options.GetSanitizedServiceUrlForDisplay(),
                 _options.EnableClientLog,
                 _options.TlsOptions is not null
             );
@@ -60,7 +60,7 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
         }
     }
 
-    public string ServersAddress => _options.ServiceUrl;
+    public string ServersAddress => _options.GetSanitizedServiceUrlForDisplay();
 
     public async Task<IProducer<byte[]>> CreateProducerAsync(string topic)
     {

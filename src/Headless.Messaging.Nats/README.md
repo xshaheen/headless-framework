@@ -63,6 +63,17 @@ fine-grained control, disable this and manage streams externally:
 nats.EnableSubscriberClientStreamAndSubjectCreation = false;
 ```
 
+## Messaging Semantics
+
+- Publish writes the serialized body and headers to JetStream.
+- Delay stays in the core pipeline. This provider does not add broker-native scheduling.
+- Commit sends `ACK`.
+- Reject sends `NAK` so JetStream can redeliver.
+- `FetchTopicsAsync(...)` groups subjects into streams and creates them when auto-creation is enabled.
+- Consumer startup creates filtered durable consumers for each subscribed subject.
+- Sequential handling preserves per-subject delivery order best. Parallel handlers and redeliveries can reorder work.
+- Subject naming, header sizes, and payload limits follow NATS and JetStream limits.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

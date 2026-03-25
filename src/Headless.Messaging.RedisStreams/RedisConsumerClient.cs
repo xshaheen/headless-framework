@@ -72,7 +72,8 @@ internal sealed class RedisConsumerClient(
 
     public ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return ValueTask.CompletedTask;
 
         _pauseGate.Release();
         _semaphore.Dispose();
@@ -128,20 +129,22 @@ internal sealed class RedisConsumerClient(
                     if (groupConcurrent > 0)
                     {
                         await _semaphore.WaitAsync(cancellationToken);
-                        _ = Task.Run(
-                            async () =>
-                            {
-                                try
+                        _ObserveBackgroundHandler(
+                            _RunConcurrentHandlerIgnoringCancellation(
+                                async () =>
                                 {
-                                    await consumeAsync(position, stream, entry);
-                                }
-                                finally
-                                {
-                                    _ReleaseSemaphore();
-                                }
-                            },
-                            cancellationToken
-                        ).ConfigureAwait(false);
+                                    try
+                                    {
+                                        await consumeAsync(position, stream, entry).ConfigureAwait(false);
+                                    }
+                                    finally
+                                    {
+                                        _ReleaseSemaphore();
+                                    }
+                                },
+                                cancellationToken
+                            )
+                        );
                     }
                     else
                     {
@@ -155,42 +158,54 @@ internal sealed class RedisConsumerClient(
         {
             try
             {
-                var message = RedisMessage.Create(entry, groupId);
-                await OnMessageCallback!(message, (stream.Key.ToString(), groupId, entry.Id.ToString()));
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(
-                    ex,
-                    message: "Redis entry {EntryId} on stream {StreamKey} at position {Position} of group {GroupId} is not valid for Messaging, see inner exception for more details.",
-                    entry.Id,
-                    stream.Key,
-                    position,
-                    groupId
-                );
-
-                var logArgs = new LogMessageEventArgs { LogType = MqLogType.RedisConsumeError, Reason = ex.ToString() };
-
+                TransportMessage message;
                 try
                 {
-                    var onError = options.Value.OnConsumeError?.Invoke(
-                        new MessagingRedisOptions.ConsumeErrorContext(ex, entry)
-                    );
-
-                    await (onError ?? Task.CompletedTask).ConfigureAwait(false);
+                    message = RedisMessage.Create(entry, groupId);
                 }
-                catch (Exception onError)
+                catch (Exception ex)
                 {
                     logger.LogError(
-                        onError,
-                        "Unhandled exception occurred in {Action} action, Exception has been caught",
-                        nameof(MessagingRedisOptions.OnConsumeError)
+                        ex,
+                        message: "Redis entry {EntryId} on stream {StreamKey} at position {Position} of group {GroupId} is not valid for Messaging, see inner exception for more details.",
+                        entry.Id,
+                        stream.Key,
+                        position,
+                        groupId
                     );
+
+                    var logArgs = new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.RedisConsumeError,
+                        Reason = ex.ToString(),
+                    };
+
+                    try
+                    {
+                        var onError = options.Value.OnConsumeError?.Invoke(
+                            new MessagingRedisOptions.ConsumeErrorContext(ex, entry)
+                        );
+
+                        await (onError ?? Task.CompletedTask).ConfigureAwait(false);
+                    }
+                    catch (Exception onError)
+                    {
+                        logger.LogError(
+                            onError,
+                            "Unhandled exception occurred in {Action} action, Exception has been caught",
+                            nameof(MessagingRedisOptions.OnConsumeError)
+                        );
+                    }
+                    finally
+                    {
+                        OnLogCallback!(logArgs);
+                    }
+
+                    return;
                 }
-                finally
-                {
-                    OnLogCallback!(logArgs);
-                }
+
+                await OnMessageCallback!(message, (stream.Key.ToString(), groupId, entry.Id.ToString()))
+                    .ConfigureAwait(false);
             }
             finally
             {
@@ -205,5 +220,32 @@ internal sealed class RedisConsumerClient(
                 );
             }
         }
+    }
+
+    private Task _RunConcurrentHandlerIgnoringCancellation(Func<Task> handler, CancellationToken cancellationToken)
+    {
+        _ = cancellationToken;
+        return Task.Run(handler);
+    }
+
+    private void _ObserveBackgroundHandler(Task task)
+    {
+        _ = task.ContinueWith(
+            completedTask =>
+            {
+                var exception = completedTask.Exception?.GetBaseException();
+                if (exception is not null)
+                {
+                    logger.LogError(
+                        exception,
+                        "Unhandled exception in Redis background message handler for group {GroupId}",
+                        groupId
+                    );
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 }
