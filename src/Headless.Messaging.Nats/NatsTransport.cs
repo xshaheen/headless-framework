@@ -1,58 +1,57 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
-using NATS.Client;
+using NATS.Client.Core;
 using NATS.Client.JetStream;
 
 namespace Headless.Messaging.Nats;
 
 internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool connectionPool) : ITransport
 {
-    private readonly JetStreamOptions _jetStreamOptions = JetStreamOptions
-        .Builder()
-        .WithPublishNoAck(false)
-        .WithRequestTimeout(3000)
-        .Build();
-
     public BrokerAddress BrokerAddress => new("nats", connectionPool.ServersAddress);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
-        var connection = connectionPool.RentConnection();
-
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var msg = new Msg(message.GetName(), message.Body.ToArray());
+            var connection = connectionPool.GetConnection();
+            var js = new NatsJSContext(connection);
+
+            var headers = new NatsHeaders();
             foreach (var header in message.Headers)
             {
-                msg.Header[header.Key] = header.Value;
-            }
-
-            var js = connection.CreateJetStreamContext(_jetStreamOptions);
-
-            var builder = NATS.Client.JetStream.PublishOptions.Builder().WithMessageId(message.GetId());
-
-            // Note: NATS .NET client doesn't support CancellationToken in PublishAsync yet
-            var resp = await js.PublishAsync(msg, builder.Build()).ConfigureAwait(false);
-
-            if (resp.Seq > 0)
-            {
-                if (logger.IsEnabled(LogLevel.Debug))
+                if (header.Value is not null)
                 {
-                    logger.LogDebug("NATS stream message [{GetName}] has been published.", message.GetName());
+                    headers[header.Key] = header.Value;
                 }
-
-                return OperateResult.Success;
             }
 
-            return OperateResult.Failed(
-                new PublisherSentFailedException("NATS message send failed, no consumer reply!")
-            );
+            var ack = await js.PublishAsync(
+                    subject: message.GetName(),
+                    data: message.Body,
+                    serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+                    headers: headers,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (ack.Error is not null)
+            {
+                return OperateResult.Failed(
+                    new PublisherSentFailedException($"NATS publish error {ack.Error.Code}: {ack.Error.Description}")
+                );
+            }
+
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.LogDebug("NATS stream message [{Name}] published, seq={Seq}.", message.GetName(), ack.Seq);
+            }
+
+            return OperateResult.Success;
         }
         catch (OperationCanceledException)
         {
@@ -60,13 +59,7 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
         }
         catch (Exception ex)
         {
-            var warpEx = new PublisherSentFailedException(ex.Message, ex);
-
-            return OperateResult.Failed(warpEx);
-        }
-        finally
-        {
-            connectionPool.Return(connection);
+            return OperateResult.Failed(new PublisherSentFailedException(ex.Message, ex));
         }
     }
 

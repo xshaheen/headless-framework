@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Messaging.Messages;
-using NATS.Client;
+using NATS.Client.Core;
 using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
 
 namespace Headless.Messaging.Nats;
 
@@ -19,7 +19,7 @@ public sealed class MessagingNatsOptions
     public string Servers { get; set; } = "nats://127.0.0.1:4222";
 
     /// <summary>
-    /// connection pool size, default is 10
+    /// Connection pool size, default is 10.
     /// </summary>
     public int ConnectionPoolSize { get; set; } = 10;
 
@@ -29,24 +29,39 @@ public sealed class MessagingNatsOptions
     public bool EnableSubscriberClientStreamAndSubjectCreation { get; set; } = true;
 
     /// <summary>
-    /// Used to setup all NATs client options
+    /// Customize the NATS connection options. Since <see cref="NatsOpts"/> is a record, use the <c>with</c> pattern:
+    /// <code>opt.ConfigureConnection = o => o with { ConnectTimeout = TimeSpan.FromSeconds(10) };</code>
+    /// The <see cref="Servers"/> property is applied as <c>Url</c> before this callback runs.
     /// </summary>
-    public Options? Options { get; set; }
-
-    public Action<StreamConfiguration.StreamConfigurationBuilder>? StreamOptions { get; set; }
-
-    public Action<ConsumerConfiguration.ConsumerConfigurationBuilder>? ConsumerOptions { get; set; }
+    public Func<NatsOpts, NatsOpts>? ConfigureConnection { get; set; }
 
     /// <summary>
-    /// If you need to get additional native delivery args, you can use this function to write into <see cref="MessageHeader" />.
+    /// Customize the JetStream stream configuration when streams are auto-created.
+    /// </summary>
+    public Action<StreamConfig>? StreamOptions { get; set; }
+
+    /// <summary>
+    /// Customize the JetStream consumer configuration.
+    /// </summary>
+    public Action<ConsumerConfig>? ConsumerOptions { get; set; }
+
+    /// <summary>
+    /// If you need to get additional native delivery args, you can use this function to write into message headers.
     /// </summary>
     public Func<
-        MsgHandlerEventArgs,
+        NatsJSMsgMetadata?,
+        NatsHeaders?,
         IServiceProvider,
         List<KeyValuePair<string, string>>
     >? CustomHeadersBuilder { get; set; }
 
     public Func<string, string> NormalizeStreamName { get; set; } = origin => origin.Split('.')[0];
+
+    internal NatsOpts BuildNatsOpts()
+    {
+        var opts = NatsOpts.Default with { Url = Servers };
+        return ConfigureConnection is not null ? ConfigureConnection(opts) : opts;
+    }
 }
 
 internal sealed class MessagingNatsOptionsValidator : AbstractValidator<MessagingNatsOptions>

@@ -5,8 +5,9 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
-using NATS.Client;
+using NATS.Client.Core;
 using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
 
 namespace Headless.Messaging.Nats;
 
@@ -17,17 +18,16 @@ internal sealed class NatsConsumerClient(
     IServiceProvider serviceProvider
 ) : IConsumerClient
 {
-    private readonly Lock _connectionLock = new();
-
     private readonly MessagingNatsOptions _natsOptions =
         options.Value ?? throw new ArgumentNullException(nameof(options));
+
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
-    private readonly List<IJetStreamPushAsyncSubscription> _subscriptions = [];
+
+    private NatsConnection? _connection;
+    private NatsJSContext? _jsContext;
     private IEnumerable<string>? _subscribedTopics;
     private int _disposed;
-    private CancellationToken _cancellationToken;
-    private IConnection? _consumerClient;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -35,195 +35,214 @@ internal sealed class NatsConsumerClient(
 
     public BrokerAddress BrokerAddress => new("nats", _natsOptions.Servers);
 
-    public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+    public async Task ConnectAsync()
     {
-        if (_natsOptions.EnableSubscriberClientStreamAndSubjectCreation)
+        var opts = _natsOptions.BuildNatsOpts();
+        _connection = new NatsConnection(opts);
+        await _connection.ConnectAsync().ConfigureAwait(false);
+        _jsContext = new NatsJSContext(_connection);
+    }
+
+    public async ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+    {
+        if (!_natsOptions.EnableSubscriberClientStreamAndSubjectCreation)
         {
-            Connect();
+            return topicNames.ToList();
+        }
 
-            var jsm = _consumerClient!.CreateJetStreamManagementContext();
+        var streamSubjectsGroups = topicNames.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
 
-            var streamSubjectsGroups = topicNames.GroupBy(
-                x => _natsOptions.NormalizeStreamName(x),
-                StringComparer.Ordinal
-            );
-
-            foreach (var streamSubjectsGroup in streamSubjectsGroups)
+        foreach (var streamSubjectsGroup in streamSubjectsGroups)
+        {
+            var config = new StreamConfig
             {
-                var builder = StreamConfiguration
-                    .Builder()
-                    .WithName(streamSubjectsGroup.Key)
-                    .WithNoAck(false)
-                    .WithStorageType(StorageType.Memory)
-                    .WithSubjects(streamSubjectsGroup.ToList());
+                Name = streamSubjectsGroup.Key,
+                Subjects = streamSubjectsGroup.ToList(),
+                NoAck = false,
+                Storage = StreamConfigStorage.Memory,
+            };
 
-                _natsOptions.StreamOptions?.Invoke(builder);
+            _natsOptions.StreamOptions?.Invoke(config);
 
+            try
+            {
+                await _jsContext!.UpdateStreamAsync(config).ConfigureAwait(false);
+            }
+            catch (NatsJSApiException ex) when (ex.Error.Code == 404)
+            {
                 try
                 {
-                    jsm.GetStreamInfo(streamSubjectsGroup.Key); // this throws if the stream does not exist
-
-                    jsm.UpdateStream(builder.Build());
+                    await _jsContext!.CreateStreamAsync(config).ConfigureAwait(false);
                 }
-                catch (NATSJetStreamException)
+                catch (NatsJSApiException e) when (e.Error.Code == 409)
                 {
-                    try
-                    {
-                        jsm.AddStream(builder.Build());
-                    }
-                    catch (NATSJetStreamException)
-                    {
-                        // Stream was created by another instance between GetStreamInfo and AddStream — safe to ignore
-                    }
+                    // Stream was created by another instance between check and create
                 }
             }
         }
 
-        return ValueTask.FromResult<ICollection<string>>(topicNames.ToList());
+        return topicNames.ToList();
     }
 
     public ValueTask SubscribeAsync(IEnumerable<string> topics)
     {
         Argument.IsNotNull(topics);
 
-        // Materialize and store topics for re-subscription on resume
         _subscribedTopics = topics.ToList();
-
-        if (_pauseGate.IsPaused)
-        {
-            return ValueTask.CompletedTask;
-        }
-
-        _CreateSubscriptions(_subscribedTopics);
 
         return ValueTask.CompletedTask;
     }
 
-    private void _CreateSubscriptions(IEnumerable<string> topics)
+    public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        Connect();
+        var streamGroups = _subscribedTopics!.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
 
-        var js = _consumerClient!.CreateJetStreamContext();
-        var streamGroup = topics.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
-        List<Exception>? failures = null;
-        var totalSubjects = 0;
+        var tasks = new List<Task>();
 
-        lock (_connectionLock)
+        foreach (var streamGroup in streamGroups)
         {
-            foreach (var subjectStream in streamGroup)
+            var groupName = Helper.Normalized(name);
+
+            foreach (var subject in streamGroup)
             {
-                var groupName = Helper.Normalized(name);
+                var durableName = Helper.Normalized(groupName + "-" + subject);
 
-                foreach (var subject in subjectStream)
+                var consumerConfig = new ConsumerConfig(durableName)
                 {
-                    totalSubjects++;
+                    FilterSubject = subject,
+                    AckWait = TimeSpan.FromSeconds(30),
+                };
 
-                    try
+                _natsOptions.ConsumerOptions?.Invoke(consumerConfig);
+
+                tasks.Add(_ConsumeSubjectAsync(streamGroup.Key, consumerConfig, cancellationToken));
+            }
+        }
+
+        await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
+    private async Task _ConsumeSubjectAsync(
+        string streamName,
+        ConsumerConfig consumerConfig,
+        CancellationToken cancellationToken
+    )
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                var consumer = await _jsContext!
+                    .CreateOrUpdateConsumerAsync(streamName, consumerConfig, cancellationToken)
+                    .ConfigureAwait(false);
+
+                await foreach (
+                    var msg in consumer
+                        .ConsumeAsync<ReadOnlyMemory<byte>>(
+                            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+                            cancellationToken: cancellationToken
+                        )
+                        .ConfigureAwait(false)
+                )
+                {
+                    await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+
+                    if (groupConcurrent > 0)
                     {
-                        var consumerConfig = ConsumerConfiguration
-                            .Builder()
-                            .WithDurable(Helper.Normalized(groupName + "-" + subject))
-                            .WithDeliverPolicy(DeliverPolicy.New)
-                            .WithAckWait(30000)
-                            .WithAckPolicy(AckPolicy.Explicit);
+                        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-                        _natsOptions.ConsumerOptions?.Invoke(consumerConfig);
-
-                        var pso = PushSubscribeOptions
-                            .Builder()
-                            .WithStream(subjectStream.Key)
-                            .WithConfiguration(consumerConfig.Build())
-                            .Build();
-
-                        var sub = js.PushSubscribeAsync(subject, groupName, _SubscriptionMessageHandler, false, pso);
-                        _subscriptions.Add(sub);
-                    }
-                    catch (Exception e)
-                    {
-                        OnLogCallback?.Invoke(
-                            new LogMessageEventArgs
+                        _ = Task.Run(
+                            async () =>
                             {
-                                LogType = MqLogType.ConnectError,
-                                Reason =
-                                    $"An error was encountered when attempting to subscribe to subject: {subject}.{Environment.NewLine}"
-                                    + e,
-                            }
+                                try
+                                {
+                                    await _ProcessMessageAsync(msg).ConfigureAwait(false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    OnLogCallback?.Invoke(
+                                        new LogMessageEventArgs
+                                        {
+                                            LogType = MqLogType.ExceptionReceived,
+                                            Reason = $"Unhandled exception in concurrent message handler: {ex}",
+                                        }
+                                    );
+                                }
+                                finally
+                                {
+                                    _ReleaseSemaphore();
+                                }
+                            },
+                            cancellationToken
                         );
-
-                        failures ??= [];
-                        failures.Add(e);
+                    }
+                    else
+                    {
+                        await _ProcessMessageAsync(msg).ConfigureAwait(false);
                     }
                 }
             }
-        }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (NatsJSApiException ex)
+            {
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConnectError,
+                        Reason = $"JetStream API error for stream '{streamName}', will retry: {ex}",
+                    }
+                );
 
-        // Fail fast if no subscriptions succeeded
-        if (failures is not null && failures.Count == totalSubjects)
-        {
-            throw new AggregateException(
-                "Failed to subscribe to all NATS subjects. See inner exceptions for details.",
-                failures
-            );
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ExceptionReceived,
+                        Reason = $"Consumer error for stream '{streamName}', will retry: {ex}",
+                    }
+                );
+
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
-    public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
-    {
-        _cancellationToken = cancellationToken;
-
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            cancellationToken.WaitHandle.WaitOne(timeout);
-        }
-    }
-
-#pragma warning disable VSTHRD100
-    private async void _SubscriptionMessageHandler(object? sender, MsgHandlerEventArgs e)
-#pragma warning restore VSTHRD100
+    private async Task _ProcessMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg)
     {
         try
         {
-            await _pauseGate.WaitIfPausedAsync(_cancellationToken).ConfigureAwait(false);
+            var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
 
-            if (groupConcurrent > 0)
+            if (msg.Headers is { Count: > 0 } natsHeaders)
             {
-                _ = Task.Run(
-                    async () =>
-                    {
-                        try
-                        {
-                            await _semaphore.WaitAsync(_cancellationToken).ConfigureAwait(false);
-                            try
-                            {
-                                await consumeAsync().ConfigureAwait(false);
-                            }
-                            finally
-                            {
-                                _ReleaseSemaphore();
-                            }
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            // Shutdown in progress — expected, do not log
-                        }
-                        catch (Exception ex)
-                        {
-                            OnLogCallback?.Invoke(
-                                new LogMessageEventArgs
-                                {
-                                    LogType = MqLogType.ExceptionReceived,
-                                    Reason = $"Unhandled exception in concurrent message handler: {ex}",
-                                }
-                            );
-                        }
-                    },
-                    _cancellationToken
-                );
+                foreach (var (key, values) in natsHeaders)
+                {
+                    headers[key] = values.Count > 0 ? values[0] : null;
+                }
             }
-            else
+
+            headers[Headers.Group] = name;
+
+            if (_natsOptions.CustomHeadersBuilder is not null)
             {
-                await consumeAsync();
+                var metadata = msg.Metadata;
+                var customHeaders = _natsOptions.CustomHeadersBuilder(metadata, msg.Headers, serviceProvider);
+                foreach (var customHeader in customHeaders)
+                {
+                    headers[customHeader.Key] = customHeader.Value;
+                }
+            }
+
+            if (OnMessageCallback is not null)
+            {
+                // Box the struct for the sender parameter — used by CommitAsync/RejectAsync
+                await OnMessageCallback(new TransportMessage(headers, msg.Data), msg).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -232,55 +251,19 @@ internal sealed class NatsConsumerClient(
                 new LogMessageEventArgs
                 {
                     LogType = MqLogType.ExceptionReceived,
-                    Reason = $"Unhandled exception in message handler: {ex}",
+                    Reason = $"Unhandled exception processing message: {ex}",
                 }
             );
         }
-
-        async Task consumeAsync()
-        {
-            try
-            {
-                var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
-
-                foreach (string h in e.Message.Header.Keys)
-                {
-                    headers.Add(h, e.Message.Header[h]);
-                }
-
-                headers[Headers.Group] = name;
-
-                if (_natsOptions.CustomHeadersBuilder != null)
-                {
-                    var customHeaders = _natsOptions.CustomHeadersBuilder(e, serviceProvider);
-                    foreach (var customHeader in customHeaders)
-                    {
-                        headers[customHeader.Key] = customHeader.Value;
-                    }
-                }
-
-                await OnMessageCallback!(new TransportMessage(headers, e.Message.Data), e.Message);
-            }
-            catch (Exception ex)
-            {
-                OnLogCallback?.Invoke(
-                    new LogMessageEventArgs
-                    {
-                        LogType = MqLogType.ExceptionReceived,
-                        Reason = $"Unhandled exception processing message: {ex}",
-                    }
-                );
-            }
-        }
     }
 
-    public ValueTask CommitAsync(object? sender)
+    public async ValueTask CommitAsync(object? sender)
     {
         try
         {
-            if (sender is Msg msg)
+            if (sender is INatsJSMsg<ReadOnlyMemory<byte>> msg)
             {
-                msg.Ack();
+                await msg.AckAsync().ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -293,17 +276,15 @@ internal sealed class NatsConsumerClient(
                 }
             );
         }
-
-        return ValueTask.CompletedTask;
     }
 
-    public ValueTask RejectAsync(object? sender)
+    public async ValueTask RejectAsync(object? sender)
     {
         try
         {
-            if (sender is Msg msg)
+            if (sender is INatsJSMsg<ReadOnlyMemory<byte>> msg)
             {
-                msg.Nak();
+                await msg.NakAsync().ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -316,8 +297,6 @@ internal sealed class NatsConsumerClient(
                 }
             );
         }
-
-        return ValueTask.CompletedTask;
     }
 
     private void _ReleaseSemaphore()
@@ -332,146 +311,38 @@ internal sealed class NatsConsumerClient(
             {
                 // Defensive: ignore over-release
             }
+            catch (ObjectDisposedException)
+            {
+                // Shutdown in progress — semaphore already disposed
+            }
         }
     }
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0)
-        {
             return;
-        }
-
-        if (!await _pauseGate.PauseAsync())
-        {
-            return;
-        }
-
-        // Unsubscribe without drain — the circuit is opening because messages are
-        // already failing, so a synchronous 5-second drain adds latency with no
-        // safety benefit. Consistent with RabbitMQ/Kafka/Azure pause semantics.
-        _UnsubscribeWithoutDrain();
+        await _pauseGate.PauseAsync();
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0)
-        {
             return;
-        }
-
-        if (!await _pauseGate.ResumeAsync())
-        {
-            return;
-        }
-
-        if (_subscribedTopics is not null)
-        {
-            _CreateSubscriptions(_subscribedTopics);
-        }
+        await _pauseGate.ResumeAsync();
     }
 
-    private void _UnsubscribeWithoutDrain()
-    {
-        lock (_connectionLock)
-        {
-            foreach (var sub in _subscriptions)
-            {
-                try
-                {
-                    sub.Unsubscribe();
-                }
-#pragma warning disable ERP022
-                catch
-                {
-                    // Best-effort unsubscribe; subscription may already be closed
-                }
-#pragma warning restore ERP022
-            }
-
-            _subscriptions.Clear();
-        }
-    }
-
-    private void _DrainSubscriptions()
-    {
-        lock (_connectionLock)
-        {
-            foreach (var sub in _subscriptions)
-            {
-                try
-                {
-                    sub.Drain((int)TimeSpan.FromSeconds(5).TotalMilliseconds);
-                }
-#pragma warning disable ERP022
-                catch
-                {
-                    // Best-effort drain; subscription may already be closed
-                }
-#pragma warning restore ERP022
-            }
-
-            _subscriptions.Clear();
-        }
-    }
-
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
-        {
-            return ValueTask.CompletedTask;
-        }
+            return;
 
         _pauseGate.Release();
-        _DrainSubscriptions();
-        _consumerClient?.Dispose();
         _semaphore.Dispose();
-        return ValueTask.CompletedTask;
-    }
 
-    public void Connect()
-    {
-        if (_consumerClient != null)
+        if (_connection is not null)
         {
-            return;
+            await _connection.DisposeAsync().ConfigureAwait(false);
         }
-
-        lock (_connectionLock)
-        {
-#pragma warning disable CA1508 // Justification: other thread can initialize it
-            if (_consumerClient is null)
-#pragma warning restore CA1508
-            {
-                // Create a fresh options instance to avoid mutating the shared Options object
-                var opts = ConnectionFactory.GetDefaultOptions();
-                opts.Url = _natsOptions.Servers;
-                opts.DisconnectedEventHandler = _DisconnectedEventHandler;
-                opts.AsyncErrorEventHandler = _AsyncErrorEventHandler;
-                opts.Timeout = 5000;
-                // Intentional: reconnection is managed by ConsumerRegister.ReStartAsync,
-                // which rebuilds the consumer when _DisconnectedEventHandler signals MqLogType.ConnectError.
-                opts.AllowReconnect = false;
-                opts.NoEcho = true;
-
-                _consumerClient = new ConnectionFactory().CreateConnection(opts);
-            }
-        }
-    }
-
-    private void _DisconnectedEventHandler(object? sender, ConnEventArgs e)
-    {
-        if (e.Error is null)
-        {
-            return;
-        }
-
-        var logArgs = new LogMessageEventArgs { LogType = MqLogType.ConnectError, Reason = e.Error.ToString() };
-        OnLogCallback?.Invoke(logArgs);
-    }
-
-    private void _AsyncErrorEventHandler(object? sender, ErrEventArgs e)
-    {
-        var logArgs = new LogMessageEventArgs { LogType = MqLogType.AsyncErrorEvent, Reason = e.Error };
-        OnLogCallback?.Invoke(logArgs);
     }
 }
