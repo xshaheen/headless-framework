@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.SqlServer;
 
-internal class SqlServerMonitoringApi(
+internal sealed class SqlServerMonitoringApi(
     IOptions<SqlServerOptions> options,
     IStorageInitializer initializer,
     ISerializer serializer,
@@ -112,7 +112,7 @@ internal class SqlServerMonitoringApi(
         }
 
         var sqlQuery =
-            $"SELECT {selectColumns} FROM {tableName} WHERE 1=1 {where} ORDER BY Added DESC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY";
+            $"SELECT {selectColumns}, COUNT(*) OVER() AS [TotalCount] FROM {tableName} WHERE 1=1 {where} ORDER BY Added DESC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY";
 
         object[] sqlParams =
         [
@@ -126,20 +126,7 @@ internal class SqlServerMonitoringApi(
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 
-        var count = await connection
-            .ExecuteScalarAsync(
-                $"SELECT COUNT(1) FROM {tableName} WHERE 1=1 {where}",
-                cancellationToken: cancellationToken,
-                sqlParams:
-                [
-                    new SqlParameter("@StatusName", query.StatusName ?? string.Empty),
-                    new SqlParameter("@Group", query.Group ?? string.Empty),
-                    new SqlParameter("@Name", query.Name ?? string.Empty),
-                    new SqlParameter("@Content", $"%{query.Content}%"),
-                ]
-            )
-            .ConfigureAwait(false);
-
+        var totalCount = 0;
         var items = await connection
             .ExecuteReaderAsync(
                 sqlQuery,
@@ -168,9 +155,10 @@ internal class SqlServerMonitoringApi(
                                 ExpiresAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(index - 1),
-                                StatusName = reader.GetString(index),
+                                StatusName = reader.GetString(index++),
                             }
                         );
+                        totalCount = reader.GetInt32(index);
                     }
 
                     return messages;
@@ -180,7 +168,7 @@ internal class SqlServerMonitoringApi(
             )
             .ConfigureAwait(false);
 
-        return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(count, int.MaxValue));
+        return new(items, query.CurrentPage, query.PageSize, totalCount);
     }
 
     public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)

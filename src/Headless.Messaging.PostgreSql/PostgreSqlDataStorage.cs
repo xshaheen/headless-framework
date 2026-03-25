@@ -234,8 +234,14 @@ public sealed class PostgreSqlDataStorage(
                 dbTrans = dbContextTrans.GetDbTransaction();
             }
 
-            var conn = dbTrans?.Connection!;
-            await conn.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).ConfigureAwait(false);
+            if (dbTrans is null)
+            {
+                throw new InvalidOperationException(
+                    $"Unsupported transaction type '{transaction.GetType().FullName}'. Expected DbTransaction or IDbContextTransaction."
+                );
+            }
+
+            await dbTrans.Connection!.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).ConfigureAwait(false);
         }
 
         return message;

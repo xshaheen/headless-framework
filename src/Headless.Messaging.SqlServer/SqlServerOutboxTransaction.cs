@@ -46,7 +46,7 @@ public sealed class SqlServerOutboxTransaction(
     {
         switch (DbTransaction)
         {
-            case NoopTransaction _:
+            case NoopTransaction:
                 Flush();
                 break;
             case IDbTransaction dbTransaction:
