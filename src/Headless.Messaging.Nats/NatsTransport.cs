@@ -19,6 +19,7 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
             cancellationToken.ThrowIfCancellationRequested();
 
             var connection = connectionPool.GetConnection();
+            // NatsJSContext is a stateless wrapper around the connection — safe to create per call
             var js = new NatsJSContext(connection);
 
             var headers = new NatsHeaders();

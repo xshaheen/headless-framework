@@ -128,6 +128,9 @@ internal sealed class NatsConsumerClient(
         CancellationToken cancellationToken
     )
     {
+        // Shared across API and transient error paths — escalation carries
+        // over between error types intentionally so sustained mixed failures
+        // still back off. Reset on successful message receive (line below).
         var retryDelay = TimeSpan.FromSeconds(1);
 
         while (!cancellationToken.IsCancellationRequested)
@@ -147,7 +150,7 @@ internal sealed class NatsConsumerClient(
                         .ConfigureAwait(false)
                 )
                 {
-                    // Reset backoff on successful message receive
+                    // Successful receive proves the consumer/stream is healthy — reset backoff
                     retryDelay = TimeSpan.FromSeconds(1);
 
                     await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
@@ -183,7 +186,20 @@ internal sealed class NatsConsumerClient(
                     }
                     else
                     {
-                        await _ProcessMessageAsync(msg).ConfigureAwait(false);
+                        try
+                        {
+                            await _ProcessMessageAsync(msg).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            OnLogCallback?.Invoke(
+                                new LogMessageEventArgs
+                                {
+                                    LogType = MqLogType.ExceptionReceived,
+                                    Reason = $"Unhandled exception in sequential message handler: {ex}",
+                                }
+                            );
+                        }
                     }
                 }
             }
