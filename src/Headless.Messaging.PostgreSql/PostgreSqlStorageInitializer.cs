@@ -69,8 +69,8 @@ public sealed class PostgreSqlStorageInitializer(
             	"Group" VARCHAR(200) NULL,
             	"Content" TEXT NULL,
             	"Retries" INT NOT NULL,
-            	"Added" TIMESTAMP NOT NULL,
-                "ExpiresAt" TIMESTAMP NULL,
+            	"Added" TIMESTAMPTZ NOT NULL,
+                "ExpiresAt" TIMESTAMPTZ NULL,
             	"StatusName" VARCHAR(50) NOT NULL,
                 "MessageId" VARCHAR(200) NOT NULL,
                 "ExceptionInfo" text NULL
@@ -88,21 +88,45 @@ public sealed class PostgreSqlStorageInitializer(
             	"Name" VARCHAR(200) NOT NULL,
             	"Content" TEXT NULL,
             	"Retries" INT NOT NULL,
-            	"Added" TIMESTAMP NOT NULL,
-                "ExpiresAt" TIMESTAMP NULL,
+            	"Added" TIMESTAMPTZ NOT NULL,
+                "ExpiresAt" TIMESTAMPTZ NULL,
             	"StatusName" VARCHAR(50) NOT NULL,
                 "MessageId" VARCHAR(200) NOT NULL
             );
 
-            ALTER TABLE {GetPublishedTableName()} ADD COLUMN IF NOT EXISTS "MessageId" VARCHAR(200);
-            UPDATE {GetPublishedTableName()} SET "MessageId" = "Id"::text WHERE "MessageId" IS NULL;
             DO $$
             BEGIN
-                IF EXISTS (
+                -- MessageId migration: add column, backfill, set NOT NULL (transactional)
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = '{postgreSqlOptions.Value.Schema}' AND table_name = 'published' AND column_name = 'MessageId'
+                ) THEN
+                    ALTER TABLE {GetPublishedTableName()} ADD COLUMN "MessageId" VARCHAR(200);
+                    UPDATE {GetPublishedTableName()} SET "MessageId" = "Id"::text WHERE "MessageId" IS NULL;
+                    ALTER TABLE {GetPublishedTableName()} ALTER COLUMN "MessageId" SET NOT NULL;
+                ELSIF EXISTS (
                     SELECT 1 FROM information_schema.columns
                     WHERE table_schema = '{postgreSqlOptions.Value.Schema}' AND table_name = 'published' AND column_name = 'MessageId' AND is_nullable = 'YES'
                 ) THEN
+                    UPDATE {GetPublishedTableName()} SET "MessageId" = "Id"::text WHERE "MessageId" IS NULL;
                     ALTER TABLE {GetPublishedTableName()} ALTER COLUMN "MessageId" SET NOT NULL;
+                END IF;
+
+                -- TIMESTAMPTZ migration: convert TIMESTAMP columns to TIMESTAMPTZ
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = '{postgreSqlOptions.Value.Schema}' AND table_name = 'published' AND column_name = 'Added' AND data_type = 'timestamp without time zone'
+                ) THEN
+                    ALTER TABLE {GetPublishedTableName()} ALTER COLUMN "Added" TYPE TIMESTAMPTZ USING "Added" AT TIME ZONE 'UTC';
+                    ALTER TABLE {GetPublishedTableName()} ALTER COLUMN "ExpiresAt" TYPE TIMESTAMPTZ USING "ExpiresAt" AT TIME ZONE 'UTC';
+                END IF;
+
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = '{postgreSqlOptions.Value.Schema}' AND table_name = 'received' AND column_name = 'Added' AND data_type = 'timestamp without time zone'
+                ) THEN
+                    ALTER TABLE {GetReceivedTableName()} ALTER COLUMN "Added" TYPE TIMESTAMPTZ USING "Added" AT TIME ZONE 'UTC';
+                    ALTER TABLE {GetReceivedTableName()} ALTER COLUMN "ExpiresAt" TYPE TIMESTAMPTZ USING "ExpiresAt" AT TIME ZONE 'UTC';
                 END IF;
             END $$;
 
@@ -118,8 +142,17 @@ public sealed class PostgreSqlStorageInitializer(
                 CREATE TABLE IF NOT EXISTS {GetLockTableName()}(
                 	"Key" VARCHAR(128) PRIMARY KEY NOT NULL,
                     "Instance" VARCHAR(256),
-                	"LastLockTime" TIMESTAMP NOT NULL
+                	"LastLockTime" TIMESTAMPTZ NOT NULL
                 );
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = '{postgreSqlOptions.Value.Schema}' AND table_name = 'lock' AND column_name = 'LastLockTime' AND data_type = 'timestamp without time zone'
+                    ) THEN
+                        ALTER TABLE {GetLockTableName()} ALTER COLUMN "LastLockTime" TYPE TIMESTAMPTZ USING "LastLockTime" AT TIME ZONE 'UTC';
+                    END IF;
+                END $$;
                 INSERT INTO {GetLockTableName()} ("Key","Instance","LastLockTime") VALUES(@PubKey,'',@LastLockTime) ON CONFLICT DO NOTHING;
                 INSERT INTO {GetLockTableName()} ("Key","Instance","LastLockTime") VALUES(@RecKey,'',@LastLockTime) ON CONFLICT DO NOTHING;
                 """;
