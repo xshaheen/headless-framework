@@ -12,6 +12,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
+using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -443,7 +444,7 @@ public static class MessagingDashboardEndpoints
         };
 
         var result = await monitoringApi.GetMessagesAsync(queryDto);
-        return Results.Json(new { items = result.Items.Select(_MapMessageView).ToArray(), totals = result.TotalItems });
+        return Results.Json(_MapMessagePage(result));
     }
 
     private static async Task<IResult> _ReceivedList(
@@ -473,7 +474,7 @@ public static class MessagingDashboardEndpoints
         };
 
         var result = await monitoringApi.GetMessagesAsync(queryDto);
-        return Results.Json(new { items = result.Items.Select(_MapMessageView).ToArray(), totals = result.TotalItems });
+        return Results.Json(_MapMessagePage(result));
     }
 
     private static async Task<IResult> _Subscribers(IServiceProvider sp)
@@ -517,6 +518,22 @@ public static class MessagingDashboardEndpoints
             message.ExpiresAt,
             message.Retries,
             message.StatusName,
+        };
+    }
+
+    private static object _MapMessagePage(IndexPage<MessageView> page)
+    {
+        var mapped = page.Select(_MapMessageView);
+        return new
+        {
+            mapped.Items,
+            mapped.Index,
+            mapped.Size,
+            mapped.TotalItems,
+            mapped.TotalPages,
+            mapped.HasPrevious,
+            mapped.HasNext,
+            Totals = mapped.TotalItems,
         };
     }
 

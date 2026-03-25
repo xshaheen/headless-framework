@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
@@ -10,6 +11,7 @@ using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
@@ -80,6 +82,69 @@ public sealed class PublishedMessageEndpointTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task PublishedList_should_preserve_pagination_metadata_and_map_identity_fields()
+    {
+        // given
+        var result = new IndexPage<MessageView>(
+            [
+                new MessageView
+                {
+                    StorageId = 123,
+                    MessageId = "logical-pub-123",
+                    Version = "v1",
+                    Name = "orders.created",
+                    Content = "{\"key\":\"value\"}",
+                    Added = new DateTime(2026, 03, 24, 10, 00, 00, DateTimeKind.Utc),
+                    Retries = 2,
+                    StatusName = "Succeeded",
+                },
+            ],
+            index: 1,
+            size: 20,
+            totalItems: 35
+        );
+
+        _monitoringApi
+            .GetMessagesAsync(Arg.Any<MessageQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(result));
+        _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
+
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+
+        // when
+        var response = await client.GetAsync("/api/published/Succeeded?currentPage=2&perPage=20");
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>();
+        payload
+            .Should()
+            .ContainKeys("items", "index", "size", "totalItems", "totalPages", "hasPrevious", "hasNext", "totals");
+        payload["index"].GetInt32().Should().Be(1);
+        payload["size"].GetInt32().Should().Be(20);
+        payload["totalItems"].GetInt32().Should().Be(35);
+        payload["totals"].GetInt32().Should().Be(35);
+
+        var item = payload["items"].EnumerateArray().Should().ContainSingle().Subject;
+        item.GetProperty("storageId").GetString().Should().Be("123");
+        item.GetProperty("messageId").GetString().Should().Be("logical-pub-123");
+
+        await _monitoringApi
+            .Received(1)
+            .GetMessagesAsync(
+                Arg.Is<MessageQuery>(query =>
+                    query.MessageType == MessageType.Publish
+                    && query.StatusName == "Succeeded"
+                    && query.CurrentPage == 1
+                    && query.PageSize == 20
+                ),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

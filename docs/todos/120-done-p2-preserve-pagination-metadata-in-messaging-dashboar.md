@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p2
 issue_id: "120"
 tags: ["code-review","dotnet","architecture","quality"]
@@ -39,9 +39,9 @@ Use Option 1 and keep the previous pagination metadata while mapping each item t
 
 ## Acceptance Criteria
 
-- [ ] Published and received list endpoints keep the previous pagination metadata fields while exposing storageId and messageId per item
-- [ ] Unit or endpoint tests assert the list response contract for both published and received routes
-- [ ] Any intentional API contract change is explicitly documented instead of happening as an incidental side effect of the identity refactor
+- [x] Published and received list endpoints keep the previous pagination metadata fields while exposing storageId and messageId per item
+- [x] Unit or endpoint tests assert the list response contract for both published and received routes
+- [x] Any intentional API contract change is explicitly documented instead of happening as an incidental side effect of the identity refactor
 
 ## Notes
 
@@ -54,3 +54,23 @@ Discovered during PR #198 review against docs/plans/2026-03-23-002-refactor-mess
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-25 - Resolved
+
+**By:** Codex
+**Actions:**
+- Restored the published and received list endpoints to emit the existing page metadata while keeping item-level `storageId` and `messageId`
+- Kept a `totals` alias in the payload so the current dashboard client continues to work while the full pagination contract remains available
+- Added unit coverage for both list endpoints and verified the new published/received list tests with targeted `dotnet test` runs
+
+### 2026-03-24 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-25 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
@@ -10,6 +11,7 @@ using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
@@ -81,6 +83,72 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task ReceivedList_should_preserve_pagination_metadata_and_map_identity_fields()
+    {
+        // given
+        var result = new IndexPage<MessageView>(
+            [
+                new MessageView
+                {
+                    StorageId = 456,
+                    MessageId = "logical-rec-456",
+                    Version = "v1",
+                    Name = "orders.received",
+                    Group = "workers",
+                    Content = "{\"received\":\"data\"}",
+                    Added = new DateTime(2026, 03, 24, 11, 00, 00, DateTimeKind.Utc),
+                    Retries = 1,
+                    StatusName = "Failed",
+                },
+            ],
+            index: 0,
+            size: 10,
+            totalItems: 1
+        );
+
+        _monitoringApi
+            .GetMessagesAsync(Arg.Any<MessageQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(result));
+        _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
+
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+
+        // when
+        var response = await client.GetAsync("/api/received/Failed?currentPage=1&perPage=10&group=workers");
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>();
+        payload
+            .Should()
+            .ContainKeys("items", "index", "size", "totalItems", "totalPages", "hasPrevious", "hasNext", "totals");
+        payload["index"].GetInt32().Should().Be(0);
+        payload["size"].GetInt32().Should().Be(10);
+        payload["totalItems"].GetInt32().Should().Be(1);
+        payload["totals"].GetInt32().Should().Be(1);
+
+        var item = payload["items"].EnumerateArray().Should().ContainSingle().Subject;
+        item.GetProperty("storageId").GetString().Should().Be("456");
+        item.GetProperty("messageId").GetString().Should().Be("logical-rec-456");
+        item.GetProperty("group").GetString().Should().Be("workers");
+
+        await _monitoringApi
+            .Received(1)
+            .GetMessagesAsync(
+                Arg.Is<MessageQuery>(query =>
+                    query.MessageType == MessageType.Subscribe
+                    && query.StatusName == "Failed"
+                    && query.Group == "workers"
+                    && query.CurrentPage == 0
+                    && query.PageSize == 10
+                ),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
