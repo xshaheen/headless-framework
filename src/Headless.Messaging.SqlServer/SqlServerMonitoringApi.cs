@@ -42,7 +42,7 @@ internal sealed class SqlServerMonitoringApi(
                 {
                     var statisticsDto = new StatisticsView();
 
-                    while (await reader.ReadAsync(ct))
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
                     {
                         statisticsDto.PublishedSucceeded = reader.GetInt64(0);
                         statisticsDto.ReceivedSucceeded = reader.GetInt64(1);
@@ -126,7 +126,7 @@ internal sealed class SqlServerMonitoringApi(
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 
-        var totalCount = 0;
+        long totalCount = 0;
         var items = await connection
             .ExecuteReaderAsync(
                 sqlQuery,
@@ -158,7 +158,7 @@ internal sealed class SqlServerMonitoringApi(
                                 StatusName = reader.GetString(index++),
                             }
                         );
-                        totalCount = reader.GetInt32(index);
+                        totalCount = reader.GetInt64(index);
                     }
 
                     return messages;
@@ -168,7 +168,7 @@ internal sealed class SqlServerMonitoringApi(
             )
             .ConfigureAwait(false);
 
-        return new(items, query.CurrentPage, query.PageSize, totalCount);
+        return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
     }
 
     public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
