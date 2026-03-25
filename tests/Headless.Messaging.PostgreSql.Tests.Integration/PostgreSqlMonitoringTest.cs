@@ -257,6 +257,90 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         retrieved.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task should_rollback_transaction_and_not_persist_message()
+    {
+        // given
+        var storage = _storage!;
+        var msg = _CreateMessage();
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+
+        // when — store then rollback
+        var result = await storage.StoreMessageAsync("rollback-test", msg, transaction, AbortToken);
+        await transaction.RollbackAsync(AbortToken);
+
+        // then — message should not be persisted
+        var monitoringApi = storage.GetMonitoringApi();
+        var retrieved = await monitoringApi.GetPublishedMessageAsync(result.StorageId, AbortToken);
+        retrieved.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_throw_for_unsupported_transaction_type()
+    {
+        // given
+        var storage = _storage!;
+        var msg = _CreateMessage();
+        var unsupportedTransaction = new object();
+
+        // when
+        var act = async () => await storage.StoreMessageAsync("bad-tx", msg, unsupportedTransaction, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Unsupported transaction type*");
+    }
+
+    [Fact]
+    public async Task should_return_empty_page_when_no_messages_match()
+    {
+        // given — empty table (truncated in InitializeAsync)
+        var monitoringApi = _storage!.GetMonitoringApi();
+
+        // when
+        var page = await monitoringApi.GetMessagesAsync(
+            new MessageQuery { MessageType = MessageType.Publish, CurrentPage = 0, PageSize = 10 },
+            AbortToken
+        );
+
+        // then
+        page.Items.Should().BeEmpty();
+        page.TotalItems.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_renew_lock_and_advance_last_lock_time()
+    {
+        // given
+        var storage = _storage!;
+        const string key = "publish_retry_v1";
+        var instance = Guid.NewGuid().ToString();
+        var ttl = TimeSpan.FromSeconds(30);
+
+        await storage.AcquireLockAsync(key, ttl, instance, AbortToken);
+
+        // read LastLockTime before renewal
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        var before = await connection.QueryFirstAsync<DateTime>(
+            "SELECT \"LastLockTime\" FROM messaging.lock WHERE \"Key\" = @Key",
+            new { Key = key }
+        );
+
+        // when
+        await storage.RenewLockAsync(key, ttl, instance, AbortToken);
+
+        // then — LastLockTime should have advanced
+        var after = await connection.QueryFirstAsync<DateTime>(
+            "SELECT \"LastLockTime\" FROM messaging.lock WHERE \"Key\" = @Key",
+            new { Key = key }
+        );
+        after.Should().BeAfter(before);
+    }
+
     private static long _messageIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() << 20;
 
     private static Message _CreateMessage()
