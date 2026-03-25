@@ -97,9 +97,14 @@ public sealed class SqlServerDataStorage(
     )
     {
         var sql =
-            $"UPDATE {_lockName} SET [LastLockTime]=DATEADD(s,{ttl.TotalSeconds},[LastLockTime]) WHERE [Key]=@Key AND [Instance]=@Instance;";
+            $"UPDATE {_lockName} SET [LastLockTime]=DATEADD(second,@TtlSeconds,[LastLockTime]) WHERE [Key]=@Key AND [Instance]=@Instance;";
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        object[] sqlParams = [new SqlParameter("@Key", key), new SqlParameter("@Instance", instance)];
+        object[] sqlParams =
+        [
+            new SqlParameter("@Key", key),
+            new SqlParameter("@Instance", instance),
+            new SqlParameter("@TtlSeconds", ttl.TotalSeconds),
+        ];
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
             .ConfigureAwait(false);
@@ -449,9 +454,17 @@ public sealed class SqlServerDataStorage(
 
         if (transaction is DbTransaction dbTransaction)
         {
-            var connection = (SqlConnection)dbTransaction.Connection!;
+            var connection = dbTransaction.Connection!;
             await connection
                 .ExecuteNonQueryAsync(sql, dbTransaction, cancellationToken, sqlParams)
+                .ConfigureAwait(false);
+        }
+        else if (transaction is IDbContextTransaction efTransaction)
+        {
+            var dbTrans = efTransaction.GetDbTransaction();
+            var connection = dbTrans.Connection!;
+            await connection
+                .ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams)
                 .ConfigureAwait(false);
         }
         else
@@ -488,7 +501,7 @@ public sealed class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var fourMinAgo = timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds);
+        var cutoffTime = timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds);
 
         var sql =
             $"SELECT TOP ({_RetryBatchSize}) Id, Content, Retries, Added FROM {tableName} WITH (UPDLOCK, READPAST) "
@@ -498,10 +511,13 @@ public sealed class SqlServerDataStorage(
         [
             new SqlParameter("@Retries", messagingOptions.Value.FailedRetryCount),
             new SqlParameter("@Version", messagingOptions.Value.Version),
-            new SqlParameter("@Added", fourMinAgo),
+            new SqlParameter("@Added", cutoffTime),
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
         var result = await connection
             .ExecuteReaderAsync(
                 sql,
@@ -526,10 +542,13 @@ public sealed class SqlServerDataStorage(
 
                     return messages;
                 },
-                cancellationToken: cancellationToken,
-                sqlParams: sqlParams
+                transaction,
+                cancellationToken,
+                sqlParams
             )
             .ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken);
 
         return result;
     }
