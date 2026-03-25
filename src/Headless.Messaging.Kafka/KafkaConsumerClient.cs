@@ -15,13 +15,18 @@ internal sealed class KafkaConsumerClient(
     string groupId,
     byte groupConcurrent,
     IOptions<MessagingKafkaOptions> options,
-    IServiceProvider serviceProvider
+    IServiceProvider serviceProvider,
+    Func<ConsumerConfig, IConsumer<string, byte[]>>? consumerFactory = null,
+    Func<AdminClientConfig, IAdminClient>? adminClientFactory = null
 ) : IConsumerClient
 {
     private readonly Lock _lock = new();
-    private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly MessagingKafkaOptions _kafkaOptions = Argument.IsNotNull(options.Value);
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly Func<ConsumerConfig, IConsumer<string, byte[]>> _consumerFactory =
+        consumerFactory ?? _BuildConsumer;
+    private readonly Func<AdminClientConfig, IAdminClient> _adminClientFactory =
+        adminClientFactory ?? _BuildAdminClient;
     private IConsumer<string, byte[]>? _consumerClient;
     private int _disposed;
 
@@ -31,11 +36,24 @@ internal sealed class KafkaConsumerClient(
 
     public BrokerAddress BrokerAddress => new("kafka", _kafkaOptions.Servers);
 
-    public async Task<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+    public async ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
     {
         Argument.IsNotNull(topicNames);
 
-        var regexTopicNames = topicNames.Select(Helper.WildcardToRegex).ToList();
+        var normalizedTopics = new List<string>();
+        var concreteTopicsToCreate = new List<string>();
+
+        foreach (var topicName in topicNames)
+        {
+            if (topicName.Contains('*') || topicName.Contains('#'))
+            {
+                normalizedTopics.Add(Helper.WildcardToRegex(topicName));
+                continue;
+            }
+
+            normalizedTopics.Add(topicName);
+            concreteTopicsToCreate.Add(topicName);
+        }
 
         var allowAutoCreate = true;
         if (
@@ -46,7 +64,7 @@ internal sealed class KafkaConsumerClient(
             allowAutoCreate = parsedValue;
         }
 
-        if (allowAutoCreate)
+        if (allowAutoCreate && concreteTopicsToCreate.Count > 0)
         {
             try
             {
@@ -55,10 +73,10 @@ internal sealed class KafkaConsumerClient(
                     BootstrapServers = _kafkaOptions.Servers,
                 };
 
-                using var adminClient = new AdminClientBuilder(config).Build();
+                using var adminClient = _adminClientFactory(config);
 
                 await adminClient.CreateTopicsAsync(
-                    regexTopicNames.Select(x => new TopicSpecification
+                    concreteTopicsToCreate.Select(x => new TopicSpecification
                     {
                         Name = x,
                         NumPartitions = _kafkaOptions.TopicOptions.NumPartitions,
@@ -80,7 +98,7 @@ internal sealed class KafkaConsumerClient(
 #pragma warning restore ERP022
         }
 
-        return regexTopicNames;
+        return normalizedTopics;
     }
 
     public ValueTask SubscribeAsync(IEnumerable<string> topics)
@@ -106,7 +124,10 @@ internal sealed class KafkaConsumerClient(
 
             try
             {
-                consumerResult = _consumerClient!.Consume(timeout);
+                lock (_lock)
+                {
+                    consumerResult = _consumerClient!.Consume(timeout);
+                }
 
                 if (consumerResult == null)
                 {
@@ -130,67 +151,96 @@ internal sealed class KafkaConsumerClient(
                 continue;
             }
 
-            if (groupConcurrent > 0)
-            {
-                await _semaphore.WaitAsync(cancellationToken);
-                _ = Task.Run(
-                    async () =>
-                    {
-                        try
-                        {
-                            await _ConsumeAsync(consumerResult);
-                        }
-                        finally
-                        {
-                            _ReleaseSemaphore();
-                        }
-                    },
-                    cancellationToken
-                ).ConfigureAwait(false);
-            }
-            else
-            {
-                await _ConsumeAsync(consumerResult);
-            }
+            // Kafka commits advance partition offsets. Processing sequentially within a consumer
+            // prevents later messages from committing past earlier failures on the same partition.
+            await _ConsumeAsync(consumerResult);
         }
         // ReSharper disable once FunctionNeverReturns
     }
 
     public ValueTask CommitAsync(object? sender)
     {
-        _consumerClient!.Commit((ConsumeResult<string, byte[]>)sender!);
+        if (sender is not ConsumeResult<string, byte[]> consumerResult || _consumerClient is null)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        lock (_lock)
+        {
+            _consumerClient.Commit(consumerResult);
+        }
+
         return ValueTask.CompletedTask;
     }
 
     public ValueTask RejectAsync(object? sender)
     {
-        _consumerClient!.Assign(_consumerClient.Assignment);
+        if (sender is not ConsumeResult<string, byte[]> consumerResult || _consumerClient is null)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        lock (_lock)
+        {
+            _consumerClient.Seek(consumerResult.TopicPartitionOffset);
+        }
+
         return ValueTask.CompletedTask;
     }
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
-        if (!await _pauseGate.PauseAsync()) return;
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+        if (!await _pauseGate.PauseAsync())
+            return;
 
-        _consumerClient?.Pause(_consumerClient.Assignment);
+        lock (_lock)
+        {
+            _consumerClient?.Pause(_consumerClient.Assignment);
+        }
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
-        if (!await _pauseGate.ResumeAsync()) return;
+        if (Volatile.Read(ref _disposed) != 0)
+            return;
+        if (!await _pauseGate.ResumeAsync())
+            return;
 
-        _consumerClient?.Resume(_consumerClient.Assignment);
+        lock (_lock)
+        {
+            _consumerClient?.Resume(_consumerClient.Assignment);
+        }
     }
 
     public ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return ValueTask.CompletedTask;
 
         _pauseGate.Release();
-        _semaphore.Dispose();
-        _consumerClient?.Dispose();
+        IConsumer<string, byte[]>? consumerClient;
+        lock (_lock)
+        {
+            consumerClient = _consumerClient;
+            _consumerClient = null;
+        }
+
+        if (consumerClient is not null)
+        {
+            try
+            {
+                consumerClient.Close();
+            }
+            catch (Exception)
+            {
+                // Best-effort shutdown. Dispose still releases native resources.
+            }
+
+            consumerClient.Dispose();
+        }
+
         return ValueTask.CompletedTask;
     }
 
@@ -217,22 +267,7 @@ internal sealed class KafkaConsumerClient(
                 config.EnableAutoCommit ??= false;
                 config.LogConnectionClose ??= false;
 
-                _consumerClient = _BuildConsumer(config);
-            }
-        }
-    }
-
-    private void _ReleaseSemaphore()
-    {
-        if (groupConcurrent > 0)
-        {
-            try
-            {
-                _semaphore.Release();
-            }
-            catch (SemaphoreFullException)
-            {
-                // Defensive: ignore over-release
+                _consumerClient = _consumerFactory(config);
             }
         }
     }
@@ -267,6 +302,11 @@ internal sealed class KafkaConsumerClient(
         return new ConsumerBuilder<string, byte[]>(config).SetErrorHandler(_ConsumerClientOnConsumeError).Build();
     }
 
+    private static IAdminClient _BuildAdminClient(AdminClientConfig config)
+    {
+        return new AdminClientBuilder(config).Build();
+    }
+
     private void _ConsumerClientOnConsumeError(IConsumer<string, byte[]> consumer, Error e)
     {
         var logArgs = new LogMessageEventArgs
@@ -276,5 +316,4 @@ internal sealed class KafkaConsumerClient(
         };
         OnLogCallback!(logArgs);
     }
-
 }

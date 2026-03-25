@@ -223,6 +223,41 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_release_connect_semaphore_when_channel_setup_throws()
+    {
+        // given
+        var firstChannel = Substitute.For<IChannel>();
+        var secondChannel = Substitute.For<IChannel>();
+        _connection
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(firstChannel, secondChannel);
+        firstChannel
+            .ExchangeDeclareAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<IDictionary<string, object?>>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<Task>(_ => throw new InvalidOperationException("exchange declare failed"));
+
+        await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
+
+        // when
+        await client.Invoking(x => x.ConnectAsync()).Should().ThrowAsync<InvalidOperationException>();
+        await client.ConnectAsync().WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+        // then
+        await _connection
+            .Received(2)
+            .CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>());
+        await firstChannel.Received(1).DisposeAsync();
+    }
+
+    [Fact]
     public async Task should_throw_when_subscribing_with_null_topics()
     {
         // given
@@ -412,7 +447,10 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await client.ResumeAsync();
 
         // then
-        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+        _channel
+            .ReceivedCalls()
+            .Should()
+            .NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
     }
 
     [Fact]
@@ -440,7 +478,10 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await client.ResumeAsync();
 
         // then
-        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+        _channel
+            .ReceivedCalls()
+            .Should()
+            .NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
     }
 
     [Fact]

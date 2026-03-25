@@ -153,7 +153,24 @@ internal sealed class AmazonSqsConsumerClient(
             catch (JsonException ex)
             {
                 _logger.LogError(ex, "Failed to deserialize SQS message. Moving to DLQ.");
+                await rejectSafelyAsync(receiptHandle).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error consuming message for group {GroupId}", groupId);
+                await rejectSafelyAsync(receiptHandle).ConfigureAwait(false);
+            }
+        }
+
+        async Task rejectSafelyAsync(string receiptHandle)
+        {
+            try
+            {
                 await RejectAsync(receiptHandle).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to reject message for group {GroupId}", groupId);
             }
         }
     }
@@ -203,7 +220,8 @@ internal sealed class AmazonSqsConsumerClient(
 
     public ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return ValueTask.CompletedTask;
 
         _pauseGate.Release();
         _sqsClient?.Dispose();

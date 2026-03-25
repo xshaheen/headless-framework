@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Confluent.Kafka;
+using Confluent.Kafka.Admin;
 using Headless.Messaging.Kafka;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -87,7 +89,14 @@ public sealed class KafkaConsumerClientTests : TestBase
     public async Task FetchTopicsAsync_should_return_topics()
     {
         // given
-        await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
+        var options = Options.Create(
+            new MessagingKafkaOptions
+            {
+                Servers = "localhost:9092",
+                MainConfig = { ["allow.auto.create.topics"] = "false" },
+            }
+        );
+        await using var client = new KafkaConsumerClient("test-group", 1, options, _serviceProvider);
         client.OnLogCallback = _ => { }; // Set callback to avoid null ref
 
         // when - FetchTopicsAsync will return topics even if admin client fails
@@ -98,6 +107,39 @@ public sealed class KafkaConsumerClientTests : TestBase
         result.Should().HaveCount(2);
         result.Should().Contain("topic1");
         result.Should().Contain("topic2");
+    }
+
+    [Fact]
+    public async Task FetchTopicsAsync_should_use_kafka_override_when_called_via_interface()
+    {
+        // given
+        var adminClient = Substitute.For<IAdminClient>();
+        adminClient
+            .CreateTopicsAsync(Arg.Any<IEnumerable<TopicSpecification>>(), Arg.Any<CreateTopicsOptions>())
+            .Returns(Task.CompletedTask);
+
+        IConsumerClient client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            adminClientFactory: _ => adminClient
+        );
+
+        // when
+        var result = await client.FetchTopicsAsync(["orders.created", "orders.*"]);
+
+        // then
+        result.Should().Contain("orders.created");
+        result.Should().Contain(x => x.StartsWith("^orders\\.", StringComparison.Ordinal));
+        await adminClient
+            .Received(1)
+            .CreateTopicsAsync(
+                Arg.Is<IEnumerable<TopicSpecification>>(specs =>
+                    specs.Select(x => x.Name).SequenceEqual(["orders.created"])
+                ),
+                Arg.Any<CreateTopicsOptions>()
+            );
     }
 
     [Fact]
@@ -186,6 +228,111 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.Connect();
 
         // then - no exception
+    }
+
+    [Fact]
+    public async Task RejectAsync_should_seek_failed_offset()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+        client.Connect();
+        var consumeResult = new ConsumeResult<string, byte[]>
+        {
+            TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(2), new Offset(17)),
+            Message = new Message<string, byte[]> { Value = [1], Headers = new Confluent.Kafka.Headers() },
+        };
+
+        // when
+        await client.RejectAsync(consumeResult);
+
+        // then
+        consumer.Received(1).Seek(consumeResult.TopicPartitionOffset);
+    }
+
+    [Fact]
+    public async Task ListeningAsync_should_process_messages_sequentially_when_concurrency_is_requested()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                var callIndex = Interlocked.Increment(ref consumeCallCount);
+                return callIndex switch
+                {
+                    1 => new ConsumeResult<string, byte[]>
+                    {
+                        TopicPartitionOffset = new TopicPartitionOffset(
+                            "orders.created",
+                            new Partition(0),
+                            new Offset(0)
+                        ),
+                        Message = new Message<string, byte[]> { Value = [1], Headers = new Confluent.Kafka.Headers() },
+                    },
+                    2 => new ConsumeResult<string, byte[]>
+                    {
+                        TopicPartitionOffset = new TopicPartitionOffset(
+                            "orders.created",
+                            new Partition(0),
+                            new Offset(1)
+                        ),
+                        Message = new Message<string, byte[]> { Value = [2], Headers = new Confluent.Kafka.Headers() },
+                    },
+                    _ => null!,
+                };
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            2,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var callbackCount = 0;
+
+        client.OnMessageCallback = async (_, _) =>
+        {
+            var current = Interlocked.Increment(ref callbackCount);
+            if (current == 1)
+            {
+                firstStarted.TrySetResult();
+                await releaseFirst.Task.ConfigureAwait(false);
+                return;
+            }
+
+            secondStarted.TrySetResult();
+        };
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await Task.Delay(100, AbortToken);
+
+        // then
+        secondStarted.Task.IsCompleted.Should().BeFalse();
+
+        releaseFirst.TrySetResult();
+        await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+        await cts.CancelAsync();
+        await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
     }
 
     // -------------------------------------------------------------------------

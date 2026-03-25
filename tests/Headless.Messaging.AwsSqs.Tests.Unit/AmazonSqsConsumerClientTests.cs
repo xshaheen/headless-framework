@@ -129,15 +129,9 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             );
     }
 
-    [Fact(Skip = "Tests expected behavior - current implementation doesn't reject messages after consume errors")]
+    [Fact]
     public async Task should_log_error_when_reject_fails_after_consume_error()
     {
-        // This test documents expected behavior where the implementation should:
-        // 1. Catch callback exceptions
-        // 2. Call RejectAsync to return the message to the queue
-        // 3. If RejectAsync fails, log that failure too
-        // Current implementation only logs the callback error, doesn't reject.
-
         // given
         var options = _CreateOptions();
 
@@ -222,7 +216,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             .Log(
                 LogLevel.Error,
                 Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString()!.Contains("Failed to reject message after consume error")),
+                Arg.Is<object>(o => o.ToString()!.Contains("Failed to reject message for group")),
                 Arg.Is<Exception>(ex => ex == rejectException),
                 Arg.Any<Func<object, Exception?, string>>()
             );
@@ -378,15 +372,9 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             );
     }
 
-    [Fact(Skip = "Documents known double-release bug - semaphore count exceeds initial")]
+    [Fact]
     public async Task should_not_double_release_semaphore_on_exception()
     {
-        // CRITICAL BUG: This test documents a double-release bug in the semaphore handling.
-        // When an exception is thrown in the callback, the semaphore is released twice,
-        // causing the count to exceed the initial value.
-        // The bug is in AmazonSqsConsumerClient.ConsumeAsync - both the finally block
-        // and the catch block release the semaphore.
-
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
         const int concurrencyLimit = 3;
@@ -442,8 +430,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         await Task.Delay(500, AbortToken);
 
-        // then - semaphore count should return to initial value (not exceed it due to double release)
-        // BUG: finalCount is 4 instead of 3, confirming double release
+        // then - semaphore count should return to initial value
         var finalCount = semaphore.CurrentCount;
         finalCount.Should().Be(initialCount, "semaphore should be released exactly once, not twice");
     }
@@ -965,13 +952,14 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await client.PauseAsync();
 
         using var cts = new CancellationTokenSource();
-        var listenTask = Task.Run(
-            async () =>
+        var listenTask = Task.Run(async () =>
+        {
+            try
             {
-                try { await client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token); }
-                catch (OperationCanceledException) { }
+                await client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token);
             }
-        );
+            catch (OperationCanceledException) { }
+        });
 
         await Task.Delay(300);
         var countWhilePaused = receiveCount;
