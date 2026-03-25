@@ -61,7 +61,7 @@ public sealed class NatsConnectionPool : INatsConnectionPool
 
     /// <summary>
     /// Returns a connection from the pool using round-robin distribution.
-    /// Connections are long-lived and multiplexed — no return is needed.
+    /// Connections are long-lived and multiplexed, so no return is needed.
     /// </summary>
     public NatsConnection GetConnection()
     {

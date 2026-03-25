@@ -129,7 +129,6 @@ internal sealed class NatsConsumerClient(
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         var streamGroups = _subscribedTopics!.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
-
         var tasks = new List<Task>();
 
         foreach (var streamGroup in streamGroups)
@@ -364,7 +363,7 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        // Let exceptions propagate — the framework's OnMessageCallback handler
+        // Let exceptions propagate. The framework's OnMessageCallback handler
         // calls CommitAsync on success and RejectAsync on failure.
         await OnMessageCallback!(message, msg).ConfigureAwait(false);
     }
@@ -424,11 +423,11 @@ internal sealed class NatsConsumerClient(
         }
         catch (SemaphoreFullException)
         {
-            // Defensive: ignore over-release
+            // Defensive: ignore over-release.
         }
         catch (ObjectDisposedException)
         {
-            // Shutdown in progress — semaphore already disposed
+            // Shutdown in progress. Semaphore already disposed.
         }
     }
 

@@ -19,7 +19,7 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
             cancellationToken.ThrowIfCancellationRequested();
 
             var connection = connectionPool.GetConnection();
-            // NatsJSContext is a stateless wrapper around the connection — safe to create per call
+            // NatsJSContext is a stateless wrapper around the connection, so it's safe to create per call.
             var js = new NatsJSContext(connection);
 
             var ack = await js.PublishAsync(
@@ -39,6 +39,13 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
                 );
             }
 
+            if (ack.Seq == 0)
+            {
+                return OperateResult.Failed(
+                    new PublisherSentFailedException("NATS message send failed, no consumer reply!")
+                );
+            }
+
             if (logger.IsEnabled(LogLevel.Debug))
             {
                 logger.LogDebug("NATS stream message [{Name}] published, seq={Seq}.", message.GetName(), ack.Seq);
@@ -48,7 +55,7 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
         }
         catch (OperationCanceledException)
         {
-            // Don't wrap cancellation as a publish failure
+            // Don't wrap cancellation as a publish failure.
             throw;
         }
         catch (Exception ex)
