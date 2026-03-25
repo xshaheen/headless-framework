@@ -15,7 +15,7 @@ internal sealed class RedisTransport(
 {
     private readonly MessagingRedisOptions _options = options.Value;
 
-    public BrokerAddress BrokerAddress => new("redis", _options.Endpoint);
+    public BrokerAddress BrokerAddress => new("redis", _options.DisplayEndpoint);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {

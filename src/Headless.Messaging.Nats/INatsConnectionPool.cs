@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NATS.Client.Core;
@@ -22,7 +23,7 @@ public sealed class NatsConnectionPool : INatsConnectionPool
     public NatsConnectionPool(ILogger<NatsConnectionPool> logger, IOptions<MessagingNatsOptions> options)
     {
         var opts = options.Value;
-        ServersAddress = opts.GetSanitizedServersForDisplay();
+        ServersAddress = BrokerAddressDisplay.GetDisplayEndpoints(opts.Servers, inferredScheme: "nats");
 
         var natsOpts = opts.BuildNatsOpts();
         var poolSize = opts.ConnectionPoolSize;

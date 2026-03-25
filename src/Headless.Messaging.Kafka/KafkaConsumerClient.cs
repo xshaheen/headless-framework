@@ -46,7 +46,8 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-    public BrokerAddress BrokerAddress => new("kafka", _kafkaOptions.GetSanitizedServersForDisplay());
+    public BrokerAddress BrokerAddress =>
+        new("kafka", BrokerAddressDisplay.GetDisplayEndpoints(_kafkaOptions.Servers, inferredScheme: "kafka"));
 
     public async ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
     {

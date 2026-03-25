@@ -38,7 +38,8 @@ internal sealed class NatsConsumerClient(
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-    public BrokerAddress BrokerAddress => new("nats", _natsOptions.GetSanitizedServersForDisplay());
+    public BrokerAddress BrokerAddress =>
+        new("nats", BrokerAddressDisplay.GetDisplayEndpoints(_natsOptions.Servers, inferredScheme: "nats"));
 
     public async Task ConnectAsync()
     {

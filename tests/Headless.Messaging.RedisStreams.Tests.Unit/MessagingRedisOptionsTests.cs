@@ -170,7 +170,7 @@ public sealed class MessagingRedisOptionsTests : TestBase
     {
         // Access internal Endpoint property via reflection (can't use nameof for internal members)
         var property = typeof(MessagingRedisOptions).GetProperty(
-            "Endpoint",
+            "DisplayEndpoint",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         return (string)property!.GetValue(options)!;
