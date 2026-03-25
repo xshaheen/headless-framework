@@ -30,6 +30,17 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_redact_credentials_from_broker_address()
+    {
+        var options = MsOptions.Options.Create(
+            new MessagingNatsOptions { Servers = "nats://user:password@localhost:4222" }
+        );
+        await using var client = new NatsConsumerClient("test-group", 1, options, _serviceProvider);
+
+        client.BrokerAddress.Endpoint.Should().Be("nats://localhost:4222");
+    }
+
+    [Fact]
     public void should_throw_when_options_value_is_null()
     {
         var nullOptions = Substitute.For<MsOptions.IOptions<MessagingNatsOptions>>();
@@ -75,6 +86,55 @@ public sealed class NatsConsumerClientTests : TestBase
 
         var result = await client.FetchTopicsAsync(topics);
         result.Should().BeEquivalentTo(topics);
+    }
+
+    [Fact]
+    public void BuildStreamSubjects_should_use_exact_subject_for_single_token_topic()
+    {
+        NatsConsumerClient.BuildStreamSubjects("orders", ["orders"]).Should().BeEquivalentTo(["orders"]);
+    }
+
+    [Fact]
+    public void BuildStreamSubjects_should_use_wildcard_for_hierarchical_subjects()
+    {
+        NatsConsumerClient.BuildStreamSubjects("orders", ["orders.created"]).Should().BeEquivalentTo(["orders.>"]);
+    }
+
+    [Fact]
+    public void BuildStreamSubjects_should_include_bare_and_hierarchical_subjects_together()
+    {
+        NatsConsumerClient
+            .BuildStreamSubjects("orders", ["orders", "orders.created"])
+            .Should()
+            .BeEquivalentTo(["orders", "orders.>"]);
+    }
+
+    [Fact]
+    public void BuildStreamSubjects_should_preserve_non_prefix_topics()
+    {
+        NatsConsumerClient
+            .BuildStreamSubjects("events", ["orders.created"])
+            .Should()
+            .BeEquivalentTo(["orders.created"]);
+    }
+
+    [Fact]
+    public async Task RunConcurrentHandlerIgnoringCancellation_should_run_even_when_token_is_already_canceled()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var ran = false;
+
+        await NatsConsumerClient.RunConcurrentHandlerIgnoringCancellation(
+            () =>
+            {
+                ran = true;
+                return Task.CompletedTask;
+            },
+            cts.Token
+        );
+
+        ran.Should().BeTrue();
     }
 
     [Fact]

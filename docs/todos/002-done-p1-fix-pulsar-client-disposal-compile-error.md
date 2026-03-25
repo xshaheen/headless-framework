@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "002"
 tags: ["code-review","dotnet","build","quality"]
@@ -39,9 +39,9 @@ Switch to the supported PulsarClient disposal method and verify the Pulsar proje
 
 ## Acceptance Criteria
 
-- [ ] ConnectionFactory compiles against the current Pulsar client package
-- [ ] dotnet build headless-framework.slnx -c Release no longer reports CS1061 for PulsarClient
-- [ ] Pulsar unit tests run successfully
+- [x] ConnectionFactory compiles against the current Pulsar client package
+- [x] dotnet build headless-framework.slnx -c Release no longer reports CS1061 for PulsarClient
+- [x] Pulsar unit tests run successfully
 
 ## Notes
 
@@ -54,3 +54,22 @@ Review of branch xshaheen/review-transports on 2026-03-25.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-25 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-25 - Implemented
+
+**By:** Agent
+**Actions:**
+- Switched Pulsar client disposal to the supported `CloseAsync()` API after verifying the referenced package surface
+- Verified with solution build and Pulsar unit tests
+
+### 2026-03-25 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

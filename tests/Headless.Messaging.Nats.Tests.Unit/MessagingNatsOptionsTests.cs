@@ -44,6 +44,25 @@ public sealed class MessagingNatsOptionsTests : TestBase
     }
 
     [Fact]
+    public void should_redact_credentials_from_single_server_display_value()
+    {
+        var options = new MessagingNatsOptions { Servers = "nats://user:password@localhost:4222" };
+
+        options.GetSanitizedServersForDisplay().Should().Be("nats://localhost:4222");
+    }
+
+    [Fact]
+    public void should_redact_credentials_from_multiple_server_display_value()
+    {
+        var options = new MessagingNatsOptions
+        {
+            Servers = "nats://user:password@localhost:4222, nats://admin:secret@example.com:4223",
+        };
+
+        options.GetSanitizedServersForDisplay().Should().Be("nats://localhost:4222,nats://example.com:4223");
+    }
+
+    [Fact]
     public void should_have_default_stream_name_normalizer()
     {
         var options = new MessagingNatsOptions();

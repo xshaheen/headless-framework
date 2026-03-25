@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p1
 issue_id: "001"
 tags: ["code-review","dotnet","build","quality"]
@@ -39,9 +39,9 @@ Replace the method-group RHS with explicitly typed delegates and re-run Kafka te
 
 ## Acceptance Criteria
 
-- [ ] KafkaConsumerClient compiles without CS0019
-- [ ] dotnet build headless-framework.slnx -c Release passes this project
-- [ ] Kafka unit tests run successfully
+- [x] KafkaConsumerClient compiles without CS0019
+- [x] dotnet build headless-framework.slnx -c Release passes this project
+- [x] Kafka unit tests run successfully
 
 ## Notes
 
@@ -54,3 +54,23 @@ Review of branch xshaheen/review-transports on 2026-03-25.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-25 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-25 - Implemented
+
+**By:** Agent
+**Actions:**
+- Reworked `KafkaConsumerClient` constructor initialization to use explicit fields and valid delegate assignment
+- Fixed the Kafka unit test expression to compile on the current toolchain
+- Verified with solution build and Kafka unit tests
+
+### 2026-03-25 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

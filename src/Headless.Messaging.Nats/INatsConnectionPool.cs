@@ -22,7 +22,7 @@ public sealed class NatsConnectionPool : INatsConnectionPool
     public NatsConnectionPool(ILogger<NatsConnectionPool> logger, IOptions<MessagingNatsOptions> options)
     {
         var opts = options.Value;
-        ServersAddress = opts.Servers;
+        ServersAddress = opts.GetSanitizedServersForDisplay();
 
         var natsOpts = opts.BuildNatsOpts();
         var poolSize = opts.ConnectionPoolSize;

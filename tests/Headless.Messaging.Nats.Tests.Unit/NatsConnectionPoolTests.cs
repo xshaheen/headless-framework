@@ -30,6 +30,17 @@ public sealed class NatsConnectionPoolTests : TestBase
     }
 
     [Fact]
+    public async Task should_redact_credentials_from_server_address()
+    {
+        var options = MsOptions.Options.Create(
+            new MessagingNatsOptions { Servers = "nats://user:password@localhost:4222", ConnectionPoolSize = 1 }
+        );
+
+        await using var pool = new NatsConnectionPool(_logger, options);
+        pool.ServersAddress.Should().Be("nats://localhost:4222");
+    }
+
+    [Fact]
     public async Task should_return_connection_via_round_robin()
     {
         await using var pool = new NatsConnectionPool(_logger, _options);

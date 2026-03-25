@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p2
 issue_id: "004"
 tags: ["code-review","dotnet","quality","nats","concurrency"]
@@ -39,9 +39,9 @@ Move semaphore acquisition/release into a code path that cannot be bypassed by t
 
 ## Acceptance Criteria
 
-- [ ] Cancellation cannot leak a semaphore permit
-- [ ] Concurrent message processing still respects `groupConcurrent`
-- [ ] A regression test covers cancellation between receive and work-item startup
+- [x] Cancellation cannot leak a semaphore permit
+- [x] Concurrent message processing still respects `groupConcurrent`
+- [x] A regression test covers cancellation between receive and work-item startup
 
 ## Notes
 
@@ -54,3 +54,22 @@ Review of branch xshaheen/review-transports on 2026-03-25.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-25 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-25 - Verified
+
+**By:** Agent
+**Actions:**
+- Confirmed the branch already avoids passing the cancellation token into concurrent task scheduling
+- Added a regression seam and unit test proving scheduling still runs when the token is already canceled
+
+### 2026-03-25 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p3
 issue_id: "008"
 tags: ["code-review","testing","quality"]
@@ -39,9 +39,9 @@ Add the integration test project to `headless-framework.slnx` so it participates
 
 ## Acceptance Criteria
 
-- [ ] The NATS integration test project is referenced from `headless-framework.slnx`
-- [ ] Solution-level test discovery includes the new project
-- [ ] CI or documented local test workflow covers the project
+- [x] The NATS integration test project is referenced from `headless-framework.slnx`
+- [x] Solution-level test discovery includes the new project
+- [x] CI or documented local test workflow covers the project
 
 ## Notes
 
@@ -54,3 +54,22 @@ Review of branch xshaheen/review-transports on 2026-03-25.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-25 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-25 - Implemented
+
+**By:** Agent
+**Actions:**
+- Added the NATS integration test project to `headless-framework.slnx`
+- Verified the project participates in the standard solution build path
+
+### 2026-03-25 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

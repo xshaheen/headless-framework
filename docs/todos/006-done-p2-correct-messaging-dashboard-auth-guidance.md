@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p2
 issue_id: "006"
 tags: ["code-review","security","documentation"]
@@ -39,9 +39,9 @@ Rewrite the dashboard auth section to reflect the real builder methods and expli
 
 ## Acceptance Criteria
 
-- [ ] Messaging dashboard docs describe the real auth API
-- [ ] Docs clearly state the default auth mode and production-safe options
-- [ ] Examples compile against the current codebase
+- [x] Messaging dashboard docs describe the real auth API
+- [x] Docs clearly state the default auth mode and production-safe options
+- [x] Examples compile against the current codebase
 
 ## Notes
 
@@ -54,3 +54,23 @@ Review of branch xshaheen/review-transports on 2026-03-25.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-25 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-25 - Implemented
+
+**By:** Agent
+**Actions:**
+- Rewrote the dashboard auth guidance in generated messaging docs to match the real fluent API
+- Updated examples to use `WithBasicAuth`, `WithHostAuthentication`, `WithApiKey`, and `WithCustomAuth`
+- Corrected the package README custom-auth example to match the current delegate signature
+
+### 2026-03-25 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

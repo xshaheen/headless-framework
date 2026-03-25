@@ -39,7 +39,7 @@ internal sealed class NatsConsumerClient(
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-    public BrokerAddress BrokerAddress => new("nats", _natsOptions.Servers);
+    public BrokerAddress BrokerAddress => new("nats", _natsOptions.GetSanitizedServersForDisplay());
 
     public async Task ConnectAsync()
     {
@@ -56,19 +56,16 @@ internal sealed class NatsConsumerClient(
             return topicNames.ToList();
         }
 
-        // Group topics by stream name, then create each stream with a wildcard
-        // subject (e.g., "orders.>") instead of explicit subject lists. This is
-        // multi-instance safe: all instances create the same stream with the same
-        // wildcard, eliminating subject-overwrite races. Individual consumers use
-        // FilterSubject on their ConsumerConfig for precise topic matching.
-        var streamNames = topicNames.Select(x => _natsOptions.NormalizeStreamName(x)).Distinct(StringComparer.Ordinal);
+        // Preserve wildcard coverage for hierarchical subjects, but add exact
+        // subjects for bare/non-prefix topics that the wildcard cannot match.
+        var streamGroups = topicNames.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
 
-        foreach (var streamName in streamNames)
+        foreach (var streamGroup in streamGroups)
         {
             var config = new StreamConfig
             {
-                Name = streamName,
-                Subjects = [$"{streamName}.>"],
+                Name = streamGroup.Key,
+                Subjects = [.. BuildStreamSubjects(streamGroup.Key, streamGroup)],
                 NoAck = false,
                 Storage = StreamConfigStorage.File,
             };
@@ -79,6 +76,39 @@ internal sealed class NatsConsumerClient(
         }
 
         return topicNames.ToList();
+    }
+
+    internal static IReadOnlyList<string> BuildStreamSubjects(string streamName, IEnumerable<string> topicNames)
+    {
+        Argument.IsNotNull(topicNames);
+
+        var subjects = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var hierarchicalPrefix = streamName + ".";
+        var hasHierarchicalSubjects = false;
+
+        foreach (var topicName in topicNames)
+        {
+            if (!seen.Add(topicName))
+            {
+                continue;
+            }
+
+            if (topicName.StartsWith(hierarchicalPrefix, StringComparison.Ordinal))
+            {
+                hasHierarchicalSubjects = true;
+                continue;
+            }
+
+            subjects.Add(topicName);
+        }
+
+        if (hasHierarchicalSubjects)
+        {
+            subjects.Add($"{streamName}.>");
+        }
+
+        return subjects;
     }
 
     public ValueTask SubscribeAsync(IEnumerable<string> topics)
@@ -212,28 +242,30 @@ internal sealed class NatsConsumerClient(
         {
             await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-            // Don't pass cancellationToken — body must always run so finally releases semaphore
-            _ = Task.Run(async () =>
-            {
-                try
+            _ = RunConcurrentHandlerIgnoringCancellation(
+                async () =>
                 {
-                    await _ProcessMessageAsync(msg).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    OnLogCallback?.Invoke(
-                        new LogMessageEventArgs
-                        {
-                            LogType = MqLogType.ExceptionReceived,
-                            Reason = $"Unhandled exception in concurrent message handler: {ex}",
-                        }
-                    );
-                }
-                finally
-                {
-                    _ReleaseSemaphore();
-                }
-            });
+                    try
+                    {
+                        await _ProcessMessageAsync(msg).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        OnLogCallback?.Invoke(
+                            new LogMessageEventArgs
+                            {
+                                LogType = MqLogType.ExceptionReceived,
+                                Reason = $"Unhandled exception in concurrent message handler: {ex}",
+                            }
+                        );
+                    }
+                    finally
+                    {
+                        _ReleaseSemaphore();
+                    }
+                },
+                cancellationToken
+            );
         }
         else
         {
@@ -252,6 +284,17 @@ internal sealed class NatsConsumerClient(
                 );
             }
         }
+    }
+
+    internal static Task RunConcurrentHandlerIgnoringCancellation(
+        Func<Task> handler,
+        CancellationToken cancellationToken
+    )
+    {
+        _ = cancellationToken;
+
+        // Scheduling must ignore cancellation so the release finally always runs.
+        return Task.Run(handler);
     }
 
     private static TimeSpan _NextBackoff(TimeSpan current, TimeSpan floor = default)

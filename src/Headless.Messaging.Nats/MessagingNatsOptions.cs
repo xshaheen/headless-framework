@@ -72,6 +72,38 @@ public sealed class MessagingNatsOptions
         var opts = NatsOpts.Default with { Url = Servers };
         return ConfigureConnection is not null ? ConfigureConnection(opts) : opts;
     }
+
+    internal string GetSanitizedServersForDisplay()
+    {
+        return string.Join(
+            ",",
+            Servers
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(_SanitizeServerForDisplay)
+        );
+    }
+
+    private static string _SanitizeServerForDisplay(string server)
+    {
+        if (!Uri.TryCreate(server, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return server;
+        }
+
+        var builder = new UriBuilder(uri) { UserName = string.Empty, Password = string.Empty };
+        var sanitized = builder.Uri.GetLeftPart(UriPartial.Authority);
+        if (uri.PathAndQuery is { Length: > 1 })
+        {
+            sanitized += uri.PathAndQuery;
+        }
+
+        if (!string.IsNullOrEmpty(uri.Fragment))
+        {
+            sanitized += uri.Fragment;
+        }
+
+        return sanitized;
+    }
 }
 
 internal sealed class MessagingNatsOptionsValidator : AbstractValidator<MessagingNatsOptions>

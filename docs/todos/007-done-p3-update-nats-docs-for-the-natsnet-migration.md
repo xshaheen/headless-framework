@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p3
 issue_id: "007"
 tags: ["code-review","documentation","agent-native"]
@@ -39,9 +39,9 @@ Update the NATS README to the current API and regenerate the LLM docs from that 
 
 ## Acceptance Criteria
 
-- [ ] README examples use `UseNats` and the current option names
-- [ ] Dependency bullets reference `NATS.Net` correctly
-- [ ] Generated LLM docs no longer instruct users to use removed APIs
+- [x] README examples use `UseNats` and the current option names
+- [x] Dependency bullets reference `NATS.Net` correctly
+- [x] Generated LLM docs no longer instruct users to use removed APIs
 
 ## Notes
 
@@ -54,3 +54,22 @@ Review of branch xshaheen/review-transports on 2026-03-25.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-25 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-25 - Implemented
+
+**By:** Agent
+**Actions:**
+- Updated the NATS README package name, install command, and stream auto-creation guidance
+- Rewrote the generated messaging docs to the current `UseNats` and `NATS.Net` API surface
+
+### 2026-03-25 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

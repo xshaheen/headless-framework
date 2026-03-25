@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p2
 issue_id: "005"
 tags: ["code-review","security","dotnet","nats"]
@@ -39,9 +39,9 @@ Introduce a sanitized endpoint representation for broker addresses and logs, lea
 
 ## Acceptance Criteria
 
-- [ ] No log or BrokerAddress path emits NATS credentials
-- [ ] Multi-server connection strings are redacted safely
-- [ ] Regression coverage verifies usernames/passwords are removed from surfaced endpoints
+- [x] No log or BrokerAddress path emits NATS credentials
+- [x] Multi-server connection strings are redacted safely
+- [x] Regression coverage verifies usernames/passwords are removed from surfaced endpoints
 
 ## Notes
 
@@ -54,3 +54,22 @@ Review of branch xshaheen/review-transports on 2026-03-25.
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-25 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-25 - Implemented
+
+**By:** Agent
+**Actions:**
+- Added sanitized server-display helpers for broker addresses and connection-pool surfaces
+- Added unit coverage for single-server and multi-server credential redaction
+
+### 2026-03-25 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

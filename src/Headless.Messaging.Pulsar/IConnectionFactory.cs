@@ -56,7 +56,7 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 
         if (_client is not null)
         {
-            await _client.DisposeAsync().ConfigureAwait(false);
+            await _client.CloseAsync().ConfigureAwait(false);
         }
     }
 

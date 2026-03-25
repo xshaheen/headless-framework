@@ -136,7 +136,7 @@ public sealed class KafkaConsumerClientTests : TestBase
             .Received(1)
             .CreateTopicsAsync(
                 Arg.Is<IEnumerable<TopicSpecification>>(specs =>
-                    specs.Select(x => x.Name).SequenceEqual(["orders.created"])
+                    specs.Select(x => x.Name).SequenceEqual(new[] { "orders.created" })
                 ),
                 Arg.Any<CreateTopicsOptions>()
             );

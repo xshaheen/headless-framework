@@ -1,4 +1,4 @@
-# Headless.Messaging.NATS
+# Headless.Messaging.Nats
 
 NATS JetStream transport provider for the Headless messaging system.
 
@@ -12,7 +12,7 @@ NATS JetStream transport provider for the Headless messaging system.
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.NATS
+dotnet add package Headless.Messaging.Nats
 ```
 
 ## Quick Start
@@ -55,9 +55,9 @@ options.UseNats(nats =>
 
 ### Stream Auto-Creation
 
-By default, consumer clients create JetStream streams with wildcard subjects on startup
-(`AutoCreateStreams` via `EnableSubscriberClientStreamAndSubjectCreation`). For production
-deployments requiring fine-grained control, disable this and manage streams externally:
+By default, consumer clients create JetStream streams and subjects on startup via
+`EnableSubscriberClientStreamAndSubjectCreation`. For production deployments requiring
+fine-grained control, disable this and manage streams externally:
 
 ```csharp
 nats.EnableSubscriberClientStreamAndSubjectCreation = false;

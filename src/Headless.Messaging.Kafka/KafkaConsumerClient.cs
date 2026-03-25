@@ -11,24 +11,33 @@ using Headers = Headless.Messaging.Headers;
 
 namespace Headless.Messaging.Kafka;
 
-internal sealed class KafkaConsumerClient(
-    string groupId,
-    byte groupConcurrent,
-    IOptions<MessagingKafkaOptions> options,
-    IServiceProvider serviceProvider,
-    Func<ConsumerConfig, IConsumer<string, byte[]>>? consumerFactory = null,
-    Func<AdminClientConfig, IAdminClient>? adminClientFactory = null
-) : IConsumerClient
+internal sealed class KafkaConsumerClient : IConsumerClient
 {
+    private readonly string _groupId;
     private readonly Lock _lock = new();
-    private readonly MessagingKafkaOptions _kafkaOptions = Argument.IsNotNull(options.Value);
+    private readonly MessagingKafkaOptions _kafkaOptions;
     private readonly ConsumerPauseGate _pauseGate = new();
-    private readonly Func<ConsumerConfig, IConsumer<string, byte[]>> _consumerFactory =
-        consumerFactory ?? _BuildConsumer;
-    private readonly Func<AdminClientConfig, IAdminClient> _adminClientFactory =
-        adminClientFactory ?? _BuildAdminClient;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly Func<ConsumerConfig, IConsumer<string, byte[]>> _consumerFactory;
+    private readonly Func<AdminClientConfig, IAdminClient> _adminClientFactory;
     private IConsumer<string, byte[]>? _consumerClient;
     private int _disposed;
+
+    public KafkaConsumerClient(
+        string groupId,
+        byte groupConcurrent,
+        IOptions<MessagingKafkaOptions> options,
+        IServiceProvider serviceProvider,
+        Func<ConsumerConfig, IConsumer<string, byte[]>>? consumerFactory = null,
+        Func<AdminClientConfig, IAdminClient>? adminClientFactory = null
+    )
+    {
+        _groupId = groupId;
+        _kafkaOptions = Argument.IsNotNull(options.Value);
+        _serviceProvider = serviceProvider;
+        _consumerFactory = consumerFactory ?? _BuildConsumer;
+        _adminClientFactory = adminClientFactory ?? _BuildAdminClient;
+    }
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -261,7 +270,7 @@ internal sealed class KafkaConsumerClient(
                     new Dictionary<string, string>(_kafkaOptions.MainConfig, StringComparer.Ordinal)
                 );
                 config.BootstrapServers ??= _kafkaOptions.Servers;
-                config.GroupId ??= groupId;
+                config.GroupId ??= _groupId;
                 config.AutoOffsetReset ??= AutoOffsetReset.Earliest;
                 config.AllowAutoCreateTopics ??= true;
                 config.EnableAutoCommit ??= false;
@@ -281,11 +290,11 @@ internal sealed class KafkaConsumerClient(
             headers[header.Key] = val != null ? Encoding.UTF8.GetString(val) : null;
         }
 
-        headers[Headers.Group] = groupId;
+        headers[Headers.Group] = _groupId;
 
         if (_kafkaOptions.CustomHeadersBuilder != null)
         {
-            var customHeaders = _kafkaOptions.CustomHeadersBuilder(consumerResult, serviceProvider);
+            var customHeaders = _kafkaOptions.CustomHeadersBuilder(consumerResult, _serviceProvider);
             foreach (var customHeader in customHeaders)
             {
                 headers[customHeader.Key] = customHeader.Value;

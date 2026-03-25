@@ -234,7 +234,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Use `InMemoryQueue` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
-- **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to anonymous access — set `AllowAnonymousExplicit = false` and `AuthorizationPolicy` for production.
+- **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication — configure `WithBasicAuth`, `WithApiKey`, or `WithHostAuthentication` for production.
 - **Messages are type-safe**: Define message types as classes/records. Register consumers implementing `IConsume<TMessage>`. Use `SubscribeFromAssemblyContaining<TMarker>()` or `SubscribeFromAssembly(assembly)` for automatic registration.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, filters, diagnostics, retry, and correlation semantics with class handlers.
 - **Two publisher modes**: Use `IOutboxPublisher` for reliable at-least-once delivery (transactional outbox). Use `IDirectPublisher` for fire-and-forget low-latency scenarios (metrics, cache invalidation).
@@ -696,8 +696,7 @@ builder.Services.AddHeadlessMessaging(options =>
 
     options.UseDashboard(dashboard =>
     {
-        dashboard.AllowAnonymousExplicit = false;
-        dashboard.AuthorizationPolicy = "DashboardPolicy";
+        dashboard.WithBasicAuth("admin", "password");
     });
 
     options.SubscribeFromAssemblyContaining<Program>();
@@ -708,24 +707,50 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
-You **must** explicitly choose an auth mode — either allow anonymous or set a policy. Omitting both throws at startup.
+The dashboard defaults to `WithNoAuth()`. For production, configure one of the supported authentication modes explicitly.
 
-### With Authorization Policy
+### No Authentication
 
 ```csharp
 options.UseDashboard(dashboard =>
 {
-    dashboard.AllowAnonymousExplicit = false;
-    dashboard.AuthorizationPolicy = "DashboardPolicy";
+    dashboard.WithNoAuth();
 });
 ```
 
-### Anonymous Access (Dev/Testing Only)
+### Basic Authentication
 
 ```csharp
 options.UseDashboard(dashboard =>
 {
-    dashboard.AllowAnonymousExplicit = true;
+    dashboard.WithBasicAuth("admin", "password");
+});
+```
+
+### API Key Authentication
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.WithApiKey("super-secret-api-key");
+});
+```
+
+### Host Authentication
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.WithHostAuthentication("DashboardPolicy");
+});
+```
+
+### Custom Authentication
+
+```csharp
+options.UseDashboard(dashboard =>
+{
+    dashboard.WithCustomAuth((token, services) => ValidateToken(token, services));
 });
 ```
 
@@ -736,19 +761,23 @@ options.UseDashboard(dashboard =>
 | `PathMatch` | `/messaging` | URL path for the dashboard |
 | `PathBase` | `""` | Base path when behind a reverse proxy |
 | `StatsPollingInterval` | `2000` | Stats endpoint polling interval (ms) |
-| `AllowAnonymousExplicit` | `false` | Allow unauthenticated access. Must be set to `true` or `AuthorizationPolicy` must be configured |
-| `AuthorizationPolicy` | `null` | ASP.NET Core authorization policy name. Required when `AllowAnonymousExplicit` is `false` |
+| `WithNoAuth()` | Enabled by default | Exposes the dashboard without authentication |
+| `WithBasicAuth(username, password)` | Disabled | Enables username/password authentication |
+| `WithApiKey(apiKey)` | Disabled | Enables API key authentication |
+| `WithHostAuthentication(policy?)` | Disabled | Uses ASP.NET Core host authentication with optional policy |
+| `WithCustomAuth(validator)` | Disabled | Uses a custom token validator |
 
 ## Dependencies
 
 - `Headless.Messaging.Core`
+- `Headless.Dashboard.Authentication`
 - Embedded web UI assets
 
 ## Side Effects
 
 - Exposes web endpoint at configured path (default: `/messaging`)
 - Periodically polls message storage for statistics
-- Anonymous by default — configure `AuthorizationPolicy` for production use
+- No authentication by default — configure an auth mode for production use
 ---
 # Headless.Messaging.Dashboard.K8s
 
@@ -1165,13 +1194,13 @@ options.EnableSubscriberParallelExecute = false; // Disable parallel execution
 - Establishes persistent connections to Kafka brokers
 - Joins consumer groups for load balancing
 ---
-# Headless.Messaging.NATS
+# Headless.Messaging.Nats
 
 NATS messaging system transport provider for the messaging system.
 
 ## Problem Solved
 
-Enables lightweight, cloud-native messaging using NATS with JetStream for persistence, subjects for routing, and NATS Streaming for reliable delivery.
+Enables lightweight, cloud-native messaging using NATS with JetStream for persistence and subjects for routing.
 
 ## Key Features
 
@@ -1184,7 +1213,7 @@ Enables lightweight, cloud-native messaging using NATS with JetStream for persis
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.NATS
+dotnet add package Headless.Messaging.Nats
 ```
 
 ## Quick Start
@@ -1194,7 +1223,7 @@ builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
-    options.UseNATS(nats =>
+    options.UseNats(nats =>
     {
         nats.Servers = "nats://localhost:4222";
     });
@@ -1206,23 +1235,41 @@ builder.Services.AddHeadlessMessaging(options =>
 ## Configuration
 
 ```csharp
-options.UseNATS(nats =>
+options.UseNats(nats =>
 {
     nats.Servers = "nats://localhost:4222,nats://localhost:4223";
     nats.ConnectionPoolSize = 10;
-    nats.EnableJetStream = true;
+
+    nats.StreamOptions = config =>
+    {
+        config.Storage = StreamConfigStorage.Memory;
+    };
+
+    nats.ConfigureConnection = opts => opts with
+    {
+        ConnectTimeout = TimeSpan.FromSeconds(10),
+    };
 });
+```
+
+### Stream Auto-Creation
+
+By default, consumer clients create JetStream streams and subjects on startup via
+`EnableSubscriberClientStreamAndSubjectCreation`. Disable this when streams are managed externally:
+
+```csharp
+nats.EnableSubscriberClientStreamAndSubjectCreation = false;
 ```
 
 ## Dependencies
 
 - `Headless.Messaging.Core`
-- `NATS.Client`
+- `NATS.Net`
 
 ## Side Effects
 
 - Establishes persistent connections to NATS servers
-- Creates JetStream streams if enabled
+- Creates JetStream streams and consumers if enabled
 - Subscribes to subjects for message consumption
 ---
 # Headless.Messaging.Pulsar
