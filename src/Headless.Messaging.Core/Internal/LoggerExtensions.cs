@@ -8,19 +8,15 @@ internal static partial class LoggerExtensions
 {
     [LoggerMessage(
         EventId = 1,
-        EventName = "ConsumerExecutedAfterThreshold",
+        EventName = "ConsumerReceivedMessageAfterThreshold",
         Level = LogLevel.Warning,
-        Message = "The Subscriber of the message({MessageId}) still fails after {Retries}th executions and we will stop retrying."
+        Message = "The subscriber of received message {MessageId} still fails after {Retries} executions and will stop retrying."
     )]
-    public static partial void ConsumerExecutedAfterThreshold(this ILogger logger, string messageId, int retries);
-
-    [LoggerMessage(
-        EventId = 2,
-        EventName = "SenderAfterThreshold",
-        Level = LogLevel.Warning,
-        Message = "The Publisher of the message({MessageId}) still fails after {Retries}th sends and we will stop retrying."
-    )]
-    public static partial void SenderAfterThreshold(this ILogger logger, string messageId, int retries);
+    public static partial void ConsumerReceivedMessageAfterThreshold(
+        this ILogger logger,
+        string messageId,
+        int retries
+    );
 
     [LoggerMessage(
         EventId = 3,

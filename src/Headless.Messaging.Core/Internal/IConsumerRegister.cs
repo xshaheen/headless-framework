@@ -510,7 +510,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                             }
                         );
 
-                        _logger.ConsumerExecutedAfterThreshold(message.GetId(), _options.FailedRetryCount);
+                        _logger.ConsumerReceivedMessageAfterThreshold(message.GetId(), _options.FailedRetryCount);
                     }
                     catch (Exception e)
                     {

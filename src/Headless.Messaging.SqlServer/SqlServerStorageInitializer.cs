@@ -125,13 +125,13 @@ public sealed class SqlServerStorageInitializer(
             IF COL_LENGTH('{options.Value.Schema}.Published', 'MessageId') IS NULL
             BEGIN
                 ALTER TABLE {GetPublishedTableName()} ADD [MessageId] [nvarchar](200) NULL;
+
+                UPDATE {GetPublishedTableName()}
+                SET [MessageId] = CONVERT(nvarchar(200), [Id])
+                WHERE [MessageId] IS NULL;
+
+                ALTER TABLE {GetPublishedTableName()} ALTER COLUMN [MessageId] [nvarchar](200) NOT NULL;
             END;
-
-            UPDATE {GetPublishedTableName()}
-            SET [MessageId] = CONVERT(nvarchar(200), [Id])
-            WHERE [MessageId] IS NULL;
-
-            ALTER TABLE {GetPublishedTableName()} ALTER COLUMN [MessageId] [nvarchar](200) NOT NULL;
 
             """;
 
