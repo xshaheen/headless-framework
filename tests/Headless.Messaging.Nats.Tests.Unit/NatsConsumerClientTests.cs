@@ -4,6 +4,7 @@ using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using NATS.Client.Core;
 using NATS.Client.JetStream;
 using MsOptions = Microsoft.Extensions.Options;
 
@@ -236,8 +237,117 @@ public sealed class NatsConsumerClientTests : TestBase
         loggedArgs.Reason.Should().Contain("nak failed");
     }
 
+    [Fact]
+    public async Task ListeningAsync_should_not_fetch_messages_until_resumed()
+    {
+        // given
+        var nextCallCount = 0;
+        var consumer = Substitute.For<INatsJSConsumer>();
+        consumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref nextCallCount);
+                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>((INatsJSMsg<ReadOnlyMemory<byte>>?)null);
+            });
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        );
+        await client.SubscribeAsync(["orders.created"]);
+        await client.PauseAsync();
+
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        await Task.Delay(100, AbortToken);
+
+        // then
+        nextCallCount.Should().Be(0);
+
+        await client.ResumeAsync();
+        await WaitUntilAsync(() => Volatile.Read(ref nextCallCount) > 0, TimeSpan.FromSeconds(1));
+
+        await cts.CancelAsync();
+        await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+    }
+
+    [Fact]
+    public async Task PauseAsync_should_cancel_inflight_fetch()
+    {
+        // given
+        var nextStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var fetchCanceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var consumer = Substitute.For<INatsJSConsumer>();
+        consumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async call =>
+            {
+                var token = call.Arg<CancellationToken>();
+                nextStarted.TrySetResult();
+
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                    return null;
+                }
+                catch (OperationCanceledException)
+                {
+                    fetchCanceled.TrySetResult();
+                    throw;
+                }
+            });
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        );
+        await client.SubscribeAsync(["orders.created"]);
+
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        await nextStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await client.PauseAsync();
+
+        // then
+        await fetchCanceled.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+        await cts.CancelAsync();
+        await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+    }
+
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)
     {
         return new NatsConsumerClient(groupName, groupConcurrent, _options, _serviceProvider);
+    }
+
+    private async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        cts.CancelAfter(timeout);
+
+        while (!condition())
+        {
+            cts.Token.ThrowIfCancellationRequested();
+            await Task.Delay(20, cts.Token);
+        }
     }
 }

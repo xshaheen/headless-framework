@@ -15,17 +15,22 @@ internal sealed class NatsConsumerClient(
     string name,
     byte groupConcurrent,
     IOptions<MessagingNatsOptions> options,
-    IServiceProvider serviceProvider
+    IServiceProvider serviceProvider,
+    Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? consumerFactory = null
 ) : IConsumerClient
 {
+    private readonly Lock _receiveLock = new();
     private readonly MessagingNatsOptions _natsOptions =
         options.Value ?? throw new ArgumentNullException(nameof(options));
 
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? _consumerFactory =
+        consumerFactory;
 
     private NatsConnection? _connection;
     private NatsJSContext? _jsContext;
+    private CancellationTokenSource _receiveCts = new();
     private IEnumerable<string>? _subscribedTopics;
     private int _disposed;
 
@@ -50,14 +55,19 @@ internal sealed class NatsConsumerClient(
             return topicNames.ToList();
         }
 
-        var streamSubjectsGroups = topicNames.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
+        // Group topics by stream name, then create each stream with a wildcard
+        // subject (e.g., "orders.>") instead of explicit subject lists. This is
+        // multi-instance safe: all instances create the same stream with the same
+        // wildcard, eliminating subject-overwrite races. Individual consumers use
+        // FilterSubject on their ConsumerConfig for precise topic matching.
+        var streamNames = topicNames.Select(x => _natsOptions.NormalizeStreamName(x)).Distinct(StringComparer.Ordinal);
 
-        foreach (var streamSubjectsGroup in streamSubjectsGroups)
+        foreach (var streamName in streamNames)
         {
             var config = new StreamConfig
             {
-                Name = streamSubjectsGroup.Key,
-                Subjects = streamSubjectsGroup.ToList(),
+                Name = streamName,
+                Subjects = [$"{streamName}.>"],
                 NoAck = false,
                 Storage = StreamConfigStorage.Memory,
             };
@@ -66,18 +76,11 @@ internal sealed class NatsConsumerClient(
 
             try
             {
-                await _jsContext!.UpdateStreamAsync(config).ConfigureAwait(false);
+                await _jsContext!.CreateStreamAsync(config).ConfigureAwait(false);
             }
-            catch (NatsJSApiException ex) when (ex.Error.Code == 404)
+            catch (NatsJSApiException e) when (e.Error.Code == 409)
             {
-                try
-                {
-                    await _jsContext!.CreateStreamAsync(config).ConfigureAwait(false);
-                }
-                catch (NatsJSApiException e) when (e.Error.Code == 409)
-                {
-                    // Stream was created by another instance between check and create
-                }
+                // Stream already exists — safe to ignore, wildcard subject is idempotent
             }
         }
 
@@ -115,7 +118,7 @@ internal sealed class NatsConsumerClient(
 
                 _natsOptions.ConsumerOptions?.Invoke(consumerConfig);
 
-                tasks.Add(_ConsumeSubjectAsync(streamGroup.Key, consumerConfig, cancellationToken));
+                tasks.Add(_ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, cancellationToken));
             }
         }
 
@@ -125,6 +128,7 @@ internal sealed class NatsConsumerClient(
     private async Task _ConsumeSubjectAsync(
         string streamName,
         ConsumerConfig consumerConfig,
+        TimeSpan timeout,
         CancellationToken cancellationToken
     )
     {
@@ -137,23 +141,36 @@ internal sealed class NatsConsumerClient(
         {
             try
             {
-                var consumer = await _jsContext!
-                    .CreateOrUpdateConsumerAsync(streamName, consumerConfig, cancellationToken)
-                    .ConfigureAwait(false);
+                var consumer = _consumerFactory is not null
+                    ? await _consumerFactory(streamName, consumerConfig, cancellationToken).ConfigureAwait(false)
+                    : await _jsContext!
+                        .CreateOrUpdateConsumerAsync(streamName, consumerConfig, cancellationToken)
+                        .ConfigureAwait(false);
 
-                await foreach (
-                    var msg in consumer
-                        .ConsumeAsync<ReadOnlyMemory<byte>>(
-                            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
-                            cancellationToken: cancellationToken
-                        )
-                        .ConfigureAwait(false)
-                )
+                while (!cancellationToken.IsCancellationRequested)
                 {
+                    await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+
+                    using var receiveCts = CancellationTokenSource.CreateLinkedTokenSource(
+                        cancellationToken,
+                        _GetReceiveToken()
+                    );
+
+                    var msg = await consumer
+                        .NextAsync(
+                            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+                            opts: _CreateNextOptions(timeout),
+                            cancellationToken: receiveCts.Token
+                        )
+                        .ConfigureAwait(false);
+
+                    if (msg is null)
+                    {
+                        continue;
+                    }
+
                     // Successful receive proves the consumer/stream is healthy — reset backoff
                     retryDelay = TimeSpan.FromSeconds(1);
-
-                    await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 
                     if (groupConcurrent > 0)
                     {
@@ -207,6 +224,10 @@ internal sealed class NatsConsumerClient(
             {
                 break;
             }
+            catch (OperationCanceledException) when (_pauseGate.IsPaused)
+            {
+                continue;
+            }
             catch (NatsJSApiException ex)
             {
                 // API errors (stream not ready, deleted, permissions) — longer initial backoff
@@ -237,6 +258,16 @@ internal sealed class NatsConsumerClient(
                 retryDelay = TimeSpan.FromTicks(Math.Min(retryDelay.Ticks * 2, TimeSpan.FromSeconds(30).Ticks));
             }
         }
+    }
+
+    private static NatsJSNextOpts? _CreateNextOptions(TimeSpan timeout)
+    {
+        if (timeout <= TimeSpan.Zero)
+        {
+            return null;
+        }
+
+        return new NatsJSNextOpts { Expires = timeout };
     }
 
     private async Task _ProcessMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg)
@@ -333,14 +364,20 @@ internal sealed class NatsConsumerClient(
     {
         if (Volatile.Read(ref _disposed) != 0)
             return;
-        await _pauseGate.PauseAsync();
+        if (!await _pauseGate.PauseAsync())
+            return;
+
+        _CancelReceives();
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0)
             return;
-        await _pauseGate.ResumeAsync();
+        if (!await _pauseGate.ResumeAsync())
+            return;
+
+        _ResetReceiveToken();
     }
 
     public async ValueTask DisposeAsync()
@@ -349,11 +386,51 @@ internal sealed class NatsConsumerClient(
             return;
 
         _pauseGate.Release();
+        _CancelReceives();
+        _receiveCts.Dispose();
         _semaphore.Dispose();
 
         if (_connection is not null)
         {
             await _connection.DisposeAsync().ConfigureAwait(false);
         }
+    }
+
+    private CancellationToken _GetReceiveToken()
+    {
+        lock (_receiveLock)
+        {
+            return _receiveCts.Token;
+        }
+    }
+
+    private void _CancelReceives()
+    {
+        CancellationTokenSource receiveCts;
+        lock (_receiveLock)
+        {
+            receiveCts = _receiveCts;
+        }
+
+        try
+        {
+            receiveCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Shutdown already disposed the receive CTS.
+        }
+    }
+
+    private void _ResetReceiveToken()
+    {
+        CancellationTokenSource previous;
+        lock (_receiveLock)
+        {
+            previous = _receiveCts;
+            _receiveCts = new CancellationTokenSource();
+        }
+
+        previous.Dispose();
     }
 }

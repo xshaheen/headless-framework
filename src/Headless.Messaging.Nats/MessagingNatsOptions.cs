@@ -24,8 +24,18 @@ public sealed class MessagingNatsOptions
     public int ConnectionPoolSize { get; set; } = 10;
 
     /// <summary>
-    /// Allows a nats consumer client to dynamically create a stream and configure the expected subjects on the stream. Defaults to true.
+    /// Allows a NATS consumer client to dynamically create streams with wildcard subjects on startup.
+    /// Defaults to <c>true</c>.
     /// </summary>
+    /// <remarks>
+    /// When enabled, streams are created with a wildcard subject pattern (e.g., <c>orders.&gt;</c>)
+    /// derived from <see cref="NormalizeStreamName"/>. Individual consumers use <c>FilterSubject</c>
+    /// for precise topic matching. This is multi-instance safe — all instances create the same stream
+    /// with the same wildcard, so concurrent startups do not overwrite each other's subjects.
+    /// <para/>
+    /// For production deployments requiring fine-grained stream subject control, set this to <c>false</c>
+    /// and manage streams externally via NATS CLI or infrastructure tooling.
+    /// </remarks>
     public bool EnableSubscriberClientStreamAndSubjectCreation { get; set; } = true;
 
     /// <summary>
