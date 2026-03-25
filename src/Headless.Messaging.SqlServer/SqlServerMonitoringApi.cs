@@ -180,7 +180,7 @@ internal class SqlServerMonitoringApi(
             )
             .ConfigureAwait(false);
 
-        return new(items, query.CurrentPage, query.PageSize, (int)count);
+        return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(count, int.MaxValue));
     }
 
     public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)

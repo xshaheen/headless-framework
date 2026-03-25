@@ -138,7 +138,7 @@ public sealed class PostgreSqlMonitoringApi(
             new NpgsqlParameter("@Limit", query.PageSize),
         ];
 
-        var totalCount = 0;
+        long totalCount = 0;
         var items = await connection
             .ExecuteReaderAsync(
                 sqlQuery,
@@ -170,7 +170,7 @@ public sealed class PostgreSqlMonitoringApi(
                                 StatusName = reader.GetString(index++),
                             }
                         );
-                        totalCount = reader.GetInt32(index);
+                        totalCount = reader.GetInt64(index);
                     }
                     return messages;
                 },
@@ -179,7 +179,7 @@ public sealed class PostgreSqlMonitoringApi(
             )
             .ConfigureAwait(false);
 
-        return new(items, query.CurrentPage, query.PageSize, totalCount);
+        return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
     }
 
     public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
