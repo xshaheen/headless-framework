@@ -23,11 +23,12 @@ internal sealed class NatsConsumerClient(
     private readonly MessagingNatsOptions _natsOptions =
         options.Value ?? throw new ArgumentNullException(nameof(options));
 
-    private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? _consumerFactory =
         consumerFactory;
 
+    private readonly List<CancellationTokenSource> _oldReceiveCts = [];
     private NatsConnection? _connection;
     private NatsJSContext? _jsContext;
     private CancellationTokenSource _receiveCts = new();
@@ -69,19 +70,12 @@ internal sealed class NatsConsumerClient(
                 Name = streamName,
                 Subjects = [$"{streamName}.>"],
                 NoAck = false,
-                Storage = StreamConfigStorage.Memory,
+                Storage = StreamConfigStorage.File,
             };
 
             _natsOptions.StreamOptions?.Invoke(config);
 
-            try
-            {
-                await _jsContext!.CreateStreamAsync(config).ConfigureAwait(false);
-            }
-            catch (NatsJSApiException e) when (e.Error.Code == 409)
-            {
-                // Stream already exists — safe to ignore, wildcard subject is idempotent
-            }
+            await _jsContext!.CreateOrUpdateStreamAsync(config).ConfigureAwait(false);
         }
 
         return topicNames.ToList();
@@ -132,10 +126,8 @@ internal sealed class NatsConsumerClient(
         CancellationToken cancellationToken
     )
     {
-        // Shared across API and transient error paths — escalation carries
-        // over between error types intentionally so sustained mixed failures
-        // still back off. Reset on successful message receive (line below).
         var retryDelay = TimeSpan.FromSeconds(1);
+        var nextOpts = timeout > TimeSpan.Zero ? new NatsJSNextOpts { Expires = timeout } : (NatsJSNextOpts?)null;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -159,7 +151,7 @@ internal sealed class NatsConsumerClient(
                     var msg = await consumer
                         .NextAsync(
                             serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
-                            opts: _CreateNextOptions(timeout),
+                            opts: nextOpts,
                             cancellationToken: receiveCts.Token
                         )
                         .ConfigureAwait(false);
@@ -169,55 +161,8 @@ internal sealed class NatsConsumerClient(
                         continue;
                     }
 
-                    // Successful receive proves the consumer/stream is healthy — reset backoff
                     retryDelay = TimeSpan.FromSeconds(1);
-
-                    if (groupConcurrent > 0)
-                    {
-                        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-                        _ = Task.Run(
-                            async () =>
-                            {
-                                try
-                                {
-                                    await _ProcessMessageAsync(msg).ConfigureAwait(false);
-                                }
-                                catch (Exception ex)
-                                {
-                                    OnLogCallback?.Invoke(
-                                        new LogMessageEventArgs
-                                        {
-                                            LogType = MqLogType.ExceptionReceived,
-                                            Reason = $"Unhandled exception in concurrent message handler: {ex}",
-                                        }
-                                    );
-                                }
-                                finally
-                                {
-                                    _ReleaseSemaphore();
-                                }
-                            },
-                            cancellationToken
-                        );
-                    }
-                    else
-                    {
-                        try
-                        {
-                            await _ProcessMessageAsync(msg).ConfigureAwait(false);
-                        }
-                        catch (Exception ex)
-                        {
-                            OnLogCallback?.Invoke(
-                                new LogMessageEventArgs
-                                {
-                                    LogType = MqLogType.ExceptionReceived,
-                                    Reason = $"Unhandled exception in sequential message handler: {ex}",
-                                }
-                            );
-                        }
-                    }
+                    await _DispatchMessageAsync(msg, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -230,7 +175,6 @@ internal sealed class NatsConsumerClient(
             }
             catch (NatsJSApiException ex)
             {
-                // API errors (stream not ready, deleted, permissions) — longer initial backoff
                 OnLogCallback?.Invoke(
                     new LogMessageEventArgs
                     {
@@ -239,13 +183,12 @@ internal sealed class NatsConsumerClient(
                     }
                 );
 
-                var apiDelay = TimeSpan.FromTicks(Math.Max(retryDelay.Ticks, TimeSpan.FromSeconds(5).Ticks));
-                await Task.Delay(apiDelay, cancellationToken).ConfigureAwait(false);
-                retryDelay = TimeSpan.FromTicks(Math.Min(retryDelay.Ticks * 2, TimeSpan.FromSeconds(30).Ticks));
+                // API errors use a 5s floor before escalating
+                retryDelay = _NextBackoff(retryDelay, floor: TimeSpan.FromSeconds(5));
+                await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                // Transient errors (network, timeout) — shorter initial backoff
                 OnLogCallback?.Invoke(
                     new LogMessageEventArgs
                     {
@@ -254,20 +197,68 @@ internal sealed class NatsConsumerClient(
                     }
                 );
 
+                retryDelay = _NextBackoff(retryDelay);
                 await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
-                retryDelay = TimeSpan.FromTicks(Math.Min(retryDelay.Ticks * 2, TimeSpan.FromSeconds(30).Ticks));
             }
         }
     }
 
-    private static NatsJSNextOpts? _CreateNextOptions(TimeSpan timeout)
+    private async ValueTask _DispatchMessageAsync(
+        INatsJSMsg<ReadOnlyMemory<byte>> msg,
+        CancellationToken cancellationToken
+    )
     {
-        if (timeout <= TimeSpan.Zero)
+        if (_semaphore is not null)
         {
-            return null;
-        }
+            await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        return new NatsJSNextOpts { Expires = timeout };
+            // Don't pass cancellationToken — body must always run so finally releases semaphore
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _ProcessMessageAsync(msg).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ExceptionReceived,
+                            Reason = $"Unhandled exception in concurrent message handler: {ex}",
+                        }
+                    );
+                }
+                finally
+                {
+                    _ReleaseSemaphore();
+                }
+            });
+        }
+        else
+        {
+            try
+            {
+                await _ProcessMessageAsync(msg).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ExceptionReceived,
+                        Reason = $"Unhandled exception in sequential message handler: {ex}",
+                    }
+                );
+            }
+        }
+    }
+
+    private static TimeSpan _NextBackoff(TimeSpan current, TimeSpan floor = default)
+    {
+        var ceiling = TimeSpan.FromSeconds(30);
+        var next = TimeSpan.FromTicks(Math.Min(current.Ticks * 2, ceiling.Ticks));
+        return floor > next ? floor : next;
     }
 
     private async Task _ProcessMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg)
@@ -343,20 +334,20 @@ internal sealed class NatsConsumerClient(
 
     private void _ReleaseSemaphore()
     {
-        if (groupConcurrent > 0)
+        if (_semaphore is null)
+            return;
+
+        try
         {
-            try
-            {
-                _semaphore.Release();
-            }
-            catch (SemaphoreFullException)
-            {
-                // Defensive: ignore over-release
-            }
-            catch (ObjectDisposedException)
-            {
-                // Shutdown in progress — semaphore already disposed
-            }
+            _semaphore.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // Defensive: ignore over-release
+        }
+        catch (ObjectDisposedException)
+        {
+            // Shutdown in progress — semaphore already disposed
         }
     }
 
@@ -388,7 +379,7 @@ internal sealed class NatsConsumerClient(
         _pauseGate.Release();
         _CancelReceives();
         _receiveCts.Dispose();
-        _semaphore.Dispose();
+        _semaphore?.Dispose();
 
         if (_connection is not null)
         {
@@ -424,13 +415,12 @@ internal sealed class NatsConsumerClient(
 
     private void _ResetReceiveToken()
     {
-        CancellationTokenSource previous;
         lock (_receiveLock)
         {
-            previous = _receiveCts;
+            // Don't dispose previous CTS eagerly — the consume loop may still hold
+            // a token from it inside CreateLinkedTokenSource. Defer to DisposeAsync.
+            _oldReceiveCts.Add(_receiveCts);
             _receiveCts = new CancellationTokenSource();
         }
-
-        previous.Dispose();
     }
 }
