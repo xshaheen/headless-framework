@@ -133,23 +133,18 @@ public sealed class PostgreSqlDataStorage(
             return;
         }
 
-        var parameters = new object[storageIds.Length + 1];
-        var paramNames = new string[storageIds.Length];
+        var sql = $"UPDATE {_pubName} SET \"StatusName\"=@StatusName WHERE \"Id\" = ANY(@Ids);";
 
-        for (var i = 0; i < storageIds.Length; i++)
-        {
-            paramNames[i] = $"@Id{i}";
-            parameters[i] = new NpgsqlParameter($"@Id{i}", storageIds[i]);
-        }
-
-        parameters[^1] = new NpgsqlParameter("@StatusName", nameof(StatusName.Delayed));
-
-        var sql = $"UPDATE {_pubName} SET \"StatusName\"=@StatusName WHERE \"Id\" IN ({string.Join(',', paramNames)});";
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@Ids", storageIds),
+            new NpgsqlParameter("@StatusName", nameof(StatusName.Delayed)),
+        ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
 
         await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: parameters)
+            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
             .ConfigureAwait(false);
     }
 

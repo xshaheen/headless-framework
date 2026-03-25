@@ -124,25 +124,9 @@ public sealed class PostgreSqlMonitoringApi(
         }
 
         var sqlQuery =
-            $"SELECT {selectColumns} FROM {tableName} WHERE 1=1 {where} ORDER BY \"Added\" DESC OFFSET @Offset LIMIT @Limit";
+            $"SELECT {selectColumns}, COUNT(*) OVER() AS \"TotalCount\" FROM {tableName} WHERE 1=1 {where} ORDER BY \"Added\" DESC OFFSET @Offset LIMIT @Limit";
 
         await using var connection = _options.CreateConnection();
-
-        object[] countParams =
-        [
-            new NpgsqlParameter("@StatusName", query.StatusName ?? string.Empty),
-            new NpgsqlParameter("@Group", query.Group ?? string.Empty),
-            new NpgsqlParameter("@Name", query.Name ?? string.Empty),
-            new NpgsqlParameter("@Content", $"%{query.Content}%"),
-        ];
-
-        var count = await connection
-            .ExecuteScalarAsync(
-                $"SELECT COUNT(1) FROM {tableName} WHERE 1=1 {where}",
-                cancellationToken: cancellationToken,
-                sqlParams: countParams
-            )
-            .ConfigureAwait(false);
 
         object[] sqlParams =
         [
@@ -154,6 +138,7 @@ public sealed class PostgreSqlMonitoringApi(
             new NpgsqlParameter("@Limit", query.PageSize),
         ];
 
+        var totalCount = 0;
         var items = await connection
             .ExecuteReaderAsync(
                 sqlQuery,
@@ -182,9 +167,10 @@ public sealed class PostgreSqlMonitoringApi(
                                 ExpiresAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(index - 1),
-                                StatusName = reader.GetString(index),
+                                StatusName = reader.GetString(index++),
                             }
                         );
+                        totalCount = reader.GetInt32(index);
                     }
                     return messages;
                 },
@@ -193,7 +179,7 @@ public sealed class PostgreSqlMonitoringApi(
             )
             .ConfigureAwait(false);
 
-        return new(items, query.CurrentPage, query.PageSize, (int)count);
+        return new(items, query.CurrentPage, query.PageSize, totalCount);
     }
 
     public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
@@ -255,12 +241,11 @@ public sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var endDate = timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
         var dates = new List<DateTime>();
         for (var i = 0; i < 24; i++)
         {
-            dates.Add(endDate);
-            endDate = endDate.AddHours(-1);
+            dates.Add(now.AddHours(-i));
         }
 
         var keyMaps = dates.ToDictionary(
@@ -269,13 +254,15 @@ public sealed class PostgreSqlMonitoringApi(
             StringComparer.Ordinal
         );
 
-        return _GetTimelineStats(tableName, statusName, keyMaps, cancellationToken);
+        return _GetTimelineStats(tableName, statusName, keyMaps, dates[^1], now, cancellationToken);
     }
 
     private async Task<Dictionary<DateTime, int>> _GetTimelineStats(
         string tableName,
         string statusName,
         Dictionary<string, DateTime> keyMaps,
+        DateTime minAdded,
+        DateTime maxAdded,
         CancellationToken cancellationToken = default
     )
     {
@@ -284,17 +271,17 @@ public sealed class PostgreSqlMonitoringApi(
                 SELECT to_char("Added",'yyyy-MM-dd-HH') AS "Key",
                 COUNT("Id") AS "Count"
                 FROM {tableName}
-                    WHERE "StatusName" = @StatusName
+                    WHERE "StatusName" = @StatusName AND "Added" >= @MinAdded AND "Added" <= @MaxAdded
                 GROUP BY to_char("Added", 'yyyy-MM-dd-HH')
             )
-            SELECT "Key","Count" from Aggr WHERE "Key" >= @MinKey AND "Key" <= @MaxKey;
+            SELECT "Key","Count" from Aggr;
             """;
 
         object[] sqlParams =
         [
             new NpgsqlParameter("@StatusName", statusName),
-            new NpgsqlParameter("@MinKey", keyMaps.Keys.Min()),
-            new NpgsqlParameter("@MaxKey", keyMaps.Keys.Max()),
+            new NpgsqlParameter("@MinAdded", minAdded),
+            new NpgsqlParameter("@MaxAdded", maxAdded),
         ];
 
         await using var connection = _options.CreateConnection();
