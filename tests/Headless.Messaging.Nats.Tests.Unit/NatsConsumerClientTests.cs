@@ -394,6 +394,90 @@ public sealed class NatsConsumerClientTests : TestBase
         await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
     }
 
+    [Fact]
+    public async Task PauseAsync_and_ResumeAsync_should_restart_fetch_with_a_fresh_receive_token()
+    {
+        // given
+        var startedSignals = new[]
+        {
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var canceledSignals = new[]
+        {
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+        };
+        var seenTokens = new List<CancellationToken>();
+        var nextCallCount = 0;
+        var consumer = Substitute.For<INatsJSConsumer>();
+        consumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async call =>
+            {
+                var callIndex = Interlocked.Increment(ref nextCallCount) - 1;
+                var token = call.Arg<CancellationToken>();
+
+                lock (seenTokens)
+                {
+                    seenTokens.Add(token);
+                }
+
+                if (callIndex < startedSignals.Length)
+                {
+                    startedSignals[callIndex].TrySetResult();
+                }
+
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                    return null;
+                }
+                catch (OperationCanceledException)
+                {
+                    if (callIndex < canceledSignals.Length)
+                    {
+                        canceledSignals[callIndex].TrySetResult();
+                    }
+
+                    throw;
+                }
+            });
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        );
+        await client.SubscribeAsync(["orders.created"]);
+
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        await startedSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await client.PauseAsync();
+        await canceledSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+        await client.ResumeAsync();
+        await startedSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        await client.PauseAsync();
+        await canceledSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+        // then
+        seenTokens.Should().HaveCountGreaterThanOrEqualTo(2);
+        seenTokens[0].Should().NotBe(seenTokens[1]);
+
+        await cts.CancelAsync();
+        await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+    }
+
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)
     {
         return new NatsConsumerClient(groupName, groupConcurrent, _options, _serviceProvider);

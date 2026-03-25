@@ -17,10 +17,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly Lock _lock = new();
     private readonly MessagingKafkaOptions _kafkaOptions;
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly byte _requestedConcurrency;
     private readonly IServiceProvider _serviceProvider;
     private readonly Func<ConsumerConfig, IConsumer<string, byte[]>> _consumerFactory;
     private readonly Func<AdminClientConfig, IAdminClient> _adminClientFactory;
     private IConsumer<string, byte[]>? _consumerClient;
+    private int _configurationWarningLogged;
     private int _disposed;
 
     public KafkaConsumerClient(
@@ -34,6 +36,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     {
         _groupId = groupId;
         _kafkaOptions = Argument.IsNotNull(options.Value);
+        _requestedConcurrency = groupConcurrent;
         _serviceProvider = serviceProvider;
         _consumerFactory = consumerFactory ?? _BuildConsumer;
         _adminClientFactory = adminClientFactory ?? _BuildAdminClient;
@@ -124,6 +127,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         Connect();
+        _LogSequentialProcessingConfigurationWarningIfNeeded();
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -309,6 +313,23 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private IConsumer<string, byte[]> _BuildConsumer(ConsumerConfig config)
     {
         return new ConsumerBuilder<string, byte[]>(config).SetErrorHandler(_ConsumerClientOnConsumeError).Build();
+    }
+
+    private void _LogSequentialProcessingConfigurationWarningIfNeeded()
+    {
+        if (_requestedConcurrency <= 1 || Interlocked.CompareExchange(ref _configurationWarningLogged, 1, 0) != 0)
+        {
+            return;
+        }
+
+        OnLogCallback?.Invoke(
+            new LogMessageEventArgs
+            {
+                LogType = MqLogType.TransportConfigurationWarning,
+                Reason =
+                    $"Kafka transport processes messages sequentially to preserve offset commit ordering; requested groupConcurrent={_requestedConcurrency} is ignored.",
+            }
+        );
     }
 
     private static IAdminClient _BuildAdminClient(AdminClientConfig config)

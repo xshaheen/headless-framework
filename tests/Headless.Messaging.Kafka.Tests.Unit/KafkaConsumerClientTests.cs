@@ -262,6 +262,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
         var consumeCallCount = 0;
+        LogMessageEventArgs? configurationWarning = null;
         consumer
             .Consume(Arg.Any<TimeSpan>())
             .Returns(_ =>
@@ -316,7 +317,13 @@ public sealed class KafkaConsumerClientTests : TestBase
 
             secondStarted.TrySetResult();
         };
-        client.OnLogCallback = _ => { };
+        client.OnLogCallback = args =>
+        {
+            if (args.LogType == MqLogType.TransportConfigurationWarning)
+            {
+                configurationWarning = args;
+            }
+        };
 
         using var cts = new CancellationTokenSource();
 
@@ -327,6 +334,9 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         // then
         secondStarted.Task.IsCompleted.Should().BeFalse();
+        configurationWarning.Should().NotBeNull();
+        configurationWarning!.Reason.Should().Contain("groupConcurrent=2");
+        configurationWarning.Reason.Should().Contain("sequentially");
 
         releaseFirst.TrySetResult();
         await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);

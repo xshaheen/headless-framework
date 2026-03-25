@@ -6,6 +6,7 @@ using Headless.Messaging.Nats;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using NATS.Client.JetStream;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -54,6 +55,14 @@ public sealed class NatsTransportTests : TestBase
         var act = async () => await transport.DisposeAsync();
 
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public void CreatePublishOpts_should_use_message_id_for_jetstream_deduplication()
+    {
+        var opts = NatsTransport.CreatePublishOpts(_CreateTransportMessage("msg-123", "TestMessage"));
+
+        opts.Should().BeEquivalentTo(new NatsJSPubOpts { MsgId = "msg-123" });
     }
 
     private static TransportMessage _CreateTransportMessage(string messageId, string messageName)

@@ -28,10 +28,9 @@ internal sealed class NatsConsumerClient(
     private readonly Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? _consumerFactory =
         consumerFactory;
 
-    private readonly List<CancellationTokenSource> _oldReceiveCts = [];
     private NatsConnection? _connection;
     private NatsJSContext? _jsContext;
-    private CancellationTokenSource _receiveCts = new();
+    private ReceiveTokenState _receiveTokenState = new();
     private IEnumerable<string>? _subscribedTopics;
     private int _disposed;
 
@@ -173,16 +172,13 @@ internal sealed class NatsConsumerClient(
                 {
                     await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 
-                    using var receiveCts = CancellationTokenSource.CreateLinkedTokenSource(
-                        cancellationToken,
-                        _GetReceiveToken()
-                    );
+                    using var receiveLease = _AcquireReceiveLease(cancellationToken);
 
                     var msg = await consumer
                         .NextAsync(
                             serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
                             opts: nextOpts,
-                            cancellationToken: receiveCts.Token
+                            cancellationToken: receiveLease.Token
                         )
                         .ConfigureAwait(false);
 
@@ -421,10 +417,18 @@ internal sealed class NatsConsumerClient(
 
         _pauseGate.Release();
         _CancelReceives();
-        _receiveCts.Dispose();
-        foreach (var cts in _oldReceiveCts)
-            cts.Dispose();
-        _oldReceiveCts.Clear();
+
+        ReceiveTokenState? receiveTokenStateToDispose = null;
+        lock (_receiveLock)
+        {
+            _receiveTokenState.Retired = true;
+            if (_receiveTokenState.RefCount == 0)
+            {
+                receiveTokenStateToDispose = _receiveTokenState;
+            }
+        }
+
+        receiveTokenStateToDispose?.Dispose();
         _semaphore?.Dispose();
 
         if (_connection is not null)
@@ -433,25 +437,37 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    private CancellationToken _GetReceiveToken()
+    private ReceiveTokenLease _AcquireReceiveLease(CancellationToken cancellationToken)
     {
+        ReceiveTokenState receiveTokenState;
         lock (_receiveLock)
         {
-            return _receiveCts.Token;
+            receiveTokenState = _receiveTokenState;
+            receiveTokenState.RefCount++;
+        }
+
+        try
+        {
+            return new ReceiveTokenLease(this, receiveTokenState, cancellationToken);
+        }
+        catch
+        {
+            _ReleaseReceiveTokenState(receiveTokenState);
+            throw;
         }
     }
 
     private void _CancelReceives()
     {
-        CancellationTokenSource receiveCts;
+        ReceiveTokenState receiveTokenState;
         lock (_receiveLock)
         {
-            receiveCts = _receiveCts;
+            receiveTokenState = _receiveTokenState;
         }
 
         try
         {
-            receiveCts.Cancel();
+            receiveTokenState.Source.Cancel();
         }
         catch (ObjectDisposedException)
         {
@@ -461,12 +477,83 @@ internal sealed class NatsConsumerClient(
 
     private void _ResetReceiveToken()
     {
+        ReceiveTokenState? receiveTokenStateToDispose = null;
         lock (_receiveLock)
         {
-            // Don't dispose previous CTS eagerly — the consume loop may still hold
-            // a token from it inside CreateLinkedTokenSource. Defer to DisposeAsync.
-            _oldReceiveCts.Add(_receiveCts);
-            _receiveCts = new CancellationTokenSource();
+            var previousState = _receiveTokenState;
+            previousState.Retired = true;
+            _receiveTokenState = new ReceiveTokenState();
+
+            if (previousState.RefCount == 0)
+            {
+                receiveTokenStateToDispose = previousState;
+            }
+        }
+
+        receiveTokenStateToDispose?.Dispose();
+    }
+
+    private void _ReleaseReceiveTokenState(ReceiveTokenState receiveTokenState)
+    {
+        var shouldDispose = false;
+        lock (_receiveLock)
+        {
+            receiveTokenState.RefCount--;
+            shouldDispose = receiveTokenState.RefCount == 0 && receiveTokenState.Retired;
+        }
+
+        if (shouldDispose)
+        {
+            receiveTokenState.Dispose();
+        }
+    }
+
+    private sealed class ReceiveTokenState : IDisposable
+    {
+        public CancellationTokenSource Source { get; } = new();
+
+        public int RefCount { get; set; }
+
+        public bool Retired { get; set; }
+
+        public void Dispose()
+        {
+            Source.Dispose();
+        }
+    }
+
+    private sealed class ReceiveTokenLease : IDisposable
+    {
+        private readonly CancellationTokenSource _linkedTokenSource;
+        private readonly NatsConsumerClient _owner;
+        private readonly ReceiveTokenState _receiveTokenState;
+        private int _disposed;
+
+        public ReceiveTokenLease(
+            NatsConsumerClient owner,
+            ReceiveTokenState receiveTokenState,
+            CancellationToken cancellationToken
+        )
+        {
+            _owner = owner;
+            _receiveTokenState = receiveTokenState;
+            _linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                receiveTokenState.Source.Token
+            );
+        }
+
+        public CancellationToken Token => _linkedTokenSource.Token;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            _linkedTokenSource.Dispose();
+            _owner._ReleaseReceiveTokenState(_receiveTokenState);
         }
     }
 }

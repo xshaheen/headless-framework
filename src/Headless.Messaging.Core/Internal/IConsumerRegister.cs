@@ -611,6 +611,9 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 _isHealthy = true;
                 _logger.LogError("Redis client consume error. --> {Reason}", reason);
                 break;
+            case MqLogType.TransportConfigurationWarning:
+                _logger.LogWarning("Transport configuration warning. --> {Reason}", reason);
+                break;
             default:
                 throw new InvalidOperationException($"Unknown {nameof(MqLogType)}={logMessage.LogType}");
         }

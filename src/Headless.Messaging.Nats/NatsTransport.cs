@@ -22,21 +22,12 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
             // NatsJSContext is a stateless wrapper around the connection — safe to create per call
             var js = new NatsJSContext(connection);
 
-            NatsHeaders? headers = null;
-            foreach (var header in message.Headers)
-            {
-                if (header.Value is not null)
-                {
-                    headers ??= new NatsHeaders();
-                    headers[header.Key] = header.Value;
-                }
-            }
-
             var ack = await js.PublishAsync(
                     subject: message.GetName(),
                     data: message.Body,
                     serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
-                    headers: headers,
+                    opts: CreatePublishOpts(message),
+                    headers: CreatePublishHeaders(message),
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -67,4 +58,24 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    internal static NatsHeaders? CreatePublishHeaders(TransportMessage message)
+    {
+        NatsHeaders? headers = null;
+        foreach (var header in message.Headers)
+        {
+            if (header.Value is not null)
+            {
+                headers ??= new NatsHeaders();
+                headers[header.Key] = header.Value;
+            }
+        }
+
+        return headers;
+    }
+
+    internal static NatsJSPubOpts CreatePublishOpts(TransportMessage message)
+    {
+        return new NatsJSPubOpts { MsgId = message.GetId() };
+    }
 }

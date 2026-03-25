@@ -73,6 +73,11 @@ public enum MqLogType
     /// An error occurred during message consumption (Redis Streams).
     /// </summary>
     RedisConsumeError,
+
+    /// <summary>
+    /// The transport detected a configuration that is accepted but cannot be fully honored.
+    /// </summary>
+    TransportConfigurationWarning,
 }
 
 /// <summary>
