@@ -105,17 +105,17 @@ public sealed class PostgreSqlMonitoringApi(
 
         if (!string.IsNullOrEmpty(query.StatusName))
         {
-            where += " AND Lower(\"StatusName\") = Lower(@StatusName)";
+            where += " AND \"StatusName\" = @StatusName";
         }
 
         if (!string.IsNullOrEmpty(query.Name))
         {
-            where += " AND Lower(\"Name\") = Lower(@Name)";
+            where += " AND \"Name\" = @Name";
         }
 
         if (!string.IsNullOrEmpty(query.Group))
         {
-            where += " AND Lower(\"Group\") = Lower(@Group)";
+            where += " AND \"Group\" = @Group";
         }
 
         if (!string.IsNullOrEmpty(query.Content))

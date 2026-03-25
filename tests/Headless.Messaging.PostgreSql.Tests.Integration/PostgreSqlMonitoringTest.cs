@@ -62,6 +62,9 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         // then
         stats.PublishedSucceeded.Should().Be(1);
         stats.PublishedFailed.Should().Be(1);
+        stats.ReceivedSucceeded.Should().Be(0);
+        stats.ReceivedFailed.Should().Be(0);
+        stats.PublishedDelayed.Should().Be(0);
     }
 
     [Fact]
@@ -111,6 +114,147 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         retrieved.Should().NotBeNull();
         retrieved!.StorageId.Should().Be(stored.StorageId);
         retrieved.Content.Should().Be(stored.Content);
+    }
+
+    [Fact]
+    public async Task should_get_received_message_by_id()
+    {
+        // given
+        var storage = _storage!;
+        var msg = _CreateMessage();
+        var stored = await storage.StoreReceivedMessageAsync("get-received-test", "test-group", msg, AbortToken);
+
+        // when
+        var monitoringApi = storage.GetMonitoringApi();
+        var retrieved = await monitoringApi.GetReceivedMessageAsync(stored.StorageId, AbortToken);
+
+        // then
+        retrieved.Should().NotBeNull();
+        retrieved!.StorageId.Should().Be(stored.StorageId);
+    }
+
+    [Fact]
+    public async Task should_return_null_for_nonexistent_message()
+    {
+        var monitoringApi = _storage!.GetMonitoringApi();
+        var result = await monitoringApi.GetPublishedMessageAsync(999_999_999, AbortToken);
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_paginate_published_messages()
+    {
+        // given — seed 3 messages
+        var storage = _storage!;
+        for (var i = 0; i < 3; i++)
+        {
+            await storage.StoreMessageAsync("page-test", _CreateMessage(), cancellationToken: AbortToken);
+        }
+
+        // when — page size 2, page 0
+        var monitoringApi = storage.GetMonitoringApi();
+        var page0 = await monitoringApi.GetMessagesAsync(
+            new MessageQuery { MessageType = MessageType.Publish, CurrentPage = 0, PageSize = 2 },
+            AbortToken
+        );
+
+        // then
+        page0.Items.Should().HaveCount(2);
+        page0.TotalItems.Should().Be(3);
+
+        // when — page 1
+        var page1 = await monitoringApi.GetMessagesAsync(
+            new MessageQuery { MessageType = MessageType.Publish, CurrentPage = 1, PageSize = 2 },
+            AbortToken
+        );
+
+        page1.Items.Should().HaveCount(1);
+        page1.TotalItems.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task should_filter_messages_by_status()
+    {
+        // given
+        var storage = _storage!;
+        var msg1 = _CreateMessage();
+        var msg2 = _CreateMessage();
+        var stored1 = await storage.StoreMessageAsync("filter-test", msg1, cancellationToken: AbortToken);
+        await storage.StoreMessageAsync("filter-test", msg2, cancellationToken: AbortToken);
+        await storage.ChangePublishStateAsync(stored1, StatusName.Succeeded, cancellationToken: AbortToken);
+
+        // when
+        var monitoringApi = storage.GetMonitoringApi();
+        var result = await monitoringApi.GetMessagesAsync(
+            new MessageQuery { MessageType = MessageType.Publish, StatusName = "Succeeded", CurrentPage = 0, PageSize = 10 },
+            AbortToken
+        );
+
+        // then
+        result.Items.Should().HaveCount(1);
+        result.Items[0].StatusName.Should().Be("Succeeded");
+    }
+
+    [Fact]
+    public async Task should_return_hourly_succeeded_jobs()
+    {
+        // given — seed a succeeded message
+        var storage = _storage!;
+        var msg = _CreateMessage();
+        var stored = await storage.StoreMessageAsync("hourly-test", msg, cancellationToken: AbortToken);
+        await storage.ChangePublishStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
+
+        // when
+        var monitoringApi = storage.GetMonitoringApi();
+        var hourly = await monitoringApi.HourlySucceededJobs(MessageType.Publish, AbortToken);
+
+        // then — should have 24 hour buckets, at least one with count > 0
+        hourly.Should().HaveCount(24);
+        hourly.Values.Sum().Should().BeGreaterThanOrEqualTo(1);
+    }
+
+    [Fact]
+    public async Task should_return_hourly_failed_jobs()
+    {
+        // given
+        var storage = _storage!;
+        var msg = _CreateMessage();
+        var stored = await storage.StoreMessageAsync("hourly-fail-test", msg, cancellationToken: AbortToken);
+        await storage.ChangePublishStateAsync(stored, StatusName.Failed, cancellationToken: AbortToken);
+
+        // when
+        var monitoringApi = storage.GetMonitoringApi();
+        var hourly = await monitoringApi.HourlyFailedJobs(MessageType.Publish, AbortToken);
+
+        // then
+        hourly.Should().HaveCount(24);
+        hourly.Values.Sum().Should().BeGreaterThanOrEqualTo(1);
+    }
+
+    [Fact]
+    public async Task should_store_message_within_npgsql_transaction()
+    {
+        // given
+        var storage = _storage!;
+        var msg = _CreateMessage();
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+
+        // when
+        var result = await storage.StoreMessageAsync("tx-test", msg, transaction, AbortToken);
+
+        // then — message is visible within the transaction
+        result.Should().NotBeNull();
+        result.StorageId.Should().BeGreaterThan(0);
+
+        await transaction.CommitAsync(AbortToken);
+
+        // verify message persisted after commit
+        var monitoringApi = storage.GetMonitoringApi();
+        var retrieved = await monitoringApi.GetPublishedMessageAsync(result.StorageId, AbortToken);
+        retrieved.Should().NotBeNull();
     }
 
     private static long _messageIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() << 20;
