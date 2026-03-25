@@ -197,7 +197,9 @@ internal sealed class InMemoryDataStorage(
         {
             StorageId = id,
             Group = group,
-            Origin = serializer.Deserialize(content)!,
+            Origin =
+                serializer.Deserialize(content)
+                ?? throw new InvalidOperationException("Failed to deserialize received exception message content."),
             Name = name,
             Content = content,
             Retries = messagingOptions.Value.FailedRetryCount,

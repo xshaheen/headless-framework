@@ -179,7 +179,9 @@ public sealed class PostgreSqlMonitoringApi(
                                     : reader.GetString(index - 1),
                                 Retries = reader.GetInt32(index++),
                                 Added = reader.GetDateTime(index++),
-                                ExpiresAt = await reader.IsDBNullAsync(index++) ? null : reader.GetDateTime(index - 1),
+                                ExpiresAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(index - 1),
                                 StatusName = reader.GetString(index),
                             }
                         );
@@ -357,7 +359,7 @@ public sealed class PostgreSqlMonitoringApi(
                                 ? null
                                 : reader.GetDateTime(3),
                             Retries = reader.GetInt32(4),
-                            ExceptionInfo = await reader.IsDBNullAsync(5).ConfigureAwait(false)
+                            ExceptionInfo = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
                                 ? null
                                 : reader.GetString(5),
                         };

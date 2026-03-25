@@ -165,7 +165,9 @@ internal class SqlServerMonitoringApi(
                                     : reader.GetString(index - 1),
                                 Retries = reader.GetInt32(index++),
                                 Added = reader.GetDateTime(index++),
-                                ExpiresAt = await reader.IsDBNullAsync(index++) ? null : reader.GetDateTime(index - 1),
+                                ExpiresAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(index - 1),
                                 StatusName = reader.GetString(index),
                             }
                         );
