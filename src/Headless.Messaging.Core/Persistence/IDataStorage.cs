@@ -44,6 +44,10 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Stores a failed received message using serialized <see cref="Message"/> JSON so providers can persist message headers.
+    /// </summary>
+    /// <param name="content">Serialized <see cref="Message"/> payload, including headers.</param>
     ValueTask StoreReceivedExceptionMessageAsync(
         string name,
         string group,

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: done
 priority: p2
 issue_id: "123"
 tags: ["code-review","quality","dotnet"]
@@ -43,9 +43,9 @@ Pick an explicit MessageId limit and enforce it before persistence, or widen the
 
 ## Acceptance Criteria
 
-- [ ] Published message creation rejects or safely stores overlong MessageId values before hitting the database
-- [ ] The supported MessageId length is documented in code and README surface area
-- [ ] Tests cover SQL Server and PostgreSQL durable publish paths with boundary-length MessageId values
+- [x] Published message creation rejects or safely stores overlong MessageId values before hitting the database
+- [x] The supported MessageId length is documented in code and README surface area
+- [x] Tests cover SQL Server and PostgreSQL durable publish paths with boundary-length MessageId values
 
 ## Notes
 
@@ -58,3 +58,15 @@ PR #198 code review on 2026-03-25
 **By:** Agent
 **Actions:**
 - Created via todo.sh create --stdin
+
+### 2026-03-25 - Approved
+
+**By:** Triage Agent
+**Actions:**
+- Status changed: pending → ready
+
+### 2026-03-25 - Completed
+
+**By:** Agent
+**Actions:**
+- Status changed: in-progress → done

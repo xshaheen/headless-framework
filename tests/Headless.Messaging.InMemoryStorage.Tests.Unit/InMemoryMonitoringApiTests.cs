@@ -36,6 +36,9 @@ public sealed class InMemoryMonitoringApiTests : TestBase
 
         _timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 15, 10, 0, 0, TimeSpan.Zero));
         _serializer.Serialize(Arg.Any<Message>()).Returns(call => JsonSerializer.Serialize(call.Arg<Message>()));
+        _serializer
+            .Deserialize(Arg.Any<string>())
+            .Returns(call => JsonSerializer.Deserialize<Message>(call.Arg<string>()));
         _idGenerator.Create().Returns(_ => Interlocked.Increment(ref _idCounter));
 
         _storage = new InMemoryDataStorage(_options, _serializer, _idGenerator, _timeProvider);
@@ -82,6 +85,29 @@ public sealed class InMemoryMonitoringApiTests : TestBase
         // then
         result.Should().NotBeNull();
         result!.StorageId.Should().Be(stored.StorageId);
+    }
+
+    [Fact]
+    public async Task should_get_received_exception_message_by_id()
+    {
+        // given
+        var message = _CreateMessage("recv-exception-1");
+        var content = _serializer.Serialize(message);
+        await _storage.StoreReceivedExceptionMessageAsync(
+            "failed.topic",
+            "group",
+            content,
+            cancellationToken: AbortToken
+        );
+        var id = InMemoryDataStorage.ReceivedMessages.Values.Single().StorageId;
+
+        // when
+        var result = await _sut.GetReceivedMessageAsync(id, AbortToken);
+
+        // then
+        result.Should().NotBeNull();
+        result!.StorageId.Should().Be(id);
+        result.Origin.GetId().Should().Be(message.GetId());
     }
 
     [Fact]

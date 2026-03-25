@@ -34,6 +34,9 @@ public sealed class InMemoryDataStorageTests : TestBase
 
         _timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 15, 10, 0, 0, TimeSpan.Zero));
         _serializer.Serialize(Arg.Any<Message>()).Returns(call => JsonSerializer.Serialize(call.Arg<Message>()));
+        _serializer
+            .Deserialize(Arg.Any<string>())
+            .Returns(call => JsonSerializer.Deserialize<Message>(call.Arg<string>()));
         _idGenerator.Create().Returns(_ => Interlocked.Increment(ref _idCounter));
 
         _sut = new InMemoryDataStorage(_options, _serializer, _idGenerator, _timeProvider);
@@ -83,7 +86,8 @@ public sealed class InMemoryDataStorageTests : TestBase
     public async Task should_store_received_exception_message()
     {
         // given
-        var content = "Error: Something went wrong";
+        var message = _CreateMessage("exception-1001");
+        var content = _serializer.Serialize(message);
 
         // when
         await _sut.StoreReceivedExceptionMessageAsync(
@@ -98,6 +102,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         storedMessage.Name.Should().Be("failed.topic");
         storedMessage.Group.Should().Be("error-group");
         storedMessage.Content.Should().Be(content);
+        storedMessage.Origin.GetId().Should().Be(message.GetId());
         storedMessage.StatusName.Should().Be(StatusName.Failed);
         storedMessage.Retries.Should().Be(_options.Value.FailedRetryCount);
         storedMessage.ExpiresAt.Should().NotBeNull();

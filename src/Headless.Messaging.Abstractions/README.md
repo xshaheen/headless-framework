@@ -99,7 +99,7 @@ Runtime delegates use the same scoped consume pipeline as `IConsume<T>` handlers
 - duplicate registrations are rejected unless you explicitly opt into `Ignore` or `Replace`
 - anonymous delegates must provide `HandlerId`
 
-`PublishOptions.MessageId` is a logical transport-level identifier. Durable outbox providers keep their own numeric storage ID for retries, monitoring, requeue, and delete operations.
+`PublishOptions.MessageId` is a logical transport-level identifier. Durable outbox providers keep their own numeric storage ID for retries, monitoring, requeue, and delete operations. When a message is published durably, `MessageId` is capped at `PublishOptions.MessageIdMaxLength` characters.
 
 ```csharp
 public sealed class ProjectionWarmup(IRuntimeSubscriber subscriber)

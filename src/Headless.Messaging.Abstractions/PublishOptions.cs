@@ -8,6 +8,11 @@ namespace Headless.Messaging;
 public sealed class PublishOptions
 {
     /// <summary>
+    /// Maximum supported length for <see cref="MessageId"/> when publishing messages that may be stored durably.
+    /// </summary>
+    public const int MessageIdMaxLength = 200;
+
+    /// <summary>
     /// Gets the explicit topic override. When <see langword="null"/>, the topic is resolved from mappings or conventions.
     /// </summary>
     public string? Topic { get; init; }
@@ -20,6 +25,10 @@ public sealed class PublishOptions
     /// <summary>
     /// Gets the explicit logical message identifier override.
     /// </summary>
+    /// <remarks>
+    /// Durable outbox providers store this value in 200-character columns, so values longer than
+    /// <see cref="MessageIdMaxLength"/> are rejected before persistence.
+    /// </remarks>
     public string? MessageId { get; init; }
 
     /// <summary>

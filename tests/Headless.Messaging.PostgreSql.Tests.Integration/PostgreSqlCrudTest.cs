@@ -98,6 +98,22 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     }
 
     [Fact]
+    public async Task should_store_published_message_with_maximum_supported_message_id_length()
+    {
+        // given
+        var msgId = new string('m', PublishOptions.MessageIdMaxLength);
+        var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
+        var message = new Message(header, new { Data = "test" });
+
+        // when
+        var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
+
+        // then
+        stored.Origin.Headers[Headers.MessageId].Should().Be(msgId);
+        stored.Origin.Headers[Headers.MessageId].Should().HaveLength(PublishOptions.MessageIdMaxLength);
+    }
+
+    [Fact]
     public async Task should_delete_received_message()
     {
         // given

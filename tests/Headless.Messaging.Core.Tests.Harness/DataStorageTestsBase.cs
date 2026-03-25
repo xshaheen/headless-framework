@@ -132,7 +132,7 @@ public abstract class DataStorageTestsBase : TestBase
         var serializer = GetSerializer();
         const string messageName = "exception-message";
         const string group = "test-group";
-        // StoreReceivedExceptionMessageAsync expects serialized Message content with headers
+        // StoreReceivedExceptionMessageAsync expects serialized Message JSON with headers, not raw text
         var message = CreateMessage();
         var content = serializer.Serialize(message);
 

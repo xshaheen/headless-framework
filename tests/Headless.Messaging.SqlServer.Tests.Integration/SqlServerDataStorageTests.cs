@@ -229,6 +229,22 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     }
 
     [Fact]
+    public async Task should_store_published_message_with_maximum_supported_message_id_length()
+    {
+        // given
+        var msgId = new string('m', PublishOptions.MessageIdMaxLength);
+        var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
+        var message = new Message(header, """{"test": "payload"}""");
+
+        // when
+        var stored = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
+
+        // then
+        stored.Origin.Headers[Headers.MessageId].Should().Be(msgId);
+        stored.Origin.Headers[Headers.MessageId].Should().HaveLength(PublishOptions.MessageIdMaxLength);
+    }
+
+    [Fact]
     public async Task should_delete_published_message()
     {
         // given
