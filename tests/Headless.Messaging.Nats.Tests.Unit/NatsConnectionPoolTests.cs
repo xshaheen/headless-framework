@@ -80,6 +80,16 @@ public sealed class NatsConnectionPoolTests : TestBase
         mockLogger.ReceivedCalls().Should().ContainSingle(call => _IsDebugLog(call));
     }
 
+    [Fact]
+    public async Task should_throw_object_disposed_when_getting_connection_after_dispose()
+    {
+        var pool = new NatsConnectionPool(_logger, _options);
+        await pool.DisposeAsync();
+
+        var act = () => pool.GetConnection();
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
     private static bool _IsDebugLog(ICall call)
     {
         if (call.GetMethodInfo().Name != nameof(ILogger.Log))

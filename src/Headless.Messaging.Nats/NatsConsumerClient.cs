@@ -25,8 +25,6 @@ internal sealed class NatsConsumerClient(
 
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
     private readonly ConsumerPauseGate _pauseGate = new();
-    private readonly Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? _consumerFactory =
-        consumerFactory;
 
     private NatsConnection? _connection;
     private NatsJSContext? _jsContext;
@@ -136,6 +134,7 @@ internal sealed class NatsConsumerClient(
                 var consumerConfig = new ConsumerConfig(durableName)
                 {
                     FilterSubject = subject,
+                    DeliverPolicy = ConsumerConfigDeliverPolicy.New,
                     AckWait = TimeSpan.FromSeconds(30),
                 };
 
@@ -162,8 +161,8 @@ internal sealed class NatsConsumerClient(
         {
             try
             {
-                var consumer = _consumerFactory is not null
-                    ? await _consumerFactory(streamName, consumerConfig, cancellationToken).ConfigureAwait(false)
+                var consumer = consumerFactory is not null
+                    ? await consumerFactory(streamName, consumerConfig, cancellationToken).ConfigureAwait(false)
                     : await _jsContext!
                         .CreateOrUpdateConsumerAsync(streamName, consumerConfig, cancellationToken)
                         .ConfigureAwait(false);
@@ -261,7 +260,7 @@ internal sealed class NatsConsumerClient(
             await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
             _ObserveBackgroundHandler(
-                RunConcurrentHandlerIgnoringCancellation(
+                _RunConcurrentHandlerIgnoringCancellation(
                     async () =>
                     {
                         try
@@ -283,7 +282,7 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    internal static Task RunConcurrentHandlerIgnoringCancellation(
+    internal static Task _RunConcurrentHandlerIgnoringCancellation(
         Func<Task> handler,
         CancellationToken cancellationToken
     )
@@ -317,7 +316,7 @@ internal sealed class NatsConsumerClient(
         );
     }
 
-    private static TimeSpan _NextBackoff(TimeSpan current, TimeSpan floor = default)
+    internal static TimeSpan _NextBackoff(TimeSpan current, TimeSpan floor = default)
     {
         var ceiling = TimeSpan.FromSeconds(30);
         var next = TimeSpan.FromTicks(Math.Min(current.Ticks * 2, ceiling.Ticks));

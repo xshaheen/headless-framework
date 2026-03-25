@@ -169,7 +169,10 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
-    private Task _RunConcurrentHandlerIgnoringCancellation(Func<Task> handler, CancellationToken cancellationToken)
+    private static Task _RunConcurrentHandlerIgnoringCancellation(
+        Func<Task> handler,
+        CancellationToken cancellationToken
+    )
     {
         _ = cancellationToken;
         return Task.Run(handler);

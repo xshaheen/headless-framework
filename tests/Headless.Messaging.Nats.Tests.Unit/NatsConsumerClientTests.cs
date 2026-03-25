@@ -110,6 +110,15 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public void BuildStreamSubjects_should_deduplicate_topics()
+    {
+        NatsConsumerClient
+            .BuildStreamSubjects("orders", ["orders.created", "orders.created"])
+            .Should()
+            .BeEquivalentTo(["orders.>"]);
+    }
+
+    [Fact]
     public void BuildStreamSubjects_should_preserve_non_prefix_topics()
     {
         NatsConsumerClient
@@ -125,7 +134,7 @@ public sealed class NatsConsumerClientTests : TestBase
         await cts.CancelAsync();
         var ran = false;
 
-        await NatsConsumerClient.RunConcurrentHandlerIgnoringCancellation(
+        await NatsConsumerClient._RunConcurrentHandlerIgnoringCancellation(
             () =>
             {
                 ran = true;
@@ -135,6 +144,76 @@ public sealed class NatsConsumerClientTests : TestBase
         );
 
         ran.Should().BeTrue();
+    }
+
+    // _NextBackoff tests
+
+    [Fact]
+    public void NextBackoff_should_double_current_delay()
+    {
+        var result = NatsConsumerClient._NextBackoff(TimeSpan.FromSeconds(1));
+        result.Should().Be(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public void NextBackoff_should_cap_at_30_seconds()
+    {
+        var result = NatsConsumerClient._NextBackoff(TimeSpan.FromSeconds(20));
+        result.Should().Be(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public void NextBackoff_should_not_exceed_ceiling_even_with_large_input()
+    {
+        var result = NatsConsumerClient._NextBackoff(TimeSpan.FromSeconds(60));
+        result.Should().Be(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public void NextBackoff_should_enforce_floor_when_next_is_below()
+    {
+        var result = NatsConsumerClient._NextBackoff(TimeSpan.FromSeconds(1), floor: TimeSpan.FromSeconds(5));
+        result.Should().Be(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void NextBackoff_should_not_enforce_floor_when_next_is_above()
+    {
+        var result = NatsConsumerClient._NextBackoff(TimeSpan.FromSeconds(5), floor: TimeSpan.FromSeconds(5));
+        result.Should().Be(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public void NextBackoff_should_produce_correct_exponential_sequence()
+    {
+        var delay = TimeSpan.FromSeconds(1);
+        delay = NatsConsumerClient._NextBackoff(delay); // 2s
+        delay.Should().Be(TimeSpan.FromSeconds(2));
+        delay = NatsConsumerClient._NextBackoff(delay); // 4s
+        delay.Should().Be(TimeSpan.FromSeconds(4));
+        delay = NatsConsumerClient._NextBackoff(delay); // 8s
+        delay.Should().Be(TimeSpan.FromSeconds(8));
+        delay = NatsConsumerClient._NextBackoff(delay); // 16s
+        delay.Should().Be(TimeSpan.FromSeconds(16));
+        delay = NatsConsumerClient._NextBackoff(delay); // 30s (capped)
+        delay.Should().Be(TimeSpan.FromSeconds(30));
+        delay = NatsConsumerClient._NextBackoff(delay); // 30s (stays capped)
+        delay.Should().Be(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public void NextBackoff_with_floor_should_produce_correct_sequence()
+    {
+        var delay = TimeSpan.FromSeconds(1);
+        var floor = TimeSpan.FromSeconds(5);
+        delay = NatsConsumerClient._NextBackoff(delay, floor); // max(2, 5) = 5s
+        delay.Should().Be(TimeSpan.FromSeconds(5));
+        delay = NatsConsumerClient._NextBackoff(delay, floor); // max(10, 5) = 10s
+        delay.Should().Be(TimeSpan.FromSeconds(10));
+        delay = NatsConsumerClient._NextBackoff(delay, floor); // max(20, 5) = 20s
+        delay.Should().Be(TimeSpan.FromSeconds(20));
+        delay = NatsConsumerClient._NextBackoff(delay, floor); // max(30, 5) = 30s (capped)
+        delay.Should().Be(TimeSpan.FromSeconds(30));
     }
 
     [Fact]
