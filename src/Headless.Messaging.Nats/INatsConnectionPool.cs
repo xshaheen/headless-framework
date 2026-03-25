@@ -16,13 +16,13 @@ public interface INatsConnectionPool : IAsyncDisposable
 public sealed class NatsConnectionPool : INatsConnectionPool
 {
     private readonly NatsConnection[] _connections;
-    private readonly string _serversAddress;
+    private int _disposed;
     private int _index;
 
     public NatsConnectionPool(ILogger<NatsConnectionPool> logger, IOptions<MessagingNatsOptions> options)
     {
         var opts = options.Value;
-        _serversAddress = opts.Servers;
+        ServersAddress = opts.Servers;
 
         var natsOpts = opts.BuildNatsOpts();
         var poolSize = opts.ConnectionPoolSize;
@@ -38,12 +38,12 @@ public sealed class NatsConnectionPool : INatsConnectionPool
             logger.LogDebug(
                 "NATS connection pool created with {PoolSize} connections to {Servers}.",
                 poolSize,
-                _serversAddress
+                ServersAddress
             );
         }
     }
 
-    public string ServersAddress => _serversAddress;
+    public string ServersAddress { get; }
 
     /// <summary>
     /// Returns a connection from the pool using round-robin distribution.
@@ -51,12 +51,17 @@ public sealed class NatsConnectionPool : INatsConnectionPool
     /// </summary>
     public NatsConnection GetConnection()
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
         var index = Interlocked.Increment(ref _index);
         return _connections[(index & 0x7FFF_FFFF) % _connections.Length];
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+
         foreach (var connection in _connections)
         {
             await connection.DisposeAsync().ConfigureAwait(false);
