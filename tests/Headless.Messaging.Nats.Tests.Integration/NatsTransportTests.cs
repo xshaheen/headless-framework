@@ -23,6 +23,8 @@ public sealed class NatsTransportTests : TransportTestsBase, IAsyncLifetime
     {
         // JetStream requires a stream to exist before publishing.
         // Create a catch-all stream for test subjects.
+        // TransportTestsBase uses various message names as NATS subjects.
+        // Create a catch-all stream. The ">" wildcard requires NoAck = true.
         await _fixture.EnsureStreamAsync("TEST", ">");
     }
 
@@ -42,7 +44,12 @@ public sealed class NatsTransportTests : TransportTestsBase, IAsyncLifetime
     protected override ITransport GetTransport()
     {
         var natsOptions = Options.Create(
-            new MessagingNatsOptions { Servers = _fixture.ConnectionString, ConnectionPoolSize = 2 }
+            new MessagingNatsOptions
+            {
+                Servers = _fixture.ConnectionString,
+                ConnectionPoolSize = 2,
+                ConfigureConnection = opts => opts with { ConnectTimeout = TimeSpan.FromSeconds(10) },
+            }
         );
 
         _connectionPool = new NatsConnectionPool(NullLogger<NatsConnectionPool>.Instance, natsOptions);

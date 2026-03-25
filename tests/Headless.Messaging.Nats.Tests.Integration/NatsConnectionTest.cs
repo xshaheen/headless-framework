@@ -8,16 +8,13 @@ namespace Tests;
 public sealed class NatsConnectionTest(NatsFixture fixture)
 {
     [Fact]
-    public async Task should_connect_to_nats_via_fixture()
+    public async Task should_connect_and_ping_nats()
     {
-        var connStr = fixture.ConnectionString;
-
-        // NATS.Net v2 ConnectAsync starts connection but may not complete
-        // synchronously. PingAsync forces a roundtrip that blocks until
-        // the connection is fully established.
         var opts = NatsOpts.Default with
         {
-            Url = connStr,
+            Url = fixture.ConnectionString,
+            ConnectTimeout = TimeSpan.FromSeconds(10),
+            RetryOnInitialConnect = true,
         };
         await using var conn = new NatsConnection(opts);
         var rtt = await conn.PingAsync();
