@@ -335,7 +335,7 @@ public sealed class MetricsService(IDirectPublisher publisher)
 
 ## Transport Pause/Resume
 
-`IConsumerClient` exposes `PauseAsync` and `ResumeAsync` as default interface methods (DIM). All transport providers implement them.
+`IConsumerClient` exposes `PauseAsync` and `ResumeAsync`. All transport providers implement them.
 
 Both methods are idempotent — calling `PauseAsync` on an already-paused client or `ResumeAsync` on a running client is a no-op. In-flight messages are allowed to complete; no new messages are pulled after `PauseAsync` returns.
 
@@ -523,6 +523,84 @@ builder.Services.AddHeadlessMessaging(options =>
     options.DefaultGroupName = "myapp";
 });
 ```
+
+## Writing A Transport Provider
+
+A transport package adapts one broker to the core runtime. Across the existing `Headless.Messaging.*` providers, the package shape is usually:
+
+- `Setup.cs` exposing `UseMyBroker(...)` on `MessagingOptions`
+- `MyBrokerOptions` plus a validator
+- `MyBrokerTransport : ITransport`
+- `MyBrokerConsumerClientFactory : IConsumerClientFactory`
+- `MyBrokerConsumerClient : IConsumerClient`
+- broker-specific pools, factories, or helpers when connection reuse matters
+- `README.md` documenting setup, ordering, provisioning, and broker limitations
+
+### DI Registration Shape
+
+Every transport registers itself through `MessagingOptions.RegisterExtension(...)` and should add:
+
+- `MessageQueueMarkerService("MyBroker")`
+- validated options
+- singleton `ITransport`
+- singleton `IConsumerClientFactory`
+- any broker-owned singletons such as connection pools
+
+```csharp
+public static class MessagesMyBrokerSetup
+{
+    extension(MessagingOptions options)
+    {
+        public MessagingOptions UseMyBroker(Action<MyBrokerOptions> configure)
+        {
+            options.RegisterExtension(new MyBrokerOptionsExtension(configure));
+            return options;
+        }
+    }
+
+    private sealed class MyBrokerOptionsExtension(Action<MyBrokerOptions> configure) : IMessagesOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
+        {
+            services.AddSingleton(new MessageQueueMarkerService("MyBroker"));
+            services.Configure<MyBrokerOptions, MyBrokerOptionsValidator>(configure);
+            services.AddSingleton<ITransport, MyBrokerTransport>();
+            services.AddSingleton<IConsumerClientFactory, MyBrokerConsumerClientFactory>();
+        }
+    }
+}
+```
+
+### Runtime Contract
+
+- `ITransport.SendAsync(...)` receives a fully prepared `TransportMessage`. Publish `message.Body` and preserve `message.Headers`.
+- Return `OperateResult.Success` on broker success. On broker failure, return `OperateResult.Failed(new PublisherSentFailedException(...))`. Let cancellation propagate.
+- `BrokerAddress` feeds diagnostics, OpenTelemetry, and dashboard surfaces. Use a sanitized operator-facing endpoint, not a raw secret-bearing connection string.
+- `IConsumerClientFactory.CreateAsync(groupName, groupConcurrent)` is called once for topic discovery and again for each live consumer thread. It must be safe to create and dispose clients without starting background receive loops too early.
+- `FetchTopicsAsync(...)` is the broker-normalization hook. Use it for topic creation, queue/subscription provisioning, wildcard translation, or ARN/subject resolution. If the broker uses topic names as-is, the default pass-through is enough.
+- `SubscribeAsync(...)` binds the current consumer group to the resolved topics.
+- `ListeningAsync(...)` owns the long-running receive loop. For every delivery, create a `TransportMessage`, set `Headers.Group` to the active group, and invoke `OnMessageCallback(message, commitToken)`.
+- Do not swallow `OnMessageCallback` exceptions inside the transport. The framework decides whether to commit, reject, retry, or trip the circuit breaker.
+- `CommitAsync(sender)` and `RejectAsync(sender)` must map that `commitToken` back to broker ack/nack/delete/seek semantics. If the broker cannot reject, make that explicit and use the best available no-op or requeue behavior.
+- `PauseAsync(...)` and `ResumeAsync(...)` must be idempotent. After `PauseAsync` returns, no new messages should be pulled, but in-flight deliveries may finish naturally.
+- `OnLogCallback` should emit meaningful `MqLogType` events for connection failures, broker shutdown, registration, and consume errors so health checks and restart behavior stay accurate.
+- `DisposeAsync()` should release only resources owned by that client instance. Do not tear down shared pools still used by other transport services.
+
+### Header And Payload Rules
+
+- Publish-side headers come from the core pipeline. At minimum, the transport must round-trip `Headers.MessageId`, `Headers.MessageName`, `Headers.Type`, `Headers.CorrelationId`, `Headers.CorrelationSequence`, and `Headers.SentTime`.
+- Optional headers such as `Headers.CallbackName`, `Headers.DelayTime`, `Headers.TraceParent`, and custom application headers must also survive the roundtrip.
+- `Headers.Group` is added on consume, not publish. The consumer client is responsible for injecting the active group name before calling `OnMessageCallback`.
+- Treat the body as raw bytes. Only encode/decode when the broker client API forces it.
+- Do not leak exception messages, credentials, or broker-specific secret material into headers or `BrokerAddress`.
+
+### Behavior To Document In The Provider README
+
+- publish semantics: direct publish only vs broker-side scheduling support
+- consume semantics: ack/reject/requeue behavior and whether reject is best-effort or a no-op
+- ordering guarantees under `ConsumerThreadCount` and broker-native partition/session rules
+- auto-provisioning behavior in `FetchTopicsAsync(...)` or `SubscribeAsync(...)`
+- any broker-specific required headers, topic naming restrictions, or size limits
 
 ## Message Ordering Guarantees
 
