@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net.Sockets;
 using System.Text;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
@@ -29,21 +28,11 @@ public sealed class NatsFixture : IAsyncLifetime
     /// <summary>Gets the NATS connection string.</summary>
     public string ConnectionString => _container.GetConnectionString();
 
-    public NatsOpts NatsOpts =>
-        NatsOpts.Default with
-        {
-            Url = ConnectionString,
-            ConnectTimeout = TimeSpan.FromSeconds(10),
-        };
-
     public async ValueTask InitializeAsync()
     {
         await _container.StartAsync();
-
-        // Wait for NATS protocol to be responsive (not just TCP port open).
-        // Docker Desktop on macOS can have port forwarding latency.
-        var uri = new Uri(ConnectionString);
-        await _WaitForNatsProtocolAsync(uri.Host, uri.Port, TimeSpan.FromSeconds(15));
+        // Eagerly establish the shared connection to fail fast on startup issues
+        await GetConnectionAsync();
     }
 
     /// <summary>
@@ -56,13 +45,12 @@ public sealed class NatsFixture : IAsyncLifetime
 
         try
         {
-            await js.CreateStreamAsync(
+            await js.CreateOrUpdateStreamAsync(
                 new StreamConfig
                 {
                     Name = streamName,
                     Subjects = [subjectWildcard],
                     Storage = StreamConfigStorage.Memory,
-                    NoAck = subjectWildcard == ">", // catch-all wildcard requires NoAck
                 }
             );
         }
@@ -79,7 +67,8 @@ public sealed class NatsFixture : IAsyncLifetime
             return _connection;
         }
 
-        _connection = new NatsConnection(NatsOpts);
+        var opts = NatsOpts.Default with { Url = ConnectionString, ConnectTimeout = TimeSpan.FromSeconds(30) };
+        _connection = new NatsConnection(opts);
         await _connection.ConnectAsync();
         return _connection;
     }
@@ -92,39 +81,6 @@ public sealed class NatsFixture : IAsyncLifetime
         }
 
         await _container.DisposeAsync();
-    }
-
-    /// <summary>
-    /// Waits until the NATS server sends its INFO protocol message over TCP.
-    /// This confirms the server is fully ready for connections, not just TCP-listening.
-    /// </summary>
-    private static async Task _WaitForNatsProtocolAsync(string host, int port, TimeSpan timeout)
-    {
-        using var cts = new CancellationTokenSource(timeout);
-
-        while (!cts.IsCancellationRequested)
-        {
-            try
-            {
-                using var tcp = new TcpClient();
-                await tcp.ConnectAsync(host, port, cts.Token);
-                await using var stream = tcp.GetStream();
-                stream.ReadTimeout = 5000;
-                var buffer = new byte[512];
-                var bytesRead = await stream.ReadAsync(buffer, cts.Token);
-
-                if (bytesRead > 0 && Encoding.UTF8.GetString(buffer, 0, bytesRead).StartsWith("INFO"))
-                {
-                    return; // Server is ready
-                }
-            }
-            catch (Exception) when (!cts.IsCancellationRequested)
-            {
-                await Task.Delay(200, cts.Token);
-            }
-        }
-
-        throw new TimeoutException($"NATS server at {host}:{port} did not respond with INFO protocol within {timeout}");
     }
 }
 

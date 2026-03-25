@@ -23,9 +23,9 @@ public sealed class NatsTransportTests : TransportTestsBase, IAsyncLifetime
     {
         // JetStream requires a stream to exist before publishing.
         // Create a catch-all stream for test subjects.
-        // TransportTestsBase uses various message names as NATS subjects.
-        // Create a catch-all stream. The ">" wildcard requires NoAck = true.
-        await _fixture.EnsureStreamAsync("TEST", ">");
+        // TransportTestsBase uses single-token subjects ("TestMessage", "TestMessageName").
+        // NATS "*" matches any single token at one level.
+        await _fixture.EnsureStreamAsync("TEST", "*");
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
