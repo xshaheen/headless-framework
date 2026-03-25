@@ -15,7 +15,7 @@ public class MessagingRedisOptions
     // BrokerAddress is emitted to telemetry and dashboards, so expose only broker endpoints here.
     internal string DisplayEndpoint =>
         Configuration?.EndPoints.Count > 0
-            ? string.Join(",", Configuration.EndPoints.Select(BrokerAddressDisplay.GetDisplayEndpoint))
+            ? string.Join(",", Configuration.EndPoints.Select(BrokerAddressDisplay.Format))
             : string.Empty;
 
     /// <summary>

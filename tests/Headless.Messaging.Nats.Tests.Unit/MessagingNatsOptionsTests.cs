@@ -49,10 +49,7 @@ public sealed class MessagingNatsOptionsTests : TestBase
     {
         var options = new MessagingNatsOptions { Servers = "nats://user:password@localhost:4222" };
 
-        BrokerAddressDisplay
-            .GetDisplayEndpoints(options.Servers, inferredScheme: "nats")
-            .Should()
-            .Be("nats://localhost:4222");
+        BrokerAddressDisplay.FormatMany(options.Servers).Should().Be("nats://localhost:4222");
     }
 
     [Fact]
@@ -63,10 +60,7 @@ public sealed class MessagingNatsOptionsTests : TestBase
             Servers = "nats://user:password@localhost:4222, nats://admin:secret@example.com:4223",
         };
 
-        BrokerAddressDisplay
-            .GetDisplayEndpoints(options.Servers, inferredScheme: "nats")
-            .Should()
-            .Be("nats://localhost:4222,nats://example.com:4223");
+        BrokerAddressDisplay.FormatMany(options.Servers).Should().Be("nats://localhost:4222,nats://example.com:4223");
     }
 
     [Fact]

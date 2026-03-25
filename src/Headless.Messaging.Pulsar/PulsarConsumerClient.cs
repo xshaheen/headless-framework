@@ -27,8 +27,7 @@ internal sealed class PulsarConsumerClient(
 
     public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-    public BrokerAddress BrokerAddress =>
-        new("pulsar", BrokerAddressDisplay.GetDisplayEndpoint(_pulsarOptions.ServiceUrl));
+    public BrokerAddress BrokerAddress => new("pulsar", BrokerAddressDisplay.Format(_pulsarOptions.ServiceUrl));
 
     public async ValueTask SubscribeAsync(IEnumerable<string> topics)
     {

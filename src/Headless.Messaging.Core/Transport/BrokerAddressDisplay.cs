@@ -13,7 +13,9 @@ namespace Headless.Messaging.Transport;
 /// </remarks>
 public static class BrokerAddressDisplay
 {
-    public static string GetDisplayEndpoints(string? endpoints, string? inferredScheme = null)
+    private const string _DummyScheme = "mq";
+
+    public static string FormatMany(string? endpoints)
     {
         if (string.IsNullOrWhiteSpace(endpoints))
         {
@@ -22,13 +24,11 @@ public static class BrokerAddressDisplay
 
         return string.Join(
             ",",
-            endpoints
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(endpoint => GetDisplayEndpoint(endpoint, inferredScheme))
+            endpoints.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(Format)
         );
     }
 
-    public static string GetDisplayEndpoint(string? endpoint, string? inferredScheme = null)
+    public static string Format(string? endpoint)
     {
         if (string.IsNullOrWhiteSpace(endpoint))
         {
@@ -38,13 +38,15 @@ public static class BrokerAddressDisplay
         endpoint = endpoint.Trim();
 
         if (
-            !string.IsNullOrWhiteSpace(inferredScheme)
-            && !endpoint.Contains("://", StringComparison.Ordinal)
+            !endpoint.Contains("://", StringComparison.Ordinal)
             && endpoint.Contains('@')
-            && Uri.TryCreate(inferredScheme + "://" + endpoint, UriKind.Absolute, out var inferredUri)
+            && Uri.TryCreate(_DummyScheme + "://" + endpoint, UriKind.Absolute, out var inferredUri)
         )
         {
-            return inferredUri.IsDefaultPort ? inferredUri.Host : $"{inferredUri.Host}:{inferredUri.Port}";
+            var displayEndpoint = _RemoveCredentials(inferredUri);
+            return displayEndpoint.StartsWith(_DummyScheme + "://", StringComparison.Ordinal)
+                ? displayEndpoint[(_DummyScheme.Length + 3)..]
+                : displayEndpoint;
         }
 
         if (Uri.TryCreate(endpoint, UriKind.Absolute, out var absoluteUri))
@@ -55,7 +57,7 @@ public static class BrokerAddressDisplay
         return endpoint;
     }
 
-    public static string GetDisplayEndpoint(EndPoint endpoint)
+    public static string Format(EndPoint endpoint)
     {
         return endpoint switch
         {

@@ -41,7 +41,7 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
         {
             _logger.LogDebug(
                 "Messaging Pulsar configuration: ServiceUrl={ServiceUrl}, EnableClientLog={EnableClientLog}, HasTlsOptions={HasTlsOptions}",
-                BrokerAddressDisplay.GetDisplayEndpoint(_options.ServiceUrl),
+                BrokerAddressDisplay.Format(_options.ServiceUrl),
                 _options.EnableClientLog,
                 _options.TlsOptions is not null
             );
@@ -61,7 +61,7 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
         }
     }
 
-    public string ServersAddress => BrokerAddressDisplay.GetDisplayEndpoint(_options.ServiceUrl);
+    public string ServersAddress => BrokerAddressDisplay.Format(_options.ServiceUrl);
 
     public async Task<IProducer<byte[]>> CreateProducerAsync(string topic)
     {

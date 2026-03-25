@@ -33,12 +33,12 @@ public sealed class KafkaConnectionPool : IKafkaConnectionPool, IDisposable
         {
             logger.LogDebug(
                 "Kafka servers for messaging: {Servers}",
-                BrokerAddressDisplay.GetDisplayEndpoints(_options.Servers, inferredScheme: "kafka")
+                BrokerAddressDisplay.FormatMany(_options.Servers)
             );
         }
     }
 
-    public string ServersAddress => BrokerAddressDisplay.GetDisplayEndpoints(_options.Servers, inferredScheme: "kafka");
+    public string ServersAddress => BrokerAddressDisplay.FormatMany(_options.Servers);
 
     public IProducer<string, byte[]> RentProducer()
     {

@@ -23,7 +23,7 @@ public sealed class NatsConnectionPool : INatsConnectionPool
     public NatsConnectionPool(ILogger<NatsConnectionPool> logger, IOptions<MessagingNatsOptions> options)
     {
         var opts = options.Value;
-        ServersAddress = BrokerAddressDisplay.GetDisplayEndpoints(opts.Servers, inferredScheme: "nats");
+        ServersAddress = BrokerAddressDisplay.FormatMany(opts.Servers);
 
         var natsOpts = opts.BuildNatsOpts();
         var poolSize = opts.ConnectionPoolSize;
