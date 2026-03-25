@@ -5,6 +5,34 @@ packages: Tus, Tus.Azure, Tus.DistributedLocks
 
 # TUS (Resumable Uploads)
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.Tus](#headlesstus)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Usage](#usage)
+  - [Configuration](#configuration)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.Tus.Azure](#headlesstusazure)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start)
+  - [Configuration](#configuration-1)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+- [Headless.Tus.DistributedLocks](#headlesstusdistributedlocks)
+  - [Problem Solved](#problem-solved-2)
+  - [Key Features](#key-features-2)
+  - [Installation](#installation-2)
+  - [Quick Start](#quick-start-1)
+  - [Configuration](#configuration-2)
+  - [Dependencies](#dependencies-2)
+  - [Side Effects](#side-effects-2)
+
 > TUS protocol implementation for resumable file uploads with Azure Blob Storage backend and distributed lock support.
 
 ## Quick Orientation

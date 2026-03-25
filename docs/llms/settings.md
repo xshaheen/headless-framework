@@ -5,6 +5,39 @@ packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework
 
 # Settings
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.Settings.Abstractions](#headlesssettingsabstractions)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Usage](#usage)
+  - [Configuration](#configuration)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.Settings.Core](#headlesssettingscore)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start)
+  - [Usage](#usage-1)
+    - [Define Settings](#define-settings)
+    - [Read/Write Settings](#readwrite-settings)
+  - [Configuration](#configuration-1)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+- [Headless.Settings.Storage.EntityFramework](#headlesssettingsstorageentityframework)
+  - [Problem Solved](#problem-solved-2)
+  - [Key Features](#key-features-2)
+  - [Installation](#installation-2)
+  - [Quick Start](#quick-start-1)
+    - [Option 1: Dedicated DbContext](#option-1-dedicated-dbcontext)
+    - [Option 2: Shared DbContext](#option-2-shared-dbcontext)
+  - [Configuration](#configuration-2)
+  - [Dependencies](#dependencies-2)
+  - [Side Effects](#side-effects-2)
+
 > Dynamic, hierarchical application settings with runtime read/write support and multiple value providers (default, config, global, tenant, user).
 
 ## Quick Orientation

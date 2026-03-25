@@ -902,7 +902,7 @@ Consider adding a combined demo showing both modules in one dashboard.
 - Solution file — remove old projects, add new
 - Root `README.md` package table and feature docs
 - Package READMEs under `src/Headless.*`
-- `docs/llms/jobs.txt` and `docs/llms/messaging.txt`
+- `docs/llms/jobs.md` and `docs/llms/messaging.md`
 - `InternalsVisibleTo` declarations in moved/consuming projects
 - Demo project references, using statements, and launch instructions
 - Any CI/CD, packaging, or release automation that references old package names

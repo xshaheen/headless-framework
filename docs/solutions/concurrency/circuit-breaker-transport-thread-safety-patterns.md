@@ -349,7 +349,7 @@ src/Headless.Messaging.InMemory/InMemoryConsumerClient.cs
 src/Headless.Messaging.Pulsar/PulsarConsumerClient.cs
 src/Headless.Messaging.Sqs/SqsConsumerClient.cs
 src/Headless.Messaging.Redis/RedisConsumerClient.cs
-docs/llms/messaging.txt
+docs/llms/messaging.md
 tests/Headless.Messaging.Core.Tests.Unit/CircuitBreaker/CircuitBreakerStateManagerTests.cs
 ```
 

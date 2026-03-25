@@ -5,6 +5,36 @@ packages: OpenApi.Nswag, OpenApi.Nswag.OData, OpenApi.Scalar
 
 # OpenAPI
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.OpenApi.Nswag](#headlessopenapinswag)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Configuration](#configuration)
+    - [Options](#options)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.OpenApi.Nswag.OData](#headlessopenapinswagodata)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start-1)
+  - [Configuration](#configuration-1)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+- [Headless.OpenApi.Scalar](#headlessopenapiscalar)
+  - [Problem Solved](#problem-solved-2)
+  - [Key Features](#key-features-2)
+  - [Installation](#installation-2)
+  - [Quick Start](#quick-start-2)
+  - [Configuration](#configuration-2)
+    - [Options](#options-1)
+  - [Dependencies](#dependencies-2)
+  - [Side Effects](#side-effects-2)
+
 > OpenAPI spec generation via NSwag with FluentValidation integration, OData parameter docs, and Scalar documentation UI.
 
 ## Quick Orientation

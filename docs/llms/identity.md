@@ -5,6 +5,18 @@ packages: Identity.Storage.EntityFramework
 
 # Identity
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.Identity.Storage.EntityFramework](#headlessidentitystorageentityframework)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Configuration](#configuration)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+
 > ASP.NET Core Identity integration with framework EF Core conventions and interceptors.
 
 ## Quick Orientation

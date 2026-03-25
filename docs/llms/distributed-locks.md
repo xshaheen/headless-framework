@@ -5,6 +5,43 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 
 # Distributed Locks
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.DistributedLocks.Abstractions](#headlessdistributedlocksabstractions)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Usage](#usage)
+  - [Configuration](#configuration)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.DistributedLocks.Core](#headlessdistributedlockscore)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start)
+  - [Configuration](#configuration-1)
+    - [Options](#options)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+- [Headless.DistributedLocks.Cache](#headlessdistributedlockscache)
+  - [Problem Solved](#problem-solved-2)
+  - [Key Features](#key-features-2)
+  - [Installation](#installation-2)
+  - [Quick Start](#quick-start-1)
+  - [Configuration](#configuration-2)
+  - [Dependencies](#dependencies-2)
+  - [Side Effects](#side-effects-2)
+- [Headless.DistributedLocks.Redis](#headlessdistributedlocksredis)
+  - [Problem Solved](#problem-solved-3)
+  - [Key Features](#key-features-3)
+  - [Installation](#installation-3)
+  - [Quick Start](#quick-start-2)
+  - [Configuration](#configuration-3)
+  - [Dependencies](#dependencies-3)
+  - [Side Effects](#side-effects-3)
+
 > Provider-agnostic distributed locking with automatic renewal, expiration, throttling, and pluggable storage backends (Redis, Cache).
 
 ## Quick Orientation

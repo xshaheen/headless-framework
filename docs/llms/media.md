@@ -5,6 +5,27 @@ packages: Media.Indexing.Abstractions, Media.Indexing
 
 # Media
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.Media.Indexing.Abstractions](#headlessmediaindexingabstractions)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Usage](#usage)
+  - [Configuration](#configuration)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.Media.Indexing](#headlessmediaindexing)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start)
+  - [Usage](#usage-1)
+  - [Configuration](#configuration-1)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+
 > Text extraction from documents (PDF, Word, PowerPoint) for full-text search indexing.
 
 ## Quick Orientation

@@ -5,6 +5,19 @@ packages: Api, Core, Orm.EntityFramework, Permissions.Core
 
 # Multi-Tenancy
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [HTTP Setup](#http-setup)
+- [Tenant Semantics](#tenant-semantics)
+- [EF Core Integration](#ef-core-integration)
+- [Permissions and Caching](#permissions-and-caching)
+- [Non-HTTP Execution Paths](#non-http-execution-paths)
+  - [Background Jobs](#background-jobs)
+  - [Message Consumers](#message-consumers)
+  - [SignalR](#signalr)
+- [Failure Modes to Watch](#failure-modes-to-watch)
+
 > End-to-end tenant context setup for HTTP requests, EF Core global filters, permission caching, and non-HTTP execution paths.
 
 ## Quick Orientation

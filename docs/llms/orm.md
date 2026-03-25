@@ -5,6 +5,29 @@ packages: Orm.EntityFramework, Orm.Couchbase
 
 # ORM
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.Orm.EntityFramework](#headlessormentityframework)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Configuration](#configuration)
+    - [Value Converters](#value-converters)
+    - [Global Filters](#global-filters)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.Orm.Couchbase](#headlessormcouchbase)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start-1)
+  - [Configuration](#configuration-1)
+    - [Cluster Options](#cluster-options)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+
 > Database integration with EF Core conventions (auditing, soft delete, multi-tenancy, DDD) and Couchbase document DB support.
 
 ## Quick Orientation

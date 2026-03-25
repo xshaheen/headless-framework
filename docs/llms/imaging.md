@@ -5,6 +5,36 @@ packages: Imaging.Abstractions, Imaging.Core, Imaging.ImageSharp
 
 # Imaging
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.Imaging.Abstractions](#headlessimagingabstractions)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Usage](#usage)
+  - [Configuration](#configuration)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.Imaging.Core](#headlessimagingcore)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start)
+  - [Configuration](#configuration-1)
+    - [Options](#options)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+- [Headless.Imaging.ImageSharp](#headlessimagingimagesharp)
+  - [Problem Solved](#problem-solved-2)
+  - [Key Features](#key-features-2)
+  - [Installation](#installation-2)
+  - [Quick Start](#quick-start-1)
+  - [Configuration](#configuration-2)
+    - [Options](#options-1)
+  - [Dependencies](#dependencies-2)
+  - [Side Effects](#side-effects-2)
+
 > Image resizing and compression pipeline with contributor-based extensibility, powered by ImageSharp.
 
 ## Quick Orientation

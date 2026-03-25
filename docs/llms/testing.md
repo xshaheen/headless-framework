@@ -5,6 +5,30 @@ packages: Testing, Testing.Testcontainers
 
 # Testing
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.Testing](#headlesstesting)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Usage](#usage)
+    - [Test Lifecycle](#test-lifecycle)
+    - [Controllable Time](#controllable-time)
+  - [Configuration](#configuration)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.Testing.Testcontainers](#headlesstestingtestcontainers)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start-1)
+  - [Prerequisites](#prerequisites)
+  - [Configuration](#configuration-1)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+
 > Base classes and Docker-backed fixtures for xUnit unit and integration tests.
 
 ## Quick Orientation

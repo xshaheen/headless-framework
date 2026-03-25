@@ -5,6 +5,19 @@ packages: Logging.Serilog
 
 # Logging
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.Logging.Serilog](#headlessloggingserilog)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Configuration](#configuration)
+    - [appsettings.json](#appsettingsjson)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+
 > Serilog configuration factory with preconfigured sinks, enrichers, and structured logging defaults.
 
 ## Quick Orientation

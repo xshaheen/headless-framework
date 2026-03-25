@@ -5,6 +5,39 @@ packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework
 
 # Feature Management
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.Features.Abstractions](#headlessfeaturesabstractions)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Usage](#usage)
+    - [Defining Features](#defining-features)
+  - [Configuration](#configuration)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.Features.Core](#headlessfeaturescore)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start)
+    - [Custom Value Provider](#custom-value-provider)
+  - [Configuration](#configuration-1)
+    - [Options](#options)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+- [Headless.Features.Storage.EntityFramework](#headlessfeaturesstorageentityframework)
+  - [Problem Solved](#problem-solved-2)
+  - [Key Features](#key-features-2)
+  - [Installation](#installation-2)
+  - [Quick Start](#quick-start-1)
+    - [Using Built-in DbContext](#using-built-in-dbcontext)
+    - [Using Custom DbContext](#using-custom-dbcontext)
+  - [Configuration](#configuration-2)
+  - [Dependencies](#dependencies-2)
+  - [Side Effects](#side-effects-2)
+
 > Dynamic feature flags and feature value management with hierarchical resolution (Tenant > Edition > Default), caching, and EF Core persistence.
 
 ## Quick Orientation

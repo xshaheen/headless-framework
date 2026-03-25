@@ -5,6 +5,41 @@ packages: Payments.Paymob.CashIn, Payments.Paymob.CashOut, Payments.Paymob.Servi
 
 # Payments
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.Payments.Paymob.CashIn](#headlesspaymentspaymobcashin)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Usage](#usage)
+    - [Create Payment Intention](#create-payment-intention)
+    - [Validate Callback](#validate-callback)
+  - [Configuration](#configuration)
+    - [appsettings.json](#appsettingsjson)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.Payments.Paymob.CashOut](#headlesspaymentspaymobcashout)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start-1)
+  - [Usage](#usage-1)
+    - [Bank Transfer](#bank-transfer)
+  - [Configuration](#configuration-1)
+    - [appsettings.json](#appsettingsjson-1)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+- [Headless.Payments.Paymob.Services](#headlesspaymentspaymobservices)
+  - [Problem Solved](#problem-solved-2)
+  - [Key Features](#key-features-2)
+  - [Installation](#installation-2)
+  - [Quick Start](#quick-start-2)
+  - [Configuration](#configuration-2)
+  - [Dependencies](#dependencies-2)
+  - [Side Effects](#side-effects-2)
+
 > Paymob Accept payment gateway integration for Egypt/MENA: payment collection (CashIn), disbursements (CashOut), and higher-level service workflows.
 
 ## Quick Orientation

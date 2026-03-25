@@ -5,6 +5,42 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
 
 # Permissions
 
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.Permissions.Abstractions](#headlesspermissionsabstractions)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Usage](#usage)
+    - [Defining Permissions](#defining-permissions)
+  - [Configuration](#configuration)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.Permissions.Core](#headlesspermissionscore)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start)
+    - [Authorization Requirement](#authorization-requirement)
+  - [Permission Resolution](#permission-resolution)
+    - [Resolution Examples](#resolution-examples)
+    - [Permission States](#permission-states)
+  - [Configuration](#configuration-1)
+    - [Options](#options)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+- [Headless.Permissions.Storage.EntityFramework](#headlesspermissionsstorageentityframework)
+  - [Problem Solved](#problem-solved-2)
+  - [Key Features](#key-features-2)
+  - [Installation](#installation-2)
+  - [Quick Start](#quick-start-1)
+    - [Using Built-in DbContext](#using-built-in-dbcontext)
+    - [Using Custom DbContext](#using-custom-dbcontext)
+  - [Configuration](#configuration-2)
+  - [Dependencies](#dependencies-2)
+  - [Side Effects](#side-effects-2)
+
 > Dynamic permission management with hierarchical grant resolution, caching, and ASP.NET Core authorization integration.
 
 ## Quick Orientation
