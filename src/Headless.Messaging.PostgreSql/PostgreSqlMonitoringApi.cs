@@ -75,11 +75,11 @@ public sealed class PostgreSqlMonitoringApi(
 
                     while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                     {
-                        statisticsDto.PublishedSucceeded = reader.GetInt32(0);
-                        statisticsDto.ReceivedSucceeded = reader.GetInt32(1);
-                        statisticsDto.PublishedFailed = reader.GetInt32(2);
-                        statisticsDto.ReceivedFailed = reader.GetInt32(3);
-                        statisticsDto.PublishedDelayed = reader.GetInt32(4);
+                        statisticsDto.PublishedSucceeded = reader.GetInt64(0);
+                        statisticsDto.ReceivedSucceeded = reader.GetInt64(1);
+                        statisticsDto.PublishedFailed = reader.GetInt64(2);
+                        statisticsDto.ReceivedFailed = reader.GetInt64(3);
+                        statisticsDto.PublishedDelayed = reader.GetInt64(4);
                     }
 
                     return statisticsDto;
@@ -193,25 +193,25 @@ public sealed class PostgreSqlMonitoringApi(
             )
             .ConfigureAwait(false);
 
-        return new(items, query.CurrentPage, query.PageSize, count);
+        return new(items, query.CurrentPage, query.PageSize, (int)count);
     }
 
-    public ValueTask<int> PublishedFailedCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_pubName, nameof(StatusName.Failed));
     }
 
-    public ValueTask<int> PublishedSucceededCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_pubName, nameof(StatusName.Succeeded));
     }
 
-    public ValueTask<int> ReceivedFailedCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_recName, nameof(StatusName.Failed));
     }
 
-    public ValueTask<int> ReceivedSucceededCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
     {
         return _GetNumberOfMessage(_recName, nameof(StatusName.Succeeded));
     }
@@ -234,7 +234,7 @@ public sealed class PostgreSqlMonitoringApi(
         return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed)).ConfigureAwait(false);
     }
 
-    private async ValueTask<int> _GetNumberOfMessage(
+    private async ValueTask<long> _GetNumberOfMessage(
         string tableName,
         string statusName,
         CancellationToken cancellationToken = default
