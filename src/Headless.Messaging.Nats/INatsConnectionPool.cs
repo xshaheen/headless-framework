@@ -20,10 +20,12 @@ public sealed class NatsConnectionPool : INatsConnectionPool, IDisposable
 {
     private readonly MessagingNatsOptions _options;
     private readonly ConcurrentQueue<IConnection> _connectionPool;
-
     private readonly ConnectionFactory _connectionFactory;
+    private readonly int _maxSize;
+
+    // Tracks the number of connections currently queued in the pool (not outstanding/rented).
     private int _pCount;
-    private int _maxSize;
+    private int _disposed;
 
     public NatsConnectionPool(ILogger<NatsConnectionPool> logger, IOptions<MessagingNatsOptions> options)
     {
@@ -31,6 +33,7 @@ public sealed class NatsConnectionPool : INatsConnectionPool, IDisposable
         _connectionPool = new ConcurrentQueue<IConnection>();
         _connectionFactory = new ConnectionFactory();
         _maxSize = _options.ConnectionPoolSize;
+
         if (logger.IsEnabled(LogLevel.Debug))
         {
             logger.LogDebug("NATS configuration: {Options}", options.Value.Options);
@@ -44,45 +47,59 @@ public sealed class NatsConnectionPool : INatsConnectionPool, IDisposable
         if (_connectionPool.TryDequeue(out var connection))
         {
             Interlocked.Decrement(ref _pCount);
-
             return connection;
         }
 
-        if (_options.Options != null)
+        if (_options.Options is not null)
         {
-            _options.Options.Url = _options.Servers;
-            connection = _connectionFactory.CreateConnection(_options.Options);
-        }
-        else
-        {
-            connection = _connectionFactory.CreateConnection(_options.Servers);
+            // Create a fresh options copy to avoid mutating the shared instance
+            var opts = ConnectionFactory.GetDefaultOptions();
+            opts.Url = _options.Servers;
+            return _connectionFactory.CreateConnection(opts);
         }
 
-        return connection;
+        return _connectionFactory.CreateConnection(_options.Servers);
     }
 
     public bool Return(IConnection connection)
     {
-        if (Interlocked.Increment(ref _pCount) <= _maxSize && connection.State == ConnState.CONNECTED)
+        if (Volatile.Read(ref _disposed) != 0)
         {
-            _connectionPool.Enqueue(connection);
-
-            return true;
+            if (!connection.IsReconnecting())
+                connection.Dispose();
+            return false;
         }
 
-        if (!connection.IsReconnecting())
+        if (connection.State != ConnState.CONNECTED)
         {
-            connection.Dispose();
+            if (!connection.IsReconnecting())
+                connection.Dispose();
+            return false;
         }
 
-        Interlocked.Decrement(ref _pCount);
+        // Atomic check-and-increment: only enqueue if pool is not full
+        while (true)
+        {
+            var current = Volatile.Read(ref _pCount);
+            if (current >= _maxSize)
+            {
+                if (!connection.IsReconnecting())
+                    connection.Dispose();
+                return false;
+            }
 
-        return false;
+            if (Interlocked.CompareExchange(ref _pCount, current + 1, current) == current)
+            {
+                _connectionPool.Enqueue(connection);
+                return true;
+            }
+        }
     }
 
     public void Dispose()
     {
-        _maxSize = 0;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
 
         while (_connectionPool.TryDequeue(out var context))
         {

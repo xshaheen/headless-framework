@@ -35,7 +35,7 @@ internal sealed class NatsConsumerClient(
 
     public BrokerAddress BrokerAddress => new("nats", _natsOptions.Servers);
 
-    public Task<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+    public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
     {
         if (_natsOptions.EnableSubscriberClientStreamAndSubjectCreation)
         {
@@ -71,17 +71,15 @@ internal sealed class NatsConsumerClient(
                     {
                         jsm.AddStream(builder.Build());
                     }
-#pragma warning disable ERP022
-                    catch
+                    catch (NATSJetStreamException)
                     {
-                        // ignored
+                        // Stream was created by another instance between GetStreamInfo and AddStream — safe to ignore
                     }
-#pragma warning restore ERP022
                 }
             }
         }
 
-        return Task.FromResult<ICollection<string>>(topicNames.ToList());
+        return ValueTask.FromResult<ICollection<string>>(topicNames.ToList());
     }
 
     public ValueTask SubscribeAsync(IEnumerable<string> topics)
@@ -107,6 +105,8 @@ internal sealed class NatsConsumerClient(
 
         var js = _consumerClient!.CreateJetStreamContext();
         var streamGroup = topics.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
+        List<Exception>? failures = null;
+        var totalSubjects = 0;
 
         lock (_connectionLock)
         {
@@ -116,6 +116,8 @@ internal sealed class NatsConsumerClient(
 
                 foreach (var subject in subjectStream)
                 {
+                    totalSubjects++;
+
                     try
                     {
                         var consumerConfig = ConsumerConfiguration
@@ -136,10 +138,9 @@ internal sealed class NatsConsumerClient(
                         var sub = js.PushSubscribeAsync(subject, groupName, _SubscriptionMessageHandler, false, pso);
                         _subscriptions.Add(sub);
                     }
-#pragma warning disable ERP022
                     catch (Exception e)
                     {
-                        OnLogCallback!(
+                        OnLogCallback?.Invoke(
                             new LogMessageEventArgs
                             {
                                 LogType = MqLogType.ConnectError,
@@ -148,10 +149,21 @@ internal sealed class NatsConsumerClient(
                                     + e,
                             }
                         );
+
+                        failures ??= [];
+                        failures.Add(e);
                     }
-#pragma warning restore ERP022
                 }
             }
+        }
+
+        // Fail fast if no subscriptions succeeded
+        if (failures is not null && failures.Count == totalSubjects)
+        {
+            throw new AggregateException(
+                "Failed to subscribe to all NATS subjects. See inner exceptions for details.",
+                failures
+            );
         }
     }
 
@@ -177,7 +189,9 @@ internal sealed class NatsConsumerClient(
             if (groupConcurrent > 0)
             {
                 _ = Task.Run(
-                        async () =>
+                    async () =>
+                    {
+                        try
                         {
                             await _semaphore.WaitAsync(_cancellationToken).ConfigureAwait(false);
                             try
@@ -188,9 +202,24 @@ internal sealed class NatsConsumerClient(
                             {
                                 _ReleaseSemaphore();
                             }
-                        },
-                        CancellationToken.None
-                    );
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // Shutdown in progress — expected, do not log
+                        }
+                        catch (Exception ex)
+                        {
+                            OnLogCallback?.Invoke(
+                                new LogMessageEventArgs
+                                {
+                                    LogType = MqLogType.ExceptionReceived,
+                                    Reason = $"Unhandled exception in concurrent message handler: {ex}",
+                                }
+                            );
+                        }
+                    },
+                    _cancellationToken
+                );
             }
             else
             {
@@ -308,8 +337,15 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
-        if (!await _pauseGate.PauseAsync()) return;
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
+        if (!await _pauseGate.PauseAsync())
+        {
+            return;
+        }
 
         // Unsubscribe without drain — the circuit is opening because messages are
         // already failing, so a synchronous 5-second drain adds latency with no
@@ -319,8 +355,15 @@ internal sealed class NatsConsumerClient(
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
-        if (!await _pauseGate.ResumeAsync()) return;
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
+        if (!await _pauseGate.ResumeAsync())
+        {
+            return;
+        }
 
         if (_subscribedTopics is not null)
         {
@@ -374,7 +417,10 @@ internal sealed class NatsConsumerClient(
 
     public ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return ValueTask.CompletedTask;
+        }
 
         _pauseGate.Release();
         _DrainSubscriptions();
@@ -396,11 +442,14 @@ internal sealed class NatsConsumerClient(
             if (_consumerClient is null)
 #pragma warning restore CA1508
             {
-                var opts = _natsOptions.Options ?? ConnectionFactory.GetDefaultOptions();
-                opts.Url ??= _natsOptions.Servers;
+                // Create a fresh options instance to avoid mutating the shared Options object
+                var opts = ConnectionFactory.GetDefaultOptions();
+                opts.Url = _natsOptions.Servers;
                 opts.DisconnectedEventHandler = _DisconnectedEventHandler;
                 opts.AsyncErrorEventHandler = _AsyncErrorEventHandler;
                 opts.Timeout = 5000;
+                // Intentional: reconnection is managed by ConsumerRegister.ReStartAsync,
+                // which rebuilds the consumer when _DisconnectedEventHandler signals MqLogType.ConnectError.
                 opts.AllowReconnect = false;
                 opts.NoEcho = true;
 
@@ -417,13 +466,12 @@ internal sealed class NatsConsumerClient(
         }
 
         var logArgs = new LogMessageEventArgs { LogType = MqLogType.ConnectError, Reason = e.Error.ToString() };
-        OnLogCallback!(logArgs);
+        OnLogCallback?.Invoke(logArgs);
     }
 
     private void _AsyncErrorEventHandler(object? sender, ErrEventArgs e)
     {
         var logArgs = new LogMessageEventArgs { LogType = MqLogType.AsyncErrorEvent, Reason = e.Error };
-        OnLogCallback!(logArgs);
+        OnLogCallback?.Invoke(logArgs);
     }
-
 }

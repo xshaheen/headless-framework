@@ -50,7 +50,9 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
                 return OperateResult.Success;
             }
 
-            throw new PublisherSentFailedException("NATS message send failed, no consumer reply!");
+            return OperateResult.Failed(
+                new PublisherSentFailedException("NATS message send failed, no consumer reply!")
+            );
         }
         catch (OperationCanceledException)
         {
