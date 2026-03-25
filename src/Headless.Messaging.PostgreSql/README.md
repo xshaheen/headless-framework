@@ -44,7 +44,6 @@ options.UsePostgreSql(config =>
 {
     config.ConnectionString = "connection_string";
     config.Schema = "messaging";
-    config.TableNamePrefix = "msg";
 });
 ```
 
@@ -56,8 +55,8 @@ options.UsePostgreSql(config =>
 ## Side Effects
 
 - Creates database tables in configured schema:
-  - `{prefix}_published` - Published messages
-  - `{prefix}_received` - Received messages
-  - `{prefix}_lock` - Distributed lock table
+  - `{schema}.published` - Published messages
+  - `{schema}.received` - Received messages
+  - `{schema}.lock` - Distributed lock table
 - Creates indexes for message queries
 - Periodically cleans up expired messages

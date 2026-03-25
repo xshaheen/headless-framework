@@ -19,18 +19,18 @@ internal class SqlServerMonitoringApi(
 ) : IMonitoringApi
 {
     private readonly SqlServerOptions _options = options.Value ?? throw new ArgumentNullException(nameof(options));
-    private readonly string _pubName = initializer.GetPublishedTableName();
-    private readonly string _recName = initializer.GetReceivedTableName();
+    private readonly string _publishedTable = initializer.GetPublishedTableName();
+    private readonly string _receivedTable = initializer.GetReceivedTableName();
 
     public async ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
     {
         var sql = $"""
             SELECT
-                (SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Succeeded') AS PublishedSucceeded,
-                (SELECT COUNT(Id) FROM {_recName} WHERE StatusName = N'Succeeded') AS ReceivedSucceeded,
-                (SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Failed') AS PublishedFailed,
-                (SELECT COUNT(Id) FROM {_recName} WHERE StatusName = N'Failed') AS ReceivedFailed,
-                (SELECT COUNT(Id) FROM {_pubName} WHERE StatusName = N'Delayed') AS PublishedDelayed;
+                (SELECT COUNT(Id) FROM {_publishedTable} WHERE StatusName = N'Succeeded') AS PublishedSucceeded,
+                (SELECT COUNT(Id) FROM {_receivedTable} WHERE StatusName = N'Succeeded') AS ReceivedSucceeded,
+                (SELECT COUNT(Id) FROM {_publishedTable} WHERE StatusName = N'Failed') AS PublishedFailed,
+                (SELECT COUNT(Id) FROM {_receivedTable} WHERE StatusName = N'Failed') AS ReceivedFailed,
+                (SELECT COUNT(Id) FROM {_publishedTable} WHERE StatusName = N'Delayed') AS PublishedDelayed;
             """;
 
         await using var connection = new SqlConnection(_options.ConnectionString);
@@ -65,7 +65,7 @@ internal class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var tableName = type == MessageType.Publish ? _pubName : _recName;
+        var tableName = type == MessageType.Publish ? _publishedTable : _receivedTable;
         return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed), cancellationToken)
             .ConfigureAwait(false);
     }
@@ -75,7 +75,7 @@ internal class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var tableName = type == MessageType.Publish ? _pubName : _recName;
+        var tableName = type == MessageType.Publish ? _publishedTable : _receivedTable;
         return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded), cancellationToken)
             .ConfigureAwait(false);
     }
@@ -85,7 +85,7 @@ internal class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var tableName = query.MessageType == MessageType.Publish ? _pubName : _recName;
+        var tableName = query.MessageType == MessageType.Publish ? _publishedTable : _receivedTable;
         var selectColumns =
             query.MessageType == MessageType.Publish
                 ? "[Id],[MessageId],[Version],[Name],CAST(NULL AS nvarchar(200)) AS [Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName]"
@@ -185,22 +185,22 @@ internal class SqlServerMonitoringApi(
 
     public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_pubName, nameof(StatusName.Failed), cancellationToken);
+        return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Failed), cancellationToken);
     }
 
     public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_pubName, nameof(StatusName.Succeeded), cancellationToken);
+        return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Succeeded), cancellationToken);
     }
 
     public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_recName, nameof(StatusName.Failed), cancellationToken);
+        return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Failed), cancellationToken);
     }
 
     public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_recName, nameof(StatusName.Succeeded), cancellationToken);
+        return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Succeeded), cancellationToken);
     }
 
     public async ValueTask<MediumMessage?> GetPublishedMessageAsync(
@@ -208,7 +208,7 @@ internal class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessageAsync(_pubName, id, cancellationToken).ConfigureAwait(false);
+        return await _GetMessageAsync(_publishedTable, id, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<MediumMessage?> GetReceivedMessageAsync(
@@ -216,7 +216,7 @@ internal class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessageAsync(_recName, id, cancellationToken).ConfigureAwait(false);
+        return await _GetMessageAsync(_receivedTable, id, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<long> _GetNumberOfMessage(
@@ -327,7 +327,7 @@ internal class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var exceptionInfoSql = string.Equals(tableName, _recName, StringComparison.Ordinal)
+        var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
             ? "ExceptionInfo"
             : "CAST(NULL AS nvarchar(max)) AS ExceptionInfo";
         var sql =

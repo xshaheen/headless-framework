@@ -24,15 +24,15 @@ public sealed class PostgreSqlMonitoringApi(
 ) : IMonitoringApi
 {
     private readonly PostgreSqlOptions _options = Argument.IsNotNull(options.Value);
-    private readonly string _pubName = initializer.GetPublishedTableName();
-    private readonly string _recName = initializer.GetReceivedTableName();
+    private readonly string _publishedTable = initializer.GetPublishedTableName();
+    private readonly string _receivedTable = initializer.GetReceivedTableName();
 
     public async ValueTask<MediumMessage?> GetPublishedMessageAsync(
         long id,
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessageAsync(_pubName, id, cancellationToken).ConfigureAwait(false);
+        return await _GetMessageAsync(_publishedTable, id, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<MediumMessage?> GetReceivedMessageAsync(
@@ -40,7 +40,7 @@ public sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessageAsync(_recName, id, cancellationToken).ConfigureAwait(false);
+        return await _GetMessageAsync(_receivedTable, id, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
@@ -48,19 +48,19 @@ public sealed class PostgreSqlMonitoringApi(
         var sql = $"""
             SELECT
             (
-                SELECT COUNT("Id") FROM {_pubName} WHERE "StatusName" = N'Succeeded'
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Succeeded'
             ) AS "PublishedSucceeded",
             (
-                SELECT COUNT("Id") FROM {_recName} WHERE "StatusName" = N'Succeeded'
+                SELECT COUNT("Id") FROM {_receivedTable} WHERE "StatusName" = 'Succeeded'
             ) AS "ReceivedSucceeded",
             (
-                SELECT COUNT("Id") FROM {_pubName} WHERE "StatusName" = N'Failed'
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Failed'
             ) AS "PublishedFailed",
             (
-                SELECT COUNT("Id") FROM {_recName} WHERE "StatusName" = N'Failed'
+                SELECT COUNT("Id") FROM {_receivedTable} WHERE "StatusName" = 'Failed'
             ) AS "ReceivedFailed",
             (
-                SELECT COUNT("Id") FROM {_pubName} WHERE "StatusName" = N'Delayed'
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Delayed'
             ) AS "PublishedDelayed";
             """;
 
@@ -96,7 +96,7 @@ public sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var tableName = query.MessageType == MessageType.Publish ? _pubName : _recName;
+        var tableName = query.MessageType == MessageType.Publish ? _publishedTable : _receivedTable;
         var selectColumns =
             query.MessageType == MessageType.Publish
                 ? @"""Id"",""MessageId"",""Version"",""Name"",CAST(NULL AS VARCHAR(200)) AS ""Group"",""Content"",""Retries"",""Added"",""ExpiresAt"",""StatusName"""
@@ -184,22 +184,22 @@ public sealed class PostgreSqlMonitoringApi(
 
     public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_pubName, nameof(StatusName.Failed));
+        return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Failed));
     }
 
     public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_pubName, nameof(StatusName.Succeeded));
+        return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Succeeded));
     }
 
     public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_recName, nameof(StatusName.Failed));
+        return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Failed));
     }
 
     public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_recName, nameof(StatusName.Succeeded));
+        return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Succeeded));
     }
 
     public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
@@ -207,7 +207,7 @@ public sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var tableName = type == MessageType.Publish ? _pubName : _recName;
+        var tableName = type == MessageType.Publish ? _publishedTable : _receivedTable;
         return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded)).ConfigureAwait(false);
     }
 
@@ -216,7 +216,7 @@ public sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var tableName = type == MessageType.Publish ? _pubName : _recName;
+        var tableName = type == MessageType.Publish ? _publishedTable : _receivedTable;
         return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed)).ConfigureAwait(false);
     }
 
