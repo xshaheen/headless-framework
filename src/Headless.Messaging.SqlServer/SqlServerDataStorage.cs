@@ -103,7 +103,7 @@ public sealed class SqlServerDataStorage(
         [
             new SqlParameter("@Key", key),
             new SqlParameter("@Instance", instance),
-            new SqlParameter("@TtlSeconds", ttl.TotalSeconds),
+            new SqlParameter("@TtlSeconds", (int)ttl.TotalSeconds),
         ];
         await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)

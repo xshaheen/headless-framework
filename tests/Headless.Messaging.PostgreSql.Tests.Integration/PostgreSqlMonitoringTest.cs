@@ -111,7 +111,6 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         retrieved.Should().NotBeNull();
         retrieved!.StorageId.Should().Be(stored.StorageId);
         retrieved.Content.Should().Be(stored.Content);
-        await Task.CompletedTask;
     }
 
     private static long _messageIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() << 20;

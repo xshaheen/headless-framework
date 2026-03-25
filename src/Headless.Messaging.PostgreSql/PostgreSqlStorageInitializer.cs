@@ -47,7 +47,7 @@ public sealed class PostgreSqlStorageInitializer(
         [
             new NpgsqlParameter("@PubKey", $"publish_retry_{messagingOptions.Value.Version}"),
             new NpgsqlParameter("@RecKey", $"received_retry_{messagingOptions.Value.Version}"),
-            new NpgsqlParameter("@LastLockTime", DateTime.MinValue),
+            new NpgsqlParameter("@LastLockTime", DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc)),
         ];
 
         await connection

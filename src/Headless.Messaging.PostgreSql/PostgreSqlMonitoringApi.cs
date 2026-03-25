@@ -184,22 +184,22 @@ public sealed class PostgreSqlMonitoringApi(
 
     public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Failed));
+        return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Failed), cancellationToken);
     }
 
     public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Succeeded));
+        return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Succeeded), cancellationToken);
     }
 
     public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Failed));
+        return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Failed), cancellationToken);
     }
 
     public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
     {
-        return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Succeeded));
+        return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Succeeded), cancellationToken);
     }
 
     public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
@@ -295,7 +295,7 @@ public sealed class PostgreSqlMonitoringApi(
 
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
-                        dictionary.Add(reader.GetString(0), reader.GetInt32(1));
+                        dictionary.Add(reader.GetString(0), (int)reader.GetInt64(1));
                     }
 
                     return dictionary;
