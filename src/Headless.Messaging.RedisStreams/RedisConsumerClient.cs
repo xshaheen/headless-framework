@@ -167,14 +167,7 @@ internal sealed class RedisConsumerClient(
                 }
                 catch (Exception ex)
                 {
-                    logger.LogError(
-                        ex,
-                        message: "Redis entry {EntryId} on stream {StreamKey} at position {Position} of group {GroupId} is not valid for Messaging, see inner exception for more details.",
-                        entry.Id,
-                        stream.Key,
-                        position,
-                        groupId
-                    );
+                    logger.InvalidRedisEntry(ex, entry.Id, stream.Key, position, groupId);
 
                     var logArgs = new LogMessageEventArgs
                     {
@@ -192,11 +185,7 @@ internal sealed class RedisConsumerClient(
                     }
                     catch (Exception onError)
                     {
-                        logger.LogError(
-                            onError,
-                            "Unhandled exception occurred in {Action} action, Exception has been caught",
-                            nameof(MessagingRedisOptions.OnConsumeError)
-                        );
+                        logger.RedisConsumeErrorCallbackFailed(onError, nameof(MessagingRedisOptions.OnConsumeError));
                     }
                     finally
                     {
@@ -215,11 +204,7 @@ internal sealed class RedisConsumerClient(
                     position == StreamPosition.Beginning
                         ? nameof(StreamPosition.Beginning)
                         : nameof(StreamPosition.NewMessages);
-                logger.LogDebug(
-                    "Redis stream entry [{EntryId}] [position : {PositionName}] was delivered",
-                    entry.Id,
-                    positionName
-                );
+                logger.RedisEntryDelivered(entry.Id, positionName);
             }
         }
     }
@@ -232,11 +217,7 @@ internal sealed class RedisConsumerClient(
                 var exception = completedTask.Exception?.GetBaseException();
                 if (exception is not null)
                 {
-                    logger.LogError(
-                        exception,
-                        "Unhandled exception in Redis background message handler for group {GroupId}",
-                        groupId
-                    );
+                    logger.RedisBackgroundHandlerFailed(exception, groupId);
                 }
             },
             CancellationToken.None,
@@ -244,4 +225,42 @@ internal sealed class RedisConsumerClient(
             TaskScheduler.Default
         );
     }
+}
+
+internal static partial class RedisConsumerClientLog
+{
+    [LoggerMessage(
+        EventId = 3004,
+        Level = LogLevel.Error,
+        Message = "Redis entry {EntryId} on stream {StreamKey} at position {Position} of group {GroupId} is not valid for Messaging, see inner exception for more details."
+    )]
+    public static partial void InvalidRedisEntry(
+        this ILogger logger,
+        Exception exception,
+        RedisValue entryId,
+        RedisKey streamKey,
+        RedisValue position,
+        string groupId
+    );
+
+    [LoggerMessage(
+        EventId = 3005,
+        Level = LogLevel.Error,
+        Message = "Unhandled exception occurred in {Action} action, Exception has been caught"
+    )]
+    public static partial void RedisConsumeErrorCallbackFailed(this ILogger logger, Exception exception, string action);
+
+    [LoggerMessage(
+        EventId = 3006,
+        Level = LogLevel.Debug,
+        Message = "Redis stream entry [{EntryId}] [position : {PositionName}] was delivered"
+    )]
+    public static partial void RedisEntryDelivered(this ILogger logger, RedisValue entryId, string positionName);
+
+    [LoggerMessage(
+        EventId = 3007,
+        Level = LogLevel.Error,
+        Message = "Unhandled exception in Redis background message handler for group {GroupId}"
+    )]
+    public static partial void RedisBackgroundHandlerFailed(this ILogger logger, Exception exception, string groupId);
 }

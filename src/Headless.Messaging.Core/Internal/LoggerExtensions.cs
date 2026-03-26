@@ -312,4 +312,121 @@ internal static partial class LoggerExtensions
         Message = "Transport connection healthy!"
     )]
     public static partial void TransportHealthy(this ILogger logger);
+
+    [LoggerMessage(EventId = 36, Level = LogLevel.Error, Message = "Failed to connect to broker")]
+    public static partial void FailedToConnectToBroker(this ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 37, Level = LogLevel.Error, Message = "An exception occurred in consumer processing loop")]
+    public static partial void ConsumerProcessingLoopFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 38,
+        Level = LogLevel.Warning,
+        Message = "Circuit breaker opened for group '{GroupName}'. Pausing consumers."
+    )]
+    public static partial void CircuitBreakerOpenedPausingConsumers(this ILogger logger, string groupName);
+
+    [LoggerMessage(
+        EventId = 39,
+        Level = LogLevel.Error,
+        Message = "Failed to pause consumer client for group '{GroupName}'."
+    )]
+    public static partial void PauseConsumerClientFailed(this ILogger logger, Exception exception, string groupName);
+
+    [LoggerMessage(
+        EventId = 40,
+        Level = LogLevel.Debug,
+        Message = "Resuming consumers for group '{GroupName}' (half-open)."
+    )]
+    public static partial void ResumingConsumersHalfOpen(this ILogger logger, string groupName);
+
+    [LoggerMessage(
+        EventId = 41,
+        Level = LogLevel.Error,
+        Message = "Failed to resume consumer client for group '{GroupName}'."
+    )]
+    public static partial void ResumeConsumerClientFailed(this ILogger logger, Exception exception, string groupName);
+
+    [LoggerMessage(EventId = 42, Level = LogLevel.Warning, Message = "RabbitMQ consumer cancelled. --> {Reason}")]
+    public static partial void RabbitMqConsumerCancelled(this ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 43, Level = LogLevel.Information, Message = "RabbitMQ consumer registered. --> {Reason}")]
+    public static partial void RabbitMqConsumerRegistered(this ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 44, Level = LogLevel.Warning, Message = "RabbitMQ consumer unregistered. --> {Reason}")]
+    public static partial void RabbitMqConsumerUnregistered(this ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 45, Level = LogLevel.Warning, Message = "RabbitMQ consumer shutdown. --> {Reason}")]
+    public static partial void RabbitMqConsumerShutdown(this ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 46, Level = LogLevel.Error, Message = "Kafka client consume error. --> {Reason}")]
+    public static partial void KafkaClientConsumeError(this ILogger logger, string reason);
+
+    [LoggerMessage(
+        EventId = 47,
+        Level = LogLevel.Warning,
+        Message = "Kafka client consume exception, retying... --> {Reason}"
+    )]
+    public static partial void KafkaClientConsumeRetrying(this ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 48, Level = LogLevel.Critical, Message = "Kafka server connection error. --> {Reason}")]
+    public static partial void KafkaServerConnectionError(this ILogger logger, string reason);
+
+    [LoggerMessage(
+        EventId = 49,
+        Level = LogLevel.Error,
+        Message = "AzureServiceBus subscriber received an error. --> {Reason}"
+    )]
+    public static partial void AzureServiceBusSubscriberReceivedError(this ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 50, Level = LogLevel.Error, Message = "NATS subscriber received an error. --> {Reason}")]
+    public static partial void NatsSubscriberReceivedError(this ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 51, Level = LogLevel.Error, Message = "NATS server connection error. --> {Reason}")]
+    public static partial void NatsServerConnectionError(this ILogger logger, string reason);
+
+    [LoggerMessage(
+        EventId = 52,
+        Level = LogLevel.Error,
+        Message = "AmazonSQS subscriber delete inflight message failed, invalid id. --> {Reason}"
+    )]
+    public static partial void AmazonSqsInvalidIdFormat(this ILogger logger, string reason);
+
+    [LoggerMessage(
+        EventId = 53,
+        Level = LogLevel.Error,
+        Message = "AmazonSQS subscriber change message's visibility failed, message isn't in flight. --> {Reason}"
+    )]
+    public static partial void AmazonSqsMessageNotInflight(this ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 54, Level = LogLevel.Error, Message = "Redis client consume error. --> {Reason}")]
+    public static partial void RedisClientConsumeError(this ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 55, Level = LogLevel.Warning, Message = "Transport configuration warning. --> {Reason}")]
+    public static partial void TransportConfigurationWarning(this ILogger logger, string reason);
+
+    [LoggerMessage(
+        EventId = 56,
+        Level = LogLevel.Error,
+        Message = "Message (Name:{GetName},Group:{GetGroup}) can not be found subscriber. Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches."
+    )]
+    public static partial void SubscriberNotFound(this ILogger logger, string? getName, string? getGroup);
+
+    [LoggerMessage(
+        EventId = 57,
+        Level = LogLevel.Information,
+        Message = "Stored message {StorageId} execution was canceled by shutdown. Persisting for later retry."
+    )]
+    public static partial void StoredMessageExecutionCanceled(this ILogger logger, long storageId);
+
+    [LoggerMessage(
+        EventId = 58,
+        Level = LogLevel.Warning,
+        Message = "Stored message {StorageId} failed with non-retryable exception: {ExceptionType}. Skipping retries."
+    )]
+    public static partial void StoredMessageNonRetryableFailure(
+        this ILogger logger,
+        long storageId,
+        string exceptionType
+    );
 }

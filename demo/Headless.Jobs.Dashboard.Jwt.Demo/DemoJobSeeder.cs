@@ -40,7 +40,10 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
             {
                 var count = Random.Shared.Next(2, 5);
                 await ScheduleTimeJobs(count, stoppingToken);
-                logger.LogInformation("Scheduled {Count} time jobs (cycle #{Cycle})", count, _counter);
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation("Scheduled {Count} time jobs (cycle #{Cycle})", count, _counter);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

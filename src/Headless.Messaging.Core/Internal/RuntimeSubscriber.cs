@@ -44,13 +44,7 @@ internal sealed class RuntimeSubscriber(
                 );
             }
 
-            logger.LogInformation(
-                "Attached runtime subscription {SubscriptionId} for topic {Topic}, group {Group}, handler {HandlerId}.",
-                result.SubscriptionId,
-                result.Topic,
-                result.Group,
-                result.HandlerId
-            );
+            logger.RuntimeSubscriptionAttached(result.SubscriptionId, result.Topic, result.Group, result.HandlerId);
 
             return RuntimeSubscriptionHandle.Attached(
                 result.SubscriptionId!,
@@ -89,7 +83,7 @@ internal sealed class RuntimeSubscriber(
                 await consumerRegister.ReStartAsync(force: true).ConfigureAwait(false);
             }
 
-            logger.LogInformation("Detached runtime subscription {SubscriptionId}.", subscriptionId);
+            logger.RuntimeSubscriptionDetached(subscriptionId);
             return true;
         }
         finally
@@ -102,4 +96,27 @@ internal sealed class RuntimeSubscriber(
     {
         _mutationLock.Dispose();
     }
+}
+
+internal static partial class RuntimeSubscriberLog
+{
+    [LoggerMessage(
+        EventId = 3100,
+        Level = LogLevel.Information,
+        Message = "Attached runtime subscription {SubscriptionId} for topic {Topic}, group {Group}, handler {HandlerId}."
+    )]
+    public static partial void RuntimeSubscriptionAttached(
+        this ILogger logger,
+        string? subscriptionId,
+        string topic,
+        string group,
+        string handlerId
+    );
+
+    [LoggerMessage(
+        EventId = 3101,
+        Level = LogLevel.Information,
+        Message = "Detached runtime subscription {SubscriptionId}."
+    )]
+    public static partial void RuntimeSubscriptionDetached(this ILogger logger, string subscriptionId);
 }

@@ -137,12 +137,7 @@ internal sealed class RuntimeConsumerRegistry(
                 switch (options?.DuplicateBehavior ?? RuntimeSubscriptionDuplicateBehavior.Reject)
                 {
                     case RuntimeSubscriptionDuplicateBehavior.Ignore:
-                        logger.LogInformation(
-                            "Ignoring duplicate runtime subscription for topic {Topic}, group {Group}, handler {HandlerId}.",
-                            topic,
-                            group,
-                            handlerId
-                        );
+                        logger.DuplicateRuntimeSubscriptionIgnored(topic, group, handlerId);
                         return new RuntimeConsumerRegistrationResult(
                             RuntimeConsumerRegistrationStatus.Ignored,
                             null,
@@ -152,13 +147,7 @@ internal sealed class RuntimeConsumerRegistry(
                         );
                     case RuntimeSubscriptionDuplicateBehavior.Replace:
                         _registrations = _registrations.Remove(existing);
-                        logger.LogWarning(
-                            "Replacing runtime subscription for topic {Topic}, group {Group}. Previous handler {ExistingHandlerId}, new handler {HandlerId}.",
-                            topic,
-                            group,
-                            existing.HandlerId,
-                            handlerId
-                        );
+                        logger.DuplicateRuntimeSubscriptionReplaced(topic, group, existing.HandlerId, handlerId);
                         break;
                     default:
                         throw new InvalidOperationException(
@@ -349,4 +338,32 @@ internal sealed class RuntimeConsumerRegistry(
             return handler((ConsumeContext<TMessage>)consumeContext, services, cancellationToken);
         }
     }
+}
+
+internal static partial class RuntimeConsumerRegistryLog
+{
+    [LoggerMessage(
+        EventId = 3102,
+        Level = LogLevel.Information,
+        Message = "Ignoring duplicate runtime subscription for topic {Topic}, group {Group}, handler {HandlerId}."
+    )]
+    public static partial void DuplicateRuntimeSubscriptionIgnored(
+        this ILogger logger,
+        string topic,
+        string group,
+        string handlerId
+    );
+
+    [LoggerMessage(
+        EventId = 3103,
+        Level = LogLevel.Warning,
+        Message = "Replacing runtime subscription for topic {Topic}, group {Group}. Previous handler {ExistingHandlerId}, new handler {HandlerId}."
+    )]
+    public static partial void DuplicateRuntimeSubscriptionReplaced(
+        this ILogger logger,
+        string topic,
+        string group,
+        string existingHandlerId,
+        string handlerId
+    );
 }

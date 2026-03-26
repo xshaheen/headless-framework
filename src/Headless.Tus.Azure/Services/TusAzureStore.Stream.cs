@@ -18,7 +18,7 @@ public sealed partial class TusAzureStore
         Argument.IsNotNull(fileId);
         Argument.IsNotNull(stream);
 
-        _logger.LogTrace("Appending data using the Stream for file '{FileId}'", fileId);
+        _logger.StreamAppendStarted(fileId);
 
         var blobClient = _GetBlobClient(fileId);
         var blockBlobClient = _GetBlockBlobClient(fileId);
@@ -56,11 +56,7 @@ public sealed partial class TusAzureStore
         azureFile.Metadata.LastChunkChecksum = Convert.ToBase64String(hasher.Hash ?? []);
         await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken);
 
-        _logger.LogDebug(
-            "Stored chunk metadata for file '{FileId}': {BlockCount} blocks staged for checksum verification",
-            fileId,
-            chunkBlockIds.Count
-        );
+        _logger.StoredStreamChunkMetadata(fileId, chunkBlockIds.Count);
 
         return bytesWritten;
     }
@@ -298,4 +294,21 @@ public sealed partial class TusAzureStore
             throw;
         }
     }
+}
+
+internal static partial class TusAzureStoreStreamLog
+{
+    [LoggerMessage(
+        EventId = 3224,
+        Level = LogLevel.Trace,
+        Message = "Appending data using the Stream for file '{FileId}'"
+    )]
+    public static partial void StreamAppendStarted(this ILogger logger, string fileId);
+
+    [LoggerMessage(
+        EventId = 3225,
+        Level = LogLevel.Debug,
+        Message = "Stored chunk metadata for file '{FileId}': {BlockCount} blocks staged for checksum verification"
+    )]
+    public static partial void StoredStreamChunkMetadata(this ILogger logger, string fileId, int blockCount);
 }

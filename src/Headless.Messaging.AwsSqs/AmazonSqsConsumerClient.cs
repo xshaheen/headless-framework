@@ -127,16 +127,14 @@ internal sealed class AmazonSqsConsumerClient(
             }
             catch (JsonException ex)
             {
-                _logger.LogError(ex, "Failed to deserialize SQS message. Moving to DLQ.");
+                _logger.SqsMessageDeserializationFailed(ex);
                 await rejectSafelyAsync(receiptHandle).ConfigureAwait(false);
                 return;
             }
 
             if (messageObj?.MessageAttributes == null)
             {
-                _logger.LogError(
-                    "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Moving to DLQ."
-                );
+                _logger.InvalidSqsMessageStructure();
                 await rejectSafelyAsync(receiptHandle).ConfigureAwait(false);
                 return;
             }
@@ -164,7 +162,7 @@ internal sealed class AmazonSqsConsumerClient(
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to reject message for group {GroupId}", groupId);
+                _logger.SqsRejectFailed(ex, groupId);
             }
         }
     }
@@ -177,7 +175,7 @@ internal sealed class AmazonSqsConsumerClient(
                 var exception = completedTask.Exception?.GetBaseException();
                 if (exception is not null)
                 {
-                    _logger.LogError(exception, "Error consuming message for group {GroupId}", groupId);
+                    _logger.SqsMessageConsumeFailed(exception, groupId);
                 }
             },
             CancellationToken.None,
@@ -254,11 +252,8 @@ internal sealed class AmazonSqsConsumerClient(
                 lock (_connectionLock)
                 {
 #pragma warning disable CA1508 // Justification: other thread can initialize it
-                    if (_snsClient == null)
+                    _snsClient ??= AwsClientFactory.CreateSnsClient(_amazonSqsOptions);
 #pragma warning restore CA1508
-                    {
-                        _snsClient = AwsClientFactory.CreateSnsClient(_amazonSqsOptions);
-                    }
                 }
             }
 
@@ -346,4 +341,27 @@ internal sealed class AmazonSqsConsumerClient(
     }
 
     #endregion
+}
+
+internal static partial class AmazonSqsConsumerClientLog
+{
+    [LoggerMessage(
+        EventId = 4200,
+        Level = LogLevel.Error,
+        Message = "Failed to deserialize SQS message. Moving to DLQ."
+    )]
+    public static partial void SqsMessageDeserializationFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4201,
+        Level = LogLevel.Error,
+        Message = "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Moving to DLQ."
+    )]
+    public static partial void InvalidSqsMessageStructure(this ILogger logger);
+
+    [LoggerMessage(EventId = 4202, Level = LogLevel.Error, Message = "Failed to reject message for group {GroupId}")]
+    public static partial void SqsRejectFailed(this ILogger logger, Exception exception, string groupId);
+
+    [LoggerMessage(EventId = 4203, Level = LogLevel.Error, Message = "Error consuming message for group {GroupId}")]
+    public static partial void SqsMessageConsumeFailed(this ILogger logger, Exception exception, string groupId);
 }

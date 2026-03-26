@@ -9,7 +9,7 @@ using Tests.Capabilities;
 namespace Tests;
 
 [Collection("Nats")]
-public sealed class NatsTransportTests : TransportTestsBase, IAsyncLifetime
+public sealed class NatsTransportTests : TransportTestsBase
 {
     private readonly NatsFixture _fixture;
     private INatsConnectionPool? _connectionPool;
@@ -19,7 +19,7 @@ public sealed class NatsTransportTests : TransportTestsBase, IAsyncLifetime
         _fixture = fixture;
     }
 
-    public async ValueTask InitializeAsync()
+    public override async ValueTask InitializeAsync()
     {
         // JetStream requires a stream to exist before publishing.
         // Create a catch-all stream for test subjects.
@@ -27,8 +27,6 @@ public sealed class NatsTransportTests : TransportTestsBase, IAsyncLifetime
         // NATS "*" matches any single token at one level.
         await _fixture.EnsureStreamAsync("TEST", "*");
     }
-
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     protected override TransportCapabilities Capabilities =>
         new()

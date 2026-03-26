@@ -4,32 +4,24 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Hubs;
 
-public class JobsNotificationHub(ILogger<JobsNotificationHub> logger, IAuthService authService) : Hub
+public partial class JobsNotificationHub(ILogger<JobsNotificationHub> logger, IAuthService authService) : Hub
 {
     public override async Task OnConnectedAsync()
     {
         var connectionId = Context.ConnectionId;
-        logger.LogDebug("SignalR connection attempt: {ConnectionId}", connectionId);
+        logger.ConnectionAttempt(connectionId);
 
         // Authenticate the connection using new auth service
         var authResult = await authService.AuthenticateAsync(Context.GetHttpContext()!);
 
         if (!authResult.IsAuthenticated)
         {
-            logger.LogWarning(
-                "SignalR authentication failed: {ConnectionId} - {Error}",
-                connectionId,
-                authResult.ErrorMessage
-            );
+            logger.AuthenticationFailed(connectionId, authResult.ErrorMessage);
             Context.Abort();
             return;
         }
 
-        logger.LogInformation(
-            "SignalR connection established: {ConnectionId} - User: {Username}",
-            connectionId,
-            authResult.Username
-        );
+        logger.ConnectionEstablished(connectionId, authResult.Username);
 
         // Store user info in connection
         Context.Items["username"] = authResult.Username;
@@ -43,11 +35,7 @@ public class JobsNotificationHub(ILogger<JobsNotificationHub> logger, IAuthServi
         var connectionId = Context.ConnectionId;
         var username = Context.Items["username"]?.ToString() ?? "unknown";
 
-        logger.LogInformation(
-            "SignalR connection disconnected: {ConnectionId} - User: {Username}",
-            connectionId,
-            username
-        );
+        logger.ConnectionDisconnected(connectionId, username);
 
         await base.OnDisconnectedAsync(exception);
     }
@@ -63,7 +51,7 @@ public class JobsNotificationHub(ILogger<JobsNotificationHub> logger, IAuthServi
         await Groups.AddToGroupAsync(Context.ConnectionId, groupName);
         var username = Context.Items["username"]?.ToString();
 
-        logger.LogDebug("User {Username} joined group {GroupName}", username, groupName);
+        logger.UserJoinedGroup(username, groupName);
         await Clients.Caller.SendAsync("GroupJoined", groupName);
     }
 
@@ -78,7 +66,7 @@ public class JobsNotificationHub(ILogger<JobsNotificationHub> logger, IAuthServi
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, groupName);
         var username = Context.Items["username"]?.ToString();
 
-        logger.LogDebug("User {Username} left group {GroupName}", username, groupName);
+        logger.UserLeftGroup(username, groupName);
         await Clients.Caller.SendAsync("GroupLeft", groupName);
     }
 
@@ -99,4 +87,37 @@ public class JobsNotificationHub(ILogger<JobsNotificationHub> logger, IAuthServi
     {
         return Context.Items.ContainsKey("authenticated") && (bool)Context.Items["authenticated"]!;
     }
+}
+
+internal static partial class JobsNotificationHubLog
+{
+    [LoggerMessage(EventId = 2000, Level = LogLevel.Debug, Message = "SignalR connection attempt: {ConnectionId}")]
+    public static partial void ConnectionAttempt(this ILogger logger, string connectionId);
+
+    [LoggerMessage(
+        EventId = 2001,
+        Level = LogLevel.Warning,
+        Message = "SignalR authentication failed: {ConnectionId} - {Error}"
+    )]
+    public static partial void AuthenticationFailed(this ILogger logger, string connectionId, string? error);
+
+    [LoggerMessage(
+        EventId = 2002,
+        Level = LogLevel.Information,
+        Message = "SignalR connection established: {ConnectionId} - User: {Username}"
+    )]
+    public static partial void ConnectionEstablished(this ILogger logger, string connectionId, string? username);
+
+    [LoggerMessage(
+        EventId = 2003,
+        Level = LogLevel.Information,
+        Message = "SignalR connection disconnected: {ConnectionId} - User: {Username}"
+    )]
+    public static partial void ConnectionDisconnected(this ILogger logger, string connectionId, string username);
+
+    [LoggerMessage(EventId = 2004, Level = LogLevel.Debug, Message = "User {Username} joined group {GroupName}")]
+    public static partial void UserJoinedGroup(this ILogger logger, string? username, string groupName);
+
+    [LoggerMessage(EventId = 2005, Level = LogLevel.Debug, Message = "User {Username} left group {GroupName}")]
+    public static partial void UserLeftGroup(this ILogger logger, string? username, string groupName);
 }

@@ -111,7 +111,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             )
             .Unwrap()
             .ContinueWith(
-                t => _logger.LogError(t.Exception, "Unhandled exception in published-message retry processing"),
+                t => _logger.PublishedRetryProcessingUnhandled(t.Exception),
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted,
                 TaskScheduler.Default
@@ -143,7 +143,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             .Unwrap();
 
         _ = _failedRetryConsumeTask.ContinueWith(
-            t => _logger.LogError(t.Exception, "Unhandled exception in received-message retry processing"),
+            t => _logger.ReceivedRetryProcessingUnhandled(t.Exception),
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default
@@ -239,11 +239,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 if (group is not null && _IsCircuitOpen(group, circuitOpenCache))
                 {
                     skippedCircuitOpen++;
-                    _logger.LogDebug(
-                        "Skipping retry for message {StorageId} — circuit open for group {Group}",
-                        message.StorageId,
-                        LogSanitizer.Sanitize(group)
-                    );
+                    var safeGroup = LogSanitizer.Sanitize(group);
+                    _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, safeGroup);
                     continue;
                 }
 
@@ -277,7 +274,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(1, ex, "Get messages from storage failed. Retrying...");
+            _logger.GetMessagesFromStorageFailed(ex);
 
             return [];
         }
@@ -366,10 +363,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             desired = snapshot <= _maxInterval.Ticks / 2 ? snapshot * 2 : _maxInterval.Ticks;
         } while (Interlocked.CompareExchange(ref _currentIntervalTicks, desired, snapshot) != snapshot);
 
-        _logger.LogDebug(
-            "Adaptive polling: circuit-open rate exceeds threshold, interval increased to {Interval}",
-            TimeSpan.FromTicks(desired)
-        );
+        var increasedInterval = TimeSpan.FromTicks(desired);
+        _logger.AdaptivePollingIntervalIncreased(increasedInterval);
     }
 
     /// <summary>
@@ -391,10 +386,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             desired = Math.Max(snapshot / 2, _baseInterval.Ticks);
         } while (Interlocked.CompareExchange(ref _currentIntervalTicks, desired, snapshot) != snapshot);
 
-        _logger.LogDebug(
-            "Adaptive polling: healthy for 2 cycles, interval decreased to {Interval}",
-            TimeSpan.FromTicks(desired)
-        );
+        var decreasedInterval = TimeSpan.FromTicks(desired);
+        _logger.AdaptivePollingIntervalDecreased(decreasedInterval);
     }
 
     private bool _IsCircuitOpen(string group, Dictionary<string, bool> cache)
@@ -420,11 +413,62 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     {
         if (_lookbackWindow < TimeSpan.FromSeconds(_MinSuggestedValueForFallbackWindowLookbackSeconds))
         {
-            _logger.LogWarning(
-                "The provided FallbackWindowLookbackSeconds of {CurrentSetFallbackWindowLookbackSeconds} is set to a value lower than {MinSuggestedSeconds} seconds. This might cause unwanted unsafe behavior if the consumer takes more than the provided FallbackWindowLookbackSeconds to execute. ",
+            _logger.FallbackWindowLookbackTooLow(
                 _options.Value.FallbackWindowLookbackSeconds,
                 _MinSuggestedValueForFallbackWindowLookbackSeconds
             );
         }
     }
+}
+
+internal static partial class RetryProcessorLog
+{
+    [LoggerMessage(
+        EventId = 3107,
+        Level = LogLevel.Error,
+        Message = "Unhandled exception in published-message retry processing"
+    )]
+    public static partial void PublishedRetryProcessingUnhandled(this ILogger logger, Exception? ex);
+
+    [LoggerMessage(
+        EventId = 3108,
+        Level = LogLevel.Error,
+        Message = "Unhandled exception in received-message retry processing"
+    )]
+    public static partial void ReceivedRetryProcessingUnhandled(this ILogger logger, Exception? ex);
+
+    [LoggerMessage(
+        EventId = 3109,
+        Level = LogLevel.Debug,
+        Message = "Skipping retry for message {StorageId} — circuit open for group {Group}"
+    )]
+    public static partial void RetrySkippedBecauseCircuitOpen(this ILogger logger, long storageId, string? group);
+
+    [LoggerMessage(EventId = 3110, Level = LogLevel.Warning, Message = "Get messages from storage failed. Retrying...")]
+    public static partial void GetMessagesFromStorageFailed(this ILogger logger, Exception ex);
+
+    [LoggerMessage(
+        EventId = 3111,
+        Level = LogLevel.Debug,
+        Message = "Adaptive polling: circuit-open rate exceeds threshold, interval increased to {Interval}"
+    )]
+    public static partial void AdaptivePollingIntervalIncreased(this ILogger logger, TimeSpan interval);
+
+    [LoggerMessage(
+        EventId = 3112,
+        Level = LogLevel.Debug,
+        Message = "Adaptive polling: healthy for 2 cycles, interval decreased to {Interval}"
+    )]
+    public static partial void AdaptivePollingIntervalDecreased(this ILogger logger, TimeSpan interval);
+
+    [LoggerMessage(
+        EventId = 3113,
+        Level = LogLevel.Warning,
+        Message = "The provided FallbackWindowLookbackSeconds of {CurrentSetFallbackWindowLookbackSeconds} is set to a value lower than {MinSuggestedSeconds} seconds. This might cause unwanted unsafe behavior if the consumer takes more than the provided FallbackWindowLookbackSeconds to execute. "
+    )]
+    public static partial void FallbackWindowLookbackTooLow(
+        this ILogger logger,
+        int currentSetFallbackWindowLookbackSeconds,
+        int minSuggestedSeconds
+    );
 }

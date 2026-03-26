@@ -96,14 +96,14 @@ internal sealed class AzureServiceBusConsumerClient(
                 new CreateRuleOptions { Name = newRule, Filter = currentRuleToAdd }
             );
 
-            logger.LogInformation("Azure Service Bus add rule: {NewRule}", newRule);
+            logger.RuleAdded(newRule);
         }
 
         foreach (var oldRule in allRuleNames.Except(topicsList, StringComparer.Ordinal))
         {
             await _administrationClient.DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule);
 
-            logger.LogInformation("Azure Service Bus remove rule: {OldRule}", oldRule);
+            logger.RuleRemoved(oldRule);
         }
     }
 
@@ -343,7 +343,7 @@ internal sealed class AzureServiceBusConsumerClient(
                         if (!await _administrationClient.TopicExistsAsync(topicPath))
                         {
                             await _administrationClient.CreateTopicAsync(topicPath);
-                            logger.LogInformation("Azure Service Bus created topic: {TopicPath}", topicPath);
+                            logger.TopicCreated(topicPath);
                         }
 
                         if (
@@ -362,11 +362,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
                             await _administrationClient.CreateSubscriptionAsync(subscriptionDescription);
 
-                            logger.LogInformation(
-                                "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}",
-                                topicPath,
-                                subscriptionName
-                            );
+                            logger.SubscriptionCreated(topicPath, subscriptionName);
                         }
                     }
                 }
@@ -427,10 +423,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
                 if (!added)
                 {
-                    logger.LogWarning(
-                        "Not possible to add the custom header {Header}. A value with the same key already exists in the Message headers.",
-                        customHeader.Key
-                    );
+                    logger.CustomHeaderSkipped(customHeader.Key);
                 }
             }
         }
@@ -492,4 +485,34 @@ internal sealed class AzureServiceBusConsumerClient(
     }
 
     #endregion private methods
+}
+
+internal static partial class AzureServiceBusConsumerClientLog
+{
+    [LoggerMessage(EventId = 3008, Level = LogLevel.Information, Message = "Azure Service Bus add rule: {NewRule}")]
+    public static partial void RuleAdded(this ILogger logger, string newRule);
+
+    [LoggerMessage(EventId = 3009, Level = LogLevel.Information, Message = "Azure Service Bus remove rule: {OldRule}")]
+    public static partial void RuleRemoved(this ILogger logger, string oldRule);
+
+    [LoggerMessage(
+        EventId = 3010,
+        Level = LogLevel.Information,
+        Message = "Azure Service Bus created topic: {TopicPath}"
+    )]
+    public static partial void TopicCreated(this ILogger logger, string topicPath);
+
+    [LoggerMessage(
+        EventId = 3011,
+        Level = LogLevel.Information,
+        Message = "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}"
+    )]
+    public static partial void SubscriptionCreated(this ILogger logger, string topicPath, string subscriptionName);
+
+    [LoggerMessage(
+        EventId = 3012,
+        Level = LogLevel.Warning,
+        Message = "Not possible to add the custom header {Header}. A value with the same key already exists in the Message headers."
+    )]
+    public static partial void CustomHeaderSkipped(this ILogger logger, string header);
 }

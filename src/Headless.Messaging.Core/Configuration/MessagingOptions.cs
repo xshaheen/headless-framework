@@ -18,8 +18,10 @@ namespace Headless.Messaging.Configuration;
 /// </summary>
 public class MessagingOptions : IMessagingBuilder
 {
+#pragma warning disable IDE0032
     private string _defaultGroupName =
         "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
+#pragma warning restore IDE0032
 
     internal IServiceCollection? Services { get; set; }
     internal ConsumerRegistry? Registry { get; set; }

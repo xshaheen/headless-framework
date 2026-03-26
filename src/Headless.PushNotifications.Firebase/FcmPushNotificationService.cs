@@ -208,7 +208,12 @@ public sealed class FcmPushNotificationService(
         }
         catch (Exception e)
         {
-            logger.FailedToSendPushNotification(e, $"multicast:{clientTokens.Count}");
+            if (logger.IsEnabled(LogLevel.Error))
+            {
+                var notificationTarget = $"multicast:{clientTokens.Count}";
+                logger.FailedToSendPushNotification(e, notificationTarget);
+            }
+
             throw;
         }
 

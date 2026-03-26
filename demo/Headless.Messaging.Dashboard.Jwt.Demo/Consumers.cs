@@ -10,12 +10,15 @@ public sealed class OrderCreatedConsumer(ILogger<OrderCreatedConsumer> logger) :
 {
     public async ValueTask Consume(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)
     {
-        logger.LogInformation(
-            "Processing order #{OrderId} from {Customer} — ${Amount}",
-            context.Message.OrderId,
-            context.Message.CustomerName,
-            context.Message.Amount
-        );
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "Processing order #{OrderId} from {Customer} — ${Amount}",
+                context.Message.OrderId,
+                context.Message.CustomerName,
+                context.Message.Amount
+            );
+        }
         await Task.Delay(Random.Shared.Next(30, 150), cancellationToken);
     }
 }
@@ -33,11 +36,14 @@ public sealed class OrderNotificationConsumer(ILogger<OrderNotificationConsumer>
             );
         }
 
-        logger.LogInformation(
-            "Sent order notification for #{OrderId} to {Customer}",
-            context.Message.OrderId,
-            context.Message.CustomerName
-        );
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "Sent order notification for #{OrderId} to {Customer}",
+                context.Message.OrderId,
+                context.Message.CustomerName
+            );
+        }
         await Task.Delay(Random.Shared.Next(50, 200), cancellationToken);
     }
 }
@@ -63,11 +69,14 @@ public sealed class PaymentProcessedConsumer(ILogger<PaymentProcessedConsumer> l
             );
         }
 
-        logger.LogInformation(
-            "Reconciled payment {PaymentId} for order #{OrderId}",
-            context.Message.PaymentId,
-            context.Message.OrderId
-        );
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "Reconciled payment {PaymentId} for order #{OrderId}",
+                context.Message.PaymentId,
+                context.Message.OrderId
+            );
+        }
         await Task.Delay(Random.Shared.Next(100, 400), cancellationToken);
     }
 }
@@ -76,11 +85,14 @@ public sealed class UserRegisteredConsumer(ILogger<UserRegisteredConsumer> logge
 {
     public async ValueTask Consume(ConsumeContext<UserRegistered> context, CancellationToken cancellationToken)
     {
-        logger.LogInformation(
-            "Welcome email queued for {Email} (plan: {Plan})",
-            context.Message.Email,
-            context.Message.Plan
-        );
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "Welcome email queued for {Email} (plan: {Plan})",
+                context.Message.Email,
+                context.Message.Plan
+            );
+        }
         // Simulate slow email rendering
         await Task.Delay(Random.Shared.Next(200, 600), cancellationToken);
     }
@@ -90,12 +102,15 @@ public sealed class InventoryUpdatedConsumer(ILogger<InventoryUpdatedConsumer> l
 {
     public async ValueTask Consume(ConsumeContext<InventoryUpdated> context, CancellationToken cancellationToken)
     {
-        logger.LogInformation(
-            "Stock updated: {ProductId} now {Quantity} units at {Warehouse}",
-            context.Message.ProductId,
-            context.Message.Quantity,
-            context.Message.Warehouse
-        );
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation(
+                "Stock updated: {ProductId} now {Quantity} units at {Warehouse}",
+                context.Message.ProductId,
+                context.Message.Quantity,
+                context.Message.Warehouse
+            );
+        }
         await Task.Delay(Random.Shared.Next(20, 80), cancellationToken);
     }
 }

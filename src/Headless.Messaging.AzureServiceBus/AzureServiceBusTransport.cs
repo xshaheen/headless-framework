@@ -82,7 +82,8 @@ internal class AzureServiceBusTransport(
 
             await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
 
-            _logger.LogDebug("Azure Service Bus message [{GetName}] has been published.", transportMessage.GetName());
+            var messageName = transportMessage.GetName();
+            _logger.MessagePublished(messageName);
 
             return OperateResult.Success;
         }
@@ -110,10 +111,7 @@ internal class AzureServiceBusTransport(
     {
         if (_senders.TryGetValue(producerDescriptor.TopicPath, out var sender) && sender != null)
         {
-            _logger.LogTrace(
-                "Topic {TopicPath} connection already present as a Publish destination.",
-                producerDescriptor.TopicPath
-            );
+            _logger.TopicConnectionExists(producerDescriptor.TopicPath);
 
             return sender;
         }
@@ -146,4 +144,21 @@ internal class AzureServiceBusTransport(
             await _client.DisposeAsync();
         }
     }
+}
+
+internal static partial class AzureServiceBusTransportLog
+{
+    [LoggerMessage(
+        EventId = 3006,
+        Level = LogLevel.Debug,
+        Message = "Azure Service Bus message [{GetName}] has been published."
+    )]
+    public static partial void MessagePublished(this ILogger logger, string getName);
+
+    [LoggerMessage(
+        EventId = 3007,
+        Level = LogLevel.Trace,
+        Message = "Topic {TopicPath} connection already present as a Publish destination."
+    )]
+    public static partial void TopicConnectionExists(this ILogger logger, string topicPath);
 }

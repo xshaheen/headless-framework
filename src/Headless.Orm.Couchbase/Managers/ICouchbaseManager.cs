@@ -110,12 +110,10 @@ public sealed class CouchbaseManager : ICouchbaseManager
             cancellationToken
         );
 
-        _logger.LogInformation(
-            "Cluster {ClusterKey} > Bucket {BucketName} > Build deferred indexes SUCCESS took {Elapsed}",
-            clusterKey,
-            bucketName,
-            Stopwatch.GetElapsedTime(timestamp)
-        );
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.BuildDeferredIndexesSucceeded(clusterKey, bucketName, Stopwatch.GetElapsedTime(timestamp));
+        }
     }
 
     public async Task<CreateScopeStatus> CreateScopeAsync(
@@ -129,24 +127,20 @@ public sealed class CouchbaseManager : ICouchbaseManager
         Argument.IsNotNull(bucketName);
         Argument.IsNotNull(scopeName);
 
-        _logger.LogInformation(
-            "Cluster {ClusterKey} > Bucket {BucketName} > Try to create scope {ScopeName}",
-            clusterKey,
-            bucketName,
-            scopeName
-        );
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.TryCreateScope(clusterKey, bucketName, scopeName);
+        }
 
         var bucket = await _GetBucketAsync(clusterKey, bucketName);
         var bucketScopes = await _GetBucketScopeSpecsAsync(clusterKey, bucket);
 
         if (bucketScopes.ContainsKey(scopeName))
         {
-            _logger.LogInformation(
-                "Cluster {ClusterKey} > Bucket {BucketName} > Scope {ScopeName} exist",
-                clusterKey,
-                bucketName,
-                scopeName
-            );
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.ScopeExists(clusterKey, bucketName, scopeName);
+            }
 
             return CreateScopeStatus.Exist;
         }
@@ -167,23 +161,19 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
                         @this._ClearScopesCache(clusterKey, bucket.Name);
 
-                        @this._logger.LogInformation(
-                            "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} success",
-                            clusterKey,
-                            bucket.Name,
-                            scopeName
-                        );
+                        if (@this._logger.IsEnabled(LogLevel.Information))
+                        {
+                            @this._logger.CreateScopeSucceeded(clusterKey, bucket.Name, scopeName);
+                        }
 
                         return CreateScopeStatus.Success;
                     }
                     catch (ScopeExistsException)
                     {
-                        @this._logger.LogInformation(
-                            "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} success (exist)",
-                            clusterKey,
-                            bucket.Name,
-                            scopeName
-                        );
+                        if (@this._logger.IsEnabled(LogLevel.Information))
+                        {
+                            @this._logger.CreateScopeSucceededAlreadyExists(clusterKey, bucket.Name, scopeName);
+                        }
 
                         return CreateScopeStatus.Success;
                     }
@@ -194,13 +184,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
         }
         catch (Exception e)
         {
-            _logger.LogError(
-                e,
-                "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} failed",
-                clusterKey,
-                bucketName,
-                scopeName
-            );
+            _logger.CreateScopeFailed(e, clusterKey, bucketName, scopeName);
 
             return CreateScopeStatus.Failed;
         }
@@ -248,13 +232,10 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
         var elapsed = Stopwatch.GetElapsedTime(timestamp);
 
-        _logger.LogInformation(
-            "Cluster {ClusterKey} > Bucket {BucketName} > Create ALL COLLECTIONS in scope {ScopeName} SUCCESS took {Elapsed}",
-            clusterKey,
-            bucketName,
-            scopeName,
-            elapsed
-        );
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.CreateAllCollectionsSucceeded(clusterKey, bucketName, scopeName, elapsed);
+        }
     }
 
     private async Task _CreateCollectionAsync(
@@ -292,20 +273,21 @@ public sealed class CouchbaseManager : ICouchbaseManager
                 token
             );
 
-            _logger.LogInformation(
-                "Cluster {ClusterKey} > Bucket {BucketName} > Create collection {ScopeName}.{CollectionName} SUCCESS took {Elapsed}",
-                clusterKey,
-                bucket.Name,
-                scope.Name,
-                collectionName,
-                Stopwatch.GetElapsedTime(timestamp)
-            );
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.CreateCollectionSucceeded(
+                    clusterKey,
+                    bucket.Name,
+                    scope.Name,
+                    collectionName,
+                    Stopwatch.GetElapsedTime(timestamp)
+                );
+            }
         }
         catch (Exception e)
         {
-            _logger.LogError(
+            _logger.CreateCollectionFailed(
                 e,
-                "Cluster {ClusterKey} > Bucket {BucketName} > Create collection {ScopeName}.{CollectionName} FAILED took {Elapsed}",
                 clusterKey,
                 bucket.Name,
                 scope.Name,
@@ -357,21 +339,22 @@ public sealed class CouchbaseManager : ICouchbaseManager
                 cancellationToken
             );
 
-            _logger.LogInformation(
-                "Cluster {ClusterKey} > Bucket {BucketName} > Create secondary index on collection {ScopeName}.{CollectionName} IndexName={IndexName} SUCCESS took {Elapsed}",
-                clusterKey,
-                bucketName,
-                scopeName,
-                collectionName,
-                indexName,
-                Stopwatch.GetElapsedTime(timestamp)
-            );
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.CreateSecondaryIndexSucceeded(
+                    clusterKey,
+                    bucketName,
+                    scopeName,
+                    collectionName,
+                    indexName,
+                    Stopwatch.GetElapsedTime(timestamp)
+                );
+            }
         }
         catch (Exception e)
         {
-            _logger.LogError(
+            _logger.CreateSecondaryIndexFailed(
                 e,
-                "Cluster {ClusterKey} > Bucket {BucketName} > Create secondary index on collection {ScopeName}.{CollectionName} IndexName={IndexName} FAILED took {Elapsed}",
                 clusterKey,
                 collection.Scope.Bucket.Name,
                 collection.Scope.Name,
@@ -421,20 +404,21 @@ public sealed class CouchbaseManager : ICouchbaseManager
                 collection
             );
 
-            _logger.LogInformation(
-                "Cluster {ClusterKey} > Bucket {BucketName} > Create primary index on collection {ScopeName}.{CollectionName} SUCCESS took {Elapsed}",
-                clusterKey,
-                collection.Scope.Bucket.Name,
-                collection.Scope.Name,
-                collection.Name,
-                Stopwatch.GetElapsedTime(timestamp)
-            );
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.CreatePrimaryIndexSucceeded(
+                    clusterKey,
+                    collection.Scope.Bucket.Name,
+                    collection.Scope.Name,
+                    collection.Name,
+                    Stopwatch.GetElapsedTime(timestamp)
+                );
+            }
         }
         catch (Exception e)
         {
-            _logger.LogError(
+            _logger.CreatePrimaryIndexFailed(
                 e,
-                "Cluster {ClusterKey} > Bucket {BucketName} > Failed to create primary index on collection {ScopeName}.{CollectionName} FAILED took {Elapsed}",
                 clusterKey,
                 collection.Scope.Bucket.Name,
                 collection.Scope.Name,
@@ -516,4 +500,177 @@ public sealed class CouchbaseManager : ICouchbaseManager
     }
 
     #endregion
+}
+
+internal static partial class CouchbaseManagerLog
+{
+    [LoggerMessage(
+        EventId = 5100,
+        Level = LogLevel.Information,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Build deferred indexes SUCCESS took {Elapsed}"
+    )]
+    public static partial void BuildDeferredIndexesSucceeded(
+        this ILogger logger,
+        string clusterKey,
+        string bucketName,
+        TimeSpan elapsed
+    );
+
+    [LoggerMessage(
+        EventId = 5101,
+        Level = LogLevel.Information,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Try to create scope {ScopeName}"
+    )]
+    public static partial void TryCreateScope(
+        this ILogger logger,
+        string clusterKey,
+        string bucketName,
+        string scopeName
+    );
+
+    [LoggerMessage(
+        EventId = 5102,
+        Level = LogLevel.Information,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Scope {ScopeName} exist"
+    )]
+    public static partial void ScopeExists(this ILogger logger, string clusterKey, string bucketName, string scopeName);
+
+    [LoggerMessage(
+        EventId = 5103,
+        Level = LogLevel.Information,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} success"
+    )]
+    public static partial void CreateScopeSucceeded(
+        this ILogger logger,
+        string clusterKey,
+        string bucketName,
+        string scopeName
+    );
+
+    [LoggerMessage(
+        EventId = 5104,
+        Level = LogLevel.Information,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} success (exist)"
+    )]
+    public static partial void CreateScopeSucceededAlreadyExists(
+        this ILogger logger,
+        string clusterKey,
+        string bucketName,
+        string scopeName
+    );
+
+    [LoggerMessage(
+        EventId = 5105,
+        Level = LogLevel.Error,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create scope {ScopeName} failed"
+    )]
+    public static partial void CreateScopeFailed(
+        this ILogger logger,
+        Exception exception,
+        string clusterKey,
+        string bucketName,
+        string scopeName
+    );
+
+    [LoggerMessage(
+        EventId = 5106,
+        Level = LogLevel.Information,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create ALL COLLECTIONS in scope {ScopeName} SUCCESS took {Elapsed}"
+    )]
+    public static partial void CreateAllCollectionsSucceeded(
+        this ILogger logger,
+        string clusterKey,
+        string bucketName,
+        string scopeName,
+        TimeSpan elapsed
+    );
+
+    [LoggerMessage(
+        EventId = 5107,
+        Level = LogLevel.Information,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create collection {ScopeName}.{CollectionName} SUCCESS took {Elapsed}"
+    )]
+    public static partial void CreateCollectionSucceeded(
+        this ILogger logger,
+        string clusterKey,
+        string bucketName,
+        string scopeName,
+        string collectionName,
+        TimeSpan elapsed
+    );
+
+    [LoggerMessage(
+        EventId = 5108,
+        Level = LogLevel.Error,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create collection {ScopeName}.{CollectionName} FAILED took {Elapsed}"
+    )]
+    public static partial void CreateCollectionFailed(
+        this ILogger logger,
+        Exception exception,
+        string clusterKey,
+        string bucketName,
+        string scopeName,
+        string collectionName,
+        TimeSpan elapsed
+    );
+
+    [LoggerMessage(
+        EventId = 5109,
+        Level = LogLevel.Information,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create secondary index on collection {ScopeName}.{CollectionName} IndexName={IndexName} SUCCESS took {Elapsed}"
+    )]
+    public static partial void CreateSecondaryIndexSucceeded(
+        this ILogger logger,
+        string clusterKey,
+        string bucketName,
+        string scopeName,
+        string collectionName,
+        string indexName,
+        TimeSpan elapsed
+    );
+
+    [LoggerMessage(
+        EventId = 5110,
+        Level = LogLevel.Error,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create secondary index on collection {ScopeName}.{CollectionName} IndexName={IndexName} FAILED took {Elapsed}"
+    )]
+    public static partial void CreateSecondaryIndexFailed(
+        this ILogger logger,
+        Exception exception,
+        string clusterKey,
+        string bucketName,
+        string scopeName,
+        string collectionName,
+        string indexName,
+        TimeSpan elapsed
+    );
+
+    [LoggerMessage(
+        EventId = 5111,
+        Level = LogLevel.Information,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Create primary index on collection {ScopeName}.{CollectionName} SUCCESS took {Elapsed}"
+    )]
+    public static partial void CreatePrimaryIndexSucceeded(
+        this ILogger logger,
+        string clusterKey,
+        string bucketName,
+        string scopeName,
+        string collectionName,
+        TimeSpan elapsed
+    );
+
+    [LoggerMessage(
+        EventId = 5112,
+        Level = LogLevel.Error,
+        Message = "Cluster {ClusterKey} > Bucket {BucketName} > Failed to create primary index on collection {ScopeName}.{CollectionName} FAILED took {Elapsed}"
+    )]
+    public static partial void CreatePrimaryIndexFailed(
+        this ILogger logger,
+        Exception exception,
+        string clusterKey,
+        string bucketName,
+        string scopeName,
+        string collectionName,
+        TimeSpan elapsed
+    );
 }
