@@ -93,7 +93,9 @@ public sealed class NatsConnectionPoolTests : TestBase
     private static bool _IsDebugLog(ICall call)
     {
         if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+        {
             return false;
+        }
 
         return call.GetArguments()[0] is LogLevel.Debug;
     }

@@ -32,11 +32,13 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         // Clean tables before each test
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
-        await connection.ExecuteAsync("""
+        await connection.ExecuteAsync(
+            """
             TRUNCATE TABLE messaging.published;
             TRUNCATE TABLE messaging.received;
             UPDATE messaging.lock SET "Instance"='', "LastLockTime"='0001-01-01 00:00:00+00';
-            """);
+            """
+        );
     }
 
     [Fact]
@@ -154,7 +156,12 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         // when — page size 2, page 0
         var monitoringApi = storage.GetMonitoringApi();
         var page0 = await monitoringApi.GetMessagesAsync(
-            new MessageQuery { MessageType = MessageType.Publish, CurrentPage = 0, PageSize = 2 },
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 0,
+                PageSize = 2,
+            },
             AbortToken
         );
 
@@ -164,7 +171,12 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
         // when — page 1
         var page1 = await monitoringApi.GetMessagesAsync(
-            new MessageQuery { MessageType = MessageType.Publish, CurrentPage = 1, PageSize = 2 },
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 1,
+                PageSize = 2,
+            },
             AbortToken
         );
 
@@ -186,7 +198,13 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         // when
         var monitoringApi = storage.GetMonitoringApi();
         var result = await monitoringApi.GetMessagesAsync(
-            new MessageQuery { MessageType = MessageType.Publish, StatusName = "Succeeded", CurrentPage = 0, PageSize = 10 },
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                StatusName = "Succeeded",
+                CurrentPage = 0,
+                PageSize = 10,
+            },
             AbortToken
         );
 
@@ -290,8 +308,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         var act = async () => await storage.StoreMessageAsync("bad-tx", msg, unsupportedTransaction, AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*Unsupported transaction type*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Unsupported transaction type*");
     }
 
     [Fact]
@@ -302,7 +319,12 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
         // when
         var page = await monitoringApi.GetMessagesAsync(
-            new MessageQuery { MessageType = MessageType.Publish, CurrentPage = 0, PageSize = 10 },
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 0,
+                PageSize = 10,
+            },
             AbortToken
         );
 
@@ -357,7 +379,10 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
     private void _EnsureInitialized()
     {
-        if (_initializer is not null) return;
+        if (_initializer is not null)
+        {
+            return;
+        }
 
         var services = new ServiceCollection();
         services.AddOptions();

@@ -51,7 +51,9 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
     private static void _AddEntries(IReadOnlyList<AuditLogEntryData> entries, DbContext context)
     {
         if (entries.Count == 0)
+        {
             return;
+        }
 
         var set = context.Set<AuditLogEntry>();
 

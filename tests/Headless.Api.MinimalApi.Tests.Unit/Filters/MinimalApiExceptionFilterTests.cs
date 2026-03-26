@@ -404,7 +404,9 @@ public sealed class MinimalApiExceptionFilterTests : TestBase
     private static bool _IsTimeoutDebugLog(ICall call, Exception exception)
     {
         if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+        {
             return false;
+        }
 
         var arguments = call.GetArguments();
 

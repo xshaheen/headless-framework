@@ -41,7 +41,10 @@ internal sealed class ConsumerPauseGate
         lock (_lock)
         {
             if (_disposed || _paused)
+            {
                 return new ValueTask<bool>(false);
+            }
+
             _paused = true;
             _gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
@@ -59,7 +62,10 @@ internal sealed class ConsumerPauseGate
         lock (_lock)
         {
             if (_disposed || !_paused)
+            {
                 return new ValueTask<bool>(false);
+            }
+
             _paused = false;
             gateToComplete = _gate;
         }

@@ -74,7 +74,9 @@ public sealed class NatsConnectionPool : INatsConnectionPool
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
             return;
+        }
 
         foreach (var connection in _connections)
         {

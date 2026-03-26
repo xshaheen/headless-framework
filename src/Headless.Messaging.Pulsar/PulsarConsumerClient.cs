@@ -35,13 +35,15 @@ internal sealed class PulsarConsumerClient(
 
         var serviceName = Assembly.GetEntryAssembly()?.GetName().Name!.ToLowerInvariant();
 
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         _consumerClient = await client
             .NewConsumer()
             .Topics(topics)
             .SubscriptionName(groupName)
             .ConsumerName(serviceName)
             .SubscriptionType(SubscriptionType.Shared)
-            .SubscribeAsync();
+            .SubscribeAsync()
+            .WaitAsync(cts.Token);
     }
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -180,7 +182,9 @@ internal sealed class PulsarConsumerClient(
     public ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
             return ValueTask.CompletedTask;
+        }
 
         _pauseGate.Release();
         _semaphore.Dispose();

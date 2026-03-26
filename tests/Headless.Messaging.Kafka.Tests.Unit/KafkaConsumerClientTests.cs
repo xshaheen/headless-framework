@@ -451,12 +451,14 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
         var consumeCallCount = 0;
+        var seekCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         consumer
             .Consume(Arg.Any<TimeSpan>())
             .Returns(_ =>
             {
-                return Interlocked.Increment(ref consumeCallCount) == 1
-                    ? new ConsumeResult<string, byte[]>
+                if (Interlocked.Increment(ref consumeCallCount) == 1)
+                {
+                    return new ConsumeResult<string, byte[]>
                     {
                         TopicPartitionOffset = new TopicPartitionOffset(
                             "orders.created",
@@ -464,9 +466,14 @@ public sealed class KafkaConsumerClientTests : TestBase
                             new Offset(5)
                         ),
                         Message = new Message<string, byte[]> { Value = [1], Headers = new Confluent.Kafka.Headers() },
-                    }
-                    : null!;
+                    };
+                }
+
+                // Block to avoid tight spin — throw OCE when cancellation fires
+                throw new OperationCanceledException();
             });
+
+        consumer.When(c => c.Seek(Arg.Any<TopicPartitionOffset>())).Do(_ => seekCalled.TrySetResult());
 
         await using var client = new KafkaConsumerClient(
             "test-group",
@@ -486,16 +493,26 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnLogCallback = args =>
         {
             if (args.LogType == MqLogType.ConsumeError)
+            {
                 loggedError = args;
+            }
         };
 
         using var cts = new CancellationTokenSource();
 
-        // when
+        // when — ListeningAsync will fault after the seek; we only need to observe the seek signal
+#pragma warning disable AsyncFixer04
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
-        await Task.Delay(300, AbortToken);
-        await cts.CancelAsync();
-        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+#pragma warning restore AsyncFixer04
+        await seekCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        // Observe the faulted task to prevent unobserved exception
+        try
+        {
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1));
+        }
+        catch
+        { /* expected — mock throws OCE on second Consume call */
+        }
 
         // then — callback should not be invoked, offset should be seeked back
         callbackInvoked.Should().BeFalse();

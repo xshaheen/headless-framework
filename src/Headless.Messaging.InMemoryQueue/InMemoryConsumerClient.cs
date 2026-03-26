@@ -209,7 +209,9 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     public ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
             return ValueTask.CompletedTask;
+        }
 
         _pauseGate.Release();
         _semaphore.Dispose();

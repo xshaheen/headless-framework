@@ -145,9 +145,14 @@ internal sealed class AzureServiceBusConsumerClient(
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0)
+        {
             return;
+        }
+
         if (!await _pauseGate.PauseAsync())
+        {
             return;
+        }
 
         if (_serviceBusProcessor is not null)
         {
@@ -158,12 +163,16 @@ internal sealed class AzureServiceBusConsumerClient(
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0)
+        {
             return;
+        }
 
         // ASB is push-based — release the gate first (only affects startup gating),
         // then restart the processor which delivers messages via callbacks.
         if (!await _pauseGate.ResumeAsync())
+        {
             return;
+        }
 
         if (_serviceBusProcessor is null || Volatile.Read(ref _hasStartedProcessing) == 0)
         {
@@ -181,7 +190,9 @@ internal sealed class AzureServiceBusConsumerClient(
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
             return;
+        }
 
         _pauseGate.Release();
 

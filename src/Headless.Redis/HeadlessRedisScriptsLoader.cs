@@ -132,7 +132,10 @@ public sealed class HeadlessRedisScriptsLoader(
     private void _OnConnectionRestored(object? sender, ConnectionFailedEventArgs e)
     {
         if (logger is not null)
+        {
             logger.LogConnectionRestored();
+        }
+
         _scriptsLoaded = false;
     }
 

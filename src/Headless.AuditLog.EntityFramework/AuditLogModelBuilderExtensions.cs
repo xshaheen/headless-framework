@@ -34,7 +34,9 @@ public static class AuditLogModelBuilderExtensions
     {
         // Idempotent: skip if already configured
         if (modelBuilder.Model.FindEntityType(typeof(AuditLogEntry)) is not null)
+        {
             return modelBuilder;
+        }
 
         modelBuilder.ApplyConfiguration(new AuditLogEntryConfiguration(schema, tableName, jsonColumnType));
         return modelBuilder;

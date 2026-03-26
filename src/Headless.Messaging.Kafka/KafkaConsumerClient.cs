@@ -204,9 +204,14 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0)
+        {
             return;
+        }
+
         if (!await _pauseGate.PauseAsync())
+        {
             return;
+        }
 
         lock (_lock)
         {
@@ -217,9 +222,14 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0)
+        {
             return;
+        }
+
         if (!await _pauseGate.ResumeAsync())
+        {
             return;
+        }
 
         lock (_lock)
         {
@@ -230,7 +240,9 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     public ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
             return ValueTask.CompletedTask;
+        }
 
         _pauseGate.Release();
         IConsumer<string, byte[]>? consumerClient;
@@ -246,10 +258,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             {
                 consumerClient.Close();
             }
+#pragma warning disable RCS1075, ERP022
             catch (Exception)
             {
                 // Best-effort shutdown. Dispose still releases native resources.
             }
+#pragma warning restore RCS1075, ERP022
 
             consumerClient.Dispose();
         }

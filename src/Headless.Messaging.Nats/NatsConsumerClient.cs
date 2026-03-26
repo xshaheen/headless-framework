@@ -77,7 +77,8 @@ internal sealed class NatsConsumerClient(
 
             _natsOptions.StreamOptions?.Invoke(config);
 
-            await _jsContext!.CreateOrUpdateStreamAsync(config).ConfigureAwait(false);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await _jsContext!.CreateOrUpdateStreamAsync(config, cts.Token).ConfigureAwait(false);
         }
 
         return topicNames.ToList();
@@ -413,7 +414,9 @@ internal sealed class NatsConsumerClient(
     private void _ReleaseSemaphore()
     {
         if (_semaphore is null)
+        {
             return;
+        }
 
         try
         {
@@ -432,9 +435,14 @@ internal sealed class NatsConsumerClient(
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0)
+        {
             return;
+        }
+
         if (!await _pauseGate.PauseAsync())
+        {
             return;
+        }
 
         _CancelReceives();
     }
@@ -442,9 +450,14 @@ internal sealed class NatsConsumerClient(
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0)
+        {
             return;
+        }
+
         if (!await _pauseGate.ResumeAsync())
+        {
             return;
+        }
 
         _ResetReceiveToken();
     }
@@ -452,7 +465,9 @@ internal sealed class NatsConsumerClient(
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
             return;
+        }
 
         _pauseGate.Release();
         _CancelReceives();

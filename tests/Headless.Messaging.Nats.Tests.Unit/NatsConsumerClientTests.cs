@@ -374,6 +374,7 @@ public sealed class NatsConsumerClientTests : TestBase
         msg.Headers.Returns((NatsHeaders?)null);
 
         var callbackInvoked = false;
+        var nakCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var consumer = Substitute.For<INatsJSConsumer>();
         var callCount = 0;
         consumer
@@ -382,11 +383,36 @@ public sealed class NatsConsumerClientTests : TestBase
                 Arg.Any<NatsJSNextOpts?>(),
                 Arg.Any<CancellationToken>()
             )
+            .Returns(call =>
+            {
+                var token = call.Arg<CancellationToken>();
+                if (Interlocked.Increment(ref callCount) == 1)
+                {
+                    return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(msg);
+                }
+
+                // Block until cancellation — throws OCE which the consumer loop handles
+                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                    Task.Delay(Timeout.InfiniteTimeSpan, token)
+                        .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                            static (t, _) =>
+                            {
+                                t.GetAwaiter().GetResult(); // propagate OCE
+                                return null;
+                            },
+                            null,
+                            CancellationToken.None,
+                            TaskContinuationOptions.ExecuteSynchronously,
+                            TaskScheduler.Default
+                        )
+                );
+            });
+
+        msg.NakAsync(cancellationToken: Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                if (Interlocked.Increment(ref callCount) == 1)
-                    return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(msg);
-                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>((INatsJSMsg<ReadOnlyMemory<byte>>?)null);
+                nakCalled.TrySetResult();
+                return ValueTask.CompletedTask;
             });
 
         await using var client = new NatsConsumerClient(
@@ -406,7 +432,9 @@ public sealed class NatsConsumerClientTests : TestBase
         client.OnLogCallback = args =>
         {
             if (args.LogType == MqLogType.ConsumeError)
+            {
                 loggedArgs = args;
+            }
         };
 
         await client.SubscribeAsync(["orders.created"]);
@@ -415,7 +443,7 @@ public sealed class NatsConsumerClientTests : TestBase
 
         // when
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
-        await Task.Delay(300, AbortToken);
+        await nakCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
         await cts.CancelAsync();
         await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 

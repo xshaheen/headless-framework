@@ -19,7 +19,9 @@ public static class AuditLogSetup
             services.AddOptions<AuditLogOptions, AuditLogOptionsValidator>();
 
             if (configure is not null)
+            {
                 services.Configure(configure);
+            }
 
             return services;
         }

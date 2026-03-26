@@ -379,7 +379,9 @@ internal sealed class CircuitBreakerStateManager(
     public async ValueTask AbortHalfOpenProbeAsync(string groupName)
     {
         if (!_groups.TryGetValue(groupName, out var state))
+        {
             return;
+        }
 
         var safeGroupName = LogSanitizer.Sanitize(groupName);
         var groupLock = state.SyncLock;
@@ -389,7 +391,9 @@ internal sealed class CircuitBreakerStateManager(
         lock (groupLock)
         {
             if (state.State is not CircuitBreakerState.HalfOpen)
+            {
                 return;
+            }
 
             state.ProbeAcquired = false;
 
@@ -974,7 +978,9 @@ internal sealed class CircuitBreakerStateManager(
                         try
                         {
                             if (ct.IsCancellationRequested)
+                            {
                                 return;
+                            }
 
                             try
                             {
@@ -983,7 +989,9 @@ internal sealed class CircuitBreakerStateManager(
                             catch (Exception ex)
                             {
                                 if (ct.IsCancellationRequested)
+                                {
                                     return;
+                                }
 
                                 logger.LogError(
                                     ex,
@@ -1015,7 +1023,9 @@ internal sealed class CircuitBreakerStateManager(
     private async Task _ReopenAfterResumeFailureAsync(string groupName)
     {
         if (_disposalCts.IsCancellationRequested)
+        {
             return;
+        }
 
         if (!_groups.TryGetValue(groupName, out var state))
         {
@@ -1066,7 +1076,9 @@ internal sealed class CircuitBreakerStateManager(
         if (pauseCallback is not null)
         {
             if (_disposalCts.IsCancellationRequested)
+            {
                 return;
+            }
 
             try
             {
