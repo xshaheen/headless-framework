@@ -35,6 +35,9 @@ internal sealed class PulsarConsumerClient(
 
         var serviceName = Assembly.GetEntryAssembly()?.GetName().Name!.ToLowerInvariant();
 
+        // Pulsar.Client's SubscribeAsync lacks CancellationToken — use WaitAsync as a
+        // timeout guard. Plan to migrate to DotPulsar (apache/pulsar-dotnet) when producer
+        // batching ships: https://github.com/apache/pulsar-dotpulsar/issues/7
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         _consumerClient = await client
             .NewConsumer()
