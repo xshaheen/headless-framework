@@ -149,6 +149,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_store_published_message() => base.should_store_published_message();
 
     [Fact]
+    public override Task should_store_published_message_with_non_numeric_message_id() =>
+        base.should_store_published_message_with_non_numeric_message_id();
+
+    [Fact]
     public override Task should_store_received_message() => base.should_store_received_message();
 
     [Fact]
@@ -265,6 +269,25 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         // then
         monitoringApi.Should().BeOfType<PostgreSqlMonitoringApi>();
         await Task.CompletedTask;
+    }
+
+    [Theory]
+    [InlineData("published", "Added")]
+    [InlineData("published", "ExpiresAt")]
+    [InlineData("received", "Added")]
+    [InlineData("received", "ExpiresAt")]
+    public async Task should_use_timestamptz_for_time_columns(string table, string column)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var dataType = await connection.QueryFirstOrDefaultAsync<string>(
+            $"""
+            SELECT data_type FROM information_schema.columns
+            WHERE table_schema = 'messaging' AND table_name = '{table}' AND column_name = '{column}'
+            """
+        );
+        dataType.Should().Be("timestamp with time zone");
     }
 
     #endregion

@@ -71,8 +71,8 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
         stored2.Should().NotBeNull();
 
         // ON CONFLICT should update existing row, verifying deduplication works
-        stored1.DbId.Should().NotBeNullOrEmpty();
-        stored2.DbId.Should().NotBeNullOrEmpty();
+        stored1.StorageId.Should().BeGreaterThan(0);
+        stored2.StorageId.Should().BeGreaterThan(0);
     }
 
     [Fact]
@@ -109,6 +109,6 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
         // Should create two separate records
         stored1.Should().NotBeNull();
         stored2.Should().NotBeNull();
-        stored1.DbId.Should().NotBe(stored2.DbId);
+        stored1.StorageId.Should().NotBe(stored2.StorageId);
     }
 }

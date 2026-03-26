@@ -7,9 +7,9 @@ namespace Headless.Messaging.Monitoring;
 
 public interface IMonitoringApi
 {
-    ValueTask<MediumMessage?> GetPublishedMessageAsync(long id, CancellationToken cancellationToken = default);
+    ValueTask<MediumMessage?> GetPublishedMessageAsync(long storageId, CancellationToken cancellationToken = default);
 
-    ValueTask<MediumMessage?> GetReceivedMessageAsync(long id, CancellationToken cancellationToken = default);
+    ValueTask<MediumMessage?> GetReceivedMessageAsync(long storageId, CancellationToken cancellationToken = default);
 
     ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default);
 
@@ -18,13 +18,13 @@ public interface IMonitoringApi
         CancellationToken cancellationToken = default
     );
 
-    ValueTask<int> PublishedFailedCount(CancellationToken cancellationToken = default);
+    ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default);
 
-    ValueTask<int> PublishedSucceededCount(CancellationToken cancellationToken = default);
+    ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default);
 
-    ValueTask<int> ReceivedFailedCount(CancellationToken cancellationToken = default);
+    ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default);
 
-    ValueTask<int> ReceivedSucceededCount(CancellationToken cancellationToken = default);
+    ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default);
 
     ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
         MessageType type,

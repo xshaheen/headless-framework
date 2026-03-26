@@ -47,7 +47,7 @@ public sealed class PostgreSqlStorageInitializer(
         [
             new NpgsqlParameter("@PubKey", $"publish_retry_{messagingOptions.Value.Version}"),
             new NpgsqlParameter("@RecKey", $"received_retry_{messagingOptions.Value.Version}"),
-            new NpgsqlParameter("@LastLockTime", DateTime.MinValue),
+            new NpgsqlParameter("@LastLockTime", DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc)),
         ];
 
         await connection
@@ -69,8 +69,8 @@ public sealed class PostgreSqlStorageInitializer(
             	"Group" VARCHAR(200) NULL,
             	"Content" TEXT NULL,
             	"Retries" INT NOT NULL,
-            	"Added" TIMESTAMP NOT NULL,
-                "ExpiresAt" TIMESTAMP NULL,
+            	"Added" TIMESTAMPTZ NOT NULL,
+                "ExpiresAt" TIMESTAMPTZ NULL,
             	"StatusName" VARCHAR(50) NOT NULL,
                 "MessageId" VARCHAR(200) NOT NULL,
                 "ExceptionInfo" text NULL
@@ -88,9 +88,10 @@ public sealed class PostgreSqlStorageInitializer(
             	"Name" VARCHAR(200) NOT NULL,
             	"Content" TEXT NULL,
             	"Retries" INT NOT NULL,
-            	"Added" TIMESTAMP NOT NULL,
-                "ExpiresAt" TIMESTAMP NULL,
-            	"StatusName" VARCHAR(50) NOT NULL
+            	"Added" TIMESTAMPTZ NOT NULL,
+                "ExpiresAt" TIMESTAMPTZ NULL,
+            	"StatusName" VARCHAR(50) NOT NULL,
+                "MessageId" VARCHAR(200) NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS "idx_published_ExpiresAt_StatusName" ON {GetPublishedTableName()}("ExpiresAt","StatusName");
@@ -105,7 +106,7 @@ public sealed class PostgreSqlStorageInitializer(
                 CREATE TABLE IF NOT EXISTS {GetLockTableName()}(
                 	"Key" VARCHAR(128) PRIMARY KEY NOT NULL,
                     "Instance" VARCHAR(256),
-                	"LastLockTime" TIMESTAMP NOT NULL
+                	"LastLockTime" TIMESTAMPTZ NOT NULL
                 );
                 INSERT INTO {GetLockTableName()} ("Key","Instance","LastLockTime") VALUES(@PubKey,'',@LastLockTime) ON CONFLICT DO NOTHING;
                 INSERT INTO {GetLockTableName()} ("Key","Instance","LastLockTime") VALUES(@RecKey,'',@LastLockTime) ON CONFLICT DO NOTHING;

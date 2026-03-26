@@ -111,6 +111,45 @@ public sealed class RuntimeSubscriberTests : TestBase
     }
 
     [Fact]
+    public async Task should_refresh_wildcard_runtime_matchers_after_replacing_subscription()
+    {
+        await using var provider = _CreateProvider();
+        var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
+        var selector = provider.GetRequiredService<IConsumerServiceSelector>();
+        var firstHandler = provider.GetRequiredService<NamedRuntimeHandler>();
+        var secondHandler = provider.GetRequiredService<AlternateNamedRuntimeHandler>();
+
+        var first = await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
+            firstHandler.HandleAsync,
+            new RuntimeSubscriptionOptions { Topic = "runtime.*", Group = "runtime.wildcard" },
+            AbortToken
+        );
+
+        var initialMatch = selector.SelectBestCandidate("runtime.created", selector.SelectCandidates());
+        initialMatch.Should().NotBeNull();
+        initialMatch!.HandlerId.Should().Be(first.HandlerId);
+
+        var replaced = await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
+            secondHandler.HandleAsync,
+            new RuntimeSubscriptionOptions
+            {
+                Topic = "runtime.*",
+                Group = "runtime.wildcard",
+                DuplicateBehavior = RuntimeSubscriptionDuplicateBehavior.Replace,
+            },
+            AbortToken
+        );
+
+        var refreshedMatch = selector.SelectBestCandidate("runtime.created", selector.SelectCandidates());
+
+        refreshedMatch.Should().NotBeNull();
+        refreshedMatch!.HandlerId.Should().Be(replaced.HandlerId);
+
+        await first.DisposeAsync();
+        await replaced.DisposeAsync();
+    }
+
+    [Fact]
     public async Task should_keep_runtime_registry_consistent_under_concurrent_subscribe_and_unsubscribe()
     {
         await using var provider = _CreateProvider();

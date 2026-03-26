@@ -34,8 +34,33 @@ public sealed class KafkaTransportTests : TestBase
         await using var transport = new KafkaTransport(_logger, _pool);
 
         // then
-        transport.BrokerAddress.Name.Should().Be("Kafka");
+        transport.BrokerAddress.Name.Should().Be("kafka");
         transport.BrokerAddress.Endpoint.Should().Be("localhost:9092");
+    }
+
+    [Fact]
+    public async Task should_propagate_cancellation()
+    {
+        // given
+        await using var transport = new KafkaTransport(_logger, _pool);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestTopic" },
+            },
+            body: "test-body"u8.ToArray()
+        );
+
+        // when
+        var act = async () => await transport.SendAsync(message, cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _pool.Received(1).Return(_producer);
     }
 
     [Fact]

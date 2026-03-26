@@ -2,6 +2,7 @@
 
 using Azure.Core;
 using Azure.Messaging.ServiceBus;
+using FluentValidation;
 using Headless.Messaging.AzureServiceBus.Producer;
 using Headless.Messaging.Messages;
 
@@ -165,5 +166,22 @@ public class AzureServiceBusOptions
         CustomProducers.Add(builder.Build());
 
         return this;
+    }
+}
+
+internal sealed class AzureServiceBusOptionsValidator : AbstractValidator<AzureServiceBusOptions>
+{
+    public AzureServiceBusOptionsValidator()
+    {
+        RuleFor(x => x)
+            .Must(x =>
+                !string.IsNullOrWhiteSpace(x.ConnectionString)
+                || (!string.IsNullOrWhiteSpace(x.Namespace) && x.TokenCredential is not null)
+            )
+            .WithMessage("Azure Service Bus requires either a ConnectionString or both Namespace and TokenCredential.");
+
+        RuleFor(x => x.TopicPath).NotEmpty();
+        RuleFor(x => x.MaxConcurrentCalls).GreaterThanOrEqualTo(1);
+        RuleFor(x => x.SubscriptionMaxDeliveryCount).GreaterThanOrEqualTo(1);
     }
 }

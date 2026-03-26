@@ -1,4 +1,5 @@
-﻿using Headless.Abstractions;
+﻿using Headless;
+using Headless.Abstractions;
 using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
@@ -9,6 +10,7 @@ using Headless.Settings.Seeders;
 using Headless.Settings.Storage.EntityFramework;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using StackExchange.Redis;
@@ -38,6 +40,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
     protected void ConfigureSettingsServices(IHostApplicationBuilder builder)
     {
         var services = builder.Services;
+        _AddDefaultStringEncryptionConfiguration(builder.Configuration);
 
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
@@ -61,16 +64,21 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         services.AddSingleton<HeadlessRedisScriptsLoader>();
         // Resource Lock
         services.AddDistributedLock<RedisDistributedLockStorage>();
+        services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
         services
-            .AddSettingsManagementCore(encryption =>
-            {
-                encryption.DefaultPassPhrase = "TestPassPhrase123456";
-                encryption.InitVectorBytes = "TestIV0123456789"u8.ToArray();
-                encryption.DefaultSalt = "TestSalt"u8.ToArray();
-            })
+            .AddSettingsManagementCore()
             .AddSettingsManagementDbContextStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
 
         services.RemoveHostedService<SettingsInitializationBackgroundService>();
+    }
+
+    private static void _AddDefaultStringEncryptionConfiguration(IConfigurationBuilder configuration)
+    {
+        configuration.AddInMemoryCollection([
+            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
+            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
+            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
+        ]);
     }
 }

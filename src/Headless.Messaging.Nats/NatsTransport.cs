@@ -1,68 +1,81 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
-using NATS.Client;
+using NATS.Client.Core;
 using NATS.Client.JetStream;
 
 namespace Headless.Messaging.Nats;
 
-internal class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool connectionPool) : ITransport
+internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool connectionPool) : ITransport
 {
-    private readonly JetStreamOptions _jetStreamOptions = JetStreamOptions
-        .Builder()
-        .WithPublishNoAck(false)
-        .WithRequestTimeout(3000)
-        .Build();
-
-    public BrokerAddress BrokerAddress => new("NATS", connectionPool.ServersAddress);
+    public BrokerAddress BrokerAddress => new("nats", connectionPool.ServersAddress);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
-        var connection = connectionPool.RentConnection();
-
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var msg = new Msg(message.GetName(), message.Body.ToArray());
-            foreach (var header in message.Headers)
+            var connection = connectionPool.GetConnection();
+            // NatsJSContext is a stateless wrapper around the connection — safe to create per call
+            var js = new NatsJSContext(connection);
+
+            var ack = await js.PublishAsync(
+                    subject: message.GetName(),
+                    data: message.Body,
+                    serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+                    opts: CreatePublishOpts(message),
+                    headers: CreatePublishHeaders(message),
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (ack.Error is not null)
             {
-                msg.Header[header.Key] = header.Value;
+                return OperateResult.Failed(
+                    new PublisherSentFailedException($"NATS publish error {ack.Error.Code}: {ack.Error.Description}")
+                );
             }
 
-            var js = connection.CreateJetStreamContext(_jetStreamOptions);
-
-            var builder = NATS.Client.JetStream.PublishOptions.Builder().WithMessageId(message.GetId());
-
-            // Note: NATS .NET client doesn't support CancellationToken in PublishAsync yet
-            var resp = await js.PublishAsync(msg, builder.Build()).ConfigureAwait(false);
-
-            if (resp.Seq > 0)
+            if (logger.IsEnabled(LogLevel.Debug))
             {
-                if (logger.IsEnabled(LogLevel.Debug))
-                {
-                    logger.LogDebug("NATS stream message [{GetName}] has been published.", message.GetName());
-                }
-
-                return OperateResult.Success;
+                logger.LogDebug("NATS stream message [{Name}] published, seq={Seq}.", message.GetName(), ack.Seq);
             }
 
-            throw new PublisherSentFailedException("NATS message send failed, no consumer reply!");
+            return OperateResult.Success;
+        }
+        catch (OperationCanceledException)
+        {
+            // Don't wrap cancellation as a publish failure
+            throw;
         }
         catch (Exception ex)
         {
-            var warpEx = new PublisherSentFailedException(ex.Message, ex);
-
-            return OperateResult.Failed(warpEx);
-        }
-        finally
-        {
-            connectionPool.Return(connection);
+            return OperateResult.Failed(new PublisherSentFailedException(ex.Message, ex));
         }
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    internal static NatsHeaders? CreatePublishHeaders(TransportMessage message)
+    {
+        NatsHeaders? headers = null;
+        foreach (var header in message.Headers)
+        {
+            if (header.Value is not null)
+            {
+                headers ??= new NatsHeaders();
+                headers[header.Key] = header.Value;
+            }
+        }
+
+        return headers;
+    }
+
+    internal static NatsJSPubOpts CreatePublishOpts(TransportMessage message)
+    {
+        return new NatsJSPubOpts { MsgId = message.GetId() };
+    }
 }

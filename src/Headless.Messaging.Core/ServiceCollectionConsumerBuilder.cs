@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.CircuitBreaker;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging;
@@ -18,7 +19,9 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
     where TConsumer : class
 {
     private readonly IServiceCollection _services;
+    private ConsumerMetadata _registeredMetadata;
     private ConsumerMetadata _metadata;
+    private Action<ConsumerCircuitBreakerOptions>? _pendingCircuitBreakerConfigure;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ServiceCollectionConsumerBuilder{TConsumer}"/> class.
@@ -28,6 +31,7 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
     internal ServiceCollectionConsumerBuilder(IServiceCollection services, ConsumerMetadata metadata)
     {
         _services = services;
+        _registeredMetadata = metadata;
         _metadata = metadata;
     }
 
@@ -74,14 +78,43 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
         return this;
     }
 
+    /// <inheritdoc />
+    public IConsumerBuilder<TConsumer> WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        _pendingCircuitBreakerConfigure = configure;
+        _ApplyCircuitBreakerOverride();
+        _ReplaceMetadataInServices();
+
+        return this;
+    }
+
     private void _UpdateMetadataInServices()
     {
-        // Find and replace the existing metadata instance in the service collection
+        _ApplyCircuitBreakerOverride();
+        _ReplaceMetadataInServices();
+    }
+
+    private void _ApplyCircuitBreakerOverride()
+    {
+        if (_pendingCircuitBreakerConfigure is null)
+        {
+            return;
+        }
+
+        var cbOptions = new ConsumerCircuitBreakerOptions();
+        _pendingCircuitBreakerConfigure(cbOptions);
+
+        _metadata = _metadata with { CircuitBreakerOverride = cbOptions };
+    }
+
+    private void _ReplaceMetadataInServices()
+    {
         var existingDescriptor = _services.FirstOrDefault(d =>
             d.ServiceType == typeof(ConsumerMetadata)
             && d.ImplementationInstance is ConsumerMetadata existing
-            && existing.ConsumerType == typeof(TConsumer)
-            && existing.MessageType == _metadata.MessageType
+            && ReferenceEquals(existing, _registeredMetadata)
         );
 
         if (existingDescriptor != null)
@@ -90,5 +123,6 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
         }
 
         _services.AddSingleton(_metadata);
+        _registeredMetadata = _metadata;
     }
 }

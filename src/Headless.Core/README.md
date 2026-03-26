@@ -1,10 +1,10 @@
 # Headless.Core
 
-Core abstractions for building applications with multi-tenancy, user context, and cross-cutting concerns.
+Core abstractions and utilities for building applications with multi-tenancy, user context, and cross-cutting concerns.
 
 ## Problem Solved
 
-Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, encryption, timezone conversion) and utilities (retry logic, compression, structured logging) enabling consistent patterns across all application layers.
+Provides standardized interfaces for common cross-cutting concerns (clock, user, tenant, locale, timezone conversion) and utilities (retry logic, compression, structured logging) enabling consistent patterns across all application layers.
 
 ## Key Features
 
@@ -15,7 +15,6 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
   - `ICurrentLocale` - Localization context (language, locale, culture)
   - `ICurrentTimeZone` - Timezone handling
   - `ICurrentPrincipalAccessor` - Scoped `ClaimsPrincipal` access with temporary switching
-  - `IStringEncryptionService` / `IStringHashService` - AES-256-CBC encryption and PBKDF2 hashing
   - `IPasswordGenerator` - Configurable secure password generation
   - `ICancellationTokenProvider` - Cancellation token access with fallback logic
   - `ITimezoneProvider` - Windows/IANA timezone conversion and listing
@@ -27,7 +26,6 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
   - `Run` - Retry helper with exponential backoff (`WithRetriesAsync`, `DelayedAsync`)
   - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
   - `LogState` / `LoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
-
 ## Installation
 
 ```bash
@@ -82,10 +80,9 @@ No configuration required. Implementations are registered by `Headless.Api` or o
 - `Headless.Checks`
 - `Headless.Extensions`
 - `Headless.Serializer.Json`
-- `FluentValidation`
 - `Microsoft.Extensions.Logging.Abstractions`
 - `Snappier`
 
 ## Side Effects
 
-None. This is an abstractions package.
+None.

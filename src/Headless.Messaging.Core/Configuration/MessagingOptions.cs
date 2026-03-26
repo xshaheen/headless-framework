@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using Headless.Checks;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Retry;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,8 +18,14 @@ namespace Headless.Messaging.Configuration;
 /// </summary>
 public class MessagingOptions : IMessagingBuilder
 {
+#pragma warning disable IDE0032
+    private string _defaultGroupName =
+        "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
+#pragma warning restore IDE0032
+
     internal IServiceCollection? Services { get; set; }
     internal ConsumerRegistry? Registry { get; set; }
+    internal ConsumerCircuitBreakerRegistry CircuitBreakerRegistry { get; } = new();
     internal Dictionary<Type, string> TopicMappings { get; } = new();
     internal IList<IMessagesOptionsExtension> Extensions { get; } = new List<IMessagesOptionsExtension>();
     internal Headless.Messaging.MessagingConventions Conventions { get; set; } = new();
@@ -28,8 +35,17 @@ public class MessagingOptions : IMessagingBuilder
     /// In Kafka, this corresponds to the consumer group name; in RabbitMQ, it corresponds to the queue name.
     /// Default value is "headless.queue." followed by the entry assembly name in lowercase.
     /// </summary>
-    public string DefaultGroupName { get; set; } =
-        "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
+    public string DefaultGroupName
+    {
+        get => _defaultGroupName;
+        set
+        {
+            _defaultGroupName = value;
+            IsDefaultGroupNameConfigured = true;
+        }
+    }
+
+    internal bool IsDefaultGroupNameConfigured { get; set; }
 
     /// <summary>
     /// Gets or sets an optional prefix to be prepended to all consumer group names.
@@ -171,6 +187,19 @@ public class MessagingOptions : IMessagingBuilder
     public IRetryBackoffStrategy RetryBackoffStrategy { get; set; } = new ExponentialBackoffStrategy();
 
     /// <summary>
+    /// Gets the global circuit breaker configuration that applies to all consumer groups.
+    /// Individual consumers may override specific properties via
+    /// <see cref="IConsumerBuilder{TConsumer}.WithCircuitBreaker"/>.
+    /// </summary>
+    public CircuitBreakerOptions CircuitBreaker { get; } = new();
+
+    /// <summary>
+    /// Gets the retry processor configuration that controls adaptive polling and backpressure behavior
+    /// when the circuit breaker is engaged.
+    /// </summary>
+    public RetryProcessorOptions RetryProcessor { get; } = new();
+
+    /// <summary>
     /// Registers a messaging options extension that will be executed when configuring messaging services.
     /// Extensions allow third-party libraries to customize messaging behavior without modifying core configuration.
     /// </summary>
@@ -234,9 +263,9 @@ public class MessagingOptions : IMessagingBuilder
 
         var messageType = _ResolveExplicitMessageType(typeof(TConsumer));
 
-        RegisterConsumer(typeof(TConsumer), messageType, topic: null, group: null, concurrency: 1);
+        var metadata = RegisterConsumer(typeof(TConsumer), messageType, topic: null, group: null, concurrency: 1);
 
-        return new ConsumerBuilder<TConsumer>(this, Registry, messageType, autoRegistered: true);
+        return new ConsumerBuilder<TConsumer>(this, Registry, CircuitBreakerRegistry, metadata, autoRegistered: true);
     }
 
     /// <inheritdoc />
@@ -252,10 +281,17 @@ public class MessagingOptions : IMessagingBuilder
         _WithTopicMapping(messageType, topic);
 
         // Immediately register with default settings (concurrency=1, group=null)
-        RegisterConsumer(typeof(TConsumer), messageType, topic, group: null, concurrency: 1);
+        var metadata = RegisterConsumer(typeof(TConsumer), messageType, topic, group: null, concurrency: 1);
 
         // Return builder that can update the registration if further configuration is needed
-        return new ConsumerBuilder<TConsumer>(this, Registry, messageType, topic, autoRegistered: true);
+        return new ConsumerBuilder<TConsumer>(
+            this,
+            Registry,
+            CircuitBreakerRegistry,
+            metadata,
+            topic,
+            autoRegistered: true
+        );
     }
 
     /// <inheritdoc />
@@ -311,6 +347,13 @@ public class MessagingOptions : IMessagingBuilder
         Argument.IsNotNullOrWhiteSpace(topic);
 
         return string.IsNullOrWhiteSpace(TopicNamePrefix) ? topic : string.Concat(TopicNamePrefix, ".", topic);
+    }
+
+    internal string ApplyGroupNamePrefix(string group)
+    {
+        Argument.IsNotNullOrWhiteSpace(group);
+
+        return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : string.Concat(GroupNamePrefix, ".", group);
     }
 
     private static Type _ResolveExplicitMessageType(Type consumerType)
@@ -387,15 +430,36 @@ public class MessagingOptions : IMessagingBuilder
             ?? conventions.GetTopicName(messageType)
             ?? messageType.Name;
         var finalTopic = ApplyTopicNamePrefix(resolvedTopic);
-        var finalGroup = group ?? conventions.GetGroupName(finalHandlerId);
+        var finalGroup = ResolveGroupName(finalHandlerId, group);
 
         return new ConsumerMetadata(messageType, consumerType, finalTopic, finalGroup, concurrency, finalHandlerId);
+    }
+
+    internal string ResolveGroupName(string handlerId, string? explicitGroup = null)
+    {
+        Argument.IsNotNullOrWhiteSpace(handlerId);
+
+        Conventions.Version = Version;
+
+        var resolvedGroup =
+            !string.IsNullOrWhiteSpace(explicitGroup) ? explicitGroup!
+            : !string.IsNullOrWhiteSpace(Conventions.DefaultGroup) ? Conventions.DefaultGroup!
+            : IsDefaultGroupNameConfigured ? DefaultGroupName
+            : Conventions.GetGroupName(handlerId);
+
+        return ApplyGroupNamePrefix(resolvedGroup);
     }
 
     /// <summary>
     /// Registers a consumer with the specified metadata.
     /// </summary>
-    internal void RegisterConsumer(Type consumerType, Type messageType, string? topic, string? group, byte concurrency)
+    internal ConsumerMetadata RegisterConsumer(
+        Type consumerType,
+        Type messageType,
+        string? topic,
+        string? group,
+        byte concurrency
+    )
     {
         Argument.IsNotNull(Services, "Services must be initialized before calling _RegisterConsumer");
         Argument.IsNotNull(Registry, "Registry must be initialized before calling _RegisterConsumer");
@@ -410,5 +474,7 @@ public class MessagingOptions : IMessagingBuilder
         Services.TryAdd(
             new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
         );
+
+        return metadata;
     }
 }

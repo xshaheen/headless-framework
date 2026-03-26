@@ -15,6 +15,8 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     private readonly byte _groupConcurrent;
     private readonly BlockingCollection<TransportMessage> _messageQueue = new();
     private readonly SemaphoreSlim _semaphore;
+    private readonly ConsumerPauseGate _pauseGate = new();
+    private int _disposed;
 
     /// <summary>
     /// Initializes a new instance of the InMemoryConsumerClient class.
@@ -77,13 +79,52 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <returns>A task representing the listening operation</returns>
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        foreach (var message in _messageQueue.GetConsumingEnumerable(cancellationToken))
+        var waitMilliseconds =
+            timeout == Timeout.InfiniteTimeSpan ? -1
+            : timeout <= TimeSpan.Zero ? 0
+            : (int)Math.Min(timeout.TotalMilliseconds, int.MaxValue);
+
+        while (!cancellationToken.IsCancellationRequested)
         {
+            TransportMessage message;
+            try
+            {
+                if (!_messageQueue.TryTake(out message, waitMilliseconds, cancellationToken))
+                {
+                    continue;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (ObjectDisposedException) when (Volatile.Read(ref _disposed) != 0)
+            {
+                break;
+            }
+
+            await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
             if (_groupConcurrent > 0)
             {
                 await _semaphore.WaitAsync(cancellationToken);
-                _ = Task.Run(() => OnMessageCallback?.Invoke(message, null) ?? Task.CompletedTask, cancellationToken)
-                    .ConfigureAwait(false);
+                _ObserveBackgroundFault(
+                    Task.Run(
+                        async () =>
+                        {
+                            try
+                            {
+                                await (OnMessageCallback?.Invoke(message, null) ?? Task.CompletedTask).ConfigureAwait(
+                                    false
+                                );
+                            }
+                            finally
+                            {
+                                _ReleaseSemaphore();
+                            }
+                        },
+                        CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
+                    )
+                );
             }
             else
             {
@@ -93,6 +134,8 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
                 }
             }
         }
+
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     /// <summary>
@@ -102,7 +145,6 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <returns>A completed task</returns>
     public ValueTask CommitAsync(object? sender)
     {
-        _semaphore.Release();
         return ValueTask.CompletedTask;
     }
 
@@ -113,9 +155,52 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <returns>A completed task</returns>
     public ValueTask RejectAsync(object? sender)
     {
-        _semaphore.Release();
         return ValueTask.CompletedTask;
     }
+
+    private void _ReleaseSemaphore()
+    {
+        if (_groupConcurrent > 0)
+        {
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
+            }
+        }
+    }
+
+    private void _ObserveBackgroundFault(Task task)
+    {
+        _ = task.ContinueWith(
+            completedTask =>
+            {
+                var exception = completedTask.Exception?.GetBaseException();
+                if (exception is not null)
+                {
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ExceptionReceived,
+                            Reason = $"Unhandled exception in concurrent message handler: {exception}",
+                        }
+                    );
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+    }
+
+    /// <inheritdoc />
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) => await _pauseGate.PauseAsync();
+
+    /// <inheritdoc />
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) => await _pauseGate.ResumeAsync();
 
     /// <summary>
     /// Disposes the consumer client and unsubscribes from the queue.
@@ -123,6 +208,12 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <returns>A value task representing the disposal</returns>
     public ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        _pauseGate.Release();
         _semaphore.Dispose();
         _messageQueue.Dispose();
         _queue.Unsubscribe(_groupId);

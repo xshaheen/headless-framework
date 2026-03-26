@@ -4,7 +4,8 @@ import JSONBig from 'json-bigint'
 import { formatDateTime, timeAgo } from '@/utilities/dateTimeParser'
 
 export interface MessageDetail {
-  id: string
+  storageId: string
+  messageId: string
   name: string
   content: string
   added: string
@@ -253,6 +254,14 @@ async function copyContent() {
 
         <div class="metadata-fields mt-2">
           <div class="meta-item">
+            <span class="meta-label">Storage ID</span>
+            <span class="meta-value meta-code">{{ message.storageId }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Message ID</span>
+            <span class="meta-value meta-code">{{ message.messageId }}</span>
+          </div>
+          <div class="meta-item">
             <span class="meta-label">Added</span>
             <v-tooltip :text="timeAgo(message.added)" location="top">
               <template #activator="{ props: tp }">
@@ -443,6 +452,10 @@ async function copyContent() {
 .meta-value {
   font-size: 0.8rem;
   color: #e0e0e0;
+}
+
+.meta-code {
+  font-family: 'JetBrains Mono', 'Monaco', 'Consolas', monospace;
 }
 
 .content-area {

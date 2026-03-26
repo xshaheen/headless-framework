@@ -48,7 +48,10 @@ public sealed class ThrottlingDistributedLockProvider(
 
             try
             {
-                logger.LogThrottlingInfo(_Now(), _DatePeriodStarted(), cacheKey);
+                if (logger.IsEnabled(LogLevel.Trace))
+                {
+                    logger.LogThrottlingInfo(_Now(), _DatePeriodStarted(), cacheKey);
+                }
 
                 var hitCount = await storage.GetHitCountsAsync(cacheKey).ConfigureAwait(false);
 
@@ -85,8 +88,13 @@ public sealed class ThrottlingDistributedLockProvider(
 
                 if (sleepUntil > _Now())
                 {
-                    logger.LogThrottlingSleepUntil(resource, sleepUntil - _Now());
-                    await timeProvider.DelayUntilElapsedOrCancel(sleepUntil - _Now(), cts.Token).ConfigureAwait(false);
+                    var delay = sleepUntil - _Now();
+                    if (logger.IsEnabled(LogLevel.Debug))
+                    {
+                        logger.LogThrottlingSleepUntil(resource, delay);
+                    }
+
+                    await timeProvider.DelayUntilElapsedOrCancel(delay, cts.Token).ConfigureAwait(false);
                 }
                 else
                 {

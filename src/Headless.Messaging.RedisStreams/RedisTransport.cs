@@ -15,7 +15,7 @@ internal sealed class RedisTransport(
 {
     private readonly MessagingRedisOptions _options = options.Value;
 
-    public BrokerAddress BrokerAddress => new("redis", _options.Endpoint);
+    public BrokerAddress BrokerAddress => new("redis", _options.DisplayEndpoint);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
@@ -24,9 +24,14 @@ internal sealed class RedisTransport(
         {
             await redis.PublishAsync(message.GetName(), message.AsStreamEntries()).ConfigureAwait(false);
 
-            logger.LogDebug("Redis message [{Message}] has been published.", message.GetName());
+            var messageName = message.GetName();
+            logger.MessagePublished(messageName);
 
             return OperateResult.Success;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -37,4 +42,10 @@ internal sealed class RedisTransport(
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal static partial class RedisTransportLog
+{
+    [LoggerMessage(EventId = 3003, Level = LogLevel.Debug, Message = "Redis message [{Message}] has been published.")]
+    public static partial void MessagePublished(this ILogger logger, string message);
 }

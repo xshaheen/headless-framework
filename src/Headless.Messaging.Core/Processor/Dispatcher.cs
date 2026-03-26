@@ -164,7 +164,7 @@ public sealed class Dispatcher : IDispatcher
         }
         catch (Exception e)
         {
-            _logger.SubscriberInvocationFailed(e, message.DbId);
+            _logger.SubscriberInvocationFailed(e, message.StorageId);
         }
     }
 
@@ -305,7 +305,7 @@ public sealed class Dispatcher : IDispatcher
                     return;
                 }
 
-                var messageIds = _schedulerQueue.UnorderedItems.Select(x => x.DbId).ToArray();
+                var messageIds = _schedulerQueue.UnorderedItems.Select(x => x.StorageId).ToArray();
                 _storage
                     .ChangePublishStateToDelayedAsync(messageIds)
                     .AsTask()
@@ -345,12 +345,12 @@ public sealed class Dispatcher : IDispatcher
             var result = await _sender.SendAsync(message).ConfigureAwait(false);
             if (!result.Succeeded)
             {
-                _logger.DelayedMessageSendFailed(message.DbId);
+                _logger.DelayedMessageSendFailed(message.StorageId);
             }
         }
         catch (Exception ex)
         {
-            _logger.ScheduledMessageSendError(ex, message.DbId);
+            _logger.ScheduledMessageSendError(ex, message.StorageId);
         }
     }
 
@@ -416,7 +416,7 @@ public sealed class Dispatcher : IDispatcher
         }
         catch (Exception ex)
         {
-            _logger.TransportSendError(ex, message.DbId);
+            _logger.TransportSendError(ex, message.StorageId);
         }
     }
 
@@ -464,7 +464,7 @@ public sealed class Dispatcher : IDispatcher
         }
         catch (Exception e)
         {
-            _logger.SubscriberInvocationFailed(e, messageData.Item1.DbId);
+            _logger.SubscriberInvocationFailed(e, messageData.Item1.StorageId);
         }
     }
 

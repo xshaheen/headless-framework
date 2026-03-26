@@ -60,7 +60,9 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
             new { Schema = schema }
         );
 
-        columns.Should().Contain(["Id", "Version", "Name", "Content", "Retries", "Added", "ExpiresAt", "StatusName"]);
+        columns
+            .Should()
+            .Contain(["Id", "Version", "Name", "Content", "Retries", "Added", "ExpiresAt", "StatusName", "MessageId"]);
 
         // cleanup
         await connection.ExecuteAsync(

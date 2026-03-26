@@ -69,7 +69,7 @@ internal static class DbConnectionExtensions
             return result;
         }
 
-        public async Task<int> ExecuteScalarAsync(
+        public async Task<long> ExecuteScalarAsync(
             string sql,
             CancellationToken cancellationToken = default,
             params object?[] sqlParams
@@ -87,7 +87,7 @@ internal static class DbConnectionExtensions
 
             var objValue = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
-            return Convert.ToInt32(objValue, CultureInfo.InvariantCulture);
+            return Convert.ToInt64(objValue, CultureInfo.InvariantCulture);
         }
     }
 }

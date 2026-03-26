@@ -120,5 +120,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
             );
             _groupConcurrent = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
         }
+
+        selector.Invalidate();
     }
 }

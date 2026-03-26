@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Serialization;
@@ -28,23 +29,23 @@ namespace Headless.Messaging.Testing;
 /// });
 ///
 /// await harness.Publisher.PublishAsync(new MyMessage { ... });
-/// var recorded = await harness.WaitForConsumed&lt;MyMessage&gt;(TimeSpan.FromSeconds(5));
+/// var recorded = await harness.WaitForConsumed&lt;MyMessage&gt;();
 /// </code>
 /// </para>
 /// </remarks>
 public sealed class MessagingTestHarness : IAsyncDisposable
 {
-    private readonly IServiceProvider _sp;
+    /// <summary>Default timeout for <c>WaitFor*</c> methods when no explicit timeout is provided.</summary>
+    public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(5);
+
     private readonly MessageObservationStore _store;
     private readonly bool _ownsSp;
-    private readonly Lazy<IMessagePublisher> _publisher;
 
     private MessagingTestHarness(IServiceProvider sp, MessageObservationStore store, bool ownsSp)
     {
-        _sp = sp;
+        ServiceProvider = sp;
         _store = store;
         _ownsSp = ownsSp;
-        _publisher = new Lazy<IMessagePublisher>(sp.GetRequiredService<IMessagePublisher>);
     }
 
     // -------------------------------------------------------------------------
@@ -64,6 +65,8 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(configure);
+
         var services = new ServiceCollection();
 
         services.AddLogging();
@@ -96,6 +99,14 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// </summary>
     internal static void ConfigureServices(IServiceCollection services)
     {
+        // Idempotency guard — safe to call multiple times (e.g., integration test setup)
+        if (services.Any(d => d.ServiceType == typeof(TestHarnessMarkerService)))
+        {
+            return;
+        }
+
+        services.AddSingleton<TestHarnessMarkerService>();
+
         _EnsureInMemoryInfrastructure(services);
 
         // Disable parallelism for deterministic single-threaded test execution
@@ -138,8 +149,14 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until a message of type <typeparamref name="T"/> is published,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForPublished<T>(TimeSpan timeout, CancellationToken ct = default) =>
-        _store.WaitForAsync(typeof(T), MessageObservationType.Published, predicate: null, timeout, ct);
+    public Task<RecordedMessage> WaitForPublished<T>(TimeSpan? timeout = null, CancellationToken ct = default) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Published,
+            predicate: null,
+            timeout ?? DefaultTimeout,
+            ct
+        );
 
     /// <summary>
     /// Waits until a published message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
@@ -147,9 +164,16 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// </summary>
     public Task<RecordedMessage> WaitForPublished<T>(
         Func<T, bool> predicate,
-        TimeSpan timeout,
+        TimeSpan? timeout = null,
         CancellationToken ct = default
-    ) => _store.WaitForAsync(typeof(T), MessageObservationType.Published, obj => predicate((T)obj), timeout, ct);
+    ) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Published,
+            obj => predicate((T)obj),
+            timeout ?? DefaultTimeout,
+            ct
+        );
 
     // -------------------------------------------------------------------------
     // Awaitable assertions — Consumed
@@ -159,8 +183,8 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until a message of type <typeparamref name="T"/> is consumed successfully,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForConsumed<T>(TimeSpan timeout, CancellationToken ct = default) =>
-        _store.WaitForAsync(typeof(T), MessageObservationType.Consumed, predicate: null, timeout, ct);
+    public Task<RecordedMessage> WaitForConsumed<T>(TimeSpan? timeout = null, CancellationToken ct = default) =>
+        _store.WaitForAsync(typeof(T), MessageObservationType.Consumed, predicate: null, timeout ?? DefaultTimeout, ct);
 
     /// <summary>
     /// Waits until a consumed message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
@@ -168,9 +192,16 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// </summary>
     public Task<RecordedMessage> WaitForConsumed<T>(
         Func<T, bool> predicate,
-        TimeSpan timeout,
+        TimeSpan? timeout = null,
         CancellationToken ct = default
-    ) => _store.WaitForAsync(typeof(T), MessageObservationType.Consumed, obj => predicate((T)obj), timeout, ct);
+    ) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Consumed,
+            obj => predicate((T)obj),
+            timeout ?? DefaultTimeout,
+            ct
+        );
 
     // -------------------------------------------------------------------------
     // Awaitable assertions — Faulted
@@ -180,8 +211,8 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until processing of a message of type <typeparamref name="T"/> faults,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForFaulted<T>(TimeSpan timeout, CancellationToken ct = default) =>
-        _store.WaitForAsync(typeof(T), MessageObservationType.Faulted, predicate: null, timeout, ct);
+    public Task<RecordedMessage> WaitForFaulted<T>(TimeSpan? timeout = null, CancellationToken ct = default) =>
+        _store.WaitForAsync(typeof(T), MessageObservationType.Faulted, predicate: null, timeout ?? DefaultTimeout, ct);
 
     /// <summary>
     /// Waits until a faulted message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
@@ -189,9 +220,16 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// </summary>
     public Task<RecordedMessage> WaitForFaulted<T>(
         Func<T, bool> predicate,
-        TimeSpan timeout,
+        TimeSpan? timeout = null,
         CancellationToken ct = default
-    ) => _store.WaitForAsync(typeof(T), MessageObservationType.Faulted, obj => predicate((T)obj), timeout, ct);
+    ) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Faulted,
+            obj => predicate((T)obj),
+            timeout ?? DefaultTimeout,
+            ct
+        );
 
     // -------------------------------------------------------------------------
     // State management
@@ -208,14 +246,14 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     // -------------------------------------------------------------------------
 
     /// <summary>Returns a publisher backed by the in-memory transport.</summary>
-    public IMessagePublisher Publisher => _publisher.Value;
+    public IMessagePublisher Publisher => ServiceProvider.GetRequiredService<IMessagePublisher>();
 
     /// <summary>Resolves an arbitrary service from the harness container.</summary>
     public T GetRequiredService<T>()
-        where T : notnull => _sp.GetRequiredService<T>();
+        where T : notnull => ServiceProvider.GetRequiredService<T>();
 
     /// <summary>Provides direct access to the harness <see cref="IServiceProvider"/>.</summary>
-    public IServiceProvider ServiceProvider => _sp;
+    public IServiceProvider ServiceProvider { get; }
 
     // -------------------------------------------------------------------------
     // Disposal
@@ -234,7 +272,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         // Cancel the bootstrapper first — its registered callback stops all processing servers.
         // Directly calling DisposeAsync on processors before the bootstrapper cancels its CTS
         // causes a race where the CTS cancel-callback fires on an already-disposed processor CTS.
-        var bootstrapper = _sp.GetService<IBootstrapper>();
+        var bootstrapper = ServiceProvider.GetService<IBootstrapper>();
 
         if (bootstrapper is not null)
         {
@@ -247,7 +285,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         }
 
         // Dispose the DI container — remaining singletons are released here.
-        if (_sp is IAsyncDisposable asyncDisposable)
+        if (ServiceProvider is IAsyncDisposable asyncDisposable)
         {
             await asyncDisposable.DisposeAsync().ConfigureAwait(false);
         }
@@ -256,6 +294,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    /// <summary>Marker service for idempotency guard in <see cref="ConfigureServices"/>.</summary>
+    private sealed class TestHarnessMarkerService;
 
     /// <summary>
     /// Verifies that in-memory queue and storage providers are registered.

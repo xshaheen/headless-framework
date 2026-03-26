@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.CircuitBreaker;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -217,6 +218,29 @@ public sealed class MessagingBuilderTests
 
         consumers.Should().HaveCount(2);
         consumers.Select(c => c.Group).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void should_apply_topic_name_prefix_to_addconsumer_registrations()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
+
+        // when
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemoryStorage();
+            messaging.TopicNamePrefix = "billing";
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        // then
+        registry.GetAll().Single().Topic.Should().Be("billing.orders.placed");
     }
 
     [Fact]
@@ -441,6 +465,53 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
+    public void should_use_explicit_default_group_name_when_configured()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.DefaultGroupName = "shared-group";
+            messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        // then
+        registry.GetAll().Single().Group.Should().Be("shared-group");
+    }
+
+    [Fact]
+    public void should_apply_group_name_prefix_to_generated_groups()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.GroupNamePrefix = "tenant-a";
+            messaging.UseConventions(conventions =>
+            {
+                conventions.UseApplicationId("orders");
+                conventions.UseVersion("v1");
+            });
+            messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        // then
+        var handlerId = MessagingConventions.GetDefaultHandlerId(typeof(TestOrderConsumer), typeof(TestOrderMessage));
+        var conventions = new MessagingConventions().UseApplicationId("orders").UseVersion("v1");
+        registry.GetAll().Single().Group.Should().Be($"tenant-a.{conventions.GetGroupName(handlerId)}");
+    }
+
+    [Fact]
     public void should_allow_chaining_with_implicit_topic_mapping()
     {
         // given
@@ -460,6 +531,78 @@ public sealed class MessagingBuilderTests
         consumer.Topic.Should().Be("orders.placed");
         consumer.Concurrency.Should().Be(5);
         consumer.Group.Should().Be("order-service");
+    }
+
+    [Fact]
+    public void with_circuit_breaker_before_group_uses_final_group_name()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when — circuit breaker BEFORE group
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging
+                .Subscribe<TestOrderConsumer>()
+                .Topic("orders.placed")
+                .WithCircuitBreaker(cb => cb.FailureThreshold = 3)
+                .Group("my-group");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+
+        // then — override is registered against the final group name
+        cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
+        opts!.FailureThreshold.Should().Be(3);
+    }
+
+    [Fact]
+    public void with_circuit_breaker_after_group_uses_final_group_name()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when — circuit breaker AFTER group
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging
+                .Subscribe<TestOrderConsumer>()
+                .Topic("orders.placed")
+                .Group("my-group")
+                .WithCircuitBreaker(cb => cb.FailureThreshold = 5);
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+
+        // then
+        cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
+        opts!.FailureThreshold.Should().Be(5);
+    }
+
+    [Fact]
+    public void with_circuit_breaker_before_group_does_not_leave_stale_registration()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when — circuit breaker set, then group changes the group name
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging
+                .Subscribe<TestOrderConsumer>()
+                .Topic("orders.placed")
+                .WithCircuitBreaker(cb => cb.FailureThreshold = 3)
+                .Group("final-group");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+
+        // then — no stale default-group entry, only the final one
+        cbRegistry.TryGet("final-group", out var opts).Should().BeTrue();
+        opts!.FailureThreshold.Should().Be(3);
     }
 }
 

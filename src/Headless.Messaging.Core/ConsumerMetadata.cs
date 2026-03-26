@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.CircuitBreaker;
+
 namespace Headless.Messaging;
 
-/// <summary>
-/// Contains metadata about a registered message consumer.
-/// </summary>
+/// <summary>Contains metadata about a registered message consumer.</summary>
 /// <param name="MessageType">The type of message this consumer handles.</param>
 /// <param name="ConsumerType">The type of the consumer implementation.</param>
 /// <param name="Topic">The topic name to subscribe to.</param>
@@ -31,4 +31,11 @@ public sealed record ConsumerMetadata(
         string.IsNullOrWhiteSpace(HandlerId)
             ? MessagingConventions.GetDefaultHandlerId(ConsumerType, MessageType)
             : HandlerId!;
+
+    /// <summary>
+    /// Per-consumer circuit breaker overrides registered via
+    /// <c>AddConsumer().WithCircuitBreaker()</c>. Applied to the
+    /// <see cref="ConsumerCircuitBreakerRegistry"/> during startup discovery.
+    /// </summary>
+    internal ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; init; }
 }

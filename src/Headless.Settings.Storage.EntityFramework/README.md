@@ -27,6 +27,9 @@ dotnet add package Headless.Settings.Storage.EntityFramework
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddStringEncryptionService(
+    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
+);
 builder.Services.AddSettingsManagementCore();
 builder.Services.AddSettingsManagementDbContextStorage(options =>
 {
@@ -50,13 +53,22 @@ public class AppDbContext : DbContext, ISettingsDbContext
 }
 
 // In Program.cs
+builder.Services.AddStringEncryptionService(
+    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
+);
 builder.Services.AddSettingsManagementCore();
 builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
 ```
 
 ## Configuration
 
-No additional configuration beyond DbContext setup.
+Pre-requisite: register string encryption before calling `AddSettingsManagementCore(...)`, for example:
+
+```csharp
+builder.Services.AddStringEncryptionService(
+    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
+);
+```
 
 ## Dependencies
 

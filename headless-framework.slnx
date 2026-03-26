@@ -147,11 +147,14 @@
         <Project Path="src\Headless.Domain.LocalPublisher\Headless.Domain.LocalPublisher.csproj" />
         <Project Path="src\Headless.Domain\Headless.Domain.csproj" />
         <Project Path="src\Headless.Hosting\Headless.Hosting.csproj" />
+        <Project Path="src\Headless.Security.Abstractions\Headless.Security.Abstractions.csproj" />
+        <Project Path="src\Headless.Security\Headless.Security.csproj" />
         <Project Path="src\Headless.NetTopologySuite\Headless.NetTopologySuite.csproj" />
         <Project Path="src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
         <Project Path="src\Headless.Testing\Headless.Testing.csproj" />
         <Project Path="tests\Headless.Extensions.Tests.Unit\Headless.Extensions.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Core.Tests.Unit\Headless.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Security.Tests.Unit\Headless.Security.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Checks.Tests.Unit\Headless.Checks.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Domain.LocalPublisher.Tests.Unit\Headless.Domain.LocalPublisher.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Domain.Tests.Unit\Headless.Domain.Tests.Unit.csproj" />
@@ -192,8 +195,10 @@
         <Project Path="src/Headless.Messaging.RabbitMq/Headless.Messaging.RabbitMq.csproj" />
         <Project Path="src/Headless.Messaging.RedisStreams/Headless.Messaging.RedisStreams.csproj" />
         <Project Path="src/Headless.Messaging.SqlServer/Headless.Messaging.SqlServer.csproj" />
+        <Project Path="src/Headless.Messaging.Testing/Headless.Messaging.Testing.csproj" />
     </Folder>
     <Folder Name="/Messaging/Tests/">
+        <Project Path="tests/Headless.Messaging.Testing.Tests.Unit/Headless.Messaging.Testing.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Kafka.Tests.Unit/Headless.Messaging.Kafka.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.OpenTelemetry.Tests.Unit/Headless.Messaging.OpenTelemetry.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Abstractions.Tests.Unit/Headless.Messaging.Abstractions.Tests.Unit.csproj" />
@@ -202,6 +207,7 @@
         <Project Path="tests/Headless.Messaging.Dashboard.K8s.Tests.Unit/Headless.Messaging.Dashboard.K8s.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Dashboard.Tests.Unit/Headless.Messaging.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.InMemoryQueue.Tests.Unit/Headless.Messaging.InMemoryQueue.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Nats.Tests.Integration/Headless.Messaging.Nats.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Nats.Tests.Unit/Headless.Messaging.Nats.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.PostgreSql.Tests.Unit/Headless.Messaging.PostgreSql.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Pulsar.Tests.Unit/Headless.Messaging.Pulsar.Tests.Unit.csproj" />

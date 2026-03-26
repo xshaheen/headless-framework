@@ -48,6 +48,17 @@ options.UsePulsar(pulsar =>
 });
 ```
 
+## Messaging Semantics
+
+- Publish sends the serialized body as Pulsar payload bytes and preserves headers as properties.
+- Delay stays in the core pipeline. This provider does not add broker-native scheduling.
+- Commit acknowledges the message.
+- Reject sends a negative acknowledgment so Pulsar can redeliver under subscription policy.
+- Consumer startup subscribes the group name to the configured topics in the tenant and namespace.
+- Topic creation and retention still follow broker configuration for that tenant and namespace.
+- Shared subscriptions favor throughput over strict ordering. Single-threaded consumption gives the most stable order.
+- Topic names, property sizes, and payload limits follow Pulsar broker limits.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

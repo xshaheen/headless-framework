@@ -19,7 +19,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
 
             if (azureFile == null)
             {
-                _logger.LogWarning("Cannot set expiration for non-existent file {FileId}", fileId);
+                _logger.CannotSetExpirationForMissingFile(fileId);
 
                 return;
             }
@@ -27,11 +27,11 @@ public sealed partial class TusAzureStore : ITusExpirationStore
             azureFile.Metadata.DateExpiration = expires;
             await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken);
 
-            _logger.LogDebug("Set expiration for file {FileId} to {ExpirationDate}", fileId, expires);
+            _logger.ExpirationSet(fileId, expires);
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Failed to set expiration for file {FileId}", fileId);
+            _logger.ExpirationSetFailed(e, fileId);
 
             throw;
         }
@@ -75,7 +75,7 @@ public sealed partial class TusAzureStore : ITusExpirationStore
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Failed to get expired files");
+            _logger.GetExpiredFilesFailed(e);
 
             throw;
         }
@@ -97,12 +97,41 @@ public sealed partial class TusAzureStore : ITusExpirationStore
             }
             catch (Exception e)
             {
-                _logger.LogError(e, "Failed to remove expired file {FileId}", fileId);
+                _logger.RemoveExpiredFileFailed(e, fileId);
             }
         }
 
-        _logger.LogInformation("Removed {RemovedCount} expired files", removedCount);
+        _logger.ExpiredFilesRemoved(removedCount);
 
         return removedCount;
     }
+}
+
+internal static partial class TusAzureStoreExpirationLog
+{
+    [LoggerMessage(
+        EventId = 3206,
+        Level = LogLevel.Warning,
+        Message = "Cannot set expiration for non-existent file {FileId}"
+    )]
+    public static partial void CannotSetExpirationForMissingFile(this ILogger logger, string fileId);
+
+    [LoggerMessage(
+        EventId = 3207,
+        Level = LogLevel.Debug,
+        Message = "Set expiration for file {FileId} to {ExpirationDate}"
+    )]
+    public static partial void ExpirationSet(this ILogger logger, string fileId, DateTimeOffset expirationDate);
+
+    [LoggerMessage(EventId = 3208, Level = LogLevel.Error, Message = "Failed to set expiration for file {FileId}")]
+    public static partial void ExpirationSetFailed(this ILogger logger, Exception e, string fileId);
+
+    [LoggerMessage(EventId = 3209, Level = LogLevel.Error, Message = "Failed to get expired files")]
+    public static partial void GetExpiredFilesFailed(this ILogger logger, Exception e);
+
+    [LoggerMessage(EventId = 3210, Level = LogLevel.Error, Message = "Failed to remove expired file {FileId}")]
+    public static partial void RemoveExpiredFileFailed(this ILogger logger, Exception e, string fileId);
+
+    [LoggerMessage(EventId = 3211, Level = LogLevel.Information, Message = "Removed {RemovedCount} expired files")]
+    public static partial void ExpiredFilesRemoved(this ILogger logger, int removedCount);
 }

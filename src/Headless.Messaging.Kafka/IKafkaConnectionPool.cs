@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Confluent.Kafka;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -30,11 +31,14 @@ public sealed class KafkaConnectionPool : IKafkaConnectionPool, IDisposable
         _maxSize = _options.ConnectionPoolSize;
         if (logger.IsEnabled(LogLevel.Debug))
         {
-            logger.LogDebug("Kafka servers for messaging: {Servers}", _options.Servers);
+            logger.LogDebug(
+                "Kafka servers for messaging: {Servers}",
+                BrokerAddressDisplay.FormatMany(_options.Servers)
+            );
         }
     }
 
-    public string ServersAddress => _options.Servers;
+    public string ServersAddress => BrokerAddressDisplay.FormatMany(_options.Servers);
 
     public IProducer<string, byte[]> RentProducer()
     {

@@ -59,7 +59,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     public void Unsubscribe(string groupId)
     {
         _consumerClients.Remove(groupId);
-        logger.LogInformation("Removed consumer client from InMemoryQueue! --> Group: {GroupId}", groupId);
+        logger.ConsumerRemoved(groupId);
     }
 
     /// <summary>
@@ -98,4 +98,14 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
             }
         }
     }
+}
+
+internal static partial class MemoryQueueLog
+{
+    [LoggerMessage(
+        EventId = 3001,
+        Level = LogLevel.Information,
+        Message = "Removed consumer client from InMemoryQueue! --> Group: {GroupId}"
+    )]
+    public static partial void ConsumerRemoved(this ILogger logger, string groupId);
 }

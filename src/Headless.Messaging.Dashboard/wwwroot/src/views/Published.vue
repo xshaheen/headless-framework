@@ -84,7 +84,7 @@
       </div>
 
       <!-- Table -->
-      <TableSkeleton v-if="isLoading" :rows="5" :columns="6" />
+      <TableSkeleton v-if="isLoading" :rows="5" :columns="7" />
 
       <v-card v-else class="messages-card">
         <v-table density="comfortable" class="messages-table">
@@ -98,7 +98,8 @@
                   @update:model-value="toggleSelectAll"
                 />
               </th>
-              <th>ID</th>
+              <th>Storage ID</th>
+              <th>Message ID</th>
               <th>Name</th>
               <th>Added</th>
               <th>{{ isDelayedTab ? 'Delayed Publish Time' : 'Expires At' }}</th>
@@ -107,20 +108,21 @@
           </thead>
           <tbody>
             <tr v-if="messages.length === 0">
-              <td colspan="6" class="text-center pa-6 text-medium-emphasis">No messages found</td>
+              <td colspan="7" class="text-center pa-6 text-medium-emphasis">No messages found</td>
             </tr>
-            <tr v-for="msg in messages" :key="msg.id">
+            <tr v-for="msg in messages" :key="msg.storageId">
               <td>
                 <v-checkbox
-                  :model-value="selectedIds.includes(msg.id)"
+                  :model-value="selectedIds.includes(msg.storageId)"
                   hide-details
                   density="compact"
-                  @update:model-value="toggleSelect(msg.id)"
+                  @update:model-value="toggleSelect(msg.storageId)"
                 />
               </td>
               <td class="text-caption">
-                <a class="id-link" @click="viewMessage(msg.id)">{{ msg.id }}</a>
+                <a class="id-link" @click="viewMessage(msg.storageId)">{{ msg.storageId }}</a>
               </td>
+              <td class="text-caption">{{ msg.messageId }}</td>
               <td>{{ msg.name }}</td>
               <td class="text-caption">
                 <v-tooltip :text="timeAgo(msg.added)" location="top">
@@ -183,7 +185,8 @@ import PaginationFooter from '@/components/common/PaginationFooter.vue'
 import MessageDetailDialog, { type MessageDetail } from '@/components/MessageDetailDialog.vue'
 
 interface Message {
-  id: number
+  storageId: string
+  messageId: string
   name: string
   added: string
   expiresAt: string
@@ -237,7 +240,7 @@ const nameFilter = ref('')
 const contentFilter = ref('')
 const isLoading = ref(false)
 const messages = ref<Message[]>([])
-const selectedIds = ref<number[]>([])
+const selectedIds = ref<string[]>([])
 const selectAll = ref(false)
 const detailDialogOpen = ref(false)
 const detailMessage = ref<MessageDetail | null>(null)
@@ -310,25 +313,25 @@ onUnmounted(() => {
 
 function toggleSelectAll(checked: boolean | null) {
   if (checked) {
-    selectedIds.value = messages.value.map((m) => m.id)
+    selectedIds.value = messages.value.map((m) => m.storageId)
   } else {
     selectedIds.value = []
   }
 }
 
-function toggleSelect(id: number) {
-  const idx = selectedIds.value.indexOf(id)
+function toggleSelect(storageId: string) {
+  const idx = selectedIds.value.indexOf(storageId)
   if (idx >= 0) {
     selectedIds.value.splice(idx, 1)
   } else {
-    selectedIds.value.push(id)
+    selectedIds.value.push(storageId)
   }
   selectAll.value = selectedIds.value.length === messages.value.length && messages.value.length > 0
 }
 
-async function viewMessage(id: number) {
+async function viewMessage(storageId: string) {
   try {
-    const dto = await httpService.get<MessageDetail>(`/published/message/${id}`)
+    const dto = await httpService.get<MessageDetail>(`/published/message/${storageId}`)
     detailMessage.value = dto
     detailDialogOpen.value = true
   } catch (error) {

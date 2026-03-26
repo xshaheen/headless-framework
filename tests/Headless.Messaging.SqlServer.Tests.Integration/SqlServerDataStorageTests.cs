@@ -223,9 +223,25 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
         // then
         stored.Should().NotBeNull();
-        stored.DbId.Should().NotBeNullOrEmpty();
+        stored.StorageId.Should().BeGreaterThan(0);
         stored.Origin.Should().NotBeNull();
         stored.Retries.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_store_published_message_with_maximum_supported_message_id_length()
+    {
+        // given
+        var msgId = new string('m', PublishOptions.MessageIdMaxLength);
+        var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
+        var message = new Message(header, """{"test": "payload"}""");
+
+        // when
+        var stored = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
+
+        // then
+        stored.Origin.Headers[Headers.MessageId].Should().Be(msgId);
+        stored.Origin.Headers[Headers.MessageId].Should().HaveLength(PublishOptions.MessageIdMaxLength);
     }
 
     [Fact]
@@ -238,10 +254,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         var stored = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
 
         // when
-        var deleted = await _storage.DeletePublishedMessageAsync(
-            long.Parse(stored.DbId, CultureInfo.InvariantCulture),
-            AbortToken
-        );
+        var deleted = await _storage.DeletePublishedMessageAsync(stored.StorageId, AbortToken);
 
         // then
         deleted.Should().Be(1);
@@ -267,10 +280,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         var stored = await _storage.StoreReceivedMessageAsync("test.name", "test.group", message, AbortToken);
 
         // when
-        var deleted = await _storage.DeleteReceivedMessageAsync(
-            long.Parse(stored.DbId, CultureInfo.InvariantCulture),
-            AbortToken
-        );
+        var deleted = await _storage.DeleteReceivedMessageAsync(stored.StorageId, AbortToken);
 
         // then
         deleted.Should().Be(1);
@@ -294,10 +304,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
         // then - verify via monitoring API
         var monitoringApi = _storage.GetMonitoringApi();
-        var retrieved = await monitoringApi.GetPublishedMessageAsync(
-            long.Parse(stored.DbId, CultureInfo.InvariantCulture),
-            AbortToken
-        );
+        var retrieved = await monitoringApi.GetPublishedMessageAsync(stored.StorageId, AbortToken);
         retrieved.Should().NotBeNull();
     }
 
@@ -352,7 +359,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         var stored2 = await _storage.StoreMessageAsync("test.name", new Message(header2, null), null, AbortToken);
 
         // when
-        await _storage.ChangePublishStateToDelayedAsync([stored1.DbId, stored2.DbId], AbortToken);
+        await _storage.ChangePublishStateToDelayedAsync([stored1.StorageId, stored2.StorageId], AbortToken);
 
         // then
         var monitoringApi = _storage.GetMonitoringApi();
@@ -392,7 +399,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
         // then
         retryMessages.Should().NotBeNull();
-        retryMessages.Should().Contain(m => m.DbId == stored.DbId);
+        retryMessages.Should().Contain(m => m.StorageId == stored.StorageId);
     }
 
     [Fact]
@@ -414,7 +421,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
         // then
         retryMessages.Should().NotBeNull();
-        retryMessages.Should().Contain(m => m.DbId == stored.DbId);
+        retryMessages.Should().Contain(m => m.StorageId == stored.StorageId);
     }
 
     #endregion

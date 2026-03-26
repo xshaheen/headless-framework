@@ -37,7 +37,7 @@ dotnet add package Headless.Orm.EntityFramework
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessApi();
+builder.AddHeadlessApi();
 
 builder.Services.AddHeadlessRedisCache(options =>
 {
@@ -56,7 +56,8 @@ builder.Services.AddAwsSesEmail(options =>
 });
 
 var app = builder.Build();
-app.UseHeadlessApi();
+app.UseResponseCompression();
+app.UseHsts();
 app.Run();
 ```
 
@@ -84,6 +85,8 @@ Foundational building blocks shared across the framework — domain primitives, 
 |---------|-------------|
 | [Headless.Extensions](src/Headless.Extensions/README.md) | Core primitives and utilities |
 | [Headless.Core](src/Headless.Core/README.md) | Domain-Driven Design building blocks |
+| [Headless.Security.Abstractions](src/Headless.Security.Abstractions/README.md) | Security contracts and options |
+| [Headless.Security](src/Headless.Security/README.md) | String encryption and hashing services |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
 | [Headless.Domain.LocalPublisher](src/Headless.Domain.LocalPublisher/README.md) | In-process domain event publishing |
@@ -400,33 +403,33 @@ This project uses [Headless .NET Framework](https://github.com/xshaheen/headless
 Documentation index: https://raw.githubusercontent.com/xshaheen/headless-framework/main/llms.txt
 
 When working with a Headless domain, fetch the relevant domain doc:
-- API & Web: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/api.txt
-- Core: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/core.txt
-- Multi-Tenancy: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/multi-tenancy.txt
-- Blob Storage: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/blobs.txt
-- Caching: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/caching.txt
-- Email: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/emails.txt
-- Feature Management: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/features.txt
-- Identity: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/identity.txt
-- Imaging: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/imaging.txt
-- Logging: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/logging.txt
-- Media: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/media.txt
-- Messaging (Distributed Bus): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/messaging.txt
-- Audit Log: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/audit-log.txt
-- OpenAPI: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/openapi.txt
-- ORM: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/orm.txt
-- Payments: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/payments.txt
-- Permissions: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/permissions.txt
-- Push Notifications: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/push-notifications.txt
-- Distributed Locks: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/distributed-locks.txt
-- Serialization: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/serialization.txt
-- Settings: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/settings.txt
-- SMS: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/sms.txt
-- SQL: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/sql.txt
-- Testing: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/testing.txt
-- Jobs (Background Jobs): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/jobs.txt
-- TUS (Resumable Uploads): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/tus.txt
-- Utilities: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/utilities.txt
+- API & Web: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/api.md
+- Core: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/core.md
+- Multi-Tenancy: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/multi-tenancy.md
+- Blob Storage: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/blobs.md
+- Caching: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/caching.md
+- Email: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/emails.md
+- Feature Management: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/features.md
+- Identity: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/identity.md
+- Imaging: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/imaging.md
+- Logging: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/logging.md
+- Media: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/media.md
+- Messaging (Distributed Bus): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/messaging.md
+- Audit Log: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/audit-log.md
+- OpenAPI: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/openapi.md
+- ORM: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/orm.md
+- Payments: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/payments.md
+- Permissions: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/permissions.md
+- Push Notifications: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/push-notifications.md
+- Distributed Locks: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/distributed-locks.md
+- Serialization: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/serialization.md
+- Settings: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/settings.md
+- SMS: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/sms.md
+- SQL: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/sql.md
+- Testing: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/testing.md
+- Jobs (Background Jobs): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/jobs.md
+- TUS (Resumable Uploads): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/tus.md
+- Utilities: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/utilities.md
 
 Key rules:
 - Use `ICache` from `Headless.Caching.Abstractions`, NOT `Microsoft.Extensions.Caching.Distributed.IDistributedCache`

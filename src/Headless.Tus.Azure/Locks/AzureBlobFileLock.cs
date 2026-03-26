@@ -29,7 +29,7 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
 
             if (!blobExists.Value)
             {
-                logger.LogWarning("Cannot lock non-existent blob: {BlobName}", blobClient.Name);
+                logger.CannotLockMissingBlob(blobClient.Name);
 
                 return false;
             }
@@ -38,19 +38,19 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
             await _leaseClient.AcquireAsync(leaseDuration);
 
             _isLocked = true;
-            logger.LogDebug("Successfully acquired lease for blob: {BlobName}", blobClient.Name);
+            logger.BlobLeaseAcquired(blobClient.Name);
 
             return true;
         }
         catch (RequestFailedException e) when (e.ErrorCode == BlobErrorCode.LeaseAlreadyPresent)
         {
-            logger.LogDebug("Blob {BlobName} is already locked", blobClient.Name);
+            logger.BlobAlreadyLocked(blobClient.Name);
 
             return false;
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Failed to acquire lock for blob: {BlobName}", blobClient.Name);
+            logger.BlobLockAcquireFailed(e, blobClient.Name);
 
             return false;
         }
@@ -66,18 +66,18 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
         try
         {
             await _leaseClient.ReleaseAsync();
-            logger.LogDebug("Successfully released lease for blob: {BlobName}", blobClient.Name);
+            logger.BlobLeaseReleased(blobClient.Name);
         }
         catch (RequestFailedException e)
             when (e.ErrorCode == BlobErrorCode.LeaseIdMismatchWithLeaseOperation
                 || e.ErrorCode == BlobErrorCode.LeaseNotPresentWithLeaseOperation
             )
         {
-            logger.LogDebug("Lease for blob {BlobName} was already released or expired", blobClient.Name);
+            logger.BlobLeaseAlreadyReleased(blobClient.Name);
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Failed to release lease for blob: {BlobName}", blobClient.Name);
+            logger.BlobLeaseReleaseFailed(e, blobClient.Name);
         }
         finally
         {
@@ -85,4 +85,40 @@ public sealed class AzureBlobFileLock(BlobClient blobClient, TimeSpan leaseDurat
             _leaseClient = null;
         }
     }
+}
+
+internal static partial class AzureBlobFileLockLog
+{
+    [LoggerMessage(EventId = 3217, Level = LogLevel.Warning, Message = "Cannot lock non-existent blob: {BlobName}")]
+    public static partial void CannotLockMissingBlob(this ILogger logger, string blobName);
+
+    [LoggerMessage(
+        EventId = 3218,
+        Level = LogLevel.Debug,
+        Message = "Successfully acquired lease for blob: {BlobName}"
+    )]
+    public static partial void BlobLeaseAcquired(this ILogger logger, string blobName);
+
+    [LoggerMessage(EventId = 3219, Level = LogLevel.Debug, Message = "Blob {BlobName} is already locked")]
+    public static partial void BlobAlreadyLocked(this ILogger logger, string blobName);
+
+    [LoggerMessage(EventId = 3220, Level = LogLevel.Error, Message = "Failed to acquire lock for blob: {BlobName}")]
+    public static partial void BlobLockAcquireFailed(this ILogger logger, Exception e, string blobName);
+
+    [LoggerMessage(
+        EventId = 3221,
+        Level = LogLevel.Debug,
+        Message = "Successfully released lease for blob: {BlobName}"
+    )]
+    public static partial void BlobLeaseReleased(this ILogger logger, string blobName);
+
+    [LoggerMessage(
+        EventId = 3222,
+        Level = LogLevel.Debug,
+        Message = "Lease for blob {BlobName} was already released or expired"
+    )]
+    public static partial void BlobLeaseAlreadyReleased(this ILogger logger, string blobName);
+
+    [LoggerMessage(EventId = 3223, Level = LogLevel.Error, Message = "Failed to release lease for blob: {BlobName}")]
+    public static partial void BlobLeaseReleaseFailed(this ILogger logger, Exception e, string blobName);
 }

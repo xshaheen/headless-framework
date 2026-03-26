@@ -1,8 +1,9 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
@@ -62,7 +63,10 @@ public static class Setup
     /// </code>
     /// </para>
     /// </remarks>
-    public static MessagingBuilder AddHeadlessMessaging(this IServiceCollection services, Action<MessagingOptions> configure)
+    public static MessagingBuilder AddHeadlessMessaging(
+        this IServiceCollection services,
+        Action<MessagingOptions> configure
+    )
     {
         Argument.IsNotNull(configure);
 
@@ -118,6 +122,7 @@ public static class Setup
 
         //Queue's message processor
         services.TryAddSingleton<MessageNeedToRetryProcessor>();
+        services.TryAddSingleton<IRetryProcessorMonitor>(sp => sp.GetRequiredService<MessageNeedToRetryProcessor>());
         services.TryAddSingleton<TransportCheckProcessor>();
         services.TryAddSingleton<MessageDelayedProcessor>();
         services.TryAddSingleton<CollectorProcessor>();
@@ -131,6 +136,15 @@ public static class Setup
         services.TryAddSingleton<ISubscribeExecutor, SubscribeExecutor>();
 
         services.TryAddSingleton<IDispatcher, Dispatcher>();
+
+        // Circuit breaker
+        services.AddMetrics();
+        services.TryAddSingleton(options.CircuitBreakerRegistry);
+        services.TryAddSingleton<CircuitBreakerMetrics>();
+        services.TryAddSingleton<ICircuitBreakerStateManager, CircuitBreakerStateManager>();
+        services.TryAddSingleton<ICircuitBreakerMonitor>(sp =>
+            (ICircuitBreakerMonitor)sp.GetRequiredService<ICircuitBreakerStateManager>()
+        );
 
         foreach (var serviceExtension in options.Extensions)
         {
@@ -147,6 +161,7 @@ public static class Setup
 
             // Copy public properties
             opt.DefaultGroupName = options.DefaultGroupName;
+            opt.IsDefaultGroupNameConfigured = options.IsDefaultGroupNameConfigured;
             opt.GroupNamePrefix = options.GroupNamePrefix;
             opt.TopicNamePrefix = options.TopicNamePrefix;
             opt.Version = options.Version;
@@ -175,6 +190,22 @@ public static class Setup
             }
         });
 
+        // Register and validate circuit breaker and retry processor options via DI pipeline
+        services.Configure<CircuitBreakerOptions, CircuitBreakerOptionsValidator>(cb =>
+        {
+            cb.FailureThreshold = options.CircuitBreaker.FailureThreshold;
+            cb.OpenDuration = options.CircuitBreaker.OpenDuration;
+            cb.MaxOpenDuration = options.CircuitBreaker.MaxOpenDuration;
+            cb.SuccessfulCyclesToResetEscalation = options.CircuitBreaker.SuccessfulCyclesToResetEscalation;
+            cb.IsTransientException = options.CircuitBreaker.IsTransientException;
+        });
+        services.Configure<RetryProcessorOptions, RetryProcessorOptionsValidator>(rp =>
+        {
+            rp.AdaptivePolling = options.RetryProcessor.AdaptivePolling;
+            rp.MaxPollingInterval = options.RetryProcessor.MaxPollingInterval;
+            rp.CircuitOpenRateThreshold = options.RetryProcessor.CircuitOpenRateThreshold;
+        });
+
         //Startup and Hosted
         services.TryAddSingleton<Bootstrapper>();
         services.TryAddSingleton<IBootstrapper>(sp => sp.GetRequiredService<Bootstrapper>());
@@ -185,6 +216,7 @@ public static class Setup
 
     /// <summary>
     /// Discovers and registers consumer metadata instances added via AddConsumer extension method.
+    /// Also applies any per-consumer circuit breaker overrides carried on the metadata.
     /// </summary>
     private static void _DiscoverConsumersFromDI(
         IServiceCollection services,
@@ -199,21 +231,38 @@ public static class Setup
 
         foreach (var descriptor in metadataDescriptors)
         {
-            if (descriptor.ImplementationInstance is ConsumerMetadata metadata)
+            if (descriptor.ImplementationInstance is not ConsumerMetadata metadata)
             {
-                registry.Register(_ResolveDiscoveredMetadata(metadata, options));
+                continue;
+            }
+
+            var resolved = _ResolveDiscoveredMetadata(metadata, options);
+            registry.Register(resolved);
+
+            // Apply per-consumer circuit breaker overrides inline
+            if (resolved.CircuitBreakerOverride is not null && !string.IsNullOrWhiteSpace(resolved.Group))
+            {
+                options.CircuitBreakerRegistry.Register(resolved.Group, resolved.CircuitBreakerOverride);
             }
         }
     }
 
     private static ConsumerMetadata _ResolveDiscoveredMetadata(ConsumerMetadata metadata, MessagingOptions options)
     {
-        if (!string.IsNullOrWhiteSpace(metadata.Group))
-        {
-            return metadata;
-        }
+        var resolved = options.CreateConsumerMetadata(
+            metadata.ConsumerType,
+            metadata.MessageType,
+            metadata.Topic,
+            metadata.Group,
+            metadata.Concurrency,
+            metadata.HandlerId
+        );
 
-        options.Conventions.Version = options.Version;
-        return metadata with { Group = options.Conventions.GetGroupName(metadata.ResolvedHandlerId) };
+        // CreateConsumerMetadata normalizes topic/group but doesn't carry over builder-only
+        // fields. If ConsumerMetadata gains new builder-set fields, copy them here too.
+        return resolved with
+        {
+            CircuitBreakerOverride = metadata.CircuitBreakerOverride,
+        };
     }
 }

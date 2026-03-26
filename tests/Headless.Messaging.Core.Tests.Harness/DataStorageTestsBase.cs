@@ -29,19 +29,14 @@ public abstract class DataStorageTestsBase : TestBase
     protected virtual DataStorageCapabilities Capabilities => DataStorageCapabilities.Default;
 
     /// <summary>
-    /// Thread-safe counter for generating unique numeric message IDs.
-    /// Uses a base timestamp combined with an incrementing counter to ensure uniqueness.
+    /// Thread-safe counter for generating unique logical message IDs.
     /// </summary>
     private static long _messageIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() << 20;
 
     /// <summary>Creates a valid message for testing.</summary>
-    /// <remarks>
-    /// Generates numeric string IDs compatible with SQL Server/PostgreSQL bigint columns.
-    /// </remarks>
     protected static Message CreateMessage(string? messageId = null, string? messageName = null, object? value = null)
     {
-        // Generate a unique numeric ID if none provided (compatible with bigint columns)
-        var id = messageId ?? Interlocked.Increment(ref _messageIdCounter).ToString(CultureInfo.InvariantCulture);
+        var id = messageId ?? $"msg-{Interlocked.Increment(ref _messageIdCounter)}";
 
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -94,8 +89,23 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         result.Should().NotBeNull();
-        result.DbId.Should().NotBeNullOrEmpty();
+        result.StorageId.Should().BeGreaterThan(0);
         result.Origin.Should().BeSameAs(message);
+    }
+
+    public virtual async Task should_store_published_message_with_non_numeric_message_id()
+    {
+        // given
+        var storage = GetStorage();
+        var message = CreateMessage("non-numeric-id");
+
+        // when
+        var result = await storage.StoreMessageAsync("test-published-message", message, cancellationToken: AbortToken);
+
+        // then
+        result.Should().NotBeNull();
+        result.StorageId.Should().BeGreaterThan(0);
+        result.Origin.GetId().Should().Be("non-numeric-id");
     }
 
     public virtual async Task should_store_received_message()
@@ -111,7 +121,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         result.Should().NotBeNull();
-        result.DbId.Should().NotBeNullOrEmpty();
+        result.StorageId.Should().BeGreaterThan(0);
         result.Origin.Should().BeSameAs(message);
     }
 
@@ -122,7 +132,7 @@ public abstract class DataStorageTestsBase : TestBase
         var serializer = GetSerializer();
         const string messageName = "exception-message";
         const string group = "test-group";
-        // StoreReceivedExceptionMessageAsync expects serialized Message content with headers
+        // StoreReceivedExceptionMessageAsync expects serialized Message JSON with headers, not raw text
         var message = CreateMessage();
         var content = serializer.Serialize(message);
 
@@ -182,7 +192,7 @@ public abstract class DataStorageTestsBase : TestBase
         var storedMessage = await storage.StoreMessageAsync("delayed-test", message, cancellationToken: AbortToken);
 
         // when
-        var act = async () => await storage.ChangePublishStateToDelayedAsync([storedMessage.DbId], AbortToken);
+        var act = async () => await storage.ChangePublishStateToDelayedAsync([storedMessage.StorageId], AbortToken);
 
         // then
         await act.Should().NotThrowAsync();
@@ -348,13 +358,12 @@ public abstract class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var message = CreateMessage();
         var storedMessage = await storage.StoreMessageAsync("delete-test", message, cancellationToken: AbortToken);
-        var messageId = long.Parse(storedMessage.DbId, CultureInfo.InvariantCulture);
 
         // when
-        var deletedCount = await storage.DeletePublishedMessageAsync(messageId, AbortToken);
+        var deletedCount = await storage.DeletePublishedMessageAsync(storedMessage.StorageId, AbortToken);
 
         // then
-        deletedCount.Should().BeGreaterThanOrEqualTo(0);
+        deletedCount.Should().Be(1);
     }
 
     public virtual async Task should_delete_received_message()
@@ -363,13 +372,12 @@ public abstract class DataStorageTestsBase : TestBase
         var storage = GetStorage();
         var message = CreateMessage();
         var storedMessage = await storage.StoreReceivedMessageAsync("delete-test", "group", message, AbortToken);
-        var messageId = long.Parse(storedMessage.DbId, CultureInfo.InvariantCulture);
 
         // when
-        var deletedCount = await storage.DeleteReceivedMessageAsync(messageId, AbortToken);
+        var deletedCount = await storage.DeleteReceivedMessageAsync(storedMessage.StorageId, AbortToken);
 
         // then
-        deletedCount.Should().BeGreaterThanOrEqualTo(0);
+        deletedCount.Should().Be(1);
     }
 
     public virtual async Task should_get_monitoring_api()
@@ -421,7 +429,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         results.Should().HaveCount(20);
-        results.Should().AllSatisfy(r => r.DbId.Should().NotBeNullOrEmpty());
+        results.Should().AllSatisfy(r => r.StorageId.Should().BeGreaterThan(0));
     }
 
     public virtual async Task should_schedule_messages_of_delayed()
@@ -455,14 +463,15 @@ public abstract class DataStorageTestsBase : TestBase
         // given
         var storage = GetStorage();
         var message = CreateMessage();
-        object? transaction = null; // Transaction handling varies by implementation
 
-        // when
-        var result = await storage.StoreMessageAsync("transaction-test", message, transaction, AbortToken);
+        // when — null transaction path (provider-specific transaction tests should cover the real path)
+        var result = await storage.StoreMessageAsync("transaction-test", message, transaction: null, AbortToken);
 
         // then
         result.Should().NotBeNull();
-        result.DbId.Should().NotBeNullOrEmpty();
+        result.StorageId.Should().BeGreaterThan(0);
+        result.Origin.Should().BeSameAs(message);
+        result.Retries.Should().Be(0);
     }
 
     public virtual async Task should_handle_message_state_transitions()
@@ -490,8 +499,9 @@ public abstract class DataStorageTestsBase : TestBase
         // when
         await storage.ChangePublishStateAsync(storedMessage, StatusName.Failed, cancellationToken: AbortToken);
 
-        // then
-        var retriable = await storage.GetPublishedMessagesOfNeedRetry(TimeSpan.FromMinutes(1), AbortToken);
+        // then — the failed message should appear in retry results (lookback covers messages added just now)
+        var retriable = await storage.GetPublishedMessagesOfNeedRetry(TimeSpan.FromMinutes(5), AbortToken);
         retriable.Should().NotBeNull();
+        retriable.Should().Contain(m => m.StorageId == storedMessage.StorageId);
     }
 }

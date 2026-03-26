@@ -45,7 +45,7 @@ public static class MessagesNatsSetup
         {
             services.AddSingleton(new MessageQueueMarkerService("NATS JetStream"));
 
-            services.Configure(configure);
+            services.Configure<MessagingNatsOptions, MessagingNatsOptionsValidator>(configure);
 
             services.AddSingleton<ITransport, NatsTransport>();
             services.AddSingleton<IConsumerClientFactory, NatsConsumerClientFactory>();

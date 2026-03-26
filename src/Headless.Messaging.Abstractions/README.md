@@ -61,7 +61,11 @@ public sealed class OrderService(IOutboxPublisher publisher)
                 OrderId = order.Id,
                 Total = order.Total
             },
-            new PublishOptions { Topic = "orders.placed" },
+            new PublishOptions
+            {
+                Topic = "orders.placed",
+                MessageId = $"order:{order.Id}"
+            },
             ct);
     }
 }
@@ -94,6 +98,8 @@ Runtime delegates use the same scoped consume pipeline as `IConsume<T>` handlers
 - group resolves from application id + handler id + version
 - duplicate registrations are rejected unless you explicitly opt into `Ignore` or `Replace`
 - anonymous delegates must provide `HandlerId`
+
+`PublishOptions.MessageId` is a logical transport-level identifier. Durable outbox providers keep their own numeric storage ID for retries, monitoring, requeue, and delete operations. When a message is published durably, `MessageId` is capped at `PublishOptions.MessageIdMaxLength` characters.
 
 ```csharp
 public sealed class ProjectionWarmup(IRuntimeSubscriber subscriber)

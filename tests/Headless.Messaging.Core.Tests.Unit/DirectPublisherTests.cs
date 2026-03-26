@@ -196,6 +196,46 @@ public sealed class DirectPublisherTests : TestBase
     }
 
     [Fact]
+    public async Task should_allow_maximum_supported_message_id_length()
+    {
+        // given
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var publishOptions = new PublishOptions { MessageId = new string('m', PublishOptions.MessageIdMaxLength) };
+
+        // when
+        await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].Headers[Headers.MessageId].Should().HaveLength(PublishOptions.MessageIdMaxLength);
+    }
+
+    [Fact]
+    public async Task should_reject_message_id_values_longer_than_the_supported_limit()
+    {
+        // given
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var publishOptions = new PublishOptions { MessageId = new string('m', PublishOptions.MessageIdMaxLength + 1) };
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<ArgumentOutOfRangeException>()
+            .WithParameterName("messageId")
+            .WithMessage($"*{PublishOptions.MessageIdMaxLength} characters or fewer*");
+    }
+
+    [Fact]
     public async Task should_allow_explicit_topic_from_publish_options()
     {
         // given

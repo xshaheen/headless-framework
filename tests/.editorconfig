@@ -16,6 +16,10 @@ dotnet_diagnostic.CA1508.severity = none
 # Test fixture classes often have instance methods for reflection testing
 dotnet_diagnostic.CA1822.severity = none
 
+# CA1873: Logging argument evaluation may be expensive
+# Test assertions often inspect ILogger calls directly; suppress this analyzer for test-only code
+dotnet_diagnostic.CA1873.severity = none
+
 # CA5398: Avoid hardcoded SslProtocols
 # Tests verify specific TLS protocol configurations work correctly
 dotnet_diagnostic.CA5398.severity = none

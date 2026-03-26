@@ -37,7 +37,7 @@ internal sealed class EfAuditLog(
             .Add(
                 new AuditLogEntry
                 {
-                    CreatedAt = clock.UtcNow,
+                    CreatedAt = clock.UtcNow.UtcDateTime,
                     UserId = _Truncate(currentUser.UserId?.ToString(), 128),
                     AccountId = _Truncate(currentUser.AccountId?.ToString(), 128),
                     TenantId = _Truncate(currentTenant.Id, 128),

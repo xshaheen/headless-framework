@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -95,10 +96,13 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
 
     private async Task<WebApplication> _CreateAppAsync(Action<MultiTenancyOptions>? configure = null)
     {
-        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test });
+        var builder = WebApplication.CreateBuilder(
+            new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
+        );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
-        builder.AddHeadlessApi(_ConfigureEncryption);
+        builder.AddHeadlessApi();
 
         if (configure is not null)
         {
@@ -121,7 +125,11 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         app.UseTenantResolution();
         app.UseAuthorization();
 
-        app.MapGet("/tenant", (ICurrentTenant currentTenant) => Results.Json(new TenantResponse(currentTenant.Id, currentTenant.IsAvailable)));
+        app.MapGet(
+            "/tenant",
+            (ICurrentTenant currentTenant) =>
+                Results.Json(new TenantResponse(currentTenant.Id, currentTenant.IsAvailable))
+        );
 
         await app.StartAsync(AbortToken);
 
@@ -169,11 +177,14 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         return (await response.Content.ReadFromJsonAsync<TenantResponse>(cancellationToken: AbortToken))!;
     }
 
-    private static void _ConfigureEncryption(StringEncryptionOptions options)
+    private static void _AddDefaultHeadlessSecurityConfiguration(IConfigurationBuilder configuration)
     {
-        options.DefaultPassPhrase = "TestPassPhrase123456";
-        options.InitVectorBytes = "TestIV0123456789"u8.ToArray();
-        options.DefaultSalt = "TestSalt"u8.ToArray();
+        configuration.AddInMemoryCollection([
+            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
+            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
+            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
+            new KeyValuePair<string, string?>("Headless:StringHash:DefaultSalt", "TestSalt"),
+        ]);
     }
 
     private sealed record TenantResponse(string? Id, bool IsAvailable);

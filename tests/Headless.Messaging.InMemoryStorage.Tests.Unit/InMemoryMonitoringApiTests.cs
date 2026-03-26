@@ -10,6 +10,7 @@ using Headless.Messaging.Serialization;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
 
@@ -31,9 +32,13 @@ public sealed class InMemoryMonitoringApiTests : TestBase
         // Clear static state before each test
         InMemoryDataStorage.PublishedMessages.Clear();
         InMemoryDataStorage.ReceivedMessages.Clear();
+        InMemoryDataStorage.Locks.Clear();
 
         _timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 15, 10, 0, 0, TimeSpan.Zero));
         _serializer.Serialize(Arg.Any<Message>()).Returns(call => JsonSerializer.Serialize(call.Arg<Message>()));
+        _serializer
+            .Deserialize(Arg.Any<string>())
+            .Returns(call => JsonSerializer.Deserialize<Message>(call.Arg<string>()));
         _idGenerator.Create().Returns(_ => Interlocked.Increment(ref _idCounter));
 
         _storage = new InMemoryDataStorage(_options, _serializer, _idGenerator, _timeProvider);
@@ -45,14 +50,15 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     {
         // given
         var message = _CreateMessage("123");
-        await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
+        var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
 
         // when
-        var result = await _sut.GetPublishedMessageAsync(123, AbortToken);
+        var result = await _sut.GetPublishedMessageAsync(stored.StorageId, AbortToken);
 
         // then
         result.Should().NotBeNull();
-        result!.DbId.Should().Be("123");
+        result!.StorageId.Should().Be(stored.StorageId);
+        result.Origin.GetId().Should().Be("123");
     }
 
     [Fact]
@@ -71,14 +77,37 @@ public sealed class InMemoryMonitoringApiTests : TestBase
         // given
         var message = _CreateMessage("recv-456");
         var stored = await _storage.StoreReceivedMessageAsync("test.topic", "group", message, AbortToken);
-        var id = long.Parse(stored.DbId, CultureInfo.InvariantCulture);
+        var id = stored.StorageId;
 
         // when
         var result = await _sut.GetReceivedMessageAsync(id, AbortToken);
 
         // then
         result.Should().NotBeNull();
-        result!.DbId.Should().Be(stored.DbId);
+        result!.StorageId.Should().Be(stored.StorageId);
+    }
+
+    [Fact]
+    public async Task should_get_received_exception_message_by_id()
+    {
+        // given
+        var message = _CreateMessage("recv-exception-1");
+        var content = _serializer.Serialize(message);
+        await _storage.StoreReceivedExceptionMessageAsync(
+            "failed.topic",
+            "group",
+            content,
+            cancellationToken: AbortToken
+        );
+        var id = InMemoryDataStorage.ReceivedMessages.Values.Single().StorageId;
+
+        // when
+        var result = await _sut.GetReceivedMessageAsync(id, AbortToken);
+
+        // then
+        result.Should().NotBeNull();
+        result!.StorageId.Should().Be(id);
+        result.Origin.GetId().Should().Be(message.GetId());
     }
 
     [Fact]
@@ -97,21 +126,21 @@ public sealed class InMemoryMonitoringApiTests : TestBase
         // given
         var pubSucceeded = await _storage.StoreMessageAsync(
             "topic",
-            _CreateMessage("ps-1"),
+            _CreateMessage("2001"),
             cancellationToken: AbortToken
         );
         await _storage.ChangePublishStateAsync(pubSucceeded, StatusName.Succeeded, cancellationToken: AbortToken);
 
         var pubFailed = await _storage.StoreMessageAsync(
             "topic",
-            _CreateMessage("pf-1"),
+            _CreateMessage("2002"),
             cancellationToken: AbortToken
         );
         await _storage.ChangePublishStateAsync(pubFailed, StatusName.Failed, cancellationToken: AbortToken);
 
         var pubDelayed = await _storage.StoreMessageAsync(
             "topic",
-            _CreateMessage("pd-1"),
+            _CreateMessage("2003"),
             cancellationToken: AbortToken
         );
         await _storage.ChangePublishStateAsync(pubDelayed, StatusName.Delayed, cancellationToken: AbortToken);
@@ -142,8 +171,8 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     public async Task should_return_published_failed_count()
     {
         // given
-        var msg1 = await _storage.StoreMessageAsync("topic", _CreateMessage("pfc-1"), cancellationToken: AbortToken);
-        var msg2 = await _storage.StoreMessageAsync("topic", _CreateMessage("pfc-2"), cancellationToken: AbortToken);
+        var msg1 = await _storage.StoreMessageAsync("topic", _CreateMessage("2004"), cancellationToken: AbortToken);
+        var msg2 = await _storage.StoreMessageAsync("topic", _CreateMessage("2005"), cancellationToken: AbortToken);
         await _storage.ChangePublishStateAsync(msg1, StatusName.Failed, cancellationToken: AbortToken);
         await _storage.ChangePublishStateAsync(msg2, StatusName.Failed, cancellationToken: AbortToken);
 
@@ -158,7 +187,7 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     public async Task should_return_published_succeeded_count()
     {
         // given
-        var msg = await _storage.StoreMessageAsync("topic", _CreateMessage("psc-1"), cancellationToken: AbortToken);
+        var msg = await _storage.StoreMessageAsync("topic", _CreateMessage("2006"), cancellationToken: AbortToken);
         await _storage.ChangePublishStateAsync(msg, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // when
@@ -202,12 +231,12 @@ public sealed class InMemoryMonitoringApiTests : TestBase
         // given
         var msg1 = await _storage.StoreMessageAsync(
             "orders.created",
-            _CreateMessage("qp-1"),
+            _CreateMessage("2007"),
             cancellationToken: AbortToken
         );
         var msg2 = await _storage.StoreMessageAsync(
             "users.created",
-            _CreateMessage("qp-2"),
+            _CreateMessage("2008"),
             cancellationToken: AbortToken
         );
         await _storage.ChangePublishStateAsync(msg1, StatusName.Succeeded, cancellationToken: AbortToken);
@@ -226,7 +255,8 @@ public sealed class InMemoryMonitoringApiTests : TestBase
 
         // then
         result.Items.Should().ContainSingle();
-        result.Items[0].Id.Should().Be("qp-1");
+        result.Items[0].StorageId.Should().Be(msg1.StorageId);
+        result.Items[0].MessageId.Should().Be("2007");
         result.Items[0].StatusName.Should().Be("Succeeded");
     }
 
@@ -234,8 +264,8 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     public async Task should_query_published_messages_by_name()
     {
         // given
-        await _storage.StoreMessageAsync("orders.created", _CreateMessage("qn-1"), cancellationToken: AbortToken);
-        await _storage.StoreMessageAsync("users.created", _CreateMessage("qn-2"), cancellationToken: AbortToken);
+        await _storage.StoreMessageAsync("orders.created", _CreateMessage("2009"), cancellationToken: AbortToken);
+        await _storage.StoreMessageAsync("users.created", _CreateMessage("2010"), cancellationToken: AbortToken);
 
         var query = new MessageQuery
         {
@@ -257,13 +287,13 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     public async Task should_query_published_messages_by_content()
     {
         // given
-        var msg1 = _CreateMessage("qc-1");
-        var msg2 = _CreateMessage("qc-2");
+        var msg1 = _CreateMessage("2011");
+        var msg2 = _CreateMessage("2012");
 
         _serializer.Serialize(Arg.Is<Message>(m => m == msg1)).Returns("{\"searchterm\":\"findme\"}");
         _serializer.Serialize(Arg.Is<Message>(m => m == msg2)).Returns("{\"data\":\"other\"}");
 
-        await _storage.StoreMessageAsync("topic", msg1, cancellationToken: AbortToken);
+        var stored1 = await _storage.StoreMessageAsync("topic", msg1, cancellationToken: AbortToken);
         await _storage.StoreMessageAsync("topic", msg2, cancellationToken: AbortToken);
 
         var query = new MessageQuery
@@ -279,7 +309,8 @@ public sealed class InMemoryMonitoringApiTests : TestBase
 
         // then
         result.Items.Should().ContainSingle();
-        result.Items[0].Id.Should().Be("qc-1");
+        result.Items[0].StorageId.Should().Be(stored1.StorageId);
+        result.Items[0].MessageId.Should().Be("2011");
     }
 
     [Fact]
@@ -311,7 +342,11 @@ public sealed class InMemoryMonitoringApiTests : TestBase
         // given
         for (var i = 0; i < 25; i++)
         {
-            await _storage.StoreMessageAsync("topic", _CreateMessage($"page-{i}"), cancellationToken: AbortToken);
+            await _storage.StoreMessageAsync(
+                "topic",
+                _CreateMessage((3000 + i).ToString(CultureInfo.InvariantCulture)),
+                cancellationToken: AbortToken
+            );
         }
 
         var query = new MessageQuery
@@ -359,7 +394,7 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     public async Task should_return_hourly_failed_jobs_for_published()
     {
         // given
-        var msg = await _storage.StoreMessageAsync("topic", _CreateMessage("hf-1"), cancellationToken: AbortToken);
+        var msg = await _storage.StoreMessageAsync("topic", _CreateMessage("2013"), cancellationToken: AbortToken);
         await _storage.ChangePublishStateAsync(msg, StatusName.Failed, cancellationToken: AbortToken);
 
         // when
@@ -389,12 +424,12 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     public async Task should_return_message_view_with_all_properties()
     {
         // given
-        var message = _CreateMessage("view-test");
-        await _storage.StoreMessageAsync("test.topic.name", message, cancellationToken: AbortToken);
-        InMemoryDataStorage.PublishedMessages["view-test"].ExpiresAt = _timeProvider
+        var message = _CreateMessage("2014");
+        var stored = await _storage.StoreMessageAsync("test.topic.name", message, cancellationToken: AbortToken);
+        InMemoryDataStorage.PublishedMessages[stored.StorageId].ExpiresAt = _timeProvider
             .GetUtcNow()
             .UtcDateTime.AddHours(1);
-        InMemoryDataStorage.PublishedMessages["view-test"].Retries = 3;
+        InMemoryDataStorage.PublishedMessages[stored.StorageId].Retries = 3;
 
         var query = new MessageQuery
         {
@@ -408,7 +443,8 @@ public sealed class InMemoryMonitoringApiTests : TestBase
 
         // then
         var view = result.Items[0];
-        view.Id.Should().Be("view-test");
+        view.StorageId.Should().Be(stored.StorageId);
+        view.MessageId.Should().Be("2014");
         view.Name.Should().Be("test.topic.name");
         view.Version.Should().Be("N/A");
         view.Retries.Should().Be(3);
@@ -439,7 +475,7 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     public async Task should_filter_by_status_case_insensitive()
     {
         // given
-        var msg = await _storage.StoreMessageAsync("topic", _CreateMessage("case-test"), cancellationToken: AbortToken);
+        var msg = await _storage.StoreMessageAsync("topic", _CreateMessage("2015"), cancellationToken: AbortToken);
         await _storage.ChangePublishStateAsync(msg, StatusName.Succeeded, cancellationToken: AbortToken);
 
         var query = new MessageQuery
@@ -460,7 +496,7 @@ public sealed class InMemoryMonitoringApiTests : TestBase
     private static Message _CreateMessage(string id)
     {
         return new Message(
-            new Dictionary<string, string?>(StringComparer.Ordinal) { { Headers.MessageId, id } },
+            new Dictionary<string, string?>(StringComparer.Ordinal) { { MessagingHeaders.MessageId, id } },
             new { Data = "test" }
         );
     }

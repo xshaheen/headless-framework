@@ -92,7 +92,7 @@ options.UseDashboard(dashboard =>
 ```csharp
 options.UseDashboard(dashboard =>
 {
-    dashboard.WithCustomAuth(token => ValidateToken(token));
+    dashboard.WithCustomAuth((token, services) => ValidateToken(token, services));
 });
 ```
 

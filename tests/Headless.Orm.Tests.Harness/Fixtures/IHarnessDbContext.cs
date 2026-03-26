@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using Headless.Orm.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -37,15 +36,6 @@ public interface IHarnessDbContext : IDisposable, IAsyncDisposable
     /// Saves all changes made in this context to the database.
     /// </summary>
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Executes the given operation in a transaction with the specified isolation level.
-    /// </summary>
-    Task ExecuteTransactionAsync(
-        Func<Task<bool>> operation,
-        IsolationLevel isolation = IsolationLevel.ReadCommitted,
-        CancellationToken cancellationToken = default
-    );
 
     /// <summary>
     /// Provides access to database-related information and operations for this context.

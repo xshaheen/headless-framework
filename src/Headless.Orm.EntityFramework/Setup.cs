@@ -66,7 +66,7 @@ public static class OrmEntityFrameworkSetup
 
         public void AddHeadlessDbContextServices()
         {
-            services.TryAddScoped<IHeadlessEntityModelProcessor, HeadlessEntityModelProcessor>();
+            services.TryAddSingleton<IHeadlessEntityModelProcessor, HeadlessEntityModelProcessor>();
             services.TryAddSingleton<IClock, Clock>();
             services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
             services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);

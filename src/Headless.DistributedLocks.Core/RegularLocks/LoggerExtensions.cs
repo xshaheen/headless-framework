@@ -8,6 +8,23 @@ namespace Headless.DistributedLocks;
 
 public static partial class RegularLockLoggerExtensions
 {
+    public static void LogErrorAcquiringLockElapsed(
+        this ILogger logger,
+        Exception exception,
+        string resource,
+        string lockId,
+        TimeProvider timeProvider,
+        long timestamp
+    )
+    {
+        if (!logger.IsEnabled(LogLevel.Trace))
+        {
+            return;
+        }
+
+        LogErrorAcquiringLock(logger, exception, resource, lockId, timeProvider.GetElapsedTime(timestamp));
+    }
+
     [LoggerMessage(
         EventId = 1,
         EventName = "LockReleaseStarted",
@@ -132,4 +149,12 @@ public static partial class RegularLockLoggerExtensions
         string lockId,
         TimeSpan duration
     );
+
+    [LoggerMessage(
+        EventId = 14,
+        EventName = "ProcessingLockReleased",
+        Level = LogLevel.Debug,
+        Message = "Processing lock released {MessageId} for {Resource}"
+    )]
+    public static partial void LogProcessingLockReleased(this ILogger logger, string? messageId, string resource);
 }

@@ -34,6 +34,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Add required dependencies
 builder.Services.AddCaching();
 builder.Services.AddDistributedLock();
+builder.Services.AddStringEncryptionService(
+    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
+);
 
 // Add settings management
 builder.Services.AddSettingsManagementCore(options =>
@@ -99,7 +102,25 @@ public sealed class ConfigService(ISettingManager settings)
 
 ## Configuration
 
+`AddSettingsManagementCore(...)` has a prerequisite: register `IStringEncryptionService` before settings management. The recommended setup is to bind `Headless:StringEncryption` explicitly:
+
+```json
+{
+  "Headless": {
+    "StringEncryption": {
+      "DefaultPassPhrase": "YourPassPhrase123",
+      "InitVectorBytes": "WW91ckluaXRWZWN0b3IxNg==",
+      "DefaultSalt": "WW91clNhbHQ="
+    }
+  }
+}
+```
+
+Register encryption first, then configure settings management:
+
 ```csharp
+services.AddStringEncryptionService(configuration.GetRequiredSection("Headless:StringEncryption"));
+
 services.AddSettingsManagementCore(options =>
 {
     // Cache expiration for setting values (default: 5 hours)
@@ -117,6 +138,7 @@ services.AddSettingsManagementCore(options =>
 ## Dependencies
 
 - `Headless.Settings.Abstractions`
+- `Headless.Security`
 - `Headless.Caching.Abstractions`
 - `Headless.DistributedLocks.Abstractions`
 - `Headless.Domain`

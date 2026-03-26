@@ -182,14 +182,14 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     {
         // given
         var stored = await _CreatePublishedMessage(StatusName.Scheduled);
-        var id = long.Parse(stored.DbId, CultureInfo.InvariantCulture);
+        var id = stored.StorageId;
 
         // when
         var retrieved = await _monitoringApi.GetPublishedMessageAsync(id, AbortToken);
 
         // then
         retrieved.Should().NotBeNull();
-        retrieved!.DbId.Should().Be(stored.DbId);
+        retrieved!.StorageId.Should().Be(stored.StorageId);
     }
 
     [Fact]
@@ -207,14 +207,14 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     {
         // given
         var stored = await _CreateReceivedMessage(StatusName.Scheduled);
-        var id = long.Parse(stored.DbId, CultureInfo.InvariantCulture);
+        var id = stored.StorageId;
 
         // when
         var retrieved = await _monitoringApi.GetReceivedMessageAsync(id, AbortToken);
 
         // then
         retrieved.Should().NotBeNull();
-        retrieved!.DbId.Should().Be(stored.DbId);
+        retrieved!.StorageId.Should().Be(stored.StorageId);
     }
 
     #endregion
@@ -246,6 +246,31 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         page1.TotalItems.Should().Be(5);
         page1.Index.Should().Be(0);
         page1.Size.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_preserve_total_items_for_empty_later_pages()
+    {
+        // given
+        for (var i = 0; i < 5; i++)
+        {
+            await _CreatePublishedMessage(StatusName.Succeeded);
+        }
+
+        var query = new MessageQuery
+        {
+            MessageType = MessageType.Publish,
+            StatusName = nameof(StatusName.Succeeded),
+            CurrentPage = 3,
+            PageSize = 2,
+        };
+
+        // when
+        var page = await _monitoringApi.GetMessagesAsync(query, AbortToken);
+
+        // then
+        page.Items.Should().BeEmpty();
+        page.TotalItems.Should().Be(5);
     }
 
     [Fact]

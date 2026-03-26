@@ -24,6 +24,8 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly AmazonSqsOptions _amazonSqsOptions = options.Value;
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
+    private readonly ConsumerPauseGate _pauseGate = new();
+    private int _disposed;
     private string _queueUrl = string.Empty;
 
     private IAmazonSimpleNotificationService? _snsClient;
@@ -73,6 +75,8 @@ internal sealed class AmazonSqsConsumerClient(
 
         while (true)
         {
+            await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+
             var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
 
             if (response?.Messages?.Count > 0)
@@ -82,21 +86,22 @@ internal sealed class AmazonSqsConsumerClient(
                     if (groupConcurrent > 0)
                     {
                         await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-                        _ = Task.Run(
+                        _ObserveBackgroundHandler(
+                            Task.Run(
                                 async () =>
                                 {
                                     try
                                     {
                                         await consumeAsync(sqsMessage).ConfigureAwait(false);
                                     }
-                                    catch (Exception ex)
+                                    finally
                                     {
-                                        _logger.LogError(ex, "Error consuming message for group {GroupId}", groupId);
+                                        _ReleaseSemaphore();
                                     }
                                 },
-                                cancellationToken
+                                CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                             )
-                            .ConfigureAwait(false);
+                        );
                     }
                     else
                     {
@@ -115,39 +120,68 @@ internal sealed class AmazonSqsConsumerClient(
         {
             var receiptHandle = sqsMessage.ReceiptHandle;
 
+            SqsReceivedMessage? messageObj;
             try
             {
-                var messageObj = JsonSerializer.Deserialize<SqsReceivedMessage>(sqsMessage.Body);
-
-                if (messageObj?.MessageAttributes == null)
-                {
-                    _logger.LogError(
-                        "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Moving to DLQ."
-                    );
-                    await RejectAsync(receiptHandle).ConfigureAwait(false);
-                    return;
-                }
-
-                var header = messageObj.MessageAttributes.ToDictionary<
-                    KeyValuePair<string, SqsReceivedMessageAttributes>,
-                    string,
-                    string?
-                >(x => x.Key, x => x.Value?.Value ?? string.Empty, StringComparer.Ordinal);
-                var body = messageObj.Message;
-
-                var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null)
-                {
-                    Headers = { [Headers.Group] = groupId },
-                };
-
-                await OnMessageCallback!(message, receiptHandle).ConfigureAwait(false);
+                messageObj = JsonSerializer.Deserialize<SqsReceivedMessage>(sqsMessage.Body);
             }
             catch (JsonException ex)
             {
-                _logger.LogError(ex, "Failed to deserialize SQS message. Moving to DLQ.");
+                _logger.SqsMessageDeserializationFailed(ex);
+                await rejectSafelyAsync(receiptHandle).ConfigureAwait(false);
+                return;
+            }
+
+            if (messageObj?.MessageAttributes == null)
+            {
+                _logger.InvalidSqsMessageStructure();
+                await rejectSafelyAsync(receiptHandle).ConfigureAwait(false);
+                return;
+            }
+
+            var header = messageObj.MessageAttributes.ToDictionary<
+                KeyValuePair<string, SqsReceivedMessageAttributes>,
+                string,
+                string?
+            >(x => x.Key, x => x.Value?.Value ?? string.Empty, StringComparer.Ordinal);
+            var body = messageObj.Message;
+
+            var message = new TransportMessage(header, body != null ? Encoding.UTF8.GetBytes(body) : null)
+            {
+                Headers = { [Headers.Group] = groupId },
+            };
+
+            await OnMessageCallback!(message, receiptHandle).ConfigureAwait(false);
+        }
+
+        async Task rejectSafelyAsync(string receiptHandle)
+        {
+            try
+            {
                 await RejectAsync(receiptHandle).ConfigureAwait(false);
             }
+            catch (Exception ex)
+            {
+                _logger.SqsRejectFailed(ex, groupId);
+            }
         }
+    }
+
+    private void _ObserveBackgroundHandler(Task task)
+    {
+        _ = task.ContinueWith(
+            completedTask =>
+            {
+                var exception = completedTask.Exception?.GetBaseException();
+                if (exception is not null)
+                {
+                    _logger.SqsMessageConsumeFailed(exception, groupId);
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     public async ValueTask CommitAsync(object? sender)
@@ -159,10 +193,6 @@ internal sealed class AmazonSqsConsumerClient(
         catch (ReceiptHandleIsInvalidException ex)
         {
             _InvalidIdFormatLog(ex.Message);
-        }
-        finally
-        {
-            _semaphore.Release();
         }
     }
 
@@ -176,14 +206,35 @@ internal sealed class AmazonSqsConsumerClient(
         {
             _MessageNotInflightLog(ex.Message);
         }
-        finally
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        if (groupConcurrent > 0)
         {
-            _semaphore.Release();
+            try
+            {
+                _semaphore.Release();
+            }
+            catch (SemaphoreFullException)
+            {
+                // Defensive: ignore over-release
+            }
         }
     }
 
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) => await _pauseGate.PauseAsync();
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) => await _pauseGate.ResumeAsync();
+
     public ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        _pauseGate.Release();
         _sqsClient?.Dispose();
         _snsClient?.Dispose();
         _semaphore.Dispose();
@@ -201,11 +252,8 @@ internal sealed class AmazonSqsConsumerClient(
                 lock (_connectionLock)
                 {
 #pragma warning disable CA1508 // Justification: other thread can initialize it
-                    if (_sqsClient == null)
+                    _snsClient ??= AwsClientFactory.CreateSnsClient(_amazonSqsOptions);
 #pragma warning restore CA1508
-                    {
-                        _snsClient = AwsClientFactory.CreateSnsClient(_amazonSqsOptions);
-                    }
                 }
             }
 
@@ -293,4 +341,27 @@ internal sealed class AmazonSqsConsumerClient(
     }
 
     #endregion
+}
+
+internal static partial class AmazonSqsConsumerClientLog
+{
+    [LoggerMessage(
+        EventId = 4200,
+        Level = LogLevel.Error,
+        Message = "Failed to deserialize SQS message. Moving to DLQ."
+    )]
+    public static partial void SqsMessageDeserializationFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4201,
+        Level = LogLevel.Error,
+        Message = "Invalid SQS message structure: deserialization returned null or missing MessageAttributes. Moving to DLQ."
+    )]
+    public static partial void InvalidSqsMessageStructure(this ILogger logger);
+
+    [LoggerMessage(EventId = 4202, Level = LogLevel.Error, Message = "Failed to reject message for group {GroupId}")]
+    public static partial void SqsRejectFailed(this ILogger logger, Exception exception, string groupId);
+
+    [LoggerMessage(EventId = 4203, Level = LogLevel.Error, Message = "Error consuming message for group {GroupId}")]
+    public static partial void SqsMessageConsumeFailed(this ILogger logger, Exception exception, string groupId);
 }

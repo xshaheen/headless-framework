@@ -11,6 +11,7 @@ using Headless.Api.Identity.Normalizer;
 using Headless.Api.Identity.Schemes;
 using Headless.Api.Security.Claims;
 using Headless.Api.Security.Jwt;
+using Headless.Checks;
 using Headless.Constants;
 using Headless.Core;
 using Headless.Serializer;
@@ -22,6 +23,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -31,6 +33,9 @@ namespace Headless.Api;
 [PublicAPI]
 public static class ApiSetup
 {
+    private const string _StringEncryptionSectionName = "Headless:StringEncryption";
+    private const string _StringHashSectionName = "Headless:StringHash";
+
     public static readonly FileFormatInspector FileFormatInspector = new(FileFormatLocator.GetFormats());
 
     public static void ConfigureGlobalSettings()
@@ -42,18 +47,97 @@ public static class ApiSetup
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
     }
 
+    public static WebApplicationBuilder AddHeadlessApi(this WebApplicationBuilder builder)
+    {
+        Argument.IsNotNull(builder);
+
+        _AddDefaultStringEncryptionService(builder);
+        _AddDefaultStringHashService(builder);
+
+        return _AddCore(builder);
+    }
+
     public static WebApplicationBuilder AddHeadlessApi(
         this WebApplicationBuilder builder,
-        Action<StringEncryptionOptions> configureEncryption
+        IConfiguration stringEncryptionConfig,
+        IConfiguration stringHashConfig
     )
+    {
+        Argument.IsNotNull(builder);
+        Argument.IsNotNull(stringEncryptionConfig);
+        Argument.IsNotNull(stringHashConfig);
+
+        builder.Services.AddStringEncryptionService(stringEncryptionConfig);
+        builder.Services.AddStringHashService(stringHashConfig);
+
+        return _AddCore(builder);
+    }
+
+    public static WebApplicationBuilder AddHeadlessApi(
+        this WebApplicationBuilder builder,
+        Action<StringEncryptionOptions> configureEncryption,
+        Action<StringHashOptions>? configureHash = null
+    )
+    {
+        Argument.IsNotNull(builder);
+        Argument.IsNotNull(configureEncryption);
+
+        builder.Services.AddStringEncryptionService(configureEncryption);
+
+        if (configureHash is null)
+        {
+            _AddDefaultStringHashService(builder);
+        }
+        else
+        {
+            builder.Services.AddStringHashService(configureHash);
+        }
+
+        return _AddCore(builder);
+    }
+
+    public static WebApplicationBuilder AddHeadlessApi(
+        this WebApplicationBuilder builder,
+        Action<StringEncryptionOptions, IServiceProvider> configureEncryption,
+        Action<StringHashOptions, IServiceProvider>? configureHash = null
+    )
+    {
+        Argument.IsNotNull(builder);
+        Argument.IsNotNull(configureEncryption);
+
+        builder.Services.AddStringEncryptionService(configureEncryption);
+
+        if (configureHash is null)
+        {
+            _AddDefaultStringHashService(builder);
+        }
+        else
+        {
+            builder.Services.AddStringHashService(configureHash);
+        }
+
+        return _AddCore(builder);
+    }
+
+    private static void _AddDefaultStringEncryptionService(WebApplicationBuilder builder)
+    {
+        builder.Services.AddStringEncryptionService(
+            builder.Configuration.GetRequiredSection(_StringEncryptionSectionName)
+        );
+    }
+
+    private static void _AddDefaultStringHashService(WebApplicationBuilder builder)
+    {
+        builder.Services.AddStringHashService(builder.Configuration.GetRequiredSection(_StringHashSectionName));
+    }
+
+    private static WebApplicationBuilder _AddCore(WebApplicationBuilder builder)
     {
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddResilienceEnricher();
         builder.Services.AddJsonService();
         builder.Services.AddTimeService();
-        builder.Services.AddStringHashService();
-        builder.Services.AddStringEncryptionService(configureEncryption);
         builder.Services.AddApiResponseCompression();
         builder.Services.AddHeadlessProblemDetails();
         builder.Services.AddApiConfigurations();
@@ -112,27 +196,6 @@ public static class ApiSetup
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IClock, Clock>();
         services.TryAddSingleton<ITimezoneProvider, TzConvertTimezoneProvider>();
-
-        return services;
-    }
-
-    public static IServiceCollection AddStringHashService(this IServiceCollection services)
-    {
-        services.AddOptions<StringHashOptions, StringHashOptionsValidator>();
-        services.AddSingletonOptionValue<StringHashOptions>();
-        services.TryAddSingleton<IStringHashService, StringHashService>();
-
-        return services;
-    }
-
-    public static IServiceCollection AddStringEncryptionService(
-        this IServiceCollection services,
-        Action<StringEncryptionOptions> configure
-    )
-    {
-        services.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(configure);
-        services.AddSingletonOptionValue<StringEncryptionOptions>();
-        services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
 
         return services;
     }

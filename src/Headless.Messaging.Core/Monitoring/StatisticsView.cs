@@ -8,12 +8,12 @@ public class StatisticsView
 
     public int Subscribers { get; set; }
 
-    public int PublishedSucceeded { get; set; }
+    public long PublishedSucceeded { get; set; }
 
-    public int PublishedDelayed { get; set; }
+    public long PublishedDelayed { get; set; }
 
-    public int ReceivedSucceeded { get; set; }
+    public long ReceivedSucceeded { get; set; }
 
-    public int PublishedFailed { get; set; }
-    public int ReceivedFailed { get; set; }
+    public long PublishedFailed { get; set; }
+    public long ReceivedFailed { get; set; }
 }

@@ -2,6 +2,7 @@
 
 using Amazon;
 using Amazon.Runtime;
+using FluentValidation;
 
 namespace Headless.Messaging.AwsSqs;
 
@@ -20,4 +21,12 @@ public sealed class AmazonSqsOptions
     /// Overrides Service Url deduced from AWS Region. To use in local development environments like localstack.
     /// </summary>
     public string? SqsServiceUrl { get; set; }
+}
+
+internal sealed class AmazonSqsOptionsValidator : AbstractValidator<AmazonSqsOptions>
+{
+    public AmazonSqsOptionsValidator()
+    {
+        RuleFor(x => x.Region).NotNull();
+    }
 }

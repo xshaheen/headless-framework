@@ -7,31 +7,21 @@ using Headless.Primitives;
 
 namespace Headless.Messaging.InMemoryStorage;
 
-internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
+internal sealed class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
 {
     public ValueTask<MediumMessage?> GetPublishedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        var idString = id.ToString(CultureInfo.InvariantCulture);
-
-        return ValueTask.FromResult<MediumMessage?>(
-            InMemoryDataStorage.PublishedMessages.Values.FirstOrDefault(x =>
-                string.Equals(x.DbId, idString, StringComparison.Ordinal)
-            )
+        return ValueTask.FromResult(
+            InMemoryDataStorage.PublishedMessages.TryGetValue(id, out var message) ? (MediumMessage?)message : null
         );
     }
 
     public ValueTask<MediumMessage?> GetReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        var idString = id.ToString(CultureInfo.InvariantCulture);
-
-        return ValueTask.FromResult<MediumMessage?>(
-            InMemoryDataStorage.ReceivedMessages.Values.FirstOrDefault(x =>
-                string.Equals(x.DbId, idString, StringComparison.Ordinal)
-            )
+        return ValueTask.FromResult(
+            InMemoryDataStorage.ReceivedMessages.TryGetValue(id, out var message) ? (MediumMessage?)message : null
         );
     }
 
@@ -112,10 +102,11 @@ internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
                 .Select(x => new MessageView
                 {
                     Added = x.Added,
+                    StorageId = x.StorageId,
+                    MessageId = x.Origin.GetId(),
                     Version = "N/A",
                     Content = x.Content,
                     ExpiresAt = x.ExpiresAt,
-                    Id = x.DbId,
                     Name = x.Name,
                     Retries = x.Retries,
                     StatusName = x.StatusName.ToString(),
@@ -167,10 +158,11 @@ internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
                 {
                     Added = x.Added,
                     Group = x.Group,
+                    StorageId = x.StorageId,
+                    MessageId = x.Origin.GetId(),
                     Version = "N/A",
                     Content = x.Content,
                     ExpiresAt = x.ExpiresAt,
-                    Id = x.DbId,
                     Name = x.Name,
                     Retries = x.Retries,
                     StatusName = x.StatusName.ToString(),
@@ -188,34 +180,34 @@ internal class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
         }
     }
 
-    public ValueTask<int> PublishedFailedCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<int>(
+        return new ValueTask<long>(
             InMemoryDataStorage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Failed)
         );
     }
 
-    public ValueTask<int> PublishedSucceededCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<int>(
+        return new ValueTask<long>(
             InMemoryDataStorage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded)
         );
     }
 
-    public ValueTask<int> ReceivedFailedCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<int>(
+        return new ValueTask<long>(
             InMemoryDataStorage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Failed)
         );
     }
 
-    public ValueTask<int> ReceivedSucceededCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<int>(
+        return new ValueTask<long>(
             InMemoryDataStorage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded)
         );
     }

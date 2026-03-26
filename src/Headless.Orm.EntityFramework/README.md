@@ -66,6 +66,26 @@ var allProducts = await dbContext.Products
     .ToListAsync();
 ```
 
+### Resilient Transactions
+
+Extension methods on `DbContext` that wrap an operation in a transaction coordinated with the execution strategy (safe for retrying providers like SQL Server `EnableRetryOnFailure`).
+
+```csharp
+await dbContext.ExecuteTransactionAsync(async () =>
+{
+    dbContext.Products.Add(new Product { Name = "Widget" });
+    return true; // true = commit, false = rollback
+});
+
+// With a return value
+var result = await dbContext.ExecuteTransactionAsync<int>(async () =>
+{
+    var product = new Product { Name = "Widget" };
+    dbContext.Products.Add(product);
+    return (true, product.Id); // (commit, result)
+});
+```
+
 ## Dependencies
 
 - `Headless.Domain`

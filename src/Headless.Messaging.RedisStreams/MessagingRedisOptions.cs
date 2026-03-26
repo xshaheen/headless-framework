@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Transport;
 using StackExchange.Redis;
 
 namespace Headless.Messaging.RedisStreams;
@@ -11,7 +12,11 @@ public class MessagingRedisOptions
     /// </summary>
     public ConfigurationOptions? Configuration { get; set; }
 
-    internal string Endpoint => Configuration?.ToString() ?? string.Empty;
+    // BrokerAddress is emitted to telemetry and dashboards, so expose only broker endpoints here.
+    internal string DisplayEndpoint =>
+        Configuration?.EndPoints.Count > 0
+            ? string.Join(",", Configuration.EndPoints.Select(BrokerAddressDisplay.Format))
+            : string.Empty;
 
     /// <summary>
     /// Gets or sets the count of entries consumed from stream

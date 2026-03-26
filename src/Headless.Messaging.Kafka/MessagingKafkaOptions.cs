@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Confluent.Kafka;
+using FluentValidation;
 using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Kafka;
@@ -78,4 +79,13 @@ public sealed class KafkaTopicOptions
     /// The replication factor for the new topic
     /// </summary>
     public short ReplicationFactor { get; set; } = -1;
+}
+
+internal sealed class MessagingKafkaOptionsValidator : AbstractValidator<MessagingKafkaOptions>
+{
+    public MessagingKafkaOptionsValidator()
+    {
+        RuleFor(x => x.Servers).NotEmpty();
+        RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
+    }
 }

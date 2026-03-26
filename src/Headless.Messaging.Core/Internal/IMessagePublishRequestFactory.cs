@@ -79,7 +79,7 @@ internal sealed class MessagePublishRequestFactory(
 
         var messageId = string.IsNullOrWhiteSpace(options?.MessageId)
             ? _idGenerator.Create().ToString(CultureInfo.InvariantCulture)
-            : options!.MessageId;
+            : _ValidateMessageId(options!.MessageId);
 
         headers[Headers.MessageId] = messageId;
         headers[Headers.CorrelationId] = string.IsNullOrWhiteSpace(options?.CorrelationId)
@@ -102,6 +102,18 @@ internal sealed class MessagePublishRequestFactory(
         }
 
         return headers;
+    }
+
+    private static string _ValidateMessageId(string messageId)
+    {
+        Argument.IsLessThanOrEqualTo(
+            messageId.Length,
+            PublishOptions.MessageIdMaxLength,
+            $"PublishOptions.MessageId must be {PublishOptions.MessageIdMaxLength} characters or fewer before durable storage.",
+            paramName: nameof(messageId)
+        );
+
+        return messageId;
     }
 
     private void _ValidateCustomHeaders(IReadOnlyDictionary<string, string?> headers)

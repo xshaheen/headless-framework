@@ -5,8 +5,17 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging.AmazonSQS" />
+    <InternalsVisibleTo Include="Headless.Messaging.AwsSqs" />
     <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard" />
+    <InternalsVisibleTo Include="Headless.Messaging.InMemoryQueue" />
+    <InternalsVisibleTo Include="Headless.Messaging.Kafka" />
+    <InternalsVisibleTo Include="Headless.Messaging.Nats" />
+    <InternalsVisibleTo Include="Headless.Messaging.Pulsar" />
+    <InternalsVisibleTo Include="Headless.Messaging.RabbitMq" />
+    <InternalsVisibleTo Include="Headless.Messaging.RedisStreams" />
+    <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
     <InternalsVisibleTo Include="Headless.Messaging.Testing" />
     <InternalsVisibleTo Include="Headless.Messaging.Testing.Tests.Unit" />
   </ItemGroup>

@@ -121,7 +121,6 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
             messaging.WithTopicMapping<OrderPlaced>("orders.placed");
             messaging.SubscribeFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
@@ -151,7 +150,6 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
             messaging.Version = "v1";
             messaging.SubscribeFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
         });

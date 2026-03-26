@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Domain;
 using Headless.Settings.Definitions;
 using Headless.Settings.Entities;
@@ -22,32 +21,28 @@ public static class CoreSettingsSetup
     {
         /// <summary>
         /// Adds core setting management services to the host builder and registers default setting value providers.
-        /// You should add TimeProvider, Cache, DistributedLock, GuidGenerator, IConfiguration, ICurrentUser,
-        /// and ICurrentTenant implementations to be able to use this feature.
+        /// You should also add TimeProvider, Cache, DistributedLock, GuidGenerator, IConfiguration, ICurrentUser,
+        /// ICurrentTenant, and IStringEncryptionService implementations to be able to use this feature.
         /// </summary>
         public IServiceCollection AddSettingsManagementCore(
-            Action<StringEncryptionOptions> configureEncryption,
             Action<SettingManagementOptions, IServiceProvider> setupAction
         )
         {
             services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
 
-            return _AddCore(services, configureEncryption);
+            return _AddCore(services);
         }
 
         /// <summary>
         /// Adds core setting management services to the host builder and registers default setting value providers.
-        /// You should add TimeProvider, Cache, DistributedLock, GuidGenerator, IConfiguration, ICurrentUser,
-        /// and ICurrentTenant implementations to be able to use this feature.
+        /// You should also add TimeProvider, Cache, DistributedLock, GuidGenerator, IConfiguration, ICurrentUser,
+        /// ICurrentTenant, and IStringEncryptionService implementations to be able to use this feature.
         /// </summary>
-        public IServiceCollection AddSettingsManagementCore(
-            Action<StringEncryptionOptions> configureEncryption,
-            Action<SettingManagementOptions>? setupAction = null
-        )
+        public IServiceCollection AddSettingsManagementCore(Action<SettingManagementOptions>? setupAction = null)
         {
             services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
 
-            return _AddCore(services, configureEncryption);
+            return _AddCore(services);
         }
 
         public IServiceCollection AddSettingDefinitionProvider<T>()
@@ -97,22 +92,10 @@ public static class CoreSettingsSetup
             services.AddSingleton<TenantSettingValueProvider>();
             services.AddSingleton<UserSettingValueProvider>();
         }
-
-        private void _AddSettingEncryption(Action<StringEncryptionOptions> configureEncryption)
-        {
-            services.Configure<StringEncryptionOptions, StringEncryptionOptionsValidator>(configureEncryption);
-            services.AddSingletonOptionValue<StringEncryptionOptions>();
-            services.TryAddSingleton<IStringEncryptionService, StringEncryptionService>();
-            services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();
-        }
     }
 
-    private static IServiceCollection _AddCore(
-        IServiceCollection services,
-        Action<StringEncryptionOptions> configureEncryption
-    )
+    private static IServiceCollection _AddCore(IServiceCollection services)
     {
-        services._AddSettingEncryption(configureEncryption);
         services._AddCoreValueProvider();
 
         services.AddHostedService<SettingsInitializationBackgroundService>();
@@ -123,6 +106,7 @@ public static class CoreSettingsSetup
         >();
 
         services.TryAddSingleton<ISettingsErrorsDescriptor, DefaultSettingsErrorsDescriptor>();
+        services.TryAddSingleton<ISettingEncryptionService, SettingEncryptionService>();
 
         // Definition Services
         /*

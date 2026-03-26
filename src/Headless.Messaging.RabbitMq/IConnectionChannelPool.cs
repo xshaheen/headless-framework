@@ -60,8 +60,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
             ? options.ExchangeName
             : $"{options.ExchangeName}.{messagingOptions.Version}";
 
-        _logger.LogDebug(
-            "RabbitMQ configuration:'HostName:{OptionsHostName}, Port:{OptionsPort}, UserName:{OptionsUserName}, VirtualHost:{OptionsVirtualHost}, ExchangeName:{OptionsExchangeName}'",
+        _logger.Configuration(
             options.HostName,
             options.Port,
             options.UserName,
@@ -204,7 +203,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "RabbitMQ channel model create failed!");
+            _logger.ChannelModelCreateFailed(e);
             throw;
         }
 
@@ -228,4 +227,24 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
 
         return false;
     }
+}
+
+internal static partial class ConnectionChannelPoolLog
+{
+    [LoggerMessage(
+        EventId = 3005,
+        Level = LogLevel.Debug,
+        Message = "RabbitMQ configuration:'HostName:{OptionsHostName}, Port:{OptionsPort}, UserName:{OptionsUserName}, VirtualHost:{OptionsVirtualHost}, ExchangeName:{OptionsExchangeName}'"
+    )]
+    public static partial void Configuration(
+        this ILogger logger,
+        string optionsHostName,
+        int optionsPort,
+        string? optionsUserName,
+        string? optionsVirtualHost,
+        string optionsExchangeName
+    );
+
+    [LoggerMessage(EventId = 3006, Level = LogLevel.Error, Message = "RabbitMQ channel model create failed!")]
+    public static partial void ChannelModelCreateFailed(this ILogger logger, Exception exception);
 }

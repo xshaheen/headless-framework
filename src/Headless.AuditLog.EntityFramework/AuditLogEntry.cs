@@ -12,7 +12,7 @@ public sealed class AuditLogEntry
     public long Id { get; init; }
 
     /// <summary>UTC timestamp when the entry was captured.</summary>
-    public DateTimeOffset CreatedAt { get; init; }
+    public DateTime CreatedAt { get; init; }
 
     // Actor
     /// <summary>ID of the user who triggered the change.</summary>

@@ -113,6 +113,7 @@ public sealed class SqlServerStorageInitializer(
                     [Added] [datetime2](7) NOT NULL,
                     [ExpiresAt] [datetime2](7) NULL,
                     [StatusName] [nvarchar](50) NOT NULL,
+                    [MessageId] [nvarchar](200) NOT NULL,
                     CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
 
@@ -121,7 +122,7 @@ public sealed class SqlServerStorageInitializer(
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_RetryQuery] ON {GetPublishedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC);
             END;
 
-            """;
+""";
 
         if (messagingOptions.Value.UseStorageLock)
         {

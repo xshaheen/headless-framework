@@ -22,7 +22,7 @@ internal sealed class RabbitMqTransport : ITransport
         _exchange = _connectionChannelPool.Exchange;
     }
 
-    public BrokerAddress BrokerAddress => new("RabbitMQ", _connectionChannelPool.HostAddress);
+    public BrokerAddress BrokerAddress => new("rabbitmq", _connectionChannelPool.HostAddress);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
@@ -46,13 +46,15 @@ internal sealed class RabbitMqTransport : ITransport
                 .BasicPublishAsync(_exchange, message.GetName(), false, props, message.Body, cancellationToken)
                 .ConfigureAwait(false);
 
-            _logger.LogInformation(
-                "Headless message '{Name}' published, internal id '{Id}'",
-                message.GetName(),
-                message.GetId()
-            );
+            var messageName = message.GetName();
+            var messageId = message.GetId();
+            _logger.MessagePublished(messageName, messageId);
 
             return OperateResult.Success;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -61,9 +63,7 @@ internal sealed class RabbitMqTransport : ITransport
                 // There are cases when channel's property IsOpen returns true, but the connection is actually closed, e.g. https://github.com/rabbitmq/rabbitmq-dotnet-client/issues/1871
                 // This is a workaround to abort the channel in this case to avoid returning a faulty channel back to the pool.
 
-                _logger.LogWarning(
-                    "Channel state inconsistency detected: channel is reported as open, but its underlying connection is closed. Forcing channel closure."
-                );
+                _logger.ChannelStateInconsistencyDetected();
 
                 await channel.DisposeAsync().ConfigureAwait(false);
             }
@@ -88,4 +88,21 @@ internal sealed class RabbitMqTransport : ITransport
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal static partial class RabbitMqTransportLog
+{
+    [LoggerMessage(
+        EventId = 3004,
+        Level = LogLevel.Information,
+        Message = "Headless message '{Name}' published, internal id '{Id}'"
+    )]
+    public static partial void MessagePublished(this ILogger logger, string name, string? id);
+
+    [LoggerMessage(
+        EventId = 3007,
+        Level = LogLevel.Warning,
+        Message = "Channel state inconsistency detected: channel is reported as open, but its underlying connection is closed. Forcing channel closure."
+    )]
+    public static partial void ChannelStateInconsistencyDetected(this ILogger logger);
 }

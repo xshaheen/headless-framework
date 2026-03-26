@@ -1,92 +1,86 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using NATS.Client;
+using NATS.Client.Core;
 
 namespace Headless.Messaging.Nats;
 
-public interface INatsConnectionPool
+public interface INatsConnectionPool : IAsyncDisposable
 {
     string ServersAddress { get; }
 
-    IConnection RentConnection();
-
-    bool Return(IConnection connection);
+    NatsConnection GetConnection();
 }
 
-public sealed class NatsConnectionPool : INatsConnectionPool, IDisposable
+public sealed class NatsConnectionPool : INatsConnectionPool
 {
-    private readonly MessagingNatsOptions _options;
-    private readonly ConcurrentQueue<IConnection> _connectionPool;
-
-    private readonly ConnectionFactory _connectionFactory;
-    private int _pCount;
-    private int _maxSize;
+    private readonly NatsConnection[] _connections;
+    private int _disposed;
+    private int _index;
 
     public NatsConnectionPool(ILogger<NatsConnectionPool> logger, IOptions<MessagingNatsOptions> options)
     {
-        _options = options.Value;
-        _connectionPool = new ConcurrentQueue<IConnection>();
-        _connectionFactory = new ConnectionFactory();
-        _maxSize = _options.ConnectionPoolSize;
+        var opts = options.Value;
+        ServersAddress = BrokerAddressDisplay.FormatMany(opts.Servers);
+
+        var natsOpts = opts.BuildNatsOpts();
+        var poolSize = opts.ConnectionPoolSize;
+        _connections = new NatsConnection[poolSize];
+
+        for (var i = 0; i < poolSize; i++)
+        {
+            _connections[i] = new NatsConnection(natsOpts);
+        }
+
         if (logger.IsEnabled(LogLevel.Debug))
         {
-            logger.LogDebug("NATS configuration: {Options}", options.Value.Options);
+            logger.LogDebug(
+                "NATS connection pool created with {PoolSize} connections to {Servers}.",
+                poolSize,
+                ServersAddress
+            );
         }
     }
 
-    public string ServersAddress => _options.Servers;
+    public string ServersAddress { get; }
 
-    public IConnection RentConnection()
+    /// <summary>
+    /// Eagerly connects all pooled connections to the NATS server.
+    /// Call during startup to surface connection failures early instead of on first publish.
+    /// </summary>
+    public async Task ConnectAllAsync(CancellationToken cancellationToken = default)
     {
-        if (_connectionPool.TryDequeue(out var connection))
+        foreach (var connection in _connections)
         {
-            Interlocked.Decrement(ref _pCount);
-
-            return connection;
+            await connection.ConnectAsync().ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
         }
-
-        if (_options.Options != null)
-        {
-            _options.Options.Url = _options.Servers;
-            connection = _connectionFactory.CreateConnection(_options.Options);
-        }
-        else
-        {
-            connection = _connectionFactory.CreateConnection(_options.Servers);
-        }
-
-        return connection;
     }
 
-    public bool Return(IConnection connection)
+    /// <summary>
+    /// Returns a connection from the pool using round-robin distribution.
+    /// Connections are long-lived and multiplexed — no return is needed.
+    /// </summary>
+    public NatsConnection GetConnection()
     {
-        if (Interlocked.Increment(ref _pCount) <= _maxSize && connection.State == ConnState.CONNECTED)
-        {
-            _connectionPool.Enqueue(connection);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
-            return true;
-        }
-
-        if (!connection.IsReconnecting())
-        {
-            connection.Dispose();
-        }
-
-        Interlocked.Decrement(ref _pCount);
-
-        return false;
+        var index = Interlocked.Increment(ref _index);
+        return _connections[(index & 0x7FFF_FFFF) % _connections.Length];
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        _maxSize = 0;
-
-        while (_connectionPool.TryDequeue(out var context))
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
-            context.Dispose();
+            return;
+        }
+
+        foreach (var connection in _connections)
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
         }
     }
 }

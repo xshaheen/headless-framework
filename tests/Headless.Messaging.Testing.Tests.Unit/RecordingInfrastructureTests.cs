@@ -51,7 +51,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     {
         return new MediumMessage
         {
-            DbId = "db-1",
+            StorageId = 1,
             Content = "{}",
             Added = DateTime.UtcNow,
             Origin = new Message(_BaseHeaders(id, name, correlationId), value: null),

@@ -129,15 +129,9 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             );
     }
 
-    [Fact(Skip = "Tests expected behavior - current implementation doesn't reject messages after consume errors")]
-    public async Task should_log_error_when_reject_fails_after_consume_error()
+    [Fact]
+    public async Task should_not_attempt_transport_reject_when_consume_callback_fails()
     {
-        // This test documents expected behavior where the implementation should:
-        // 1. Catch callback exceptions
-        // 2. Call RejectAsync to return the message to the queue
-        // 3. If RejectAsync fails, log that failure too
-        // Current implementation only logs the callback error, doesn't reject.
-
         // given
         var options = _CreateOptions();
 
@@ -145,7 +139,6 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await using var client = new AmazonSqsConsumerClient("test-group", 1, options, logger);
 
         var consumeException = new InvalidOperationException("Consume failed");
-        var rejectException = new MessageNotInflightException("Reject failed");
 
         client.OnMessageCallback = (_, _) => throw consumeException;
 
@@ -182,15 +175,6 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
-        sqsClient
-            .ChangeMessageVisibilityAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<int>(),
-                Arg.Any<CancellationToken>()
-            )
-            .ThrowsAsync(rejectException);
-
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when
@@ -206,7 +190,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         await Task.Delay(500, AbortToken);
 
-        // then - Verify both errors were logged
+        // then - Verify only the callback failure was logged. Reject is owned by the framework callback wrapper.
         logger
             .Received(1)
             .Log(
@@ -217,14 +201,13 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                 Arg.Any<Func<object, Exception?, string>>()
             );
 
-        logger
-            .Received(1)
-            .Log(
-                LogLevel.Error,
-                Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString()!.Contains("Failed to reject message after consume error")),
-                Arg.Is<Exception>(ex => ex == rejectException),
-                Arg.Any<Func<object, Exception?, string>>()
+        await sqsClient
+            .DidNotReceive()
+            .ChangeMessageVisibilityAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
             );
     }
 
@@ -378,15 +361,9 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             );
     }
 
-    [Fact(Skip = "Documents known double-release bug - semaphore count exceeds initial")]
+    [Fact]
     public async Task should_not_double_release_semaphore_on_exception()
     {
-        // CRITICAL BUG: This test documents a double-release bug in the semaphore handling.
-        // When an exception is thrown in the callback, the semaphore is released twice,
-        // causing the count to exceed the initial value.
-        // The bug is in AmazonSqsConsumerClient.ConsumeAsync - both the finally block
-        // and the catch block release the semaphore.
-
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
         const int concurrencyLimit = 3;
@@ -442,8 +419,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         await Task.Delay(500, AbortToken);
 
-        // then - semaphore count should return to initial value (not exceed it due to double release)
-        // BUG: finalCount is 4 instead of 3, confirming double release
+        // then - semaphore count should return to initial value
         var finalCount = semaphore.CurrentCount;
         finalCount.Should().Be(initialCount, "semaphore should be released exactly once, not twice");
     }
@@ -895,6 +871,99 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await sqsClient
             .Received(1)
             .ChangeMessageVisibilityAsync(Arg.Any<string>(), "receipt-json-error", 3, Arg.Any<CancellationToken>());
+    }
+
+    // -------------------------------------------------------------------------
+    // PauseAsync / ResumeAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PauseAsync_is_idempotent_when_called_twice()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
+
+        // when
+        await client.PauseAsync();
+        await client.PauseAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_when_not_paused()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
+
+        // when
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_blocks_listening_loop()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
+
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        var receiveCount = 0;
+        sqsClient
+            .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref receiveCount);
+                return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+            });
+
+        _SetPrivateFields(client, sqsClient, "http://test");
+
+        // when — pause, then start listening
+        await client.PauseAsync();
+
+        using var cts = new CancellationTokenSource();
+        var listenTask = Task.Run(async () =>
+        {
+            try
+            {
+                await client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token);
+            }
+            catch (OperationCanceledException) { }
+        });
+
+        await Task.Delay(300);
+        var countWhilePaused = receiveCount;
+
+        // then — no messages polled while paused
+        countWhilePaused.Should().Be(0);
+
+        // cleanup
+        await client.ResumeAsync();
+        await Task.Delay(300);
+        await cts.CancelAsync();
+        await listenTask;
+
+        // after resume, polling should have started
+        receiveCount.Should().BeGreaterThan(0);
     }
 
     [Fact]

@@ -53,7 +53,10 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
             {
                 var count = Random.Shared.Next(2, 6);
                 await PublishBatch(count, stoppingToken);
-                logger.LogInformation("Published {Count} demo messages (cycle #{Cycle})", count, _counter);
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation("Published {Count} demo messages (cycle #{Cycle})", count, _counter);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

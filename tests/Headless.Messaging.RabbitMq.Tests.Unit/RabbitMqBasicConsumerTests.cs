@@ -81,7 +81,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
-    public async Task should_nack_message_when_consume_fails_with_concurrent_processing()
+    public async Task should_not_transport_nack_when_consume_fails_with_concurrent_processing()
     {
         // given
         const byte concurrent = 2;
@@ -120,8 +120,14 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // Allow async task to complete
         await Task.Delay(100, AbortToken);
 
-        // then
-        await _channel.Received(1).BasicNackAsync(deliveryTag, false, requeue: true, CancellationToken.None);
+        // then - reject is owned by the framework callback wrapper, not the transport callback shell
+        await _channel
+            .DidNotReceive()
+            .BasicNackAsync(Arg.Any<ulong>(), Arg.Any<bool>(), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+
+        _loggedEvents.Should().ContainSingle();
+        _loggedEvents[0].LogType.Should().Be(MqLogType.ConsumeError);
+        _loggedEvents[0].Reason.Should().Contain("Simulated consumption error");
     }
 
     [Fact]
@@ -737,6 +743,95 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
 
         // then
         receivedMessage!.Value.Headers["NullHeader"].Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_nack_when_custom_headers_builder_throws_with_concurrent_processing()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        var callbackInvoked = false;
+
+        static List<KeyValuePair<string, string>> throwingBuilder(BasicDeliverEventArgs _, IServiceProvider __)
+        {
+            throw new InvalidOperationException("bad header builder");
+        }
+
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            2,
+            "test-group",
+            (_, _) =>
+            {
+                callbackInvoked = true;
+                return Task.CompletedTask;
+            },
+            args => _loggedEvents.Add(args),
+            throwingBuilder,
+            _serviceProvider
+        );
+
+        // when
+        await consumer.HandleBasicDeliverAsync(
+            "consumerTag",
+            999ul,
+            false,
+            "exchange",
+            "routingKey",
+            Substitute.For<IReadOnlyBasicProperties>(),
+            "test"u8.ToArray(),
+            CancellationToken.None
+        );
+
+        await Task.Delay(200, AbortToken);
+
+        // then — message should be nacked, not left unacked
+        callbackInvoked.Should().BeFalse();
+        await _channel.Received(1).BasicNackAsync(999ul, false, true, Arg.Any<CancellationToken>());
+        _loggedEvents.Should().ContainSingle(e => e.LogType == MqLogType.ConsumeError);
+        _loggedEvents[0].Reason.Should().Contain("bad header builder");
+    }
+
+    [Fact]
+    public async Task should_nack_when_custom_headers_builder_throws_without_concurrent_processing()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        var callbackInvoked = false;
+
+        static List<KeyValuePair<string, string>> throwingBuilder(BasicDeliverEventArgs _, IServiceProvider __) =>
+            throw new InvalidOperationException("bad header builder");
+
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            "test-group",
+            (_, _) =>
+            {
+                callbackInvoked = true;
+                return Task.CompletedTask;
+            },
+            args => _loggedEvents.Add(args),
+            throwingBuilder,
+            _serviceProvider
+        );
+
+        // when
+        await consumer.HandleBasicDeliverAsync(
+            "consumerTag",
+            888ul,
+            false,
+            "exchange",
+            "routingKey",
+            Substitute.For<IReadOnlyBasicProperties>(),
+            "test"u8.ToArray(),
+            CancellationToken.None
+        );
+
+        // then — message should be nacked, not left unacked
+        callbackInvoked.Should().BeFalse();
+        await _channel.Received(1).BasicNackAsync(888ul, false, true, Arg.Any<CancellationToken>());
+        _loggedEvents.Should().ContainSingle(e => e.LogType == MqLogType.ConsumeError);
     }
 
     [Fact]

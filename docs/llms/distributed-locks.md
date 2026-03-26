@@ -1,0 +1,279 @@
+---
+domain: Distributed Locks
+packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks.Cache, DistributedLocks.Redis
+---
+
+# Distributed Locks
+
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.DistributedLocks.Abstractions](#headlessdistributedlocksabstractions)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Usage](#usage)
+  - [Configuration](#configuration)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.DistributedLocks.Core](#headlessdistributedlockscore)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start)
+  - [Configuration](#configuration-1)
+    - [Options](#options)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+- [Headless.DistributedLocks.Cache](#headlessdistributedlockscache)
+  - [Problem Solved](#problem-solved-2)
+  - [Key Features](#key-features-2)
+  - [Installation](#installation-2)
+  - [Quick Start](#quick-start-1)
+  - [Configuration](#configuration-2)
+  - [Dependencies](#dependencies-2)
+  - [Side Effects](#side-effects-2)
+- [Headless.DistributedLocks.Redis](#headlessdistributedlocksredis)
+  - [Problem Solved](#problem-solved-3)
+  - [Key Features](#key-features-3)
+  - [Installation](#installation-3)
+  - [Quick Start](#quick-start-2)
+  - [Configuration](#configuration-3)
+  - [Dependencies](#dependencies-3)
+  - [Side Effects](#side-effects-3)
+
+> Provider-agnostic distributed locking with automatic renewal, expiration, throttling, and pluggable storage backends (Redis, Cache).
+
+## Quick Orientation
+- Install `Headless.DistributedLocks.Abstractions` to depend on interfaces only (e.g., in domain/application layers).
+- Install `Headless.DistributedLocks.Core` for the lock provider implementation. Register with `AddDistributedLock(options => ...)`.
+- Choose one storage backend:
+  - `Headless.DistributedLocks.Redis` — production multi-instance deployments (atomic Lua scripts, high performance).
+  - `Headless.DistributedLocks.Cache` — uses `ICache` abstraction; works if your cache is already distributed (e.g., Redis cache).
+- Use `IDistributedLockProvider.TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, ct)` to acquire locks. Returns `null` if acquisition fails.
+- For rate-limited locking, use `IThrottlingDistributedLockProvider` (requires throttling storage from the chosen backend).
+
+## Agent Instructions
+- Always code against `IDistributedLockProvider` from Abstractions. Never reference storage-specific types in application code.
+- Use `DistributedLocks.Redis` for production multi-instance deployments. It uses atomic Lua scripts for lock acquire/release — this is the only truly safe option for distributed scenarios.
+- Use `DistributedLocks.Cache` when you already have a distributed `ICache` (e.g., Redis cache) and don't want a separate Redis connection for locks.
+- Always check for `null` after `TryAcquireAsync` — a null return means the lock could not be acquired within the timeout.
+- Always `await using` the returned `IDistributedLock` to ensure proper release. Do not manually dispose without `await`.
+- Default timeouts: `DefaultTimeUntilExpires = 20 min`, `DefaultAcquireTimeout = 30s`. Override per-call or globally via options.
+- Lock resources are string keys (e.g., `"order:{orderId}"`). Use consistent naming conventions across your codebase.
+- Both `IDistributedLockProvider` and `IThrottlingDistributedLockProvider` are registered as **singletons**.
+
+---
+# Headless.DistributedLocks.Abstractions
+
+Defines the unified interface for distributed resource locking.
+
+## Problem Solved
+
+Provides a provider-agnostic distributed locking API, enabling coordination across multiple instances with features like lock expiration, renewal, and throttling without changing application code.
+
+## Key Features
+
+- `IDistributedLockProvider` - Regular locking with expiration
+- `IDistributedLock` - Acquired lock handle with release
+- `IThrottlingDistributedLockProvider` - Rate-limited locking
+- `IDistributedThrottlingLock` - Throttling lock handle
+- Configurable timeouts and expiration
+
+## Installation
+
+```bash
+dotnet add package Headless.DistributedLocks.Abstractions
+```
+
+## Usage
+
+```csharp
+public sealed class OrderService(IDistributedLockProvider lockProvider)
+{
+    public async Task ProcessOrderAsync(Guid orderId, CancellationToken ct)
+    {
+        var lockResource = $"order:{orderId}";
+
+        await using var @lock = await lockProvider.TryAcquireAsync(
+            lockResource,
+            timeUntilExpires: TimeSpan.FromMinutes(5),
+            acquireTimeout: TimeSpan.FromSeconds(30),
+            ct
+        );
+
+        if (@lock is null)
+            throw new ConcurrencyException("Could not acquire lock");
+
+        // Process order safely...
+    }
+}
+```
+
+## Configuration
+
+No configuration required. This is an abstractions-only package.
+
+## Dependencies
+
+None.
+
+## Side Effects
+
+None.
+---
+# Headless.DistributedLocks.Core
+
+Core implementation of distributed resource locking with storage abstraction.
+
+## Problem Solved
+
+Provides the lock provider implementation with automatic renewal, expiration handling, and support for pluggable storage backends (cache, Redis).
+
+## Key Features
+
+- `DistributedLockProvider` - Full implementation of `IDistributedLockProvider`
+- `ThrottlingDistributedLockProvider` - Rate-limited lock provider
+- `DisposableDistributedLock` - Auto-releasing lock handle
+- Storage interfaces: `IDistributedLockStorage`, `IThrottlingDistributedLockStorage`
+- Configurable options for timeouts and expiration
+
+## Installation
+
+```bash
+dotnet add package Headless.DistributedLocks.Core
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddDistributedLock(options =>
+{
+    options.DefaultTimeUntilExpires = TimeSpan.FromMinutes(20);
+    options.DefaultAcquireTimeout = TimeSpan.FromSeconds(30);
+});
+
+// Add storage (cache or Redis)
+builder.Services.AddDistributedLockCacheStorage();
+// or
+builder.Services.AddDistributedLockRedisStorage();
+```
+
+## Configuration
+
+### Options
+
+```csharp
+services.AddDistributedLock(options =>
+{
+    options.DefaultTimeUntilExpires = TimeSpan.FromMinutes(20);
+    options.DefaultAcquireTimeout = TimeSpan.FromSeconds(30);
+});
+```
+
+## Dependencies
+
+- `Headless.DistributedLocks.Abstractions`
+
+## Side Effects
+
+- Registers `IDistributedLockProvider` as singleton
+- Registers `IThrottlingDistributedLockProvider` as singleton (if throttling storage is provided)
+---
+# Headless.DistributedLocks.Cache
+
+Cache-based resource lock storage using ICache.
+
+## Problem Solved
+
+Provides resource lock storage using the headless's `ICache` abstraction, suitable for single-instance deployments or when using a distributed cache like Redis.
+
+## Key Features
+
+- `CacheDistributedLockStorage` - Lock storage via `ICache`
+- `CacheThrottlingDistributedLockStorage` - Throttling lock storage
+- Automatic expiration via cache TTL
+
+## Installation
+
+```bash
+dotnet add package Headless.DistributedLocks.Cache
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Add cache (e.g., Redis cache)
+builder.Services.AddRedisCache(options => { /* ... */ });
+
+// Add resource locks with cache storage
+builder.Services.AddDistributedLock();
+builder.Services.AddSingleton<IDistributedLockStorage, CacheDistributedLockStorage>();
+```
+
+## Configuration
+
+No additional configuration required.
+
+## Dependencies
+
+- `Headless.DistributedLocks.Core`
+- `Headless.Caching.Abstractions`
+
+## Side Effects
+
+- Registers `IDistributedLockStorage` as singleton
+- Registers `IThrottlingDistributedLockStorage` as singleton (optional)
+---
+# Headless.DistributedLocks.Redis
+
+Redis-based resource lock storage using StackExchange.Redis.
+
+## Problem Solved
+
+Provides high-performance distributed locking using Redis with atomic Lua scripts for lock acquisition and release, suitable for multi-instance production deployments.
+
+## Key Features
+
+- `RedisDistributedLockStorage` - Atomic lock operations via Redis
+- `RedisThrottlingDistributedLockStorage` - Rate-limited locking
+- Lua scripts for atomic acquire/release
+- High performance and reliability
+
+## Installation
+
+```bash
+dotnet add package Headless.DistributedLocks.Redis
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
+builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
+
+// Add resource locks with Redis storage
+builder.Services.AddDistributedLock();
+builder.Services.AddSingleton<IDistributedLockStorage, RedisDistributedLockStorage>();
+```
+
+## Configuration
+
+No additional configuration beyond Redis connection.
+
+## Dependencies
+
+- `Headless.DistributedLocks.Core`
+- `Headless.Redis`
+- `StackExchange.Redis`
+
+## Side Effects
+
+- Registers `IDistributedLockStorage` as singleton
+- Registers `IThrottlingDistributedLockStorage` as singleton (optional)

@@ -5,6 +5,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Pulsar.Client.Api;
 
 namespace Tests;
 
@@ -33,6 +34,21 @@ public sealed class ConnectionFactoryTests : TestBase
     }
 
     [Fact]
+    public async Task should_sanitize_servers_address_when_credentials_are_present()
+    {
+        // given
+        var credentialedOptions = Options.Create(
+            new MessagingPulsarOptions { ServiceUrl = "pulsar://user:secret@localhost:6650" }
+        );
+
+        // when
+        await using var factory = new ConnectionFactory(_logger, credentialedOptions);
+
+        // then
+        factory.ServersAddress.Should().Be("pulsar://localhost:6650");
+    }
+
+    [Fact]
     public async Task should_create_client_with_service_url()
     {
         // given
@@ -54,5 +70,35 @@ public sealed class ConnectionFactoryTests : TestBase
 
         // then
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_retry_producer_creation_after_transient_failure()
+    {
+        // given
+        var producer = Substitute.For<IProducer<byte[]>>();
+        var callCount = 0;
+        await using var factory = new ConnectionFactory(
+            _logger,
+            _options,
+            _ =>
+            {
+                if (Interlocked.Increment(ref callCount) == 1)
+                {
+                    return Task.FromException<IProducer<byte[]>>(new InvalidOperationException("transient"));
+                }
+
+                return Task.FromResult(producer);
+            }
+        );
+
+        // when
+        var firstAttempt = async () => await factory.CreateProducerAsync("orders.created");
+
+        // then
+        await firstAttempt.Should().ThrowAsync<InvalidOperationException>();
+        var recoveredProducer = await factory.CreateProducerAsync("orders.created");
+        recoveredProducer.Should().BeSameAs(producer);
+        callCount.Should().Be(2);
     }
 }

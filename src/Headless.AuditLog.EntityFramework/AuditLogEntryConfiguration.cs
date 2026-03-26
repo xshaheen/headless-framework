@@ -21,6 +21,7 @@ internal sealed class AuditLogEntryConfiguration(string? schema, string tableNam
         builder.HasKey(e => new { e.CreatedAt, e.Id });
 
         builder.Property(e => e.Id).ValueGeneratedOnAdd();
+        builder.Property(e => e.CreatedAt).HasConversion(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
 
         builder.Property(e => e.Action).IsRequired().HasMaxLength(256);
         builder.Property(e => e.EntityType).HasMaxLength(512);

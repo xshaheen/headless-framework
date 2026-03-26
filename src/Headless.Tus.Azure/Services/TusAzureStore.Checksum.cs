@@ -70,7 +70,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
             if (file is null)
             {
-                _logger.LogError("File info not found for {FileId} during checksum verification", fileId);
+                _logger.ChecksumVerificationFileInfoNotFound(fileId);
                 return false;
             }
 
@@ -82,11 +82,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
             if (_VerifyChecksum(calculatedChecksum, checksum))
             {
-                _logger.LogDebug(
-                    "Checksum verification passed for file {FileId} using algorithm {Algorithm}",
-                    fileId,
-                    algorithm
-                );
+                _logger.ChecksumVerificationPassed(fileId, algorithm);
 
                 // Commit staged blocks and update metadata atomically
                 await _CommitLastChunkAsync(blockBlobClient, file, cancellationToken);
@@ -94,13 +90,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
                 return true;
             }
 
-            _logger.LogWarning(
-                "Checksum verification failed for file {FileId} using algorithm {Algorithm}. Expected: {Expected}, Calculated: {Calculated}.",
-                fileId,
-                algorithm,
-                Convert.ToHexString(checksum),
-                Convert.ToHexString(calculatedChecksum)
-            );
+            _logger.ChecksumVerificationFailed(fileId, algorithm, checksum, calculatedChecksum);
 
             // Don't commit the last chunk, effectively discarding it (since it's not part of the committed blob)
             // as the TUS protocol requires
@@ -109,12 +99,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         }
         catch (Exception e)
         {
-            _logger.LogError(
-                e,
-                "Failed to verify checksum for file {FileId} using algorithm {Algorithm}",
-                fileId,
-                algorithm
-            );
+            _logger.ChecksumVerificationFailedUnexpectedly(e, fileId, algorithm);
 
             return false;
         }
@@ -136,10 +121,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
 
         if (string.IsNullOrEmpty(lastChunkChecksum))
         {
-            _logger.LogError(
-                "Pre-calculated checksum missing for file {FileId} - this indicates a bug or corrupted metadata during upload",
-                file.FileId
-            );
+            _logger.PreCalculatedChecksumMissing(file.FileId);
 
             checksum = null;
 
@@ -150,15 +132,11 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         {
             checksum = Convert.FromBase64String(lastChunkChecksum);
 
-            _logger.LogDebug("Using pre-calculated checksum for file {FileId}", file.FileId);
+            _logger.UsingPreCalculatedChecksum(file.FileId);
         }
         catch (FormatException e)
         {
-            _logger.LogError(
-                e,
-                "Invalid stored checksum format for file {FileId} - metadata is corrupted",
-                file.FileId
-            );
+            _logger.InvalidStoredChecksumFormat(e, file.FileId);
 
             checksum = null;
 
@@ -209,17 +187,103 @@ public sealed partial class TusAzureStore : ITusChecksumStore
             var options = new CommitBlockListOptions { Metadata = file.Metadata.ToAzure() };
             await client.CommitBlockListAsync(allBlockIds, options, cancellationToken: token);
 
-            _logger.LogDebug(
-                "Committed last chunk for file {FileId}: {TotalBlocks} blocks (atomic with metadata update)",
-                file.FileId,
-                allBlockIds.Count
-            );
+            _logger.LastChunkCommitted(file.FileId, allBlockIds.Count);
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Failed to commit last chunk for file {FileId}", file.FileId);
+            _logger.CommitLastChunkFailed(e, file.FileId);
 
             throw;
         }
     }
+}
+
+internal static partial class TusAzureStoreChecksumLog
+{
+    [LoggerMessage(
+        EventId = 3230,
+        Level = LogLevel.Error,
+        Message = "File info not found for {FileId} during checksum verification"
+    )]
+    public static partial void ChecksumVerificationFileInfoNotFound(this ILogger logger, string fileId);
+
+    [LoggerMessage(
+        EventId = 3231,
+        Level = LogLevel.Debug,
+        Message = "Checksum verification passed for file {FileId} using algorithm {Algorithm}"
+    )]
+    public static partial void ChecksumVerificationPassed(this ILogger logger, string fileId, string algorithm);
+
+    public static void ChecksumVerificationFailed(
+        this ILogger logger,
+        string fileId,
+        string algorithm,
+        byte[] expected,
+        byte[] calculated
+    )
+    {
+        if (!logger.IsEnabled(LogLevel.Warning))
+        {
+            return;
+        }
+
+        logger.ChecksumVerificationFailedCore(
+            fileId,
+            algorithm,
+            Convert.ToHexString(expected),
+            Convert.ToHexString(calculated)
+        );
+    }
+
+    [LoggerMessage(
+        EventId = 3232,
+        Level = LogLevel.Warning,
+        Message = "Checksum verification failed for file {FileId} using algorithm {Algorithm}. Expected: {Expected}, Calculated: {Calculated}."
+    )]
+    private static partial void ChecksumVerificationFailedCore(
+        this ILogger logger,
+        string fileId,
+        string algorithm,
+        string expected,
+        string calculated
+    );
+
+    [LoggerMessage(
+        EventId = 3233,
+        Level = LogLevel.Error,
+        Message = "Failed to verify checksum for file {FileId} using algorithm {Algorithm}"
+    )]
+    public static partial void ChecksumVerificationFailedUnexpectedly(
+        this ILogger logger,
+        Exception exception,
+        string fileId,
+        string algorithm
+    );
+
+    [LoggerMessage(
+        EventId = 3234,
+        Level = LogLevel.Error,
+        Message = "Pre-calculated checksum missing for file {FileId} - this indicates a bug or corrupted metadata during upload"
+    )]
+    public static partial void PreCalculatedChecksumMissing(this ILogger logger, string fileId);
+
+    [LoggerMessage(EventId = 3235, Level = LogLevel.Debug, Message = "Using pre-calculated checksum for file {FileId}")]
+    public static partial void UsingPreCalculatedChecksum(this ILogger logger, string fileId);
+
+    [LoggerMessage(
+        EventId = 3236,
+        Level = LogLevel.Error,
+        Message = "Invalid stored checksum format for file {FileId} - metadata is corrupted"
+    )]
+    public static partial void InvalidStoredChecksumFormat(this ILogger logger, Exception exception, string fileId);
+
+    [LoggerMessage(
+        EventId = 3237,
+        Level = LogLevel.Debug,
+        Message = "Committed last chunk for file {FileId}: {TotalBlocks} blocks (atomic with metadata update)"
+    )]
+    public static partial void LastChunkCommitted(this ILogger logger, string fileId, int totalBlocks);
+
+    [LoggerMessage(EventId = 3238, Level = LogLevel.Error, Message = "Failed to commit last chunk for file {FileId}")]
+    public static partial void CommitLastChunkFailed(this ILogger logger, Exception exception, string fileId);
 }

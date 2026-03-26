@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Messaging.AzureServiceBus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -147,5 +148,150 @@ public sealed class AzureServiceBusConsumerClientTests
 
         // then
         await act.Should().NotThrowAsync();
+    }
+
+    // -------------------------------------------------------------------------
+    // PauseAsync / ResumeAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PauseAsync_is_noop_when_processor_is_null()
+    {
+        // given — no ConnectAsync called, processor is null
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+
+        // when
+        await client.PauseAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_is_idempotent_when_called_twice()
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+
+        // when
+        await client.PauseAsync();
+        await client.PauseAsync();
+
+        // then — no exception, second call is no-op
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_when_not_paused()
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+
+        // when
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_then_ResumeAsync_completes_full_cycle()
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_idempotent_after_resume()
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+
+        // when
+        await client.PauseAsync();
+        await client.ResumeAsync();
+        await client.ResumeAsync(); // second resume is no-op
+
+        // then — no exception
+    }
+
+    [Fact]
+    public async Task PauseAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await client.DisposeAsync();
+
+        // when — should not throw
+        await client.PauseAsync();
+    }
+
+    [Fact]
+    public async Task ResumeAsync_is_noop_after_disposal()
+    {
+        // given
+        var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        await client.DisposeAsync();
+
+        // when — should not throw
+        await client.ResumeAsync();
+    }
+
+    [Fact]
+    public async Task PauseAsync_and_ResumeAsync_should_toggle_the_startup_gate_before_processing_starts()
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        var gateField = typeof(AzureServiceBusConsumerClient).GetField(
+            "_pauseGate",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        )!;
+        var gate = gateField.GetValue(client)!;
+        var isPausedProp = gate.GetType().GetProperty("IsPaused", BindingFlags.Public | BindingFlags.Instance)!;
+
+        // then - gate starts open
+        ((bool)isPausedProp.GetValue(gate)!)
+            .Should()
+            .BeFalse();
+
+        // when
+        await client.PauseAsync();
+
+        // then - startup gate closes while paused
+        ((bool)isPausedProp.GetValue(gate)!)
+            .Should()
+            .BeTrue();
+
+        // when
+        await client.ResumeAsync();
+
+        // then - gate reopens for late-starting listeners
+        ((bool)isPausedProp.GetValue(gate)!)
+            .Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public async Task ResumeAsync_should_not_mark_processing_as_started_before_listening_runs()
+    {
+        // given
+        await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
+        var startedField = typeof(AzureServiceBusConsumerClient).GetField(
+            "_hasStartedProcessing",
+            BindingFlags.NonPublic | BindingFlags.Instance
+        )!;
+
+        await client.PauseAsync();
+
+        // when
+        await client.ResumeAsync();
+
+        // then - resume only opens the gate before first ListeningAsync startup
+        ((int)startedField.GetValue(client)!)
+            .Should()
+            .Be(0);
     }
 }

@@ -37,7 +37,7 @@ public static class MessagesAmazonSqsSetup
         {
             services.AddSingleton(new MessageQueueMarkerService("Amazon SQS"));
 
-            services.Configure(configure);
+            services.Configure<AmazonSqsOptions, AmazonSqsOptionsValidator>(configure);
             services.AddSingleton<ITransport, AmazonSqsTransport>();
             services.AddSingleton<IConsumerClientFactory, AmazonSqsConsumerClientFactory>();
         }

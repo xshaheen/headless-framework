@@ -87,7 +87,7 @@ public sealed class DistributedLockProvider(
                 catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
                 {
                     // Swallow transient errors (network, timeout) and retry
-                    logger.LogErrorAcquiringLock(e, resource, lockId, timeProvider.GetElapsedTime(timestamp));
+                    logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, timestamp);
                 }
 
                 if (gotLock)
@@ -466,11 +466,7 @@ public sealed class DistributedLockProvider(
                 return ValueTask.FromCanceled(cancellationToken);
             }
 
-            logger.LogDebug(
-                "Processing lock released {MessageId} for {Resource}",
-                context.MessageId,
-                context.Message.Resource
-            );
+            logger.LogProcessingLockReleased(context.MessageId, context.Message.Resource);
 
             if (provider is DistributedLockProvider impl)
             {
