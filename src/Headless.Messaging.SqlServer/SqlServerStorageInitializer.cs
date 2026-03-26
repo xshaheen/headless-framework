@@ -122,18 +122,7 @@ public sealed class SqlServerStorageInitializer(
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_RetryQuery] ON {GetPublishedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC);
             END;
 
-            IF COL_LENGTH('{options.Value.Schema}.Published', 'MessageId') IS NULL
-            BEGIN
-                ALTER TABLE {GetPublishedTableName()} ADD [MessageId] [nvarchar](200) NULL;
-
-                UPDATE {GetPublishedTableName()}
-                SET [MessageId] = CONVERT(nvarchar(200), [Id])
-                WHERE [MessageId] IS NULL;
-
-                ALTER TABLE {GetPublishedTableName()} ALTER COLUMN [MessageId] [nvarchar](200) NOT NULL;
-            END;
-
-            """;
+""";
 
         if (messagingOptions.Value.UseStorageLock)
         {

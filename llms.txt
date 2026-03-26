@@ -30,82 +30,82 @@ Follow these rules when generating code that uses Headless packages:
 Each domain has its own documentation file with package READMEs, Quick Orientation, and Agent Instructions.
 
 ### API & Web
-- [docs/llms/api.txt](docs/llms/api.txt): ASP.NET Core API infrastructure, JWT, middleware, Minimal API and MVC integrations.
+- [docs/llms/api.md](docs/llms/api.md): ASP.NET Core API infrastructure, JWT, middleware, Minimal API and MVC integrations.
 
 ### Core
-- [docs/llms/core.txt](docs/llms/core.txt): Foundation utilities, DDD building blocks, guard clauses, domain events.
+- [docs/llms/core.md](docs/llms/core.md): Foundation utilities, DDD building blocks, guard clauses, domain events.
 
 ### Multi-Tenancy
-- [docs/llms/multi-tenancy.txt](docs/llms/multi-tenancy.txt): Tenant context setup across HTTP requests, EF Core filters, permission caching, and background processing.
+- [docs/llms/multi-tenancy.md](docs/llms/multi-tenancy.md): Tenant context setup across HTTP requests, EF Core filters, permission caching, and background processing.
 
 ### Blob Storage
-- [docs/llms/blobs.txt](docs/llms/blobs.txt): Unified file storage across AWS S3, Azure, file system, Redis, SFTP.
+- [docs/llms/blobs.md](docs/llms/blobs.md): Unified file storage across AWS S3, Azure, file system, Redis, SFTP.
 
 ### Caching
-- [docs/llms/caching.txt](docs/llms/caching.txt): Unified caching with Memory, Redis, and Hybrid (L1+L2) providers.
+- [docs/llms/caching.md](docs/llms/caching.md): Unified caching with Memory, Redis, and Hybrid (L1+L2) providers.
 
 ### Email
-- [docs/llms/emails.txt](docs/llms/emails.txt): Email sending via AWS SES, MailKit SMTP, and dev no-op.
+- [docs/llms/emails.md](docs/llms/emails.md): Email sending via AWS SES, MailKit SMTP, and dev no-op.
 
 ### Feature Management
-- [docs/llms/features.txt](docs/llms/features.txt): Feature flags with caching, value providers, and EF Core storage.
+- [docs/llms/features.md](docs/llms/features.md): Feature flags with caching, value providers, and EF Core storage.
 
 ### Identity
-- [docs/llms/identity.txt](docs/llms/identity.txt): ASP.NET Core Identity with EF Core and framework extensions.
+- [docs/llms/identity.md](docs/llms/identity.md): ASP.NET Core Identity with EF Core and framework extensions.
 
 ### Imaging
-- [docs/llms/imaging.txt](docs/llms/imaging.txt): Image processing with ImageSharp-based resizing and compression.
+- [docs/llms/imaging.md](docs/llms/imaging.md): Image processing with ImageSharp-based resizing and compression.
 
 ### Logging
-- [docs/llms/logging.txt](docs/llms/logging.txt): Serilog configuration factory with structured logging defaults.
+- [docs/llms/logging.md](docs/llms/logging.md): Serilog configuration factory with structured logging defaults.
 
 ### Media
-- [docs/llms/media.txt](docs/llms/media.txt): Text extraction from PDF, Word, and PowerPoint for search indexing.
+- [docs/llms/media.md](docs/llms/media.md): Text extraction from PDF, Word, and PowerPoint for search indexing.
 
 ### Messaging
-- [docs/llms/messaging.txt](docs/llms/messaging.txt): Distributed messaging with transactional outbox, 7 transports, 3 storage backends.
+- [docs/llms/messaging.md](docs/llms/messaging.md): Distributed messaging with transactional outbox, 7 transports, 3 storage backends.
 
 ### OpenAPI
-- [docs/llms/openapi.txt](docs/llms/openapi.txt): NSwag OpenAPI generation and Scalar documentation UI.
+- [docs/llms/openapi.md](docs/llms/openapi.md): NSwag OpenAPI generation and Scalar documentation UI.
 
 ### ORM
-- [docs/llms/orm.txt](docs/llms/orm.txt): Entity Framework Core and Couchbase integrations with DDD support.
+- [docs/llms/orm.md](docs/llms/orm.md): Entity Framework Core and Couchbase integrations with DDD support.
 
 ### Payments
-- [docs/llms/payments.txt](docs/llms/payments.txt): Paymob Accept integration for cash-in and cash-out operations.
+- [docs/llms/payments.md](docs/llms/payments.md): Paymob Accept integration for cash-in and cash-out operations.
 
 ### Permissions
-- [docs/llms/permissions.txt](docs/llms/permissions.txt): Permission management with caching, authorization, and EF Core storage.
+- [docs/llms/permissions.md](docs/llms/permissions.md): Permission management with caching, authorization, and EF Core storage.
 
 ### Push Notifications
-- [docs/llms/push-notifications.txt](docs/llms/push-notifications.txt): Push notifications via Firebase FCM and dev no-op.
+- [docs/llms/push-notifications.md](docs/llms/push-notifications.md): Push notifications via Firebase FCM and dev no-op.
 
 ### Distributed Locks
-- [docs/llms/distributed-locks.txt](docs/llms/distributed-locks.txt): Distributed locking with Redis, cache-based, and in-memory backends.
+- [docs/llms/distributed-locks.md](docs/llms/distributed-locks.md): Distributed locking with Redis, cache-based, and in-memory backends.
 
 ### Serialization
-- [docs/llms/serialization.txt](docs/llms/serialization.txt): Unified serialization with System.Text.Json and MessagePack.
+- [docs/llms/serialization.md](docs/llms/serialization.md): Unified serialization with System.Text.Json and MessagePack.
 
 ### Settings
-- [docs/llms/settings.txt](docs/llms/settings.txt): Dynamic runtime settings with hierarchical providers and EF Core storage.
+- [docs/llms/settings.md](docs/llms/settings.md): Dynamic runtime settings with hierarchical providers and EF Core storage.
 
 ### SMS
-- [docs/llms/sms.txt](docs/llms/sms.txt): SMS sending via Twilio, AWS SNS, Infobip, and regional providers.
+- [docs/llms/sms.md](docs/llms/sms.md): SMS sending via Twilio, AWS SNS, Infobip, and regional providers.
 
 ### SQL
-- [docs/llms/sql.txt](docs/llms/sql.txt): SQL connection factories for PostgreSQL, SQL Server, and SQLite.
+- [docs/llms/sql.md](docs/llms/sql.md): SQL connection factories for PostgreSQL, SQL Server, and SQLite.
 
 ### Testing
-- [docs/llms/testing.txt](docs/llms/testing.txt): xUnit base classes and Testcontainers fixtures for integration tests.
+- [docs/llms/testing.md](docs/llms/testing.md): xUnit base classes and Testcontainers fixtures for integration tests.
 
 ### Jobs (Background Jobs)
-- [docs/llms/jobs.txt](docs/llms/jobs.txt): Distributed background job scheduling with cron, monitoring, and source generation.
+- [docs/llms/jobs.md](docs/llms/jobs.md): Distributed background job scheduling with cron, monitoring, and source generation.
 
 ### TUS (Resumable Uploads)
-- [docs/llms/tus.txt](docs/llms/tus.txt): TUS protocol for resumable file uploads with Azure and distributed lock support.
+- [docs/llms/tus.md](docs/llms/tus.md): TUS protocol for resumable file uploads with Azure and distributed lock support.
 
 ### Utilities
-- [docs/llms/utilities.txt](docs/llms/utilities.txt): FluentValidation extensions, source-generated primitives, reCAPTCHA, sitemaps, slugs, Redis utilities.
+- [docs/llms/utilities.md](docs/llms/utilities.md): FluentValidation extensions, source-generated primitives, reCAPTCHA, sitemaps, slugs, Redis utilities.
 
 ## Packages
 

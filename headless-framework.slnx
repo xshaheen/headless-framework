@@ -207,6 +207,7 @@
         <Project Path="tests/Headless.Messaging.Dashboard.K8s.Tests.Unit/Headless.Messaging.Dashboard.K8s.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Dashboard.Tests.Unit/Headless.Messaging.Dashboard.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.InMemoryQueue.Tests.Unit/Headless.Messaging.InMemoryQueue.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Nats.Tests.Integration/Headless.Messaging.Nats.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Nats.Tests.Unit/Headless.Messaging.Nats.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.PostgreSql.Tests.Unit/Headless.Messaging.PostgreSql.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Pulsar.Tests.Unit/Headless.Messaging.Pulsar.Tests.Unit.csproj" />

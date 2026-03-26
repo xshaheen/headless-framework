@@ -1,9 +1,9 @@
 ﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Newtonsoft.Json;
 using Pulsar.Client.Api;
 
 namespace Headless.Messaging.Pulsar;
@@ -20,42 +20,71 @@ public interface IConnectionFactory
 public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 {
     private readonly Lock _lock = new();
+    private readonly ILogger<ConnectionFactory> _logger;
     private PulsarClient? _client;
     private readonly MessagingPulsarOptions _options;
+    private readonly Func<string, Task<IProducer<byte[]>>>? _producerFactoryOverride;
     private readonly ConcurrentDictionary<string, Task<IProducer<byte[]>>> _topicProducers;
 
-    public ConnectionFactory(ILogger<ConnectionFactory> logger, IOptions<MessagingPulsarOptions> options)
+    public ConnectionFactory(
+        ILogger<ConnectionFactory> logger,
+        IOptions<MessagingPulsarOptions> options,
+        Func<string, Task<IProducer<byte[]>>>? producerFactoryOverride = null
+    )
     {
+        _logger = logger;
         _options = options.Value;
+        _producerFactoryOverride = producerFactoryOverride;
         _topicProducers = new ConcurrentDictionary<string, Task<IProducer<byte[]>>>(StringComparer.Ordinal);
 
-        logger.LogDebug(
-            "Messaging Pulsar configuration: {Configuration}",
-            JsonConvert.SerializeObject(_options, Formatting.Indented)
-        );
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug(
+                "Messaging Pulsar configuration: ServiceUrl={ServiceUrl}, EnableClientLog={EnableClientLog}, HasTlsOptions={HasTlsOptions}",
+                BrokerAddressDisplay.Format(_options.ServiceUrl),
+                _options.EnableClientLog,
+                _options.TlsOptions is not null
+            );
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
         foreach (var value in _topicProducers.Values)
         {
-            await (await value.ConfigureAwait(false)).DisposeAsync();
+            await (await value.ConfigureAwait(false)).DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (_client is not null)
+        {
+            await _client.CloseAsync().ConfigureAwait(false);
         }
     }
 
-    public string ServersAddress => _options.ServiceUrl;
+    public string ServersAddress => BrokerAddressDisplay.Format(_options.ServiceUrl);
 
     public async Task<IProducer<byte[]>> CreateProducerAsync(string topic)
     {
-        _client ??= RentClient();
-
-        async Task<IProducer<byte[]>> valueFactory(string top)
+        if (_producerFactoryOverride is null)
         {
-            return await _client.NewProducer().Topic(top).CreateAsync().ConfigureAwait(false);
+            _client ??= RentClient();
         }
 
-        //connection may lost
-        return await _topicProducers.GetOrAdd(topic, valueFactory).ConfigureAwait(false);
+        var producerTask = _topicProducers.GetOrAdd(
+            topic,
+            static (top, state) => state._CreateProducerAsync(top),
+            this
+        );
+
+        try
+        {
+            return await producerTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            _topicProducers.TryRemove(new KeyValuePair<string, Task<IProducer<byte[]>>>(topic, producerTask));
+            throw;
+        }
     }
 
     public PulsarClient RentClient()
@@ -80,5 +109,15 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 
             return _client;
         }
+    }
+
+    private Task<IProducer<byte[]>> _CreateProducerAsync(string topic)
+    {
+        if (_producerFactoryOverride is not null)
+        {
+            return _producerFactoryOverride(topic);
+        }
+
+        return _client!.NewProducer().Topic(topic).CreateAsync();
     }
 }

@@ -91,7 +91,10 @@ internal sealed class CircuitBreakerMetrics
     {
         var cache = Volatile.Read(ref _safeTagCache);
         if (cache.Count == 0)
+        {
             return groupName;
+        }
+
         return cache.TryGetValue(groupName, out var safe) ? safe : UnknownGroupTag;
     }
 

@@ -48,16 +48,15 @@ internal sealed class OpenTelemetryInstrumentation(
         activity?.SetTag("Headless.Jobs.job.function", functionName);
 
         // Get detailed caller information for OpenTelemetry
-        var callerInfo = string.IsNullOrEmpty(enqueuedFrom) ? CallerInfoHelper.GetCallerInfo(6) : enqueuedFrom;
+        var callerInfo = enqueuedFrom;
+        if (string.IsNullOrEmpty(callerInfo))
+        {
+            callerInfo = logger.IsEnabled(LogLevel.Information) ? CallerInfoHelper.GetCallerInfo(6) : null;
+        }
+
         activity?.SetTag("Headless.Jobs.job.enqueued_from", callerInfo);
 
-        logger.LogInformation(
-            "Jobs Job enqueued: {JobType} - {Function} ({JobId}) from {EnqueuedFrom}",
-            jobType,
-            functionName,
-            jobId,
-            callerInfo
-        );
+        base.LogJobEnqueued(jobType, functionName, jobId, callerInfo);
     }
 
     public override void LogJobCompleted(Guid jobId, string functionName, long executionTimeMs, bool success)

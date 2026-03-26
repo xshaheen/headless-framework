@@ -96,6 +96,16 @@ options.EnableSubscriberParallelExecute = false; // No parallel execution
 - For high throughput: Design consumers to handle out-of-order messages
 - Consider Kafka or Azure Service Bus with sessions for stronger ordering guarantees
 
+## Messaging Semantics
+
+- Publish sends the serialized body to the configured exchange and preserves headers.
+- Delay stays in the core pipeline unless you add RabbitMQ delayed-message plugins yourself.
+- Commit sends `BasicAck`.
+- Reject sends `BasicReject(requeue: true)`. Dead-letter behavior follows queue arguments and broker policies.
+- Consumer startup declares the exchange and queue. `SubscribeAsync(...)` binds routing keys to that queue.
+- Higher `ConsumerThreadCount` increases concurrency but weakens observable ordering guarantees.
+- Exchange names, routing keys, headers, and payload sizes follow RabbitMQ and AMQP limits.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

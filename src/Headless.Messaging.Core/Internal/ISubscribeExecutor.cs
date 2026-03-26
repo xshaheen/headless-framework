@@ -61,11 +61,7 @@ internal sealed class SubscribeExecutor(
                 var safeName = LogSanitizer.Sanitize(message.Origin.GetName());
                 var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup());
 
-                logger.LogError(
-                    "Message (Name:{GetName},Group:{GetGroup}) can not be found subscriber. Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.",
-                    safeName,
-                    safeGroup
-                );
+                logger.SubscriberNotFound(safeName, safeGroup);
 
                 var exception = new SubscriberNotFoundException(
                     $"Message (Name:{safeName},Group:{safeGroup}) can not be found subscriber."
@@ -133,13 +129,17 @@ internal sealed class SubscribeExecutor(
             await _SetSuccessfulState(message).ConfigureAwait(false);
 
             MessageEventCounterSource.Log.WriteInvokeTimeMetrics(sp.Elapsed.TotalMilliseconds);
-            logger.ConsumerExecuted(
-                descriptor.ImplTypeInfo.Name,
-                descriptor.MethodInfo.Name,
-                descriptor.GroupName,
-                sp.Elapsed.TotalMilliseconds,
-                message.Origin.GetExecutionInstanceId()
-            );
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                var executionInstanceId = message.Origin.GetExecutionInstanceId();
+                logger.ConsumerExecuted(
+                    descriptor.ImplTypeInfo.Name,
+                    descriptor.MethodInfo.Name,
+                    descriptor.GroupName,
+                    sp.Elapsed.TotalMilliseconds,
+                    executionInstanceId
+                );
+            }
 
             return (RetryDecision.Stop, OperateResult.Success);
         }
@@ -200,10 +200,7 @@ internal sealed class SubscribeExecutor(
     {
         if (_IsRequestedCancellation(ex))
         {
-            logger.LogInformation(
-                "Stored message {StorageId} execution was canceled by shutdown. Persisting for later retry.",
-                message.StorageId
-            );
+            logger.StoredMessageExecutionCanceled(message.StorageId);
             return RetryDecision.Stop;
         }
 
@@ -211,11 +208,7 @@ internal sealed class SubscribeExecutor(
         if (!_backoffStrategy.ShouldRetry(ex))
         {
             message.Retries = _options.FailedRetryCount; // Mark as exhausted
-            logger.LogWarning(
-                "Stored message {StorageId} failed with non-retryable exception: {ExceptionType}. Skipping retries.",
-                message.StorageId,
-                ex.GetType().Name
-            );
+            logger.StoredMessageNonRetryableFailure(message.StorageId, ex.GetType().Name);
             return RetryDecision.Stop;
         }
 

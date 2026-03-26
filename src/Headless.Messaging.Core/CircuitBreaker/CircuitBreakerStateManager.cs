@@ -118,11 +118,7 @@ internal sealed class CircuitBreakerStateManager(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(
-                ex,
-                "IsTransientException predicate threw for group {Group}; treating as non-transient",
-                LogSanitizer.Sanitize(groupName)
-            );
+            logger.IsTransientPredicateFailed(ex, LogSanitizer.Sanitize(groupName));
             isTransient = false;
         }
 
@@ -188,11 +184,9 @@ internal sealed class CircuitBreakerStateManager(
         // Log transitions outside the lock
         if (tripped)
         {
-            var safeGroupName = LogSanitizer.Sanitize(groupName);
-            logger.LogWarning(
-                "Circuit breaker {PreviousState} → Open for group {Group} (failures: {Failures}, escalation: {Escalation}, open for {Duration})",
+            logger.CircuitOpened(
                 openInfo.PreviousState,
-                safeGroupName,
+                LogSanitizer.Sanitize(groupName),
                 openInfo.Failures,
                 openInfo.Escalation,
                 openInfo.OpenDuration
@@ -200,11 +194,7 @@ internal sealed class CircuitBreakerStateManager(
         }
         else if (closedFromHalfOpen)
         {
-            var safeGroupName = LogSanitizer.Sanitize(groupName);
-            logger.LogWarning(
-                "Circuit breaker HalfOpen → Closed for group {Group} (non-transient failure, dependency considered healthy)",
-                safeGroupName
-            );
+            logger.CircuitClosedAfterNonTransientHalfOpenFailure(LogSanitizer.Sanitize(groupName));
         }
 
         // Dispose timers outside the lock
@@ -317,10 +307,7 @@ internal sealed class CircuitBreakerStateManager(
 
         if (transitionedToClosed)
         {
-            logger.LogInformation(
-                "Circuit breaker HalfOpen → Closed for group {Group} (probe succeeded)",
-                LogSanitizer.Sanitize(groupName)
-            );
+            logger.CircuitClosedAfterProbeSucceeded(groupName);
         }
 
         if (closedTimerToDispose is not null)
@@ -379,7 +366,9 @@ internal sealed class CircuitBreakerStateManager(
     public async ValueTask AbortHalfOpenProbeAsync(string groupName)
     {
         if (!_groups.TryGetValue(groupName, out var state))
+        {
             return;
+        }
 
         var safeGroupName = LogSanitizer.Sanitize(groupName);
         var groupLock = state.SyncLock;
@@ -389,7 +378,9 @@ internal sealed class CircuitBreakerStateManager(
         lock (groupLock)
         {
             if (state.State is not CircuitBreakerState.HalfOpen)
+            {
                 return;
+            }
 
             state.ProbeAcquired = false;
 
@@ -412,10 +403,7 @@ internal sealed class CircuitBreakerStateManager(
             timerInfo = (openDuration, gen);
         }
 
-        logger.LogInformation(
-            "Circuit breaker HalfOpen → Open (probe aborted by transport restart) for group {Group}",
-            safeGroupName
-        );
+        logger.CircuitReopenedAfterProbeAbort(safeGroupName);
 
         // Await timer disposal outside the lock
         if (oldTimer is not null)
@@ -551,11 +539,7 @@ internal sealed class CircuitBreakerStateManager(
             resumeCallback = state.OnResume;
         }
 
-        logger.LogWarning(
-            "Circuit breaker {PreviousState} → Closed (manual reset) for group {Group}",
-            previousState,
-            LogSanitizer.Sanitize(groupName)
-        );
+        logger.CircuitClosedByManualReset(previousState, LogSanitizer.Sanitize(groupName));
 
         if (timerToDispose is not null)
         {
@@ -618,8 +602,7 @@ internal sealed class CircuitBreakerStateManager(
             escalationLevel = state.EscalationLevel;
         }
 
-        logger.LogWarning(
-            "Circuit breaker {PreviousState} → Open (forced) for group {Group} (escalation: {Escalation}, open for {Duration})",
+        logger.CircuitForcedOpen(
             previousState,
             LogSanitizer.Sanitize(groupName),
             escalationLevel,
@@ -740,8 +723,9 @@ internal sealed class CircuitBreakerStateManager(
                 catch (OperationCanceledException)
                 { /* expected — disposal cancelled the token */
                 }
-                catch
-                { /* ignore other exceptions during disposal */
+                catch (Exception ex)
+                {
+                    logger.IgnoringResumeTaskFailureDuringDisposal(ex);
                 }
             }
         }
@@ -776,10 +760,7 @@ internal sealed class CircuitBreakerStateManager(
         var knownGroups = Volatile.Read(ref _knownGroups);
         if (knownGroups.Count > 0 && !knownGroups.Contains(groupName))
         {
-            logger.LogWarning(
-                "Unrecognized consumer group '{Group}' — returning no-op circuit state to prevent unbounded cardinality",
-                LogSanitizer.Sanitize(groupName)
-            );
+            logger.UnrecognizedConsumerGroup(LogSanitizer.Sanitize(groupName));
 
             return _NoOpState;
         }
@@ -789,10 +770,7 @@ internal sealed class CircuitBreakerStateManager(
         {
             if (Interlocked.CompareExchange(ref _capWarningLogged, 1, 0) == 0)
             {
-                logger.LogWarning(
-                    "Circuit breaker group count cap ({Cap}) reached — returning no-op state for new groups",
-                    MaxTrackedGroups
-                );
+                logger.CircuitBreakerGroupCountCapReached(MaxTrackedGroups);
             }
 
             return _NoOpState;
@@ -957,7 +935,7 @@ internal sealed class CircuitBreakerStateManager(
             }
         }
 
-        logger.LogInformation("Circuit breaker Open → HalfOpen for group {Group}", LogSanitizer.Sanitize(groupName));
+        logger.CircuitHalfOpen(groupName);
 
         if (resumeCallback is not null)
         {
@@ -974,7 +952,9 @@ internal sealed class CircuitBreakerStateManager(
                         try
                         {
                             if (ct.IsCancellationRequested)
+                            {
                                 return;
+                            }
 
                             try
                             {
@@ -983,13 +963,11 @@ internal sealed class CircuitBreakerStateManager(
                             catch (Exception ex)
                             {
                                 if (ct.IsCancellationRequested)
+                                {
                                     return;
+                                }
 
-                                logger.LogError(
-                                    ex,
-                                    "Resume callback failed for group {Group} during HalfOpen transition",
-                                    LogSanitizer.Sanitize(groupName)
-                                );
+                                logger.ResumeCallbackFailed(ex, LogSanitizer.Sanitize(groupName));
                                 await _ReopenAfterResumeFailureAsync(groupName).ConfigureAwait(false);
                             }
                         }
@@ -1015,7 +993,9 @@ internal sealed class CircuitBreakerStateManager(
     private async Task _ReopenAfterResumeFailureAsync(string groupName)
     {
         if (_disposalCts.IsCancellationRequested)
+        {
             return;
+        }
 
         if (!_groups.TryGetValue(groupName, out var state))
         {
@@ -1045,8 +1025,7 @@ internal sealed class CircuitBreakerStateManager(
             pauseCallback = state.OnPause;
         }
 
-        logger.LogWarning(
-            "Circuit breaker {PreviousState} → Open for group {Group} (failures: {Failures}, escalation: {Escalation}, open for {Duration})",
+        logger.CircuitOpened(
             openInfo.PreviousState,
             LogSanitizer.Sanitize(groupName),
             openInfo.Failures,
@@ -1066,7 +1045,9 @@ internal sealed class CircuitBreakerStateManager(
         if (pauseCallback is not null)
         {
             if (_disposalCts.IsCancellationRequested)
+            {
                 return;
+            }
 
             try
             {
@@ -1078,13 +1059,7 @@ internal sealed class CircuitBreakerStateManager(
                 // _TransitionToOpen already incremented EscalationLevel, so do NOT bump it
                 // again here — that would cause 4x escalation instead of the intended 2x.
                 // Log at Critical level so operators are alerted to the inconsistency.
-                logger.LogCritical(
-                    ex,
-                    "Pause callback failed while re-opening circuit for group {Group}. "
-                        + "Circuit is Open but transport may not be paused — manual ResetAsync may be required (escalation: {Escalation})",
-                    LogSanitizer.Sanitize(groupName),
-                    openInfo.Escalation
-                );
+                logger.ReopenPauseCallbackFailed(ex, groupName, openInfo.Escalation);
             }
         }
     }
@@ -1129,7 +1104,9 @@ internal sealed class CircuitBreakerStateManager(
             get => (CircuitBreakerState)Volatile.Read(ref _state);
             set => Volatile.Write(ref _state, (int)value);
         }
+#pragma warning disable IDE0032
         private int _consecutiveFailures;
+#pragma warning restore IDE0032
 
         /// <summary>
         /// Uses <see cref="Volatile"/> read/write for cross-thread visibility on the
@@ -1221,4 +1198,155 @@ internal sealed class CircuitBreakerStateManager(
         /// </summary>
         public required Func<Exception, bool> EffectiveIsTransient { get; init; }
     }
+}
+
+internal static partial class CircuitBreakerStateManagerLog
+{
+    [LoggerMessage(
+        EventId = 4100,
+        Level = LogLevel.Warning,
+        Message = "IsTransientException predicate threw for group {Group}; treating as non-transient"
+    )]
+    public static partial void IsTransientPredicateFailed(this ILogger logger, Exception exception, string? group);
+
+    [LoggerMessage(
+        EventId = 4101,
+        Level = LogLevel.Warning,
+        Message = "Circuit breaker {PreviousState} → Open for group {Group} (failures: {Failures}, escalation: {Escalation}, open for {Duration})"
+    )]
+    public static partial void CircuitOpened(
+        this ILogger logger,
+        CircuitBreakerState previousState,
+        string? group,
+        int failures,
+        int escalation,
+        TimeSpan duration
+    );
+
+    [LoggerMessage(
+        EventId = 4102,
+        Level = LogLevel.Warning,
+        Message = "Circuit breaker HalfOpen → Closed for group {Group} (non-transient failure, dependency considered healthy)"
+    )]
+    public static partial void CircuitClosedAfterNonTransientHalfOpenFailure(this ILogger logger, string? group);
+
+    public static void CircuitClosedAfterProbeSucceeded(this ILogger logger, string groupName)
+    {
+        if (!logger.IsEnabled(LogLevel.Information))
+        {
+            return;
+        }
+
+        logger.CircuitClosedAfterProbeSucceededCore(LogSanitizer.Sanitize(groupName));
+    }
+
+    [LoggerMessage(
+        EventId = 4103,
+        Level = LogLevel.Information,
+        Message = "Circuit breaker HalfOpen → Closed for group {Group} (probe succeeded)"
+    )]
+    private static partial void CircuitClosedAfterProbeSucceededCore(this ILogger logger, string? group);
+
+    [LoggerMessage(
+        EventId = 4104,
+        Level = LogLevel.Information,
+        Message = "Circuit breaker HalfOpen → Open (probe aborted by transport restart) for group {Group}"
+    )]
+    public static partial void CircuitReopenedAfterProbeAbort(this ILogger logger, string? group);
+
+    [LoggerMessage(
+        EventId = 4105,
+        Level = LogLevel.Warning,
+        Message = "Circuit breaker {PreviousState} → Closed (manual reset) for group {Group}"
+    )]
+    public static partial void CircuitClosedByManualReset(
+        this ILogger logger,
+        CircuitBreakerState previousState,
+        string? group
+    );
+
+    [LoggerMessage(
+        EventId = 4106,
+        Level = LogLevel.Warning,
+        Message = "Circuit breaker {PreviousState} → Open (forced) for group {Group} (escalation: {Escalation}, open for {Duration})"
+    )]
+    public static partial void CircuitForcedOpen(
+        this ILogger logger,
+        CircuitBreakerState previousState,
+        string? group,
+        int escalation,
+        TimeSpan duration
+    );
+
+    [LoggerMessage(
+        EventId = 4107,
+        Level = LogLevel.Debug,
+        Message = "Ignoring resume task failure during circuit-breaker disposal."
+    )]
+    public static partial void IgnoringResumeTaskFailureDuringDisposal(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 4108,
+        Level = LogLevel.Warning,
+        Message = "Unrecognized consumer group '{Group}' — returning no-op circuit state to prevent unbounded cardinality"
+    )]
+    public static partial void UnrecognizedConsumerGroup(this ILogger logger, string? group);
+
+    [LoggerMessage(
+        EventId = 4109,
+        Level = LogLevel.Warning,
+        Message = "Circuit breaker group count cap ({Cap}) reached — returning no-op state for new groups"
+    )]
+    public static partial void CircuitBreakerGroupCountCapReached(this ILogger logger, int cap);
+
+    public static void CircuitHalfOpen(this ILogger logger, string groupName)
+    {
+        if (!logger.IsEnabled(LogLevel.Information))
+        {
+            return;
+        }
+
+        logger.CircuitHalfOpenCore(LogSanitizer.Sanitize(groupName));
+    }
+
+    [LoggerMessage(
+        EventId = 4110,
+        Level = LogLevel.Information,
+        Message = "Circuit breaker Open → HalfOpen for group {Group}"
+    )]
+    private static partial void CircuitHalfOpenCore(this ILogger logger, string? group);
+
+    [LoggerMessage(
+        EventId = 4111,
+        Level = LogLevel.Error,
+        Message = "Resume callback failed for group {Group} during HalfOpen transition"
+    )]
+    public static partial void ResumeCallbackFailed(this ILogger logger, Exception exception, string? group);
+
+    public static void ReopenPauseCallbackFailed(
+        this ILogger logger,
+        Exception exception,
+        string groupName,
+        int escalation
+    )
+    {
+        if (!logger.IsEnabled(LogLevel.Critical))
+        {
+            return;
+        }
+
+        logger.ReopenPauseCallbackFailedCore(exception, LogSanitizer.Sanitize(groupName), escalation);
+    }
+
+    [LoggerMessage(
+        EventId = 4112,
+        Level = LogLevel.Critical,
+        Message = "Pause callback failed while re-opening circuit for group {Group}. Circuit is Open but transport may not be paused — manual ResetAsync may be required (escalation: {Escalation})"
+    )]
+    private static partial void ReopenPauseCallbackFailedCore(
+        this ILogger logger,
+        Exception exception,
+        string? group,
+        int escalation
+    );
 }

@@ -11,7 +11,8 @@ using Microsoft.Extensions.Options;
 namespace Headless.AuditLog;
 
 internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, ILogger<EfAuditChangeCapture> logger)
-    : IAuditChangeCapture, IAuditEntityIdResolver
+    : IAuditChangeCapture,
+        IAuditEntityIdResolver
 {
     private static readonly ConcurrentDictionary<PropertyInfo, AuditPropertyMetadata> _PropertyCache = new();
     private readonly ConcurrentDictionary<Type, bool> _entityFilterCache = new();
@@ -42,15 +43,21 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         foreach (var obj in entries)
         {
             if (obj is not EntityEntry entry)
+            {
                 continue;
+            }
 
             if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            {
                 continue;
+            }
 
             try
             {
                 if (!_ShouldAudit(entry, opts))
+                {
                     continue;
+                }
 
                 var data = _CaptureEntry(entry, opts, userId, accountId, tenantId, correlationId, timestamp);
 
@@ -61,13 +68,17 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
 
                     // Defer EntityId resolution for Added entities with store-generated keys.
                     if (entry.State == EntityState.Added)
+                    {
                         _deferredEntityIds.Add((data, entry));
+                    }
                 }
             }
             catch (Exception ex)
             {
                 if (ex is OptionsValidationException)
+                {
                     throw;
+                }
 
                 logger.LogWarning(
                     ex,
@@ -97,12 +108,12 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
     private void _LogDisabledWarningOnce()
     {
         if (_hasLoggedDisabledWarning)
+        {
             return;
+        }
 
         _hasLoggedDisabledWarning = true;
-        logger.LogWarning(
-            "Audit logging is disabled. Set AuditLogOptions.IsEnabled = true to enable audit capture."
-        );
+        logger.LogWarning("Audit logging is disabled. Set AuditLogOptions.IsEnabled = true to enable audit capture.");
     }
 
     private bool _ShouldAudit(EntityEntry entry, AuditLogOptions opts)
@@ -124,12 +135,16 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         if (opts.AuditByDefault)
         {
             if (clrType.GetCustomAttribute<AuditIgnoreAttribute>() is not null)
+            {
                 return false;
+            }
         }
         else
         {
             if (!typeof(IAuditTracked).IsAssignableFrom(clrType))
+            {
                 return false;
+            }
         }
 
         return !_ShouldExcludeEntity(clrType, opts);
@@ -138,7 +153,9 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
     private bool _ShouldExcludeEntity(Type clrType, AuditLogOptions opts)
     {
         if (opts.EntityFilter is null)
+        {
             return false;
+        }
 
         return _entityFilterCache.GetOrAdd(clrType, static (type, filter) => filter(type), opts.EntityFilter);
     }
@@ -146,7 +163,9 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
     private bool _ShouldExcludeProperty(Type clrType, string propertyName, AuditLogOptions opts)
     {
         if (opts.PropertyFilter is null)
+        {
             return false;
+        }
 
         return _propertyFilterCache.GetOrAdd(
             (clrType, propertyName),
@@ -176,7 +195,9 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         };
 
         if (changeType is null)
+        {
             return null;
+        }
 
         var oldValues = new Dictionary<string, object?>(StringComparer.Ordinal);
         var newValues = new Dictionary<string, object?>(StringComparer.Ordinal);
@@ -186,23 +207,31 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         foreach (var property in entry.Properties)
         {
             if (property.Metadata.PropertyInfo is null)
+            {
                 continue; // shadow properties — skip
+            }
 
             var propertyName = property.Metadata.Name;
 
             // Default framework property exclusion
             if (opts.DefaultExcludedProperties.Contains(propertyName))
+            {
                 continue;
+            }
 
             var meta = _GetPropertyMetadata(property.Metadata.PropertyInfo);
 
             // [AuditIgnore] — skip entirely
             if (meta.IsIgnored)
+            {
                 continue;
+            }
 
             // Option-based property filter
             if (_ShouldExcludeProperty(clrType, propertyName, opts))
+            {
                 continue;
+            }
 
             _CaptureActionFlags(actionContext, propertyName, property);
 
@@ -239,7 +268,9 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
 
         // Skip updates with no real changed fields
         if (changeType == AuditChangeType.Updated && changedFields.Count == 0)
+        {
             return null;
+        }
 
         var action = _DetermineAction(changeType.Value, actionContext);
         var (entityType, entityId) = _GetEntityIdentity(entry);
@@ -264,7 +295,9 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
     private static void _CaptureActionFlags(ActionContext context, string propertyName, PropertyEntry property)
     {
         if (!property.IsModified)
+        {
             return;
+        }
 
         if (propertyName == "IsDeleted")
         {
@@ -291,13 +324,24 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         if (changeType == AuditChangeType.Updated)
         {
             if (context.IsSoftDeleted)
+            {
                 return AuditActionNames.SoftDeleted;
+            }
+
             if (context.IsRestored)
+            {
                 return AuditActionNames.Restored;
+            }
+
             if (context.IsSuspended)
+            {
                 return AuditActionNames.Suspended;
+            }
+
             if (context.IsUnsuspended)
+            {
                 return AuditActionNames.Unsuspended;
+            }
         }
 
         return changeType switch
@@ -345,9 +389,7 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
                     ?? throw new OptionsValidationException(
                         nameof(AuditLogOptions),
                         typeof(AuditLogOptions),
-                        [
-                            "SensitiveValueTransformer must be configured when SensitiveDataStrategy is Transform."
-                        ]
+                        ["SensitiveValueTransformer must be configured when SensitiveDataStrategy is Transform."]
                     );
 
                 try
@@ -450,7 +492,9 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         var key = entry.Metadata.FindPrimaryKey();
 
         if (key is null)
+        {
             return (entry.Metadata.ClrType.FullName, null);
+        }
 
         var values = key.Properties.Select(p => entry.Property(p.Name).CurrentValue).ToArray();
 
@@ -460,10 +504,14 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
     private static string? _FormatEntityId(object?[] values)
     {
         if (values.Length == 0)
+        {
             return null;
+        }
 
         if (values.Length == 1)
+        {
             return values[0]?.ToString();
+        }
 
         return JsonSerializer.Serialize(values.Select(static value => value?.ToString()).ToArray());
     }

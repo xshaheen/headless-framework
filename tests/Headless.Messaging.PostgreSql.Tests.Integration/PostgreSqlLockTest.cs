@@ -58,7 +58,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.OpenAsync();
         // Reset lock table
         await connection.ExecuteAsync(
-            "UPDATE messaging.lock SET \"Instance\"='', \"LastLockTime\"='0001-01-01 00:00:00'"
+            "UPDATE messaging.lock SET \"Instance\"='', \"LastLockTime\"='0001-01-01 00:00:00+00'"
         );
         await base.DisposeAsyncCore();
     }
@@ -213,7 +213,7 @@ public sealed class PostgreSqlLockTest(PostgreSqlTestFixture fixture) : TestBase
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await connection.ExecuteAsync(
-            "UPDATE messaging.lock SET \"Instance\"='', \"LastLockTime\"='0001-01-01 00:00:00'"
+            "UPDATE messaging.lock SET \"Instance\"='', \"LastLockTime\"='0001-01-01 00:00:00+00'"
         );
 
         // when - all instances try to acquire simultaneously

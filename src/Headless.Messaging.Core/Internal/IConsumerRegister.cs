@@ -236,7 +236,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             catch (BrokerConnectionException e)
             {
                 _isHealthy = false;
-                _logger.LogError(e, "Failed to connect to broker");
+                _logger.FailedToConnectToBroker(e);
                 return;
             }
 
@@ -296,11 +296,11 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                             catch (BrokerConnectionException e)
                             {
                                 _isHealthy = false;
-                                _logger.LogError(e, "Failed to connect to broker");
+                                _logger.FailedToConnectToBroker(e);
                             }
                             catch (Exception e)
                             {
-                                _logger.LogError(e, "An exception occurred in consumer processing loop");
+                                _logger.ConsumerProcessingLoopFailed(e);
                             }
                         },
                         groupCts.Token,
@@ -316,7 +316,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
     private async ValueTask _PauseGroupAsync(GroupHandle handle)
     {
-        _logger.LogWarning("Circuit breaker opened for group '{GroupName}'. Pausing consumers.", handle.GroupName);
+        _logger.CircuitBreakerOpenedPausingConsumers(handle.GroupName);
 
         // Do NOT cancel the CTS here — the ListeningAsync loops must stay alive so they can
         // resume without restarting tasks. Transport-level pause (PauseAsync) is sufficient:
@@ -334,7 +334,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to pause consumer client for group '{GroupName}'.", handle.GroupName);
+                    _logger.PauseConsumerClientFailed(ex, handle.GroupName);
                 }
             })
         );
@@ -342,7 +342,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
     private async ValueTask _ResumeGroupAsync(GroupHandle handle)
     {
-        _logger.LogDebug("Resuming consumers for group '{GroupName}' (half-open).", handle.GroupName);
+        _logger.ResumingConsumersHalfOpen(handle.GroupName);
 
         // No CTS recreation needed — the original CTS was never cancelled during pause,
         // so ListeningAsync loops are still running. Just un-gate the transport.
@@ -359,7 +359,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to resume consumer client for group '{GroupName}'.", handle.GroupName);
+                    _logger.ResumeConsumerClientFailed(ex, handle.GroupName);
                     failures.Add(ex);
                 }
             })
@@ -410,10 +410,12 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                     }
                 }
 
-                _logger.MessageReceived(
-                    LogSanitizer.Sanitize(transportMessage.GetId()) ?? "(null)",
-                    LogSanitizer.Sanitize(transportMessage.GetName()) ?? "(null)"
-                );
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    var safeMessageId = LogSanitizer.Sanitize(transportMessage.GetId()) ?? "(null)";
+                    var safeMessageName = LogSanitizer.Sanitize(transportMessage.GetName()) ?? "(null)";
+                    _logger.MessageReceived(safeMessageId, safeMessageName);
+                }
 
                 tracingTimestamp = _TracingBefore(transportMessage, _serverAddress);
 
@@ -562,54 +564,51 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         {
             case MqLogType.ConsumerCancelled:
                 _isHealthy = false;
-                _logger.LogWarning("RabbitMQ consumer cancelled. --> {Reason}", reason);
+                _logger.RabbitMqConsumerCancelled(reason);
                 break;
             case MqLogType.ConsumerRegistered:
                 _isHealthy = true;
-                _logger.LogInformation("RabbitMQ consumer registered. --> {Reason}", reason);
+                _logger.RabbitMqConsumerRegistered(reason);
                 break;
             case MqLogType.ConsumerUnregistered:
-                _logger.LogWarning("RabbitMQ consumer unregistered. --> {Reason}", reason);
+                _logger.RabbitMqConsumerUnregistered(reason);
                 break;
             case MqLogType.ConsumerShutdown:
                 _isHealthy = false;
-                _logger.LogWarning("RabbitMQ consumer shutdown. --> {Reason}", reason);
+                _logger.RabbitMqConsumerShutdown(reason);
                 break;
             case MqLogType.ConsumeError:
-                _logger.LogError("Kafka client consume error. --> {Reason}", reason);
+                _logger.KafkaClientConsumeError(reason);
                 break;
             case MqLogType.ConsumeRetries:
-                _logger.LogWarning("Kafka client consume exception, retying... --> {Reason}", reason);
+                _logger.KafkaClientConsumeRetrying(reason);
                 break;
             case MqLogType.ServerConnError:
                 _isHealthy = false;
-                _logger.LogCritical("Kafka server connection error. --> {Reason}", reason);
+                _logger.KafkaServerConnectionError(reason);
                 break;
             case MqLogType.ExceptionReceived:
-                _logger.LogError("AzureServiceBus subscriber received an error. --> {Reason}", reason);
+                _logger.AzureServiceBusSubscriberReceivedError(reason);
                 break;
             case MqLogType.AsyncErrorEvent:
-                _logger.LogError("NATS subscriber received an error. --> {Reason}", reason);
+                _logger.NatsSubscriberReceivedError(reason);
                 break;
             case MqLogType.ConnectError:
                 _isHealthy = false;
-                _logger.LogError("NATS server connection error. --> {Reason}", reason);
+                _logger.NatsServerConnectionError(reason);
                 break;
             case MqLogType.InvalidIdFormat:
-                _logger.LogError(
-                    "AmazonSQS subscriber delete inflight message failed, invalid id. --> {Reason}",
-                    reason
-                );
+                _logger.AmazonSqsInvalidIdFormat(reason);
                 break;
             case MqLogType.MessageNotInflight:
-                _logger.LogError(
-                    "AmazonSQS subscriber change message's visibility failed, message isn't in flight. --> {Reason}",
-                    reason
-                );
+                _logger.AmazonSqsMessageNotInflight(reason);
                 break;
             case MqLogType.RedisConsumeError:
                 _isHealthy = true;
-                _logger.LogError("Redis client consume error. --> {Reason}", reason);
+                _logger.RedisClientConsumeError(reason);
+                break;
+            case MqLogType.TransportConfigurationWarning:
+                _logger.TransportConfigurationWarning(reason);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown {nameof(MqLogType)}={logMessage.LogType}");

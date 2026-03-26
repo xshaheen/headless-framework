@@ -96,14 +96,14 @@ internal sealed class AzureServiceBusConsumerClient(
                 new CreateRuleOptions { Name = newRule, Filter = currentRuleToAdd }
             );
 
-            logger.LogInformation("Azure Service Bus add rule: {NewRule}", newRule);
+            logger.RuleAdded(newRule);
         }
 
         foreach (var oldRule in allRuleNames.Except(topicsList, StringComparer.Ordinal))
         {
             await _administrationClient.DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule);
 
-            logger.LogInformation("Azure Service Bus remove rule: {OldRule}", oldRule);
+            logger.RuleRemoved(oldRule);
         }
     }
 
@@ -144,8 +144,15 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
-        if (!await _pauseGate.PauseAsync()) return;
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
+        if (!await _pauseGate.PauseAsync())
+        {
+            return;
+        }
 
         if (_serviceBusProcessor is not null)
         {
@@ -155,11 +162,17 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
 
         // ASB is push-based — release the gate first (only affects startup gating),
         // then restart the processor which delivers messages via callbacks.
-        if (!await _pauseGate.ResumeAsync()) return;
+        if (!await _pauseGate.ResumeAsync())
+        {
+            return;
+        }
 
         if (_serviceBusProcessor is null || Volatile.Read(ref _hasStartedProcessing) == 0)
         {
@@ -176,7 +189,10 @@ internal sealed class AzureServiceBusConsumerClient(
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
 
         _pauseGate.Release();
 
@@ -233,24 +249,28 @@ internal sealed class AzureServiceBusConsumerClient(
 
         if (groupConcurrent > 0)
         {
-            await _semaphore.WaitAsync();
-            _ = Task.Run(
-                async () =>
-                {
-                    try
+            await _semaphore.WaitAsync().ConfigureAwait(false);
+            _ObserveBackgroundHandler(
+                Task.Run(
+                    async () =>
                     {
-                        await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg));
-                    }
-                    finally
-                    {
-                        _ReleaseSemaphore();
-                    }
-                }
-            ).ConfigureAwait(false);
+                        try
+                        {
+                            await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg))
+                                .ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            _ReleaseSemaphore();
+                        }
+                    },
+                    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
+                )
+            );
         }
         else
         {
-            await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg));
+            await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
         }
     }
 
@@ -258,7 +278,31 @@ internal sealed class AzureServiceBusConsumerClient(
     {
         var context = _ConvertMessage(arg.Message);
 
-        await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg));
+        await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
+    }
+
+    private void _ObserveBackgroundHandler(Task task)
+    {
+        _ = task.ContinueWith(
+            completedTask =>
+            {
+                var exception = completedTask.Exception?.GetBaseException();
+                if (exception is not null)
+                {
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ConsumeError,
+                            Reason =
+                                $"Unhandled exception in Azure Service Bus background message handler: {exception}",
+                        }
+                    );
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     public async Task ConnectAsync()
@@ -283,10 +327,7 @@ internal sealed class AzureServiceBusConsumerClient(
                 if (_asbOptions.AutoProvision)
                 {
                     _administrationClient = _asbOptions.TokenCredential is not null
-                        ? new ServiceBusAdministrationClient(
-                            _asbOptions.Namespace,
-                            _asbOptions.TokenCredential
-                        )
+                        ? new ServiceBusAdministrationClient(_asbOptions.Namespace, _asbOptions.TokenCredential)
                         : new ServiceBusAdministrationClient(_asbOptions.ConnectionString);
 
                     var topicConfigs = _asbOptions
@@ -302,7 +343,7 @@ internal sealed class AzureServiceBusConsumerClient(
                         if (!await _administrationClient.TopicExistsAsync(topicPath))
                         {
                             await _administrationClient.CreateTopicAsync(topicPath);
-                            logger.LogInformation("Azure Service Bus created topic: {TopicPath}", topicPath);
+                            logger.TopicCreated(topicPath);
                         }
 
                         if (
@@ -321,11 +362,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
                             await _administrationClient.CreateSubscriptionAsync(subscriptionDescription);
 
-                            logger.LogInformation(
-                                "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}",
-                                topicPath,
-                                subscriptionName
-                            );
+                            logger.SubscriptionCreated(topicPath, subscriptionName);
                         }
                     }
                 }
@@ -386,10 +423,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
                 if (!added)
                 {
-                    logger.LogWarning(
-                        "Not possible to add the custom header {Header}. A value with the same key already exists in the Message headers.",
-                        customHeader.Key
-                    );
+                    logger.CustomHeaderSkipped(customHeader.Key);
                 }
             }
         }
@@ -451,4 +485,34 @@ internal sealed class AzureServiceBusConsumerClient(
     }
 
     #endregion private methods
+}
+
+internal static partial class AzureServiceBusConsumerClientLog
+{
+    [LoggerMessage(EventId = 3008, Level = LogLevel.Information, Message = "Azure Service Bus add rule: {NewRule}")]
+    public static partial void RuleAdded(this ILogger logger, string newRule);
+
+    [LoggerMessage(EventId = 3009, Level = LogLevel.Information, Message = "Azure Service Bus remove rule: {OldRule}")]
+    public static partial void RuleRemoved(this ILogger logger, string oldRule);
+
+    [LoggerMessage(
+        EventId = 3010,
+        Level = LogLevel.Information,
+        Message = "Azure Service Bus created topic: {TopicPath}"
+    )]
+    public static partial void TopicCreated(this ILogger logger, string topicPath);
+
+    [LoggerMessage(
+        EventId = 3011,
+        Level = LogLevel.Information,
+        Message = "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}"
+    )]
+    public static partial void SubscriptionCreated(this ILogger logger, string topicPath, string subscriptionName);
+
+    [LoggerMessage(
+        EventId = 3012,
+        Level = LogLevel.Warning,
+        Message = "Not possible to add the custom header {Header}. A value with the same key already exists in the Message headers."
+    )]
+    public static partial void CustomHeaderSkipped(this ILogger logger, string header);
 }

@@ -30,7 +30,8 @@ internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemory
             cancellationToken.ThrowIfCancellationRequested();
 
             queue.Send(message);
-            _logger.LogDebug("Event message [{MessageName}] has been published.", message.GetName());
+            var messageName = message.GetName();
+            _logger.MessagePublished(messageName);
             return Task.FromResult(OperateResult.Success);
         }
         catch (OperationCanceledException)
@@ -45,4 +46,14 @@ internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemory
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal static partial class InMemoryQueueTransportLog
+{
+    [LoggerMessage(
+        EventId = 3000,
+        Level = LogLevel.Debug,
+        Message = "Event message [{MessageName}] has been published."
+    )]
+    public static partial void MessagePublished(this ILogger logger, string messageName);
 }

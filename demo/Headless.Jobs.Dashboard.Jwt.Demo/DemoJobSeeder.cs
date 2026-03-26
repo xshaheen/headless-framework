@@ -40,7 +40,10 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
             {
                 var count = Random.Shared.Next(2, 5);
                 await ScheduleTimeJobs(count, stoppingToken);
-                logger.LogInformation("Scheduled {Count} time jobs (cycle #{Cycle})", count, _counter);
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation("Scheduled {Count} time jobs (cycle #{Cycle})", count, _counter);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -64,9 +67,13 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
             ct
         );
         if (!r1.IsSucceeded)
+        {
             logger.LogError("Failed to seed CleanupExpiredSessions: {Error}", r1.Exception?.Message);
+        }
         else
+        {
             logger.LogInformation("Seeded cron job: Demo_CleanupExpiredSessions");
+        }
 
         var r2 = await cronManager.AddAsync(
             new CronJobEntity
@@ -78,9 +85,13 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
             ct
         );
         if (!r2.IsSucceeded)
+        {
             logger.LogError("Failed to seed HealthCheck: {Error}", r2.Exception?.Message);
+        }
         else
+        {
             logger.LogInformation("Seeded cron job: Demo_HealthCheck");
+        }
     }
 
     private async Task ScheduleTimeJobs(int count, CancellationToken ct)

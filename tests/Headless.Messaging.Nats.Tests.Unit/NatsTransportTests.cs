@@ -1,17 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Nats;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using NATS.Client;
 using NATS.Client.JetStream;
-using NSubstitute.ExceptionExtensions;
 using MessagingHeaders = Headless.Messaging.Headers;
-using NatsPublishOptions = NATS.Client.JetStream.PublishOptions;
+using NatsHeaders = NATS.Client.Core.NatsHeaders;
 
 namespace Tests;
 
@@ -24,17 +20,14 @@ public sealed class NatsTransportTests : TestBase
     {
         _logger = NullLogger<NatsTransport>.Instance;
         _pool = Substitute.For<INatsConnectionPool>();
-
         _pool.ServersAddress.Returns("nats://localhost:4222");
     }
 
     [Fact]
     public async Task should_have_correct_broker_address()
     {
-        // given, when
         await using var transport = new NatsTransport(_logger, _pool);
 
-        // then
         transport.BrokerAddress.Name.Should().Be("nats");
         transport.BrokerAddress.Endpoint.Should().Be("nats://localhost:4222");
     }
@@ -42,223 +35,77 @@ public sealed class NatsTransportTests : TestBase
     [Fact]
     public async Task should_propagate_cancellation()
     {
-        // given
         await using var transport = new NatsTransport(_logger, _pool);
-        var connection = Substitute.For<IConnection>();
-        _pool.RentConnection().Returns(connection);
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        // when
         var act = async () => await transport.SendAsync(_CreateTransportMessage("msg-123", "TestMessage"), cts.Token);
 
-        // then
         await act.Should().ThrowAsync<OperationCanceledException>();
-        _pool.Received(1).Return(connection);
-    }
-
-    [Fact]
-    public async Task should_rent_connection_when_sending()
-    {
-        // given
-        await using var transport = new NatsTransport(_logger, _pool);
-        var message = _CreateTransportMessage("msg-123", "TestMessage");
-
-        var connection = Substitute.For<IConnection>();
-        var jetStream = Substitute.For<IJetStream>();
-        _pool.RentConnection().Returns(connection);
-        connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
-        jetStream
-            .PublishAsync(Arg.Any<Msg>(), Arg.Any<NatsPublishOptions>())
-            .ThrowsAsync(new NATSException("Connection closed")); // Force an exception to test the flow
-
-        // when
-        await transport.SendAsync(message);
-
-        // then
-        _pool.Received(1).RentConnection();
-        _pool.Received(1).Return(connection);
-    }
-
-    [Fact]
-    public async Task should_return_connection_to_pool_on_exception()
-    {
-        // given
-        await using var transport = new NatsTransport(_logger, _pool);
-        var message = _CreateTransportMessage("msg-123", "TestMessage");
-
-        var connection = Substitute.For<IConnection>();
-        var jetStream = Substitute.For<IJetStream>();
-        _pool.RentConnection().Returns(connection);
-        connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
-        jetStream
-            .PublishAsync(Arg.Any<Msg>(), Arg.Any<NatsPublishOptions>())
-            .ThrowsAsync(new InvalidOperationException("Publish failed"));
-
-        // when
-        var result = await transport.SendAsync(message);
-
-        // then
-        result.Succeeded.Should().BeFalse();
-        result.Exception.Should().BeOfType<PublisherSentFailedException>();
-        _pool.Received(1).Return(connection);
-    }
-
-    [Fact]
-    public async Task should_wrap_nats_exception_in_publisher_failed_exception()
-    {
-        // given
-        await using var transport = new NatsTransport(_logger, _pool);
-        var message = _CreateTransportMessage("msg-123", "TestMessage");
-
-        var connection = Substitute.For<IConnection>();
-        var jetStream = Substitute.For<IJetStream>();
-        _pool.RentConnection().Returns(connection);
-        connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
-        jetStream
-            .PublishAsync(Arg.Any<Msg>(), Arg.Any<NatsPublishOptions>())
-            .ThrowsAsync(new NATSException("NATS connection closed"));
-
-        // when
-        var result = await transport.SendAsync(message);
-
-        // then
-        result.Succeeded.Should().BeFalse();
-        result.Exception.Should().BeOfType<PublisherSentFailedException>();
-        result.Exception!.InnerException.Should().BeOfType<NATSException>();
-    }
-
-    [Fact]
-    public async Task should_pass_message_headers_to_nats()
-    {
-        // given
-        await using var transport = new NatsTransport(_logger, _pool);
-        var message = new TransportMessage(
-            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                { MessagingHeaders.MessageId, "msg-123" },
-                { MessagingHeaders.MessageName, "TestMessage" },
-                { "CustomHeader", "CustomValue" },
-            },
-            body: "test-body"u8.ToArray()
-        );
-
-        var connection = Substitute.For<IConnection>();
-        var jetStream = Substitute.For<IJetStream>();
-        _pool.RentConnection().Returns(connection);
-        connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
-
-        Msg? capturedMsg = null;
-        jetStream
-            .PublishAsync(Arg.Do<Msg>(m => capturedMsg = m), Arg.Any<NatsPublishOptions>())
-            .ThrowsAsync(new NATSException("Test exception")); // Force exception after capture
-
-        // when
-        await transport.SendAsync(message);
-
-        // then
-        capturedMsg.Should().NotBeNull();
-        capturedMsg!.Header["CustomHeader"].Should().Be("CustomValue");
-        capturedMsg.Header[MessagingHeaders.MessageId].Should().Be("msg-123");
-    }
-
-    [Fact]
-    public async Task should_use_message_name_as_subject()
-    {
-        // given
-        await using var transport = new NatsTransport(_logger, _pool);
-        var message = _CreateTransportMessage("msg-123", "orders.created");
-
-        var connection = Substitute.For<IConnection>();
-        var jetStream = Substitute.For<IJetStream>();
-        _pool.RentConnection().Returns(connection);
-        connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
-
-        Msg? capturedMsg = null;
-        jetStream
-            .PublishAsync(Arg.Do<Msg>(m => capturedMsg = m), Arg.Any<NatsPublishOptions>())
-            .ThrowsAsync(new NATSException("Test exception")); // Force exception after capture
-
-        // when
-        await transport.SendAsync(message);
-
-        // then
-        capturedMsg.Should().NotBeNull();
-        capturedMsg!.Subject.Should().Be("orders.created");
-    }
-
-    [Fact]
-    public async Task should_use_message_id_in_publish_options()
-    {
-        // given
-        await using var transport = new NatsTransport(_logger, _pool);
-        var message = _CreateTransportMessage("unique-msg-id", "TestMessage");
-
-        var connection = Substitute.For<IConnection>();
-        var jetStream = Substitute.For<IJetStream>();
-        _pool.RentConnection().Returns(connection);
-        connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
-
-        NatsPublishOptions? capturedOptions = null;
-        jetStream
-            .PublishAsync(Arg.Any<Msg>(), Arg.Do<NatsPublishOptions>(o => capturedOptions = o))
-            .ThrowsAsync(new NATSException("Test exception")); // Force exception after capture
-
-        // when
-        await transport.SendAsync(message);
-
-        // then
-        capturedOptions.Should().NotBeNull();
-        capturedOptions!.MessageId.Should().Be("unique-msg-id");
     }
 
     [Fact]
     public async Task should_dispose_without_error()
     {
-        // given
         await using var transport = new NatsTransport(_logger, _pool);
 
-        // when
         // ReSharper disable once DisposeOnUsingVariable
         // ReSharper disable once AccessToDisposedClosure
         var act = async () => await transport.DisposeAsync();
 
-        // then
         await act.Should().NotThrowAsync();
     }
 
     [Fact]
-    public async Task should_include_message_body_in_nats_message()
+    public void CreatePublishOpts_should_use_message_id_for_jetstream_deduplication()
     {
-        // given
-        await using var transport = new NatsTransport(_logger, _pool);
-        var expectedBody = "test message content"u8.ToArray();
+        var opts = NatsTransport.CreatePublishOpts(_CreateTransportMessage("msg-123", "TestMessage"));
+
+        opts.Should().BeEquivalentTo(new NatsJSPubOpts { MsgId = "msg-123" });
+    }
+
+    [Fact]
+    public void CreatePublishHeaders_should_return_null_when_all_values_are_null()
+    {
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { { "key1", null }, { "key2", null } },
+            body: "test"u8.ToArray()
+        );
+
+        NatsTransport.CreatePublishHeaders(message).Should().BeNull();
+    }
+
+    [Fact]
+    public void CreatePublishHeaders_should_include_only_non_null_values()
+    {
         var message = new TransportMessage(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
-                { MessagingHeaders.MessageId, "msg-123" },
-                { MessagingHeaders.MessageName, "TestMessage" },
+                { "key1", "value1" },
+                { "key2", null },
+                { "key3", "value3" },
             },
-            body: expectedBody
+            body: "test"u8.ToArray()
         );
 
-        var connection = Substitute.For<IConnection>();
-        var jetStream = Substitute.For<IJetStream>();
-        _pool.RentConnection().Returns(connection);
-        connection.CreateJetStreamContext(Arg.Any<JetStreamOptions>()).Returns(jetStream);
+        var headers = NatsTransport.CreatePublishHeaders(message);
 
-        Msg? capturedMsg = null;
-        jetStream
-            .PublishAsync(Arg.Do<Msg>(m => capturedMsg = m), Arg.Any<NatsPublishOptions>())
-            .ThrowsAsync(new NATSException("Test exception")); // Force exception after capture
+        headers.Should().NotBeNull();
+        headers!.Should().HaveCount(2);
+        headers["key1"].ToString().Should().Be("value1");
+        headers["key3"].ToString().Should().Be("value3");
+    }
 
-        // when
-        await transport.SendAsync(message);
+    [Fact]
+    public void CreatePublishHeaders_should_return_null_when_headers_are_empty()
+    {
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal),
+            body: "test"u8.ToArray()
+        );
 
-        // then
-        capturedMsg.Should().NotBeNull();
-        capturedMsg!.Data.Should().BeEquivalentTo(expectedBody);
+        NatsTransport.CreatePublishHeaders(message).Should().BeNull();
     }
 
     private static TransportMessage _CreateTransportMessage(string messageId, string messageName)

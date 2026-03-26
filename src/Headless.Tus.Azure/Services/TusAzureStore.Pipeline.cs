@@ -20,7 +20,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
         Argument.IsNotNull(fileId);
         Argument.IsNotNull(pipeReader);
 
-        _logger.LogTrace("Appending data using the PipeReader for file '{FileId}'", fileId);
+        _logger.PipeReaderAppendStarted(fileId);
 
         var blobClient = _GetBlobClient(fileId);
         var blockBlobClient = _GetBlockBlobClient(fileId);
@@ -102,12 +102,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                 // Tell the PipeReader we've consumed up to this point
                 pipeReader.AdvanceTo(consumed);
 
-                _logger.LogDebug(
-                    "Staged {BytesWritten} bytes for file '{FileId}' ({BlockCount} blocks)",
-                    bytesWrittenThisRequest,
-                    fileId,
-                    chunkBlockIds.Count
-                );
+                _logger.BlocksStaged(bytesWrittenThisRequest, fileId, chunkBlockIds.Count);
             }
 
             await pipeReader.CompleteAsync().ConfigureAwait(false);
@@ -132,11 +127,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                 azureFile.Metadata.LastChunkChecksum = Convert.ToBase64String(hasher.Hash ?? []);
                 await _UpdateMetadataAsync(blobClient, azureFile, cancellationToken).ConfigureAwait(false);
 
-                _logger.LogDebug(
-                    "Stored chunk metadata for file '{FileId}': {BlockCount} blocks staged for checksum verification",
-                    fileId,
-                    chunkBlockIds.Count
-                );
+                _logger.StoredPipelineChunkMetadata(fileId, chunkBlockIds.Count);
             }
         }
         catch (Exception e)
@@ -157,7 +148,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
             if (e is OperationCanceledException or TaskCanceledException)
             {
-                _logger.LogWarning("Cancelled the upload operation for file id '{FileId}'", fileId);
+                _logger.UploadOperationCanceled(fileId);
             }
             else
             {
@@ -205,4 +196,35 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             throw new TusStoreException(message.ToString(CultureInfo.InvariantCulture));
         }
     }
+}
+
+internal static partial class TusAzureStorePipelineLog
+{
+    [LoggerMessage(
+        EventId = 3226,
+        Level = LogLevel.Trace,
+        Message = "Appending data using the PipeReader for file '{FileId}'"
+    )]
+    public static partial void PipeReaderAppendStarted(this ILogger logger, string fileId);
+
+    [LoggerMessage(
+        EventId = 3227,
+        Level = LogLevel.Debug,
+        Message = "Staged {BytesWritten} bytes for file '{FileId}' ({BlockCount} blocks)"
+    )]
+    public static partial void BlocksStaged(this ILogger logger, long bytesWritten, string fileId, int blockCount);
+
+    [LoggerMessage(
+        EventId = 3228,
+        Level = LogLevel.Debug,
+        Message = "Stored chunk metadata for file '{FileId}': {BlockCount} blocks staged for checksum verification"
+    )]
+    public static partial void StoredPipelineChunkMetadata(this ILogger logger, string fileId, int blockCount);
+
+    [LoggerMessage(
+        EventId = 3229,
+        Level = LogLevel.Warning,
+        Message = "Cancelled the upload operation for file id '{FileId}'"
+    )]
+    public static partial void UploadOperationCanceled(this ILogger logger, string fileId);
 }

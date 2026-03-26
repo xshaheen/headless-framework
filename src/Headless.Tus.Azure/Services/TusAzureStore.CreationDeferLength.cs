@@ -22,13 +22,26 @@ public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
             blobInfo.Metadata.UploadLength = uploadLength;
             await _UpdateMetadataAsync(blobClient, blobInfo, cancellationToken);
 
-            _logger.LogDebug("Set upload length for file {FileId} to {UploadLength}", fileId, uploadLength);
+            _logger.UploadLengthSet(fileId, uploadLength);
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Failed to set upload length for file {FileId}", fileId);
+            _logger.UploadLengthSetFailed(e, fileId);
 
             throw;
         }
     }
+}
+
+internal static partial class TusAzureStoreCreationDeferLengthLog
+{
+    [LoggerMessage(
+        EventId = 3202,
+        Level = LogLevel.Debug,
+        Message = "Set upload length for file {FileId} to {UploadLength}"
+    )]
+    public static partial void UploadLengthSet(this ILogger logger, string fileId, long uploadLength);
+
+    [LoggerMessage(EventId = 3203, Level = LogLevel.Error, Message = "Failed to set upload length for file {FileId}")]
+    public static partial void UploadLengthSetFailed(this ILogger logger, Exception e, string fileId);
 }

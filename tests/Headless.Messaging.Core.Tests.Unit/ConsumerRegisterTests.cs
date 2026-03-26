@@ -216,7 +216,10 @@ public sealed class ConsumerRegisterTests : TestBase
         // when — call ExecuteAsync directly (the internal path ReStartAsync uses after PulseAsync)
         var executeAsync = typeof(ConsumerRegister).GetMethod(
             "ExecuteAsync",
-            BindingFlags.Public | BindingFlags.Instance
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            binder: null,
+            Type.EmptyTypes,
+            modifiers: null
         )!;
         await (ValueTask)executeAsync.Invoke(register, null)!;
 

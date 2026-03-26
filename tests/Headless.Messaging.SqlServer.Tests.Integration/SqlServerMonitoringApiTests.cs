@@ -249,6 +249,31 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     }
 
     [Fact]
+    public async Task should_preserve_total_items_for_empty_later_pages()
+    {
+        // given
+        for (var i = 0; i < 5; i++)
+        {
+            await _CreatePublishedMessage(StatusName.Succeeded);
+        }
+
+        var query = new MessageQuery
+        {
+            MessageType = MessageType.Publish,
+            StatusName = nameof(StatusName.Succeeded),
+            CurrentPage = 3,
+            PageSize = 2,
+        };
+
+        // when
+        var page = await _monitoringApi.GetMessagesAsync(query, AbortToken);
+
+        // then
+        page.Items.Should().BeEmpty();
+        page.TotalItems.Should().Be(5);
+    }
+
+    [Fact]
     public async Task should_filter_messages_by_status()
     {
         // given

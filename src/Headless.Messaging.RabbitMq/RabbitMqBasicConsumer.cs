@@ -37,7 +37,8 @@ public sealed class RabbitMqBasicConsumer(
             await _semaphore.WaitAsync(cancellationToken);
             // Copy of the body safe to use outside the RabbitMQ thread context
             ReadOnlyMemory<byte> safeBody = body.ToArray();
-            _ = Task.Run(
+            _ObserveBackgroundHandler(
+                Task.Run(
                     async () =>
                     {
                         try
@@ -53,38 +54,14 @@ public sealed class RabbitMqBasicConsumer(
                                 )
                                 .ConfigureAwait(false);
                         }
-                        catch (Exception ex)
+                        finally
                         {
-                            var args = new LogMessageEventArgs
-                            {
-                                LogType = MqLogType.ConsumeError,
-                                Reason = $"Error consuming message: {ex}",
-                            };
-
-                            logCallback(args);
-
-                            try
-                            {
-                                if (Channel.IsOpen)
-                                {
-                                    await Channel.BasicNackAsync(deliveryTag, multiple: false, requeue: true);
-                                }
-                            }
-#pragma warning disable ERP022
-                            catch
-                            {
-                                // Nack failure already logged via callback
-                            }
-#pragma warning restore ERP022
-                            finally
-                            {
-                                _semaphore.Release();
-                            }
+                            _ReleaseSemaphore();
                         }
                     },
-                    cancellationToken
+                    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                 )
-                .ConfigureAwait(false);
+            );
         }
         else
         {
@@ -93,7 +70,7 @@ public sealed class RabbitMqBasicConsumer(
         }
     }
 
-    private Task _Consume(
+    private async Task _Consume(
         string consumerTag,
         ulong deliveryTag,
         bool redelivered,
@@ -103,46 +80,80 @@ public sealed class RabbitMqBasicConsumer(
         ReadOnlyMemory<byte> body
     )
     {
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
-
-        if (properties.Headers != null)
+        TransportMessage message;
+        try
         {
-            foreach (var header in properties.Headers)
+            var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+            if (properties.Headers != null)
             {
-                if (header.Value is byte[] val)
+                foreach (var header in properties.Headers)
                 {
-                    headers.Add(header.Key, Encoding.UTF8.GetString(val));
-                }
-                else
-                {
-                    headers.Add(header.Key, header.Value?.ToString());
+                    if (header.Value is byte[] val)
+                    {
+                        headers.Add(header.Key, Encoding.UTF8.GetString(val));
+                    }
+                    else
+                    {
+                        headers.Add(header.Key, header.Value?.ToString());
+                    }
                 }
             }
+
+            headers[Headers.Group] = groupName;
+
+            if (customHeadersBuilder != null)
+            {
+                var e = new BasicDeliverEventArgs(
+                    consumerTag,
+                    deliveryTag,
+                    redelivered,
+                    exchange,
+                    routingKey,
+                    properties,
+                    body
+                );
+                var customHeaders = customHeadersBuilder(e, serviceProvider);
+                foreach (var customHeader in customHeaders)
+                {
+                    headers[customHeader.Key] = customHeader.Value;
+                }
+            }
+
+            message = new TransportMessage(headers, body);
         }
-
-        headers[Headers.Group] = groupName;
-
-        if (customHeadersBuilder != null)
+        catch (Exception ex)
         {
-            var e = new BasicDeliverEventArgs(
-                consumerTag,
-                deliveryTag,
-                redelivered,
-                exchange,
-                routingKey,
-                properties,
-                body
+            logCallback(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Failed to build transport message, nacking delivery {deliveryTag}: {ex}",
+                }
             );
-            var customHeaders = customHeadersBuilder(e, serviceProvider);
-            foreach (var customHeader in customHeaders)
+
+            try
             {
-                headers[customHeader.Key] = customHeader.Value;
+                if (Channel.IsOpen)
+                {
+                    await Channel.BasicNackAsync(deliveryTag, multiple: false, requeue: true).ConfigureAwait(false);
+                }
             }
+            catch (Exception nackEx)
+            {
+                logCallback(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConsumeError,
+                        Reason = $"Failed to nack delivery {deliveryTag}: {nackEx}",
+                    }
+                );
+            }
+
+            return;
         }
 
-        var message = new TransportMessage(headers, body);
-
-        return msgCallback(message, deliveryTag);
+        await msgCallback(message, deliveryTag).ConfigureAwait(false);
     }
 
     public async Task BasicAck(ulong deliveryTag)
@@ -151,8 +162,6 @@ public sealed class RabbitMqBasicConsumer(
         {
             await Channel.BasicAckAsync(deliveryTag, false);
         }
-
-        _semaphore.Release();
     }
 
     public async Task BasicReject(ulong deliveryTag)
@@ -161,8 +170,6 @@ public sealed class RabbitMqBasicConsumer(
         {
             await Channel.BasicRejectAsync(deliveryTag, true);
         }
-
-        _semaphore.Release();
     }
 
     protected override async Task OnCancelAsync(string[] consumerTags, CancellationToken cancellationToken = default)
@@ -209,6 +216,45 @@ public sealed class RabbitMqBasicConsumer(
         var args = new LogMessageEventArgs { LogType = MqLogType.ConsumerShutdown, Reason = reason.ReplyText };
 
         logCallback(args);
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        try
+        {
+            _semaphore.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // Defensive: ignore over-release
+        }
+        catch (ObjectDisposedException)
+        {
+            // Shutdown in progress
+        }
+    }
+
+    private void _ObserveBackgroundHandler(Task task)
+    {
+        _ = task.ContinueWith(
+            completedTask =>
+            {
+                var exception = completedTask.Exception?.GetBaseException();
+                if (exception is not null)
+                {
+                    logCallback(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ConsumeError,
+                            Reason = $"Error consuming message: {exception}",
+                        }
+                    );
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     public void Dispose()

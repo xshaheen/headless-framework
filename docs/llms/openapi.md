@@ -1,0 +1,242 @@
+---
+domain: OpenAPI
+packages: OpenApi.Nswag, OpenApi.Nswag.OData, OpenApi.Scalar
+---
+
+# OpenAPI
+
+## Table of Contents
+- [Quick Orientation](#quick-orientation)
+- [Agent Instructions](#agent-instructions)
+- [Headless.OpenApi.Nswag](#headlessopenapinswag)
+  - [Problem Solved](#problem-solved)
+  - [Key Features](#key-features)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Configuration](#configuration)
+    - [Options](#options)
+  - [Dependencies](#dependencies)
+  - [Side Effects](#side-effects)
+- [Headless.OpenApi.Nswag.OData](#headlessopenapinswagodata)
+  - [Problem Solved](#problem-solved-1)
+  - [Key Features](#key-features-1)
+  - [Installation](#installation-1)
+  - [Quick Start](#quick-start-1)
+  - [Configuration](#configuration-1)
+  - [Dependencies](#dependencies-1)
+  - [Side Effects](#side-effects-1)
+- [Headless.OpenApi.Scalar](#headlessopenapiscalar)
+  - [Problem Solved](#problem-solved-2)
+  - [Key Features](#key-features-2)
+  - [Installation](#installation-2)
+  - [Quick Start](#quick-start-2)
+  - [Configuration](#configuration-2)
+    - [Options](#options-1)
+  - [Dependencies](#dependencies-2)
+  - [Side Effects](#side-effects-2)
+
+> OpenAPI spec generation via NSwag with FluentValidation integration, OData parameter docs, and Scalar documentation UI.
+
+## Quick Orientation
+
+Three packages:
+- `Headless.OpenApi.Nswag` — OpenAPI document generation with schema processors, security schemes, and framework type mappings
+- `Headless.OpenApi.Nswag.OData` — adds OData query parameter documentation ($filter, $orderby, $top, $skip, $select)
+- `Headless.OpenApi.Scalar` — modern API documentation UI via Scalar (alternative to Swagger UI)
+
+Typical registration:
+```csharp
+// Services
+builder.Services.AddNswagOpenApi(options =>
+{
+    options.AddBearerSecurity = true;
+    options.AddPrimitiveMappings = true;
+});
+
+// Middleware
+app.MapNswagOpenApi();         // OpenAPI JSON endpoint
+app.MapScalarOpenApi();        // Scalar docs UI
+```
+
+For versioned APIs, use `app.MapNswagOpenApiVersions()` instead.
+
+## Agent Instructions
+
+- Use `AddNswagOpenApi()` for OpenAPI spec generation — do NOT configure NSwag manually; this method wires up all framework processors.
+- Key processors registered automatically: `FluentValidationSchemaProcessor` (extracts validation rules into schema), `NullabilityAsRequiredSchemaProcessor`, `CamelCaseQueryParameterOperationProcessor`, and response processors for 401/403/ProblemDetails.
+- Framework primitive types (Money, Month, UserId, AccountId) are mapped to OpenAPI types when `AddPrimitiveMappings = true`.
+- For OData support, add `ODataOperationFilter` via `setupGeneratorActions` — only if the API uses OData queries.
+- Use `MapScalarOpenApi()` for the docs UI. Configure dark mode, layout, and endpoint prefix via options.
+- Scalar depends on `Scalar.AspNetCore` (transitive). NSwag depends on `NSwag.AspNetCore` and `FluentValidation` (transitive).
+- Security: set `AddBearerSecurity = true` for JWT, `AddApiKeySecurity = true` for API key auth. Configure `ApiKeyHeaderName` if non-default.
+- Do NOT add both Swagger UI (from NSwag) and Scalar simultaneously — pick one. Scalar is the recommended choice.
+
+---
+# Headless.OpenApi.Nswag
+
+NSwag OpenAPI document generation with framework-specific processors and defaults.
+
+## Problem Solved
+
+Provides pre-configured NSwag OpenAPI generation with FluentValidation schema enhancement, standard response processors, and framework primitive type mappings for consistent API documentation.
+
+## Key Features
+
+- `FluentValidationSchemaProcessor` - Extracts validation rules into OpenAPI schema
+- `GenericNullabilitySchemaProcessor` - Fixes `T?` nullability detection in generic types (NSwag limitation)
+- `NullabilityAsRequiredSchemaProcessor` - Marks non-nullable as required
+- `CamelCaseQueryParameterOperationProcessor` - Converts query parameter names to camelCase
+- Operation processors: Unauthorized, Forbidden, ProblemDetails responses
+- Bearer and API key security scheme support
+- Framework primitive type mappings (Money, Month, UserId, AccountId)
+- API versioning support
+
+## Installation
+
+```bash
+dotnet add package Headless.OpenApi.Nswag
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddNswagOpenApi(options =>
+{
+    options.AddBearerSecurity = true;
+    options.AddPrimitiveMappings = true;
+});
+
+var app = builder.Build();
+
+app.MapNswagOpenApi();
+// or for versioned APIs:
+app.MapNswagOpenApiVersions();
+```
+
+## Configuration
+
+### Options
+
+```csharp
+services.AddNswagOpenApi(options =>
+{
+    options.AddBearerSecurity = true;        // JWT Bearer auth
+    options.AddApiKeySecurity = true;        // API Key auth
+    options.ApiKeyHeaderName = "X-Api-Key";  // Header name
+    options.AddPrimitiveMappings = true;     // Framework types
+});
+```
+
+## Dependencies
+
+- `Headless.Api.Abstractions`
+- `NSwag.AspNetCore`
+- `FluentValidation`
+
+## Side Effects
+
+- Adds OpenAPI document middleware
+- Adds Swagger UI middleware
+---
+# Headless.OpenApi.Nswag.OData
+
+NSwag operation filter for OData query parameter documentation.
+
+## Problem Solved
+
+Automatically documents OData query parameters ($filter, $orderby, $top, $skip, $select) in OpenAPI specifications for endpoints that support OData queries.
+
+## Key Features
+
+- `ODataOperationFilter` - Adds OData query parameters to OpenAPI docs
+- Automatic parameter detection
+- Standard OData parameter descriptions
+
+## Installation
+
+```bash
+dotnet add package Headless.OpenApi.Nswag.OData
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddNswagOpenApi(
+    setupHeadlessAction: null,
+    setupGeneratorActions: settings =>
+    {
+        settings.OperationProcessors.Add(new ODataOperationFilter());
+    }
+);
+```
+
+## Configuration
+
+No configuration required.
+
+## Dependencies
+
+- `Headless.OpenApi.Nswag`
+
+## Side Effects
+
+None.
+---
+# Headless.OpenApi.Scalar
+
+Scalar API documentation UI integration for OpenAPI.
+
+## Problem Solved
+
+Provides a modern, beautiful API documentation UI using Scalar as an alternative to Swagger UI, with sensible defaults and framework integration.
+
+## Key Features
+
+- Modern, responsive API documentation UI
+- Dark mode support with toggle
+- Multiple code generation targets (C#, Go, JavaScript, Node, PowerShell, Shell)
+- Multiple HTTP clients (HttpClient, Curl, Axios, Fetch, etc.)
+- Customizable layout and sorting
+
+## Installation
+
+```bash
+dotnet add package Headless.OpenApi.Scalar
+```
+
+## Quick Start
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+// Add OpenAPI generation (NSwag or other)
+builder.Services.AddNswagOpenApi();
+
+var app = builder.Build();
+
+app.MapScalarOpenApi();
+```
+
+## Configuration
+
+### Options
+
+```csharp
+app.MapScalarOpenApi(options =>
+{
+    options.DarkMode = true;
+    options.Layout = ScalarLayout.Modern;
+}, endpointPrefix: "/docs");
+```
+
+## Dependencies
+
+- `Scalar.AspNetCore`
+
+## Side Effects
+
+- Adds Scalar UI middleware at configured endpoint (default: `/scalar`)

@@ -47,6 +47,17 @@ options.UseRedisStreams(redis =>
 });
 ```
 
+## Messaging Semantics
+
+- Publish appends the serialized body and headers as Redis Stream entries.
+- Delay stays in the core pipeline. This provider does not add broker-native scheduling.
+- Commit acknowledges the pending entry with `XACK`.
+- Reject is a no-op. Pending entries are reclaimed later by the claim loop for redelivery.
+- Consumer startup creates streams and consumer groups as needed.
+- The transport periodically claims abandoned pending entries and routes them back through the handler.
+- Single-threaded consumption follows stream order best. Consumer groups, claiming, and parallel handlers can reorder work.
+- Stream names, field sizes, and payload limits follow Redis memory and broker limits.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

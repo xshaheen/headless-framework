@@ -81,9 +81,9 @@ internal static class DbConnectionExtensions
         }
 
         /// <summary>
-        /// Executes a SQL query and returns a single integer result.
+        /// Executes a SQL query and returns a single long integer result.
         /// </summary>
-        public async Task<int> ExecuteScalarAsync(
+        public async Task<long> ExecuteScalarAsync(
             string sql,
             CancellationToken cancellationToken = default,
             params object?[] sqlParams
@@ -101,7 +101,7 @@ internal static class DbConnectionExtensions
 
             var objValue = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
 
-            return Convert.ToInt32(objValue, CultureInfo.InvariantCulture);
+            return Convert.ToInt64(objValue, CultureInfo.InvariantCulture);
         }
     }
 }

@@ -28,7 +28,8 @@ internal sealed class PulsarTransport(ILogger<PulsarTransport> logger, IConnecti
 
             if (messageId != null)
             {
-                _logger.LogDebug("pulsar topic message [{GetName}] has been published.", message.GetName());
+                var messageName = message.GetName();
+                _logger.MessagePublished(messageName);
 
                 return OperateResult.Success;
             }
@@ -48,4 +49,14 @@ internal sealed class PulsarTransport(ILogger<PulsarTransport> logger, IConnecti
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal static partial class PulsarTransportLog
+{
+    [LoggerMessage(
+        EventId = 3002,
+        Level = LogLevel.Debug,
+        Message = "pulsar topic message [{GetName}] has been published."
+    )]
+    public static partial void MessagePublished(this ILogger logger, string getName);
 }

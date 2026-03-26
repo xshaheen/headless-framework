@@ -134,29 +134,37 @@ public Task ResumeAsync(CancellationToken cancellationToken)
 
 ---
 
-### Pattern 3: Semaphore acquired before Task.Run → acquire inside lambda
+### Pattern 3: Semaphore acquired before Task.Run → schedule without cancellation
 
 When a `CancellationToken` is cancelled between `await semaphore.WaitAsync()` and the `Task.Run` lambda starting, the semaphore slot is consumed but `Release()` in the `finally` block never executes. The concurrency limiter is permanently decremented.
 
-**Affected:** `NatsConsumerClient`
+**Affected:** `NatsConsumerClient`, `AmazonSqsConsumerClient`, `RabbitMqBasicConsumer`
 
 ```csharp
 // BEFORE (semaphore leaked if Task.Run never starts)
 await _semaphore.WaitAsync(cancellationToken);
-await Task.Run(async () =>
-{
-    try { /* work */ }
-    finally { _semaphore.Release(); }
-}, cancellationToken);
+
+await Task.Run(
+    async () =>
+    {
+        try { /* work */ }
+        finally { _semaphore.Release(); }
+    },
+    cancellationToken
+);
 
 
-// AFTER (semaphore only acquired if lambda executes)
-await Task.Run(async () =>
-{
-    await _semaphore.WaitAsync(cancellationToken);
-    try { /* work */ }
-    finally { _semaphore.Release(); }
-}, cancellationToken);
+// AFTER (scheduling ignores cancellation so finally always runs)
+await _semaphore.WaitAsync(cancellationToken);
+
+_ = Task.Run(
+    async () =>
+    {
+        try { /* work */ }
+        finally { _semaphore.Release(); }
+    },
+    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
+);
 ```
 
 ---
@@ -349,7 +357,7 @@ src/Headless.Messaging.InMemory/InMemoryConsumerClient.cs
 src/Headless.Messaging.Pulsar/PulsarConsumerClient.cs
 src/Headless.Messaging.Sqs/SqsConsumerClient.cs
 src/Headless.Messaging.Redis/RedisConsumerClient.cs
-docs/llms/messaging.txt
+docs/llms/messaging.md
 tests/Headless.Messaging.Core.Tests.Unit/CircuitBreaker/CircuitBreakerStateManagerTests.cs
 ```
 
@@ -414,16 +422,22 @@ public async Task ConcurrentPauseAsync_OnlyOneCallerCreatesGate()
 **Pattern 3 — Semaphore not leaked on cancellation**
 ```csharp
 [Fact]
-public async Task TaskRun_CancelledBeforeExecution_SemaphoreCountRestored()
+public async Task run_concurrent_handler_ignoring_cancellation_runs_even_when_token_is_canceled()
 {
     using var cts = new CancellationTokenSource();
-    var client = CreateClient();
-    cts.Cancel();
+    await cts.CancelAsync();
+    var ran = false;
 
-    try { await client.ConsumeAsync(cts.Token); } catch (OperationCanceledException) { }
+    await Task.Run(
+        () =>
+        {
+            ran = true;
+            return Task.CompletedTask;
+        },
+        CancellationToken.None // Ensure the task runs even if the original token is canceled
+    );
 
-    client.InternalSemaphore.CurrentCount
-          .Should().Be(client.InternalSemaphore.MaximumCount);
+    ran.Should().BeTrue();
 }
 ```
 
@@ -521,7 +535,7 @@ When a PR touches `IConsumerClient` implementations or state machine transitions
 
 2. **No `volatile bool` gates.** Any `volatile bool _paused/stopped/running` used as a branch guard must be replaced with `Interlocked` or `SemaphoreSlim`.
 
-3. **Semaphores acquired inside `Task.Run`, not before.** Confirm `WaitAsync` is inside the delegate, in `try/finally` that always releases.
+3. **Background scheduling must guarantee semaphore release.** If a slot is acquired before `Task.Run`, the delegate must be scheduled with `CancellationToken.None` and release in `finally` so cancellation cannot leak capacity.
 
 4. **Timer callbacks check generation.** Every timer driving state transitions must capture and validate a generation counter that is incremented on Reset/Dispose.
 

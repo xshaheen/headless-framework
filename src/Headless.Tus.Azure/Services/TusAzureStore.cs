@@ -58,11 +58,11 @@ public sealed partial class TusAzureStore
 #pragma warning disable MA0045 // Use Async
             _containerClient.CreateIfNotExists(_options.ContainerPublicAccessType);
 #pragma warning restore MA0045
-            _logger.LogInformation("Initialized Azure Blob container: {ContainerName}", _options.ContainerName);
+            _logger.BlobContainerInitialized(_options.ContainerName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize container: {ContainerName}", _options.ContainerName);
+            _logger.BlobContainerInitializationFailed(ex, _options.ContainerName);
             throw;
         }
     }
@@ -159,4 +159,21 @@ public sealed partial class TusAzureStore
 
         return blobName.StartsWith(prefix, StringComparison.Ordinal) ? blobName[prefix.Length..] : string.Empty;
     }
+}
+
+internal static partial class TusAzureStoreLog
+{
+    [LoggerMessage(
+        EventId = 3215,
+        Level = LogLevel.Information,
+        Message = "Initialized Azure Blob container: {ContainerName}"
+    )]
+    public static partial void BlobContainerInitialized(this ILogger logger, string containerName);
+
+    [LoggerMessage(EventId = 3216, Level = LogLevel.Error, Message = "Failed to initialize container: {ContainerName}")]
+    public static partial void BlobContainerInitializationFailed(
+        this ILogger logger,
+        Exception ex,
+        string containerName
+    );
 }

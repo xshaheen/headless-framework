@@ -93,6 +93,17 @@ options.EnableSubscriberParallelExecute = false; // Disable parallel execution
 - Messages without partition key: Round-robin distribution, no ordering guarantee
 - Multiple consumer threads (`ConsumerThreadCount > 1`): May process out of order
 
+## Messaging Semantics
+
+- Publish writes the serialized body as record bytes and forwards framework headers.
+- Delay stays in the core pipeline. This provider does not add broker-native scheduling.
+- Commit commits the consumed partition offset.
+- Reject seeks back to the failed offset so Kafka can redeliver on the next poll.
+- `FetchTopicsAsync(...)` creates concrete topics when auto-create is enabled and normalizes wildcard subscriptions.
+- `SubscribeAsync(...)` joins the configured consumer group to those topics.
+- Partition keys control ordering. Parallel handlers or multiple partitions can reorder observed processing.
+- Topic names, header sizes, and record sizes follow Kafka broker limits.
+
 ## Dependencies
 
 - `Headless.Messaging.Core`

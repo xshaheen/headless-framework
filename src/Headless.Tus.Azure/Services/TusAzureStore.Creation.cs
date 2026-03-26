@@ -31,13 +31,13 @@ public sealed partial class TusAzureStore : ITusCreationStore
                 cancellationToken: cancellationToken
             );
 
-            _logger.LogInformation("Created file {FileId} with upload length {UploadLength}", fileId, uploadLength);
+            _logger.FileCreated(fileId, uploadLength);
 
             return fileId;
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Failed to create file with upload length {UploadLength}", uploadLength);
+            _logger.FileCreateFailed(e, uploadLength);
 
             throw;
         }
@@ -49,4 +49,21 @@ public sealed partial class TusAzureStore : ITusCreationStore
 
         return blobInfo?.Metadata.ToTusString();
     }
+}
+
+internal static partial class TusAzureStoreCreationLog
+{
+    [LoggerMessage(
+        EventId = 3200,
+        Level = LogLevel.Information,
+        Message = "Created file {FileId} with upload length {UploadLength}"
+    )]
+    public static partial void FileCreated(this ILogger logger, string fileId, long uploadLength);
+
+    [LoggerMessage(
+        EventId = 3201,
+        Level = LogLevel.Error,
+        Message = "Failed to create file with upload length {UploadLength}"
+    )]
+    public static partial void FileCreateFailed(this ILogger logger, Exception e, long uploadLength);
 }

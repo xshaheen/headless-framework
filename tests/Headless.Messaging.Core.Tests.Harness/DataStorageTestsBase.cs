@@ -363,7 +363,7 @@ public abstract class DataStorageTestsBase : TestBase
         var deletedCount = await storage.DeletePublishedMessageAsync(storedMessage.StorageId, AbortToken);
 
         // then
-        deletedCount.Should().BeGreaterThanOrEqualTo(0);
+        deletedCount.Should().Be(1);
     }
 
     public virtual async Task should_delete_received_message()
@@ -377,7 +377,7 @@ public abstract class DataStorageTestsBase : TestBase
         var deletedCount = await storage.DeleteReceivedMessageAsync(storedMessage.StorageId, AbortToken);
 
         // then
-        deletedCount.Should().BeGreaterThanOrEqualTo(0);
+        deletedCount.Should().Be(1);
     }
 
     public virtual async Task should_get_monitoring_api()
@@ -463,14 +463,15 @@ public abstract class DataStorageTestsBase : TestBase
         // given
         var storage = GetStorage();
         var message = CreateMessage();
-        object? transaction = null; // Transaction handling varies by implementation
 
-        // when
-        var result = await storage.StoreMessageAsync("transaction-test", message, transaction, AbortToken);
+        // when — null transaction path (provider-specific transaction tests should cover the real path)
+        var result = await storage.StoreMessageAsync("transaction-test", message, transaction: null, AbortToken);
 
         // then
         result.Should().NotBeNull();
         result.StorageId.Should().BeGreaterThan(0);
+        result.Origin.Should().BeSameAs(message);
+        result.Retries.Should().Be(0);
     }
 
     public virtual async Task should_handle_message_state_transitions()
@@ -498,8 +499,9 @@ public abstract class DataStorageTestsBase : TestBase
         // when
         await storage.ChangePublishStateAsync(storedMessage, StatusName.Failed, cancellationToken: AbortToken);
 
-        // then
-        var retriable = await storage.GetPublishedMessagesOfNeedRetry(TimeSpan.FromMinutes(1), AbortToken);
+        // then — the failed message should appear in retry results (lookback covers messages added just now)
+        var retriable = await storage.GetPublishedMessagesOfNeedRetry(TimeSpan.FromMinutes(5), AbortToken);
         retriable.Should().NotBeNull();
+        retriable.Should().Contain(m => m.StorageId == storedMessage.StorageId);
     }
 }

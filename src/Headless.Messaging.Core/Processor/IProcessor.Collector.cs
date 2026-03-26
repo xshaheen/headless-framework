@@ -39,7 +39,7 @@ public sealed class CollectorProcessor : IProcessor
     {
         foreach (var table in _tableNames)
         {
-            _logger.LogDebug("Collecting expired data from table: {Table}", table);
+            _logger.CollectingExpiredData(table);
 
             int deletedCount;
             var time = _timeProvider.GetUtcNow().UtcDateTime;
@@ -54,11 +54,7 @@ public sealed class CollectorProcessor : IProcessor
 
                     if (deletedCount != 0)
                     {
-                        _logger.LogDebug(
-                            "Successfully deleted {DeletedCount} expired items from table '{Table}'.",
-                            deletedCount,
-                            table
-                        );
+                        _logger.ExpiredItemsDeleted(deletedCount, table);
 
                         await context.WaitAsync(_delay).ConfigureAwait(false);
                         context.ThrowIfStopping();
@@ -66,12 +62,7 @@ public sealed class CollectorProcessor : IProcessor
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(
-                        ex,
-                        "An error occurred while attempting to delete expired data from table '{Table}':{ExMessage}",
-                        table,
-                        ex.Message
-                    );
+                    _logger.ExpiredDataDeleteFailed(ex, table, ex.Message);
                     throw;
                 }
             } while (deletedCount != 0);
@@ -79,4 +70,29 @@ public sealed class CollectorProcessor : IProcessor
 
         await context.WaitAsync(_waitingInterval).ConfigureAwait(false);
     }
+}
+
+internal static partial class CollectorProcessorLog
+{
+    [LoggerMessage(EventId = 3104, Level = LogLevel.Debug, Message = "Collecting expired data from table: {Table}")]
+    public static partial void CollectingExpiredData(this ILogger logger, string table);
+
+    [LoggerMessage(
+        EventId = 3105,
+        Level = LogLevel.Debug,
+        Message = "Successfully deleted {DeletedCount} expired items from table '{Table}'."
+    )]
+    public static partial void ExpiredItemsDeleted(this ILogger logger, int deletedCount, string table);
+
+    [LoggerMessage(
+        EventId = 3106,
+        Level = LogLevel.Error,
+        Message = "An error occurred while attempting to delete expired data from table '{Table}':{ExMessage}"
+    )]
+    public static partial void ExpiredDataDeleteFailed(
+        this ILogger logger,
+        Exception ex,
+        string table,
+        string exMessage
+    );
 }

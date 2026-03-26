@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 
@@ -12,7 +13,13 @@ public sealed class ConsumerClientPauseResumeTests
     {
         // PauseAsync has no default implementation — any IConsumerClient must provide it.
         // MinimalConsumerClient compiles only because it explicitly implements PauseAsync.
-        var method = typeof(IConsumerClient).GetMethod(nameof(IConsumerClient.PauseAsync));
+        var method = typeof(IConsumerClient).GetMethod(
+            nameof(IConsumerClient.PauseAsync),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            binder: null,
+            [typeof(CancellationToken)],
+            modifiers: null
+        );
         method.Should().NotBeNull();
         method!.IsAbstract.Should().BeTrue("PauseAsync must not have a default implementation");
     }
@@ -20,7 +27,13 @@ public sealed class ConsumerClientPauseResumeTests
     [Fact]
     public void resume_async_is_required_interface_member()
     {
-        var method = typeof(IConsumerClient).GetMethod(nameof(IConsumerClient.ResumeAsync));
+        var method = typeof(IConsumerClient).GetMethod(
+            nameof(IConsumerClient.ResumeAsync),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            binder: null,
+            [typeof(CancellationToken)],
+            modifiers: null
+        );
         method.Should().NotBeNull();
         method!.IsAbstract.Should().BeTrue("ResumeAsync must not have a default implementation");
     }
@@ -130,7 +143,8 @@ public sealed class ConsumerClientPauseResumeTests
 
         public ValueTask SubscribeAsync(IEnumerable<string> topics) => ValueTask.CompletedTask;
 
-        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
 
         public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
 
