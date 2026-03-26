@@ -93,7 +93,8 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                         Name = x,
                         NumPartitions = _kafkaOptions.TopicOptions.NumPartitions,
                         ReplicationFactor = _kafkaOptions.TopicOptions.ReplicationFactor,
-                    })
+                    }),
+                    new CreateTopicsOptions { RequestTimeout = TimeSpan.FromSeconds(30) }
                 );
             }
 #pragma warning disable ERP022
