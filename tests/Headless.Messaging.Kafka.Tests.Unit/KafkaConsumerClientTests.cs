@@ -271,12 +271,11 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task ListeningAsync_should_process_messages_sequentially_when_concurrency_is_requested()
+    public async Task ListeningAsync_should_process_messages_concurrently_when_concurrency_is_requested()
     {
         // given
         var consumer = Substitute.For<IConsumer<string, byte[]>>();
         var consumeCallCount = 0;
-        LogMessageEventArgs? configurationWarning = null;
         consumer
             .Consume(Arg.Any<TimeSpan>())
             .Returns(_ =>
@@ -302,8 +301,14 @@ public sealed class KafkaConsumerClientTests : TestBase
                         ),
                         Message = new Message<string, byte[]> { Value = [2], Headers = new Confluent.Kafka.Headers() },
                     },
-                    _ => null!,
+                    _ => waitAndReturnNull(),
                 };
+
+                static ConsumeResult<string, byte[]> waitAndReturnNull()
+                {
+                    Thread.Sleep(10);
+                    return null!;
+                }
             });
 
         await using var client = new KafkaConsumerClient(
@@ -331,32 +336,27 @@ public sealed class KafkaConsumerClientTests : TestBase
 
             secondStarted.TrySetResult();
         };
-        client.OnLogCallback = args =>
-        {
-            if (args.LogType == MqLogType.TransportConfigurationWarning)
-            {
-                configurationWarning = args;
-            }
-        };
+        client.OnLogCallback = _ => { };
 
-        using var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         // when
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
-        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
-        await Task.Delay(100, AbortToken);
 
-        // then
-        secondStarted.Task.IsCompleted.Should().BeFalse();
-        configurationWarning.Should().NotBeNull();
-        configurationWarning!.Reason.Should().Contain("groupConcurrent=2");
-        configurationWarning.Reason.Should().Contain("sequentially");
+        try
+        {
+            await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await Task.Delay(100, AbortToken);
 
-        releaseFirst.TrySetResult();
-        await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
-
-        await cts.CancelAsync();
-        await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            // then
+            await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+        finally
+        {
+            releaseFirst.TrySetResult();
+            await cts.CancelAsync();
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -498,26 +498,43 @@ public sealed class KafkaConsumerClientTests : TestBase
             }
         };
 
-        using var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         // when — ListeningAsync will fault after the seek; we only need to observe the seek signal
 #pragma warning disable AsyncFixer04
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
 #pragma warning restore AsyncFixer04
-        await seekCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
-        // Observe the faulted task to prevent unobserved exception
         try
         {
-            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1));
-        }
-        catch
-        { /* expected — mock throws OCE on second Consume call */
-        }
+            await seekCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
-        // then — callback should not be invoked, offset should be seeked back
-        callbackInvoked.Should().BeFalse();
-        consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(tpo => tpo.Offset == 5));
-        loggedError.Should().NotBeNull();
-        loggedError!.Reason.Should().Contain("bad header builder");
+            // Observe the faulted task to prevent unobserved exception
+            try
+            {
+                await listeningTask.WaitAsync(TimeSpan.FromSeconds(1));
+            }
+            catch
+            {
+                // Expected — mock throws OCE on second Consume call.
+            }
+
+            // then — callback should not be invoked, offset should be seeked back
+            callbackInvoked.Should().BeFalse();
+            consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(tpo => tpo.Offset == 5));
+            loggedError.Should().NotBeNull();
+            loggedError!.Reason.Should().Contain("bad header builder");
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            try
+            {
+                await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            }
+            catch
+            {
+                // Best-effort cleanup only.
+            }
+        }
     }
 }

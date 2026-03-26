@@ -35,6 +35,15 @@ public sealed class BrokerAddressDisplayTests
     }
 
     [Fact]
+    public void format_should_strip_query_string_and_fragment_secrets()
+    {
+        BrokerAddressDisplay
+            .Format("nats://user:secret@broker:4222/orders?token=secret#jwt=secret")
+            .Should()
+            .Be("nats://broker:4222/orders");
+    }
+
+    [Fact]
     public void format_should_format_dns_endpoints()
     {
         BrokerAddressDisplay.Format(new DnsEndPoint("redis.example.com", 6380)).Should().Be("redis.example.com:6380");

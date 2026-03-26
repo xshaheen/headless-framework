@@ -123,8 +123,12 @@ public sealed class PostgreSqlMonitoringApi(
             where += " AND \"Content\" ILike @Content";
         }
 
+        // Keep the total count in a separate query: COUNT(*) OVER() returns no count row when OFFSET/LIMIT yields
+        // an empty later page, which breaks pagination metadata even though matching rows still exist.
+        var countQuery = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE 1=1 {where}";
+
         var sqlQuery =
-            $"SELECT {selectColumns}, COUNT(*) OVER() AS \"TotalCount\" FROM {tableName} WHERE 1=1 {where} ORDER BY \"Added\" DESC OFFSET @Offset LIMIT @Limit";
+            $"SELECT {selectColumns} FROM {tableName} WHERE 1=1 {where} ORDER BY \"Added\" DESC OFFSET @Offset LIMIT @Limit";
 
         await using var connection = _options.CreateConnection();
 
@@ -138,7 +142,15 @@ public sealed class PostgreSqlMonitoringApi(
             new NpgsqlParameter("@Limit", query.PageSize),
         ];
 
-        long totalCount = 0;
+        var totalCount = await connection
+            .ExecuteScalarAsync(countQuery, cancellationToken, sqlParams)
+            .ConfigureAwait(false);
+
+        if (totalCount == 0)
+        {
+            return new([], query.CurrentPage, query.PageSize, 0);
+        }
+
         var items = await connection
             .ExecuteReaderAsync(
                 sqlQuery,
@@ -170,7 +182,6 @@ public sealed class PostgreSqlMonitoringApi(
                                 StatusName = reader.GetString(index++),
                             }
                         );
-                        totalCount = reader.GetInt64(index);
                     }
                     return messages;
                 },
@@ -208,7 +219,9 @@ public sealed class PostgreSqlMonitoringApi(
     )
     {
         var tableName = type == MessageType.Publish ? _publishedTable : _receivedTable;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded), cancellationToken).ConfigureAwait(false);
+
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
@@ -217,7 +230,8 @@ public sealed class PostgreSqlMonitoringApi(
     )
     {
         var tableName = type == MessageType.Publish ? _publishedTable : _receivedTable;
-        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed), cancellationToken).ConfigureAwait(false);
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async ValueTask<long> _GetNumberOfMessage(
@@ -322,8 +336,11 @@ public sealed class PostgreSqlMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
+        var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
+            ? @"""ExceptionInfo"""
+            : "NULL AS \"ExceptionInfo\"";
         var sql =
-            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""Added"", ""ExpiresAt"", ""Retries"", ""ExceptionInfo"" FROM {tableName} WHERE ""Id""=@Id";
+            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql} FROM {tableName} WHERE ""Id""=@Id";
 
         await using var connection = _options.CreateConnection();
 

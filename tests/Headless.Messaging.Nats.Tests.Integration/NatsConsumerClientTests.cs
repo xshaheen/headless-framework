@@ -47,22 +47,26 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture)
 
         // when — start listening, then publish
         var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
-        await Task.Delay(500);
+        try
+        {
+            await Task.Delay(500);
 
-        var body = "hello-commit"u8.ToArray();
-        await _PublishAsync(subject, body);
+            var body = "hello-commit"u8.ToArray();
+            await _PublishAsync(subject, body);
 
-        var (transportMsg, natsMsg) = await received.Task.WaitAsync(cts.Token);
+            var (transportMsg, natsMsg) = await received.Task.WaitAsync(cts.Token);
 
-        // then — message received with correct body
-        transportMsg.Body.ToArray().Should().BeEquivalentTo(body);
-        transportMsg.Headers[MessagingHeaders.Group].Should().Be("test-group");
+            // then — message received with correct body
+            transportMsg.Body.ToArray().Should().BeEquivalentTo(body);
+            transportMsg.Headers[MessagingHeaders.Group].Should().Be("test-group");
 
-        // commit should not throw
-        await client.CommitAsync(natsMsg);
-
-        await cts.CancelAsync();
-        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2));
+            // commit should not throw
+            await client.CommitAsync(natsMsg);
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
     }
 
     [Fact]
@@ -92,16 +96,20 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture)
 
         // when — start listening, then publish
         var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
-        await Task.Delay(500);
-        await _PublishAsync(subject, "hello-reject"u8.ToArray());
+        try
+        {
+            await Task.Delay(500);
+            await _PublishAsync(subject, "hello-reject"u8.ToArray());
 
-        var natsMsg = await received.Task.WaitAsync(cts.Token);
+            var natsMsg = await received.Task.WaitAsync(cts.Token);
 
-        // then — reject (nak) should not throw
-        await client.RejectAsync(natsMsg);
-
-        await cts.CancelAsync();
-        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2));
+            // then — reject (nak) should not throw
+            await client.RejectAsync(natsMsg);
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
     }
 
     [Fact]
@@ -186,25 +194,29 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture)
 
         // when — start listening, then publish with headers
         var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
-        await Task.Delay(500);
+        try
+        {
+            await Task.Delay(500);
 
-        var conn = await fixture.GetConnectionAsync();
-        var js = new NatsJSContext(conn);
-        var headers = new NatsHeaders { { "X-Custom", "custom-value" } };
-        await js.PublishAsync(
-            subject,
-            "body"u8.ToArray(),
-            serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
-            headers: headers
-        );
+            var conn = await fixture.GetConnectionAsync();
+            var js = new NatsJSContext(conn);
+            var headers = new NatsHeaders { { "X-Custom", "custom-value" } };
+            await js.PublishAsync(
+                subject,
+                "body"u8.ToArray(),
+                serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
+                headers: headers
+            );
 
-        var transportMsg = await received.Task.WaitAsync(cts.Token);
+            var transportMsg = await received.Task.WaitAsync(cts.Token);
 
-        // then
-        transportMsg.Headers["X-Custom"].Should().Be("custom-value");
-
-        await cts.CancelAsync();
-        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2));
+            // then
+            transportMsg.Headers["X-Custom"].Should().Be("custom-value");
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
     }
 
     [Fact]
@@ -255,26 +267,30 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture)
 
         // when — start listening, pause, publish, verify no delivery
         var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
-        await Task.Delay(500); // let consumer start and create durable consumer
+        try
+        {
+            await Task.Delay(500); // let consumer start and create durable consumer
 
-        await client.PauseAsync();
-        await _PublishAsync(subject, "paused-msg"u8.ToArray());
-        await Task.Delay(1000);
+            await client.PauseAsync();
+            await _PublishAsync(subject, "paused-msg"u8.ToArray());
+            await Task.Delay(1000);
 
-        var countWhilePaused = Volatile.Read(ref messageCount);
+            var countWhilePaused = Volatile.Read(ref messageCount);
 
-        // resume and wait for delivery via signal
-        await client.ResumeAsync();
-        await messageReceived.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            // resume and wait for delivery via signal
+            await client.ResumeAsync();
+            await messageReceived.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
-        var countAfterResume = Volatile.Read(ref messageCount);
+            var countAfterResume = Volatile.Read(ref messageCount);
 
-        // then
-        countWhilePaused.Should().Be(0);
-        countAfterResume.Should().BeGreaterThan(0);
-
-        await cts.CancelAsync();
-        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2));
+            // then
+            countWhilePaused.Should().Be(0);
+            countAfterResume.Should().BeGreaterThan(0);
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
     }
 
     private IOptions<MessagingNatsOptions> _CreateOptions(bool enableStreamCreation)
@@ -302,5 +318,19 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture)
             new ReadOnlyMemory<byte>(body),
             serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default
         );
+    }
+
+    private static async Task _StopListeningAsync(Task listeningTask, CancellationTokenSource cts)
+    {
+        await cts.CancelAsync();
+
+        try
+        {
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // Normal shutdown.
+        }
     }
 }

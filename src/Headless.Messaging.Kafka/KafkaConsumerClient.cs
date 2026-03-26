@@ -17,12 +17,11 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly Lock _lock = new();
     private readonly MessagingKafkaOptions _kafkaOptions;
     private readonly ConsumerPauseGate _pauseGate = new();
-    private readonly byte _requestedConcurrency;
+    private readonly SemaphoreSlim? _semaphore;
     private readonly IServiceProvider _serviceProvider;
     private readonly Func<ConsumerConfig, IConsumer<string, byte[]>> _consumerFactory;
     private readonly Func<AdminClientConfig, IAdminClient> _adminClientFactory;
     private IConsumer<string, byte[]>? _consumerClient;
-    private int _configurationWarningLogged;
     private int _disposed;
 
     public KafkaConsumerClient(
@@ -36,7 +35,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     {
         _groupId = groupId;
         _kafkaOptions = Argument.IsNotNull(options.Value);
-        _requestedConcurrency = groupConcurrent;
+        _semaphore = groupConcurrent > 1 ? new SemaphoreSlim(groupConcurrent, groupConcurrent) : null;
         _serviceProvider = serviceProvider;
         _consumerFactory = consumerFactory ?? _BuildConsumer;
         _adminClientFactory = adminClientFactory ?? _BuildAdminClient;
@@ -127,7 +126,6 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         Connect();
-        _LogSequentialProcessingConfigurationWarningIfNeeded();
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -164,9 +162,32 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 continue;
             }
 
-            // Kafka commits advance partition offsets. Processing sequentially within a consumer
-            // prevents later messages from committing past earlier failures on the same partition.
-            await _ConsumeAsync(consumerResult);
+            if (_semaphore is not null)
+            {
+                var currentResult = consumerResult;
+                await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+                _ObserveBackgroundHandler(
+                    Task.Run(
+                        async () =>
+                        {
+                            try
+                            {
+                                await _ConsumeAsync(currentResult).ConfigureAwait(false);
+                            }
+                            finally
+                            {
+                                _ReleaseSemaphore();
+                            }
+                        },
+                        CancellationToken.None
+                    )
+                );
+            }
+            else
+            {
+                await _ConsumeAsync(consumerResult).ConfigureAwait(false);
+            }
         }
         // ReSharper disable once FunctionNeverReturns
     }
@@ -268,6 +289,8 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             consumerClient.Dispose();
         }
 
+        _semaphore?.Dispose();
+
         return ValueTask.CompletedTask;
     }
 
@@ -346,26 +369,49 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         return new ConsumerBuilder<string, byte[]>(config).SetErrorHandler(_ConsumerClientOnConsumeError).Build();
     }
 
-    private void _LogSequentialProcessingConfigurationWarningIfNeeded()
+    private void _ObserveBackgroundHandler(Task task)
     {
-        if (_requestedConcurrency <= 1 || Interlocked.CompareExchange(ref _configurationWarningLogged, 1, 0) != 0)
-        {
-            return;
-        }
-
-        OnLogCallback?.Invoke(
-            new LogMessageEventArgs
+        _ = task.ContinueWith(
+            completedTask =>
             {
-                LogType = MqLogType.TransportConfigurationWarning,
-                Reason =
-                    $"Kafka transport processes messages sequentially to preserve offset commit ordering; requested groupConcurrent={_requestedConcurrency} is ignored.",
-            }
+                var exception = completedTask.Exception?.GetBaseException();
+                if (exception is not null)
+                {
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = exception.Message }
+                    );
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
         );
     }
 
     private static IAdminClient _BuildAdminClient(AdminClientConfig config)
     {
         return new AdminClientBuilder(config).Build();
+    }
+
+    private void _ReleaseSemaphore()
+    {
+        if (_semaphore is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _semaphore.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // Defensive: ignore over-release
+        }
+        catch (ObjectDisposedException)
+        {
+            // Shutdown in progress — semaphore already disposed
+        }
     }
 
     private void _ConsumerClientOnConsumeError(IConsumer<string, byte[]> consumer, Error e)

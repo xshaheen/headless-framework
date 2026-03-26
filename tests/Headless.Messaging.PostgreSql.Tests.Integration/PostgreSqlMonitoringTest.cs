@@ -185,6 +185,33 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
     }
 
     [Fact]
+    public async Task should_preserve_total_items_for_empty_later_pages()
+    {
+        // given — seed 3 messages
+        var storage = _storage!;
+        for (var i = 0; i < 3; i++)
+        {
+            await storage.StoreMessageAsync("page-test", _CreateMessage(), cancellationToken: AbortToken);
+        }
+
+        // when — request a page beyond the result set
+        var monitoringApi = storage.GetMonitoringApi();
+        var page = await monitoringApi.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = MessageType.Publish,
+                CurrentPage = 2,
+                PageSize = 2,
+            },
+            AbortToken
+        );
+
+        // then
+        page.Items.Should().BeEmpty();
+        page.TotalItems.Should().Be(3);
+    }
+
+    [Fact]
     public async Task should_filter_messages_by_status()
     {
         // given

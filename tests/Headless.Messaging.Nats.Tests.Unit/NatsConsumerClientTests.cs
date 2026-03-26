@@ -443,15 +443,20 @@ public sealed class NatsConsumerClientTests : TestBase
 
         // when
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
-        await nakCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
-        await cts.CancelAsync();
-        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+        try
+        {
+            await nakCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
-        // then — message should be nacked, callback should not be invoked
-        callbackInvoked.Should().BeFalse();
-        await msg.Received(1).NakAsync(cancellationToken: Arg.Any<CancellationToken>());
-        loggedArgs.Should().NotBeNull();
-        loggedArgs!.Reason.Should().Contain("bad header builder");
+            // then — message should be nacked, callback should not be invoked
+            callbackInvoked.Should().BeFalse();
+            await msg.Received(1).NakAsync(cancellationToken: Arg.Any<CancellationToken>());
+            loggedArgs.Should().NotBeNull();
+            loggedArgs!.Reason.Should().Contain("bad header builder");
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
     }
 
     [Fact]
@@ -486,16 +491,20 @@ public sealed class NatsConsumerClientTests : TestBase
 
         // when
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
-        await Task.Delay(100, AbortToken);
+        try
+        {
+            await Task.Delay(100, AbortToken);
 
-        // then
-        nextCallCount.Should().Be(0);
+            // then
+            nextCallCount.Should().Be(0);
 
-        await client.ResumeAsync();
-        await WaitUntilAsync(() => Volatile.Read(ref nextCallCount) > 0, TimeSpan.FromSeconds(1));
-
-        await cts.CancelAsync();
-        await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await client.ResumeAsync();
+            await WaitUntilAsync(() => Volatile.Read(ref nextCallCount) > 0, TimeSpan.FromSeconds(1));
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
     }
 
     [Fact]
@@ -541,14 +550,18 @@ public sealed class NatsConsumerClientTests : TestBase
 
         // when
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
-        await nextStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
-        await client.PauseAsync();
+        try
+        {
+            await nextStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await client.PauseAsync();
 
-        // then
-        await fetchCanceled.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
-
-        await cts.CancelAsync();
-        await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            // then
+            await fetchCanceled.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
     }
 
     [Fact]
@@ -618,21 +631,25 @@ public sealed class NatsConsumerClientTests : TestBase
 
         // when
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
-        await startedSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
-        await client.PauseAsync();
-        await canceledSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        try
+        {
+            await startedSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await client.PauseAsync();
+            await canceledSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
-        await client.ResumeAsync();
-        await startedSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
-        await client.PauseAsync();
-        await canceledSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await client.ResumeAsync();
+            await startedSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await client.PauseAsync();
+            await canceledSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
-        // then
-        seenTokens.Should().HaveCountGreaterThanOrEqualTo(2);
-        seenTokens[0].Should().NotBe(seenTokens[1]);
-
-        await cts.CancelAsync();
-        await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            // then
+            seenTokens.Should().HaveCountGreaterThanOrEqualTo(2);
+            seenTokens[0].Should().NotBe(seenTokens[1]);
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
     }
 
     private NatsConsumerClient _CreateClient(string groupName, byte groupConcurrent = 1)
@@ -649,6 +666,20 @@ public sealed class NatsConsumerClientTests : TestBase
         {
             cts.Token.ThrowIfCancellationRequested();
             await Task.Delay(20, cts.Token);
+        }
+    }
+
+    private async Task _StopListeningAsync(Task listeningTask, CancellationTokenSource cts)
+    {
+        await cts.CancelAsync();
+
+        try
+        {
+            await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // Normal shutdown.
         }
     }
 }

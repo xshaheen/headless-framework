@@ -26,11 +26,11 @@ internal sealed class SqlServerMonitoringApi(
     {
         var sql = $"""
             SELECT
-                (SELECT COUNT(Id) FROM {_publishedTable} WHERE StatusName = N'Succeeded') AS PublishedSucceeded,
-                (SELECT COUNT(Id) FROM {_receivedTable} WHERE StatusName = N'Succeeded') AS ReceivedSucceeded,
-                (SELECT COUNT(Id) FROM {_publishedTable} WHERE StatusName = N'Failed') AS PublishedFailed,
-                (SELECT COUNT(Id) FROM {_receivedTable} WHERE StatusName = N'Failed') AS ReceivedFailed,
-                (SELECT COUNT(Id) FROM {_publishedTable} WHERE StatusName = N'Delayed') AS PublishedDelayed;
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Succeeded') AS PublishedSucceeded,
+                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE StatusName = N'Succeeded') AS ReceivedSucceeded,
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Failed') AS PublishedFailed,
+                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE StatusName = N'Failed') AS ReceivedFailed,
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Delayed') AS PublishedDelayed;
             """;
 
         await using var connection = new SqlConnection(_options.ConnectionString);
@@ -111,10 +111,22 @@ internal sealed class SqlServerMonitoringApi(
             where += " AND [Content] LIKE @Content";
         }
 
-        var sqlQuery =
-            $"SELECT {selectColumns}, COUNT(*) OVER() AS [TotalCount] FROM {tableName} WHERE 1=1 {where} ORDER BY Added DESC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY";
+        // Keep the total count in a separate query: COUNT(*) OVER() returns no count row when OFFSET/FETCH yields
+        // an empty later page, which breaks pagination metadata even though matching rows still exist.
+        var countQuery = $"SELECT COUNT_BIG(Id) FROM {tableName} WHERE 1=1 {where}";
 
-        object[] sqlParams =
+        var sqlQuery =
+            $"SELECT {selectColumns} FROM {tableName} WHERE 1=1 {where} ORDER BY Added DESC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY";
+
+        object[] countSqlParams =
+        [
+            new SqlParameter("@StatusName", query.StatusName ?? string.Empty),
+            new SqlParameter("@Group", query.Group ?? string.Empty),
+            new SqlParameter("@Name", query.Name ?? string.Empty),
+            new SqlParameter("@Content", $"%{query.Content}%"),
+        ];
+
+        object[] pageSqlParams =
         [
             new SqlParameter("@StatusName", query.StatusName ?? string.Empty),
             new SqlParameter("@Group", query.Group ?? string.Empty),
@@ -126,7 +138,15 @@ internal sealed class SqlServerMonitoringApi(
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 
-        long totalCount = 0;
+        var totalCount = await connection
+            .ExecuteScalarAsync(countQuery, cancellationToken, countSqlParams)
+            .ConfigureAwait(false);
+
+        if (totalCount == 0)
+        {
+            return new([], query.CurrentPage, query.PageSize, 0);
+        }
+
         var items = await connection
             .ExecuteReaderAsync(
                 sqlQuery,
@@ -158,13 +178,12 @@ internal sealed class SqlServerMonitoringApi(
                                 StatusName = reader.GetString(index++),
                             }
                         );
-                        totalCount = reader.GetInt64(index);
                     }
 
                     return messages;
                 },
                 cancellationToken: cancellationToken,
-                sqlParams: sqlParams
+                sqlParams: pageSqlParams
             )
             .ConfigureAwait(false);
 
@@ -213,7 +232,7 @@ internal sealed class SqlServerMonitoringApi(
         CancellationToken cancellationToken = default
     )
     {
-        var sqlQuery = $"SELECT COUNT(Id) FROM {tableName} WITH (NOLOCK) WHERE StatusName = @StatusName";
+        var sqlQuery = $"SELECT COUNT_BIG(Id) FROM {tableName} WITH (NOLOCK) WHERE StatusName = @StatusName";
         await using var connection = new SqlConnection(_options.ConnectionString);
 
         return await connection
@@ -260,7 +279,7 @@ internal sealed class SqlServerMonitoringApi(
         var sqlQuery = $"""
             WITH Aggr AS (
             SELECT CONVERT(CHAR(10), Added, 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, Added) AS VARCHAR(2)), 2) AS [Key],
-                COUNT(Id) [Count]
+                COUNT_BIG(Id) [Count]
             FROM  {tableName}
             WHERE StatusName = @StatusName AND Added >= @MinAdded AND Added <= @MaxAdded
             GROUP BY CONVERT(CHAR(10), Added, 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, Added) AS VARCHAR(2)), 2)

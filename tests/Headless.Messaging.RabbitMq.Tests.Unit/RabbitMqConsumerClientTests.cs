@@ -496,17 +496,27 @@ public sealed class RabbitMqConsumerClientTests : TestBase
 
         // when
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        try
+        {
+            // then - startup remains gated while paused
+            await Task.Delay(100);
+            _channel
+                .ReceivedCalls()
+                .Should()
+                .NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
 
-        // then - startup remains gated while paused
-        await Task.Delay(100);
-        _channel.ReceivedCalls().Should().NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+            await client.ResumeAsync();
 
-        await client.ResumeAsync();
-
-        await Task.Delay(100);
-        _channel.ReceivedCalls().Should().Contain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
-
-        await cts.CancelAsync();
-        await listeningTask; // Should complete gracefully — no OperationCanceledException
+            await Task.Delay(100);
+            _channel
+                .ReceivedCalls()
+                .Should()
+                .Contain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            await listeningTask; // Should complete gracefully — no OperationCanceledException
+        }
     }
 }

@@ -74,14 +74,9 @@ public static class BrokerAddressDisplay
         var builder = new UriBuilder(uri) { UserName = string.Empty, Password = string.Empty };
         var displayEndpoint = builder.Uri.GetLeftPart(UriPartial.Authority);
 
-        if (uri.PathAndQuery is { Length: > 1 })
+        if (uri.AbsolutePath is { Length: > 1 })
         {
-            displayEndpoint += uri.PathAndQuery;
-        }
-
-        if (!string.IsNullOrEmpty(uri.Fragment))
-        {
-            displayEndpoint += uri.Fragment;
+            displayEndpoint += uri.AbsolutePath;
         }
 
         return displayEndpoint;
