@@ -108,7 +108,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
             {
                 await _semaphore.WaitAsync(cancellationToken);
                 _ObserveBackgroundFault(
-                    _RunConcurrentHandlerIgnoringCancellation(
+                    Task.Run(
                         async () =>
                         {
                             try
@@ -122,7 +122,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
                                 _ReleaseSemaphore();
                             }
                         },
-                        cancellationToken
+                        CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                     )
                 );
             }
@@ -173,19 +173,23 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
         }
     }
 
-    private static Task _RunConcurrentHandlerIgnoringCancellation(
-        Func<Task> handler,
-        CancellationToken cancellationToken
-    )
-    {
-        _ = cancellationToken;
-        return Task.Run(handler);
-    }
-
-    private static void _ObserveBackgroundFault(Task task)
+    private void _ObserveBackgroundFault(Task task)
     {
         _ = task.ContinueWith(
-            static t => _ = t.Exception,
+            completedTask =>
+            {
+                var exception = completedTask.Exception?.GetBaseException();
+                if (exception is not null)
+                {
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ExceptionReceived,
+                            Reason = $"Unhandled exception in concurrent message handler: {exception}",
+                        }
+                    );
+                }
+            },
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default

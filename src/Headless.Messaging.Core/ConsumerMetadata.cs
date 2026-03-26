@@ -4,9 +4,7 @@ using Headless.Messaging.CircuitBreaker;
 
 namespace Headless.Messaging;
 
-/// <summary>
-/// Contains metadata about a registered message consumer.
-/// </summary>
+/// <summary>Contains metadata about a registered message consumer.</summary>
 /// <param name="MessageType">The type of message this consumer handles.</param>
 /// <param name="ConsumerType">The type of the consumer implementation.</param>
 /// <param name="Topic">The topic name to subscribe to.</param>

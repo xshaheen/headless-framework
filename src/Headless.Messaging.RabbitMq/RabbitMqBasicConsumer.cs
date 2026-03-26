@@ -38,7 +38,7 @@ public sealed class RabbitMqBasicConsumer(
             // Copy of the body safe to use outside the RabbitMQ thread context
             ReadOnlyMemory<byte> safeBody = body.ToArray();
             _ObserveBackgroundHandler(
-                _RunConcurrentHandlerIgnoringCancellation(
+                Task.Run(
                     async () =>
                     {
                         try
@@ -59,7 +59,7 @@ public sealed class RabbitMqBasicConsumer(
                             _ReleaseSemaphore();
                         }
                     },
-                    cancellationToken
+                    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                 )
             );
         }
@@ -70,7 +70,7 @@ public sealed class RabbitMqBasicConsumer(
         }
     }
 
-    private Task _Consume(
+    private async Task _Consume(
         string consumerTag,
         ulong deliveryTag,
         bool redelivered,
@@ -80,46 +80,80 @@ public sealed class RabbitMqBasicConsumer(
         ReadOnlyMemory<byte> body
     )
     {
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
-
-        if (properties.Headers != null)
+        TransportMessage message;
+        try
         {
-            foreach (var header in properties.Headers)
+            var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+            if (properties.Headers != null)
             {
-                if (header.Value is byte[] val)
+                foreach (var header in properties.Headers)
                 {
-                    headers.Add(header.Key, Encoding.UTF8.GetString(val));
-                }
-                else
-                {
-                    headers.Add(header.Key, header.Value?.ToString());
+                    if (header.Value is byte[] val)
+                    {
+                        headers.Add(header.Key, Encoding.UTF8.GetString(val));
+                    }
+                    else
+                    {
+                        headers.Add(header.Key, header.Value?.ToString());
+                    }
                 }
             }
+
+            headers[Headers.Group] = groupName;
+
+            if (customHeadersBuilder != null)
+            {
+                var e = new BasicDeliverEventArgs(
+                    consumerTag,
+                    deliveryTag,
+                    redelivered,
+                    exchange,
+                    routingKey,
+                    properties,
+                    body
+                );
+                var customHeaders = customHeadersBuilder(e, serviceProvider);
+                foreach (var customHeader in customHeaders)
+                {
+                    headers[customHeader.Key] = customHeader.Value;
+                }
+            }
+
+            message = new TransportMessage(headers, body);
         }
-
-        headers[Headers.Group] = groupName;
-
-        if (customHeadersBuilder != null)
+        catch (Exception ex)
         {
-            var e = new BasicDeliverEventArgs(
-                consumerTag,
-                deliveryTag,
-                redelivered,
-                exchange,
-                routingKey,
-                properties,
-                body
+            logCallback(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Failed to build transport message, nacking delivery {deliveryTag}: {ex}",
+                }
             );
-            var customHeaders = customHeadersBuilder(e, serviceProvider);
-            foreach (var customHeader in customHeaders)
+
+            try
             {
-                headers[customHeader.Key] = customHeader.Value;
+                if (Channel.IsOpen)
+                {
+                    await Channel.BasicNackAsync(deliveryTag, multiple: false, requeue: true).ConfigureAwait(false);
+                }
             }
+            catch (Exception nackEx)
+            {
+                logCallback(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConsumeError,
+                        Reason = $"Failed to nack delivery {deliveryTag}: {nackEx}",
+                    }
+                );
+            }
+
+            return;
         }
 
-        var message = new TransportMessage(headers, body);
-
-        return msgCallback(message, deliveryTag);
+        await msgCallback(message, deliveryTag).ConfigureAwait(false);
     }
 
     public async Task BasicAck(ulong deliveryTag)
@@ -182,15 +216,6 @@ public sealed class RabbitMqBasicConsumer(
         var args = new LogMessageEventArgs { LogType = MqLogType.ConsumerShutdown, Reason = reason.ReplyText };
 
         logCallback(args);
-    }
-
-    private static Task _RunConcurrentHandlerIgnoringCancellation(
-        Func<Task> handler,
-        CancellationToken cancellationToken
-    )
-    {
-        _ = cancellationToken;
-        return Task.Run(handler);
     }
 
     private void _ReleaseSemaphore()

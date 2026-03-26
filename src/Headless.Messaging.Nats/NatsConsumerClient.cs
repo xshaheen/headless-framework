@@ -40,7 +40,13 @@ internal sealed class NatsConsumerClient(
 
     public async Task ConnectAsync()
     {
-        var opts = _natsOptions.BuildNatsOpts();
+        // Consumer connections disable reconnect so failures propagate to the
+        // circuit breaker instead of being silently retried by the NATS client.
+        var opts = _natsOptions.BuildNatsOpts() with
+        {
+            MaxReconnectRetry = 0,
+        };
+
         _connection = new NatsConnection(opts);
         await _connection.ConnectAsync().ConfigureAwait(false);
         _jsContext = new NatsJSContext(_connection);
@@ -64,6 +70,8 @@ internal sealed class NatsConsumerClient(
                 Name = streamGroup.Key,
                 Subjects = [.. BuildStreamSubjects(streamGroup.Key, streamGroup)],
                 NoAck = false,
+                // File storage is the production default. Override via StreamOptions
+                // for dev/testing: config.Storage = StreamConfigStorage.Memory;
                 Storage = StreamConfigStorage.File,
             };
 
@@ -260,7 +268,7 @@ internal sealed class NatsConsumerClient(
             await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
             _ObserveBackgroundHandler(
-                _RunConcurrentHandlerIgnoringCancellation(
+                Task.Run(
                     async () =>
                     {
                         try
@@ -272,7 +280,7 @@ internal sealed class NatsConsumerClient(
                             _ReleaseSemaphore();
                         }
                     },
-                    cancellationToken
+                    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                 )
             );
         }
@@ -280,17 +288,6 @@ internal sealed class NatsConsumerClient(
         {
             await _ProcessMessageAsync(msg).ConfigureAwait(false);
         }
-    }
-
-    internal static Task _RunConcurrentHandlerIgnoringCancellation(
-        Func<Task> handler,
-        CancellationToken cancellationToken
-    )
-    {
-        _ = cancellationToken;
-
-        // Scheduling must ignore cancellation so the release finally always runs.
-        return Task.Run(handler);
     }
 
     private void _ObserveBackgroundHandler(Task task)
@@ -325,31 +322,50 @@ internal sealed class NatsConsumerClient(
 
     private async Task _ProcessMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg)
     {
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
-
-        if (msg.Headers is { Count: > 0 } natsHeaders)
+        TransportMessage message;
+        try
         {
-            foreach (var (key, values) in natsHeaders)
+            var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+            if (msg.Headers is { Count: > 0 } natsHeaders)
             {
-                headers[key] = values.Count > 0 ? values[0] : null;
+                foreach (var (key, values) in natsHeaders)
+                {
+                    headers[key] = values.Count > 0 ? values[0] : null;
+                }
             }
+
+            headers[Headers.Group] = name;
+
+            if (_natsOptions.CustomHeadersBuilder is not null)
+            {
+                var metadata = msg.Metadata;
+                var customHeaders = _natsOptions.CustomHeadersBuilder(metadata, msg.Headers, serviceProvider);
+                foreach (var customHeader in customHeaders)
+                {
+                    headers[customHeader.Key] = customHeader.Value;
+                }
+            }
+
+            message = new TransportMessage(headers, msg.Data);
         }
-
-        headers[Headers.Group] = name;
-
-        if (_natsOptions.CustomHeadersBuilder is not null)
+        catch (Exception ex)
         {
-            var metadata = msg.Metadata;
-            var customHeaders = _natsOptions.CustomHeadersBuilder(metadata, msg.Headers, serviceProvider);
-            foreach (var customHeader in customHeaders)
-            {
-                headers[customHeader.Key] = customHeader.Value;
-            }
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Failed to build transport message, nacking: {ex}",
+                }
+            );
+
+            await RejectAsync(msg).ConfigureAwait(false);
+            return;
         }
 
         // Let exceptions propagate — the framework's OnMessageCallback handler
         // calls CommitAsync on success and RejectAsync on failure.
-        await OnMessageCallback!(new TransportMessage(headers, msg.Data), msg).ConfigureAwait(false);
+        await OnMessageCallback!(message, msg).ConfigureAwait(false);
     }
 
     public async ValueTask CommitAsync(object? sender)

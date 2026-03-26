@@ -87,7 +87,7 @@ internal sealed class AmazonSqsConsumerClient(
                     {
                         await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
                         _ObserveBackgroundHandler(
-                            _RunConcurrentHandlerIgnoringCancellation(
+                            Task.Run(
                                 async () =>
                                 {
                                     try
@@ -99,7 +99,7 @@ internal sealed class AmazonSqsConsumerClient(
                                         _ReleaseSemaphore();
                                     }
                                 },
-                                cancellationToken
+                                CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                             )
                         );
                     }
@@ -167,15 +167,6 @@ internal sealed class AmazonSqsConsumerClient(
                 _logger.LogError(ex, "Failed to reject message for group {GroupId}", groupId);
             }
         }
-    }
-
-    private static Task _RunConcurrentHandlerIgnoringCancellation(
-        Func<Task> handler,
-        CancellationToken cancellationToken
-    )
-    {
-        _ = cancellationToken;
-        return Task.Run(handler);
     }
 
     private void _ObserveBackgroundHandler(Task task)

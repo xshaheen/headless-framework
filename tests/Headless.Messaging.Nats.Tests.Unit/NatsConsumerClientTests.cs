@@ -127,25 +127,6 @@ public sealed class NatsConsumerClientTests : TestBase
             .BeEquivalentTo(["orders.created"]);
     }
 
-    [Fact]
-    public async Task RunConcurrentHandlerIgnoringCancellation_should_run_even_when_token_is_already_canceled()
-    {
-        using var cts = new CancellationTokenSource();
-        await cts.CancelAsync();
-        var ran = false;
-
-        await NatsConsumerClient._RunConcurrentHandlerIgnoringCancellation(
-            () =>
-            {
-                ran = true;
-                return Task.CompletedTask;
-            },
-            cts.Token
-        );
-
-        ran.Should().BeTrue();
-    }
-
     // _NextBackoff tests
 
     [Fact]
@@ -374,6 +355,75 @@ public sealed class NatsConsumerClientTests : TestBase
         loggedArgs.Should().NotBeNull();
         loggedArgs!.LogType.Should().Be(MqLogType.AsyncErrorEvent);
         loggedArgs.Reason.Should().Contain("nak failed");
+    }
+
+    [Fact]
+    public async Task should_nak_when_custom_headers_builder_throws()
+    {
+        // given
+        var options = MsOptions.Options.Create(
+            new MessagingNatsOptions
+            {
+                Servers = "nats://localhost:4222",
+                CustomHeadersBuilder = (_, _, _) => throw new InvalidOperationException("bad header builder"),
+            }
+        );
+
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+        msg.Data.Returns(new ReadOnlyMemory<byte>("test"u8.ToArray()));
+        msg.Headers.Returns((NatsHeaders?)null);
+
+        var callbackInvoked = false;
+        var consumer = Substitute.For<INatsJSConsumer>();
+        var callCount = 0;
+        consumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref callCount) == 1)
+                    return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(msg);
+                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>((INatsJSMsg<ReadOnlyMemory<byte>>?)null);
+            });
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            0,
+            options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        );
+        client.OnMessageCallback = (_, _) =>
+        {
+            callbackInvoked = true;
+            return Task.CompletedTask;
+        };
+
+        LogMessageEventArgs? loggedArgs = null;
+        client.OnLogCallback = args =>
+        {
+            if (args.LogType == MqLogType.ConsumeError)
+                loggedArgs = args;
+        };
+
+        await client.SubscribeAsync(["orders.created"]);
+
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        await Task.Delay(300, AbortToken);
+        await cts.CancelAsync();
+        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        // then — message should be nacked, callback should not be invoked
+        callbackInvoked.Should().BeFalse();
+        await msg.Received(1).NakAsync(cancellationToken: Arg.Any<CancellationToken>());
+        loggedArgs.Should().NotBeNull();
+        loggedArgs!.Reason.Should().Contain("bad header builder");
     }
 
     [Fact]

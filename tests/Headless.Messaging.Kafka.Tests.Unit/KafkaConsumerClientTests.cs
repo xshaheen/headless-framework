@@ -436,4 +436,71 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         // then — no exception
     }
+
+    [Fact]
+    public async Task should_seek_back_when_custom_headers_builder_throws()
+    {
+        // given
+        var throwingOptions = Options.Create(
+            new MessagingKafkaOptions
+            {
+                Servers = "localhost:9092",
+                CustomHeadersBuilder = (_, _) => throw new InvalidOperationException("bad header builder"),
+            }
+        );
+
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                return Interlocked.Increment(ref consumeCallCount) == 1
+                    ? new ConsumeResult<string, byte[]>
+                    {
+                        TopicPartitionOffset = new TopicPartitionOffset(
+                            "orders.created",
+                            new Partition(0),
+                            new Offset(5)
+                        ),
+                        Message = new Message<string, byte[]> { Value = [1], Headers = new Confluent.Kafka.Headers() },
+                    }
+                    : null!;
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            throwingOptions,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+
+        var callbackInvoked = false;
+        LogMessageEventArgs? loggedError = null;
+        client.OnMessageCallback = (_, _) =>
+        {
+            callbackInvoked = true;
+            return Task.CompletedTask;
+        };
+        client.OnLogCallback = args =>
+        {
+            if (args.LogType == MqLogType.ConsumeError)
+                loggedError = args;
+        };
+
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        await Task.Delay(300, AbortToken);
+        await cts.CancelAsync();
+        await listeningTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        // then — callback should not be invoked, offset should be seeked back
+        callbackInvoked.Should().BeFalse();
+        consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(tpo => tpo.Offset == 5));
+        loggedError.Should().NotBeNull();
+        loggedError!.Reason.Should().Contain("bad header builder");
+    }
 }

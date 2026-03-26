@@ -746,6 +746,95 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
+    public async Task should_nack_when_custom_headers_builder_throws_with_concurrent_processing()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        var callbackInvoked = false;
+
+        static List<KeyValuePair<string, string>> throwingBuilder(BasicDeliverEventArgs _, IServiceProvider __)
+        {
+            throw new InvalidOperationException("bad header builder");
+        }
+
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            2,
+            "test-group",
+            (_, _) =>
+            {
+                callbackInvoked = true;
+                return Task.CompletedTask;
+            },
+            args => _loggedEvents.Add(args),
+            throwingBuilder,
+            _serviceProvider
+        );
+
+        // when
+        await consumer.HandleBasicDeliverAsync(
+            "consumerTag",
+            999ul,
+            false,
+            "exchange",
+            "routingKey",
+            Substitute.For<IReadOnlyBasicProperties>(),
+            "test"u8.ToArray(),
+            CancellationToken.None
+        );
+
+        await Task.Delay(200, AbortToken);
+
+        // then — message should be nacked, not left unacked
+        callbackInvoked.Should().BeFalse();
+        await _channel.Received(1).BasicNackAsync(999ul, false, true, Arg.Any<CancellationToken>());
+        _loggedEvents.Should().ContainSingle(e => e.LogType == MqLogType.ConsumeError);
+        _loggedEvents[0].Reason.Should().Contain("bad header builder");
+    }
+
+    [Fact]
+    public async Task should_nack_when_custom_headers_builder_throws_without_concurrent_processing()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        var callbackInvoked = false;
+
+        static List<KeyValuePair<string, string>> throwingBuilder(BasicDeliverEventArgs _, IServiceProvider __) =>
+            throw new InvalidOperationException("bad header builder");
+
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            "test-group",
+            (_, _) =>
+            {
+                callbackInvoked = true;
+                return Task.CompletedTask;
+            },
+            args => _loggedEvents.Add(args),
+            throwingBuilder,
+            _serviceProvider
+        );
+
+        // when
+        await consumer.HandleBasicDeliverAsync(
+            "consumerTag",
+            888ul,
+            false,
+            "exchange",
+            "routingKey",
+            Substitute.For<IReadOnlyBasicProperties>(),
+            "test"u8.ToArray(),
+            CancellationToken.None
+        );
+
+        // then — message should be nacked, not left unacked
+        callbackInvoked.Should().BeFalse();
+        await _channel.Received(1).BasicNackAsync(888ul, false, true, Arg.Any<CancellationToken>());
+        _loggedEvents.Should().ContainSingle(e => e.LogType == MqLogType.ConsumeError);
+    }
+
+    [Fact]
     public async Task should_release_semaphore_on_successful_ack()
     {
         // given

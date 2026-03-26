@@ -130,7 +130,7 @@ internal sealed class RedisConsumerClient(
                     {
                         await _semaphore.WaitAsync(cancellationToken);
                         _ObserveBackgroundHandler(
-                            _RunConcurrentHandlerIgnoringCancellation(
+                            Task.Run(
                                 async () =>
                                 {
                                     try
@@ -142,7 +142,7 @@ internal sealed class RedisConsumerClient(
                                         _ReleaseSemaphore();
                                     }
                                 },
-                                cancellationToken
+                                CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                             )
                         );
                     }
@@ -220,15 +220,6 @@ internal sealed class RedisConsumerClient(
                 );
             }
         }
-    }
-
-    private static Task _RunConcurrentHandlerIgnoringCancellation(
-        Func<Task> handler,
-        CancellationToken cancellationToken
-    )
-    {
-        _ = cancellationToken;
-        return Task.Run(handler);
     }
 
     private void _ObserveBackgroundHandler(Task task)

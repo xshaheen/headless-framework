@@ -240,7 +240,7 @@ internal sealed class AzureServiceBusConsumerClient(
         {
             await _semaphore.WaitAsync().ConfigureAwait(false);
             _ObserveBackgroundHandler(
-                _RunConcurrentHandlerIgnoringCancellation(
+                Task.Run(
                     async () =>
                     {
                         try
@@ -253,7 +253,7 @@ internal sealed class AzureServiceBusConsumerClient(
                             _ReleaseSemaphore();
                         }
                     },
-                    arg.CancellationToken
+                    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                 )
             );
         }
@@ -268,15 +268,6 @@ internal sealed class AzureServiceBusConsumerClient(
         var context = _ConvertMessage(arg.Message);
 
         await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
-    }
-
-    private static Task _RunConcurrentHandlerIgnoringCancellation(
-        Func<Task> handler,
-        CancellationToken cancellationToken
-    )
-    {
-        _ = cancellationToken;
-        return Task.Run(handler);
     }
 
     private void _ObserveBackgroundHandler(Task task)

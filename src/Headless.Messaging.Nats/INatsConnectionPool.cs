@@ -47,6 +47,19 @@ public sealed class NatsConnectionPool : INatsConnectionPool
     public string ServersAddress { get; }
 
     /// <summary>
+    /// Eagerly connects all pooled connections to the NATS server.
+    /// Call during startup to surface connection failures early instead of on first publish.
+    /// </summary>
+    public async Task ConnectAllAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var connection in _connections)
+        {
+            await connection.ConnectAsync().ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+    }
+
+    /// <summary>
     /// Returns a connection from the pool using round-robin distribution.
     /// Connections are long-lived and multiplexed — no return is needed.
     /// </summary>

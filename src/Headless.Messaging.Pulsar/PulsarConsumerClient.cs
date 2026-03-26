@@ -68,7 +68,7 @@ internal sealed class PulsarConsumerClient(
             {
                 await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
                 _ObserveBackgroundHandler(
-                    _RunConcurrentHandlerIgnoringCancellation(
+                    Task.Run(
                         async () =>
                         {
                             try
@@ -80,7 +80,7 @@ internal sealed class PulsarConsumerClient(
                                 _ReleaseSemaphore();
                             }
                         },
-                        cancellationToken
+                        CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                     )
                 );
             }
@@ -89,19 +89,39 @@ internal sealed class PulsarConsumerClient(
                 await consumeAsync(consumerResult).ConfigureAwait(false);
             }
 
-            Task consumeAsync(Message<byte[]> currentMessage)
+            async Task consumeAsync(Message<byte[]> currentMessage)
             {
-                var headers = new Dictionary<string, string?>(currentMessage.Properties.Count, StringComparer.Ordinal);
-                foreach (var header in currentMessage.Properties)
+                TransportMessage message;
+                try
                 {
-                    headers.Add(header.Key, header.Value);
+                    var headers = new Dictionary<string, string?>(
+                        currentMessage.Properties.Count,
+                        StringComparer.Ordinal
+                    );
+                    foreach (var header in currentMessage.Properties)
+                    {
+                        headers.Add(header.Key, header.Value);
+                    }
+
+                    headers[Headers.Group] = groupName;
+
+                    message = new TransportMessage(headers, currentMessage.Data);
+                }
+                catch (Exception ex)
+                {
+                    OnLogCallback!(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ConsumeError,
+                            Reason = $"Failed to build transport message, nacking: {ex}",
+                        }
+                    );
+
+                    await RejectAsync(currentMessage.MessageId).ConfigureAwait(false);
+                    return;
                 }
 
-                headers[Headers.Group] = groupName;
-
-                var message = new TransportMessage(headers, currentMessage.Data);
-
-                return OnMessageCallback!(message, currentMessage.MessageId);
+                await OnMessageCallback!(message, currentMessage.MessageId).ConfigureAwait(false);
             }
         }
     }
@@ -132,15 +152,6 @@ internal sealed class PulsarConsumerClient(
                 // Defensive: ignore over-release
             }
         }
-    }
-
-    private static Task _RunConcurrentHandlerIgnoringCancellation(
-        Func<Task> handler,
-        CancellationToken cancellationToken
-    )
-    {
-        _ = cancellationToken;
-        return Task.Run(handler);
     }
 
     private void _ObserveBackgroundHandler(Task task)

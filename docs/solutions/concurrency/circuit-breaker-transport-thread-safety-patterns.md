@@ -143,28 +143,28 @@ When a `CancellationToken` is cancelled between `await semaphore.WaitAsync()` an
 ```csharp
 // BEFORE (semaphore leaked if Task.Run never starts)
 await _semaphore.WaitAsync(cancellationToken);
-await Task.Run(async () =>
-{
-    try { /* work */ }
-    finally { _semaphore.Release(); }
-}, cancellationToken);
+
+await Task.Run(
+    async () =>
+    {
+        try { /* work */ }
+        finally { _semaphore.Release(); }
+    },
+    cancellationToken
+);
 
 
 // AFTER (scheduling ignores cancellation so finally always runs)
 await _semaphore.WaitAsync(cancellationToken);
-_ = RunConcurrentHandlerIgnoringCancellation(async () =>
-{
-    try { /* work */ }
-    finally { _semaphore.Release(); }
-}, cancellationToken);
 
-internal static Task RunConcurrentHandlerIgnoringCancellation(
-    Func<Task> handler,
-    CancellationToken cancellationToken)
-{
-    _ = cancellationToken;
-    return Task.Run(handler);
-}
+_ = Task.Run(
+    async () =>
+    {
+        try { /* work */ }
+        finally { _semaphore.Release(); }
+    },
+    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
+);
 ```
 
 ---
@@ -422,19 +422,20 @@ public async Task ConcurrentPauseAsync_OnlyOneCallerCreatesGate()
 **Pattern 3 — Semaphore not leaked on cancellation**
 ```csharp
 [Fact]
-public async Task RunConcurrentHandlerIgnoringCancellation_runs_even_when_token_is_canceled()
+public async Task run_concurrent_handler_ignoring_cancellation_runs_even_when_token_is_canceled()
 {
     using var cts = new CancellationTokenSource();
     await cts.CancelAsync();
     var ran = false;
 
-    await NatsConsumerClient.RunConcurrentHandlerIgnoringCancellation(
+    await Task.Run(
         () =>
         {
             ran = true;
             return Task.CompletedTask;
         },
-        cts.Token);
+        CancellationToken.None // Ensure the task runs even if the original token is canceled
+    );
 
     ran.Should().BeTrue();
 }

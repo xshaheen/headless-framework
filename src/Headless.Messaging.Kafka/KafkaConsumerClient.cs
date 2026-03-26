@@ -287,27 +287,44 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     private async Task _ConsumeAsync(ConsumeResult<string, byte[]> consumerResult)
     {
-        var headers = new Dictionary<string, string?>(consumerResult.Message.Headers.Count, StringComparer.Ordinal);
-        foreach (var header in consumerResult.Message.Headers)
+        TransportMessage message;
+        try
         {
-            var val = header.GetValueBytes();
-            headers[header.Key] = val != null ? Encoding.UTF8.GetString(val) : null;
-        }
-
-        headers[Headers.Group] = _groupId;
-
-        if (_kafkaOptions.CustomHeadersBuilder != null)
-        {
-            var customHeaders = _kafkaOptions.CustomHeadersBuilder(consumerResult, _serviceProvider);
-            foreach (var customHeader in customHeaders)
+            var headers = new Dictionary<string, string?>(consumerResult.Message.Headers.Count, StringComparer.Ordinal);
+            foreach (var header in consumerResult.Message.Headers)
             {
-                headers[customHeader.Key] = customHeader.Value;
+                var val = header.GetValueBytes();
+                headers[header.Key] = val != null ? Encoding.UTF8.GetString(val) : null;
             }
+
+            headers[Headers.Group] = _groupId;
+
+            if (_kafkaOptions.CustomHeadersBuilder != null)
+            {
+                var customHeaders = _kafkaOptions.CustomHeadersBuilder(consumerResult, _serviceProvider);
+                foreach (var customHeader in customHeaders)
+                {
+                    headers[customHeader.Key] = customHeader.Value;
+                }
+            }
+
+            message = new TransportMessage(headers, consumerResult.Message.Value);
+        }
+        catch (Exception ex)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Failed to build transport message, seeking back: {ex}",
+                }
+            );
+
+            await RejectAsync(consumerResult).ConfigureAwait(false);
+            return;
         }
 
-        var message = new TransportMessage(headers, consumerResult.Message.Value);
-
-        await OnMessageCallback!(message, consumerResult);
+        await OnMessageCallback!(message, consumerResult).ConfigureAwait(false);
     }
 
     private IConsumer<string, byte[]> _BuildConsumer(ConsumerConfig config)
