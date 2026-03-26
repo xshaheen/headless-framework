@@ -46,12 +46,7 @@ await _client.CloseAsync().ConfigureAwait(false);
 For broker surfaces, separate connection input from operator-facing output:
 
 ```csharp
-internal string GetSanitizedServersForDisplay()
-{
-    return string.Join(",",
-        Servers.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(_SanitizeServerForDisplay));
-}
+public BrokerAddress BrokerAddress => new("nats", BrokerAddressDisplay.FormatMany(_natsOptions.Servers));
 ```
 
 For generated docs, update the source examples at the same time as the API rename:

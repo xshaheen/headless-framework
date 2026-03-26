@@ -138,7 +138,7 @@ public Task ResumeAsync(CancellationToken cancellationToken)
 
 When a `CancellationToken` is cancelled between `await semaphore.WaitAsync()` and the `Task.Run` lambda starting, the semaphore slot is consumed but `Release()` in the `finally` block never executes. The concurrency limiter is permanently decremented.
 
-**Affected:** `NatsConsumerClient`
+**Affected:** `NatsConsumerClient`, `AmazonSqsConsumerClient`, `RabbitMqBasicConsumer`
 
 ```csharp
 // BEFORE (semaphore leaked if Task.Run never starts)
@@ -535,7 +535,7 @@ When a PR touches `IConsumerClient` implementations or state machine transitions
 
 2. **No `volatile bool` gates.** Any `volatile bool _paused/stopped/running` used as a branch guard must be replaced with `Interlocked` or `SemaphoreSlim`.
 
-3. **Semaphores acquired inside `Task.Run`, not before.** Confirm `WaitAsync` is inside the delegate, in `try/finally` that always releases.
+3. **Background scheduling must guarantee semaphore release.** If a slot is acquired before `Task.Run`, the delegate must be scheduled with `CancellationToken.None` and release in `finally` so cancellation cannot leak capacity.
 
 4. **Timer callbacks check generation.** Every timer driving state transitions must capture and validate a generation counter that is incremented on Reset/Dispose.
 

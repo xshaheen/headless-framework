@@ -52,16 +52,13 @@ await innerClient.ListeningAsync(_pollingDelay, groupCts.Token);
 
 ```csharp
 // RabbitMQ / Azure Service Bus
-await _pauseGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
 ```
 
 ```csharp
 // NATS
-if (Volatile.Read(ref _paused) != 0)
-{
-    return ValueTask.CompletedTask;
-}
+await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 ```
 
 ### 2. Resume failures must propagate back to the half-open controller
@@ -69,24 +66,31 @@ if (Volatile.Read(ref _paused) != 0)
 `_ResumeGroupAsync` still logs per-client failures, but it now rethrows after iterating all clients. A single failure is rethrown directly; multiple failures are wrapped in `AggregateException`. That preserves diagnostics without hiding the failed half-open probe from `CircuitBreakerStateManager`.
 
 ```csharp
-List<Exception>? failures = null;
+ConcurrentBag<Exception> failures = [];
 
-foreach (var client in snapshot)
+await Task.WhenAll(
+    snapshot.Select(async client =>
+    {
+        try
+        {
+            await client.ResumeAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resume consumer client for group '{GroupName}'.", handle.GroupName);
+            failures.Add(ex);
+        }
+    })
+);
+
+if (failures.IsEmpty)
 {
-    try
-    {
-        await client.ResumeAsync();
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Failed to resume consumer client for group '{GroupName}'.", handle.GroupName);
-        failures ??= [];
-        failures.Add(ex);
-    }
+    return;
 }
 
-if (failures?.Count == 1) throw failures[0];
-if (failures is not null) throw new AggregateException(..., failures);
+var failureList = failures.ToArray();
+if (failureList.Length == 1) throw failureList[0];
+throw new AggregateException(..., failureList);
 ```
 
 ### 3. Cross-option invariants belong in the FluentValidation validator
@@ -116,4 +120,4 @@ RuleFor(x => x.MaxPollingInterval)
 
 ## Related Docs
 
-- [Thread Safety and Resilience Patterns in .NET Messaging Circuit Breakers](/Users/xshaheen/Dev/framework/headless-framework/.worktrees/xshaheen/messaging-circuit-breaker-and-retry-backpressure/docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md)
+- [Thread Safety and Resilience Patterns in .NET Messaging Circuit Breakers](/Users/xshaheen/Dev/framework/headless-framework/docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md)
