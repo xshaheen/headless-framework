@@ -18,13 +18,13 @@ public interface IMonitoringApi
         CancellationToken cancellationToken = default
     );
 
-    ValueTask<int> PublishedFailedCount(CancellationToken cancellationToken = default);
+    ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default);
 
-    ValueTask<int> PublishedSucceededCount(CancellationToken cancellationToken = default);
+    ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default);
 
-    ValueTask<int> ReceivedFailedCount(CancellationToken cancellationToken = default);
+    ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default);
 
-    ValueTask<int> ReceivedSucceededCount(CancellationToken cancellationToken = default);
+    ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default);
 
     ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
         MessageType type,

@@ -180,34 +180,34 @@ internal sealed class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonito
         }
     }
 
-    public ValueTask<int> PublishedFailedCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<int>(
+        return new ValueTask<long>(
             InMemoryDataStorage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Failed)
         );
     }
 
-    public ValueTask<int> PublishedSucceededCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<int>(
+        return new ValueTask<long>(
             InMemoryDataStorage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded)
         );
     }
 
-    public ValueTask<int> ReceivedFailedCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<int>(
+        return new ValueTask<long>(
             InMemoryDataStorage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Failed)
         );
     }
 
-    public ValueTask<int> ReceivedSucceededCount(CancellationToken cancellationToken = default)
+    public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<int>(
+        return new ValueTask<long>(
             InMemoryDataStorage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded)
         );
     }
