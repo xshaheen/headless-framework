@@ -81,7 +81,10 @@ public sealed class SqlServerDataStorage(
         object[] sqlParams =
         [
             new SqlParameter("@Instance", instance),
-            new SqlParameter("@LastLockTime", new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc)) { SqlDbType = SqlDbType.DateTime2 },
+            new SqlParameter("@LastLockTime", new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc))
+            {
+                SqlDbType = SqlDbType.DateTime2,
+            },
             new SqlParameter("@Key", key),
         ];
         await connection
@@ -131,7 +134,8 @@ public sealed class SqlServerDataStorage(
 
         parameters[^1] = new SqlParameter("@StatusName", nameof(StatusName.Delayed));
 
-        var sql = $"UPDATE {_publishedTable} SET [StatusName]=@StatusName WHERE [Id] IN ({string.Join(',', paramNames)});";
+        var sql =
+            $"UPDATE {_publishedTable} SET [StatusName]=@StatusName WHERE [Id] IN ({string.Join(',', paramNames)});";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection
@@ -229,7 +233,9 @@ public sealed class SqlServerDataStorage(
                 );
             }
 
-            await dbTrans.Connection!.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).ConfigureAwait(false);
+            await dbTrans
+                .Connection!.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams)
+                .ConfigureAwait(false);
         }
 
         return message;
@@ -469,9 +475,7 @@ public sealed class SqlServerDataStorage(
         {
             var dbTrans = efTransaction.GetDbTransaction();
             var connection = dbTrans.Connection!;
-            await connection
-                .ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams)
-                .ConfigureAwait(false);
+            await connection.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).ConfigureAwait(false);
         }
         else
         {

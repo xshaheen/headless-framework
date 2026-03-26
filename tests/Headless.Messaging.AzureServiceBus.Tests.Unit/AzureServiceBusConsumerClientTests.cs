@@ -253,19 +253,25 @@ public sealed class AzureServiceBusConsumerClientTests
         var isPausedProp = gate.GetType().GetProperty("IsPaused", BindingFlags.Public | BindingFlags.Instance)!;
 
         // then - gate starts open
-        ((bool)isPausedProp.GetValue(gate)!).Should().BeFalse();
+        ((bool)isPausedProp.GetValue(gate)!)
+            .Should()
+            .BeFalse();
 
         // when
         await client.PauseAsync();
 
         // then - startup gate closes while paused
-        ((bool)isPausedProp.GetValue(gate)!).Should().BeTrue();
+        ((bool)isPausedProp.GetValue(gate)!)
+            .Should()
+            .BeTrue();
 
         // when
         await client.ResumeAsync();
 
         // then - gate reopens for late-starting listeners
-        ((bool)isPausedProp.GetValue(gate)!).Should().BeFalse();
+        ((bool)isPausedProp.GetValue(gate)!)
+            .Should()
+            .BeFalse();
     }
 
     [Fact]
@@ -284,6 +290,8 @@ public sealed class AzureServiceBusConsumerClientTests
         await client.ResumeAsync();
 
         // then - resume only opens the gate before first ListeningAsync startup
-        ((int)startedField.GetValue(client)!).Should().Be(0);
+        ((int)startedField.GetValue(client)!)
+            .Should()
+            .Be(0);
     }
 }

@@ -47,7 +47,10 @@ public sealed class PrimitiveValueConverterTests
         var restored = converter.ConvertFromProvider(stored);
 
         // then
-        ((UserId)restored!).GetUnderlyingPrimitiveValue().Should().Be("user-rt");
+        ((UserId)restored!)
+            .GetUnderlyingPrimitiveValue()
+            .Should()
+            .Be("user-rt");
     }
 
     [Fact]

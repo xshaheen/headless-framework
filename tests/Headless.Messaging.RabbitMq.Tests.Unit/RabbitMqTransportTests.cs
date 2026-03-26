@@ -70,7 +70,10 @@ public sealed class RabbitMqTransportTests : TestBase
 
         // then
         await act.Should().ThrowAsync<OperationCanceledException>();
-        _pool.ReceivedCalls().Should().NotContain(call => call.GetMethodInfo().Name == nameof(IConnectionChannelPool.Rent));
+        _pool
+            .ReceivedCalls()
+            .Should()
+            .NotContain(call => call.GetMethodInfo().Name == nameof(IConnectionChannelPool.Rent));
         _pool.DidNotReceive().Return(Arg.Any<IChannel>());
     }
 

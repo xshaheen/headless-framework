@@ -152,10 +152,7 @@ public sealed class CircuitBreakerOptionsTests : TestBase
     [Fact]
     public void validator_rejects_max_open_duration_exceeding_one_day()
     {
-        var opts = new CircuitBreakerOptions
-        {
-            MaxOpenDuration = TimeSpan.FromDays(1) + TimeSpan.FromSeconds(1),
-        };
+        var opts = new CircuitBreakerOptions { MaxOpenDuration = TimeSpan.FromDays(1) + TimeSpan.FromSeconds(1) };
         var validator = new CircuitBreakerOptionsValidator();
 
         var result = validator.Validate(opts);
@@ -167,10 +164,7 @@ public sealed class CircuitBreakerOptionsTests : TestBase
     [Fact]
     public void validator_accepts_max_open_duration_of_exactly_one_day()
     {
-        var opts = new CircuitBreakerOptions
-        {
-            MaxOpenDuration = TimeSpan.FromDays(1),
-        };
+        var opts = new CircuitBreakerOptions { MaxOpenDuration = TimeSpan.FromDays(1) };
         var validator = new CircuitBreakerOptionsValidator();
 
         var result = validator.Validate(opts);
@@ -371,12 +365,9 @@ public sealed class ConsumerCircuitBreakerRegistryTests : TestBase
         var registry = new ConsumerCircuitBreakerRegistry();
         registry.Register("my-group", new ConsumerCircuitBreakerOptions { FailureThreshold = 3 });
 
-        var act = () =>
-            registry.Register("my-group", new ConsumerCircuitBreakerOptions { FailureThreshold = 7 });
+        var act = () => registry.Register("my-group", new ConsumerCircuitBreakerOptions { FailureThreshold = 7 });
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*already registered for group 'my-group'*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*already registered for group 'my-group'*");
     }
 
     [Fact]

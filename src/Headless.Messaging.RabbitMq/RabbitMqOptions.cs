@@ -164,17 +164,13 @@ internal sealed class RabbitMqOptionsValidator : AbstractValidator<RabbitMqOptio
     {
         RuleFor(x => x.HostName).NotEmpty().WithMessage("HostName is required");
 
-        RuleFor(x => x.UserName)
-            .NotEmpty()
-            .WithMessage("UserName is required and must be configured explicitly");
+        RuleFor(x => x.UserName).NotEmpty().WithMessage("UserName is required and must be configured explicitly");
         RuleFor(x => x.UserName)
             .Must(u => !u.Equals("guest", StringComparison.OrdinalIgnoreCase))
             .When(x => !string.IsNullOrWhiteSpace(x.UserName))
             .WithMessage("UserName cannot be 'guest' - use a secure username for production environments");
 
-        RuleFor(x => x.Password)
-            .NotEmpty()
-            .WithMessage("Password is required and must be configured explicitly");
+        RuleFor(x => x.Password).NotEmpty().WithMessage("Password is required and must be configured explicitly");
         RuleFor(x => x.Password)
             .Must(p => !p.Equals("guest", StringComparison.OrdinalIgnoreCase))
             .When(x => !string.IsNullOrWhiteSpace(x.Password))

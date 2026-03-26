@@ -265,10 +265,7 @@ public sealed class MessageTests : TestBase
     public void should_update_exception_in_headers()
     {
         // given
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [Headers.Exception] = "OldException",
-        };
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.Exception] = "OldException" };
         var message = new Message(headers, null);
         var exception = new ArgumentException("New error", "testParam");
 
@@ -283,10 +280,7 @@ public sealed class MessageTests : TestBase
     public void should_remove_exception_from_headers()
     {
         // given
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [Headers.Exception] = "SomeException",
-        };
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.Exception] = "SomeException" };
         var message = new Message(headers, null);
 
         // when

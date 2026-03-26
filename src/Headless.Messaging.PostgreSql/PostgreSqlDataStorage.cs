@@ -241,7 +241,9 @@ public sealed class PostgreSqlDataStorage(
                 );
             }
 
-            await dbTrans.Connection!.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).ConfigureAwait(false);
+            await dbTrans
+                .Connection!.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams)
+                .ConfigureAwait(false);
         }
 
         return message;
@@ -349,7 +351,8 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessagesOfNeedRetryAsync(_publishedTable, lookbackSeconds, cancellationToken).ConfigureAwait(false);
+        return await _GetMessagesOfNeedRetryAsync(_publishedTable, lookbackSeconds, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(
@@ -357,7 +360,8 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessagesOfNeedRetryAsync(_receivedTable, lookbackSeconds, cancellationToken).ConfigureAwait(false);
+        return await _GetMessagesOfNeedRetryAsync(_receivedTable, lookbackSeconds, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
@@ -473,9 +477,7 @@ public sealed class PostgreSqlDataStorage(
         {
             var dbTrans = efTransaction.GetDbTransaction();
             var connection = dbTrans.Connection!;
-            await connection
-                .ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams)
-                .ConfigureAwait(false);
+            await connection.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).ConfigureAwait(false);
         }
         else
         {

@@ -462,7 +462,10 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var listenTask = Task.Run(
             async () =>
             {
-                try { await _client.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token); }
+                try
+                {
+                    await _client.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token);
+                }
                 catch (OperationCanceledException) { }
             },
             AbortToken

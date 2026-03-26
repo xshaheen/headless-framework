@@ -150,7 +150,13 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
     public Task<RecordedMessage> WaitForPublished<T>(TimeSpan? timeout = null, CancellationToken ct = default) =>
-        _store.WaitForAsync(typeof(T), MessageObservationType.Published, predicate: null, timeout ?? DefaultTimeout, ct);
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Published,
+            predicate: null,
+            timeout ?? DefaultTimeout,
+            ct
+        );
 
     /// <summary>
     /// Waits until a published message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
@@ -160,7 +166,14 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
         CancellationToken ct = default
-    ) => _store.WaitForAsync(typeof(T), MessageObservationType.Published, obj => predicate((T)obj), timeout ?? DefaultTimeout, ct);
+    ) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Published,
+            obj => predicate((T)obj),
+            timeout ?? DefaultTimeout,
+            ct
+        );
 
     // -------------------------------------------------------------------------
     // Awaitable assertions — Consumed
@@ -181,7 +194,14 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
         CancellationToken ct = default
-    ) => _store.WaitForAsync(typeof(T), MessageObservationType.Consumed, obj => predicate((T)obj), timeout ?? DefaultTimeout, ct);
+    ) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Consumed,
+            obj => predicate((T)obj),
+            timeout ?? DefaultTimeout,
+            ct
+        );
 
     // -------------------------------------------------------------------------
     // Awaitable assertions — Faulted
@@ -202,7 +222,14 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
         CancellationToken ct = default
-    ) => _store.WaitForAsync(typeof(T), MessageObservationType.Faulted, obj => predicate((T)obj), timeout ?? DefaultTimeout, ct);
+    ) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Faulted,
+            obj => predicate((T)obj),
+            timeout ?? DefaultTimeout,
+            ct
+        );
 
     // -------------------------------------------------------------------------
     // State management

@@ -178,9 +178,7 @@ internal sealed class AzureServiceBusOptionsValidator : AbstractValidator<AzureS
                 !string.IsNullOrWhiteSpace(x.ConnectionString)
                 || (!string.IsNullOrWhiteSpace(x.Namespace) && x.TokenCredential is not null)
             )
-            .WithMessage(
-                "Azure Service Bus requires either a ConnectionString or both Namespace and TokenCredential."
-            );
+            .WithMessage("Azure Service Bus requires either a ConnectionString or both Namespace and TokenCredential.");
 
         RuleFor(x => x.TopicPath).NotEmpty();
         RuleFor(x => x.MaxConcurrentCalls).GreaterThanOrEqualTo(1);
