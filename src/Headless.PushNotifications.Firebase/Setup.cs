@@ -54,7 +54,14 @@ public static class FirebaseSetup
         {
             if (FirebaseApp.DefaultInstance is null)
             {
-                FirebaseApp.Create(new AppOptions { Credential = GoogleCredential.FromJson(options.Json) });
+                FirebaseApp.Create(
+                    new AppOptions
+                    {
+                        Credential = CredentialFactory
+                            .FromJson<ServiceAccountCredential>(options.Json)
+                            .ToGoogleCredential(),
+                    }
+                );
             }
 
             // Register resilience pipeline for FCM retry logic
