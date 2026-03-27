@@ -78,12 +78,8 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: "Authenticate GitHub Packages"
-        run: |
-          dotnet nuget remove source github.com 2>/dev/null || true
-          dotnet nuget add source https://nuget.pkg.github.com/xshaheen/index.json --name github.com --username xshaheen --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text
+        run: dotnet nuget update source github.com --username xshaheen --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text --configfile nuget.config
         shell: bash
-        env:
-          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: "Build"
         run: dotnet build --configuration ${{ env.CONFIGURATION }}
