@@ -3,7 +3,7 @@
   "isRoot": true,
   "tools": {
     "minver-cli": {
-      "version": "6.0.0",
+      "version": "7.0.0",
       "commands": [
         "minver"
       ],
@@ -17,14 +17,14 @@
       "rollForward": true
     },
     "dotnet-ef": {
-      "version": "9.0.1",
+      "version": "10.0.5",
       "commands": [
         "dotnet-ef"
       ],
       "rollForward": false
     },
     "husky": {
-      "version": "0.8.0",
+      "version": "0.9.1",
       "commands": [
         "husky"
       ],
@@ -38,9 +38,16 @@
       "rollForward": false
     },
     "dotnet-reportgenerator-globaltool": {
-      "version": "5.5.3",
+      "version": "5.5.4",
       "commands": [
         "reportgenerator"
+      ],
+      "rollForward": false
+    },
+    "dotnet-outdated-tool": {
+      "version": "4.7.1",
+      "commands": [
+        "dotnet-outdated"
       ],
       "rollForward": false
     }
