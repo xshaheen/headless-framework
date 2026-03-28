@@ -180,6 +180,9 @@ public sealed class ProblemDetailsCreator(
                     StringComparison.Ordinal
                 ):
                 problemDetails.Title = HeadlessProblemDetailsConstants.Titles.EndpointNotFound;
+                problemDetails.Detail ??= HeadlessProblemDetailsConstants.Details.EndpointNotFound(
+                    httpContextAccessor.HttpContext?.Request.Path.Value ?? ""
+                );
 
                 break;
         }
