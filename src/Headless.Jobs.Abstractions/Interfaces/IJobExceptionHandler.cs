@@ -1,4 +1,4 @@
-﻿using Headless.Jobs.Enums;
+using Headless.Jobs.Enums;
 
 namespace Headless.Jobs.Interfaces;
 

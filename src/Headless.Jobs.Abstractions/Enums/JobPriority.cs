@@ -1,4 +1,4 @@
-﻿namespace Headless.Jobs.Enums;
+namespace Headless.Jobs.Enums;
 
 public enum JobPriority
 {

@@ -1,4 +1,4 @@
-﻿using Amazon;
+using Amazon;
 using Headless.Messaging.Dashboard;
 
 var builder = WebApplication.CreateBuilder(args);

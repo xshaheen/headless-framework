@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
@@ -8,9 +8,7 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Managers;
 
-internal class JobsManager<TTimeJob, TCronJob>
-    : ICronJobManager<TCronJob>,
-        ITimeJobManager<TTimeJob>
+internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
@@ -58,15 +56,11 @@ internal class JobsManager<TTimeJob, TCronJob>
         CancellationToken cancellationToken
     ) => _UpdateTimeJobAsync(timeJob, cancellationToken);
 
-    Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.DeleteAsync(
-        Guid id,
-        CancellationToken cancellationToken
-    ) => _DeleteCronJobAsync(id, cancellationToken);
+    Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.DeleteAsync(Guid id, CancellationToken cancellationToken) =>
+        _DeleteCronJobAsync(id, cancellationToken);
 
-    Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.DeleteAsync(
-        Guid id,
-        CancellationToken cancellationToken
-    ) => _DeleteTimeJobAsync(id, cancellationToken);
+    Task<JobResult<TTimeJob>> ITimeJobManager<TTimeJob>.DeleteAsync(Guid id, CancellationToken cancellationToken) =>
+        _DeleteTimeJobAsync(id, cancellationToken);
 
     Task<JobResult<List<TTimeJob>>> ITimeJobManager<TTimeJob>.AddBatchAsync(
         List<TTimeJob> entities,
@@ -98,10 +92,7 @@ internal class JobsManager<TTimeJob, TCronJob>
         CancellationToken cancellationToken
     ) => _DeleteCronJobsBatchAsync(ids, cancellationToken);
 
-    private async Task<JobResult<TTimeJob>> _AddTimeJobAsync(
-        TTimeJob entity,
-        CancellationToken cancellationToken
-    )
+    private async Task<JobResult<TTimeJob>> _AddTimeJobAsync(TTimeJob entity, CancellationToken cancellationToken)
     {
         if (entity.Id == Guid.Empty)
         {
@@ -116,7 +107,9 @@ internal class JobsManager<TTimeJob, TCronJob>
         }
 
         entity.ExecutionTime =
-            entity.ExecutionTime == null ? _timeProvider.GetUtcNow().UtcDateTime : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
+            entity.ExecutionTime == null
+                ? _timeProvider.GetUtcNow().UtcDateTime
+                : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
 
         entity.CreatedAt = _timeProvider.GetUtcNow().UtcDateTime;
         entity.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
@@ -159,10 +152,7 @@ internal class JobsManager<TTimeJob, TCronJob>
         }
     }
 
-    private async Task<JobResult<TCronJob>> _AddCronJobAsync(
-        TCronJob entity,
-        CancellationToken cancellationToken
-    )
+    private async Task<JobResult<TCronJob>> _AddCronJobAsync(TCronJob entity, CancellationToken cancellationToken)
     {
         if (entity.Id == Guid.Empty)
         {
@@ -176,11 +166,12 @@ internal class JobsManager<TTimeJob, TCronJob>
             );
         }
 
-        if (CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, _timeProvider.GetUtcNow().UtcDateTime) is not { } nextOccurrence)
+        if (
+            CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, _timeProvider.GetUtcNow().UtcDateTime)
+            is not { } nextOccurrence
+        )
         {
-            return new JobResult<TCronJob>(
-                new JobValidatorException($"Cannot parse expression {entity.Expression}")
-            );
+            return new JobResult<TCronJob>(new JobValidatorException($"Cannot parse expression {entity.Expression}"));
         }
 
         entity.CreatedAt = _timeProvider.GetUtcNow().UtcDateTime;
@@ -202,10 +193,7 @@ internal class JobsManager<TTimeJob, TCronJob>
         }
     }
 
-    private async Task<JobResult<TTimeJob>> _UpdateTimeJobAsync(
-        TTimeJob timeJob,
-        CancellationToken cancellationToken
-    )
+    private async Task<JobResult<TTimeJob>> _UpdateTimeJobAsync(TTimeJob timeJob, CancellationToken cancellationToken)
     {
         if (timeJob is null)
         {
@@ -214,9 +202,7 @@ internal class JobsManager<TTimeJob, TCronJob>
 
         if (timeJob.ExecutionTime == null)
         {
-            return new JobResult<TTimeJob>(
-                new JobValidatorException($"Job ExecutionTime must not be null!")
-            );
+            return new JobResult<TTimeJob>(new JobValidatorException($"Job ExecutionTime must not be null!"));
         }
 
         timeJob.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
@@ -252,9 +238,7 @@ internal class JobsManager<TTimeJob, TCronJob>
     {
         if (cronJob is null)
         {
-            return new JobResult<TCronJob>(
-                new ArgumentNullException(nameof(cronJob), "Cron job must not be null!")
-            );
+            return new JobResult<TCronJob>(new ArgumentNullException(nameof(cronJob), "Cron job must not be null!"));
         }
 
         if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronJob?.Function))
@@ -265,12 +249,11 @@ internal class JobsManager<TTimeJob, TCronJob>
         }
 
         if (
-            CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, _timeProvider.GetUtcNow().UtcDateTime) is not { } nextOccurrence
+            CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, _timeProvider.GetUtcNow().UtcDateTime)
+            is not { } nextOccurrence
         )
         {
-            return new JobResult<TCronJob>(
-                new JobValidatorException($"Cannot parse expression {cronJob.Expression}")
-            );
+            return new JobResult<TCronJob>(new JobValidatorException($"Cannot parse expression {cronJob.Expression}"));
         }
 
         try
@@ -303,10 +286,7 @@ internal class JobsManager<TTimeJob, TCronJob>
         }
     }
 
-    private async Task<JobResult<TCronJob>> _DeleteCronJobAsync(
-        Guid id,
-        CancellationToken cancellationToken = default
-    )
+    private async Task<JobResult<TCronJob>> _DeleteCronJobAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var affectedRows = await _persistenceProvider.RemoveCronJobs([id], cancellationToken: cancellationToken);
 
@@ -318,10 +298,7 @@ internal class JobsManager<TTimeJob, TCronJob>
         return new JobResult<TCronJob>(affectedRows);
     }
 
-    private async Task<JobResult<TTimeJob>> _DeleteTimeJobAsync(
-        Guid id,
-        CancellationToken cancellationToken = default
-    )
+    private async Task<JobResult<TTimeJob>> _DeleteTimeJobAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var affectedRows = await _persistenceProvider.RemoveTimeJobs([id], cancellationToken: cancellationToken);
 
@@ -366,9 +343,7 @@ internal class JobsManager<TTimeJob, TCronJob>
         }
     }
 
-    private static InternalFunctionContext[] _BuildImmediateContextsFromNonGeneric(
-        IEnumerable<TimeJobEntity> jobs
-    )
+    private static InternalFunctionContext[] _BuildImmediateContextsFromNonGeneric(IEnumerable<TimeJobEntity> jobs)
     {
         return jobs.Select(_BuildContextFromNonGeneric).ToArray();
     }
@@ -399,10 +374,7 @@ internal class JobsManager<TTimeJob, TCronJob>
             return new JobResult<List<TTimeJob>>(entities ?? new List<TTimeJob>());
         }
 
-        var jobFunctionsHashSet = new HashSet<string>(
-            JobFunctionProvider.JobFunctions.Keys,
-            StringComparer.Ordinal
-        );
+        var jobFunctionsHashSet = new HashSet<string>(JobFunctionProvider.JobFunctions.Keys, StringComparer.Ordinal);
         var immediateTickers = new List<Guid>();
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         DateTime earliestForNonImmediate = default;
@@ -494,7 +466,8 @@ internal class JobsManager<TTimeJob, TCronJob>
             }
 
             if (
-                CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, _timeProvider.GetUtcNow().UtcDateTime) is not { } nextOccurrence
+                CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, _timeProvider.GetUtcNow().UtcDateTime)
+                is not { } nextOccurrence
             )
             {
                 errors.Add(new JobValidatorException($"Cannot parse expression {entity.Expression}"));

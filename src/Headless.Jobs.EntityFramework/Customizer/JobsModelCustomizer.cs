@@ -1,4 +1,4 @@
-﻿using Headless.Jobs.Configurations;
+using Headless.Jobs.Configurations;
 using Headless.Jobs.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;

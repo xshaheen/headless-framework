@@ -1,4 +1,4 @@
-﻿namespace Headless.Jobs.Interfaces;
+namespace Headless.Jobs.Interfaces;
 
 public interface IJobsHostScheduler
 {

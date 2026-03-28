@@ -1,4 +1,4 @@
-﻿using Demo;
+using Demo;
 using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

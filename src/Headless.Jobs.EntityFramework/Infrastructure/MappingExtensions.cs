@@ -1,4 +1,4 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
@@ -52,9 +52,10 @@ internal static class MappingExtensions
                 .ToArray(),
         };
 
-    internal static Expression<
-        Func<TCronJobOccurrence, CronJobOccurrenceEntity<TCronJob>>
-    > ForQueueCronJobOccurrence<TCronJobOccurrence, TCronJob>()
+    internal static Expression<Func<TCronJobOccurrence, CronJobOccurrenceEntity<TCronJob>>> ForQueueCronJobOccurrence<
+        TCronJobOccurrence,
+        TCronJob
+    >()
         where TCronJob : CronJobEntity, new()
         where TCronJobOccurrence : CronJobOccurrenceEntity<TCronJob>, new() =>
         e => new CronJobOccurrenceEntity<TCronJob>

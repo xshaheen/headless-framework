@@ -1,4 +1,4 @@
-﻿using Headless.Permissions;
+using Headless.Permissions;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.GrantProviders;
 using Headless.Permissions.Grants;

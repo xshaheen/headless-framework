@@ -1,4 +1,4 @@
-﻿using Headless.Sql;
+using Headless.Sql;
 using Headless.Sql.PostgreSql;
 using Tests.TestSetup;
 

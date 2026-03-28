@@ -1,4 +1,4 @@
-﻿namespace Headless.Jobs.Exceptions;
+namespace Headless.Jobs.Exceptions;
 
 public class JobValidatorException : Exception
 {

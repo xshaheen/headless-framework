@@ -1,4 +1,4 @@
-﻿namespace Tests.Exceptions;
+namespace Tests.Exceptions;
 
 public sealed partial class ExceptionExtensionsTests
 {

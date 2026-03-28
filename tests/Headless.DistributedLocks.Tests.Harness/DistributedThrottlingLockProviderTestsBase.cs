@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Headless.DistributedLocks;
 using Headless.Testing.Tests;
 using Humanizer;

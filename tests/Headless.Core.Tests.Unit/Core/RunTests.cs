@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Headless.Core;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;

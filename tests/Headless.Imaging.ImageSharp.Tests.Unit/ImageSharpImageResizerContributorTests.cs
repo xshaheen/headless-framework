@@ -1,4 +1,4 @@
-﻿using Headless.Constants;
+using Headless.Constants;
 using Headless.Imaging;
 using Headless.Imaging.ImageSharp;
 using Headless.Testing.Tests;

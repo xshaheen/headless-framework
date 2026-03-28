@@ -1,4 +1,4 @@
-﻿using Headless.DistributedLocks;
+using Headless.DistributedLocks;
 using Headless.Redis;
 
 namespace Tests;

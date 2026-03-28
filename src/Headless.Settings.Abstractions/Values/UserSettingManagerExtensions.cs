@@ -1,4 +1,4 @@
-﻿using Headless.Settings.Models;
+using Headless.Settings.Models;
 
 namespace Headless.Settings.Values;
 

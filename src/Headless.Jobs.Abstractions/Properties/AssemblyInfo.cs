@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("Headless.Jobs.Core")]
 [assembly: InternalsVisibleTo("Headless.Jobs.EntityFramework")]

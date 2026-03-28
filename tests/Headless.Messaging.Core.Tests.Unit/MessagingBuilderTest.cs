@@ -1,4 +1,4 @@
-﻿using Headless.Messaging;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;

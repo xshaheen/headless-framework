@@ -1,4 +1,4 @@
-﻿namespace Demo.Data;
+namespace Demo.Data;
 
 public class User
 {

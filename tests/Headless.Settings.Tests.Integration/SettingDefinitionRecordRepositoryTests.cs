@@ -1,4 +1,4 @@
-﻿using Headless.Settings;
+using Headless.Settings;
 using Headless.Settings.Definitions;
 using Headless.Settings.Models;
 using Headless.Settings.Repositories;

@@ -1,4 +1,4 @@
-﻿using Headless.Jobs.Enums;
+using Headless.Jobs.Enums;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs.Base;

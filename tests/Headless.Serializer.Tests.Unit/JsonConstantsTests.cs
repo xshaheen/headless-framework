@@ -1,4 +1,4 @@
-﻿using Headless.Serializer;
+using Headless.Serializer;
 
 namespace Tests;
 

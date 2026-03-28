@@ -1,4 +1,4 @@
-﻿using Demo;
+using Demo;
 using Headless.Messaging.Dashboard;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;

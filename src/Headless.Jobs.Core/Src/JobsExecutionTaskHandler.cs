@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;

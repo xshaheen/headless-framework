@@ -1,4 +1,4 @@
-﻿using Headless.Text;
+using Headless.Text;
 
 namespace Tests.Text;
 

@@ -1,4 +1,4 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Models;
 
@@ -23,10 +23,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
     );
-    Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(
-        Guid[] ids,
-        CancellationToken cancellationToken = default
-    );
+    Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(Guid[] ids, CancellationToken cancellationToken = default);
     #endregion
 
     #region Cron_Ticker_Core_Methods
@@ -84,10 +81,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
 
     #region Cron_Ticker_Shared_Methods
     Task<TCronJob?> GetCronJobById(Guid id, CancellationToken cancellationToken);
-    Task<TCronJob[]> GetCronJobs(
-        Expression<Func<TCronJob, bool>>? predicate,
-        CancellationToken cancellationToken
-    );
+    Task<TCronJob[]> GetCronJobs(Expression<Func<TCronJob, bool>>? predicate, CancellationToken cancellationToken);
     Task<PaginationResult<TCronJob>> GetCronJobsPaginated(
         Expression<Func<TCronJob, bool>>? predicate,
         int pageNumber,

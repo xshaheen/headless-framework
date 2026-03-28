@@ -1,4 +1,4 @@
-﻿using Headless.Media.Indexing;
+using Headless.Media.Indexing;
 
 namespace Tests;
 

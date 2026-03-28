@@ -1,4 +1,4 @@
-﻿using Headless.Messaging.Messages;
+using Headless.Messaging.Messages;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.InMemoryQueue;

@@ -1,4 +1,4 @@
-﻿using Headless.Orm.EntityFramework.Contexts;
+using Headless.Orm.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 

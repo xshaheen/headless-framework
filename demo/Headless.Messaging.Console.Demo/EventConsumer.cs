@@ -1,4 +1,4 @@
-﻿using Headless.Messaging;
+using Headless.Messaging;
 
 namespace Demo;
 

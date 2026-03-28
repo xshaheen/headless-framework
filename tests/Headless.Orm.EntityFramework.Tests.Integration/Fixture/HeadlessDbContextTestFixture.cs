@@ -1,4 +1,4 @@
-﻿using Headless.Abstractions;
+using Headless.Abstractions;
 using Headless.Orm.EntityFramework;
 using Headless.Testing.Helpers;
 using Microsoft.EntityFrameworkCore;

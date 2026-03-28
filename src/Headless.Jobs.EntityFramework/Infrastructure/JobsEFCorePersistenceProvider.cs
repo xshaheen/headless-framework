@@ -1,4 +1,4 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -49,11 +49,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var baseQuery = dbContext
-            .Set<TTimeJob>()
-            .Include(x => x.Children)
-                .ThenInclude(x => x.Children)
-            .AsNoTracking();
+        var baseQuery = dbContext.Set<TTimeJob>().Include(x => x.Children).ThenInclude(x => x.Children).AsNoTracking();
 
         if (predicate != null)
         {
@@ -78,11 +74,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var baseQuery = dbContext
-            .Set<TTimeJob>()
-            .Include(x => x.Children)
-                .ThenInclude(x => x.Children)
-            .AsNoTracking();
+        var baseQuery = dbContext.Set<TTimeJob>().Include(x => x.Children).ThenInclude(x => x.Children).AsNoTracking();
 
         if (predicate != null)
         {
@@ -294,10 +286,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var baseQuery = dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .Include(x => x.CronJob)
-            .AsNoTracking();
+        var baseQuery = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().Include(x => x.CronJob).AsNoTracking();
 
         if (predicate != null)
         {
@@ -326,10 +315,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<int> RemoveCronJobOccurrences(
-        Guid[] cronJobOccurrences,
-        CancellationToken cancellationToken
-    )
+    public async Task<int> RemoveCronJobOccurrences(Guid[] cronJobOccurrences, CancellationToken cancellationToken)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -384,9 +370,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
-            .Where(x =>
-                occurrenceIds.Contains(x.Id) && x.LockHolder == LockHolder && x.Status == JobStatus.InProgress
-            )
+            .Where(x => occurrenceIds.Contains(x.Id) && x.LockHolder == LockHolder && x.Status == JobStatus.InProgress)
             .Include(x => x.CronJob)
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);

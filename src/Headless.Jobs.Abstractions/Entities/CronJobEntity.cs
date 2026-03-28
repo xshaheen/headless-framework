@@ -1,4 +1,4 @@
-﻿using Headless.Jobs.Entities.BaseEntity;
+using Headless.Jobs.Entities.BaseEntity;
 
 namespace Headless.Jobs.Entities;
 

@@ -1,6 +1,6 @@
 using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
 using Headless.Jobs.JobsThreadPool;
+using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Dispatcher;
 

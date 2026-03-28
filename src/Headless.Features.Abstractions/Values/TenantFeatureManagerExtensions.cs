@@ -1,4 +1,4 @@
-﻿using Headless.Features.Models;
+using Headless.Features.Models;
 
 namespace Headless.Features.Values;
 

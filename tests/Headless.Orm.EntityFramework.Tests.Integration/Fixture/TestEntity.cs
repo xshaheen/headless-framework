@@ -1,4 +1,4 @@
-﻿using Headless.Domain;
+using Headless.Domain;
 using UserId = Headless.Primitives.UserId;
 
 namespace Tests.Fixture;

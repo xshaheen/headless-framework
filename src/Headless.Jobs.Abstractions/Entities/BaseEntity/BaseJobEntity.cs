@@ -1,4 +1,4 @@
-﻿namespace Headless.Jobs.Entities.BaseEntity;
+namespace Headless.Jobs.Entities.BaseEntity;
 
 public class BaseJobEntity
 {

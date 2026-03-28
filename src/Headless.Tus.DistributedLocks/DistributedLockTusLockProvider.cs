@@ -1,4 +1,4 @@
-﻿using Headless.DistributedLocks;
+using Headless.DistributedLocks;
 using tusdotnet.Interfaces;
 
 namespace Headless.Tus;

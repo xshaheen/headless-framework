@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using Headless.Jobs.Entities;
@@ -69,7 +69,6 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 }
             }
         }
-
     }
 
     public async IAsyncEnumerable<TimeJobEntity> QueueTimedOutTimeJobs(
@@ -112,7 +111,6 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                 }
             }
         }
-
     }
 
     public Task ReleaseAcquiredTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken = default)

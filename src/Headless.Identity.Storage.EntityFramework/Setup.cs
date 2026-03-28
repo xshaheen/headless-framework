@@ -1,4 +1,4 @@
-﻿// Copyright (c) Mahmoud Shaheen. All rights reserved.
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;

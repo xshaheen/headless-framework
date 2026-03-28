@@ -1,4 +1,4 @@
-﻿using Headless.Domain;
+using Headless.Domain;
 using Headless.Orm.EntityFramework.Contexts;
 using Headless.Testing.Order;
 using Headless.Testing.Tests;
@@ -226,15 +226,16 @@ public sealed class HeadlessDbContextTests : TestBase
         await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
-        var act = async () => await db.ExecuteTransactionAsync(
-            async (ctx, ct) =>
-            {
-                await ctx.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "rolled" }, ct);
-                await ctx.SaveChangesAsync(ct);
-                throw new InvalidOperationException("simulated failure");
-            },
-            cancellationToken: AbortToken
-        );
+        var act = async () =>
+            await db.ExecuteTransactionAsync(
+                async (ctx, ct) =>
+                {
+                    await ctx.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "rolled" }, ct);
+                    await ctx.SaveChangesAsync(ct);
+                    throw new InvalidOperationException("simulated failure");
+                },
+                cancellationToken: AbortToken
+            );
 
         await act.Should().ThrowAsync<InvalidOperationException>();
         (await db.Basics.CountAsync(AbortToken)).Should().Be(0);

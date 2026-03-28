@@ -1,4 +1,4 @@
-﻿using System.Data.Common;
+using System.Data.Common;
 using Dapper;
 using Demo.Messages;
 using Headless.Messaging;

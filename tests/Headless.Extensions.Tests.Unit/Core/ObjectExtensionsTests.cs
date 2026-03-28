@@ -1,4 +1,4 @@
-﻿using ObjectExtensions = System.ObjectExtensions;
+using ObjectExtensions = System.ObjectExtensions;
 
 namespace Tests.Core;
 

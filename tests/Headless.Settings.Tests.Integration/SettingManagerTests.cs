@@ -1,4 +1,4 @@
-﻿using Headless.Exceptions;
+using Headless.Exceptions;
 using Headless.Settings;
 using Headless.Settings.Definitions;
 using Headless.Settings.Models;

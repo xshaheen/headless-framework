@@ -1,4 +1,4 @@
-﻿using Headless.Jobs.Entities;
+using Headless.Jobs.Entities;
 using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Interfaces.Managers;

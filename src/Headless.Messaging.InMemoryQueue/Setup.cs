@@ -1,4 +1,4 @@
-﻿using Headless.Messaging.Configuration;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemoryQueue;
 using Headless.Messaging.Transport;
 

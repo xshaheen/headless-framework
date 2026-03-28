@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using Dapper;
 using Headless.Messaging;
 using Headless.Messaging.PostgreSql;

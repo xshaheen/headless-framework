@@ -1,4 +1,4 @@
-﻿using Headless.Messaging;
+using Headless.Messaging;
 using Microsoft.Extensions.Hosting;
 
 namespace Tests.Helpers;

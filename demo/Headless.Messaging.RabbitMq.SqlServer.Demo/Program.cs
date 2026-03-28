@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using Demo;
 using Headless.Messaging.Dashboard;
 using Microsoft.Data.SqlClient;

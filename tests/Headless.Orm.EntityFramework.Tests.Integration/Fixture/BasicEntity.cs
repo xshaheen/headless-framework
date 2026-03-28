@@ -1,4 +1,4 @@
-﻿using Headless.Domain;
+using Headless.Domain;
 
 namespace Tests.Fixture;
 

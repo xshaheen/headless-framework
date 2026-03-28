@@ -1,4 +1,4 @@
-﻿using Headless.Messaging;
+using Headless.Messaging;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 

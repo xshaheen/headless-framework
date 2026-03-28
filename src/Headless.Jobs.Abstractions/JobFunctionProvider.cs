@@ -44,9 +44,7 @@ public static class JobFunctionProvider
     /// </summary>
     /// <param name="functions">The functions to register. Cannot be null.</param>
     /// <exception cref="ArgumentNullException">Thrown when functions parameter is null.</exception>
-    public static void RegisterFunctions(
-        IDictionary<string, (string, JobPriority, JobFunctionDelegate, int)> functions
-    )
+    public static void RegisterFunctions(IDictionary<string, (string, JobPriority, JobFunctionDelegate, int)> functions)
     {
         ArgumentNullException.ThrowIfNull(functions);
 
@@ -157,12 +155,7 @@ public static class JobFunctionProvider
             // Single pass: execute callbacks directly on final dictionary
             var functionsDict = new Dictionary<
                 string,
-                (
-                    string cronExpression,
-                    JobPriority Priority,
-                    JobFunctionDelegate Delegate,
-                    int MaxConcurrency
-                )
+                (string cronExpression, JobPriority Priority, JobFunctionDelegate Delegate, int MaxConcurrency)
             >(StringComparer.Ordinal);
             _functionRegistrations(functionsDict);
             JobFunctions = functionsDict.ToFrozenDictionary();
@@ -172,12 +165,7 @@ public static class JobFunctionProvider
         {
             JobFunctions = new Dictionary<
                 string,
-                (
-                    string cronExpression,
-                    JobPriority Priority,
-                    JobFunctionDelegate Delegate,
-                    int MaxConcurrency
-                )
+                (string cronExpression, JobPriority Priority, JobFunctionDelegate Delegate, int MaxConcurrency)
             >(StringComparer.Ordinal).ToFrozenDictionary();
         }
 
@@ -205,8 +193,7 @@ public static class JobsRequestProvider
     {
         try
         {
-            var internalJobsManager =
-                context.ServiceScope.ServiceProvider.GetRequiredService<IInternalJobManager>();
+            var internalJobsManager = context.ServiceScope.ServiceProvider.GetRequiredService<IInternalJobManager>();
             return await internalJobsManager.GetRequestAsync<T>(context.Id, context.Type, cancellationToken);
         }
         catch (Exception e)

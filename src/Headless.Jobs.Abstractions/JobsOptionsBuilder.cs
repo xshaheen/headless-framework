@@ -1,4 +1,4 @@
-﻿using Headless.Jobs.Entities;
+using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;

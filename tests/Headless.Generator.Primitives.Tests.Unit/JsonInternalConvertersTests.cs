@@ -1,4 +1,4 @@
-﻿using Headless.Generator.Primitives;
+using Headless.Generator.Primitives;
 
 namespace Tests;
 

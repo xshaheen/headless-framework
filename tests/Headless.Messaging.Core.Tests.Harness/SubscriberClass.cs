@@ -1,4 +1,4 @@
-﻿namespace Tests;
+namespace Tests;
 
 [PublicAPI]
 public sealed class SubscriberClass
