@@ -80,4 +80,13 @@ public sealed class TestIdentityDbContext(IHeadlessEntityModelProcessor entityPr
         EmittedDistributedMessages.Clear();
         EmittedLocalMessages.Clear();
     }
+
+    Task IHarnessDbContext.ExecuteTransactionAsync(
+        Func<DbContext, CancellationToken, Task> operation,
+        IsolationLevel isolation,
+        CancellationToken cancellationToken
+    )
+    {
+        return ExecuteTransactionAsync(operation, isolation, cancellationToken);
+    }
 }

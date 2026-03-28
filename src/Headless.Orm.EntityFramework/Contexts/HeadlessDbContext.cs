@@ -134,6 +134,160 @@ public abstract class HeadlessDbContext : DbContext
 
     #endregion
 
+    #region Execute Transaction
+
+    public Task ExecuteTransactionAsync(
+        Func<DbContext, CancellationToken, Task> operation,
+        IsolationLevel isolation = IsolationLevel.ReadCommitted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var state = (Operation: operation, Isolation: isolation, Context: this);
+
+        return Database
+            .CreateExecutionStrategy()
+            .ExecuteAsync(
+                state,
+                static async (state, ct) =>
+                {
+                    await using var transaction = await state.Context.Database.BeginTransactionAsync(
+                        state.Isolation,
+                        ct
+                    );
+
+                    try
+                    {
+                        await state.Operation(state.Context, ct);
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
+
+                        throw;
+                    }
+                },
+                cancellationToken
+            );
+    }
+
+    public Task ExecuteTransactionAsync<TArg>(
+        Func<TArg, DbContext, CancellationToken, Task> operation,
+        TArg arg,
+        IsolationLevel isolation = IsolationLevel.ReadCommitted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: this);
+
+        return Database
+            .CreateExecutionStrategy()
+            .ExecuteAsync(
+                state,
+                static async (state, ct) =>
+                {
+                    await using var transaction = await state.Context.Database.BeginTransactionAsync(
+                        state.Isolation,
+                        ct
+                    );
+
+                    try
+                    {
+                        await state.Operation(state.Arg, state.Context, ct);
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
+
+                        throw;
+                    }
+                },
+                cancellationToken
+            );
+    }
+
+    public Task<TResult> ExecuteTransactionAsync<TResult>(
+        Func<DbContext, CancellationToken, Task<TResult>> operation,
+        IsolationLevel isolation = IsolationLevel.ReadCommitted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var state = (Operation: operation, Isolation: isolation, Context: this);
+
+        return Database
+            .CreateExecutionStrategy()
+            .ExecuteAsync(
+                state,
+                static async (state, ct) =>
+                {
+                    await using var transaction = await state.Context.Database.BeginTransactionAsync(
+                        state.Isolation,
+                        ct
+                    );
+
+                    TResult result;
+
+                    try
+                    {
+                        result = await state.Operation(state.Context, ct);
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
+
+                        throw;
+                    }
+
+                    return result;
+                },
+                cancellationToken
+            );
+    }
+
+    public Task<TResult> ExecuteTransactionAsync<TResult, TArg>(
+        Func<TArg, DbContext, CancellationToken, Task<TResult>> operation,
+        TArg arg,
+        IsolationLevel isolation = IsolationLevel.ReadCommitted,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var state = (Operation: operation, Arg: arg, Isolation: isolation, Context: this);
+
+        return Database
+            .CreateExecutionStrategy()
+            .ExecuteAsync(
+                state,
+                static async (state, ct) =>
+                {
+                    await using var transaction = await state.Context.Database.BeginTransactionAsync(
+                        state.Isolation,
+                        ct
+                    );
+
+                    TResult result;
+
+                    try
+                    {
+                        result = await state.Operation(state.Arg, state.Context, ct);
+                        await transaction.CommitAsync(ct).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        await transaction.RollbackAsync(ct).ConfigureAwait(false);
+
+                        throw;
+                    }
+
+                    return result;
+                },
+                cancellationToken
+            );
+    }
+
+    #endregion
+
     #region Configure Conventions
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

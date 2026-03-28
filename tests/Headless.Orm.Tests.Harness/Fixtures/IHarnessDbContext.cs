@@ -38,6 +38,15 @@ public interface IHarnessDbContext : IDisposable, IAsyncDisposable
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Executes the given operation in a transaction with the specified isolation level.
+    /// </summary>
+    Task ExecuteTransactionAsync(
+        Func<DbContext, CancellationToken, Task> operation,
+        IsolationLevel isolation = IsolationLevel.ReadCommitted,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Provides access to database-related information and operations for this context.
     /// </summary>
     DatabaseFacade Database { get; }

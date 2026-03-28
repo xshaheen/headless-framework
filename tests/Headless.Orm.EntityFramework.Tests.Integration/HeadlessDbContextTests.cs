@@ -203,40 +203,41 @@ public sealed class HeadlessDbContextTests : TestBase
     // ExecuteTransactionAsync
 
     [Fact]
-    public async Task execute_transaction_async_should_commit_or_rollback_by_return_value()
+    public async Task execute_transaction_async_should_commit_when_operation_succeeds()
     {
-        // commit path
         await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
-        var committed = false;
-
         await db.ExecuteTransactionAsync(
-            async () =>
+            async (ctx, ct) =>
             {
-                await db.Basics.AddAsync(new BasicEntity { Name = "in-tx" });
-                committed = true;
-
-                return true;
+                await ctx.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "in-tx" }, ct);
+                await ctx.SaveChangesAsync(ct);
             },
             cancellationToken: AbortToken
         );
 
         (await db.Basics.CountAsync(AbortToken)).Should().Be(1);
-        committed.Should().BeTrue();
+    }
 
-        // rollback path
-        await db.ExecuteTransactionAsync(
-            async () =>
+    [Fact]
+    public async Task execute_transaction_async_should_rollback_when_operation_throws()
+    {
+        await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var act = async () => await db.ExecuteTransactionAsync(
+            async (ctx, ct) =>
             {
-                await db.Basics.AddAsync(new BasicEntity { Name = "rolled" });
-
-                return false;
+                await ctx.Set<BasicEntity>().AddAsync(new BasicEntity { Name = "rolled" }, ct);
+                await ctx.SaveChangesAsync(ct);
+                throw new InvalidOperationException("simulated failure");
             },
             cancellationToken: AbortToken
         );
 
-        (await db.Basics.CountAsync(AbortToken)).Should().Be(1);
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        (await db.Basics.CountAsync(AbortToken)).Should().Be(0);
     }
 
     // Global filters
