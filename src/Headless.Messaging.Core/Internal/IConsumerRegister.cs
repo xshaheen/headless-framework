@@ -115,7 +115,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             return;
         }
 
-        if (current == LifecycleState.Starting && Volatile.Read(ref _hasCapturedInitialTopology))
+        if (current == LifecycleState.Starting)
         {
             Interlocked.Exchange(ref _pendingTopologyRefresh, 1);
         }
