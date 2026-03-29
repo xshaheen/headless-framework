@@ -44,7 +44,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private IConsumerClientFactory _consumerClientFactory = null!;
     private IDispatcher _dispatcher = null!;
     private int _state = (int)LifecycleState.NotStarted;
-    private bool _isHealthy = true;
+    private volatile bool _isHealthy = true;
     private bool _hasCapturedInitialTopology;
     private int _pendingTopologyRefresh;
 
@@ -70,6 +70,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
         Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
         Volatile.Write(ref _hasCapturedInitialTopology, false);
+        Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
 
         _selector = serviceProvider.GetRequiredService<MethodMatcherCache>();
         _dispatcher = serviceProvider.GetRequiredService<IDispatcher>();
@@ -80,21 +81,17 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
         try
         {
-            await ExecuteAsync();
-
+            await ExecuteAsync().ConfigureAwait(false);
             Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
-
-            if (Interlocked.Exchange(ref _pendingTopologyRefresh, 0) == 1)
-            {
-                await ReStartAsync(force: true);
-            }
+            await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
         }
         catch
         {
-            await _stoppingCtsRegistration.DisposeAsync();
+            await _stoppingCtsRegistration.DisposeAsync().ConfigureAwait(false);
             _stoppingCts.Dispose();
             Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
             Volatile.Write(ref _hasCapturedInitialTopology, false);
+            Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
             throw;
         }
     }
@@ -103,38 +100,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     {
         if (!IsHealthy() || force)
         {
-            Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
-            Volatile.Write(ref _hasCapturedInitialTopology, false);
-
-            // Preserve circuit breaker state across transport restarts — broker reconnects
-            // are orthogonal to handler failures tracked by the circuit breaker.
-            await PulseAsync(removeCircuitState: false);
-
-            _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(_hostStoppingToken);
-            _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
-            _isHealthy = true;
-
-            try
-            {
-                await ExecuteAsync();
-            }
-            catch
-            {
-                // ExecuteAsync failed — the CTS created above will never be cleaned up by a
-                // subsequent PulseAsync call, so dispose it here to prevent a leak.
-                await _stoppingCtsRegistration.DisposeAsync();
-                _stoppingCts.Dispose();
-                Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
-                Volatile.Write(ref _hasCapturedInitialTopology, false);
-                throw;
-            }
-
-            Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
-
-            if (Interlocked.Exchange(ref _pendingTopologyRefresh, 0) == 1)
-            {
-                await ReStartAsync(force: true);
-            }
+            await _RestartCoreAsync().ConfigureAwait(false);
+            await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
         }
     }
 
@@ -362,6 +329,47 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
                 handle.ConsumerTasks.Add(task);
             }
+        }
+    }
+
+    private async ValueTask _RestartCoreAsync()
+    {
+        Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
+        Volatile.Write(ref _hasCapturedInitialTopology, false);
+        Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
+
+        // Preserve circuit breaker state across transport restarts — broker reconnects
+        // are orthogonal to handler failures tracked by the circuit breaker.
+        await PulseAsync(removeCircuitState: false).ConfigureAwait(false);
+
+        _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(_hostStoppingToken);
+        _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
+        _isHealthy = true;
+
+        try
+        {
+            await ExecuteAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // ExecuteAsync failed — the CTS created above will never be cleaned up by a
+            // subsequent PulseAsync call, so dispose it here to prevent a leak.
+            await _stoppingCtsRegistration.DisposeAsync().ConfigureAwait(false);
+            _stoppingCts.Dispose();
+            Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
+            Volatile.Write(ref _hasCapturedInitialTopology, false);
+            Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
+            throw;
+        }
+
+        Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
+    }
+
+    private async ValueTask _DrainPendingTopologyRefreshesAsync()
+    {
+        while (Interlocked.Exchange(ref _pendingTopologyRefresh, 0) == 1)
+        {
+            await _RestartCoreAsync().ConfigureAwait(false);
         }
     }
 

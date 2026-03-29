@@ -18,7 +18,7 @@ internal sealed class Bootstrapper(
 {
     private readonly Lock _bootstrapLock = new();
     private bool _disposed;
-    private CancellationTokenSource? _cts;
+    private CancellationTokenSource? _runtimeCts;
     private CancellationTokenRegistration _stoppingRegistration;
     private Task? _bootstrapTask;
     private bool _isStarted;
@@ -51,8 +51,9 @@ internal sealed class Bootstrapper(
             {
                 logger.MessagingStarting();
 
-                _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                bootstrapTask = _BootstrapAsyncCore(_cts, _cts.Token);
+                var runtimeCts = new CancellationTokenSource();
+                _runtimeCts = runtimeCts;
+                bootstrapTask = _BootstrapAsyncCore(runtimeCts, cancellationToken);
                 _bootstrapTask = bootstrapTask;
                 createdByCaller = true;
             }
@@ -68,24 +69,30 @@ internal sealed class Bootstrapper(
         }
     }
 
-    private async Task _BootstrapAsyncCore(CancellationTokenSource bootstrapCts, CancellationToken cancellationToken)
+    private async Task _BootstrapAsyncCore(CancellationTokenSource runtimeCts, CancellationToken ownerCancellationToken)
     {
+        using var startupCts = CancellationTokenSource.CreateLinkedTokenSource(
+            runtimeCts.Token,
+            ownerCancellationToken
+        );
+        var startupToken = startupCts.Token;
+
         try
         {
             _CheckRequirement();
 
             try
             {
-                await storageInitializer.InitializeAsync(cancellationToken).ConfigureAwait(false);
+                await storageInitializer.InitializeAsync(startupToken).ConfigureAwait(false);
             }
             catch (Exception e) when (e is not InvalidOperationException)
             {
                 logger.StorageInitFailed(e);
             }
 
-            _stoppingRegistration = cancellationToken.Register(_StopProcessors);
+            await _BootstrapCoreAsync(startupToken).ConfigureAwait(false);
 
-            await _BootstrapCoreAsync(cancellationToken).ConfigureAwait(false);
+            _stoppingRegistration = runtimeCts.Token.Register(_StopProcessors);
 
             lock (_bootstrapLock)
             {
@@ -98,20 +105,30 @@ internal sealed class Bootstrapper(
         }
         catch
         {
+            try
+            {
+                await runtimeCts.CancelAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Ignore races with external disposal during startup failure cleanup.
+            }
+
+            _StopProcessors();
             await _stoppingRegistration.DisposeAsync().ConfigureAwait(false);
 
             lock (_bootstrapLock)
             {
-                if (ReferenceEquals(_cts, bootstrapCts))
+                if (ReferenceEquals(_runtimeCts, runtimeCts))
                 {
-                    _cts = null;
+                    _runtimeCts = null;
                 }
 
                 _bootstrapTask = null;
                 _isStarted = false;
             }
 
-            bootstrapCts.Dispose();
+            runtimeCts.Dispose();
             throw;
         }
     }
@@ -160,9 +177,9 @@ internal sealed class Bootstrapper(
     {
         _isStarted = false;
 
-        if (_cts != null)
+        if (_runtimeCts != null)
         {
-            await _cts.CancelAsync();
+            await _runtimeCts.CancelAsync().ConfigureAwait(false);
         }
 
         await _stoppingRegistration.DisposeAsync().ConfigureAwait(false);
@@ -217,10 +234,10 @@ internal sealed class Bootstrapper(
         }
 
         _isStarted = false;
-        _cts?.Cancel();
+        _runtimeCts?.Cancel();
         _stoppingRegistration.Dispose();
-        _cts?.Dispose();
-        _cts = null;
+        _runtimeCts?.Dispose();
+        _runtimeCts = null;
         _bootstrapTask = null;
         _disposed = true;
 

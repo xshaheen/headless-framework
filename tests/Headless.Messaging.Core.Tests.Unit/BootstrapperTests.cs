@@ -66,6 +66,43 @@ public sealed class BootstrapperTests : TestBase
         bootstrapper.IsStarted.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_not_stop_runtime_when_owner_bootstrap_token_is_canceled_after_startup()
+    {
+        var processor = new TrackingProcessingServer();
+        await using var provider = _CreateProvider(beforeMessaging: processor);
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        using var ownerCts = new CancellationTokenSource();
+
+        await bootstrapper.BootstrapAsync(ownerCts.Token);
+        bootstrapper.IsStarted.Should().BeTrue();
+
+        await ownerCts.CancelAsync();
+
+        await Task.Delay(100, AbortToken);
+
+        processor.DisposeCount.Should().Be(0);
+        bootstrapper.IsStarted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_stop_started_processors_when_later_processor_fails_during_bootstrap()
+    {
+        var startedProcessor = new TrackingProcessingServer();
+        var failure = new InvalidOperationException("processor boom");
+        await using var provider = _CreateProvider(
+            beforeMessaging: startedProcessor,
+            afterMessaging: new FailingProcessingServer(failure)
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        var act = async () => await bootstrapper.BootstrapAsync(AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("processor boom");
+        startedProcessor.DisposeCount.Should().BeGreaterThan(0);
+        bootstrapper.IsStarted.Should().BeFalse();
+    }
+
     private ServiceProvider _CreateProvider(
         IProcessingServer? beforeMessaging = null,
         IProcessingServer? afterMessaging = null
@@ -138,5 +175,23 @@ public sealed class BootstrapperTests : TestBase
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class TrackingProcessingServer : IProcessingServer
+    {
+        public int DisposeCount => Volatile.Read(ref _disposeCount);
+
+        private int _disposeCount;
+
+        public ValueTask StartAsync(CancellationToken stoppingToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Interlocked.Increment(ref _disposeCount);
+            return ValueTask.CompletedTask;
+        }
     }
 }
