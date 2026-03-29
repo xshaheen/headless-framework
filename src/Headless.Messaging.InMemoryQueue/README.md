@@ -40,9 +40,11 @@ No configuration required. Just call `UseInMemoryQueue()`.
 
 - Publish and consume happen in process only. Headers and payload never leave memory.
 - Delay stays in the core pipeline. There is no broker-native scheduling layer.
+- Manual callers should await `IBootstrapper.BootstrapAsync(...)` before publishing or attaching runtime subscriptions.
 - Commit is a no-op.
 - Reject is a no-op. There is no durable redelivery or dead-letter queue.
 - `SubscribeAsync(...)` only registers in-memory topic bindings for the current process.
+- Publishing to an unbound topic still fails fast. `InMemoryQueue` is intentionally strict so tests and local development do not silently hide invalid publish targets or missing consumer registration.
 - Single-threaded consumption preserves queue order. Higher `ConsumerThreadCount` can reorder concurrent handlers.
 - Payload size is limited by process memory.
 

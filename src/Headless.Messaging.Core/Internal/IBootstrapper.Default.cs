@@ -16,75 +16,138 @@ internal sealed class Bootstrapper(
     ILogger<IBootstrapper> logger
 ) : BackgroundService, IBootstrapper
 {
+    private readonly Lock _bootstrapLock = new();
     private bool _disposed;
     private CancellationTokenSource? _cts;
-    public bool IsStarted => !_cts?.IsCancellationRequested ?? false;
+    private CancellationTokenRegistration _stoppingRegistration;
+    private Task? _bootstrapTask;
+    private bool _isStarted;
+
+    public bool IsStarted => Volatile.Read(ref _isStarted);
 
     public async Task BootstrapAsync(CancellationToken cancellationToken = default)
     {
-        if (_cts is not null)
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Task bootstrapTask;
+        var createdByCaller = false;
+
+        lock (_bootstrapLock)
         {
-            logger.MessagingAlreadyStarted();
+            ObjectDisposedException.ThrowIf(_disposed, typeof(Bootstrapper));
 
-            return;
-        }
-
-        logger.MessagingStarting();
-
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-
-        _CheckRequirement();
-
-        try
-        {
-            await storageInitializer.InitializeAsync(_cts.Token).ConfigureAwait(false);
-        }
-        catch (Exception e) when (e is not InvalidOperationException)
-        {
-            logger.StorageInitFailed(e);
-        }
-
-        _cts.Token.Register(() =>
-        {
-            logger.MessagingStopping();
-
-            foreach (var item in processors)
+            if (_isStarted)
             {
-                try
-                {
-                    item.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                }
-                catch (OperationCanceledException ex)
-                {
-                    logger.ExpectedOperationCanceledException(ex, ex.Message);
-                }
+                logger.MessagingAlreadyStarted();
+                return;
             }
-        });
 
-        await _BootstrapCoreAsync().ConfigureAwait(false);
+            if (_bootstrapTask is not null)
+            {
+                logger.MessagingAlreadyStarted();
+                bootstrapTask = _bootstrapTask;
+            }
+            else
+            {
+                logger.MessagingStarting();
 
-        _disposed = false;
-        logger.MessagingStarted();
+                _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                bootstrapTask = _BootstrapAsyncCore(_cts, _cts.Token);
+                _bootstrapTask = bootstrapTask;
+                createdByCaller = true;
+            }
+        }
+
+        if (createdByCaller)
+        {
+            await bootstrapTask.ConfigureAwait(false);
+        }
+        else
+        {
+            await bootstrapTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
-    private async Task _BootstrapCoreAsync()
+    private async Task _BootstrapAsyncCore(CancellationTokenSource bootstrapCts, CancellationToken cancellationToken)
     {
+        try
+        {
+            _CheckRequirement();
+
+            try
+            {
+                await storageInitializer.InitializeAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is not InvalidOperationException)
+            {
+                logger.StorageInitFailed(e);
+            }
+
+            _stoppingRegistration = cancellationToken.Register(_StopProcessors);
+
+            await _BootstrapCoreAsync(cancellationToken).ConfigureAwait(false);
+
+            lock (_bootstrapLock)
+            {
+                _isStarted = true;
+                _bootstrapTask = null;
+            }
+
+            _disposed = false;
+            logger.MessagingStarted();
+        }
+        catch
+        {
+            await _stoppingRegistration.DisposeAsync().ConfigureAwait(false);
+
+            lock (_bootstrapLock)
+            {
+                if (ReferenceEquals(_cts, bootstrapCts))
+                {
+                    _cts = null;
+                }
+
+                _bootstrapTask = null;
+                _isStarted = false;
+            }
+
+            bootstrapCts.Dispose();
+            throw;
+        }
+    }
+
+    private async Task _BootstrapCoreAsync(CancellationToken cancellationToken)
+    {
+        List<Exception>? failures = null;
+
         foreach (var item in processors)
         {
             try
             {
-                _cts!.Token.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
 
-                await item.StartAsync(_cts!.Token);
+                await item.StartAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
-                // ignore
+                throw;
             }
             catch (Exception ex)
             {
                 logger.ProcessorsStartedError(ex);
+                failures ??= [];
+                failures.Add(ex);
             }
+        }
+
+        if (failures is { Count: > 0 })
+        {
+            if (failures.Count == 1)
+            {
+                throw failures[0];
+            }
+
+            throw new AggregateException("One or more messaging processors failed to start.", failures);
         }
     }
 
@@ -95,11 +158,14 @@ internal sealed class Bootstrapper(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
+        _isStarted = false;
+
         if (_cts != null)
         {
             await _cts.CancelAsync();
         }
 
+        await _stoppingRegistration.DisposeAsync().ConfigureAwait(false);
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -150,9 +216,12 @@ internal sealed class Bootstrapper(
             return;
         }
 
+        _isStarted = false;
         _cts?.Cancel();
+        _stoppingRegistration.Dispose();
         _cts?.Dispose();
         _cts = null;
+        _bootstrapTask = null;
         _disposed = true;
 
         base.Dispose();
@@ -163,5 +232,22 @@ internal sealed class Bootstrapper(
         Dispose();
 
         return ValueTask.CompletedTask;
+    }
+
+    private void _StopProcessors()
+    {
+        logger.MessagingStopping();
+
+        foreach (var item in processors)
+        {
+            try
+            {
+                item.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException ex)
+            {
+                logger.ExpectedOperationCanceledException(ex, ex.Message);
+            }
+        }
     }
 }

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Headless.Messaging;
+using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -74,7 +75,47 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         probe.ProcessedMessageIds.Should().ContainSingle().Which.Should().Be("first");
     }
 
+    [Fact]
+    public async Task should_restart_consumers_for_runtime_subscription_added_after_consumer_register_is_ready()
+    {
+        var blocker = new BlockingProcessingServer();
+        await using var provider = _CreateProvider(blocker);
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+        var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
+        var publisher = provider.GetRequiredService<IOutboxPublisher>();
+        var probe = provider.GetRequiredService<RecordingRuntimeProbe>();
+
+        var bootstrapTask = bootstrapper.BootstrapAsync(AbortToken);
+        await blocker.WaitUntilStartedAsync(AbortToken);
+        bootstrapper.IsStarted.Should().BeFalse();
+
+        await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
+            probe.HandleAsync,
+            new RuntimeSubscriptionOptions { Topic = "runtime.mid-bootstrap", Group = "runtime.mid-bootstrap" },
+            AbortToken
+        );
+
+        blocker.Release();
+        await bootstrapTask;
+
+        await publisher.PublishAsync(
+            new RuntimeMessage("mid-bootstrap"),
+            new PublishOptions { Topic = "runtime.mid-bootstrap" },
+            AbortToken
+        );
+
+        var consumed = await probe.WaitForMessageAsync(AbortToken);
+        consumed.Message.Id.Should().Be("mid-bootstrap");
+    }
+
     private async Task<ServiceProvider> _CreateStartedProviderAsync()
+    {
+        var provider = _CreateProvider();
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        return provider;
+    }
+
+    private ServiceProvider _CreateProvider(IProcessingServer? additionalProcessor = null)
     {
         var services = new ServiceCollection();
         services.AddLogging(builder =>
@@ -100,9 +141,12 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             });
         });
 
-        var provider = services.BuildServiceProvider();
-        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
-        return provider;
+        if (additionalProcessor is not null)
+        {
+            services.AddSingleton<IProcessingServer>(additionalProcessor);
+        }
+
+        return services.BuildServiceProvider();
     }
 
     private sealed record RuntimeMessage(string Id);
@@ -194,5 +238,33 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         }
 
         public void Release() => _release.TrySetResult();
+    }
+
+    private sealed class BlockingProcessingServer : IProcessingServer
+    {
+        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public ValueTask StartAsync(CancellationToken stoppingToken)
+        {
+            _started.TrySetResult();
+            return new ValueTask(_release.Task.WaitAsync(stoppingToken));
+        }
+
+        public async Task WaitUntilStartedAsync(CancellationToken cancellationToken)
+        {
+            await _started.Task.WaitAsync(cancellationToken);
+        }
+
+        public void Release()
+        {
+            _release.TrySetResult();
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            _release.TrySetResult();
+            return ValueTask.CompletedTask;
+        }
     }
 }

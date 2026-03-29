@@ -11,7 +11,7 @@ namespace Headless.Messaging;
 /// <list type="bullet">
 /// <item><description>Initializing storage tables or schema if not already present.</description></item>
 /// <item><description>Registering consumer subscribers from discovered assemblies.</description></item>
-/// <item><description>Verifying connection to message brokers and storage backends.</description></item>
+/// <item><description>Starting required messaging processors and verifying they can initialize successfully.</description></item>
 /// <item><description>Preparing the system for message publishing and consuming operations.</description></item>
 /// </list>
 /// The bootstrapper is registered as a hosted service and automatically starts when the application starts.
@@ -20,7 +20,8 @@ public interface IBootstrapper : IAsyncDisposable
 {
     /// <summary>
     /// Gets a value indicating whether the bootstrap process has completed successfully.
-    /// Returns true if the system is fully initialized; false if bootstrap is still in progress or failed.
+    /// Returns true only after the required messaging startup sequence completes successfully.
+    /// Returns false while bootstrap is still in progress, after shutdown begins, or when startup failed.
     /// </summary>
     bool IsStarted { get; }
 
@@ -30,5 +31,9 @@ public interface IBootstrapper : IAsyncDisposable
     /// </summary>
     /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>A task representing the asynchronous bootstrap operation.</returns>
+    /// <remarks>
+    /// Concurrent callers await the same in-flight bootstrap operation.
+    /// Canceling a later caller's wait does not cancel shared startup unless that caller owns the bootstrap operation.
+    /// </remarks>
     Task BootstrapAsync(CancellationToken cancellationToken = default);
 }

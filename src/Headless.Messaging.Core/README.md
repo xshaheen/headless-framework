@@ -90,6 +90,16 @@ public sealed class MetricsService(IDirectPublisher publisher)
 - direct publish, outbox publish, and runtime delegates preserve the existing diagnostic listener and metric names used by dashboards.
 - runtime delegates execute through the same scoped consume pipeline as class handlers, so diagnostics, filters, and correlation behavior stay aligned.
 - `IConsumerLifecycle` hooks run per delivery on the scoped consumer instance, not once for application startup or shutdown.
+- `IBootstrapper.IsStarted` becomes `true` only after required messaging processors finish startup successfully.
+- Concurrent `BootstrapAsync(...)` callers share the same in-flight startup work; canceling a later caller's wait does not abort the shared bootstrap.
+
+## Bootstrap Lifecycle
+
+- `BootstrapAsync(...)` is the readiness boundary for manual startup paths such as tests or custom hosts.
+- Wait for `BootstrapAsync(...)` to complete before publishing when you bootstrap manually.
+- Startup fails when a required messaging processor cannot start; partial logged startup is not treated as success.
+- Runtime delegate subscriptions attached before the consumer register is ready are picked up by the initial startup path.
+- Runtime delegate subscriptions attached after the consumer register is ready trigger a consumer refresh so they are not missed during late startup.
 
 ## Publisher Options
 
@@ -169,6 +179,8 @@ public sealed class ProjectionSubscriptions(IRuntimeSubscriber subscriber)
     }
 }
 ```
+
+When runtime delegates are attached during application startup, the messaging runtime ensures they are either included in the initial consumer registration pass or trigger a refresh once the consumer register is live. You do not need to manually restart messaging after calling `SubscribeAsync(...)`.
 
 ## Configuration
 

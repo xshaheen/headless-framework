@@ -22,8 +22,10 @@ namespace Headless.Messaging.Internal;
 public interface IConsumerRegister : IProcessingServer
 {
     bool IsHealthy();
+    bool IsSubscriptionTopologyReady { get; }
 
     ValueTask ReStartAsync(bool force = false);
+    ValueTask OnTopologyChangedAsync();
 }
 
 internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvider serviceProvider)
@@ -42,7 +44,9 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private IConsumerClientFactory _consumerClientFactory = null!;
     private IDispatcher _dispatcher = null!;
     private int _state = (int)LifecycleState.NotStarted;
-    private volatile bool _isHealthy = true;
+    private bool _isHealthy = true;
+    private bool _hasCapturedInitialTopology;
+    private int _pendingTopologyRefresh;
 
     private MethodMatcherCache _selector = null!;
     private ISerializer _serializer = null!;
@@ -57,11 +61,15 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         return _isHealthy;
     }
 
+    public bool IsSubscriptionTopologyReady => (LifecycleState)Volatile.Read(ref _state) == LifecycleState.Running;
+
     public async ValueTask StartAsync(CancellationToken stoppingToken)
     {
         _hostStoppingToken = stoppingToken;
         _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
+        Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
+        Volatile.Write(ref _hasCapturedInitialTopology, false);
 
         _selector = serviceProvider.GetRequiredService<MethodMatcherCache>();
         _dispatcher = serviceProvider.GetRequiredService<IDispatcher>();
@@ -70,15 +78,34 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         _consumerClientFactory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
         _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();
 
-        await ExecuteAsync();
+        try
+        {
+            await ExecuteAsync();
 
-        Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
+            Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
+
+            if (Interlocked.Exchange(ref _pendingTopologyRefresh, 0) == 1)
+            {
+                await ReStartAsync(force: true);
+            }
+        }
+        catch
+        {
+            await _stoppingCtsRegistration.DisposeAsync();
+            _stoppingCts.Dispose();
+            Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
+            Volatile.Write(ref _hasCapturedInitialTopology, false);
+            throw;
+        }
     }
 
     public async ValueTask ReStartAsync(bool force = false)
     {
         if (!IsHealthy() || force)
         {
+            Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
+            Volatile.Write(ref _hasCapturedInitialTopology, false);
+
             // Preserve circuit breaker state across transport restarts — broker reconnects
             // are orthogonal to handler failures tracked by the circuit breaker.
             await PulseAsync(removeCircuitState: false);
@@ -97,10 +124,33 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 // subsequent PulseAsync call, so dispose it here to prevent a leak.
                 await _stoppingCtsRegistration.DisposeAsync();
                 _stoppingCts.Dispose();
+                Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
+                Volatile.Write(ref _hasCapturedInitialTopology, false);
                 throw;
             }
 
             Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
+
+            if (Interlocked.Exchange(ref _pendingTopologyRefresh, 0) == 1)
+            {
+                await ReStartAsync(force: true);
+            }
+        }
+    }
+
+    public async ValueTask OnTopologyChangedAsync()
+    {
+        var current = (LifecycleState)Volatile.Read(ref _state);
+
+        if (current == LifecycleState.Running)
+        {
+            await ReStartAsync(force: true).ConfigureAwait(false);
+            return;
+        }
+
+        if (current == LifecycleState.Starting && Volatile.Read(ref _hasCapturedInitialTopology))
+        {
+            Interlocked.Exchange(ref _pendingTopologyRefresh, 1);
         }
     }
 
@@ -217,6 +267,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     public async ValueTask ExecuteAsync()
     {
         var groupingMatches = _selector.GetCandidatesMethodsOfGroupNameGrouped();
+        Volatile.Write(ref _hasCapturedInitialTopology, true);
 
         // Arm the OTel cardinality guard so unrecognized group names are rejected.
         _circuitBreakerStateManager?.RegisterKnownGroups(groupingMatches.Keys);
@@ -618,9 +669,10 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private enum LifecycleState
     {
         NotStarted = 0,
-        Running = 1,
-        Disposing = 2,
-        Disposed = 3,
+        Starting = 1,
+        Running = 2,
+        Disposing = 3,
+        Disposed = 4,
     }
 
     private sealed class GroupHandle : IAsyncDisposable
