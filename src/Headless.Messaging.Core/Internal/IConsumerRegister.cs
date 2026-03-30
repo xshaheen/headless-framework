@@ -22,7 +22,6 @@ namespace Headless.Messaging.Internal;
 public interface IConsumerRegister : IProcessingServer
 {
     bool IsHealthy();
-    bool IsSubscriptionTopologyReady { get; }
 
     ValueTask ReStartAsync(bool force = false);
     ValueTask OnTopologyChangedAsync();
@@ -44,8 +43,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private IConsumerClientFactory _consumerClientFactory = null!;
     private IDispatcher _dispatcher = null!;
     private int _state = (int)LifecycleState.NotStarted;
+    private readonly SemaphoreSlim _restartGate = new(1, 1);
     private volatile bool _isHealthy = true;
-    private bool _hasCapturedInitialTopology;
     private int _pendingTopologyRefresh;
 
     private MethodMatcherCache _selector = null!;
@@ -61,15 +60,12 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         return _isHealthy;
     }
 
-    public bool IsSubscriptionTopologyReady => (LifecycleState)Volatile.Read(ref _state) == LifecycleState.Running;
-
     public async ValueTask StartAsync(CancellationToken stoppingToken)
     {
         _hostStoppingToken = stoppingToken;
         _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
         Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
-        Volatile.Write(ref _hasCapturedInitialTopology, false);
         Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
 
         _selector = serviceProvider.GetRequiredService<MethodMatcherCache>();
@@ -82,15 +78,32 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         try
         {
             await ExecuteAsync().ConfigureAwait(false);
-            Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
-            await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
+
+            // Acquire the restart gate so topology-change-driven restarts cannot overlap
+            // with the drain loop that follows the initial startup.
+            await _restartGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
+                await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                _restartGate.Release();
+            }
         }
         catch
         {
-            await _stoppingCtsRegistration.DisposeAsync().ConfigureAwait(false);
-            _stoppingCts.Dispose();
+            // Clean up any partially created consumer handles before resetting state.
+            try
+            {
+                await PulseAsync().ConfigureAwait(false);
+            }
+#pragma warning disable ERP022 // Best-effort cleanup — state reset below prevents stale handles from being accessible.
+            catch { }
+#pragma warning restore ERP022
+
             Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
-            Volatile.Write(ref _hasCapturedInitialTopology, false);
             Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
             throw;
         }
@@ -100,8 +113,16 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     {
         if (!IsHealthy() || force)
         {
-            await _RestartCoreAsync().ConfigureAwait(false);
-            await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
+            await _restartGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await _RestartCoreAsync().ConfigureAwait(false);
+                await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                _restartGate.Release();
+            }
         }
     }
 
@@ -183,6 +204,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 await _dispatcher.DisposeAsync();
             }
 
+            _restartGate.Dispose();
             Interlocked.Exchange(ref _state, (int)LifecycleState.Disposed);
         }
     }
@@ -234,7 +256,6 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     public async ValueTask ExecuteAsync()
     {
         var groupingMatches = _selector.GetCandidatesMethodsOfGroupNameGrouped();
-        Volatile.Write(ref _hasCapturedInitialTopology, true);
 
         // Arm the OTel cardinality guard so unrecognized group names are rejected.
         _circuitBreakerStateManager?.RegisterKnownGroups(groupingMatches.Keys);
@@ -335,7 +356,6 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private async ValueTask _RestartCoreAsync()
     {
         Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
-        Volatile.Write(ref _hasCapturedInitialTopology, false);
         Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
 
         // Preserve circuit breaker state across transport restarts — broker reconnects
@@ -352,12 +372,16 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         }
         catch
         {
-            // ExecuteAsync failed — the CTS created above will never be cleaned up by a
-            // subsequent PulseAsync call, so dispose it here to prevent a leak.
-            await _stoppingCtsRegistration.DisposeAsync().ConfigureAwait(false);
-            _stoppingCts.Dispose();
+            // Clean up any partially created consumer handles and the CTS created above.
+            try
+            {
+                await PulseAsync().ConfigureAwait(false);
+            }
+#pragma warning disable ERP022 // Best-effort cleanup — state reset below prevents stale handles from being accessible.
+            catch { }
+#pragma warning restore ERP022
+
             Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
-            Volatile.Write(ref _hasCapturedInitialTopology, false);
             Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
             throw;
         }

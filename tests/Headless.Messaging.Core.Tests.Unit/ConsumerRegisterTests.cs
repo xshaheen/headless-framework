@@ -247,17 +247,15 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
-    public async Task topology_change_during_startup_queues_refresh_before_initial_snapshot_is_marked_ready()
+    public async Task should_queue_topology_refresh_when_change_occurs_during_startup()
     {
         await using var provider = _CreateProvider();
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
 
+        // Set state to Starting (1) to simulate mid-startup.
         typeof(ConsumerRegister)
             .GetField("_state", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(register, 1);
-        typeof(ConsumerRegister)
-            .GetField("_hasCapturedInitialTopology", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(register, false);
 
         await register.OnTopologyChangedAsync();
 

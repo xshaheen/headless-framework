@@ -18,6 +18,7 @@ internal sealed class Bootstrapper(
 {
     private readonly Lock _bootstrapLock = new();
     private bool _disposed;
+    private bool _isStopping;
     private CancellationTokenSource? _runtimeCts;
     private CancellationTokenRegistration _stoppingRegistration;
     private Task? _bootstrapTask;
@@ -35,6 +36,11 @@ internal sealed class Bootstrapper(
         lock (_bootstrapLock)
         {
             ObjectDisposedException.ThrowIf(_disposed, typeof(Bootstrapper));
+
+            if (_isStopping)
+            {
+                throw new InvalidOperationException("Cannot bootstrap after shutdown has begun.");
+            }
 
             if (_isStarted)
             {
@@ -100,7 +106,6 @@ internal sealed class Bootstrapper(
                 _bootstrapTask = null;
             }
 
-            _disposed = false;
             logger.MessagingStarted();
         }
         catch
@@ -175,14 +180,32 @@ internal sealed class Bootstrapper(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _isStarted = false;
+        CancellationTokenSource? runtimeCts;
+        CancellationTokenRegistration stoppingRegistration;
 
-        if (_runtimeCts != null)
+        lock (_bootstrapLock)
         {
-            await _runtimeCts.CancelAsync().ConfigureAwait(false);
+            _isStopping = true;
+            Volatile.Write(ref _isStarted, false);
+            runtimeCts = _runtimeCts;
+            _runtimeCts = null;
+            stoppingRegistration = _stoppingRegistration;
+            _stoppingRegistration = default;
         }
 
-        await _stoppingRegistration.DisposeAsync().ConfigureAwait(false);
+        if (runtimeCts is not null)
+        {
+            try
+            {
+                await runtimeCts.CancelAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Ignore races with concurrent startup failure cleanup.
+            }
+        }
+
+        await stoppingRegistration.DisposeAsync().ConfigureAwait(false);
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -228,18 +251,29 @@ internal sealed class Bootstrapper(
 
     public override void Dispose()
     {
-        if (_disposed)
+        CancellationTokenSource? runtimeCts;
+        CancellationTokenRegistration stoppingRegistration;
+
+        lock (_bootstrapLock)
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _isStopping = true;
+            Volatile.Write(ref _isStarted, false);
+            runtimeCts = _runtimeCts;
+            _runtimeCts = null;
+            stoppingRegistration = _stoppingRegistration;
+            _stoppingRegistration = default;
+            _bootstrapTask = null;
         }
 
-        _isStarted = false;
-        _runtimeCts?.Cancel();
-        _stoppingRegistration.Dispose();
-        _runtimeCts?.Dispose();
-        _runtimeCts = null;
-        _bootstrapTask = null;
-        _disposed = true;
+        runtimeCts?.Cancel();
+        stoppingRegistration.Dispose();
+        runtimeCts?.Dispose();
 
         base.Dispose();
     }
