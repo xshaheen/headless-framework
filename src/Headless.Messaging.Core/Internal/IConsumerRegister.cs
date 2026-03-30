@@ -89,7 +89,14 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             }
             finally
             {
-                _restartGate.Release();
+                try
+                {
+                    _restartGate.Release();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // If we failed to acquire the gate above, it means DisposeAsync has already run and we should not attempt to release.
+                }
             }
         }
         catch
@@ -121,7 +128,11 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
             }
             finally
             {
-                _restartGate.Release();
+                try
+                {
+                    _restartGate.Release();
+                }
+                catch (ObjectDisposedException) { }
             }
         }
     }
@@ -355,6 +366,12 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
     private async ValueTask _RestartCoreAsync()
     {
+        var current = (LifecycleState)Volatile.Read(ref _state);
+        if (current is LifecycleState.Disposing or LifecycleState.Disposed)
+        {
+            return;
+        }
+
         Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
         Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
 

@@ -286,23 +286,64 @@ internal sealed class Bootstrapper(
             Volatile.Write(ref _isStarted, false);
             runtimeCts = _runtimeCts;
             _runtimeCts = null;
-            stoppingRegistration = _stoppingRegistration;
             _stoppingRegistration = default;
             _bootstrapTask = null;
+            stoppingRegistration = default;
         }
 
+#pragma warning disable VSTHRD103 // Dispose is synchronous by contract — CancelAsync is not available here.
         runtimeCts?.Cancel();
+#pragma warning restore VSTHRD103
         stoppingRegistration.Dispose();
         runtimeCts?.Dispose();
 
         base.Dispose();
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        Dispose();
+        Task? pendingBootstrap;
+        CancellationTokenSource? runtimeCts;
+        CancellationTokenRegistration stoppingRegistration;
 
-        return ValueTask.CompletedTask;
+        lock (_bootstrapLock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _isStopping = true;
+            Volatile.Write(ref _isStarted, false);
+            pendingBootstrap = _bootstrapTask;
+            _bootstrapTask = null;
+            runtimeCts = _runtimeCts;
+            _runtimeCts = null;
+            stoppingRegistration = _stoppingRegistration;
+            _stoppingRegistration = default;
+        }
+
+        if (runtimeCts is not null)
+        {
+            await runtimeCts.CancelAsync().ConfigureAwait(false);
+        }
+
+        if (pendingBootstrap is not null)
+        {
+#pragma warning disable ERP022 // We just need the in-flight bootstrap to finish its cleanup; the outcome does not matter.
+            try
+            {
+                await pendingBootstrap.ConfigureAwait(false);
+            }
+            catch { }
+#pragma warning restore ERP022
+        }
+
+        await stoppingRegistration.DisposeAsync().ConfigureAwait(false);
+        runtimeCts?.Dispose();
+
+        base.Dispose();
     }
 
     private void _StopProcessors()
