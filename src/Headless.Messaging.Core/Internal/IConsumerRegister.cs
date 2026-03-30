@@ -23,8 +23,8 @@ public interface IConsumerRegister : IProcessingServer
 {
     bool IsHealthy();
 
-    ValueTask ReStartAsync(bool force = false);
-    ValueTask OnTopologyChangedAsync();
+    ValueTask ReStartAsync(bool force = false, CancellationToken cancellationToken = default);
+    ValueTask OnTopologyChangedAsync(CancellationToken cancellationToken = default);
 }
 
 internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvider serviceProvider)
@@ -81,7 +81,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
             // Acquire the restart gate so topology-change-driven restarts cannot overlap
             // with the drain loop that follows the initial startup.
-            await _restartGate.WaitAsync().ConfigureAwait(false);
+            await _restartGate.WaitAsync(stoppingToken).ConfigureAwait(false);
             try
             {
                 Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
@@ -116,11 +116,11 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         }
     }
 
-    public async ValueTask ReStartAsync(bool force = false)
+    public async ValueTask ReStartAsync(bool force = false, CancellationToken cancellationToken = default)
     {
         if (!IsHealthy() || force)
         {
-            await _restartGate.WaitAsync().ConfigureAwait(false);
+            await _restartGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 await _RestartCoreAsync().ConfigureAwait(false);
@@ -137,13 +137,13 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         }
     }
 
-    public async ValueTask OnTopologyChangedAsync()
+    public async ValueTask OnTopologyChangedAsync(CancellationToken cancellationToken = default)
     {
         var current = (LifecycleState)Volatile.Read(ref _state);
 
         if (current == LifecycleState.Running)
         {
-            await ReStartAsync(force: true).ConfigureAwait(false);
+            await ReStartAsync(force: true, cancellationToken).ConfigureAwait(false);
             return;
         }
 

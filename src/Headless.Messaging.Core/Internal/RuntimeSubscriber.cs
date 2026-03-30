@@ -38,7 +38,7 @@ internal sealed class RuntimeSubscriber(
             }
 
             methodMatcherCache.Invalidate();
-            await consumerRegister.OnTopologyChangedAsync().ConfigureAwait(false);
+            await consumerRegister.OnTopologyChangedAsync(cancellationToken).ConfigureAwait(false);
             logger.RuntimeSubscriptionAttached(result.SubscriptionId, result.Topic, result.Group, result.HandlerId);
 
             return RuntimeSubscriptionHandle.Attached(
@@ -72,7 +72,7 @@ internal sealed class RuntimeSubscriber(
             }
 
             methodMatcherCache.Invalidate();
-            await consumerRegister.OnTopologyChangedAsync().ConfigureAwait(false);
+            await consumerRegister.OnTopologyChangedAsync(cancellationToken).ConfigureAwait(false);
 
             logger.RuntimeSubscriptionDetached(subscriptionId);
             return true;
