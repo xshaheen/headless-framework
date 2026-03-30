@@ -22,6 +22,9 @@ internal sealed class Bootstrapper(
     private CancellationTokenSource? _runtimeCts;
     private CancellationTokenRegistration _stoppingRegistration;
     private Task? _bootstrapTask;
+
+    // Plain access under _bootstrapLock (the lock provides a full fence).
+    // Volatile.Read in IsStarted for lock-free snapshot by external callers.
     private bool _isStarted;
 
     public bool IsStarted => Volatile.Read(ref _isStarted);
