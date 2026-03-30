@@ -98,12 +98,31 @@ internal sealed class Bootstrapper(
 
             await _BootstrapCoreAsync(startupToken).ConfigureAwait(false);
 
-            _stoppingRegistration = runtimeCts.Token.Register(_StopProcessors);
+            var registration = runtimeCts.Token.Register(_StopProcessors);
 
             lock (_bootstrapLock)
             {
-                _isStarted = true;
-                _bootstrapTask = null;
+                if (_isStopping)
+                {
+                    // Shutdown began while we were starting — undo immediately.
+                    _bootstrapTask = null;
+                    _isStarted = false;
+                    _stoppingRegistration = default;
+                }
+                else
+                {
+                    _stoppingRegistration = registration;
+                    _isStarted = true;
+                    _bootstrapTask = null;
+                }
+            }
+
+            if (_isStopping)
+            {
+                await registration.DisposeAsync().ConfigureAwait(false);
+                _StopProcessors();
+                runtimeCts.Dispose();
+                return;
             }
 
             logger.MessagingStarted();
@@ -206,6 +225,7 @@ internal sealed class Bootstrapper(
         }
 
         await stoppingRegistration.DisposeAsync().ConfigureAwait(false);
+        runtimeCts?.Dispose();
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
