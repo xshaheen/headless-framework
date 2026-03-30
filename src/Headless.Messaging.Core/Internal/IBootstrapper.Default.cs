@@ -99,6 +99,7 @@ internal sealed class Bootstrapper(
             await _BootstrapCoreAsync(startupToken).ConfigureAwait(false);
 
             var registration = runtimeCts.Token.Register(_StopProcessors);
+            var wasStopping = false;
 
             lock (_bootstrapLock)
             {
@@ -108,6 +109,7 @@ internal sealed class Bootstrapper(
                     _bootstrapTask = null;
                     _isStarted = false;
                     _stoppingRegistration = default;
+                    wasStopping = true;
                 }
                 else
                 {
@@ -117,7 +119,7 @@ internal sealed class Bootstrapper(
                 }
             }
 
-            if (_isStopping)
+            if (wasStopping)
             {
                 await registration.DisposeAsync().ConfigureAwait(false);
                 _StopProcessors();
@@ -286,9 +288,9 @@ internal sealed class Bootstrapper(
             Volatile.Write(ref _isStarted, false);
             runtimeCts = _runtimeCts;
             _runtimeCts = null;
+            stoppingRegistration = _stoppingRegistration;
             _stoppingRegistration = default;
             _bootstrapTask = null;
-            stoppingRegistration = default;
         }
 
 #pragma warning disable VSTHRD103 // Dispose is synchronous by contract — CancelAsync is not available here.
