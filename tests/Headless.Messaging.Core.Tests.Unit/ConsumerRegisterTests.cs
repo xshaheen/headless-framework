@@ -246,6 +246,26 @@ public sealed class ConsumerRegisterTests : TestBase
         await register.DisposeAsync();
     }
 
+    [Fact]
+    public async Task should_queue_topology_refresh_when_change_occurs_during_startup()
+    {
+        await using var provider = _CreateProvider();
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+
+        // Set state to Starting (1) to simulate mid-startup.
+        typeof(ConsumerRegister)
+            .GetField("_state", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(register, 1);
+
+        await register.OnTopologyChangedAsync();
+
+        var pendingRefresh = typeof(ConsumerRegister)
+            .GetField("_pendingTopologyRefresh", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(register);
+
+        pendingRefresh.Should().Be(1);
+    }
+
     private ServiceProvider _CreateProvider(ICircuitBreakerStateManager? circuitBreakerStateManager = null)
     {
         var services = new ServiceCollection();

@@ -8,7 +8,6 @@ internal sealed class RuntimeSubscriber(
     IRuntimeConsumerRegistry runtimeRegistry,
     MethodMatcherCache methodMatcherCache,
     IConsumerRegister consumerRegister,
-    IBootstrapper bootstrapper,
     ILogger<RuntimeSubscriber> logger
 ) : IRuntimeSubscriber, IDisposable
 {
@@ -27,12 +26,6 @@ internal sealed class RuntimeSubscriber(
         try
         {
             var result = runtimeRegistry.Register(handler, options);
-            methodMatcherCache.Invalidate();
-
-            if (bootstrapper.IsStarted)
-            {
-                await consumerRegister.ReStartAsync(force: true).ConfigureAwait(false);
-            }
 
             if (result.Status == RuntimeConsumerRegistrationStatus.Ignored)
             {
@@ -44,6 +37,8 @@ internal sealed class RuntimeSubscriber(
                 );
             }
 
+            methodMatcherCache.Invalidate();
+            await consumerRegister.OnTopologyChangedAsync(cancellationToken).ConfigureAwait(false);
             logger.RuntimeSubscriptionAttached(result.SubscriptionId, result.Topic, result.Group, result.HandlerId);
 
             return RuntimeSubscriptionHandle.Attached(
@@ -77,11 +72,7 @@ internal sealed class RuntimeSubscriber(
             }
 
             methodMatcherCache.Invalidate();
-
-            if (bootstrapper.IsStarted)
-            {
-                await consumerRegister.ReStartAsync(force: true).ConfigureAwait(false);
-            }
+            await consumerRegister.OnTopologyChangedAsync(cancellationToken).ConfigureAwait(false);
 
             logger.RuntimeSubscriptionDetached(subscriptionId);
             return true;

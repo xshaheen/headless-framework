@@ -23,7 +23,8 @@ public interface IConsumerRegister : IProcessingServer
 {
     bool IsHealthy();
 
-    ValueTask ReStartAsync(bool force = false);
+    ValueTask ReStartAsync(bool force = false, CancellationToken cancellationToken = default);
+    ValueTask OnTopologyChangedAsync(CancellationToken cancellationToken = default);
 }
 
 internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvider serviceProvider)
@@ -42,7 +43,9 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private IConsumerClientFactory _consumerClientFactory = null!;
     private IDispatcher _dispatcher = null!;
     private int _state = (int)LifecycleState.NotStarted;
+    private readonly SemaphoreSlim _restartGate = new(1, 1);
     private volatile bool _isHealthy = true;
+    private int _pendingTopologyRefresh;
 
     private MethodMatcherCache _selector = null!;
     private ISerializer _serializer = null!;
@@ -62,6 +65,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         _hostStoppingToken = stoppingToken;
         _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
         _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
+        Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
+        Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
 
         _selector = serviceProvider.GetRequiredService<MethodMatcherCache>();
         _dispatcher = serviceProvider.GetRequiredService<IDispatcher>();
@@ -70,37 +75,81 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         _consumerClientFactory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
         _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();
 
-        await ExecuteAsync();
+        try
+        {
+            await ExecuteAsync().ConfigureAwait(false);
 
-        Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
+            // Acquire the restart gate so topology-change-driven restarts cannot overlap
+            // with the drain loop that follows the initial startup.
+            await _restartGate.WaitAsync(stoppingToken).ConfigureAwait(false);
+            try
+            {
+                Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
+                await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                try
+                {
+                    _restartGate.Release();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // If we failed to acquire the gate above, it means DisposeAsync has already run and we should not attempt to release.
+                }
+            }
+        }
+        catch
+        {
+            // Clean up any partially created consumer handles before resetting state.
+            try
+            {
+                await PulseAsync().ConfigureAwait(false);
+            }
+#pragma warning disable ERP022 // Best-effort cleanup — state reset below prevents stale handles from being accessible.
+            catch { }
+#pragma warning restore ERP022
+
+            Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
+            Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
+            throw;
+        }
     }
 
-    public async ValueTask ReStartAsync(bool force = false)
+    public async ValueTask ReStartAsync(bool force = false, CancellationToken cancellationToken = default)
     {
         if (!IsHealthy() || force)
         {
-            // Preserve circuit breaker state across transport restarts — broker reconnects
-            // are orthogonal to handler failures tracked by the circuit breaker.
-            await PulseAsync(removeCircuitState: false);
-
-            _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(_hostStoppingToken);
-            _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
-            _isHealthy = true;
-
+            await _restartGate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await ExecuteAsync();
+                await _RestartCoreAsync().ConfigureAwait(false);
+                await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
             }
-            catch
+            finally
             {
-                // ExecuteAsync failed — the CTS created above will never be cleaned up by a
-                // subsequent PulseAsync call, so dispose it here to prevent a leak.
-                await _stoppingCtsRegistration.DisposeAsync();
-                _stoppingCts.Dispose();
-                throw;
+                try
+                {
+                    _restartGate.Release();
+                }
+                catch (ObjectDisposedException) { }
             }
+        }
+    }
 
-            Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
+    public async ValueTask OnTopologyChangedAsync(CancellationToken cancellationToken = default)
+    {
+        var current = (LifecycleState)Volatile.Read(ref _state);
+
+        if (current == LifecycleState.Running)
+        {
+            await ReStartAsync(force: true, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (current == LifecycleState.Starting)
+        {
+            Interlocked.Exchange(ref _pendingTopologyRefresh, 1);
         }
     }
 
@@ -166,6 +215,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 await _dispatcher.DisposeAsync();
             }
 
+            _restartGate.Dispose();
             Interlocked.Exchange(ref _state, (int)LifecycleState.Disposed);
         }
     }
@@ -311,6 +361,56 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
                 handle.ConsumerTasks.Add(task);
             }
+        }
+    }
+
+    private async ValueTask _RestartCoreAsync()
+    {
+        var current = (LifecycleState)Volatile.Read(ref _state);
+        if (current is LifecycleState.Disposing or LifecycleState.Disposed)
+        {
+            return;
+        }
+
+        Interlocked.Exchange(ref _state, (int)LifecycleState.Starting);
+        Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
+
+        // Preserve circuit breaker state across transport restarts — broker reconnects
+        // are orthogonal to handler failures tracked by the circuit breaker.
+        await PulseAsync(removeCircuitState: false).ConfigureAwait(false);
+
+        _stoppingCts = CancellationTokenSource.CreateLinkedTokenSource(_hostStoppingToken);
+        _stoppingCtsRegistration = _stoppingCts.Token.Register(_OnCancellationRequested);
+        _isHealthy = true;
+
+        try
+        {
+            await ExecuteAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // Clean up any partially created consumer handles and the CTS created above.
+            try
+            {
+                await PulseAsync().ConfigureAwait(false);
+            }
+#pragma warning disable ERP022 // Best-effort cleanup — state reset below prevents stale handles from being accessible.
+            catch { }
+#pragma warning restore ERP022
+
+            Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
+            Interlocked.Exchange(ref _pendingTopologyRefresh, 0);
+            throw;
+        }
+
+        Interlocked.Exchange(ref _state, (int)LifecycleState.Running);
+    }
+
+    private async ValueTask _DrainPendingTopologyRefreshesAsync()
+    {
+        while (Interlocked.Exchange(ref _pendingTopologyRefresh, 0) == 1)
+        {
+            await _RestartCoreAsync().ConfigureAwait(false);
         }
     }
 
@@ -618,9 +718,10 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     private enum LifecycleState
     {
         NotStarted = 0,
-        Running = 1,
-        Disposing = 2,
-        Disposed = 3,
+        Starting = 1,
+        Running = 2,
+        Disposing = 3,
+        Disposed = 4,
     }
 
     private sealed class GroupHandle : IAsyncDisposable

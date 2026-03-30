@@ -16,75 +16,184 @@ internal sealed class Bootstrapper(
     ILogger<IBootstrapper> logger
 ) : BackgroundService, IBootstrapper
 {
+    private readonly Lock _bootstrapLock = new();
     private bool _disposed;
-    private CancellationTokenSource? _cts;
-    public bool IsStarted => !_cts?.IsCancellationRequested ?? false;
+    private bool _isStopping;
+    private CancellationTokenSource? _runtimeCts;
+    private CancellationTokenRegistration _stoppingRegistration;
+    private Task? _bootstrapTask;
+
+    // Plain access under _bootstrapLock (the lock provides a full fence).
+    // Volatile.Read in IsStarted for lock-free snapshot by external callers.
+    private bool _isStarted;
+
+    public bool IsStarted => Volatile.Read(ref _isStarted);
 
     public async Task BootstrapAsync(CancellationToken cancellationToken = default)
     {
-        if (_cts is not null)
-        {
-            logger.MessagingAlreadyStarted();
+        cancellationToken.ThrowIfCancellationRequested();
 
-            return;
+        Task bootstrapTask;
+        var createdByCaller = false;
+
+        lock (_bootstrapLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, typeof(Bootstrapper));
+
+            if (_isStopping)
+            {
+                throw new InvalidOperationException("Cannot bootstrap after shutdown has begun.");
+            }
+
+            if (_isStarted)
+            {
+                logger.MessagingAlreadyStarted();
+                return;
+            }
+
+            if (_bootstrapTask is not null)
+            {
+                logger.MessagingAlreadyStarted();
+                bootstrapTask = _bootstrapTask;
+            }
+            else
+            {
+                logger.MessagingStarting();
+
+                var runtimeCts = new CancellationTokenSource();
+                _runtimeCts = runtimeCts;
+                bootstrapTask = _BootstrapAsyncCore(runtimeCts, cancellationToken);
+                _bootstrapTask = bootstrapTask;
+                createdByCaller = true;
+            }
         }
 
-        logger.MessagingStarting();
+        if (createdByCaller)
+        {
+            await bootstrapTask.ConfigureAwait(false);
+        }
+        else
+        {
+            await bootstrapTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
 
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-
-        _CheckRequirement();
+    private async Task _BootstrapAsyncCore(CancellationTokenSource runtimeCts, CancellationToken ownerCancellationToken)
+    {
+        using var startupCts = CancellationTokenSource.CreateLinkedTokenSource(
+            runtimeCts.Token,
+            ownerCancellationToken
+        );
+        var startupToken = startupCts.Token;
 
         try
         {
-            await storageInitializer.InitializeAsync(_cts.Token).ConfigureAwait(false);
-        }
-        catch (Exception e) when (e is not InvalidOperationException)
-        {
-            logger.StorageInitFailed(e);
-        }
+            _CheckRequirement();
 
-        _cts.Token.Register(() =>
-        {
-            logger.MessagingStopping();
-
-            foreach (var item in processors)
+            try
             {
-                try
+                await storageInitializer.InitializeAsync(startupToken).ConfigureAwait(false);
+            }
+            catch (Exception e) when (e is not InvalidOperationException)
+            {
+                logger.StorageInitFailed(e);
+            }
+
+            await _BootstrapCoreAsync(startupToken).ConfigureAwait(false);
+
+            var registration = runtimeCts.Token.Register(_StopProcessors);
+            var wasStopping = false;
+
+            lock (_bootstrapLock)
+            {
+                if (_isStopping)
                 {
-                    item.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    // Shutdown began while we were starting — undo immediately.
+                    _bootstrapTask = null;
+                    _isStarted = false;
+                    _stoppingRegistration = default;
+                    wasStopping = true;
                 }
-                catch (OperationCanceledException ex)
+                else
                 {
-                    logger.ExpectedOperationCanceledException(ex, ex.Message);
+                    _stoppingRegistration = registration;
+                    _isStarted = true;
+                    _bootstrapTask = null;
                 }
             }
-        });
 
-        await _BootstrapCoreAsync().ConfigureAwait(false);
+            if (wasStopping)
+            {
+                await registration.DisposeAsync().ConfigureAwait(false);
+                _StopProcessors();
+                runtimeCts.Dispose();
+                return;
+            }
 
-        _disposed = false;
-        logger.MessagingStarted();
+            logger.MessagingStarted();
+        }
+        catch
+        {
+            try
+            {
+                await runtimeCts.CancelAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Ignore races with external disposal during startup failure cleanup.
+            }
+
+            _StopProcessors();
+            await _stoppingRegistration.DisposeAsync().ConfigureAwait(false);
+
+            lock (_bootstrapLock)
+            {
+                if (ReferenceEquals(_runtimeCts, runtimeCts))
+                {
+                    _runtimeCts = null;
+                }
+
+                _bootstrapTask = null;
+                _isStarted = false;
+            }
+
+            runtimeCts.Dispose();
+            throw;
+        }
     }
 
-    private async Task _BootstrapCoreAsync()
+    private async Task _BootstrapCoreAsync(CancellationToken cancellationToken)
     {
+        List<Exception>? failures = null;
+
         foreach (var item in processors)
         {
             try
             {
-                _cts!.Token.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
 
-                await item.StartAsync(_cts!.Token);
+                await item.StartAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
-                // ignore
+                throw;
             }
             catch (Exception ex)
             {
                 logger.ProcessorsStartedError(ex);
+                failures ??= [];
+                failures.Add(ex);
             }
+        }
+
+        if (failures is { Count: > 0 })
+        {
+            if (failures.Count == 1)
+            {
+                throw failures[0];
+            }
+
+            throw new AggregateException("One or more messaging processors failed to start.", failures);
         }
     }
 
@@ -95,11 +204,33 @@ internal sealed class Bootstrapper(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_cts != null)
+        CancellationTokenSource? runtimeCts;
+        CancellationTokenRegistration stoppingRegistration;
+
+        lock (_bootstrapLock)
         {
-            await _cts.CancelAsync();
+            _isStopping = true;
+            Volatile.Write(ref _isStarted, false);
+            runtimeCts = _runtimeCts;
+            _runtimeCts = null;
+            stoppingRegistration = _stoppingRegistration;
+            _stoppingRegistration = default;
         }
 
+        if (runtimeCts is not null)
+        {
+            try
+            {
+                await runtimeCts.CancelAsync().ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Ignore races with concurrent startup failure cleanup.
+            }
+        }
+
+        await stoppingRegistration.DisposeAsync().ConfigureAwait(false);
+        runtimeCts?.Dispose();
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -145,23 +276,95 @@ internal sealed class Bootstrapper(
 
     public override void Dispose()
     {
-        if (_disposed)
+        CancellationTokenSource? runtimeCts;
+        CancellationTokenRegistration stoppingRegistration;
+
+        lock (_bootstrapLock)
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _isStopping = true;
+            Volatile.Write(ref _isStarted, false);
+            runtimeCts = _runtimeCts;
+            _runtimeCts = null;
+            stoppingRegistration = _stoppingRegistration;
+            _stoppingRegistration = default;
+            _bootstrapTask = null;
         }
 
-        _cts?.Cancel();
-        _cts?.Dispose();
-        _cts = null;
-        _disposed = true;
+#pragma warning disable VSTHRD103 // Dispose is synchronous by contract — CancelAsync is not available here.
+        runtimeCts?.Cancel();
+#pragma warning restore VSTHRD103
+        stoppingRegistration.Dispose();
+        runtimeCts?.Dispose();
 
         base.Dispose();
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
-        Dispose();
+        Task? pendingBootstrap;
+        CancellationTokenSource? runtimeCts;
+        CancellationTokenRegistration stoppingRegistration;
 
-        return ValueTask.CompletedTask;
+        lock (_bootstrapLock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _isStopping = true;
+            Volatile.Write(ref _isStarted, false);
+            pendingBootstrap = _bootstrapTask;
+            _bootstrapTask = null;
+            runtimeCts = _runtimeCts;
+            _runtimeCts = null;
+            stoppingRegistration = _stoppingRegistration;
+            _stoppingRegistration = default;
+        }
+
+        if (runtimeCts is not null)
+        {
+            await runtimeCts.CancelAsync().ConfigureAwait(false);
+        }
+
+        if (pendingBootstrap is not null)
+        {
+#pragma warning disable ERP022 // We just need the in-flight bootstrap to finish its cleanup; the outcome does not matter.
+            try
+            {
+                await pendingBootstrap.ConfigureAwait(false);
+            }
+            catch { }
+#pragma warning restore ERP022
+        }
+
+        await stoppingRegistration.DisposeAsync().ConfigureAwait(false);
+        runtimeCts?.Dispose();
+
+        base.Dispose();
+    }
+
+    private void _StopProcessors()
+    {
+        logger.MessagingStopping();
+
+        foreach (var item in processors)
+        {
+            try
+            {
+                item.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException ex)
+            {
+                logger.ExpectedOperationCanceledException(ex, ex.Message);
+            }
+        }
     }
 }

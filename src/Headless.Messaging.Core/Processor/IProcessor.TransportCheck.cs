@@ -23,7 +23,7 @@ public sealed class TransportCheckProcessor(ILogger<TransportCheckProcessor> log
         {
             logger.TransportUnhealthy();
 
-            await register.ReStartAsync();
+            await register.ReStartAsync(cancellationToken: context.CancellationToken);
         }
         else
         {
