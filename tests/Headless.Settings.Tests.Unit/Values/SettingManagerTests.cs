@@ -269,6 +269,31 @@ public sealed class SettingManagerTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_first_provider_value_for_inherited_setting_with_fallback()
+    {
+        // given — inherited setting exists in both the requested provider and a later fallback provider
+        const string providerName = "Account";
+        const string providerKey = "account-123";
+        var definition = new SettingDefinition("Preferences.Locale", isInherited: true);
+
+        var accountProvider = new FakeSettingValueProvider { Name = "Account" };
+        accountProvider.SetValue("Preferences.Locale", "en-US", providerKey);
+
+        var defaultProvider = new FakeSettingValueProvider { Name = "Default" };
+        defaultProvider.SetValue("Preferences.Locale", "ar-EG");
+
+        _definitionManager.GetAllAsync(AbortToken).Returns([definition]);
+        _valueProviderManager.Providers.Returns([accountProvider, defaultProvider]);
+
+        // when
+        var result = await _sut.GetAllAsync(providerName, providerKey, fallback: true, cancellationToken: AbortToken);
+
+        // then — provider-specific value wins over fallback
+        result.Should().ContainSingle()
+            .Which.Value.Should().Be("en-US");
+    }
+
+    [Fact]
     public async Task should_throw_when_provider_name_null()
     {
         // when

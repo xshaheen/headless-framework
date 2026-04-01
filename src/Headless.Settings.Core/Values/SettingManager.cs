@@ -134,6 +134,7 @@ public sealed class SettingManager(
                     if (providerValue is not null)
                     {
                         value = providerValue;
+                        break;
                     }
                 }
             }
