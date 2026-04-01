@@ -45,11 +45,23 @@ public abstract class ConsumerClientTestsBase : TestBase
         return new TransportMessage(headers, body ?? "test-body"u8.ToArray());
     }
 
+    /// <summary>
+    /// Allows transports to transform logical topic names into broker-specific subscription identifiers.
+    /// </summary>
+    protected virtual async ValueTask<IReadOnlyList<string>> ResolveSubscriptionTopicsAsync(
+        IConsumerClient consumer,
+        IReadOnlyList<string> topics
+    )
+    {
+        await Task.CompletedTask;
+        return topics;
+    }
+
     public virtual async Task should_subscribe_to_topic()
     {
         // given
         await using var consumer = GetConsumerClient();
-        var topics = new[] { "test-topic-1", "test-topic-2" };
+        var topics = await ResolveSubscriptionTopicsAsync(consumer, ["test-topic-1", "test-topic-2"]);
 
         // when
         var act = async () => await consumer.SubscribeAsync(topics);
@@ -72,7 +84,8 @@ public abstract class ConsumerClientTestsBase : TestBase
             return Task.CompletedTask;
         };
 
-        await consumer.SubscribeAsync(["test-topic"]);
+        var topics = await ResolveSubscriptionTopicsAsync(consumer, ["test-topic"]);
+        await consumer.SubscribeAsync(topics);
 
         // when
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -152,7 +165,8 @@ public abstract class ConsumerClientTestsBase : TestBase
 
         // given
         var consumer = GetConsumerClient();
-        await consumer.SubscribeAsync(["test-topic"]);
+        var topics = await ResolveSubscriptionTopicsAsync(consumer, ["test-topic"]);
+        await consumer.SubscribeAsync(topics);
 
         // Start listening in background
         using var cts = new CancellationTokenSource();
@@ -203,7 +217,8 @@ public abstract class ConsumerClientTestsBase : TestBase
             return Task.CompletedTask;
         };
 
-        await consumer.SubscribeAsync(["concurrent-topic"]);
+        var topics = await ResolveSubscriptionTopicsAsync(consumer, ["concurrent-topic"]);
+        await consumer.SubscribeAsync(topics);
 
         // when
         var tasks = Enumerable
@@ -300,7 +315,8 @@ public abstract class ConsumerClientTestsBase : TestBase
 
         consumer.OnLogCallback = args => logEvents.Add(args);
 
-        await consumer.SubscribeAsync(["log-test-topic"]);
+        var topics = await ResolveSubscriptionTopicsAsync(consumer, ["log-test-topic"]);
+        await consumer.SubscribeAsync(topics);
 
         // when
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));

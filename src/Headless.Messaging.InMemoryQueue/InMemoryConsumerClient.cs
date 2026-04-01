@@ -16,6 +16,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     private readonly BlockingCollection<TransportMessage> _messageQueue = new();
     private readonly SemaphoreSlim _semaphore;
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _disposed;
 
     /// <summary>
@@ -58,8 +59,14 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     {
         Argument.IsNotNull(topics);
         _queue.Subscribe(_groupId, topics);
+        _ready.TrySetResult();
 
         return ValueTask.CompletedTask;
+    }
+
+    public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+    {
+        return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
     /// <summary>
@@ -214,6 +221,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
         }
 
         _pauseGate.Release();
+        _ready.TrySetCanceled();
         _semaphore.Dispose();
         _messageQueue.Dispose();
         _queue.Unsubscribe(_groupId);

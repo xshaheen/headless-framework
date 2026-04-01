@@ -2,8 +2,10 @@
 
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Nats;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -76,5 +78,24 @@ public sealed class SetupTests : TestBase
 
         // then
         result.Should().BeSameAs(options);
+    }
+
+    [Fact]
+    public async Task should_register_nats_transport_services_through_AddHeadlessMessaging()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddHeadlessMessaging(options => options.UseNats("nats://localhost:4222"));
+
+        await using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<ITransport>().Should().BeOfType<NatsTransport>();
+        provider.GetRequiredService<IConsumerClientFactory>().Should().BeOfType<NatsConsumerClientFactory>();
+        provider.GetRequiredService<INatsConnectionPool>().Should().BeOfType<NatsConnectionPool>();
+        provider
+            .GetRequiredService<IOptions<MessagingNatsOptions>>()
+            .Value.Servers.Should()
+            .Be("nats://localhost:4222");
     }
 }

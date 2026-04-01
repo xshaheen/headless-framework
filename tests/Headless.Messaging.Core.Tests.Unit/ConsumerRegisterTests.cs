@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
@@ -190,8 +191,9 @@ public sealed class ConsumerRegisterTests : TestBase
             .GetField("_selector", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(register, fakeCache);
 
-        // Swap factory: first call (FetchTopicsAsync setup) succeeds; per-thread calls throw
-        // BrokerConnectionException (the catch block handles this gracefully and exits the task).
+        // Swap factory: first call returns a metadata client; per-thread calls return a
+        // ready listener so ExecuteAsync can finish and expose the paused handle state.
+        var readyClient = new ReadyListeningConsumerClient();
         var callCount = 0;
         var factorySub = Substitute.For<IConsumerClientFactory>();
         factorySub
@@ -207,7 +209,7 @@ public sealed class ConsumerRegisterTests : TestBase
                     return Task.FromResult(client);
                 }
 
-                throw new BrokerConnectionException(new Exception("intentional"));
+                return Task.FromResult<IConsumerClient>(readyClient);
             });
         typeof(ConsumerRegister)
             .GetField("_consumerClientFactory", BindingFlags.NonPublic | BindingFlags.Instance)!
@@ -266,7 +268,43 @@ public sealed class ConsumerRegisterTests : TestBase
         pendingRefresh.Should().Be(1);
     }
 
-    private ServiceProvider _CreateProvider(ICircuitBreakerStateManager? circuitBreakerStateManager = null)
+    [Fact]
+    public async Task should_not_complete_startup_until_consumer_listener_is_ready()
+    {
+        var startupClient = new StartupControlledConsumerClient();
+        var factory = new SequencedConsumerClientFactory(new MetadataConsumerClient(), startupClient);
+
+        await using var provider = _CreateProvider(
+            configureMessaging: options =>
+            {
+                options.Subscribe<BootstrapReadyConsumer>("ready-topic").Group("ready-group").Concurrency(1);
+            },
+            configureServices: services =>
+            {
+                services.AddSingleton<IConsumerClientFactory>(factory);
+                services.AddSingleton<BootstrapReadyConsumer>();
+            }
+        );
+
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        using var hostCts = new CancellationTokenSource();
+
+        var startTask = register.StartAsync(hostCts.Token).AsTask();
+        await startupClient.WaitUntilListeningEnteredAsync(AbortToken);
+
+        startTask.IsCompleted.Should().BeFalse("bootstrap readiness should wait for the consumer listener");
+
+        startupClient.SignalReady();
+        await startTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        await register.DisposeAsync();
+    }
+
+    private ServiceProvider _CreateProvider(
+        ICircuitBreakerStateManager? circuitBreakerStateManager = null,
+        Action<MessagingOptions>? configureMessaging = null,
+        Action<IServiceCollection>? configureServices = null
+    )
     {
         var services = new ServiceCollection();
         services.AddLogging(builder =>
@@ -284,6 +322,8 @@ public sealed class ConsumerRegisterTests : TestBase
                 c.UseApplicationId("messaging-tests");
                 c.UseVersion("v1");
             });
+
+            configureMessaging?.Invoke(options);
         });
 
         if (circuitBreakerStateManager is not null)
@@ -291,6 +331,154 @@ public sealed class ConsumerRegisterTests : TestBase
             services.AddSingleton(circuitBreakerStateManager);
         }
 
+        configureServices?.Invoke(services);
+
         return services.BuildServiceProvider();
+    }
+
+    private sealed class BootstrapReadyConsumer : IConsume<BootstrapReadyMessage>
+    {
+        public ValueTask Consume(ConsumeContext<BootstrapReadyMessage> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed record BootstrapReadyMessage;
+
+    private sealed class SequencedConsumerClientFactory(params IConsumerClient[] clients) : IConsumerClientFactory
+    {
+        private readonly Queue<IConsumerClient> _clients = new(clients);
+
+        public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+        {
+            if (_clients.Count == 0)
+            {
+                throw new InvalidOperationException("No consumer clients left in the factory sequence.");
+            }
+
+            return Task.FromResult(_clients.Dequeue());
+        }
+    }
+
+    private sealed class MetadataConsumerClient : IConsumerClient
+    {
+        public BrokerAddress BrokerAddress => new("test", "metadata");
+
+        public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
+
+        public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
+
+        public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+        {
+            return ValueTask.FromResult<ICollection<string>>(topicNames.ToArray());
+        }
+
+        public ValueTask SubscribeAsync(IEnumerable<string> topics) => ValueTask.CompletedTask;
+
+        public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+
+        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class StartupControlledConsumerClient : IConsumerClient
+    {
+        private readonly TaskCompletionSource _listeningEntered = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public BrokerAddress BrokerAddress => new("test", "startup");
+
+        public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
+
+        public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
+
+        public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+        {
+            return ValueTask.FromResult<ICollection<string>>(topicNames.ToArray());
+        }
+
+        public ValueTask SubscribeAsync(IEnumerable<string> topics) => ValueTask.CompletedTask;
+
+        public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            _listeningEntered.TrySetResult();
+            await _ready.Task.WaitAsync(cancellationToken);
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+        }
+
+        public async Task WaitUntilListeningEnteredAsync(CancellationToken cancellationToken)
+        {
+            await _listeningEntered.Task.WaitAsync(cancellationToken);
+        }
+
+        public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+        {
+            return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
+        }
+
+        public void SignalReady()
+        {
+            _ready.TrySetResult();
+        }
+
+        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+
+        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask DisposeAsync()
+        {
+            _ready.TrySetCanceled();
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class ReadyListeningConsumerClient : IConsumerClient
+    {
+        public BrokerAddress BrokerAddress => new("test", "ready");
+
+        public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
+
+        public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
+
+        public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+        {
+            return ValueTask.FromResult<ICollection<string>>(topicNames.ToArray());
+        }
+
+        public ValueTask SubscribeAsync(IEnumerable<string> topics) => ValueTask.CompletedTask;
+
+        public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+        }
+
+        public ValueTask CommitAsync(object? sender) => ValueTask.CompletedTask;
+
+        public ValueTask RejectAsync(object? sender) => ValueTask.CompletedTask;
+
+        public ValueTask PauseAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask ResumeAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

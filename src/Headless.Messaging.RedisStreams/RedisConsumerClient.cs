@@ -19,6 +19,7 @@ internal sealed class RedisConsumerClient(
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _disposed;
     private string[] _topics = null!;
 
@@ -40,6 +41,12 @@ internal sealed class RedisConsumerClient(
         }
 
         _topics = arr;
+        _ready.TrySetResult();
+    }
+
+    public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+    {
+        return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
     public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -78,6 +85,7 @@ internal sealed class RedisConsumerClient(
         }
 
         _pauseGate.Release();
+        _ready.TrySetCanceled();
         _semaphore.Dispose();
         return ValueTask.CompletedTask;
     }

@@ -25,6 +25,7 @@ internal sealed class NatsConsumerClient(
 
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private NatsConnection? _connection;
     private NatsJSContext? _jsContext;
@@ -130,6 +131,7 @@ internal sealed class NatsConsumerClient(
     {
         var streamGroups = _subscribedTopics!.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
         var tasks = new List<Task>();
+        var startupTasks = new List<Task>();
 
         foreach (var streamGroup in streamGroups)
         {
@@ -148,22 +150,43 @@ internal sealed class NatsConsumerClient(
 
                 _natsOptions.ConsumerOptions?.Invoke(consumerConfig);
 
-                tasks.Add(_ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, cancellationToken));
+                var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                startupTasks.Add(startupReady.Task);
+                tasks.Add(
+                    _ConsumeSubjectAsync(streamGroup.Key, consumerConfig, timeout, startupReady, cancellationToken)
+                );
             }
         }
 
+        if (startupTasks.Count == 0)
+        {
+            _ready.TrySetResult();
+        }
+        else
+        {
+            await Task.WhenAll(startupTasks).ConfigureAwait(false);
+            _ready.TrySetResult();
+        }
+
         await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
+    public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+    {
+        return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
     private async Task _ConsumeSubjectAsync(
         string streamName,
         ConsumerConfig consumerConfig,
         TimeSpan timeout,
+        TaskCompletionSource startupReady,
         CancellationToken cancellationToken
     )
     {
         var retryDelay = TimeSpan.FromSeconds(1);
         var nextOpts = timeout > TimeSpan.Zero ? new NatsJSNextOpts { Expires = timeout } : (NatsJSNextOpts?)null;
+        var readyReported = false;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -174,6 +197,12 @@ internal sealed class NatsConsumerClient(
                     : await _jsContext!
                         .CreateOrUpdateConsumerAsync(streamName, consumerConfig, cancellationToken)
                         .ConfigureAwait(false);
+
+                if (!readyReported)
+                {
+                    readyReported = true;
+                    startupReady.TrySetResult();
+                }
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
@@ -240,6 +269,7 @@ internal sealed class NatsConsumerClient(
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                startupReady.TrySetCanceled(cancellationToken);
                 break;
             }
             catch (Exception ex)
@@ -469,6 +499,7 @@ internal sealed class NatsConsumerClient(
         }
 
         _pauseGate.Release();
+        _ready.TrySetCanceled();
         _CancelReceives();
 
         ReceiveTokenState? receiveTokenStateToDispose = null;

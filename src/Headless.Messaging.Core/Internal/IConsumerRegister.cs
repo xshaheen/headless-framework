@@ -267,6 +267,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
     public async ValueTask ExecuteAsync()
     {
         var groupingMatches = _selector.GetCandidatesMethodsOfGroupNameGrouped();
+        List<Task>? startupTasks = null;
 
         // Arm the OTel cardinality guard so unrecognized group names are rejected.
         _circuitBreakerStateManager?.RegisterKnownGroups(groupingMatches.Keys);
@@ -321,6 +322,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
             for (var i = 0; i < _options.ConsumerThreadCount; i++)
             {
+                var startupReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 var task = Task
                     .Factory.StartNew(
                         async () =>
@@ -336,20 +338,22 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                                 _RegisterMessageProcessor(innerClient);
 
                                 await innerClient.SubscribeAsync(topics);
-
-                                await innerClient.ListeningAsync(_pollingDelay, groupCts.Token);
+                                await _AwaitConsumerReadyThenListenAsync(innerClient, startupReady, groupCts.Token)
+                                    .ConfigureAwait(false);
                             }
                             catch (OperationCanceledException)
                             {
-                                // ignore
+                                startupReady.TrySetCanceled(groupCts.Token);
                             }
                             catch (BrokerConnectionException e)
                             {
+                                startupReady.TrySetException(e);
                                 _isHealthy = false;
                                 _logger.FailedToConnectToBroker(e);
                             }
                             catch (Exception e)
                             {
+                                startupReady.TrySetException(e);
                                 _logger.ConsumerProcessingLoopFailed(e);
                             }
                         },
@@ -360,8 +364,47 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                     .Unwrap();
 
                 handle.ConsumerTasks.Add(task);
+                startupTasks ??= [];
+                startupTasks.Add(startupReady.Task);
             }
         }
+
+        if (startupTasks is { Count: > 0 })
+        {
+            await Task.WhenAll(startupTasks).ConfigureAwait(false);
+        }
+    }
+
+    private async Task _AwaitConsumerReadyThenListenAsync(
+        IConsumerClient innerClient,
+        TaskCompletionSource startupReady,
+        CancellationToken cancellationToken
+    )
+    {
+        var readinessTask = innerClient.WaitUntilReadyAsync(cancellationToken).AsTask();
+
+        if (readinessTask.IsCompleted)
+        {
+            await readinessTask.ConfigureAwait(false);
+            startupReady.TrySetResult();
+            await innerClient.ListeningAsync(_pollingDelay, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var listeningTask = Task.Run(
+            () => innerClient.ListeningAsync(_pollingDelay, cancellationToken).AsTask(),
+            CancellationToken.None
+        );
+
+        var completedTask = await Task.WhenAny(readinessTask, listeningTask).ConfigureAwait(false);
+        if (completedTask == listeningTask)
+        {
+            await listeningTask.ConfigureAwait(false);
+        }
+
+        await readinessTask.ConfigureAwait(false);
+        startupReady.TrySetResult();
+        await listeningTask.ConfigureAwait(false);
     }
 
     private async ValueTask _RestartCoreAsync()

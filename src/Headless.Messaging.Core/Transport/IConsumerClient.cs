@@ -41,6 +41,19 @@ public interface IConsumerClient : IAsyncDisposable
     ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Waits until the consumer is actually ready to receive messages from the transport.
+    /// </summary>
+    /// <remarks>
+    /// Implementations should complete this only after broker-side subscriptions, push consumers,
+    /// or poll loops are active enough that a message published after bootstrap will not be missed.
+    /// </remarks>
+    /// <param name="cancellationToken">Token to cancel the readiness wait.</param>
+    ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+    {
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
     /// Manually commits message offset when the message consumption is complete
     /// </summary>
     /// <param name="sender">The message or context object to commit</param>

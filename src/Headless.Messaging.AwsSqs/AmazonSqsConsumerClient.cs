@@ -25,6 +25,7 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _disposed;
     private string _queueUrl = string.Empty;
 
@@ -65,6 +66,12 @@ internal sealed class AmazonSqsConsumerClient(
         await _ConnectAsync().ConfigureAwait(false);
 
         await _SubscribeToTopics(topics).ConfigureAwait(false);
+        _ready.TrySetResult();
+    }
+
+    public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+    {
+        return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -235,6 +242,7 @@ internal sealed class AmazonSqsConsumerClient(
         }
 
         _pauseGate.Release();
+        _ready.TrySetCanceled();
         _sqsClient?.Dispose();
         _snsClient?.Dispose();
         _semaphore.Dispose();

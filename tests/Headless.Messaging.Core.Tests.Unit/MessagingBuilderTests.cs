@@ -13,6 +13,7 @@ public sealed class MessagingBuilderTests
     {
         // given
         var services = new ServiceCollection();
+        services.AddLogging();
 
         // when
         services.AddHeadlessMessaging(messaging =>
@@ -185,6 +186,29 @@ public sealed class MessagingBuilderTests
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*Duplicate consumer registration detected for topic/group identity*");
+    }
+
+    [Fact]
+    public async Task should_register_runtime_and_bootstrap_services()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemoryStorage();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<IRuntimeSubscriber>().Should().NotBeNull();
+        provider.GetRequiredService<IBootstrapper>().Should().NotBeNull();
+        provider.GetRequiredService<IScheduledPublisher>().Should().NotBeNull();
+        provider.GetRequiredService<IOutboxPublisher>().Should().NotBeNull();
     }
 
     [Fact]
