@@ -220,6 +220,7 @@
         <Project Path="tests/Headless.Messaging.PostgreSql.Tests.Integration/Headless.Messaging.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.SqlServer.Tests.Integration/Headless.Messaging.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.RedisStreams.Tests.Unit/Headless.Messaging.RedisStreams.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.NatsPostgreSql.Tests.Integration/Headless.Messaging.NatsPostgreSql.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Observability/">
         <Project Path="src\Headless.Logging.Serilog\Headless.Logging.Serilog.csproj" />
@@ -293,10 +294,6 @@
         <File Path="global.json" />
         <File Path="nuget.config" />
         <File Path="README.md" />
-    </Folder>
-    <Folder Name="/src/" />
-    <Folder Name="/tests/">
-        <Project Path="tests/Headless.Messaging.NatsPostgreSql.Tests.Integration/Headless.Messaging.NatsPostgreSql.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Validations/">
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />
