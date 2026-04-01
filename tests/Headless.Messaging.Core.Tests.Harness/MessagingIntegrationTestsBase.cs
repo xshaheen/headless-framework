@@ -6,6 +6,7 @@ using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Tests.Fixtures;
 using Tests.Helpers;
 using Xunit;
@@ -71,6 +72,13 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     /// <summary>Gets the consumer registry for discovering registered consumers.</summary>
     protected IConsumerRegistry ConsumerRegistry => ServiceProvider.GetRequiredService<IConsumerRegistry>();
 
+    /// <summary>Gets the direct publisher for transport-only readiness probes.</summary>
+    protected IDirectPublisher DirectPublisher => ServiceProvider.GetRequiredService<IDirectPublisher>();
+
+    /// <summary>Gets the resolved messaging options for prefix-aware assertions.</summary>
+    protected MessagingOptions MessagingOptions =>
+        ServiceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+
     /// <summary>Configures the transport (e.g., RabbitMQ, Kafka, InMemory) for the messaging system.</summary>
     /// <param name="options">The messaging options to configure.</param>
     protected abstract void ConfigureTransport(MessagingOptions options);
@@ -106,14 +114,13 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         {
             ConfigureTransport(options);
             ConfigureStorage(options);
+            ConfigureMessaging(options);
 
             // Register test consumer
             options.Subscribe<TestSubscriber>("test-message").Group("test-group").Concurrency(1);
 
             // Register failing consumer for exception tests
             options.Subscribe<FailingTestSubscriber>("failing-message").Group("test-group").Concurrency(1);
-
-            ConfigureMessaging(options);
         });
 
         // Register test helpers as singletons (same instance used throughout tests)
@@ -197,7 +204,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
         var context = subscriber.ReceivedContexts.First(c => c.Message.Id == message.Id);
         context.MessageId.Should().NotBeNullOrEmpty();
-        context.Topic.Should().Be("test-message");
+        context.Topic.Should().Be(ResolveTopicName("test-message"));
     }
 
     public virtual async Task should_store_received_message_in_storage()
@@ -222,7 +229,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     {
         // given
         var failingSubscriber = ServiceProvider.GetRequiredService<FailingTestSubscriber>();
-        var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "FailingTest" };
+        var message = new FailingTestMessage { Id = Guid.NewGuid().ToString(), Name = "FailingTest" };
 
         // when
         await Publisher.PublishAsync(message, new PublishOptions { Topic = "failing-message" }, AbortToken);
@@ -268,7 +275,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     {
         // given
         var failingSubscriber = ServiceProvider.GetRequiredService<FailingTestSubscriber>();
-        var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "RetryTest" };
+        var message = new FailingTestMessage { Id = Guid.NewGuid().ToString(), Name = "RetryTest" };
 
         // when
         await Publisher.PublishAsync(message, new PublishOptions { Topic = "failing-message" }, AbortToken);
@@ -375,18 +382,66 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         isStarted.Should().BeTrue("bootstrapper should be started after initialization");
         await Task.CompletedTask;
     }
+
+    protected async Task EnsureTestSubscriberReadyAsync(
+        string topic = "test-message",
+        TimeSpan? timeout = null,
+        TimeSpan? retryInterval = null
+    )
+    {
+        var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
+        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(15));
+        var pause = retryInterval ?? TimeSpan.FromMilliseconds(250);
+        var lastMessageId = string.Empty;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            subscriber.Clear();
+
+            var probe = new TestMessage
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = "ReadinessProbe",
+                Payload = "probe",
+            };
+
+            lastMessageId = probe.Id;
+
+            await DirectPublisher.PublishAsync(probe, new PublishOptions { Topic = topic }, AbortToken);
+
+            var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(1), AbortToken);
+            if (received && subscriber.ReceivedMessages.Any(message => message.Id == probe.Id))
+            {
+                subscriber.Clear();
+                return;
+            }
+
+            await Task.Delay(pause, AbortToken);
+        }
+
+        throw new TimeoutException(
+            $"Timed out waiting for test subscriber readiness on topic '{topic}'. Last probe id: '{lastMessageId}'."
+        );
+    }
+
+    protected string ResolveTopicName(string topic)
+    {
+        return string.IsNullOrWhiteSpace(MessagingOptions.TopicNamePrefix)
+            ? topic
+            : string.Concat(MessagingOptions.TopicNamePrefix, ".", topic);
+    }
 }
 
 /// <summary>Test subscriber that always throws to test exception handling and retries.</summary>
 [PublicAPI]
-public sealed class FailingTestSubscriber : IConsume<TestMessage>
+public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
 {
     private int _failedAttempts;
 
     /// <summary>Gets the number of failed processing attempts.</summary>
     public int FailedAttempts => _failedAttempts;
 
-    public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+    public ValueTask Consume(ConsumeContext<FailingTestMessage> context, CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref _failedAttempts);
         throw new InvalidOperationException($"Simulated failure for message {context.MessageId}");
