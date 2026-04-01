@@ -51,6 +51,54 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         return (SemaphoreSlim)semaphoreField!.GetValue(client)!;
     }
 
+    private static void _AssertLoggedEvent(
+        ILogger<AmazonSqsConsumerClient> logger,
+        LogLevel level,
+        int eventId,
+        Exception? exception = null
+    )
+    {
+        var matchingCalls = logger
+            .ReceivedCalls()
+            .Where(call =>
+            {
+                if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+                {
+                    return false;
+                }
+
+                var arguments = call.GetArguments();
+                return arguments.Length >= 4
+                    && arguments[0] is LogLevel loggedLevel
+                    && loggedLevel == level
+                    && arguments[1] is EventId loggedEventId
+                    && loggedEventId.Id == eventId
+                    && (exception is null || Equals(arguments[3], exception));
+            })
+            .ToList();
+
+        matchingCalls.Should().ContainSingle();
+    }
+
+    private static void _AssertNoErrorLogs(ILogger<AmazonSqsConsumerClient> logger)
+    {
+        var errorLogs = logger
+            .ReceivedCalls()
+            .Where(call =>
+            {
+                if (call.GetMethodInfo().Name != nameof(ILogger.Log))
+                {
+                    return false;
+                }
+
+                var arguments = call.GetArguments();
+                return arguments.Length >= 1 && arguments[0] is LogLevel level && level == LogLevel.Error;
+            })
+            .ToList();
+
+        errorLogs.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task should_log_error_when_consumeAsync_throws_in_concurrent_mode()
     {
@@ -58,6 +106,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var options = _CreateOptions();
 
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        logger.IsEnabled(LogLevel.Error).Returns(true);
         await using var client = new AmazonSqsConsumerClient("test-group", 1, options, logger);
 
         var exceptionThrown = new InvalidOperationException("Test exception");
@@ -118,15 +167,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await Task.Delay(500, AbortToken);
 
         // then - Verify error was logged
-        logger
-            .Received(1)
-            .Log(
-                LogLevel.Error,
-                Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString()!.Contains("Error consuming message for group")),
-                Arg.Is<Exception>(ex => ex == exceptionThrown),
-                Arg.Any<Func<object, Exception?, string>>()
-            );
+        _AssertLoggedEvent(logger, LogLevel.Error, 4203, exceptionThrown);
     }
 
     [Fact]
@@ -136,6 +177,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var options = _CreateOptions();
 
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        logger.IsEnabled(LogLevel.Error).Returns(true);
         await using var client = new AmazonSqsConsumerClient("test-group", 1, options, logger);
 
         var consumeException = new InvalidOperationException("Consume failed");
@@ -191,15 +233,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await Task.Delay(500, AbortToken);
 
         // then - Verify only the callback failure was logged. Reject is owned by the framework callback wrapper.
-        logger
-            .Received(1)
-            .Log(
-                LogLevel.Error,
-                Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString()!.Contains("Error consuming message for group")),
-                Arg.Is<Exception>(ex => ex == consumeException),
-                Arg.Any<Func<object, Exception?, string>>()
-            );
+        _AssertLoggedEvent(logger, LogLevel.Error, 4203, consumeException);
 
         await sqsClient
             .DidNotReceive()
@@ -218,7 +252,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var options = _CreateOptions();
 
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
-        await using var client = new AmazonSqsConsumerClient("test-group", 1, options, logger);
+        logger.IsEnabled(LogLevel.Error).Returns(true);
+        await using var client = new AmazonSqsConsumerClient("test-group", 0, options, logger);
 
         var messageReceived = false;
         client.OnMessageCallback = (_, _) =>
@@ -261,23 +296,13 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             // Expected
         }
 
-        await Task.Delay(500, AbortToken);
+        await Task.Delay(100, AbortToken);
 
         // then
         messageReceived.Should().BeFalse("invalid messages should not be processed");
 
         // Verify error was logged
-        logger
-            .Received(1)
-            .Log(
-                LogLevel.Error,
-                Arg.Any<EventId>(),
-                Arg.Is<object>(o =>
-                    o.ToString()!.Contains("Invalid SQS message structure") && o.ToString()!.Contains("Moving to DLQ")
-                ),
-                Arg.Any<Exception?>(),
-                Arg.Any<Func<object, Exception?, string>>()
-            );
+        _AssertLoggedEvent(logger, LogLevel.Error, 4201);
 
         // Verify message was rejected
         await sqsClient
@@ -350,15 +375,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         callbackExecuted.Should().BeTrue("callback should execute in non-concurrent mode");
 
         // No error logs should be present (callback succeeded synchronously)
-        logger
-            .DidNotReceive()
-            .Log(
-                LogLevel.Error,
-                Arg.Any<EventId>(),
-                Arg.Any<object>(),
-                Arg.Any<Exception?>(),
-                Arg.Any<Func<object, Exception?, string>>()
-            );
+        _AssertNoErrorLogs(logger);
     }
 
     [Fact]
@@ -677,15 +694,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         // then
         callbackInvoked.Should().BeFalse("callback should not be invoked when no messages");
-        logger
-            .DidNotReceive()
-            .Log(
-                LogLevel.Error,
-                Arg.Any<EventId>(),
-                Arg.Any<object>(),
-                Arg.Any<Exception?>(),
-                Arg.Any<Func<object, Exception?, string>>()
-            );
+        _AssertNoErrorLogs(logger);
     }
 
     [Fact]
@@ -811,6 +820,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        logger.IsEnabled(LogLevel.Error).Returns(true);
         await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
 
         var callbackInvoked = false;
@@ -858,15 +868,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         // then
         callbackInvoked.Should().BeFalse("invalid JSON should not be processed");
-        logger
-            .Received(1)
-            .Log(
-                LogLevel.Error,
-                Arg.Any<EventId>(),
-                Arg.Is<object>(o => o.ToString()!.Contains("Failed to deserialize SQS message")),
-                Arg.Any<Exception>(),
-                Arg.Any<Func<object, Exception?, string>>()
-            );
+        _AssertLoggedEvent(logger, LogLevel.Error, 4200);
 
         await sqsClient
             .Received(1)
