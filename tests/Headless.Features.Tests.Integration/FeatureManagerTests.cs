@@ -2,6 +2,8 @@ using Headless.Exceptions;
 using Headless.Features;
 using Headless.Features.Definitions;
 using Headless.Features.Models;
+using Headless.Features.Repositories;
+using Headless.Features.Entities;
 using Headless.Features.ValueProviders;
 using Headless.Features.Values;
 using Microsoft.Extensions.DependencyInjection;
@@ -190,6 +192,65 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
         feature.Provider.Should().NotBeNull();
         feature.Provider.Name.Should().Be(EditionFeatureValueProvider.ProviderName);
         feature.Provider.Key.Should().Be(editionId);
+    }
+
+    [Fact]
+    public async Task should_invalidate_cached_feature_end_to_end_when_repository_updates_record()
+    {
+        // given
+        await Fixture.ResetAsync();
+        using var host = CreateHost(b => b.Services.AddFeatureDefinitionProvider<Feature1FeaturesDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var featureManager = scope.ServiceProvider.GetRequiredService<IFeatureManager>();
+        var valueRepository = scope.ServiceProvider.GetRequiredService<IFeatureValueRecordRepository>();
+        const string featureName = "Feature1";
+        const string editionId = "AnyEditionId";
+        const string updatedValue = "UpdatedByRepository";
+
+        await featureManager.SetAsync(
+            featureName,
+            "true",
+            FeatureValueProviderNames.Edition,
+            editionId,
+            cancellationToken: AbortToken
+        );
+
+        (await featureManager.GetAsync(
+            featureName,
+            FeatureValueProviderNames.Edition,
+            editionId,
+            cancellationToken: AbortToken
+        ))
+            .Value.Should()
+            .Be("true");
+
+        var record = await valueRepository.FindAsync(
+            featureName,
+            EditionFeatureValueProvider.ProviderName,
+            editionId,
+            AbortToken
+        );
+        record.Should().NotBeNull();
+
+        // when
+        var updatedRecord = new FeatureValueRecord(
+            record!.Id,
+            record.Name,
+            updatedValue,
+            record.ProviderName,
+            record.ProviderKey
+        );
+        await valueRepository.UpdateAsync(updatedRecord, AbortToken);
+
+        // then
+        (await featureManager.GetAsync(
+            featureName,
+            FeatureValueProviderNames.Edition,
+            editionId,
+            cancellationToken: AbortToken
+        ))
+            .Value.Should()
+            .Be(updatedValue);
     }
 
     [Fact]

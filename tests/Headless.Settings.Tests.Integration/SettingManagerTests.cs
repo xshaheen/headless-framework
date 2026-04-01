@@ -147,6 +147,50 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
     }
 
     [Fact]
+    public async Task should_invalidate_cached_user_setting_end_to_end_when_repository_updates_record()
+    {
+        // given
+        await Fixture.ResetAsync();
+        using var host = CreateHost(b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
+        var valueRepository = scope.ServiceProvider.GetRequiredService<ISettingValueRecordRepository>();
+        var userId = Guid.NewGuid().ToString();
+        const string settingName = "Setting1";
+        const string initialValue = "InitialValue";
+        const string updatedValue = "UpdatedByRepository";
+
+        await settingManager.SetForUserAsync(userId, settingName, initialValue, cancellationToken: AbortToken);
+
+        (await settingManager.FindForUserAsync(userId, settingName, cancellationToken: AbortToken))
+            .Should()
+            .Be(initialValue);
+
+        var record = await valueRepository.FindAsync(
+            settingName,
+            UserSettingValueProvider.ProviderName,
+            userId,
+            AbortToken
+        );
+        record.Should().NotBeNull();
+
+        // when
+        var updatedRecord = new Headless.Settings.Entities.SettingValueRecord(
+            record!.Id,
+            record.Name,
+            updatedValue,
+            record.ProviderName,
+            record.ProviderKey
+        );
+        await valueRepository.UpdateAsync(updatedRecord, AbortToken);
+
+        // then
+        (await settingManager.FindForUserAsync(userId, settingName, cancellationToken: AbortToken))
+            .Should()
+            .Be(updatedValue);
+    }
+
+    [Fact]
     public async Task should_get_dynamic_settings()
     {
         // given: host1 with dynamic setting store enabled

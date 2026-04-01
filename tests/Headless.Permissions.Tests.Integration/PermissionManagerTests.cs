@@ -3,6 +3,7 @@ using Headless.Permissions.Definitions;
 using Headless.Permissions.GrantProviders;
 using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
+using Headless.Permissions.Repositories;
 using Headless.Primitives;
 using Headless.Testing.Helpers;
 using Microsoft.Extensions.DependencyInjection;
@@ -215,6 +216,48 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture) : Per
         permission = await permissionManager.GetAsync(somePermission.Name, currentUser, cancellationToken: AbortToken);
         permission.IsGranted.Should().BeTrue();
         permission.Providers.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task should_invalidate_cached_permission_end_to_end_when_repository_deletes_grant()
+    {
+        // given
+        await Fixture.ResetAsync();
+        using var host = CreateHost(b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>());
+        await using var scope = host.Services.CreateAsyncScope();
+        var permissionManager = scope.ServiceProvider.GetRequiredService<IPermissionManager>();
+        var grantRepository = scope.ServiceProvider.GetRequiredService<IPermissionGrantRepository>();
+        const string roleName = "Role1";
+        var permissionName = _GroupDefinitions[0].Permissions[0].Name;
+
+        var currentUser = new TestCurrentUser
+        {
+            IsAuthenticated = true,
+            UserId = new UserId("123"),
+            WritableRoles = { roleName },
+        };
+
+        await permissionManager.GrantToRoleAsync(permissionName, roleName, AbortToken);
+
+        (await permissionManager.GetAsync(permissionName, currentUser, cancellationToken: AbortToken))
+            .IsGranted.Should()
+            .BeTrue();
+
+        var record = await grantRepository.FindAsync(
+            permissionName,
+            RolePermissionGrantProvider.ProviderName,
+            roleName,
+            AbortToken
+        );
+        record.Should().NotBeNull();
+
+        // when
+        await grantRepository.DeleteAsync(record!, AbortToken);
+
+        // then
+        (await permissionManager.GetAsync(permissionName, currentUser, cancellationToken: AbortToken))
+            .IsGranted.Should()
+            .BeFalse();
     }
 
     [Fact]
