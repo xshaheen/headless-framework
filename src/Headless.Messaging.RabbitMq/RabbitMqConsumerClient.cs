@@ -19,6 +19,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly string _exchangeName;
     private readonly RabbitMqOptions _rabbitMqOptions;
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private RabbitMqBasicConsumer? _consumer;
     private IChannel? _channel;
     private string? _consumerTag;
@@ -95,6 +96,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         try
         {
             _consumerTag = await _channel!.BasicConsumeAsync(_groupName, false, _consumer, cancellationToken);
+            _ready.TrySetResult();
         }
         catch (TimeoutException ex)
         {
@@ -106,6 +108,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                     ex.Message + "-->" + nameof(_channel.BasicConsumeAsync)
                 )
             );
+            _ready.TrySetException(ex);
+            throw;
         }
 
         // RabbitMQ is push-based — after BasicConsumeAsync the broker delivers messages
@@ -119,6 +123,11 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         {
             // Normal shutdown
         }
+    }
+
+    public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+    {
+        return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
     public async ValueTask CommitAsync(object? sender)
@@ -177,6 +186,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         }
 
         _pauseGate.Release();
+        _ready.TrySetCanceled();
 
         _consumer?.Dispose();
         _channel?.Dispose();

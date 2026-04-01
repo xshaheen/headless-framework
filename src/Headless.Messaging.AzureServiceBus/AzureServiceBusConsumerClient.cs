@@ -24,6 +24,7 @@ internal sealed class AzureServiceBusConsumerClient(
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private int _disposed;
     private int _hasStartedProcessing;
@@ -125,6 +126,12 @@ internal sealed class AzureServiceBusConsumerClient(
         await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
         await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
         Volatile.Write(ref _hasStartedProcessing, 1);
+        _ready.TrySetResult();
+    }
+
+    public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+    {
+        return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
     public async ValueTask CommitAsync(object? sender)
@@ -195,6 +202,7 @@ internal sealed class AzureServiceBusConsumerClient(
         }
 
         _pauseGate.Release();
+        _ready.TrySetCanceled();
 
         if (_serviceBusProcessor is not null)
         {

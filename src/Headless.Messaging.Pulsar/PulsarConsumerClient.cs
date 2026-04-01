@@ -19,6 +19,7 @@ internal sealed class PulsarConsumerClient(
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _disposed;
     private readonly MessagingPulsarOptions _pulsarOptions = options.Value;
     private IConsumer<byte[]>? _consumerClient;
@@ -47,6 +48,12 @@ internal sealed class PulsarConsumerClient(
             .SubscriptionType(SubscriptionType.Shared)
             .SubscribeAsync()
             .WaitAsync(cts.Token);
+        _ready.TrySetResult();
+    }
+
+    public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+    {
+        return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
@@ -190,6 +197,7 @@ internal sealed class PulsarConsumerClient(
         }
 
         _pauseGate.Release();
+        _ready.TrySetCanceled();
         _semaphore.Dispose();
         return _consumerClient?.DisposeAsync() ?? ValueTask.CompletedTask;
     }

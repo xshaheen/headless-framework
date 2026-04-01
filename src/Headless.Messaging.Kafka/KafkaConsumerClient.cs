@@ -17,6 +17,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly Lock _lock = new();
     private readonly MessagingKafkaOptions _kafkaOptions;
     private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly SemaphoreSlim? _semaphore;
     private readonly IServiceProvider _serviceProvider;
     private readonly Func<ConsumerConfig, IConsumer<string, byte[]>> _consumerFactory;
@@ -126,6 +127,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         Connect();
+        var readyReported = false;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -138,6 +140,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 lock (_lock)
                 {
                     consumerResult = _consumerClient!.Consume(timeout);
+                }
+
+                if (!readyReported)
+                {
+                    readyReported = true;
+                    _ready.TrySetResult();
                 }
 
                 if (consumerResult == null)
@@ -190,6 +198,11 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             }
         }
         // ReSharper disable once FunctionNeverReturns
+    }
+
+    public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+    {
+        return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
     public ValueTask CommitAsync(object? sender)
@@ -266,6 +279,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         }
 
         _pauseGate.Release();
+        _ready.TrySetCanceled();
         IConsumer<string, byte[]>? consumerClient;
         lock (_lock)
         {

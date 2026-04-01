@@ -97,6 +97,7 @@ public sealed class MetricsService(IDirectPublisher publisher)
 
 - `BootstrapAsync(...)` is the readiness boundary for manual startup paths such as tests or custom hosts.
 - Wait for `BootstrapAsync(...)` to complete before publishing when you bootstrap manually.
+- `BootstrapAsync(...)` completes only after initial transport consumers report broker-side readiness, not merely after their background tasks are queued.
 - Startup fails when a required messaging processor cannot start; partial logged startup is not treated as success.
 - Runtime delegate subscriptions attached before the consumer register is ready are picked up by the initial startup path.
 - Runtime delegate subscriptions attached after the consumer register is ready trigger a consumer refresh so they are not missed during late startup.
