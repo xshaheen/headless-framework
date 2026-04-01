@@ -6,35 +6,38 @@ packages: Media.Indexing.Abstractions, Media.Indexing
 # Media
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.Media.Indexing.Abstractions](#headlessmediaindexingabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Usage](#usage)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Usage](#usage)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Media.Indexing](#headlessmediaindexing)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start)
-  - [Usage](#usage-1)
-  - [Configuration](#configuration-1)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start)
+    - [Usage](#usage-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 
 > Text extraction from documents (PDF, Word, PowerPoint) for full-text search indexing.
 
 ## Quick Orientation
 
 Two packages:
+
 - `Headless.Media.Indexing.Abstractions` — `IMediaFileTextProvider` interface
 - `Headless.Media.Indexing` — implementations for PDF (iText), DOCX, PPTX (Open XML)
 
 Typical registration:
+
 ```csharp
 builder.Services.AddSingleton<IMediaFileTextProvider, PdfMediaFileTextProvider>();
 builder.Services.AddSingleton<IMediaFileTextProvider, WordDocumentMediaFileTextProvider>();
@@ -54,6 +57,7 @@ Inject `IEnumerable<IMediaFileTextProvider>` and select the right provider by MI
 - For unsupported formats, implement `IMediaFileTextProvider` and register it alongside the built-in providers.
 
 ---
+
 # Headless.Media.Indexing.Abstractions
 
 Defines the interface for extracting text from media files for indexing.
@@ -99,8 +103,8 @@ None.
 
 ## Side Effects
 
-None.
----
+## None.
+
 # Headless.Media.Indexing
 
 Text extraction implementations for common document formats.

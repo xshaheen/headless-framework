@@ -6,60 +6,61 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher, Security.
 # Core
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.Extensions](#headlessextensions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-    - [Result Pattern](#result-pattern)
-    - [Collection Extensions](#collection-extensions)
-    - [Egyptian National ID Validator](#egyptian-national-id-validator)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+        - [Result Pattern](#result-pattern)
+        - [Collection Extensions](#collection-extensions)
+        - [Egyptian National ID Validator](#egyptian-national-id-validator)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Core](#headlesscore)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start-1)
-    - [Structured Logging](#structured-logging)
-    - [Retry with Backoff](#retry-with-backoff)
-  - [Configuration](#configuration-1)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+        - [Structured Logging](#structured-logging)
+        - [Retry with Backoff](#retry-with-backoff)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Checks](#headlesschecks)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-2)
-    - [Argument Validation](#argument-validation)
-    - [Common Checks](#common-checks)
-    - [Runtime Assertions](#runtime-assertions)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+        - [Argument Validation](#argument-validation)
+        - [Common Checks](#common-checks)
+        - [Runtime Assertions](#runtime-assertions)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Domain](#headlessdomain)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-3)
-    - [Auditing](#auditing)
-    - [Value Objects](#value-objects)
-  - [Configuration](#configuration-3)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-3)
+        - [Auditing](#auditing)
+        - [Value Objects](#value-objects)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 - [Headless.Domain.LocalPublisher](#headlessdomainlocalpublisher)
-  - [Problem Solved](#problem-solved-4)
-  - [Key Features](#key-features-4)
-  - [Installation](#installation-4)
-  - [Quick Start](#quick-start-4)
-    - [Publishing Events](#publishing-events)
-    - [Handling Events](#handling-events)
-  - [Configuration](#configuration-4)
-  - [Dependencies](#dependencies-4)
-  - [Side Effects](#side-effects-4)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-4)
+        - [Publishing Events](#publishing-events)
+        - [Handling Events](#handling-events)
+    - [Configuration](#configuration-4)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 
 > Foundational utilities, DDD building blocks, guard clauses, multi-tenancy, and domain messaging for the Headless framework.
 
@@ -88,6 +89,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher, Security.
 - Use `LogState` with `LoggerExtensions` for structured logging with tags and properties.
 
 ---
+
 # Headless.Extensions
 
 Foundational utility library providing extension methods, primitives, helpers, and common abstractions used throughout the framework.
@@ -99,19 +101,19 @@ Eliminates repetitive utility code across projects by providing a comprehensive 
 ## Key Features
 
 - **Result Pattern**:
-  - `ApiResult` / `ApiResult<T>` - Success/failure with built-in error factories (`NotFound`, `Conflict`, `Forbidden`, `Unauthorized`, `ValidationFailed`)
-  - `Result<TValue, TError>` / `Result<TError>` - Flexible result types with custom error types
-  - `ResultError` hierarchy - `NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `AggregateError`
-  - `ErrorDescriptor` - Standardized error reporting with code, description, severity, and params
+    - `ApiResult` / `ApiResult<T>` - Success/failure with built-in error factories (`NotFound`, `Conflict`, `Forbidden`, `Unauthorized`, `ValidationFailed`)
+    - `Result<TValue, TError>` / `Result<TError>` - Flexible result types with custom error types
+    - `ResultError` hierarchy - `NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`, `ValidationError`, `AggregateError`
+    - `ErrorDescriptor` - Standardized error reporting with code, description, severity, and params
 
 - **Primitives** (Source-generated with JSON/TypeConverter support):
-  - `UserId` / `AccountId` - Strongly-typed identifiers
-  - `Money` - Currency-aware decimal with arithmetic operators
-  - `Month` - Month representation
-  - `PhoneNumber` - E.164 phone number
-  - `Image` / `File` - Media metadata
-  - `PageMetadata` - SEO metadata
-  - `TenantInformation` - Tenant data
+    - `UserId` / `AccountId` - Strongly-typed identifiers
+    - `Money` - Currency-aware decimal with arithmetic operators
+    - `Month` - Month representation
+    - `PhoneNumber` - E.164 phone number
+    - `Image` / `File` - Media metadata
+    - `PageMetadata` - SEO metadata
+    - `TenantInformation` - Tenant data
 
 - **Domain Value Objects**: `Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `OrderBy`, `NameValue<T>`, `ExtraProperties`, `Locales`, `TimeUnit`
 - **ID Generation**: `IGuidGenerator` (sequential GUIDs for SQL Server/MySQL/Oracle), `ILongIdGenerator` (`SnowflakeId`)
@@ -192,8 +194,8 @@ No configuration required.
 
 ## Side Effects
 
-None.
----
+## None.
+
 # Headless.Core
 
 Core abstractions for building applications with multi-tenancy, user context, and cross-cutting concerns.
@@ -205,23 +207,23 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
 ## Key Features
 
 - **Abstractions**:
-  - `IClock` - Testable time abstraction (wraps `TimeProvider`)
-  - `ICurrentUser` - Current authenticated user context with roles and claims
-  - `ICurrentTenant` - Multi-tenancy support with scoped tenant switching
-  - `ICurrentLocale` - Localization context (language, locale, culture)
-  - `ICurrentTimeZone` - Timezone handling
-  - `ICurrentPrincipalAccessor` - Scoped `ClaimsPrincipal` access with temporary switching
-  - `IPasswordGenerator` - Configurable secure password generation
-  - `ICancellationTokenProvider` - Cancellation token access with fallback logic
-  - `ITimezoneProvider` - Windows/IANA timezone conversion and listing
-  - `IApplicationInformationAccessor` / `IBuildInformationAccessor` - Application metadata and build info
-  - `IEnumLocaleAccessor` - Localized enum display values
-  - `IHaveLogger` / `IHaveTimeProvider` - Mixin interfaces for logger and time provider access
+    - `IClock` - Testable time abstraction (wraps `TimeProvider`)
+    - `ICurrentUser` - Current authenticated user context with roles and claims
+    - `ICurrentTenant` - Multi-tenancy support with scoped tenant switching
+    - `ICurrentLocale` - Localization context (language, locale, culture)
+    - `ICurrentTimeZone` - Timezone handling
+    - `ICurrentPrincipalAccessor` - Scoped `ClaimsPrincipal` access with temporary switching
+    - `IPasswordGenerator` - Configurable secure password generation
+    - `ICancellationTokenProvider` - Cancellation token access with fallback logic
+    - `ITimezoneProvider` - Windows/IANA timezone conversion and listing
+    - `IApplicationInformationAccessor` / `IBuildInformationAccessor` - Application metadata and build info
+    - `IEnumLocaleAccessor` - Localized enum display values
+    - `IHaveLogger` / `IHaveTimeProvider` - Mixin interfaces for logger and time provider access
 
 - **Utilities**:
-  - `Run` - Retry helper with exponential backoff (`WithRetriesAsync`, `DelayedAsync`)
-  - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
-  - `LogState` / `LoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
+    - `Run` - Retry helper with exponential backoff (`WithRetriesAsync`, `DelayedAsync`)
+    - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
+    - `LogState` / `LoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
 
 ## Installation
 
@@ -283,8 +285,8 @@ No configuration required. Implementations are registered by `Headless.Api` or o
 
 ## Side Effects
 
-None. This is an abstractions package.
----
+## None. This is an abstractions package.
+
 # Headless.Checks
 
 Guard clause library for argument validation and defensive programming.
@@ -357,8 +359,8 @@ None.
 
 ## Side Effects
 
-None.
----
+## None.
+
 # Headless.Domain
 
 Core domain-driven design abstractions including entities, aggregate roots, value objects, auditing, and messaging interfaces.
@@ -446,8 +448,8 @@ None.
 
 ## Side Effects
 
-None.
----
+## None.
+
 # Headless.Domain.LocalPublisher
 
 DI-based implementation of `ILocalMessagePublisher` for in-process domain event handling.

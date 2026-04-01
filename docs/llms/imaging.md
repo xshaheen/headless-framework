@@ -6,45 +6,48 @@ packages: Imaging.Abstractions, Imaging.Core, Imaging.ImageSharp
 # Imaging
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.Imaging.Abstractions](#headlessimagingabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Usage](#usage)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Usage](#usage)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Imaging.Core](#headlessimagingcore)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration-1)
-    - [Options](#options)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration-1)
+        - [Options](#options)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Imaging.ImageSharp](#headlessimagingimagesharp)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-2)
-    - [Options](#options-1)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-2)
+        - [Options](#options-1)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 
 > Image resizing and compression pipeline with contributor-based extensibility, powered by ImageSharp.
 
 ## Quick Orientation
 
 Install all three packages for a complete imaging pipeline:
+
 - `Headless.Imaging.Abstractions` — interfaces (`IImageResizer`, `IImageCompressor`) and argument types
 - `Headless.Imaging.Core` — orchestration layer, options, DI registration via `AddImaging()`
 - `Headless.Imaging.ImageSharp` — actual processing via SixLabors.ImageSharp
 
 Typical registration:
+
 ```csharp
 builder.Services
     .AddImaging(options =>
@@ -75,6 +78,7 @@ Supports JPEG, PNG, WebP, and GIF formats.
 - For custom processing steps, implement `IImageResizerContributor` or `IImageCompressorContributor` and register via DI.
 
 ---
+
 # Headless.Imaging.Abstractions
 
 Defines the unified interface for image processing operations.
@@ -127,8 +131,8 @@ None.
 
 ## Side Effects
 
-None.
----
+## None.
+
 # Headless.Imaging.Core
 
 Core image processing implementation with contributor-based extensibility.
@@ -186,7 +190,9 @@ services.AddImaging(options =>
 
 - Registers `IImageResizer` as singleton
 - Registers `IImageCompressor` as singleton
+
 ---
+
 # Headless.Imaging.ImageSharp
 
 ImageSharp-based implementation for image resizing and compression.

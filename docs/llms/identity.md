@@ -6,16 +6,17 @@ packages: Identity.Storage.EntityFramework
 # Identity
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.Identity.Storage.EntityFramework](#headlessidentitystorageentityframework)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 
 > ASP.NET Core Identity integration with framework EF Core conventions and interceptors.
 
@@ -24,6 +25,7 @@ packages: Identity.Storage.EntityFramework
 Single package: `Headless.Identity.Storage.EntityFramework`. Provides `HeadlessIdentityDbContext<>` — a base DbContext that combines ASP.NET Core Identity with the framework's EF Core extensions (auditing, soft delete, domain events, etc.).
 
 Typical registration:
+
 ```csharp
 builder.Services.AddHeadlessDbContext<
     AppDbContext,
@@ -44,6 +46,7 @@ Requires `Headless.Orm.EntityFramework` to be available (transitive dependency).
 - For Identity-only projects without the full framework, this package is NOT appropriate — use `Microsoft.AspNetCore.Identity.EntityFrameworkCore` directly instead.
 
 ---
+
 # Headless.Identity.Storage.EntityFramework
 
 Entity Framework Core integration for ASP.NET Core Identity with framework extensions.

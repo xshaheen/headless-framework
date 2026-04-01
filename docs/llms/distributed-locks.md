@@ -6,54 +6,57 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 # Distributed Locks
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.DistributedLocks.Abstractions](#headlessdistributedlocksabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Usage](#usage)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Usage](#usage)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.DistributedLocks.Core](#headlessdistributedlockscore)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration-1)
-    - [Options](#options)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration-1)
+        - [Options](#options)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.DistributedLocks.Cache](#headlessdistributedlockscache)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.DistributedLocks.Redis](#headlessdistributedlocksredis)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-3)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 
 > Provider-agnostic distributed locking with automatic renewal, expiration, throttling, and pluggable storage backends (Redis, Cache).
 
 ## Quick Orientation
+
 - Install `Headless.DistributedLocks.Abstractions` to depend on interfaces only (e.g., in domain/application layers).
 - Install `Headless.DistributedLocks.Core` for the lock provider implementation. Register with `AddDistributedLock(options => ...)`.
 - Choose one storage backend:
-  - `Headless.DistributedLocks.Redis` — production multi-instance deployments (atomic Lua scripts, high performance).
-  - `Headless.DistributedLocks.Cache` — uses `ICache` abstraction; works if your cache is already distributed (e.g., Redis cache).
+    - `Headless.DistributedLocks.Redis` — production multi-instance deployments (atomic Lua scripts, high performance).
+    - `Headless.DistributedLocks.Cache` — uses `ICache` abstraction; works if your cache is already distributed (e.g., Redis cache).
 - Use `IDistributedLockProvider.TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, ct)` to acquire locks. Returns `null` if acquisition fails.
 - For rate-limited locking, use `IThrottlingDistributedLockProvider` (requires throttling storage from the chosen backend).
 
 ## Agent Instructions
+
 - Always code against `IDistributedLockProvider` from Abstractions. Never reference storage-specific types in application code.
 - Use `DistributedLocks.Redis` for production multi-instance deployments. It uses atomic Lua scripts for lock acquire/release — this is the only truly safe option for distributed scenarios.
 - Use `DistributedLocks.Cache` when you already have a distributed `ICache` (e.g., Redis cache) and don't want a separate Redis connection for locks.
@@ -64,6 +67,7 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 - Both `IDistributedLockProvider` and `IThrottlingDistributedLockProvider` are registered as **singletons**.
 
 ---
+
 # Headless.DistributedLocks.Abstractions
 
 Defines the unified interface for distributed resource locking.
@@ -120,8 +124,8 @@ None.
 
 ## Side Effects
 
-None.
----
+## None.
+
 # Headless.DistributedLocks.Core
 
 Core implementation of distributed resource locking with storage abstraction.
@@ -181,7 +185,9 @@ services.AddDistributedLock(options =>
 
 - Registers `IDistributedLockProvider` as singleton
 - Registers `IThrottlingDistributedLockProvider` as singleton (if throttling storage is provided)
+
 ---
+
 # Headless.DistributedLocks.Cache
 
 Cache-based resource lock storage using ICache.
@@ -228,7 +234,9 @@ No additional configuration required.
 
 - Registers `IDistributedLockStorage` as singleton
 - Registers `IThrottlingDistributedLockStorage` as singleton (optional)
+
 ---
+
 # Headless.DistributedLocks.Redis
 
 Redis-based resource lock storage using StackExchange.Redis.

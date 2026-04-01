@@ -6,182 +6,183 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
 # Messaging
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.Messaging.Abstractions](#headlessmessagingabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Transport Pause/Resume](#transport-pauseresume)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Transport Pause/Resume](#transport-pauseresume)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Messaging.Core](#headlessmessagingcore)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start-1)
-  - [Publisher Options](#publisher-options)
-    - [IOutboxPublisher (Reliable Delivery)](#ioutboxpublisher-reliable-delivery)
-    - [IDirectPublisher (Fire-and-Forget)](#idirectpublisher-fire-and-forget)
-    - [Callback Headers (Async Response Routing)](#callback-headers-async-response-routing)
-  - [Configuration](#configuration-1)
-  - [Message Ordering Guarantees](#message-ordering-guarantees)
-    - [Transport-Specific Ordering](#transport-specific-ordering)
-    - [Configuration Impact on Ordering](#configuration-impact-on-ordering)
-    - [Recommendations](#recommendations)
-  - [Circuit Breaker](#circuit-breaker)
-    - [Global Configuration](#global-configuration)
-    - [Per-Consumer Override](#per-consumer-override)
-    - [Custom Exception Predicate](#custom-exception-predicate)
-    - [Observability](#observability)
-    - [Programmatic Control](#programmatic-control)
-    - [Cluster Scope Limitation](#cluster-scope-limitation)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Publisher Options](#publisher-options)
+        - [IOutboxPublisher (Reliable Delivery)](#ioutboxpublisher-reliable-delivery)
+        - [IDirectPublisher (Fire-and-Forget)](#idirectpublisher-fire-and-forget)
+        - [Callback Headers (Async Response Routing)](#callback-headers-async-response-routing)
+    - [Configuration](#configuration-1)
+    - [Message Ordering Guarantees](#message-ordering-guarantees)
+        - [Transport-Specific Ordering](#transport-specific-ordering)
+        - [Configuration Impact on Ordering](#configuration-impact-on-ordering)
+        - [Recommendations](#recommendations)
+    - [Circuit Breaker](#circuit-breaker)
+        - [Global Configuration](#global-configuration)
+        - [Per-Consumer Override](#per-consumer-override)
+        - [Custom Exception Predicate](#custom-exception-predicate)
+        - [Observability](#observability)
+        - [Programmatic Control](#programmatic-control)
+        - [Cluster Scope Limitation](#cluster-scope-limitation)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Messaging.Dashboard](#headlessmessagingdashboard)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-2)
-    - [With Authorization Policy](#with-authorization-policy)
-    - [Anonymous Access (Dev/Testing Only)](#anonymous-access-devtesting-only)
-    - [All Options](#all-options)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+        - [With Authorization Policy](#with-authorization-policy)
+        - [Anonymous Access (Dev/Testing Only)](#anonymous-access-devtesting-only)
+        - [All Options](#all-options)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Messaging.Dashboard.K8s](#headlessmessagingdashboardk8s)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-3)
-  - [Configuration](#configuration-3)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-3)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 - [Headless.Messaging.OpenTelemetry](#headlessmessagingopentelemetry)
-  - [Problem Solved](#problem-solved-4)
-  - [Key Features](#key-features-4)
-  - [Installation](#installation-4)
-  - [Quick Start](#quick-start-4)
-  - [Configuration](#configuration-4)
-  - [Dependencies](#dependencies-4)
-  - [Side Effects](#side-effects-4)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-4)
+    - [Configuration](#configuration-4)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 - [Headless.Messaging.AwsSqs](#headlessmessagingawssqs)
-  - [Problem Solved](#problem-solved-5)
-  - [Key Features](#key-features-5)
-  - [Installation](#installation-5)
-  - [Quick Start](#quick-start-5)
-  - [Configuration](#configuration-5)
-  - [Dependencies](#dependencies-5)
-  - [Side Effects](#side-effects-5)
+    - [Problem Solved](#problem-solved-5)
+    - [Key Features](#key-features-5)
+    - [Installation](#installation-5)
+    - [Quick Start](#quick-start-5)
+    - [Configuration](#configuration-5)
+    - [Dependencies](#dependencies-5)
+    - [Side Effects](#side-effects-5)
 - [Headless.Messaging.AzureServiceBus](#headlessmessagingazureservicebus)
-  - [Problem Solved](#problem-solved-6)
-  - [Key Features](#key-features-6)
-  - [Installation](#installation-6)
-  - [Quick Start](#quick-start-6)
-  - [Configuration](#configuration-6)
-  - [Message Ordering](#message-ordering)
-    - [Session-Based Ordering](#session-based-ordering)
-    - [Publishing Ordered Messages](#publishing-ordered-messages)
-    - [Consumer Configuration](#consumer-configuration)
-    - [Ordering Guarantees](#ordering-guarantees)
-  - [Dependencies](#dependencies-6)
-  - [Side Effects](#side-effects-6)
+    - [Problem Solved](#problem-solved-6)
+    - [Key Features](#key-features-6)
+    - [Installation](#installation-6)
+    - [Quick Start](#quick-start-6)
+    - [Configuration](#configuration-6)
+    - [Message Ordering](#message-ordering)
+        - [Session-Based Ordering](#session-based-ordering)
+        - [Publishing Ordered Messages](#publishing-ordered-messages)
+        - [Consumer Configuration](#consumer-configuration)
+        - [Ordering Guarantees](#ordering-guarantees)
+    - [Dependencies](#dependencies-6)
+    - [Side Effects](#side-effects-6)
 - [Headless.Messaging.Kafka](#headlessmessagingkafka)
-  - [Problem Solved](#problem-solved-7)
-  - [Key Features](#key-features-7)
-  - [Installation](#installation-7)
-  - [Quick Start](#quick-start-7)
-  - [Configuration](#configuration-7)
-  - [Message Ordering](#message-ordering-1)
-    - [Partition-Based Ordering](#partition-based-ordering)
-    - [Configuration for Strict Ordering](#configuration-for-strict-ordering)
-    - [Consumer Configuration](#consumer-configuration-1)
-    - [Ordering Guarantees](#ordering-guarantees-1)
-  - [Dependencies](#dependencies-7)
-  - [Side Effects](#side-effects-7)
+    - [Problem Solved](#problem-solved-7)
+    - [Key Features](#key-features-7)
+    - [Installation](#installation-7)
+    - [Quick Start](#quick-start-7)
+    - [Configuration](#configuration-7)
+    - [Message Ordering](#message-ordering-1)
+        - [Partition-Based Ordering](#partition-based-ordering)
+        - [Configuration for Strict Ordering](#configuration-for-strict-ordering)
+        - [Consumer Configuration](#consumer-configuration-1)
+        - [Ordering Guarantees](#ordering-guarantees-1)
+    - [Dependencies](#dependencies-7)
+    - [Side Effects](#side-effects-7)
 - [Headless.Messaging.NATS](#headlessmessagingnats)
-  - [Problem Solved](#problem-solved-8)
-  - [Key Features](#key-features-8)
-  - [Installation](#installation-8)
-  - [Quick Start](#quick-start-8)
-  - [Configuration](#configuration-8)
-  - [Dependencies](#dependencies-8)
-  - [Side Effects](#side-effects-8)
+    - [Problem Solved](#problem-solved-8)
+    - [Key Features](#key-features-8)
+    - [Installation](#installation-8)
+    - [Quick Start](#quick-start-8)
+    - [Configuration](#configuration-8)
+    - [Dependencies](#dependencies-8)
+    - [Side Effects](#side-effects-8)
 - [Headless.Messaging.Pulsar](#headlessmessagingpulsar)
-  - [Problem Solved](#problem-solved-9)
-  - [Key Features](#key-features-9)
-  - [Installation](#installation-9)
-  - [Quick Start](#quick-start-9)
-  - [Configuration](#configuration-9)
-  - [Dependencies](#dependencies-9)
-  - [Side Effects](#side-effects-9)
+    - [Problem Solved](#problem-solved-9)
+    - [Key Features](#key-features-9)
+    - [Installation](#installation-9)
+    - [Quick Start](#quick-start-9)
+    - [Configuration](#configuration-9)
+    - [Dependencies](#dependencies-9)
+    - [Side Effects](#side-effects-9)
 - [Headless.Messaging.RabbitMQ](#headlessmessagingrabbitmq)
-  - [Problem Solved](#problem-solved-10)
-  - [Key Features](#key-features-10)
-  - [Installation](#installation-10)
-  - [Quick Start](#quick-start-10)
-  - [Configuration](#configuration-10)
-    - [Security Best Practices](#security-best-practices)
-  - [Message Ordering](#message-ordering-2)
-    - [Single Consumer Ordering](#single-consumer-ordering)
-    - [Ordering Guarantees](#ordering-guarantees-2)
-    - [Recommendations](#recommendations-1)
-  - [Dependencies](#dependencies-10)
-  - [Side Effects](#side-effects-10)
+    - [Problem Solved](#problem-solved-10)
+    - [Key Features](#key-features-10)
+    - [Installation](#installation-10)
+    - [Quick Start](#quick-start-10)
+    - [Configuration](#configuration-10)
+        - [Security Best Practices](#security-best-practices)
+    - [Message Ordering](#message-ordering-2)
+        - [Single Consumer Ordering](#single-consumer-ordering)
+        - [Ordering Guarantees](#ordering-guarantees-2)
+        - [Recommendations](#recommendations-1)
+    - [Dependencies](#dependencies-10)
+    - [Side Effects](#side-effects-10)
 - [Headless.Messaging.RedisStreams](#headlessmessagingredisstreams)
-  - [Problem Solved](#problem-solved-11)
-  - [Key Features](#key-features-11)
-  - [Installation](#installation-11)
-  - [Quick Start](#quick-start-11)
-  - [Configuration](#configuration-11)
-  - [Dependencies](#dependencies-11)
-  - [Side Effects](#side-effects-11)
+    - [Problem Solved](#problem-solved-11)
+    - [Key Features](#key-features-11)
+    - [Installation](#installation-11)
+    - [Quick Start](#quick-start-11)
+    - [Configuration](#configuration-11)
+    - [Dependencies](#dependencies-11)
+    - [Side Effects](#side-effects-11)
 - [Headless.Messaging.InMemoryQueue](#headlessmessaginginmemoryqueue)
-  - [Problem Solved](#problem-solved-12)
-  - [Key Features](#key-features-12)
-  - [Installation](#installation-12)
-  - [Quick Start](#quick-start-12)
-  - [Configuration](#configuration-12)
-  - [Dependencies](#dependencies-12)
-  - [Side Effects](#side-effects-12)
+    - [Problem Solved](#problem-solved-12)
+    - [Key Features](#key-features-12)
+    - [Installation](#installation-12)
+    - [Quick Start](#quick-start-12)
+    - [Configuration](#configuration-12)
+    - [Dependencies](#dependencies-12)
+    - [Side Effects](#side-effects-12)
 - [Headless.Messaging.PostgreSql](#headlessmessagingpostgresql)
-  - [Problem Solved](#problem-solved-13)
-  - [Key Features](#key-features-13)
-  - [Installation](#installation-13)
-  - [Quick Start](#quick-start-13)
-  - [Configuration](#configuration-13)
-  - [Dependencies](#dependencies-13)
-  - [Side Effects](#side-effects-13)
+    - [Problem Solved](#problem-solved-13)
+    - [Key Features](#key-features-13)
+    - [Installation](#installation-13)
+    - [Quick Start](#quick-start-13)
+    - [Configuration](#configuration-13)
+    - [Dependencies](#dependencies-13)
+    - [Side Effects](#side-effects-13)
 - [Headless.Messaging.SqlServer](#headlessmessagingsqlserver)
-  - [Problem Solved](#problem-solved-14)
-  - [Key Features](#key-features-14)
-  - [Installation](#installation-14)
-  - [Quick Start](#quick-start-14)
-  - [Configuration](#configuration-14)
-  - [Dependencies](#dependencies-14)
-  - [Side Effects](#side-effects-14)
+    - [Problem Solved](#problem-solved-14)
+    - [Key Features](#key-features-14)
+    - [Installation](#installation-14)
+    - [Quick Start](#quick-start-14)
+    - [Configuration](#configuration-14)
+    - [Dependencies](#dependencies-14)
+    - [Side Effects](#side-effects-14)
 - [Headless.Messaging.InMemoryStorage](#headlessmessaginginmemorystorage)
-  - [Problem Solved](#problem-solved-15)
-  - [Key Features](#key-features-15)
-  - [Installation](#installation-15)
-  - [Quick Start](#quick-start-15)
-  - [Configuration](#configuration-15)
-  - [Dependencies](#dependencies-15)
-  - [Side Effects](#side-effects-15)
+    - [Problem Solved](#problem-solved-15)
+    - [Key Features](#key-features-15)
+    - [Installation](#installation-15)
+    - [Quick Start](#quick-start-15)
+    - [Configuration](#configuration-15)
+    - [Dependencies](#dependencies-15)
+    - [Side Effects](#side-effects-15)
 - [Headless.Messaging.Testing](#headlessmessagingtesting)
-  - [Problem Solved](#problem-solved-16)
-  - [Key Features](#key-features-16)
-  - [Installation](#installation-16)
-  - [Quick Start -- Standalone Harness](#quick-start----standalone-harness)
-  - [Quick Start -- Host Integration (WebApplicationFactory / IHost)](#quick-start----host-integration-webapplicationfactory--ihost)
-  - [Observable Collections](#observable-collections)
-  - [WaitFor* Methods](#waitfor-methods)
-  - [TestConsumer\<T\>](#testconsumert)
-  - [Configuration](#configuration-16)
-  - [Dependencies](#dependencies-16)
-  - [Side Effects](#side-effects-16)
+    - [Problem Solved](#problem-solved-16)
+    - [Key Features](#key-features-16)
+    - [Installation](#installation-16)
+    - [Quick Start -- Standalone Harness](#quick-start----standalone-harness)
+    - [Quick Start -- Host Integration (WebApplicationFactory / IHost)](#quick-start----host-integration-webapplicationfactory--ihost)
+    - [Observable Collections](#observable-collections)
+    - [WaitFor\* Methods](#waitfor-methods)
+    - [TestConsumer\<T\>](#testconsumert)
+    - [Configuration](#configuration-16)
+    - [Dependencies](#dependencies-16)
+    - [Side Effects](#side-effects-16)
 
 > Type-safe distributed messaging with transactional outbox, pluggable transports, and pluggable storage providers.
 
@@ -190,6 +191,7 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
 Always install four packages together: **Abstractions + Core + one transport + one storage**.
 
 **Transports** (pick one):
+
 - `Headless.Messaging.RabbitMq` -- AMQP, exchanges/queues, flexible routing
 - `Headless.Messaging.Kafka` -- high-throughput event streaming, partition-based ordering
 - `Headless.Messaging.AzureServiceBus` -- enterprise Azure messaging, session-based ordering
@@ -200,17 +202,20 @@ Always install four packages together: **Abstractions + Core + one transport + o
 - `Headless.Messaging.InMemoryQueue` -- dev/testing only, zero infrastructure
 
 **Storage** (pick one):
+
 - `Headless.Messaging.PostgreSql` -- PostgreSQL outbox with auto-migration
 - `Headless.Messaging.SqlServer` -- SQL Server outbox with auto-migration
 - `Headless.Messaging.InMemoryStorage` -- dev/testing only, ephemeral
 
 **Optional add-ons:**
+
 - `Headless.Messaging.Dashboard` -- embedded web UI for monitoring messages
 - `Headless.Messaging.Dashboard.K8s` -- Kubernetes node discovery for dashboard
 - `Headless.Messaging.OpenTelemetry` -- distributed tracing and metrics
 - `Headless.Messaging.Testing` -- in-process test harness with awaitable assertions, works with WebApplicationFactory/IHost
 
 **Minimal production setup:**
+
 ```
 dotnet add package Headless.Messaging.Abstractions
 dotnet add package Headless.Messaging.Core
@@ -219,6 +224,7 @@ dotnet add package Headless.Messaging.PostgreSql
 ```
 
 **Minimal dev/testing setup:**
+
 ```
 dotnet add package Headless.Messaging.Abstractions
 dotnet add package Headless.Messaging.Core
@@ -251,6 +257,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 
 ---
+
 # Headless.Messaging.Abstractions
 
 Core abstractions for type-safe, high-performance message consumption and publishing with outbox pattern support.
@@ -344,6 +351,7 @@ The circuit breaker (in `Headless.Messaging.Core`) uses these methods to apply t
 ## Configuration
 
 No configuration required. This is an abstractions package. Implementations are provided by:
+
 - `Headless.Messaging.Core` (base implementation)
 - Transport packages: `Headless.Messaging.RabbitMQ`, `Headless.Messaging.Kafka`, etc.
 - Storage packages: `Headless.Messaging.PostgreSql`, `Headless.Messaging.SqlServer`, etc.
@@ -357,8 +365,8 @@ No configuration required. This is an abstractions package. Implementations are 
 
 ## Side Effects
 
-None. This is an abstractions package.
----
+## None. This is an abstractions package.
+
 # Headless.Messaging.Core
 
 Core implementation of the type-safe messaging system with outbox pattern, message processing, and per-dispatch consumer lifecycle management.
@@ -498,11 +506,11 @@ When `CallbackName` is set, the consumer's return value is automatically publish
 
 Consumers can modify callback behavior during handling via `context.Headers`:
 
-| Method | Effect |
-|--------|--------|
-| `AddResponseHeader(key, value)` | Attach custom headers to the response message |
-| `RemoveCallback()` | Suppress response — no message is published back |
-| `RewriteCallback(newTopic)` | Redirect response to a different topic |
+| Method                          | Effect                                           |
+| ------------------------------- | ------------------------------------------------ |
+| `AddResponseHeader(key, value)` | Attach custom headers to the response message    |
+| `RemoveCallback()`              | Suppress response — no message is published back |
+| `RewriteCallback(newTopic)`     | Redirect response to a different topic           |
 
 **Constraints:**
 
@@ -663,7 +671,9 @@ The circuit breaker operates per-process only. There is no cross-instance coordi
 - Starts background hosted service for message processing
 - Creates database tables for outbox storage (via storage provider)
 - Establishes transport connections (via transport provider)
+
 ---
+
 # Headless.Messaging.Dashboard
 
 Web-based dashboard for monitoring and managing distributed messaging infrastructure.
@@ -756,16 +766,16 @@ options.UseDashboard(dashboard =>
 
 ### All Options
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `PathMatch` | `/messaging` | URL path for the dashboard |
-| `PathBase` | `""` | Base path when behind a reverse proxy |
-| `StatsPollingInterval` | `2000` | Stats endpoint polling interval (ms) |
-| `WithNoAuth()` | Enabled by default | Exposes the dashboard without authentication |
-| `WithBasicAuth(username, password)` | Disabled | Enables username/password authentication |
-| `WithApiKey(apiKey)` | Disabled | Enables API key authentication |
-| `WithHostAuthentication(policy?)` | Disabled | Uses ASP.NET Core host authentication with optional policy |
-| `WithCustomAuth(validator)` | Disabled | Uses a custom token validator |
+| Option                              | Default            | Description                                                |
+| ----------------------------------- | ------------------ | ---------------------------------------------------------- |
+| `PathMatch`                         | `/messaging`       | URL path for the dashboard                                 |
+| `PathBase`                          | `""`               | Base path when behind a reverse proxy                      |
+| `StatsPollingInterval`              | `2000`             | Stats endpoint polling interval (ms)                       |
+| `WithNoAuth()`                      | Enabled by default | Exposes the dashboard without authentication               |
+| `WithBasicAuth(username, password)` | Disabled           | Enables username/password authentication                   |
+| `WithApiKey(apiKey)`                | Disabled           | Enables API key authentication                             |
+| `WithHostAuthentication(policy?)`   | Disabled           | Uses ASP.NET Core host authentication with optional policy |
+| `WithCustomAuth(validator)`         | Disabled           | Uses a custom token validator                              |
 
 ## Dependencies
 
@@ -778,7 +788,9 @@ options.UseDashboard(dashboard =>
 - Exposes web endpoint at configured path (default: `/messaging`)
 - Periodically polls message storage for statistics
 - No authentication by default — configure an auth mode for production use
+
 ---
+
 # Headless.Messaging.Dashboard.K8s
 
 Kubernetes-aware node discovery for the messaging dashboard in clustered environments.
@@ -842,7 +854,9 @@ options.UseK8sDiscovery(k8s =>
 - Queries Kubernetes API for pod endpoints
 - Requires appropriate RBAC permissions (read pods/endpoints)
 - Periodically polls for cluster topology changes
+
 ---
+
 # Headless.Messaging.OpenTelemetry
 
 OpenTelemetry instrumentation for distributed tracing and metrics in the messaging system.
@@ -911,7 +925,9 @@ options.UseOpenTelemetry(otel =>
 - Creates tracing spans for all message operations
 - Injects W3C Trace Context headers into messages
 - Exports telemetry to configured exporters
+
 ---
+
 # Headless.Messaging.AwsSqs
 
 Amazon SQS and SNS transport provider for the messaging system.
@@ -974,7 +990,9 @@ options.UseAmazonSqs(sqs =>
 - Creates SQS queues and SNS topics if they don't exist
 - Configures IAM policies for queue access
 - Establishes persistent connections to AWS services
+
 ---
+
 # Headless.Messaging.AzureServiceBus
 
 Azure Service Bus transport provider for the messaging system.
@@ -1084,7 +1102,9 @@ options.EnableSubscriberParallelExecute = false;
 - Creates Service Bus topics and subscriptions if they don't exist
 - Establishes persistent connections to Azure Service Bus
 - Configures message routing rules and filters
+
 ---
+
 # Headless.Messaging.Kafka
 
 Apache Kafka transport provider for the messaging system.
@@ -1193,7 +1213,9 @@ options.EnableSubscriberParallelExecute = false; // Disable parallel execution
 - Creates Kafka topics if they don't exist
 - Establishes persistent connections to Kafka brokers
 - Joins consumer groups for load balancing
+
 ---
+
 # Headless.Messaging.Nats
 
 NATS messaging system transport provider for the messaging system.
@@ -1271,7 +1293,9 @@ nats.EnableSubscriberClientStreamAndSubjectCreation = false;
 - Establishes persistent connections to NATS servers
 - Creates JetStream streams and consumers if enabled
 - Subscribes to subjects for message consumption
+
 ---
+
 # Headless.Messaging.Pulsar
 
 Apache Pulsar transport provider for the messaging system.
@@ -1332,7 +1356,9 @@ options.UsePulsar(pulsar =>
 - Creates Pulsar topics in configured tenant/namespace
 - Establishes persistent connections to Pulsar brokers
 - Creates subscriptions for consumer groups
+
 ---
+
 # Headless.Messaging.RabbitMQ
 
 RabbitMQ transport provider for the messaging system.
@@ -1441,7 +1467,9 @@ options.EnableSubscriberParallelExecute = false; // No parallel execution
 - Creates exchanges and queues if they don't exist
 - Establishes persistent connections to RabbitMQ
 - Configures dead-letter exchanges for failed messages
+
 ---
+
 # Headless.Messaging.RedisStreams
 
 Redis Streams transport provider for the messaging system.
@@ -1502,7 +1530,9 @@ options.UseRedisStreams(redis =>
 - Creates consumer groups for message distribution
 - Maintains persistent connections to Redis
 - Periodically claims pending messages for retry
+
 ---
+
 # Headless.Messaging.InMemoryQueue
 
 In-memory message queue transport for testing and development.
@@ -1547,8 +1577,8 @@ No configuration required. Just call `UseInMemoryQueue()`.
 
 ## Side Effects
 
-None. Messages are stored in memory only and lost on restart.
----
+## None. Messages are stored in memory only and lost on restart.
+
 # Headless.Messaging.PostgreSql
 
 PostgreSQL outbox storage provider for the messaging system.
@@ -1607,12 +1637,14 @@ options.UsePostgreSql(config =>
 ## Side Effects
 
 - Creates database tables in configured schema:
-  - `{prefix}_published` - Published messages
-  - `{prefix}_received` - Received messages
-  - `{prefix}_lock` - Distributed lock table
+    - `{prefix}_published` - Published messages
+    - `{prefix}_received` - Received messages
+    - `{prefix}_lock` - Distributed lock table
 - Creates indexes for message queries
 - Periodically cleans up expired messages
+
 ---
+
 # Headless.Messaging.SqlServer
 
 SQL Server outbox storage provider for the messaging system.
@@ -1671,12 +1703,14 @@ options.UseSqlServer(config =>
 ## Side Effects
 
 - Creates database tables in configured schema:
-  - `{prefix}_published` - Published messages
-  - `{prefix}_received` - Received messages
-  - `{prefix}_lock` - Distributed lock table
+    - `{prefix}_published` - Published messages
+    - `{prefix}_received` - Received messages
+    - `{prefix}_lock` - Distributed lock table
 - Creates indexes for message queries
 - Periodically cleans up expired messages
+
 ---
+
 # Headless.Messaging.InMemoryStorage
 
 In-memory outbox storage for testing and development.
@@ -1721,8 +1755,8 @@ No configuration required. Just call `UseInMemoryStorage()`.
 
 ## Side Effects
 
-None. All messages are stored in memory and lost on restart. Not suitable for production.
----
+## None. All messages are stored in memory and lost on restart. Not suitable for production.
+
 # Headless.Messaging.Testing
 
 In-process test harness for asserting on published, consumed, and faulted messages without external infrastructure.
@@ -1818,7 +1852,7 @@ The harness records every message in three snapshot collections:
 
 Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `Topic`, `Timestamp`, and (for faulted) `Exception`.
 
-## WaitFor* Methods
+## WaitFor\* Methods
 
 All `WaitFor*` methods return a `RecordedMessage` or throw `MessageObservationTimeoutException` with a diagnostic listing what was observed during the wait.
 

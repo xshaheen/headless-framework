@@ -6,48 +6,49 @@ packages: Caching.Abstractions, Caching.Memory, Caching.Redis, Caching.Hybrid
 # Caching
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.Caching.Abstractions](#headlesscachingabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Usage](#usage)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Usage](#usage)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Caching.Memory](#headlesscachingmemory)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration-1)
-    - [Options](#options)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration-1)
+        - [Options](#options)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Caching.Redis](#headlesscachingredis)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-2)
-    - [appsettings.json](#appsettingsjson)
-    - [Options](#options-1)
-  - [Cancellation Token Behavior](#cancellation-token-behavior)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-2)
+        - [appsettings.json](#appsettingsjson)
+        - [Options](#options-1)
+    - [Cancellation Token Behavior](#cancellation-token-behavior)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Caching.Hybrid](#headlesscachinghybrid)
-  - [Installation](#installation-3)
-  - [Prerequisites](#prerequisites)
-  - [Usage](#usage-1)
-    - [Basic Setup](#basic-setup)
-    - [Using the Cache](#using-the-cache)
-  - [Architecture](#architecture)
-    - [Read Path](#read-path)
-    - [Write/Invalidation Path](#writeinvalidation-path)
-  - [Configuration](#configuration-3)
-  - [Exception Handling](#exception-handling)
-  - [Metrics](#metrics)
+    - [Installation](#installation-3)
+    - [Prerequisites](#prerequisites)
+    - [Usage](#usage-1)
+        - [Basic Setup](#basic-setup)
+        - [Using the Cache](#using-the-cache)
+    - [Architecture](#architecture)
+        - [Read Path](#read-path)
+        - [Write/Invalidation Path](#writeinvalidation-path)
+    - [Configuration](#configuration-3)
+    - [Exception Handling](#exception-handling)
+    - [Metrics](#metrics)
 
 > Unified caching abstraction with in-memory, Redis distributed, and hybrid (L1+L2) implementations with cross-instance invalidation.
 
@@ -77,6 +78,7 @@ Use `CacheValue<T>` return type — check `.HasValue` before accessing `.Value`.
 - Hybrid cache `DefaultLocalExpiration` controls L1 TTL independently of L2. Set to shorter durations than L2 for freshness.
 
 ---
+
 # Headless.Caching.Abstractions
 
 Defines the unified caching interface for both in-memory and distributed cache implementations.
@@ -88,11 +90,11 @@ Provides a provider-agnostic caching API, enabling seamless switching between me
 ## Key Features
 
 - `ICache` - Core interface for all cache operations:
-  - Upsert/Get/Remove with expiration
-  - Bulk operations (UpsertAll, GetAll, RemoveAll)
-  - Prefix-based operations (GetByPrefix, RemoveByPrefix)
-  - Atomic operations (TryInsert, TryReplace, Increment, SetIfHigher/Lower)
-  - Set operations (SetAdd, SetRemove, GetSet)
+    - Upsert/Get/Remove with expiration
+    - Bulk operations (UpsertAll, GetAll, RemoveAll)
+    - Prefix-based operations (GetByPrefix, RemoveByPrefix)
+    - Atomic operations (TryInsert, TryReplace, Increment, SetIfHigher/Lower)
+    - Set operations (SetAdd, SetRemove, GetSet)
 - `IInMemoryCache` - Marker interface for in-memory implementations
 - `IDistributedCache` - Marker interface for distributed implementations
 - `ICache<T>` - Strongly-typed cache wrapper
@@ -136,8 +138,8 @@ None.
 
 ## Side Effects
 
-None. This is an abstractions package.
----
+## None. This is an abstractions package.
+
 # Headless.Caching.Memory
 
 In-memory cache implementation for single-instance applications.
@@ -201,7 +203,9 @@ options.KeyPrefix = "myapp:";   // Optional key prefix
 - Registers `ICache` as singleton (if isDefault: true)
 - Registers `IDistributedCache` adapter (if isDefault: true)
 - Registers `ICache<T>` and `IInMemoryCache<T>` as singletons
+
 ---
+
 # Headless.Caching.Redis
 
 Redis distributed cache implementation for multi-instance applications.
@@ -247,9 +251,9 @@ builder.Services.AddRedisCaching();
 
 ```json
 {
-  "Redis": {
-    "ConnectionString": "localhost:6379,password=secret,ssl=true"
-  }
+    "Redis": {
+        "ConnectionString": "localhost:6379,password=secret,ssl=true"
+    }
 }
 ```
 
@@ -264,11 +268,11 @@ options.KeyPrefix = "myapp:";
 
 Cancellation is checked **at the start** of each operation. Once an operation begins, it completes without interruption:
 
-| Operation Type | Cancellation Behavior |
-|---------------|----------------------|
-| Single-key ops (`GetAsync`, `UpsertAsync`, etc.) | Checked before Redis call; operation completes atomically |
-| Batch ops (`UpsertAllAsync`, `RemoveAllAsync`) | Checked before batch starts; all keys processed atomically |
-| SCAN-based ops (`RemoveByPrefixAsync`, `GetAllKeysByPrefixAsync`) | Cancellable during iteration (unbounded key sets) |
+| Operation Type                                                    | Cancellation Behavior                                      |
+| ----------------------------------------------------------------- | ---------------------------------------------------------- |
+| Single-key ops (`GetAsync`, `UpsertAsync`, etc.)                  | Checked before Redis call; operation completes atomically  |
+| Batch ops (`UpsertAllAsync`, `RemoveAllAsync`)                    | Checked before batch starts; all keys processed atomically |
+| SCAN-based ops (`RemoveByPrefixAsync`, `GetAllKeysByPrefixAsync`) | Cancellable during iteration (unbounded key sets)          |
 
 This design ensures consumers never observe partial results from batch operations.
 
@@ -287,7 +291,9 @@ This design ensures consumers never observe partial results from batch operation
 - Registers `IDistributedCache` as singleton
 - Registers `IDistributedCache<T>` as singleton
 - Uses existing `IConnectionMultiplexer` if registered, otherwise creates one
+
 ---
+
 # Headless.Caching.Hybrid
 
 Two-tier hybrid cache combining fast in-memory L1 cache with distributed L2 cache, featuring automatic cross-instance cache invalidation via messaging.
@@ -362,21 +368,21 @@ public class ProductService(ICache cache)
 
 ## Configuration
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `KeyPrefix` | `""` | Prefix for all cache keys |
-| `DefaultLocalExpiration` | `5 minutes` | Default L1 TTL (uses L2 TTL if null) |
-| `InstanceId` | Auto-generated | Unique ID for filtering self-originated messages |
+| Option                   | Default        | Description                                      |
+| ------------------------ | -------------- | ------------------------------------------------ |
+| `KeyPrefix`              | `""`           | Prefix for all cache keys                        |
+| `DefaultLocalExpiration` | `5 minutes`    | Default L1 TTL (uses L2 TTL if null)             |
+| `InstanceId`             | Auto-generated | Unique ID for filtering self-originated messages |
 
 ## Exception Handling
 
-| Scenario | Behavior |
-|----------|----------|
-| L2 write fails | Log warning, continue to populate L1 |
-| Publish fails | Log warning, other instances serve stale until TTL |
-| L1 write fails | Propagate exception (indicates serious issue) |
-| L2 read fails | Propagate exception |
-| `OperationCanceledException` | Always propagate |
+| Scenario                     | Behavior                                           |
+| ---------------------------- | -------------------------------------------------- |
+| L2 write fails               | Log warning, continue to populate L1               |
+| Publish fails                | Log warning, other instances serve stale until TTL |
+| L1 write fails               | Propagate exception (indicates serious issue)      |
+| L2 read fails                | Propagate exception                                |
+| `OperationCanceledException` | Always propagate                                   |
 
 ## Metrics
 

@@ -13,25 +13,25 @@ packages: Orm.EntityFramework, Orm.Couchbase
 - [Package Validation Snapshot](#package-validation-snapshot)
 - [Agent Instructions](#agent-instructions)
 - [Headless.Orm.EntityFramework](#headlessormentityframework)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Transaction Pattern](#transaction-pattern)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
-  - [Validation Checklist](#validation-checklist)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Transaction Pattern](#transaction-pattern)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
+    - [Validation Checklist](#validation-checklist)
 - [Headless.Orm.Couchbase](#headlessormcouchbase)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start-1)
-  - [Transaction Pattern](#transaction-pattern-1)
-  - [Configuration](#configuration-1)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
-  - [Validation Checklist](#validation-checklist-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Transaction Pattern](#transaction-pattern-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
+    - [Validation Checklist](#validation-checklist-1)
 
 ## Quick Orientation
 
@@ -46,10 +46,10 @@ Use these packages when you want ORM-level persistence primitives. For raw SQL c
 
 Validated against current source tree on `29-03-2026` (UTC).
 
-| Package | Source package path | Status |
-| --- | --- | --- |
+| Package                        | Source package path                                                    | Status  |
+| ------------------------------ | ---------------------------------------------------------------------- | ------- |
 | `Headless.Orm.EntityFramework` | `src/Headless.Orm.EntityFramework/Headless.Orm.EntityFramework.csproj` | Present |
-| `Headless.Orm.Couchbase` | `src/Headless.Orm.Couchbase/Headless.Orm.Couchbase.csproj` | Present |
+| `Headless.Orm.Couchbase`       | `src/Headless.Orm.Couchbase/Headless.Orm.Couchbase.csproj`             | Present |
 
 Validation notes:
 

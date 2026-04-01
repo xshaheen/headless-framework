@@ -6,67 +6,68 @@ packages: Api, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.L
 # API & Web
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.Api](#headlessapi)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration)
-    - [String Encryption](#string-encryption)
-    - [String Hashing](#string-hashing)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration)
+        - [String Encryption](#string-encryption)
+        - [String Hashing](#string-hashing)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Api.Abstractions](#headlessapiabstractions)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Usage](#usage)
-  - [Configuration](#configuration-1)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Usage](#usage)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Api.DataProtection](#headlessapidataprotection)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-1)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Api.FluentValidation](#headlessapifluentvalidation)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-3)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-3)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 - [Headless.Api.Logging.Serilog](#headlessapiloggingserilog)
-  - [Problem Solved](#problem-solved-4)
-  - [Key Features](#key-features-4)
-  - [Installation](#installation-4)
-  - [Quick Start](#quick-start-3)
-  - [Configuration](#configuration-4)
-  - [Dependencies](#dependencies-4)
-  - [Side Effects](#side-effects-4)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-3)
+    - [Configuration](#configuration-4)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 - [Headless.Api.MinimalApi](#headlessapiminimalapi)
-  - [Problem Solved](#problem-solved-5)
-  - [Key Features](#key-features-5)
-  - [Installation](#installation-5)
-  - [Quick Start](#quick-start-4)
-  - [Configuration](#configuration-5)
-  - [Dependencies](#dependencies-5)
-  - [Side Effects](#side-effects-5)
+    - [Problem Solved](#problem-solved-5)
+    - [Key Features](#key-features-5)
+    - [Installation](#installation-5)
+    - [Quick Start](#quick-start-4)
+    - [Configuration](#configuration-5)
+    - [Dependencies](#dependencies-5)
+    - [Side Effects](#side-effects-5)
 - [Headless.Api.Mvc](#headlessapimvc)
-  - [Problem Solved](#problem-solved-6)
-  - [Key Features](#key-features-6)
-  - [Installation](#installation-6)
-  - [Quick Start](#quick-start-5)
-    - [Controller Example](#controller-example)
-  - [Configuration](#configuration-6)
-  - [Dependencies](#dependencies-6)
-  - [Side Effects](#side-effects-6)
+    - [Problem Solved](#problem-solved-6)
+    - [Key Features](#key-features-6)
+    - [Installation](#installation-6)
+    - [Quick Start](#quick-start-5)
+        - [Controller Example](#controller-example)
+    - [Configuration](#configuration-6)
+    - [Dependencies](#dependencies-6)
+    - [Side Effects](#side-effects-6)
 
 > ASP.NET Core API infrastructure: service registration, JWT, middleware, validation, logging, and endpoint integration for Minimal API and MVC.
 
@@ -80,6 +81,7 @@ The core package is `Headless.Api` — call `AddHeadlessApi()` to register compr
 Use `Headless.Api.Abstractions` when you only need interfaces (`IRequestContext`, `IWebClientInfoProvider`) without pulling in the full API stack.
 
 Additional packages:
+
 - `Headless.Api.FluentValidation` — validators for `IFormFile` uploads (size, content type, magic bytes).
 - `Headless.Api.DataProtection` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
 - `Headless.Api.Logging.Serilog` — enrich Serilog logs with per-request context (IP, user agent, user ID, tenant ID, correlation ID).
@@ -97,6 +99,7 @@ Additional packages:
 - `AddHeadlessApi()` auto-binds `Headless:StringEncryption` and `Headless:StringHash` through `Headless.Security`, and also exposes explicit overloads for configuration sections and option callbacks when the defaults are not suitable. When the hash callback is omitted, it still binds `Headless:StringHash` by default.
 
 ---
+
 # Headless.Api
 
 Core ASP.NET Core API infrastructure providing service registration, middleware, security, JWT handling, and common API utilities.
@@ -153,13 +156,13 @@ app.Run();
 
 ```json
 {
-  "Headless": {
-    "StringEncryption": {
-      "DefaultPassPhrase": "YourPassPhrase123",
-      "InitVectorBytes": "WW91ckluaXRWZWN0b3IxNg==",
-      "DefaultSalt": "WW91clNhbHQ="
+    "Headless": {
+        "StringEncryption": {
+            "DefaultPassPhrase": "YourPassPhrase123",
+            "InitVectorBytes": "WW91ckluaXRWZWN0b3IxNg==",
+            "DefaultSalt": "WW91clNhbHQ="
+        }
     }
-  }
 }
 ```
 
@@ -167,14 +170,14 @@ app.Run();
 
 ```json
 {
-  "Headless": {
-    "StringHash": {
-      "Iterations": 600000,
-      "Size": 128,
-      "Algorithm": "SHA256",
-      "DefaultSalt": "DefaultSalt"
+    "Headless": {
+        "StringHash": {
+            "Iterations": 600000,
+            "Size": 128,
+            "Algorithm": "SHA256",
+            "DefaultSalt": "DefaultSalt"
+        }
     }
-  }
 }
 ```
 
@@ -204,7 +207,9 @@ app.Run();
 - Configures form options (file upload limits)
 - Configures HSTS options
 - Adds resilience handler to `HttpClient` defaults
+
 ---
+
 # Headless.Api.Abstractions
 
 Defines core interfaces and contracts for HTTP request context, user identity, and web client information in ASP.NET Core applications.
@@ -260,8 +265,8 @@ No configuration required. This package contains interfaces only.
 
 ## Side Effects
 
-None. This is an abstractions-only package.
----
+## None. This is an abstractions-only package.
+
 # Headless.Api.DataProtection
 
 Extends ASP.NET Core Data Protection to persist encryption keys to blob storage providers.
@@ -313,7 +318,9 @@ No specific configuration. Depends on the underlying `IBlobStorage` configuratio
 ## Side Effects
 
 - Configures `KeyManagementOptions.XmlRepository` to use blob storage
+
 ---
+
 # Headless.Api.FluentValidation
 
 FluentValidation extensions for validating ASP.NET Core `IFormFile` uploads including size, content type, and file signature verification.
@@ -370,8 +377,8 @@ No configuration required.
 
 ## Side Effects
 
-None.
----
+## None.
+
 # Headless.Api.Logging.Serilog
 
 Serilog integration for ASP.NET Core APIs with custom enrichers for request context.
@@ -424,7 +431,9 @@ Inherits Serilog configuration from `Headless.Logging.Serilog`. See that package
 
 - Adds middleware to the request pipeline
 - Enriches log context per-request
+
 ---
+
 # Headless.Api.MinimalApi
 
 Framework integration for ASP.NET Core Minimal APIs with JSON configuration, validation filters, and exception handling.
@@ -475,7 +484,9 @@ No additional configuration required. Uses framework JSON settings automatically
 ## Side Effects
 
 - Configures `JsonOptions` for Minimal APIs
+
 ---
+
 # Headless.Api.Mvc
 
 Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JSON configuration, and common utilities.

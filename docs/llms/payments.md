@@ -6,43 +6,45 @@ packages: Payments.Paymob.CashIn, Payments.Paymob.CashOut, Payments.Paymob.Servi
 # Payments
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.Payments.Paymob.CashIn](#headlesspaymentspaymobcashin)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Usage](#usage)
-    - [Create Payment Intention](#create-payment-intention)
-    - [Validate Callback](#validate-callback)
-  - [Configuration](#configuration)
-    - [appsettings.json](#appsettingsjson)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Quick Start](#quick-start)
+    - [Usage](#usage)
+        - [Create Payment Intention](#create-payment-intention)
+        - [Validate Callback](#validate-callback)
+    - [Configuration](#configuration)
+        - [appsettings.json](#appsettingsjson)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Payments.Paymob.CashOut](#headlesspaymentspaymobcashout)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Quick Start](#quick-start-1)
-  - [Usage](#usage-1)
-    - [Bank Transfer](#bank-transfer)
-  - [Configuration](#configuration-1)
-    - [appsettings.json](#appsettingsjson-1)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Quick Start](#quick-start-1)
+    - [Usage](#usage-1)
+        - [Bank Transfer](#bank-transfer)
+    - [Configuration](#configuration-1)
+        - [appsettings.json](#appsettingsjson-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Payments.Paymob.Services](#headlesspaymentspaymobservices)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 
 > Paymob Accept payment gateway integration for Egypt/MENA: payment collection (CashIn), disbursements (CashOut), and higher-level service workflows.
 
 ## Quick Orientation
+
 - Install `Headless.Payments.Paymob.CashIn` for collecting payments (cards, wallets, kiosk, cash).
 - Install `Headless.Payments.Paymob.CashOut` for disbursements (bank transfers, wallet payouts, Aman cash pickup).
 - Install `Headless.Payments.Paymob.Services` for higher-level payment flow orchestration and status tracking; it depends on CashIn.
@@ -50,6 +52,7 @@ packages: Payments.Paymob.CashIn, Payments.Paymob.CashOut, Payments.Paymob.Servi
 - Configure via `AddPaymobCashIn(options => ...)` and `AddPaymobCashOut(options => ...)`. Services layer uses `AddPaymobServices()` on top of CashIn.
 
 ## Agent Instructions
+
 - Use `Headless.Payments.Paymob.Services` for high-level payment workflows. Only drop to CashIn/CashOut when you need direct Paymob API access.
 - Primary interfaces: `IPaymobCashInBroker` (CashIn), `IPaymobCashOutBroker` (CashOut).
 - Always validate HMAC on callbacks using `IPaymobCashInBroker.Validate(transaction, hmac)` — never skip this.
@@ -59,6 +62,7 @@ packages: Payments.Paymob.CashIn, Payments.Paymob.CashOut, Payments.Paymob.Servi
 - This is a Paymob-specific integration (Egypt/MENA region). Not a generic payments abstraction.
 
 ---
+
 # Headless.Payments.Paymob.CashIn
 
 Paymob Accept integration for cash-in (payment collection) operations.
@@ -138,10 +142,10 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 
 ```json
 {
-  "Paymob": {
-    "ApiKey": "your-api-key",
-    "HmacSecret": "your-hmac-secret"
-  }
+    "Paymob": {
+        "ApiKey": "your-api-key",
+        "HmacSecret": "your-hmac-secret"
+    }
 }
 ```
 
@@ -153,7 +157,9 @@ public IActionResult HandleCallback([FromBody] CashInCallbackTransaction transac
 
 - Registers `IPaymobCashInBroker` as singleton
 - Registers `IPaymobCashInAuthenticator` as singleton
+
 ---
+
 # Headless.Payments.Paymob.CashOut
 
 Paymob integration for cash-out (disbursement) operations.
@@ -214,13 +220,13 @@ public class DisbursementService(IPaymobCashOutBroker broker)
 
 ```json
 {
-  "Paymob": {
-    "CashOut": {
-      "ApiKey": "your-api-key",
-      "Username": "your-username",
-      "Password": "your-password"
+    "Paymob": {
+        "CashOut": {
+            "ApiKey": "your-api-key",
+            "Username": "your-username",
+            "Password": "your-password"
+        }
     }
-  }
 }
 ```
 
@@ -232,7 +238,9 @@ public class DisbursementService(IPaymobCashOutBroker broker)
 
 - Registers `IPaymobCashOutBroker` as singleton
 - Registers `IPaymobCashOutAuthenticator` as singleton
+
 ---
+
 # Headless.Payments.Paymob.Services
 
 Higher-level services for Paymob payment operations.

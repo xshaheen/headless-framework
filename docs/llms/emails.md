@@ -6,53 +6,54 @@ packages: Emails.Abstractions, Emails.Core, Emails.Aws, Emails.Dev, Emails.Mailk
 # Email
 
 ## Table of Contents
+
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.Emails.Abstractions](#headlessemailsabstractions)
-  - [Problem Solved](#problem-solved)
-  - [Key Features](#key-features)
-  - [Installation](#installation)
-  - [Usage](#usage)
-  - [Configuration](#configuration)
-  - [Dependencies](#dependencies)
-  - [Side Effects](#side-effects)
+    - [Problem Solved](#problem-solved)
+    - [Key Features](#key-features)
+    - [Installation](#installation)
+    - [Usage](#usage)
+    - [Configuration](#configuration)
+    - [Dependencies](#dependencies)
+    - [Side Effects](#side-effects)
 - [Headless.Emails.Core](#headlessemailscore)
-  - [Problem Solved](#problem-solved-1)
-  - [Key Features](#key-features-1)
-  - [Installation](#installation-1)
-  - [Usage](#usage-1)
-  - [Configuration](#configuration-1)
-  - [Dependencies](#dependencies-1)
-  - [Side Effects](#side-effects-1)
+    - [Problem Solved](#problem-solved-1)
+    - [Key Features](#key-features-1)
+    - [Installation](#installation-1)
+    - [Usage](#usage-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
 - [Headless.Emails.Aws](#headlessemailsaws)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-2)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration-2)
-    - [appsettings.json](#appsettingsjson)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start)
+    - [Configuration](#configuration-2)
+        - [appsettings.json](#appsettingsjson)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
 - [Headless.Emails.Dev](#headlessemailsdev)
-  - [Problem Solved](#problem-solved-3)
-  - [Key Features](#key-features-3)
-  - [Installation](#installation-3)
-  - [Quick Start](#quick-start-1)
-  - [Output Format](#output-format)
-  - [Configuration](#configuration-3)
-    - [Options](#options)
-  - [Dependencies](#dependencies-3)
-  - [Side Effects](#side-effects-3)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-1)
+    - [Output Format](#output-format)
+    - [Configuration](#configuration-3)
+        - [Options](#options)
+    - [Dependencies](#dependencies-3)
+    - [Side Effects](#side-effects-3)
 - [Headless.Emails.Mailkit](#headlessemailsmailkit)
-  - [Problem Solved](#problem-solved-4)
-  - [Key Features](#key-features-4)
-  - [Installation](#installation-4)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-4)
-    - [appsettings.json](#appsettingsjson-1)
-    - [Options (`MailkitSmtpOptions`)](#options-mailkitsmtpoptions)
-  - [Dependencies](#dependencies-4)
-  - [Side Effects](#side-effects-4)
+    - [Problem Solved](#problem-solved-4)
+    - [Key Features](#key-features-4)
+    - [Installation](#installation-4)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-4)
+        - [appsettings.json](#appsettingsjson-1)
+        - [Options (`MailkitSmtpOptions`)](#options-mailkitsmtpoptions)
+    - [Dependencies](#dependencies-4)
+    - [Side Effects](#side-effects-4)
 
 > Provider-agnostic email sending with implementations for AWS SES, SMTP (MailKit), and development/testing modes.
 
@@ -81,6 +82,7 @@ Send emails via `IEmailSender.SendAsync(SendSingleEmailRequest)` which returns `
 - `DevEmailSender` appends to a file with separators — useful for inspecting all sent emails in development.
 
 ---
+
 # Headless.Emails.Abstractions
 
 Defines the unified interface for sending emails across different providers (AWS SES, SMTP/MailKit, development).
@@ -132,8 +134,8 @@ None.
 
 ## Side Effects
 
-None.
----
+## None.
+
 # Headless.Emails.Core
 
 Core utilities and MimeKit integration for email implementations.
@@ -174,8 +176,8 @@ No configuration required.
 
 ## Side Effects
 
-None. This is a utility package.
----
+## None. This is a utility package.
+
 # Headless.Emails.Aws
 
 AWS SES (Simple Email Service) v2 implementation of the email sending abstraction.
@@ -220,9 +222,9 @@ builder.Services.AddAwsSesEmailSender(new AWSOptions
 
 ```json
 {
-  "AWS": {
-    "Region": "us-east-1"
-  }
+    "AWS": {
+        "Region": "us-east-1"
+    }
 }
 ```
 
@@ -236,7 +238,9 @@ builder.Services.AddAwsSesEmailSender(new AWSOptions
 
 - Registers `IAmazonSimpleEmailServiceV2` if not already registered
 - Registers `IEmailSender` as singleton
+
 ---
+
 # Headless.Emails.Dev
 
 Development email implementations for local testing and debugging.
@@ -299,7 +303,9 @@ services.AddDevEmailSender("emails.txt"); // Path to output file
 
 - Registers `IEmailSender` as singleton
 - Writes emails to specified file
+
 ---
+
 # Headless.Emails.Mailkit
 
 SMTP implementation of the email abstraction using MailKit.
@@ -347,24 +353,24 @@ builder.Services.AddMailKitEmailSender(options =>
 
 ```json
 {
-  "Smtp": {
-    "Server": "smtp.example.com",
-    "Port": 587,
-    "User": "user@example.com",
-    "Password": "securepassword",
-    "SocketOptions": "StartTls"
-  }
+    "Smtp": {
+        "Server": "smtp.example.com",
+        "Port": 587,
+        "User": "user@example.com",
+        "Password": "securepassword",
+        "SocketOptions": "StartTls"
+    }
 }
 ```
 
 ### Options (`MailkitSmtpOptions`)
 
-| Property | Description |
-|----------|-------------|
-| `Server` | SMTP server hostname (required) |
-| `Port` | SMTP port (default: 25) |
-| `User` | Authentication username |
-| `Password` | Authentication password |
+| Property        | Description                                    |
+| --------------- | ---------------------------------------------- |
+| `Server`        | SMTP server hostname (required)                |
+| `Port`          | SMTP port (default: 25)                        |
+| `User`          | Authentication username                        |
+| `Password`      | Authentication password                        |
 | `SocketOptions` | `SecureSocketOptions` (StartTls, SslOnConnect) |
 
 ## Dependencies
