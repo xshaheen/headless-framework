@@ -12,6 +12,16 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
 {
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        if (_serviceProvider is IAsyncDisposable disposable)
+        {
+            await disposable.DisposeAsync();
+        }
+
+        await base.DisposeAsyncCore();
+    }
+
     protected override IConsumerClient GetConsumerClient()
     {
         var client = new NatsConsumerClient(

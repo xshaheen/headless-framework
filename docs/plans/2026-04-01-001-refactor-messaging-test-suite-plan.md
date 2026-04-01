@@ -51,29 +51,29 @@ Inspection confirms these gaps:
 
 ### Relevant Code and Patterns
 
-- The repo targets `.NET 10` with `Microsoft.Testing.Platform` via [global.json](/Users/xshaheen/Dev/framework/headless-framework/global.json).
-- Test projects already follow the repo split described in [CLAUDE.md](/Users/xshaheen/Dev/framework/headless-framework/CLAUDE.md): `*.Tests.Unit`, `*.Tests.Integration`, and `*.Tests.Harness`.
+- The repo targets `.NET 10` with `Microsoft.Testing.Platform` via [global.json](../../global.json).
+- Test projects already follow the repo split described in [CLAUDE.md](../../CLAUDE.md): `*.Tests.Unit`, `*.Tests.Integration`, and `*.Tests.Harness`.
 - Shared provider test harnesses already exist in:
-  - [tests/Headless.Messaging.Core.Tests.Harness/TransportTestsBase.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Harness/TransportTestsBase.cs)
-  - [tests/Headless.Messaging.Core.Tests.Harness/ConsumerClientTestsBase.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Harness/ConsumerClientTestsBase.cs)
-  - [tests/Headless.Messaging.Core.Tests.Harness/DataStorageTestsBase.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Harness/DataStorageTestsBase.cs)
-  - [tests/Headless.Messaging.Core.Tests.Harness/MessagingIntegrationTestsBase.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Harness/MessagingIntegrationTestsBase.cs)
+  - [tests/Headless.Messaging.Core.Tests.Harness/TransportTestsBase.cs](../../tests/Headless.Messaging.Core.Tests.Harness/TransportTestsBase.cs)
+  - [tests/Headless.Messaging.Core.Tests.Harness/ConsumerClientTestsBase.cs](../../tests/Headless.Messaging.Core.Tests.Harness/ConsumerClientTestsBase.cs)
+  - [tests/Headless.Messaging.Core.Tests.Harness/DataStorageTestsBase.cs](../../tests/Headless.Messaging.Core.Tests.Harness/DataStorageTestsBase.cs)
+  - [tests/Headless.Messaging.Core.Tests.Harness/MessagingIntegrationTestsBase.cs](../../tests/Headless.Messaging.Core.Tests.Harness/MessagingIntegrationTestsBase.cs)
 - Core already has strong in-memory integration coverage in:
-  - [tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/IDirectPublisherIntegrationTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/IDirectPublisherIntegrationTests.cs)
-  - [tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/RuntimeSubscriberIntegrationTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/RuntimeSubscriberIntegrationTests.cs)
-  - [tests/Headless.Messaging.Core.Tests.Unit/BootstrapperTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Unit/BootstrapperTests.cs)
-- PostgreSQL already uses the storage harness through [tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlStorageTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlStorageTests.cs), but its provider-owned helpers under [src/Headless.Messaging.PostgreSql](/Users/xshaheen/Dev/framework/headless-framework/src/Headless.Messaging.PostgreSql) are mostly untested.
-- NATS already uses the transport harness through [tests/Headless.Messaging.Nats.Tests.Integration/NatsTransportTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Nats.Tests.Integration/NatsTransportTests.cs), but it does not yet use `ConsumerClientTestsBase`, and it has no full-stack suite with durable storage.
+  - [tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/IDirectPublisherIntegrationTests.cs](../../tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/IDirectPublisherIntegrationTests.cs)
+  - [tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/RuntimeSubscriberIntegrationTests.cs](../../tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/RuntimeSubscriberIntegrationTests.cs)
+  - [tests/Headless.Messaging.Core.Tests.Unit/BootstrapperTests.cs](../../tests/Headless.Messaging.Core.Tests.Unit/BootstrapperTests.cs)
+- PostgreSQL already uses the storage harness through [tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlStorageTests.cs](../../tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlStorageTests.cs), but its provider-owned helpers under [src/Headless.Messaging.PostgreSql](../../src/Headless.Messaging.PostgreSql) are mostly untested.
+- NATS already uses the transport harness through [tests/Headless.Messaging.Nats.Tests.Integration/NatsTransportTests.cs](../../tests/Headless.Messaging.Nats.Tests.Integration/NatsTransportTests.cs), but it does not yet use `ConsumerClientTestsBase`, and it has no full-stack suite with durable storage.
 
 ### Institutional Learnings
 
-- [docs/solutions/guides/messaging-transport-provider-guide.md](/Users/xshaheen/Dev/framework/headless-framework/docs/solutions/guides/messaging-transport-provider-guide.md)
+- [docs/solutions/guides/messaging-transport-provider-guide.md](../../docs/solutions/guides/messaging-transport-provider-guide.md)
   - Providers should rely on core for retries/serialization and prove broker contracts through targeted transport and consumer-client tests.
-- [docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md](/Users/xshaheen/Dev/framework/headless-framework/docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md)
+- [docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md](../../docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md)
   - Concurrency-sensitive transport tests need deterministic gates, not sleep-driven timing.
-- [docs/solutions/concurrency/startup-pause-gating-and-half-open-recovery.md](/Users/xshaheen/Dev/framework/headless-framework/docs/solutions/concurrency/startup-pause-gating-and-half-open-recovery.md)
+- [docs/solutions/concurrency/startup-pause-gating-and-half-open-recovery.md](../../docs/solutions/concurrency/startup-pause-gating-and-half-open-recovery.md)
   - Transport pause/resume semantics must be validated at startup and recovery boundaries, not only steady state.
-- [docs/solutions/messaging/transport-wrapper-drift-and-doc-sync.md](/Users/xshaheen/Dev/framework/headless-framework/docs/solutions/messaging/transport-wrapper-drift-and-doc-sync.md)
+- [docs/solutions/messaging/transport-wrapper-drift-and-doc-sync.md](../../docs/solutions/messaging/transport-wrapper-drift-and-doc-sync.md)
   - Wrapper code drifts easily; contract tests should pin adapter behavior and sanitized operator-facing values.
 
 ### External References
@@ -92,7 +92,7 @@ Inspection confirms these gaps:
   - Rationale: empty interface existence tests, DTO getter/setter tests, logger-constant tests, and constructor-only exception tests add little signal. The test value is in forwarding behavior, lifecycle state transitions, DI contracts, broker/database contracts, and end-to-end behavior.
 
 - Put PostgreSQL transaction-wrapper coverage in the PostgreSQL test projects, not in core.
-  - Rationale: raw ADO.NET and EF transaction bridging are provider-owned behavior implemented in [src/Headless.Messaging.PostgreSql/PostgreSqlOutboxTransaction.cs](/Users/xshaheen/Dev/framework/headless-framework/src/Headless.Messaging.PostgreSql/PostgreSqlOutboxTransaction.cs), [src/Headless.Messaging.PostgreSql/EntityFrameworkTransactionExtensions.cs](/Users/xshaheen/Dev/framework/headless-framework/src/Headless.Messaging.PostgreSql/EntityFrameworkTransactionExtensions.cs), and [src/Headless.Messaging.PostgreSql/PostgreSqlEntityFrameworkDbTransaction.cs](/Users/xshaheen/Dev/framework/headless-framework/src/Headless.Messaging.PostgreSql/PostgreSqlEntityFrameworkDbTransaction.cs).
+  - Rationale: raw ADO.NET and EF transaction bridging are provider-owned behavior implemented in [src/Headless.Messaging.PostgreSql/PostgreSqlOutboxTransaction.cs](../../src/Headless.Messaging.PostgreSql/PostgreSqlOutboxTransaction.cs), [src/Headless.Messaging.PostgreSql/EntityFrameworkTransactionExtensions.cs](../../src/Headless.Messaging.PostgreSql/EntityFrameworkTransactionExtensions.cs), and [src/Headless.Messaging.PostgreSql/PostgreSqlEntityFrameworkDbTransaction.cs](../../src/Headless.Messaging.PostgreSql/PostgreSqlEntityFrameworkDbTransaction.cs).
 
 - Add one new full-stack integration project for `NATS + PostgreSql`.
   - Rationale: the repo currently has no real suite proving the exact pair the user called out works through DI bootstrap, outbox persistence, transport delivery, consumer execution, and monitoring. That gap is larger than any single provider unit gap.
@@ -166,8 +166,8 @@ The suite should prove behavior at the lowest layer that can prove it:
 - Keep interface-only and property-bag types out of scope unless a forwarding helper depends on them.
 
 **Patterns to follow:**
-- [tests/Headless.Messaging.Abstractions.Tests.Unit/ConsumeContextTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Abstractions.Tests.Unit/ConsumeContextTests.cs)
-- [tests/Headless.Messaging.Abstractions.Tests.Unit/MessageHeaderTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Abstractions.Tests.Unit/MessageHeaderTests.cs)
+- [tests/Headless.Messaging.Abstractions.Tests.Unit/ConsumeContextTests.cs](../../tests/Headless.Messaging.Abstractions.Tests.Unit/ConsumeContextTests.cs)
+- [tests/Headless.Messaging.Abstractions.Tests.Unit/MessageHeaderTests.cs](../../tests/Headless.Messaging.Abstractions.Tests.Unit/MessageHeaderTests.cs)
 
 **Test scenarios:**
 - Happy path — `PublishAsync<T>(publisher, message, ct)` forwards the same payload and cancellation token with `options: null`.
@@ -206,9 +206,9 @@ The suite should prove behavior at the lowest layer that can prove it:
 **Execution note:** Add characterization tests first for any helper whose current timing behavior is subtle, especially `ScheduledMediumMessageQueue` and bootstrap/runtime-subscription boundaries.
 
 **Patterns to follow:**
-- [tests/Headless.Messaging.Core.Tests.Unit/Transport/BrokerAddressDisplayTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Unit/Transport/BrokerAddressDisplayTests.cs)
-- [tests/Headless.Messaging.Core.Tests.Unit/BootstrapperTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Unit/BootstrapperTests.cs)
-- [tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/RuntimeSubscriberIntegrationTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/RuntimeSubscriberIntegrationTests.cs)
+- [tests/Headless.Messaging.Core.Tests.Unit/Transport/BrokerAddressDisplayTests.cs](../../tests/Headless.Messaging.Core.Tests.Unit/Transport/BrokerAddressDisplayTests.cs)
+- [tests/Headless.Messaging.Core.Tests.Unit/BootstrapperTests.cs](../../tests/Headless.Messaging.Core.Tests.Unit/BootstrapperTests.cs)
+- [tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/RuntimeSubscriberIntegrationTests.cs](../../tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/RuntimeSubscriberIntegrationTests.cs)
 
 **Test scenarios:**
 - Happy path — `ConsumerPauseGate.WaitIfPausedAsync` completes immediately when not paused.
@@ -254,8 +254,8 @@ The suite should prove behavior at the lowest layer that can prove it:
 - Do not add direct tests for logging source-generator methods or property-bag options that already have adequate validation coverage.
 
 **Patterns to follow:**
-- [tests/Headless.Messaging.Nats.Tests.Unit/SetupTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Nats.Tests.Unit/SetupTests.cs)
-- [tests/Headless.Messaging.Nats.Tests.Unit/NatsConnectionPoolTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Nats.Tests.Unit/NatsConnectionPoolTests.cs)
+- [tests/Headless.Messaging.Nats.Tests.Unit/SetupTests.cs](../../tests/Headless.Messaging.Nats.Tests.Unit/SetupTests.cs)
+- [tests/Headless.Messaging.Nats.Tests.Unit/NatsConnectionPoolTests.cs](../../tests/Headless.Messaging.Nats.Tests.Unit/NatsConnectionPoolTests.cs)
 
 **Test scenarios:**
 - Happy path — `UsePostgreSql(string)` registers the PostgreSQL storage marker, options, storage initializer, data storage, and outbox transaction services.
@@ -297,8 +297,8 @@ The suite should prove behavior at the lowest layer that can prove it:
 **Execution note:** Start with failing real-database tests for commit/rollback behavior before changing or adding any provider helpers.
 
 **Patterns to follow:**
-- [tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlStorageTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlStorageTests.cs)
-- [tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlMonitoringTest.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlMonitoringTest.cs)
+- [tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlStorageTests.cs](../../tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlStorageTests.cs)
+- [tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlMonitoringTest.cs](../../tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlMonitoringTest.cs)
 
 **Test scenarios:**
 - Integration — starting an outbox transaction through raw `IDbConnection.BeginTransaction(...)` persists buffered messages only after commit.
@@ -338,8 +338,8 @@ The suite should prove behavior at the lowest layer that can prove it:
 - Prefer improving `ConsumerClientTestsBase` when a scenario is generic instead of stacking more one-off NATS-only tests.
 
 **Patterns to follow:**
-- [tests/Headless.Messaging.Core.Tests.Harness/ConsumerClientTestsBase.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Harness/ConsumerClientTestsBase.cs)
-- [tests/Headless.Messaging.Nats.Tests.Integration/NatsTransportTests.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Nats.Tests.Integration/NatsTransportTests.cs)
+- [tests/Headless.Messaging.Core.Tests.Harness/ConsumerClientTestsBase.cs](../../tests/Headless.Messaging.Core.Tests.Harness/ConsumerClientTestsBase.cs)
+- [tests/Headless.Messaging.Nats.Tests.Integration/NatsTransportTests.cs](../../tests/Headless.Messaging.Nats.Tests.Integration/NatsTransportTests.cs)
 
 **Test scenarios:**
 - Happy path — `UseNats(...)` registers the NATS marker, transport, consumer factory, and connection pool services.
@@ -382,9 +382,9 @@ The suite should prove behavior at the lowest layer that can prove it:
 **Execution note:** Start with a failing end-to-end outbox publish test and keep the initial fixture small before adding secondary scenarios.
 
 **Patterns to follow:**
-- [tests/Headless.Messaging.Core.Tests.Harness/MessagingIntegrationTestsBase.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Harness/MessagingIntegrationTestsBase.cs)
-- [tests/Headless.Messaging.Nats.Tests.Integration/NatsFixture.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Nats.Tests.Integration/NatsFixture.cs)
-- [tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlTestFixture.cs](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlTestFixture.cs)
+- [tests/Headless.Messaging.Core.Tests.Harness/MessagingIntegrationTestsBase.cs](../../tests/Headless.Messaging.Core.Tests.Harness/MessagingIntegrationTestsBase.cs)
+- [tests/Headless.Messaging.Nats.Tests.Integration/NatsFixture.cs](../../tests/Headless.Messaging.Nats.Tests.Integration/NatsFixture.cs)
+- [tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlTestFixture.cs](../../tests/Headless.Messaging.PostgreSql.Tests.Integration/PostgreSqlTestFixture.cs)
 
 **Test scenarios:**
 - Integration — outbox publish stores a message in PostgreSQL and the message is then consumed through NATS by a registered subscriber.
@@ -431,9 +431,9 @@ The suite should prove behavior at the lowest layer that can prove it:
 
 ## Sources & References
 
-- [CLAUDE.md](/Users/xshaheen/Dev/framework/headless-framework/CLAUDE.md)
-- [tests/Headless.Messaging.Core.Tests.Harness/README.md](/Users/xshaheen/Dev/framework/headless-framework/tests/Headless.Messaging.Core.Tests.Harness/README.md)
-- [docs/solutions/guides/messaging-transport-provider-guide.md](/Users/xshaheen/Dev/framework/headless-framework/docs/solutions/guides/messaging-transport-provider-guide.md)
-- [docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md](/Users/xshaheen/Dev/framework/headless-framework/docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md)
-- [docs/solutions/concurrency/startup-pause-gating-and-half-open-recovery.md](/Users/xshaheen/Dev/framework/headless-framework/docs/solutions/concurrency/startup-pause-gating-and-half-open-recovery.md)
-- [docs/solutions/messaging/transport-wrapper-drift-and-doc-sync.md](/Users/xshaheen/Dev/framework/headless-framework/docs/solutions/messaging/transport-wrapper-drift-and-doc-sync.md)
+- [CLAUDE.md](../../CLAUDE.md)
+- [tests/Headless.Messaging.Core.Tests.Harness/README.md](../../tests/Headless.Messaging.Core.Tests.Harness/README.md)
+- [docs/solutions/guides/messaging-transport-provider-guide.md](../../docs/solutions/guides/messaging-transport-provider-guide.md)
+- [docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md](../../docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md)
+- [docs/solutions/concurrency/startup-pause-gating-and-half-open-recovery.md](../../docs/solutions/concurrency/startup-pause-gating-and-half-open-recovery.md)
+- [docs/solutions/messaging/transport-wrapper-drift-and-doc-sync.md](../../docs/solutions/messaging/transport-wrapper-drift-and-doc-sync.md)

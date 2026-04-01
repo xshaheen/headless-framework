@@ -47,6 +47,12 @@ public sealed class RabbitMqConsumerClientHarnessTests(RabbitMqFixture fixture) 
         }
 
         _connectionPools.Clear();
+
+        if (_serviceProvider is IAsyncDisposable disposable)
+        {
+            await disposable.DisposeAsync();
+        }
+
         await base.DisposeAsyncCore();
     }
 
