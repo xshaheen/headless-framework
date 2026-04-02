@@ -7,7 +7,6 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Testing.Tests;
 using Tests.Capabilities;
-using Xunit;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -31,7 +30,7 @@ public abstract class DataStorageTestsBase : TestBase
     /// <summary>
     /// Thread-safe counter for generating unique logical message IDs.
     /// </summary>
-    private static long _messageIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() << 20;
+    private static long _messageIdCounter;
 
     /// <summary>Creates a valid message for testing.</summary>
     protected static Message CreateMessage(string? messageId = null, string? messageName = null, object? value = null)
@@ -60,7 +59,7 @@ public abstract class DataStorageTestsBase : TestBase
         await act.Should().NotThrowAsync();
     }
 
-    public virtual async Task should_get_table_names()
+    public virtual Task should_get_table_names()
     {
         // given
         var initializer = GetInitializer();
@@ -74,7 +73,8 @@ public abstract class DataStorageTestsBase : TestBase
         publishedTable.Should().NotBeNullOrEmpty();
         receivedTable.Should().NotBeNullOrEmpty();
         lockTable.Should().NotBeNullOrEmpty();
-        await Task.CompletedTask;
+
+        return Task.CompletedTask;
     }
 
     public virtual async Task should_store_published_message()
@@ -380,7 +380,7 @@ public abstract class DataStorageTestsBase : TestBase
         deletedCount.Should().Be(1);
     }
 
-    public virtual async Task should_get_monitoring_api()
+    public virtual Task should_get_monitoring_api()
     {
         // Skip if storage doesn't support monitoring API
         if (!Capabilities.SupportsMonitoringApi)
@@ -396,7 +396,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         monitoringApi.Should().NotBeNull();
-        await Task.CompletedTask;
+        return Task.CompletedTask;
     }
 
     public virtual async Task should_handle_concurrent_storage_operations()

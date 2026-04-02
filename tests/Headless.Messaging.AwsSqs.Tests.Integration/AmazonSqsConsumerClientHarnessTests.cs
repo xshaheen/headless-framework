@@ -11,21 +11,23 @@ namespace Tests;
 [Collection<LocalStackTestFixture>]
 public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fixture) : ConsumerClientTestsBase
 {
-    protected override IConsumerClient GetConsumerClient()
+    protected override ValueTask<IConsumerClient> GetConsumerClientAsync()
     {
-        return new AmazonSqsConsumerClient(
-            $"consumer-tests-{Guid.NewGuid():N}",
-            1,
-            Options.Create(
-                new AmazonSqsOptions
-                {
-                    Region = Amazon.RegionEndpoint.USEast1,
-                    SnsServiceUrl = fixture.ConnectionString,
-                    SqsServiceUrl = fixture.ConnectionString,
-                    Credentials = new BasicAWSCredentials("test", "test"),
-                }
-            ),
-            NullLogger<AmazonSqsConsumerClient>.Instance
+        return ValueTask.FromResult<IConsumerClient>(
+            new AmazonSqsConsumerClient(
+                $"consumer-tests-{Guid.NewGuid():N}",
+                1,
+                Options.Create(
+                    new AmazonSqsOptions
+                    {
+                        Region = Amazon.RegionEndpoint.USEast1,
+                        SnsServiceUrl = fixture.ConnectionString,
+                        SqsServiceUrl = fixture.ConnectionString,
+                        Credentials = new BasicAWSCredentials("test", "test"),
+                    }
+                ),
+                NullLogger<AmazonSqsConsumerClient>.Instance
+            )
         );
     }
 
@@ -66,12 +68,6 @@ public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fi
 
     [Fact]
     public override Task should_have_valid_broker_address() => base.should_have_valid_broker_address();
-
-    [Fact(Skip = "SQS commit requires a real receipt handle and initialized queue state.")]
-    public override Task should_handle_null_sender_in_commit() => Task.CompletedTask;
-
-    [Fact(Skip = "SQS reject requires a real receipt handle and initialized queue state.")]
-    public override Task should_handle_null_sender_in_reject() => Task.CompletedTask;
 
     [Fact]
     public override Task should_invoke_log_callback_on_events() => base.should_invoke_log_callback_on_events();

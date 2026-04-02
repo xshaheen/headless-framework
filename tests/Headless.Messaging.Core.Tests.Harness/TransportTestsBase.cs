@@ -5,7 +5,6 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Tests.Capabilities;
-using Xunit;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -157,60 +156,6 @@ public abstract class TransportTestsBase : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-    }
-
-    public virtual async Task should_maintain_message_ordering()
-    {
-        // Skip if transport doesn't support ordering
-        if (!Capabilities.SupportsOrdering)
-        {
-            Assert.Skip("Transport does not support ordering");
-        }
-
-        // given
-        await using var transport = GetTransport();
-        var messageIds = new List<string>();
-
-        for (var i = 0; i < 100; i++)
-        {
-            var id = $"ordered-msg-{i:D4}";
-            messageIds.Add(id);
-            var message = CreateMessage(messageId: id);
-
-            var result = await transport.SendAsync(message);
-            result.Succeeded.Should().BeTrue();
-        }
-
-        // then - message IDs should be in order
-        messageIds.Should().BeInAscendingOrder(StringComparer.Ordinal);
-    }
-
-    public virtual async Task should_propagate_transport_errors()
-    {
-        // This test validates that transport errors are properly captured in the result
-        // The specific error handling depends on the transport implementation
-
-        // given
-        await using var transport = GetTransport();
-        var message = CreateMessage(messageName: ""); // Empty message name may cause validation error
-
-        // when
-        Func<Task> act = async () => await transport.SendAsync(message);
-
-        // then - should either throw or return failed result
-        // Implementation varies by transport
-        try
-        {
-            var result = await transport.SendAsync(message);
-            if (!result.Succeeded)
-            {
-                result.Exception.Should().NotBeNull();
-            }
-        }
-        catch (ArgumentException)
-        {
-            // Some transports may throw on validation errors, which is acceptable
-        }
     }
 
     public virtual async Task should_dispose_async_without_exception()

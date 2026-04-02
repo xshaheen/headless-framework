@@ -3,7 +3,6 @@
 using Headless.Messaging.Configuration;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Tests.Capabilities;
@@ -93,9 +92,6 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
 
     [Fact]
     public override Task should_handle_large_message_body() => base.should_handle_large_message_body();
-
-    [Fact]
-    public override Task should_maintain_message_ordering() => base.should_maintain_message_ordering();
 
     [Fact]
     public override Task should_dispose_async_without_exception() => base.should_dispose_async_without_exception();

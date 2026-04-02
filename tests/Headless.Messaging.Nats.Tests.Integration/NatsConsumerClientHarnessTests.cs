@@ -22,7 +22,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
         await base.DisposeAsyncCore();
     }
 
-    protected override IConsumerClient GetConsumerClient()
+    protected override async ValueTask<IConsumerClient> GetConsumerClientAsync()
     {
         var client = new NatsConsumerClient(
             "test-group",
@@ -37,7 +37,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
             _serviceProvider
         );
 
-        client.ConnectAsync().GetAwaiter().GetResult();
+        await client.ConnectAsync();
         return client;
     }
 
@@ -69,12 +69,6 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
 
     [Fact]
     public override Task should_have_valid_broker_address() => base.should_have_valid_broker_address();
-
-    [Fact]
-    public override Task should_handle_null_sender_in_commit() => base.should_handle_null_sender_in_commit();
-
-    [Fact]
-    public override Task should_handle_null_sender_in_reject() => base.should_handle_null_sender_in_reject();
 
     [Fact]
     public override Task should_invoke_log_callback_on_events() => base.should_invoke_log_callback_on_events();

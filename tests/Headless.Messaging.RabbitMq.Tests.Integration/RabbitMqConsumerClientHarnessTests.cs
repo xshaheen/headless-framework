@@ -15,7 +15,7 @@ public sealed class RabbitMqConsumerClientHarnessTests(RabbitMqFixture fixture) 
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
     private readonly List<ConnectionChannelPool> _connectionPools = [];
 
-    protected override IConsumerClient GetConsumerClient()
+    protected override ValueTask<IConsumerClient> GetConsumerClientAsync()
     {
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
         var rabbitOptions = Options.Create(
@@ -36,7 +36,9 @@ public sealed class RabbitMqConsumerClientHarnessTests(RabbitMqFixture fixture) 
         );
         _connectionPools.Add(pool);
 
-        return new RabbitMqConsumerClient($"test-group-{Guid.NewGuid():N}", 1, pool, rabbitOptions, _serviceProvider);
+        return ValueTask.FromResult<IConsumerClient>(
+            new RabbitMqConsumerClient($"test-group-{Guid.NewGuid():N}", 1, pool, rabbitOptions, _serviceProvider)
+        );
     }
 
     protected override async ValueTask DisposeAsyncCore()
@@ -84,12 +86,6 @@ public sealed class RabbitMqConsumerClientHarnessTests(RabbitMqFixture fixture) 
 
     [Fact]
     public override Task should_have_valid_broker_address() => base.should_have_valid_broker_address();
-
-    [Fact(Skip = "RabbitMQ commit requires a real delivery tag from a broker-delivered message.")]
-    public override Task should_handle_null_sender_in_commit() => Task.CompletedTask;
-
-    [Fact(Skip = "RabbitMQ reject requires a real delivery tag from a broker-delivered message.")]
-    public override Task should_handle_null_sender_in_reject() => Task.CompletedTask;
 
     [Fact]
     public override Task should_invoke_log_callback_on_events() => base.should_invoke_log_callback_on_events();

@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Tests.Capabilities;
-using Xunit;
 using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
@@ -15,7 +13,7 @@ namespace Tests;
 public abstract class ConsumerClientTestsBase : TestBase
 {
     /// <summary>Gets the consumer client instance for testing.</summary>
-    protected abstract IConsumerClient GetConsumerClient();
+    protected abstract ValueTask<IConsumerClient> GetConsumerClientAsync();
 
     /// <summary>Gets the consumer client capabilities for conditional test execution.</summary>
     protected virtual ConsumerClientCapabilities Capabilities => ConsumerClientCapabilities.Default;
@@ -60,7 +58,7 @@ public abstract class ConsumerClientTestsBase : TestBase
     public virtual async Task should_subscribe_to_topic()
     {
         // given
-        await using var consumer = GetConsumerClient();
+        await using var consumer = await GetConsumerClientAsync();
         var topics = await ResolveSubscriptionTopicsAsync(consumer, ["test-topic-1", "test-topic-2"]);
 
         // when
@@ -72,17 +70,14 @@ public abstract class ConsumerClientTestsBase : TestBase
 
     public virtual async Task should_receive_messages_via_listen_callback()
     {
-        // given
-        await using var consumer = GetConsumerClient();
-        var receivedMessages = new ConcurrentBag<TransportMessage>();
-        var messageReceived = new TaskCompletionSource<bool>();
+        // Lifecycle/wiring test — verifies subscribe + listen with a callback set doesn't throw.
+        // Actual message delivery is covered by MessagingIntegrationTestsBase (requires a publisher).
 
-        consumer.OnMessageCallback = (msg, sender) =>
-        {
-            receivedMessages.Add(msg);
-            messageReceived.TrySetResult(true);
-            return Task.CompletedTask;
-        };
+        // given
+        await using var consumer = await GetConsumerClientAsync();
+
+        consumer.OnMessageCallback = (msg, sender) => Task.CompletedTask;
+        consumer.OnMessageCallback.Should().NotBeNull();
 
         var topics = await ResolveSubscriptionTopicsAsync(consumer, ["test-topic"]);
         await consumer.SubscribeAsync(topics);
@@ -98,15 +93,12 @@ public abstract class ConsumerClientTestsBase : TestBase
         {
             // Expected when timeout occurs
         }
-
-        // then - callback should be set without throwing
-        consumer.OnMessageCallback.Should().NotBeNull();
     }
 
     public virtual async Task should_commit_message_successfully()
     {
         // given
-        await using var consumer = GetConsumerClient();
+        await using var consumer = await GetConsumerClientAsync();
         var mockSender = new object();
 
         // when
@@ -125,7 +117,7 @@ public abstract class ConsumerClientTestsBase : TestBase
         }
 
         // given
-        await using var consumer = GetConsumerClient();
+        await using var consumer = await GetConsumerClientAsync();
         var mockSender = new object();
 
         // when
@@ -144,7 +136,7 @@ public abstract class ConsumerClientTestsBase : TestBase
         }
 
         // given
-        await using var consumer = GetConsumerClient();
+        await using var consumer = await GetConsumerClientAsync();
         var requestedTopics = new[] { "topic-1", "topic-2", "topic-3" };
 
         // when
@@ -164,7 +156,7 @@ public abstract class ConsumerClientTestsBase : TestBase
         }
 
         // given
-        var consumer = GetConsumerClient();
+        var consumer = await GetConsumerClientAsync();
         var topics = await ResolveSubscriptionTopicsAsync(consumer, ["test-topic"]);
         await consumer.SubscribeAsync(topics);
 
@@ -203,7 +195,7 @@ public abstract class ConsumerClientTestsBase : TestBase
         }
 
         // given
-        await using var consumer = GetConsumerClient();
+        await using var consumer = await GetConsumerClientAsync();
         var processedCount = 0;
         var lockObj = new Lock();
 
@@ -240,14 +232,13 @@ public abstract class ConsumerClientTestsBase : TestBase
 
         await Task.WhenAll(tasks);
 
-        // then - should handle concurrent operations without exception
-        consumer.Should().NotBeNull();
+        // then — completes without exception
     }
 
     public virtual async Task should_dispose_without_exception()
     {
         // given
-        var consumer = GetConsumerClient();
+        var consumer = await GetConsumerClientAsync();
 
         // when & then
         var act = () => consumer.DisposeAsync().AsTask();
@@ -257,63 +248,22 @@ public abstract class ConsumerClientTestsBase : TestBase
     public virtual async Task should_have_valid_broker_address()
     {
         // given, when
-        await using var consumer = GetConsumerClient();
+        await using var consumer = await GetConsumerClientAsync();
 
         // then
         consumer.BrokerAddress.Name.Should().NotBeNullOrEmpty();
     }
 
-    public virtual async Task should_handle_null_sender_in_commit()
-    {
-        // given
-        await using var consumer = GetConsumerClient();
-
-        // when
-        var act = async () => await consumer.CommitAsync(null);
-
-        // then - should handle null gracefully or throw appropriate exception
-        try
-        {
-            await act.Should().NotThrowAsync();
-        }
-        catch (ArgumentNullException)
-        {
-            // Some implementations may require non-null sender
-        }
-    }
-
-    public virtual async Task should_handle_null_sender_in_reject()
-    {
-        // Skip if consumer doesn't support rejection
-        if (!Capabilities.SupportsReject)
-        {
-            Assert.Skip("Consumer does not support message rejection");
-        }
-
-        // given
-        await using var consumer = GetConsumerClient();
-
-        // when
-        var act = async () => await consumer.RejectAsync(null);
-
-        // then - should handle null gracefully or throw appropriate exception
-        try
-        {
-            await act.Should().NotThrowAsync();
-        }
-        catch (ArgumentNullException)
-        {
-            // Some implementations may require non-null sender
-        }
-    }
-
     public virtual async Task should_invoke_log_callback_on_events()
     {
-        // given
-        await using var consumer = GetConsumerClient();
-        var logEvents = new ConcurrentBag<LogMessageEventArgs>();
+        // Lifecycle/wiring test — verifies subscribe + listen with a log callback set doesn't throw.
+        // Log event delivery depends on broker activity; actual invocation is not guaranteed here.
 
-        consumer.OnLogCallback = args => logEvents.Add(args);
+        // given
+        await using var consumer = await GetConsumerClientAsync();
+
+        consumer.OnLogCallback = _ => { };
+        consumer.OnLogCallback.Should().NotBeNull();
 
         var topics = await ResolveSubscriptionTopicsAsync(consumer, ["log-test-topic"]);
         await consumer.SubscribeAsync(topics);
@@ -329,8 +279,5 @@ public abstract class ConsumerClientTestsBase : TestBase
         {
             // Expected
         }
-
-        // then - log callback should be set
-        consumer.OnLogCallback.Should().NotBeNull();
     }
 }

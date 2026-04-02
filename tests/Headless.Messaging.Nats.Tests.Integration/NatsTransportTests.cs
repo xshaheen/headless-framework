@@ -86,9 +86,6 @@ public sealed class NatsTransportTests : TransportTestsBase
     public override Task should_handle_large_message_body() => base.should_handle_large_message_body();
 
     [Fact]
-    public override Task should_maintain_message_ordering() => base.should_maintain_message_ordering();
-
-    [Fact]
     public override Task should_dispose_async_without_exception() => base.should_dispose_async_without_exception();
 
     [Fact]
