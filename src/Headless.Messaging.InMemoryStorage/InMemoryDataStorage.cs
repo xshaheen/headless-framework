@@ -19,12 +19,19 @@ internal sealed class InMemoryDataStorage(
     TimeProvider timeProvider
 ) : IDataStorage
 {
-    public static ConcurrentDictionary<long, MemoryMessage> PublishedMessages { get; } = new();
+    public ConcurrentDictionary<long, MemoryMessage> PublishedMessages { get; } = new();
 
-    public static ConcurrentDictionary<long, MemoryMessage> ReceivedMessages { get; } = new();
+    public ConcurrentDictionary<long, MemoryMessage> ReceivedMessages { get; } = new();
 
-    internal static ConcurrentDictionary<string, (string Instance, DateTime ExpiresAt)> Locks { get; } =
+    internal ConcurrentDictionary<string, (string Instance, DateTime ExpiresAt)> Locks { get; } =
         new(StringComparer.Ordinal);
+
+    public void Clear()
+    {
+        PublishedMessages.Clear();
+        ReceivedMessages.Clear();
+        Locks.Clear();
+    }
 
     public ValueTask<bool> AcquireLockAsync(
         string key,
@@ -362,6 +369,6 @@ internal sealed class InMemoryDataStorage(
 
     public IMonitoringApi GetMonitoringApi()
     {
-        return new InMemoryMonitoringApi(timeProvider);
+        return new InMemoryMonitoringApi(this, timeProvider);
     }
 }

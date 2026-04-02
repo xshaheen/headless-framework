@@ -2,6 +2,8 @@
 
 using Headless.Checks;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.InMemoryQueue;
+using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Testing.Internal;
@@ -236,10 +238,21 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Resets all observation state and cancels pending waiters.
-    /// Call between tests when using a shared fixture.
+    /// Resets all in-memory messaging state: recorded observations, pending queue messages,
+    /// and persisted storage data. Call between tests when using a shared fixture.
     /// </summary>
-    public void Clear() => _store.Clear();
+    /// <remarks>
+    /// Assumes no active message processing is in flight. Call this at test boundaries
+    /// (e.g., between tests) when consumers are idle. If you need to ensure quiescence
+    /// programmatically, pause consumers via <c>PauseAsync</c> before calling this method.
+    /// </remarks>
+    public void Clear()
+    {
+        _store.Clear();
+
+        ServiceProvider.GetService<MemoryQueue>()?.DrainAllPendingMessages();
+        ServiceProvider.GetService<InMemoryDataStorage>()?.Clear();
+    }
 
     // -------------------------------------------------------------------------
     // Service access

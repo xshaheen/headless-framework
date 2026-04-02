@@ -58,8 +58,26 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     /// <param name="groupId">The consumer group ID</param>
     public void Unsubscribe(string groupId)
     {
-        _consumerClients.Remove(groupId);
+        lock (_lock)
+        {
+            _consumerClients.Remove(groupId);
+        }
+
         logger.ConsumerRemoved(groupId);
+    }
+
+    /// <summary>
+    /// Drains all pending messages from every registered consumer client.
+    /// </summary>
+    public void DrainAllPendingMessages()
+    {
+        lock (_lock)
+        {
+            foreach (var client in _consumerClients.Values)
+            {
+                client.DrainPendingMessages();
+            }
+        }
     }
 
     /// <summary>

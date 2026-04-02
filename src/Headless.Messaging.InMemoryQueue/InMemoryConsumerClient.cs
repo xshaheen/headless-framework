@@ -70,6 +70,19 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     }
 
     /// <summary>
+    /// Drains all pending messages from the internal queue without processing them.
+    /// </summary>
+    public void DrainPendingMessages()
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
+        while (_messageQueue.TryTake(out _)) { }
+    }
+
+    /// <summary>
     /// Adds a message to the message queue for processing.
     /// </summary>
     /// <param name="message">The transport message to add</param>

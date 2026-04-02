@@ -24,7 +24,8 @@ public static class InMemoryStorageSetup
             services.AddSingleton(new MessageStorageMarkerService("InMemory"));
 
             services.AddTransient<IOutboxTransaction, InMemoryOutboxTransaction>();
-            services.AddSingleton<IDataStorage, InMemoryDataStorage>();
+            services.AddSingleton<InMemoryDataStorage>();
+            services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<InMemoryDataStorage>());
             services.AddSingleton<IStorageInitializer, InMemoryStorageInitializer>();
         }
     }

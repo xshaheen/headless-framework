@@ -7,13 +7,13 @@ using Headless.Primitives;
 
 namespace Headless.Messaging.InMemoryStorage;
 
-internal sealed class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonitoringApi
+internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimeProvider timeProvider) : IMonitoringApi
 {
     public ValueTask<MediumMessage?> GetPublishedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(
-            InMemoryDataStorage.PublishedMessages.TryGetValue(id, out var message) ? (MediumMessage?)message : null
+            storage.PublishedMessages.TryGetValue(id, out var message) ? (MediumMessage?)message : null
         );
     }
 
@@ -21,7 +21,7 @@ internal sealed class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonito
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(
-            InMemoryDataStorage.ReceivedMessages.TryGetValue(id, out var message) ? (MediumMessage?)message : null
+            storage.ReceivedMessages.TryGetValue(id, out var message) ? (MediumMessage?)message : null
         );
     }
 
@@ -31,19 +31,11 @@ internal sealed class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonito
 
         var stats = new StatisticsView
         {
-            PublishedSucceeded = InMemoryDataStorage.PublishedMessages.Values.Count(x =>
-                x.StatusName == StatusName.Succeeded
-            ),
-            ReceivedSucceeded = InMemoryDataStorage.ReceivedMessages.Values.Count(x =>
-                x.StatusName == StatusName.Succeeded
-            ),
-            PublishedFailed = InMemoryDataStorage.PublishedMessages.Values.Count(x =>
-                x.StatusName == StatusName.Failed
-            ),
-            ReceivedFailed = InMemoryDataStorage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Failed),
-            PublishedDelayed = InMemoryDataStorage.PublishedMessages.Values.Count(x =>
-                x.StatusName == StatusName.Delayed
-            ),
+            PublishedSucceeded = storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded),
+            ReceivedSucceeded = storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded),
+            PublishedFailed = storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Failed),
+            ReceivedFailed = storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Failed),
+            PublishedDelayed = storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Delayed),
         };
 
         return ValueTask.FromResult(stats);
@@ -76,7 +68,7 @@ internal sealed class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonito
 
         if (query.MessageType == MessageType.Publish)
         {
-            var expression = InMemoryDataStorage.PublishedMessages.Values.Where(x => true);
+            var expression = storage.PublishedMessages.Values.Where(x => true);
 
             if (!string.IsNullOrEmpty(query.StatusName))
             {
@@ -124,7 +116,7 @@ internal sealed class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonito
         }
         else
         {
-            var expression = InMemoryDataStorage.ReceivedMessages.Values.Where(x => true);
+            var expression = storage.ReceivedMessages.Values.Where(x => true);
 
             if (!string.IsNullOrEmpty(query.StatusName))
             {
@@ -183,33 +175,25 @@ internal sealed class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonito
     public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<long>(
-            InMemoryDataStorage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Failed)
-        );
+        return new ValueTask<long>(storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Failed));
     }
 
     public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<long>(
-            InMemoryDataStorage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded)
-        );
+        return new ValueTask<long>(storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded));
     }
 
     public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<long>(
-            InMemoryDataStorage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Failed)
-        );
+        return new ValueTask<long>(storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Failed));
     }
 
     public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return new ValueTask<long>(
-            InMemoryDataStorage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded)
-        );
+        return new ValueTask<long>(storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded));
     }
 
     private ValueTask<Dictionary<DateTime, int>> _GetHourlyTimelineStats(MessageType type, string statusName)
@@ -232,7 +216,7 @@ internal sealed class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonito
 
         if (type == MessageType.Publish)
         {
-            valuesMap = InMemoryDataStorage
+            valuesMap = storage
                 .PublishedMessages.Values.Where(x =>
                     string.Equals(x.StatusName.ToString(), statusName, StringComparison.Ordinal)
                 )
@@ -241,7 +225,7 @@ internal sealed class InMemoryMonitoringApi(TimeProvider timeProvider) : IMonito
         }
         else
         {
-            valuesMap = InMemoryDataStorage
+            valuesMap = storage
                 .ReceivedMessages.Values.Where(x =>
                     string.Equals(x.StatusName.ToString(), statusName, StringComparison.Ordinal)
                 )

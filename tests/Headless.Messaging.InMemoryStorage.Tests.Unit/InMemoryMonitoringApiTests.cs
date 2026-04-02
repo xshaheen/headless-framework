@@ -14,7 +14,6 @@ using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
 
-[Collection("InMemoryStorage")]
 public sealed class InMemoryMonitoringApiTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
@@ -29,11 +28,6 @@ public sealed class InMemoryMonitoringApiTests : TestBase
 
     public InMemoryMonitoringApiTests()
     {
-        // Clear static state before each test
-        InMemoryDataStorage.PublishedMessages.Clear();
-        InMemoryDataStorage.ReceivedMessages.Clear();
-        InMemoryDataStorage.Locks.Clear();
-
         _timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 15, 10, 0, 0, TimeSpan.Zero));
         _serializer.Serialize(Arg.Any<Message>()).Returns(call => JsonSerializer.Serialize(call.Arg<Message>()));
         _serializer
@@ -42,7 +36,7 @@ public sealed class InMemoryMonitoringApiTests : TestBase
         _idGenerator.Create().Returns(_ => Interlocked.Increment(ref _idCounter));
 
         _storage = new InMemoryDataStorage(_options, _serializer, _idGenerator, _timeProvider);
-        _sut = new InMemoryMonitoringApi(_timeProvider);
+        _sut = new InMemoryMonitoringApi(_storage, _timeProvider);
     }
 
     [Fact]
@@ -99,7 +93,7 @@ public sealed class InMemoryMonitoringApiTests : TestBase
             content,
             cancellationToken: AbortToken
         );
-        var id = InMemoryDataStorage.ReceivedMessages.Values.Single().StorageId;
+        var id = _storage.ReceivedMessages.Values.Single().StorageId;
 
         // when
         var result = await _sut.GetReceivedMessageAsync(id, AbortToken);
@@ -426,10 +420,8 @@ public sealed class InMemoryMonitoringApiTests : TestBase
         // given
         var message = _CreateMessage("2014");
         var stored = await _storage.StoreMessageAsync("test.topic.name", message, cancellationToken: AbortToken);
-        InMemoryDataStorage.PublishedMessages[stored.StorageId].ExpiresAt = _timeProvider
-            .GetUtcNow()
-            .UtcDateTime.AddHours(1);
-        InMemoryDataStorage.PublishedMessages[stored.StorageId].Retries = 3;
+        _storage.PublishedMessages[stored.StorageId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
+        _storage.PublishedMessages[stored.StorageId].Retries = 3;
 
         var query = new MessageQuery
         {

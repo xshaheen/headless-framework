@@ -13,7 +13,6 @@ using MessagingHeaders = Headless.Messaging.Headers;
 
 namespace Tests;
 
-[Collection("InMemoryStorage")]
 public sealed class InMemoryDataStorageTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
@@ -27,11 +26,6 @@ public sealed class InMemoryDataStorageTests : TestBase
 
     public InMemoryDataStorageTests()
     {
-        // Clear static state before each test
-        InMemoryDataStorage.PublishedMessages.Clear();
-        InMemoryDataStorage.ReceivedMessages.Clear();
-        InMemoryDataStorage.Locks.Clear();
-
         _timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 15, 10, 0, 0, TimeSpan.Zero));
         _serializer.Serialize(Arg.Any<Message>()).Returns(call => JsonSerializer.Serialize(call.Arg<Message>()));
         _serializer
@@ -57,9 +51,9 @@ public sealed class InMemoryDataStorageTests : TestBase
         result.Retries.Should().Be(0);
         result.Added.Should().Be(_timeProvider.GetUtcNow().UtcDateTime);
 
-        InMemoryDataStorage.PublishedMessages.Should().ContainKey(result.StorageId);
-        InMemoryDataStorage.PublishedMessages[result.StorageId].Name.Should().Be("test.topic");
-        InMemoryDataStorage.PublishedMessages[result.StorageId].StatusName.Should().Be(StatusName.Scheduled);
+        _sut.PublishedMessages.Should().ContainKey(result.StorageId);
+        _sut.PublishedMessages[result.StorageId].Name.Should().Be("test.topic");
+        _sut.PublishedMessages[result.StorageId].StatusName.Should().Be(StatusName.Scheduled);
     }
 
     [Fact]
@@ -76,7 +70,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         result.Retries.Should().Be(0);
         result.Added.Should().Be(_timeProvider.GetUtcNow().UtcDateTime);
 
-        var storedMessage = InMemoryDataStorage.ReceivedMessages.Values.First();
+        var storedMessage = _sut.ReceivedMessages.Values.First();
         storedMessage.Name.Should().Be("test.topic");
         storedMessage.Group.Should().Be("consumer-group");
         storedMessage.StatusName.Should().Be(StatusName.Scheduled);
@@ -98,7 +92,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         );
 
         // then
-        var storedMessage = InMemoryDataStorage.ReceivedMessages.Values.First();
+        var storedMessage = _sut.ReceivedMessages.Values.First();
         storedMessage.Name.Should().Be("failed.topic");
         storedMessage.Group.Should().Be("error-group");
         storedMessage.Content.Should().Be(content);
@@ -120,8 +114,8 @@ public sealed class InMemoryDataStorageTests : TestBase
         await _sut.ChangePublishStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // then
-        InMemoryDataStorage.PublishedMessages[stored.StorageId].StatusName.Should().Be(StatusName.Succeeded);
-        InMemoryDataStorage.PublishedMessages[stored.StorageId].ExpiresAt.Should().Be(stored.ExpiresAt);
+        _sut.PublishedMessages[stored.StorageId].StatusName.Should().Be(StatusName.Succeeded);
+        _sut.PublishedMessages[stored.StorageId].ExpiresAt.Should().Be(stored.ExpiresAt);
     }
 
     [Fact]
@@ -136,7 +130,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         await _sut.ChangeReceiveStateAsync(stored, StatusName.Failed, AbortToken);
 
         // then
-        InMemoryDataStorage.ReceivedMessages[stored.StorageId].StatusName.Should().Be(StatusName.Failed);
+        _sut.ReceivedMessages[stored.StorageId].StatusName.Should().Be(StatusName.Failed);
     }
 
     [Fact]
@@ -150,8 +144,8 @@ public sealed class InMemoryDataStorageTests : TestBase
         await _sut.ChangePublishStateToDelayedAsync([stored1.StorageId, stored2.StorageId], AbortToken);
 
         // then
-        InMemoryDataStorage.PublishedMessages[stored1.StorageId].StatusName.Should().Be(StatusName.Delayed);
-        InMemoryDataStorage.PublishedMessages[stored2.StorageId].StatusName.Should().Be(StatusName.Delayed);
+        _sut.PublishedMessages[stored1.StorageId].StatusName.Should().Be(StatusName.Delayed);
+        _sut.PublishedMessages[stored2.StorageId].StatusName.Should().Be(StatusName.Delayed);
     }
 
     [Fact]
@@ -239,7 +233,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         var stored = await _sut.StoreMessageAsync("topic", _CreateMessage("1007"), cancellationToken: AbortToken);
 
         // Set retries to max
-        InMemoryDataStorage.PublishedMessages[stored.StorageId].Retries = _options.Value.FailedRetryCount;
+        _sut.PublishedMessages[stored.StorageId].Retries = _options.Value.FailedRetryCount;
 
         _timeProvider.Advance(TimeSpan.FromMinutes(5));
 
@@ -275,16 +269,12 @@ public sealed class InMemoryDataStorageTests : TestBase
         await _sut.ChangePublishStateAsync(expired, StatusName.Failed, cancellationToken: AbortToken);
         await _sut.ChangePublishStateAsync(notExpired, StatusName.Succeeded, cancellationToken: AbortToken);
 
-        InMemoryDataStorage.PublishedMessages[expired.StorageId].ExpiresAt = _timeProvider
-            .GetUtcNow()
-            .UtcDateTime.AddHours(-1);
-        InMemoryDataStorage.PublishedMessages[notExpired.StorageId].ExpiresAt = _timeProvider
-            .GetUtcNow()
-            .UtcDateTime.AddHours(1);
+        _sut.PublishedMessages[expired.StorageId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(-1);
+        _sut.PublishedMessages[notExpired.StorageId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
 
         // when
         var deleted = await _sut.DeleteExpiresAsync(
-            nameof(InMemoryDataStorage.PublishedMessages),
+            nameof(_sut.PublishedMessages),
             _timeProvider.GetUtcNow().UtcDateTime,
             batchCount: 100,
             cancellationToken: AbortToken
@@ -292,8 +282,8 @@ public sealed class InMemoryDataStorageTests : TestBase
 
         // then
         deleted.Should().Be(1);
-        InMemoryDataStorage.PublishedMessages.Should().NotContainKey(expired.StorageId);
-        InMemoryDataStorage.PublishedMessages.Should().ContainKey(notExpired.StorageId);
+        _sut.PublishedMessages.Should().NotContainKey(expired.StorageId);
+        _sut.PublishedMessages.Should().ContainKey(notExpired.StorageId);
     }
 
     [Fact]
@@ -310,16 +300,12 @@ public sealed class InMemoryDataStorageTests : TestBase
         await _sut.ChangeReceiveStateAsync(msg1, StatusName.Failed, AbortToken);
         await _sut.ChangeReceiveStateAsync(msg2, StatusName.Succeeded, AbortToken);
 
-        InMemoryDataStorage.ReceivedMessages[msg1.StorageId].ExpiresAt = _timeProvider
-            .GetUtcNow()
-            .UtcDateTime.AddHours(-1);
-        InMemoryDataStorage.ReceivedMessages[msg2.StorageId].ExpiresAt = _timeProvider
-            .GetUtcNow()
-            .UtcDateTime.AddHours(1);
+        _sut.ReceivedMessages[msg1.StorageId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(-1);
+        _sut.ReceivedMessages[msg2.StorageId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
 
         // when
         var deleted = await _sut.DeleteExpiresAsync(
-            nameof(InMemoryDataStorage.ReceivedMessages),
+            nameof(_sut.ReceivedMessages),
             _timeProvider.GetUtcNow().UtcDateTime,
             batchCount: 100,
             cancellationToken: AbortToken
@@ -327,8 +313,8 @@ public sealed class InMemoryDataStorageTests : TestBase
 
         // then
         deleted.Should().Be(1);
-        InMemoryDataStorage.ReceivedMessages.Should().NotContainKey(msg1.StorageId);
-        InMemoryDataStorage.ReceivedMessages.Should().ContainKey(msg2.StorageId);
+        _sut.ReceivedMessages.Should().NotContainKey(msg1.StorageId);
+        _sut.ReceivedMessages.Should().ContainKey(msg2.StorageId);
     }
 
     [Fact]
@@ -343,14 +329,12 @@ public sealed class InMemoryDataStorageTests : TestBase
                 cancellationToken: AbortToken
             );
             await _sut.ChangePublishStateAsync(msg, StatusName.Failed, cancellationToken: AbortToken);
-            InMemoryDataStorage.PublishedMessages[msg.StorageId].ExpiresAt = _timeProvider
-                .GetUtcNow()
-                .UtcDateTime.AddHours(-1);
+            _sut.PublishedMessages[msg.StorageId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(-1);
         }
 
         // when
         var deleted = await _sut.DeleteExpiresAsync(
-            nameof(InMemoryDataStorage.PublishedMessages),
+            nameof(_sut.PublishedMessages),
             _timeProvider.GetUtcNow().UtcDateTime,
             batchCount: 5,
             cancellationToken: AbortToken
@@ -358,7 +342,7 @@ public sealed class InMemoryDataStorageTests : TestBase
 
         // then
         deleted.Should().Be(5);
-        InMemoryDataStorage.PublishedMessages.Should().HaveCount(5);
+        _sut.PublishedMessages.Should().HaveCount(5);
     }
 
     [Fact]
@@ -367,13 +351,11 @@ public sealed class InMemoryDataStorageTests : TestBase
         // given
         var delayed = await _sut.StoreMessageAsync("topic", _CreateMessage("1111"), cancellationToken: AbortToken);
         await _sut.ChangePublishStateAsync(delayed, StatusName.Delayed, cancellationToken: AbortToken);
-        InMemoryDataStorage.PublishedMessages[delayed.StorageId].ExpiresAt = _timeProvider
-            .GetUtcNow()
-            .UtcDateTime.AddHours(-1);
+        _sut.PublishedMessages[delayed.StorageId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(-1);
 
         // when
         var deleted = await _sut.DeleteExpiresAsync(
-            nameof(InMemoryDataStorage.PublishedMessages),
+            nameof(_sut.PublishedMessages),
             _timeProvider.GetUtcNow().UtcDateTime,
             batchCount: 100,
             cancellationToken: AbortToken
@@ -381,7 +363,7 @@ public sealed class InMemoryDataStorageTests : TestBase
 
         // then
         deleted.Should().Be(0);
-        InMemoryDataStorage.PublishedMessages.Should().ContainKey(delayed.StorageId);
+        _sut.PublishedMessages.Should().ContainKey(delayed.StorageId);
     }
 
     [Fact]
@@ -396,7 +378,7 @@ public sealed class InMemoryDataStorageTests : TestBase
 
         // then
         result.Should().Be(1);
-        InMemoryDataStorage.ReceivedMessages.Should().NotContainKey(msg.StorageId);
+        _sut.ReceivedMessages.Should().NotContainKey(msg.StorageId);
     }
 
     [Fact]
@@ -422,7 +404,7 @@ public sealed class InMemoryDataStorageTests : TestBase
 
         // then
         result.Should().Be(1);
-        InMemoryDataStorage.PublishedMessages.Should().NotContainKey(msg.StorageId);
+        _sut.PublishedMessages.Should().NotContainKey(msg.StorageId);
     }
 
     [Fact]
@@ -431,9 +413,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         // given
         var msg = await _sut.StoreMessageAsync("topic", _CreateMessage("1010"), cancellationToken: AbortToken);
         await _sut.ChangePublishStateAsync(msg, StatusName.Delayed, cancellationToken: AbortToken);
-        InMemoryDataStorage.PublishedMessages[msg.StorageId].ExpiresAt = _timeProvider
-            .GetUtcNow()
-            .UtcDateTime.AddMinutes(1);
+        _sut.PublishedMessages[msg.StorageId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(1);
 
         var scheduledMessages = new List<MediumMessage>();
 
@@ -457,9 +437,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         // given
         var msg = await _sut.StoreMessageAsync("topic", _CreateMessage("1011"), cancellationToken: AbortToken);
         await _sut.ChangePublishStateAsync(msg, StatusName.Queued, cancellationToken: AbortToken);
-        InMemoryDataStorage.PublishedMessages[msg.StorageId].ExpiresAt = _timeProvider
-            .GetUtcNow()
-            .UtcDateTime.AddMinutes(-2);
+        _sut.PublishedMessages[msg.StorageId].ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-2);
 
         var scheduledMessages = new List<MediumMessage>();
 
@@ -509,7 +487,7 @@ public sealed class InMemoryDataStorageTests : TestBase
         );
 
         // then
-        InMemoryDataStorage.PublishedMessages.Should().HaveCount(messageCount);
+        _sut.PublishedMessages.Should().HaveCount(messageCount);
     }
 
     private static Message _CreateMessage(string id)
