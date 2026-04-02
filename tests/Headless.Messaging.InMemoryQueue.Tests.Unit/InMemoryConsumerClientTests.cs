@@ -490,6 +490,73 @@ public sealed class InMemoryConsumerClientTests : TestBase
         receivedCount.Should().Be(1);
     }
 
+    // -------------------------------------------------------------------------
+    // DrainPendingMessages
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task should_drain_pending_messages_without_processing()
+    {
+        // given
+        await _client.SubscribeAsync(["test-topic"]);
+
+        _queue.Send(_CreateTestMessage("drain-1", "test-topic"));
+        _queue.Send(_CreateTestMessage("drain-2", "test-topic"));
+
+        // when — drain before any listener picks them up
+        _client.DrainPendingMessages();
+
+        // then — start listening; no messages should arrive
+        TransportMessage? receivedMessage = null;
+        _client.OnMessageCallback = (msg, _) =>
+        {
+            receivedMessage = msg;
+            return Task.CompletedTask;
+        };
+
+        using var cts = new CancellationTokenSource();
+        var listenTask = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await _client.ListeningAsync(TimeSpan.FromMilliseconds(200), cts.Token);
+                }
+                catch (OperationCanceledException) { }
+            },
+            AbortToken
+        );
+
+        await Task.Delay(300, AbortToken);
+        await cts.CancelAsync();
+
+        receivedMessage.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_not_throw_when_draining_disposed_client()
+    {
+        // given
+        var logger = Substitute.For<ILogger<MemoryQueue>>();
+        var queue = new MemoryQueue(logger);
+        var client = new InMemoryConsumerClient(queue, "disposed-group", 1);
+        await client.DisposeAsync();
+
+        // when / then
+        var act = () => client.DrainPendingMessages();
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void should_not_throw_when_draining_empty_queue()
+    {
+        // given — client created but no messages enqueued
+        var act = () => _client.DrainPendingMessages();
+
+        // when / then
+        act.Should().NotThrow();
+    }
+
     private static TransportMessage _CreateTestMessage(string id, string topic)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)

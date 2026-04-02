@@ -490,6 +490,44 @@ public sealed class InMemoryDataStorageTests : TestBase
         _sut.PublishedMessages.Should().HaveCount(messageCount);
     }
 
+    // -------------------------------------------------------------------------
+    // Clear
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task should_clear_all_state()
+    {
+        // given — populate all three dictionaries
+        await _sut.StoreMessageAsync("topic", _CreateMessage("c1"), cancellationToken: AbortToken);
+        await _sut.StoreReceivedMessageAsync("topic", "group", _CreateMessage("c2"), cancellationToken: AbortToken);
+        await _sut.AcquireLockAsync("lock-key", TimeSpan.FromMinutes(1), "inst", AbortToken);
+
+        _sut.PublishedMessages.Should().NotBeEmpty();
+        _sut.ReceivedMessages.Should().NotBeEmpty();
+        _sut.Locks.Should().NotBeEmpty();
+
+        // when
+        _sut.Clear();
+
+        // then
+        _sut.PublishedMessages.Should().BeEmpty();
+        _sut.ReceivedMessages.Should().BeEmpty();
+        _sut.Locks.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_not_throw_when_clear_called_on_empty_storage()
+    {
+        // given — fresh instance, nothing stored
+        var act = () => _sut.Clear();
+
+        // when / then
+        act.Should().NotThrow();
+        _sut.PublishedMessages.Should().BeEmpty();
+        _sut.ReceivedMessages.Should().BeEmpty();
+        _sut.Locks.Should().BeEmpty();
+    }
+
     private static Message _CreateMessage(string id)
     {
         return new Message(

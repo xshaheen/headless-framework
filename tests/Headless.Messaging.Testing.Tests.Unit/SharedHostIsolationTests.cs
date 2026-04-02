@@ -1,6 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
+using Headless.Messaging.Persistence;
 using Headless.Messaging.Testing;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -89,6 +92,37 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
     }
 
     [Fact]
+    public async Task should_reset_storage_layer_after_clear()
+    {
+        _harness.Clear();
+
+        // Publish and consume to populate storage
+        await _harness.Publisher.PublishAsync(new AlphaEvent("S1"), AbortToken);
+        await _harness.WaitForConsumed<AlphaEvent>(TimeSpan.FromSeconds(5), AbortToken);
+
+        // Verify storage has received-message data before clear
+        // (test harness uses IDirectPublisher which bypasses outbox storage,
+        //  but consumer pipeline stores in ReceivedMessages)
+        var monitoring = _harness.ServiceProvider.GetRequiredService<IDataStorage>().GetMonitoringApi();
+        var query = new MessageQuery
+        {
+            MessageType = MessageType.Subscribe,
+            CurrentPage = 0,
+            PageSize = 10,
+        };
+        var pageBefore = await monitoring.GetMessagesAsync(query, AbortToken);
+        pageBefore.Items.Should().NotBeEmpty();
+
+        // Clear all state
+        _harness.Clear();
+
+        // Verify storage is empty (re-create monitoring API to read fresh state)
+        var monitoringAfter = _harness.ServiceProvider.GetRequiredService<IDataStorage>().GetMonitoringApi();
+        var pageAfter = await monitoringAfter.GetMessagesAsync(query, AbortToken);
+        pageAfter.Items.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_support_full_publish_consume_cycle_after_clear()
     {
         _harness.Clear();
@@ -115,5 +149,8 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
         var act = () => _harness.Clear();
 
         act.Should().NotThrow();
+        _harness.Published.Should().BeEmpty();
+        _harness.Consumed.Should().BeEmpty();
+        _harness.Faulted.Should().BeEmpty();
     }
 }

@@ -79,7 +79,14 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
             return;
         }
 
-        while (_messageQueue.TryTake(out _)) { }
+        try
+        {
+            while (_messageQueue.TryTake(out _)) { }
+        }
+        catch (ObjectDisposedException) when (Volatile.Read(ref _disposed) != 0)
+        {
+            // Disposed concurrently — nothing left to drain.
+        }
     }
 
     /// <summary>

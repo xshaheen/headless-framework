@@ -71,12 +71,15 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     /// </summary>
     public void DrainAllPendingMessages()
     {
+        List<InMemoryConsumerClient> snapshot;
         lock (_lock)
         {
-            foreach (var client in _consumerClients.Values)
-            {
-                client.DrainPendingMessages();
-            }
+            snapshot = [.. _consumerClients.Values];
+        }
+
+        foreach (var client in snapshot)
+        {
+            client.DrainPendingMessages();
         }
     }
 

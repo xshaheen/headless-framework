@@ -394,6 +394,91 @@ public sealed class MemoryQueueTests : TestBase
         receivedMessages.Should().HaveCount(1);
     }
 
+    // -------------------------------------------------------------------------
+    // DrainAllPendingMessages
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task should_drain_all_pending_messages_from_multiple_clients()
+    {
+        // given
+        var logger = Substitute.For<ILogger<MemoryQueue>>();
+        var queue = new MemoryQueue(logger);
+
+        var client1 = new InMemoryConsumerClient(queue, "drain-group-1", 1);
+        var client2 = new InMemoryConsumerClient(queue, "drain-group-2", 1);
+
+        await client1.SubscribeAsync(["drain-topic"]);
+        await client2.SubscribeAsync(["drain-topic"]);
+
+        // Enqueue messages (goes to both groups via Send)
+        queue.Send(_CreateTestMessage("d1", "drain-topic"));
+        queue.Send(_CreateTestMessage("d2", "drain-topic"));
+
+        // when
+        queue.DrainAllPendingMessages();
+
+        // then — listeners should receive nothing
+        var received1 = new List<TransportMessage>();
+        var received2 = new List<TransportMessage>();
+
+        client1.OnMessageCallback = (msg, _) =>
+        {
+            received1.Add(msg);
+            return Task.CompletedTask;
+        };
+        client2.OnMessageCallback = (msg, _) =>
+        {
+            received2.Add(msg);
+            return Task.CompletedTask;
+        };
+
+        using var cts = new CancellationTokenSource();
+        var listen1 = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await client1.ListeningAsync(TimeSpan.FromMilliseconds(200), cts.Token);
+                }
+                catch (OperationCanceledException) { }
+            },
+            AbortToken
+        );
+        var listen2 = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await client2.ListeningAsync(TimeSpan.FromMilliseconds(200), cts.Token);
+                }
+                catch (OperationCanceledException) { }
+            },
+            AbortToken
+        );
+
+        await Task.Delay(300, AbortToken);
+        await cts.CancelAsync();
+
+        received1.Should().BeEmpty();
+        received2.Should().BeEmpty();
+
+        await client1.DisposeAsync();
+        await client2.DisposeAsync();
+    }
+
+    [Fact]
+    public void should_not_throw_when_draining_with_no_clients()
+    {
+        // given — queue with no registered clients
+        var logger = Substitute.For<ILogger<MemoryQueue>>();
+        var queue = new MemoryQueue(logger);
+
+        // when / then
+        var act = () => queue.DrainAllPendingMessages();
+        act.Should().NotThrow();
+    }
+
     private static TransportMessage _CreateTestMessage(string id, string topic)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
