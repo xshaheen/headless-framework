@@ -62,12 +62,14 @@ public static class TestHttpContextExtensions
     /// </summary>
     public static HttpContext SetHttpContext(
         this IServiceProvider serviceProvider,
-        string? remoteIp,
+        string remoteIp,
         ClaimsPrincipal? principal = null,
         string? userAgent = null
     )
     {
-        var ip = remoteIp is not null ? IPAddress.Parse(remoteIp) : null;
+        ArgumentException.ThrowIfNullOrEmpty(remoteIp);
+
+        var ip = IPAddress.Parse(remoteIp);
         return serviceProvider.SetHttpContext(principal, ip, userAgent);
     }
 }

@@ -31,7 +31,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
     private Action<DatabaseResetOptions>? _configureDatabaseReset;
     private readonly SemaphoreSlim _initGate = new(1, 1);
     private readonly SemaphoreSlim _resetGate = new(1, 1);
-    private WebApplicationFactory<TProgram>? _factory;
+    private volatile WebApplicationFactory<TProgram>? _factory;
     private DatabaseReset? _databaseReset;
     private DbConnection? _resetConnection;
     private bool _disposed;
@@ -231,10 +231,19 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
             return;
         }
 
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
         await _initGate.WaitAsync().ConfigureAwait(false);
 
         try
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (_factory is not null)
+            {
+                return;
+            }
+
             _factory = new ServerFactory(_configureTestServices, _configureWebHost);
 
             // Force host startup — triggers ConfigureTestServices
@@ -282,7 +291,8 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
             return;
         }
 
-        // Acquire the reset gate to wait for any in-flight reset to complete.
+        // Acquire both gates to ensure no initialization or reset is in flight.
+        await _initGate.WaitAsync().ConfigureAwait(false);
         await _resetGate.WaitAsync().ConfigureAwait(false);
 
         try
@@ -299,16 +309,17 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
                 await _resetConnection.DisposeAsync().ConfigureAwait(false);
                 _resetConnection = null;
             }
+
+            if (_factory is not null)
+            {
+                await _factory.DisposeAsync().ConfigureAwait(false);
+                _factory = null;
+            }
         }
         finally
         {
             _resetGate.Release();
-        }
-
-        if (_factory is not null)
-        {
-            await _factory.DisposeAsync().ConfigureAwait(false);
-            _factory = null;
+            _initGate.Release();
         }
 
         _initGate.Dispose();
