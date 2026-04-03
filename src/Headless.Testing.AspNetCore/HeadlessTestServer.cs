@@ -159,7 +159,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
                     await _databaseReset.ResetAsync(_resetConnection!).ConfigureAwait(false);
                     break;
                 }
-                catch (Exception ex) when (ex.GetType().Name == "NpgsqlException" && retries > 1)
+                catch (DbException) when (retries > 1)
                 {
                     retries--;
                     await Task.Delay(100).ConfigureAwait(false);
