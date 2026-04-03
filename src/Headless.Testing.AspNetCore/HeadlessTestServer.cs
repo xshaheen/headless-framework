@@ -238,6 +238,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
         await _initGate.WaitAsync().ConfigureAwait(false);
 
         WebApplicationFactory<TProgram>? factory = null;
+        var success = false;
 
         try
         {
@@ -271,19 +272,15 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
             }
 
             _factory = factory;
+            success = true;
         }
-        catch
+        finally
         {
-            // Clean up partially-created factory on failure
-            if (factory is not null)
+            if (!success && factory is not null)
             {
                 await factory.DisposeAsync().ConfigureAwait(false);
             }
 
-            throw;
-        }
-        finally
-        {
             _initGate.Release();
         }
     }
@@ -326,6 +323,9 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
             _resetGate.Release();
             _initGate.Release();
         }
+
+        _initGate.Dispose();
+        _resetGate.Dispose();
     }
 
     private sealed class ServerFactory(
