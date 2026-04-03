@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using System.Security.Claims;
+using Headless.Messaging.Testing;
 using Headless.Testing.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -215,23 +216,11 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
 
     /// <summary>
     /// Resets the messaging test harness if it is registered in the service provider.
-    /// Uses reflection to avoid a hard dependency on <c>Headless.Messaging.Testing</c>.
     /// </summary>
     public void ResetMessagingHarness()
     {
-        var harnessType = Type.GetType("Headless.Messaging.Testing.MessagingTestHarness, Headless.Messaging.Testing");
-
-        if (harnessType is null)
-        {
-            return;
-        }
-
-        var harness = Services.GetService(harnessType);
-
-        if (harness is not null)
-        {
-            harnessType.GetMethod("Clear")?.Invoke(harness, null);
-        }
+        var harness = Services.GetService<MessagingTestHarness>();
+        harness?.Clear();
     }
 
     /// <summary>Starts the test host, registers the fake time provider, and runs readiness checks.</summary>

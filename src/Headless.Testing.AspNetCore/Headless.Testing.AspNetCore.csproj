@@ -11,5 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Testing\Headless.Messaging.Testing.csproj" />
   </ItemGroup>
 </Project>
