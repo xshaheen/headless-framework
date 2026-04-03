@@ -32,6 +32,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
     private readonly SemaphoreSlim _initGate = new(1, 1);
     private readonly SemaphoreSlim _resetGate = new(1, 1);
     private volatile WebApplicationFactory<TProgram>? _factory;
+    private volatile bool _initStarted;
     private DatabaseReset? _databaseReset;
     private DbConnection? _resetConnection;
     private volatile bool _disposed;
@@ -93,7 +94,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
     /// </param>
     public HeadlessTestServer<TProgram> WaitForReadiness(Func<IServiceProvider, Task> check, TimeSpan? timeout = null)
     {
-        if (_factory is not null)
+        if (_factory is not null || _initStarted)
         {
             throw new InvalidOperationException("Cannot configure after initialization.");
         }
@@ -109,7 +110,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
     /// </summary>
     public HeadlessTestServer<TProgram> ConfigureDatabaseReset(Action<DatabaseResetOptions> configure)
     {
-        if (_factory is not null)
+        if (_factory is not null || _initStarted)
         {
             throw new InvalidOperationException("Cannot configure after initialization.");
         }
@@ -238,6 +239,8 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
     /// <summary>Starts the test host, registers the fake time provider, and runs readiness checks.</summary>
     public async ValueTask InitializeAsync()
     {
+        _initStarted = true;
+
         if (_factory is not null)
         {
             return;
