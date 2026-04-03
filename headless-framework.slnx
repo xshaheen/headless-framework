@@ -150,6 +150,7 @@
         <Project Path="src\Headless.Security.Abstractions\Headless.Security.Abstractions.csproj" />
         <Project Path="src\Headless.Security\Headless.Security.csproj" />
         <Project Path="src\Headless.NetTopologySuite\Headless.NetTopologySuite.csproj" />
+        <Project Path="src\Headless.Testing.AspNetCore\Headless.Testing.AspNetCore.csproj" />
         <Project Path="src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
         <Project Path="src\Headless.Testing\Headless.Testing.csproj" />
         <Project Path="tests\Headless.Extensions.Tests.Unit\Headless.Extensions.Tests.Unit.csproj" />
@@ -160,6 +161,9 @@
         <Project Path="tests\Headless.Domain.Tests.Unit\Headless.Domain.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Hosting.Tests.Unit\Headless.Hosting.Tests.Unit.csproj" />
         <Project Path="tests\Headless.NetTopologySuite.Tests.Unit\Headless.NetTopologySuite.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Testing.AspNetCore.Tests.TestHost\Headless.Testing.AspNetCore.Tests.TestHost.csproj" />
+        <Project Path="tests\Headless.Testing.AspNetCore.Tests.Unit\Headless.Testing.AspNetCore.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Testing.Tests.Unit\Headless.Testing.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/MediaIndexing/">
         <Project Path="src\Headless.Media.Indexing.Abstractions\Headless.Media.Indexing.Abstractions.csproj" />

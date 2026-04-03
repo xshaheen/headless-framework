@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Redis;
-using Microsoft.EntityFrameworkCore.Migrations;
+using Headless.Testing.AspNetCore;
 using Npgsql;
-using Respawn;
-using Respawn.Graph;
 using StackExchange.Redis;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
@@ -21,7 +19,7 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
 
     private NpgsqlConnection SqlConnection { get; set; } = null!;
 
-    private Respawner Respawner { get; set; } = null!;
+    private DatabaseReset DatabaseReset { get; set; } = null!;
 
     public string RedisConnectionString { get; private set; } = null!;
 
@@ -55,14 +53,7 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
         SqlConnection = new NpgsqlConnection(SqlConnectionString);
         await SqlConnection.OpenAsync();
         await _RunMigrationAsync();
-        Respawner = await Respawner.CreateAsync(
-            SqlConnection,
-            new RespawnerOptions
-            {
-                TablesToIgnore = [new Table(HistoryRepository.DefaultTableName)],
-                DbAdapter = DbAdapter.Postgres,
-            }
-        );
+        DatabaseReset = await DatabaseReset.CreateAsync(SqlConnection);
     }
 
     private async Task _InitializeRedisAsync()
@@ -73,7 +64,8 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
 
     public async Task ResetAsync()
     {
-        await Task.WhenAll(Respawner.ResetAsync(SqlConnection), Multiplexer.FlushAllAsync()).WithAggregatedExceptions();
+        await Task.WhenAll(DatabaseReset.ResetAsync(SqlConnection), Multiplexer.FlushAllAsync())
+            .WithAggregatedExceptions();
     }
 
     private async Task _RunMigrationAsync()
