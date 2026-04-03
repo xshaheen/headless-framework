@@ -47,7 +47,7 @@ public sealed class TestHttpContextExtensionsTests : IDisposable
     [Fact]
     public void should_set_remote_ip_as_string()
     {
-        _sp.SetHttpContext(remoteIp: "127.0.0.1");
+        _sp.SetHttpContext(principal: null, remoteIp: "127.0.0.1");
 
         var accessor = _sp.GetRequiredService<IHttpContextAccessor>();
         accessor.HttpContext!.Connection.RemoteIpAddress.Should().Be(IPAddress.Loopback);

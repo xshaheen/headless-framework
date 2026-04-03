@@ -34,7 +34,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
     private volatile WebApplicationFactory<TProgram>? _factory;
     private DatabaseReset? _databaseReset;
     private DbConnection? _resetConnection;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     internal Func<DatabaseReset, DbConnection, Task> ResetAction { get; set; } = (r, c) => r.ResetAsync(c);
 
@@ -93,6 +93,11 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
     /// </param>
     public HeadlessTestServer<TProgram> WaitForReadiness(Func<IServiceProvider, Task> check, TimeSpan? timeout = null)
     {
+        if (_factory is not null)
+        {
+            throw new InvalidOperationException("Cannot configure after initialization.");
+        }
+
         _readinessChecks.Add((check, timeout ?? TimeSpan.FromSeconds(30)));
         return this;
     }
@@ -104,6 +109,11 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
     /// </summary>
     public HeadlessTestServer<TProgram> ConfigureDatabaseReset(Action<DatabaseResetOptions> configure)
     {
+        if (_factory is not null)
+        {
+            throw new InvalidOperationException("Cannot configure after initialization.");
+        }
+
         _configureDatabaseReset = configure;
         return this;
     }
@@ -322,10 +332,9 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
         {
             _resetGate.Release();
             _initGate.Release();
+            _initGate.Dispose();
+            _resetGate.Dispose();
         }
-
-        _initGate.Dispose();
-        _resetGate.Dispose();
     }
 
     private sealed class ServerFactory(

@@ -2,6 +2,7 @@
 
 using System.Net;
 using System.Security.Claims;
+using Headless.Checks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -62,12 +63,12 @@ public static class TestHttpContextExtensions
     /// </summary>
     public static HttpContext SetHttpContext(
         this IServiceProvider serviceProvider,
+        ClaimsPrincipal? principal,
         string remoteIp,
-        ClaimsPrincipal? principal = null,
         string? userAgent = null
     )
     {
-        ArgumentException.ThrowIfNullOrEmpty(remoteIp);
+        Argument.IsNotNullOrEmpty(remoteIp);
 
         var ip = IPAddress.Parse(remoteIp);
         return serviceProvider.SetHttpContext(principal, ip, userAgent);
