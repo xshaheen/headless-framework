@@ -5,6 +5,9 @@
     <IsTestableProject>false</IsTestableProject>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Testing.AspNetCore.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Respawn" />

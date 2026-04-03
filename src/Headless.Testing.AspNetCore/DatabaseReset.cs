@@ -2,6 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
+using Headless.Checks;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Respawn;
 using Respawn.Graph;
@@ -40,10 +41,7 @@ public sealed class DatabaseReset
     /// </param>
     public static async Task<DatabaseReset> CreateAsync(DbConnection connection, DatabaseResetOptions? options = null)
     {
-        if (connection.State != ConnectionState.Open)
-        {
-            throw new InvalidOperationException("Connection must be open to create Respawner.");
-        }
+        Ensure.True(connection.State == ConnectionState.Open, "Connection must be open to create Respawner.");
 
         options ??= new DatabaseResetOptions();
 
@@ -69,10 +67,7 @@ public sealed class DatabaseReset
     /// <param name="connection">An <b>open</b> <see cref="DbConnection"/>.</param>
     public Task ResetAsync(DbConnection connection)
     {
-        if (connection.State != ConnectionState.Open)
-        {
-            throw new InvalidOperationException("Connection must be open to reset database.");
-        }
+        Ensure.True(connection.State == ConnectionState.Open, "Connection must be open to reset database.");
 
         return _respawner.ResetAsync(connection);
     }
