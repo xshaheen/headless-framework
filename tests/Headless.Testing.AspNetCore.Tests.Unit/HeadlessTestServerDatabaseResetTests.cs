@@ -44,6 +44,19 @@ public sealed class HeadlessTestServerDatabaseResetTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task should_throw_when_reset_after_dispose()
+    {
+        _server = new HeadlessTestServer<Program>();
+        _server.ConfigureDatabaseReset(_ => { });
+        await _server.InitializeAsync();
+        await _server.DisposeAsync();
+
+        Func<Task> act = async () => await _server.ResetDatabaseAsync();
+
+        await act.Should().ThrowExactlyAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
     public async Task should_return_self_from_configure_database_reset()
     {
         _server = new HeadlessTestServer<Program>();

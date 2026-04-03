@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Security.Claims;
 using Headless.Testing.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -27,6 +28,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
     private readonly Action<IWebHostBuilder>? _configureWebHost;
     private readonly List<(Func<IServiceProvider, Task> Check, TimeSpan Timeout)> _readinessChecks = [];
     private Action<DatabaseResetOptions>? _configureDatabaseReset;
+    private readonly SemaphoreSlim _initGate = new(1, 1);
     private readonly SemaphoreSlim _resetGate = new(1, 1);
     private WebApplicationFactory<TProgram>? _factory;
     private DatabaseReset? _databaseReset;
@@ -59,10 +61,20 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
     public HttpClient CreateClient(WebApplicationFactoryClientOptions options) => Factory.CreateClient(options);
 
     /// <summary>Advances <see cref="TimeProvider"/> by the specified duration.</summary>
-    public void AdvanceTime(TimeSpan delta) => TimeProvider.Advance(delta);
+    /// <returns>The new UTC time after advancement.</returns>
+    public DateTimeOffset AdvanceTime(TimeSpan delta)
+    {
+        TimeProvider.Advance(delta);
+        return TimeProvider.GetUtcNow();
+    }
 
     /// <summary>Sets <see cref="TimeProvider"/> to the specified UTC time.</summary>
-    public void SetTime(DateTimeOffset value) => TimeProvider.SetUtcNow(value);
+    /// <returns>The new UTC time.</returns>
+    public DateTimeOffset SetTime(DateTimeOffset value)
+    {
+        TimeProvider.SetUtcNow(value);
+        return TimeProvider.GetUtcNow();
+    }
 
     /// <summary>
     /// Registers a readiness check that runs after host startup during <see cref="InitializeAsync"/>.
@@ -111,10 +123,14 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
             );
         }
 
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
         await _resetGate.WaitAsync().ConfigureAwait(false);
 
         try
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
             if (_databaseReset is null)
             {
                 var options = new DatabaseResetOptions();
@@ -133,7 +149,27 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
                 _databaseReset = await DatabaseReset.CreateAsync(_resetConnection, options).ConfigureAwait(false);
             }
 
-            await _databaseReset.ResetAsync(_resetConnection!).ConfigureAwait(false);
+            // Retry for PostgreSQL connection flakiness under high test load
+            var retries = 3;
+            while (retries > 0)
+            {
+                try
+                {
+                    await _databaseReset.ResetAsync(_resetConnection!).ConfigureAwait(false);
+                    break;
+                }
+                catch (Exception ex) when (ex.GetType().Name == "NpgsqlException" && retries > 1)
+                {
+                    retries--;
+                    await Task.Delay(100).ConfigureAwait(false);
+
+                    // Re-open if closed or broken
+                    if (_resetConnection!.State != System.Data.ConnectionState.Open)
+                    {
+                        await _resetConnection.OpenAsync().ConfigureAwait(false);
+                    }
+                }
+            }
         }
         finally
         {
@@ -148,6 +184,17 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
         return await action(scope.ServiceProvider).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Creates a DI scope, wires the <paramref name="principal"/> to <see cref="Microsoft.AspNetCore.Http.HttpContext"/>,
+    /// invokes the delegate, and disposes the scope.
+    /// </summary>
+    public async Task<T> ExecuteScopeAsync<T>(Func<IServiceProvider, Task<T>> action, ClaimsPrincipal principal)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        scope.ServiceProvider.SetHttpContext(principal, (System.Net.IPAddress?)null);
+        return await action(scope.ServiceProvider).ConfigureAwait(false);
+    }
+
     /// <summary>Creates a DI scope, invokes the delegate, and disposes the scope.</summary>
     public async Task ExecuteScopeAsync(Func<IServiceProvider, Task> action)
     {
@@ -155,9 +202,48 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
         await action(scope.ServiceProvider).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Creates a DI scope, wires the <paramref name="principal"/> to <see cref="Microsoft.AspNetCore.Http.HttpContext"/>,
+    /// invokes the delegate, and disposes the scope.
+    /// </summary>
+    public async Task ExecuteScopeAsync(Func<IServiceProvider, Task> action, ClaimsPrincipal principal)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        scope.ServiceProvider.SetHttpContext(principal, (System.Net.IPAddress?)null);
+        await action(scope.ServiceProvider).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resets the messaging test harness if it is registered in the service provider.
+    /// Uses reflection to avoid a hard dependency on <c>Headless.Messaging.Testing</c>.
+    /// </summary>
+    public void ResetMessagingHarness()
+    {
+        var harnessType = Type.GetType("Headless.Messaging.Testing.MessagingTestHarness, Headless.Messaging.Testing");
+
+        if (harnessType is null)
+        {
+            return;
+        }
+
+        var harness = Services.GetService(harnessType);
+
+        if (harness is not null)
+        {
+            harnessType.GetMethod("Clear")?.Invoke(harness, null);
+        }
+    }
+
     /// <summary>Starts the test host, registers the fake time provider, and runs readiness checks.</summary>
     public async ValueTask InitializeAsync()
     {
+        if (_factory is not null)
+        {
+            return;
+        }
+
+        await _initGate.WaitAsync().ConfigureAwait(false);
+
         try
         {
             _factory = new ServerFactory(_configureTestServices, _configureWebHost);
@@ -193,6 +279,10 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
 
             throw;
         }
+        finally
+        {
+            _initGate.Release();
+        }
     }
 
     /// <summary>Disposes the underlying factory, database connection, and test host. Idempotent.</summary>
@@ -203,12 +293,27 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
             return;
         }
 
-        _disposed = true;
+        // Acquire the reset gate to wait for any in-flight reset to complete.
+        await _resetGate.WaitAsync().ConfigureAwait(false);
 
-        if (_resetConnection is not null)
+        try
         {
-            await _resetConnection.DisposeAsync().ConfigureAwait(false);
-            _resetConnection = null;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+
+            if (_resetConnection is not null)
+            {
+                await _resetConnection.DisposeAsync().ConfigureAwait(false);
+                _resetConnection = null;
+            }
+        }
+        finally
+        {
+            _resetGate.Release();
         }
 
         if (_factory is not null)
@@ -217,6 +322,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
             _factory = null;
         }
 
+        _initGate.Dispose();
         _resetGate.Dispose();
     }
 

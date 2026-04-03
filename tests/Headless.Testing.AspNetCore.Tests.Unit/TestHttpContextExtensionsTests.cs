@@ -45,6 +45,15 @@ public sealed class TestHttpContextExtensionsTests : IDisposable
     }
 
     [Fact]
+    public void should_set_remote_ip_as_string()
+    {
+        _sp.SetHttpContext(remoteIp: "127.0.0.1");
+
+        var accessor = _sp.GetRequiredService<IHttpContextAccessor>();
+        accessor.HttpContext!.Connection.RemoteIpAddress.Should().Be(IPAddress.Loopback);
+    }
+
+    [Fact]
     public void should_set_user_agent()
     {
         _sp.SetHttpContext(userAgent: "TestBot/1.0");

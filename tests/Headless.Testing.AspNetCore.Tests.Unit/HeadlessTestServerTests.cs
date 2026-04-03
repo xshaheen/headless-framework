@@ -107,10 +107,11 @@ public sealed class HeadlessTestServerTests : IAsyncLifetime
         await _server.InitializeAsync();
 
         var before = _server.TimeProvider.GetUtcNow();
-        _server.AdvanceTime(TimeSpan.FromMinutes(5));
+        var returned = _server.AdvanceTime(TimeSpan.FromMinutes(5));
         var after = _server.TimeProvider.GetUtcNow();
 
         (after - before).Should().Be(TimeSpan.FromMinutes(5));
+        returned.Should().Be(after);
     }
 
     [Fact]
@@ -120,9 +121,55 @@ public sealed class HeadlessTestServerTests : IAsyncLifetime
         await _server.InitializeAsync();
 
         var target = new DateTimeOffset(2030, 6, 15, 12, 0, 0, TimeSpan.Zero);
-        _server.SetTime(target);
+        var returned = _server.SetTime(target);
 
         _server.TimeProvider.GetUtcNow().Should().Be(target);
+        returned.Should().Be(target);
+    }
+
+    [Fact]
+    public async Task should_execute_scope_with_principal()
+    {
+        _server = new HeadlessTestServer<Program>();
+        await _server.InitializeAsync();
+        var principal = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("sub", "user-1")], "Test")
+        );
+
+        await _server.ExecuteScopeAsync(
+            sp =>
+            {
+                var accessor = sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
+                accessor.HttpContext.Should().NotBeNull();
+                accessor.HttpContext!.User.Should().BeSameAs(principal);
+                return Task.CompletedTask;
+            },
+            principal
+        );
+    }
+
+    [Fact]
+    public async Task should_execute_scope_with_principal_and_result()
+    {
+        _server = new HeadlessTestServer<Program>();
+        await _server.InitializeAsync();
+        var principal = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, "user-1")],
+                "TestAuth"
+            )
+        );
+
+        var result = await _server.ExecuteScopeAsync(
+            sp =>
+            {
+                var accessor = sp.GetRequiredService<Microsoft.AspNetCore.Http.IHttpContextAccessor>();
+                return Task.FromResult(accessor.HttpContext!.User.Identity!.Name);
+            },
+            principal
+        );
+
+        result.Should().Be("user-1");
     }
 
     [Fact]
@@ -184,6 +231,18 @@ public sealed class HeadlessTestServerTests : IAsyncLifetime
 
         // After init failure, dispose should be safe (factory already cleaned up)
         await _server.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_be_idempotent_on_double_init()
+    {
+        _server = new HeadlessTestServer<Program>();
+        await _server.InitializeAsync();
+        var factory = _server.Factory;
+
+        await _server.InitializeAsync();
+
+        _server.Factory.Should().BeSameAs(factory);
     }
 
     [Fact]

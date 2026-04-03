@@ -55,4 +55,19 @@ public static class TestHttpContextExtensions
 
         return context;
     }
+
+    /// <summary>
+    /// Overload for <see cref="SetHttpContext(IServiceProvider, ClaimsPrincipal?, IPAddress?, string?)"/>
+    /// that accepts the remote IP as a string.
+    /// </summary>
+    public static HttpContext SetHttpContext(
+        this IServiceProvider serviceProvider,
+        string? remoteIp,
+        ClaimsPrincipal? principal = null,
+        string? userAgent = null
+    )
+    {
+        var ip = remoteIp is not null ? IPAddress.Parse(remoteIp) : null;
+        return serviceProvider.SetHttpContext(principal, ip, userAgent);
+    }
 }

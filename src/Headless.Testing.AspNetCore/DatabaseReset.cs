@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Respawn;
@@ -39,6 +40,11 @@ public sealed class DatabaseReset
     /// </param>
     public static async Task<DatabaseReset> CreateAsync(DbConnection connection, DatabaseResetOptions? options = null)
     {
+        if (connection.State != ConnectionState.Open)
+        {
+            throw new InvalidOperationException("Connection must be open to create Respawner.");
+        }
+
         options ??= new DatabaseResetOptions();
 
         var tablesToIgnore = new List<Table>(options.TablesToIgnore.Count + 1)
@@ -61,5 +67,13 @@ public sealed class DatabaseReset
     /// Deletes all data from non-excluded tables using the provided open <paramref name="connection"/>.
     /// </summary>
     /// <param name="connection">An <b>open</b> <see cref="DbConnection"/>.</param>
-    public Task ResetAsync(DbConnection connection) => _respawner.ResetAsync(connection);
+    public Task ResetAsync(DbConnection connection)
+    {
+        if (connection.State != ConnectionState.Open)
+        {
+            throw new InvalidOperationException("Connection must be open to reset database.");
+        }
+
+        return _respawner.ResetAsync(connection);
+    }
 }
