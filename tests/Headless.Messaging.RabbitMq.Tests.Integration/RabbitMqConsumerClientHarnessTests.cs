@@ -15,7 +15,7 @@ public sealed class RabbitMqConsumerClientHarnessTests(RabbitMqFixture fixture) 
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
     private readonly List<ConnectionChannelPool> _connectionPools = [];
 
-    protected override ValueTask<IConsumerClient> GetConsumerClientAsync()
+    protected override Task<IConsumerClient> GetConsumerClientAsync()
     {
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
         var rabbitOptions = Options.Create(
@@ -36,7 +36,7 @@ public sealed class RabbitMqConsumerClientHarnessTests(RabbitMqFixture fixture) 
         );
         _connectionPools.Add(pool);
 
-        return ValueTask.FromResult<IConsumerClient>(
+        return Task.FromResult<IConsumerClient>(
             new RabbitMqConsumerClient($"test-group-{Guid.NewGuid():N}", 1, pool, rabbitOptions, _serviceProvider)
         );
     }

@@ -11,9 +11,9 @@ namespace Tests;
 [Collection<LocalStackTestFixture>]
 public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fixture) : ConsumerClientTestsBase
 {
-    protected override ValueTask<IConsumerClient> GetConsumerClientAsync()
+    protected override Task<IConsumerClient> GetConsumerClientAsync()
     {
-        return ValueTask.FromResult<IConsumerClient>(
+        return Task.FromResult<IConsumerClient>(
             new AmazonSqsConsumerClient(
                 $"consumer-tests-{Guid.NewGuid():N}",
                 1,

@@ -30,12 +30,12 @@ public abstract class DataStorageTestsBase : TestBase
     /// <summary>
     /// Thread-safe counter for generating unique logical message IDs.
     /// </summary>
-    private static long _messageIdCounter;
+    private static long _MessageIdCounter;
 
     /// <summary>Creates a valid message for testing.</summary>
     protected static Message CreateMessage(string? messageId = null, string? messageName = null, object? value = null)
     {
-        var id = messageId ?? $"msg-{Interlocked.Increment(ref _messageIdCounter)}";
+        var id = messageId ?? $"msg-{Interlocked.Increment(ref _MessageIdCounter)}";
 
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {

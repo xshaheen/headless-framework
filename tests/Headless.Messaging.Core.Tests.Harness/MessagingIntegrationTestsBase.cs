@@ -443,13 +443,17 @@ public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
     private TaskCompletionSource<bool> _attemptTcs = new();
 
     /// <summary>Gets the number of failed processing attempts.</summary>
+    /// <remarks>
+    /// Volatile.Read provides acquire semantics for lock-free reads from outside the lock.
+    /// Writes use plain increment/assignment inside <see cref="_lock"/> whose release barrier publishes them.
+    /// </remarks>
     public int FailedAttempts => Volatile.Read(ref _failedAttempts);
 
     public ValueTask Consume(ConsumeContext<FailingTestMessage> context, CancellationToken cancellationToken)
     {
         lock (_lock)
         {
-            Interlocked.Increment(ref _failedAttempts);
+            _failedAttempts++;
             _attemptTcs.TrySetResult(true);
             _attemptTcs = new TaskCompletionSource<bool>();
         }
@@ -462,7 +466,7 @@ public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
     {
         lock (_lock)
         {
-            Interlocked.Exchange(ref _failedAttempts, 0);
+            _failedAttempts = 0;
             _attemptTcs = new TaskCompletionSource<bool>();
         }
     }
@@ -485,7 +489,7 @@ public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
 
                 lock (_lock)
                 {
-                    if (Volatile.Read(ref _failedAttempts) >= minAttempts)
+                    if (_failedAttempts >= minAttempts)
                     {
                         return true;
                     }

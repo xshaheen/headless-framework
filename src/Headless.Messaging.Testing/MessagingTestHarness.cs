@@ -151,13 +151,16 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until a message of type <typeparamref name="T"/> is published,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForPublished<T>(TimeSpan? timeout = null, CancellationToken ct = default) =>
+    public Task<RecordedMessage> WaitForPublished<T>(
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    ) =>
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Published,
             predicate: null,
             timeout ?? DefaultTimeout,
-            ct
+            cancellationToken
         );
 
     /// <summary>
@@ -167,14 +170,14 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     public Task<RecordedMessage> WaitForPublished<T>(
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
-        CancellationToken ct = default
+        CancellationToken cancellationToken = default
     ) =>
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Published,
             obj => predicate((T)obj),
             timeout ?? DefaultTimeout,
-            ct
+            cancellationToken
         );
 
     // -------------------------------------------------------------------------
@@ -185,8 +188,17 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until a message of type <typeparamref name="T"/> is consumed successfully,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForConsumed<T>(TimeSpan? timeout = null, CancellationToken ct = default) =>
-        _store.WaitForAsync(typeof(T), MessageObservationType.Consumed, predicate: null, timeout ?? DefaultTimeout, ct);
+    public Task<RecordedMessage> WaitForConsumed<T>(
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    ) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Consumed,
+            predicate: null,
+            timeout ?? DefaultTimeout,
+            cancellationToken
+        );
 
     /// <summary>
     /// Waits until a consumed message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
@@ -195,14 +207,14 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     public Task<RecordedMessage> WaitForConsumed<T>(
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
-        CancellationToken ct = default
+        CancellationToken cancellationToken = default
     ) =>
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Consumed,
             obj => predicate((T)obj),
             timeout ?? DefaultTimeout,
-            ct
+            cancellationToken
         );
 
     // -------------------------------------------------------------------------
@@ -213,8 +225,17 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until processing of a message of type <typeparamref name="T"/> faults,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForFaulted<T>(TimeSpan? timeout = null, CancellationToken ct = default) =>
-        _store.WaitForAsync(typeof(T), MessageObservationType.Faulted, predicate: null, timeout ?? DefaultTimeout, ct);
+    public Task<RecordedMessage> WaitForFaulted<T>(
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    ) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Faulted,
+            predicate: null,
+            timeout ?? DefaultTimeout,
+            cancellationToken
+        );
 
     /// <summary>
     /// Waits until a faulted message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
@@ -223,14 +244,14 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     public Task<RecordedMessage> WaitForFaulted<T>(
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
-        CancellationToken ct = default
+        CancellationToken cancellationToken = default
     ) =>
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Faulted,
             obj => predicate((T)obj),
             timeout ?? DefaultTimeout,
-            ct
+            cancellationToken
         );
 
     // -------------------------------------------------------------------------

@@ -13,7 +13,7 @@ namespace Tests;
 public abstract class ConsumerClientTestsBase : TestBase
 {
     /// <summary>Gets the consumer client instance for testing.</summary>
-    protected abstract ValueTask<IConsumerClient> GetConsumerClientAsync();
+    protected abstract Task<IConsumerClient> GetConsumerClientAsync();
 
     /// <summary>Gets the consumer client capabilities for conditional test execution.</summary>
     protected virtual ConsumerClientCapabilities Capabilities => ConsumerClientCapabilities.Default;
@@ -46,13 +46,12 @@ public abstract class ConsumerClientTestsBase : TestBase
     /// <summary>
     /// Allows transports to transform logical topic names into broker-specific subscription identifiers.
     /// </summary>
-    protected virtual async ValueTask<IReadOnlyList<string>> ResolveSubscriptionTopicsAsync(
+    protected virtual ValueTask<IReadOnlyList<string>> ResolveSubscriptionTopicsAsync(
         IConsumerClient consumer,
         IReadOnlyList<string> topics
     )
     {
-        await Task.CompletedTask;
-        return topics;
+        return ValueTask.FromResult(topics);
     }
 
     public virtual async Task should_subscribe_to_topic()
@@ -156,7 +155,7 @@ public abstract class ConsumerClientTestsBase : TestBase
         }
 
         // given
-        var consumer = await GetConsumerClientAsync();
+        await using var consumer = await GetConsumerClientAsync();
         var topics = await ResolveSubscriptionTopicsAsync(consumer, ["test-topic"]);
         await consumer.SubscribeAsync(topics);
 
@@ -179,7 +178,6 @@ public abstract class ConsumerClientTestsBase : TestBase
 
         // when
         await cts.CancelAsync();
-        await consumer.DisposeAsync();
 
         // then - should complete without hanging
         var completed = await Task.WhenAny(listeningTask, Task.Delay(TimeSpan.FromSeconds(5)));

@@ -22,7 +22,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
         await base.DisposeAsyncCore();
     }
 
-    protected override async ValueTask<IConsumerClient> GetConsumerClientAsync()
+    protected override async Task<IConsumerClient> GetConsumerClientAsync()
     {
         var client = new NatsConsumerClient(
             "test-group",

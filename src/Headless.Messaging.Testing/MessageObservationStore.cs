@@ -13,6 +13,8 @@ internal sealed class MessageObservationStore
     private readonly ConcurrentQueue<RecordedMessage> _published = new();
     private readonly ConcurrentQueue<RecordedMessage> _consumed = new();
     private readonly ConcurrentQueue<RecordedMessage> _faulted = new();
+    private readonly ConcurrentDictionary<(Type, MessageObservationType), ConcurrentQueue<RecordedMessage>> _typeIndex =
+        new();
     private readonly List<WaiterEntry> _waiters = [];
     private readonly Lock _waitersLock = new();
 
@@ -30,6 +32,7 @@ internal sealed class MessageObservationStore
     {
         var queue = _GetQueue(type);
         queue.Enqueue(message);
+        _typeIndex.GetOrAdd((message.MessageType, type), _ => new()).Enqueue(message);
 
         // Snapshot candidates under lock, evaluate predicates outside to avoid
         // holding the lock during potentially expensive user predicates.
@@ -150,6 +153,8 @@ internal sealed class MessageObservationStore
 
         while (_faulted.TryDequeue(out _)) { }
 
+        _typeIndex.Clear();
+
         lock (_waitersLock)
         {
             foreach (var waiter in _waiters)
@@ -167,6 +172,17 @@ internal sealed class MessageObservationStore
 
     private RecordedMessage? _FindExisting(Type messageType, MessageObservationType type, Func<object, bool>? predicate)
     {
+        // Fast path: exact type match avoids scanning all messages
+        if (_typeIndex.TryGetValue((messageType, type), out var indexed))
+        {
+            var match = indexed.FirstOrDefault(m => predicate == null || predicate(m.Message));
+            if (match != null)
+            {
+                return match;
+            }
+        }
+
+        // Assignability scan for polymorphic queries and index-race fallback
         return _GetQueue(type)
             .FirstOrDefault(m =>
                 messageType.IsAssignableFrom(m.MessageType) && (predicate == null || predicate(m.Message))

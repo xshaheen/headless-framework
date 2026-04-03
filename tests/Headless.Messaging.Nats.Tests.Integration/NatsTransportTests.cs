@@ -21,6 +21,8 @@ public sealed class NatsTransportTests : TransportTestsBase
 
     public override async ValueTask InitializeAsync()
     {
+        await base.InitializeAsync();
+
         // JetStream requires a stream to exist before publishing.
         // Create a catch-all stream for test subjects.
         // TransportTestsBase uses single-token subjects ("TestMessage", "TestMessageName").
