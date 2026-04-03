@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="xunit.v3.mtp-v2" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Testing.AspNetCore\Headless.Testing.AspNetCore.csproj" />

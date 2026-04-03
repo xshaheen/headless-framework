@@ -36,6 +36,8 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
     private DbConnection? _resetConnection;
     private bool _disposed;
 
+    internal Func<DatabaseReset, DbConnection, Task> ResetAction { get; set; } = (r, c) => r.ResetAsync(c);
+
     public HeadlessTestServer(
         Action<IServiceCollection>? configureTestServices = null,
         Action<IWebHostBuilder>? configureWebHost = null
@@ -156,7 +158,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
             {
                 try
                 {
-                    await _databaseReset.ResetAsync(_resetConnection!).ConfigureAwait(false);
+                    await ResetAction(_databaseReset, _resetConnection!).ConfigureAwait(false);
                     break;
                 }
                 catch (DbException) when (retries > 1)
@@ -235,6 +237,8 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
 
         await _initGate.WaitAsync().ConfigureAwait(false);
 
+        WebApplicationFactory<TProgram>? factory = null;
+
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -244,12 +248,12 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
                 return;
             }
 
-            _factory = new ServerFactory(_configureTestServices, _configureWebHost);
+            factory = new ServerFactory(_configureTestServices, _configureWebHost);
 
             // Force host startup — triggers ConfigureTestServices
-            _ = _factory.Services;
+            _ = factory.Services;
 
-            TimeProvider = (FakeTimeProvider)_factory.Services.GetRequiredService<TimeProvider>();
+            TimeProvider = (FakeTimeProvider)factory.Services.GetRequiredService<TimeProvider>();
 
             // Execute readiness checks sequentially
             foreach (var (check, timeout) in _readinessChecks)
@@ -258,21 +262,22 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
 
                 try
                 {
-                    await check(Services).WaitAsync(cts.Token).ConfigureAwait(false);
+                    await check(factory.Services).WaitAsync(cts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
                     throw new TimeoutException($"Readiness check timed out after {timeout.TotalSeconds:F0}s.");
                 }
             }
+
+            _factory = factory;
         }
         catch
         {
             // Clean up partially-created factory on failure
-            if (_factory is not null)
+            if (factory is not null)
             {
-                await _factory.DisposeAsync().ConfigureAwait(false);
-                _factory = null;
+                await factory.DisposeAsync().ConfigureAwait(false);
             }
 
             throw;
@@ -321,9 +326,6 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
             _resetGate.Release();
             _initGate.Release();
         }
-
-        _initGate.Dispose();
-        _resetGate.Dispose();
     }
 
     private sealed class ServerFactory(
