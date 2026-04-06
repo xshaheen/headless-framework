@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting.Initialization;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 #pragma warning disable IDE0130
@@ -342,6 +344,41 @@ public static class DependencyInjectionExtensions
         {
             services.Remove(hostedServiceDescriptor);
         }
+
+        return services;
+    }
+
+    #endregion
+
+    #region AddInitializerHostedService
+
+    /// <summary>
+    /// Registers <typeparamref name="T"/> as a singleton, forwards it as <see cref="IInitializer"/>,
+    /// and registers it as a hosted service — all using the same singleton instance.
+    /// </summary>
+    /// <typeparam name="T">
+    /// A type that implements both <see cref="IHostedService"/> and <see cref="IInitializer"/>.
+    /// </typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The same service collection.</returns>
+    /// <remarks>
+    /// Equivalent to:
+    /// <code>
+    /// services.TryAddSingleton&lt;T&gt;();
+    /// services.TryAddEnumerable(ServiceDescriptor.Singleton&lt;IInitializer&gt;(sp => sp.GetRequiredService&lt;T&gt;()));
+    /// services.AddHostedService(sp => sp.GetRequiredService&lt;T&gt;());
+    /// </code>
+    /// Using <c>TryAddSingleton</c> and <c>TryAddEnumerable</c> guards against double-registration
+    /// when the setup method is called more than once.
+    /// </remarks>
+    public static IServiceCollection AddInitializerHostedService<T>(this IServiceCollection services)
+        where T : class, IHostedService, IInitializer
+    {
+        Argument.IsNotNull(services);
+
+        services.TryAddSingleton<T>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IInitializer>(sp => sp.GetRequiredService<T>()));
+        services.AddHostedService(sp => sp.GetRequiredService<T>());
 
         return services;
     }
