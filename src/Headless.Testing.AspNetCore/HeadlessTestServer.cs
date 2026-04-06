@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using System.Security.Claims;
+using Headless.Hosting.Initialization;
 using Headless.Messaging.Testing;
 using Headless.Testing.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
@@ -268,6 +269,25 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
             _ = factory.Services;
 
             TimeProvider = (FakeTimeProvider)factory.Services.GetRequiredService<TimeProvider>();
+
+            // Await all IInitializer services (e.g. settings/permissions/features sync)
+            var initializers = factory.Services.GetServices<IInitializer>();
+
+            foreach (var initializer in initializers)
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+                try
+                {
+                    await initializer.WaitForInitializationAsync(cts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cts.IsCancellationRequested)
+                {
+                    throw new TimeoutException(
+                        $"Initializer '{initializer.GetType().Name}' did not complete within 60s."
+                    );
+                }
+            }
 
             // Execute readiness checks sequentially
             foreach (var (check, timeout) in _readinessChecks)
