@@ -2,6 +2,7 @@
 
 using Headless.Features.Definitions;
 using Headless.Features.Models;
+using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -16,17 +17,28 @@ public sealed class FeaturesInitializationBackgroundService(
     IServiceScopeFactory serviceScopeFactory,
     IOptions<FeatureManagementOptions> optionsAccessor,
     ILogger<FeaturesInitializationBackgroundService> logger
-) : IHostedService, IDisposable
+) : IHostedService, IDisposable, IInitializer
 {
+    private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly FeatureManagementOptions _options = optionsAccessor.Value;
     private Task? _initializeDynamicFeaturesTask;
+
+    public bool IsInitialized => _tcs.Task.IsCompletedSuccessfully;
+
+    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
+        _tcs.Task.WaitAsync(cancellationToken);
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         if (_options is not { SaveStaticFeaturesToDatabase: false, IsDynamicFeatureStoreEnabled: false })
         {
             _initializeDynamicFeaturesTask = _InitializeDynamicFeaturesAsync(cancellationToken);
+        }
+        else
+        {
+            // Both features disabled — initialization is a no-op; signal completion immediately.
+            _tcs.TrySetResult();
         }
 
         return Task.CompletedTask;
@@ -62,21 +74,34 @@ public sealed class FeaturesInitializationBackgroundService(
 
     private async Task _InitializeDynamicFeaturesAsync(CancellationToken cancellationToken)
     {
-        if (cancellationToken.IsCancellationRequested)
+        try
         {
-            return;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
+
+            await _SaveStaticFeaturesToDatabaseAsync(scope, cancellationToken);
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await _PreCacheDynamicFeaturesAsync(scope, cancellationToken).ConfigureAwait(false);
+
+            _tcs.TrySetResult();
         }
-
-        await using var scope = serviceScopeFactory.CreateAsyncScope();
-
-        await _SaveStaticFeaturesToDatabaseAsync(scope, cancellationToken);
-
-        if (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
-            return;
+            // Shutdown before completion — leave TCS incomplete so waiters get a timeout.
         }
-
-        await _PreCacheDynamicFeaturesAsync(scope, cancellationToken).ConfigureAwait(false);
+        catch (Exception ex)
+        {
+            _tcs.TrySetException(ex);
+        }
     }
 
     private async Task _SaveStaticFeaturesToDatabaseAsync(AsyncServiceScope scope, CancellationToken cancellationToken)

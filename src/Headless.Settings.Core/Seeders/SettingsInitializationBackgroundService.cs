@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Settings.Definitions;
 using Headless.Settings.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,17 +17,26 @@ public sealed class SettingsInitializationBackgroundService(
     IServiceScopeFactory serviceScopeFactory,
     IOptions<SettingManagementOptions> optionsAccessor,
     ILogger<SettingsInitializationBackgroundService> logger
-) : IHostedService, IDisposable
+) : IHostedService, IDisposable, IInitializer
 {
+    private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly SettingManagementOptions _options = optionsAccessor.Value;
     private CancellationTokenSource? _linkedCts;
     private Task? _initializeDynamicSettingsTask;
 
+    public bool IsInitialized => _tcs.Task.IsCompletedSuccessfully;
+
+    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
+        _tcs.Task.WaitAsync(cancellationToken);
+
     public Task StartAsync(CancellationToken cancellationToken)
     {
         if (_options is { SaveStaticSettingsToDatabase: false, IsDynamicSettingStoreEnabled: false })
         {
+            // Both features disabled — initialization is a no-op; signal completion immediately.
+            _tcs.TrySetResult();
+
             return Task.CompletedTask;
         }
 
@@ -44,7 +54,9 @@ public sealed class SettingsInitializationBackgroundService(
         {
             try
             {
+#pragma warning disable VSTHRD003 // IHostedService pattern: task started in StartAsync, awaited in StopAsync
                 await _initializeDynamicSettingsTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+#pragma warning restore VSTHRD003
             }
             catch (OperationCanceledException) { }
         }
@@ -58,21 +70,34 @@ public sealed class SettingsInitializationBackgroundService(
 
     private async Task _InitializeDynamicSettingsAsync(CancellationToken cancellationToken)
     {
-        if (cancellationToken.IsCancellationRequested)
+        try
         {
-            return;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
+
+            await _SaveStaticSettingsToDatabaseAsync(scope, cancellationToken).ConfigureAwait(false);
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await _PreCacheDynamicSettingsAsync(scope, cancellationToken).ConfigureAwait(false);
+
+            _tcs.TrySetResult();
         }
-
-        await using var scope = serviceScopeFactory.CreateAsyncScope();
-
-        await _SaveStaticSettingsToDatabaseAsync(scope, cancellationToken).ConfigureAwait(false);
-
-        if (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
-            return;
+            // Shutdown before completion — leave TCS incomplete so waiters get a timeout.
         }
-
-        await _PreCacheDynamicSettingsAsync(scope, cancellationToken).ConfigureAwait(false);
+        catch (Exception ex)
+        {
+            _tcs.TrySetException(ex);
+        }
     }
 
     private async Task _SaveStaticSettingsToDatabaseAsync(AsyncServiceScope scope, CancellationToken cancellationToken)

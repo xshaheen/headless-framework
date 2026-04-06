@@ -9,6 +9,7 @@ using Headless.Features.Resources;
 using Headless.Features.Seeders;
 using Headless.Features.ValueProviders;
 using Headless.Features.Values;
+using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -93,7 +94,7 @@ public static class CoreSetup
     private static IServiceCollection _AddCore(IServiceCollection services)
     {
         services._AddCoreValueProviders();
-        services.AddHostedService<FeaturesInitializationBackgroundService>();
+        services.AddInitializerHostedService<FeaturesInitializationBackgroundService>();
 
         services.AddTransient<
             ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>,
