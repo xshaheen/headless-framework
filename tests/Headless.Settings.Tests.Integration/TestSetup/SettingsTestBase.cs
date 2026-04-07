@@ -6,7 +6,6 @@ using Headless.DistributedLocks.Redis;
 using Headless.Domain;
 using Headless.Redis;
 using Headless.Settings;
-using Headless.Settings.Seeders;
 using Headless.Settings.Storage.EntityFramework;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -69,8 +68,6 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         services
             .AddSettingsManagementCore()
             .AddSettingsManagementDbContextStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
-
-        services.RemoveHostedService<SettingsInitializationBackgroundService>();
     }
 
     private static void _AddDefaultStringEncryptionConfiguration(IConfigurationBuilder configuration)

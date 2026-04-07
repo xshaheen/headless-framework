@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Domain;
+using Headless.Hosting.Initialization;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.GrantProviders;
@@ -93,7 +94,7 @@ public static class PermissionsSetup
     private static IServiceCollection _AddCore(IServiceCollection services)
     {
         services._AddCoreValueProvider();
-        services.AddHostedService<PermissionsInitializationBackgroundService>();
+        services.AddInitializerHostedService<PermissionsInitializationBackgroundService>();
         services.AddTransient<IGrantPermissionsSeedHelper, GrantPermissionsSeedHelper>();
 
         services.AddTransient<
@@ -117,12 +118,10 @@ public static class PermissionsSetup
         /*
          * You need to provide a storage implementation for `IPermissionGrantRecordRepository`
          */
-        services.AddSingleton<ICache<PermissionGrantCacheItem>>(sp =>
-            new ScopedCache<PermissionGrantCacheItem>(
-                sp.GetRequiredService<ICache>(),
-                () => $"t:{sp.GetRequiredService<ICurrentTenant>().Id}"
-            )
-        );
+        services.AddSingleton<ICache<PermissionGrantCacheItem>>(sp => new ScopedCache<PermissionGrantCacheItem>(
+            sp.GetRequiredService<ICache>(),
+            () => $"t:{sp.GetRequiredService<ICurrentTenant>().Id}"
+        ));
 
         services.TryAddSingleton<IPermissionGrantStore, PermissionGrantStore>();
         services.TryAddSingleton<IPermissionGrantProviderManager, PermissionGrantProviderManager>();

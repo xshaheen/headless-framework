@@ -13,6 +13,7 @@
     <PackageReference Include="Respawn" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Testing\Headless.Testing.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Testing\Headless.Messaging.Testing.csproj" />
   </ItemGroup>

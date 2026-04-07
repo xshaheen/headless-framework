@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,52 +17,87 @@ public sealed class PermissionsInitializationBackgroundService(
     IServiceScopeFactory serviceScopeFactory,
     IOptions<PermissionManagementOptions> optionsAccessor,
     ILogger<PermissionsInitializationBackgroundService> logger
-) : IHostedService, IDisposable
+) : IHostedService, IDisposable, IInitializer
 {
+    private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly PermissionManagementOptions _options = optionsAccessor.Value;
+    private CancellationTokenSource? _linkedCts;
     private Task? _initializeDynamicPermissionsTask;
+
+    public bool IsInitialized => _tcs.Task.IsCompletedSuccessfully;
+
+    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
+        _tcs.Task.WaitAsync(cancellationToken);
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         if (_options is { SaveStaticPermissionsToDatabase: false, IsDynamicPermissionStoreEnabled: false })
         {
+            // Both features disabled — initialization is a no-op; signal completion immediately.
+            _tcs.TrySetResult();
+
             return Task.CompletedTask;
         }
 
-        _initializeDynamicPermissionsTask = _InitializeDynamicPermissionsAsync(cancellationToken);
+        _linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cancellationTokenSource.Token);
+        _initializeDynamicPermissionsTask = _InitializeDynamicPermissionsAsync(_linkedCts.Token);
 
         return Task.CompletedTask;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        await _cancellationTokenSource.CancelAsync();
+        await _cancellationTokenSource.CancelAsync().ConfigureAwait(false);
+
+        if (_initializeDynamicPermissionsTask is not null)
+        {
+            try
+            {
+#pragma warning disable VSTHRD003 // IHostedService pattern: task started in StartAsync, awaited in StopAsync
+                await _initializeDynamicPermissionsTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+            }
+            catch (OperationCanceledException) { }
+        }
     }
 
     public void Dispose()
     {
+        _linkedCts?.Dispose();
         _cancellationTokenSource.Dispose();
-        _initializeDynamicPermissionsTask?.Dispose();
     }
 
     private async Task _InitializeDynamicPermissionsAsync(CancellationToken cancellationToken)
     {
-        if (cancellationToken.IsCancellationRequested)
+        try
         {
-            return;
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
+
+            await _SaveStaticPermissionsToDatabaseAsync(scope, cancellationToken).ConfigureAwait(false);
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
+            await _PreCacheDynamicPermissionsAsync(scope, cancellationToken).ConfigureAwait(false);
+
+            _tcs.TrySetResult();
         }
-
-        await using var scope = serviceScopeFactory.CreateAsyncScope();
-
-        await _SaveStaticPermissionsToDatabaseAsync(scope, cancellationToken);
-
-        if (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
-            return;
+            _tcs.TrySetCanceled(cancellationToken);
         }
-
-        await _PreCacheDynamicPermissionsAsync(scope, cancellationToken);
+        catch (Exception ex)
+        {
+            _tcs.TrySetException(ex);
+        }
     }
 
     private async Task _SaveStaticPermissionsToDatabaseAsync(
@@ -96,7 +132,7 @@ public sealed class PermissionsInitializationBackgroundService(
 
                 try
                 {
-                    await store.SaveAsync(cancellationToken);
+                    await store.SaveAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception e)
                 {
@@ -122,7 +158,7 @@ public sealed class PermissionsInitializationBackgroundService(
         try
         {
             // Pre-cache permissions, so first request doesn't wait
-            await store.GetGroupsAsync(cancellationToken);
+            await store.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception e)
         {

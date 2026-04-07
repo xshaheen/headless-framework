@@ -1,29 +1,29 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Models;
-using Headless.Permissions.Seeders;
+using Headless.Settings.Definitions;
+using Headless.Settings.Models;
+using Headless.Settings.Seeders;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
-namespace Tests.Services;
+namespace Tests.Seeders;
 
-public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
+public sealed class SettingsInitializationBackgroundServiceTests : TestBase
 {
     private readonly IServiceScopeFactory _serviceScopeFactory = Substitute.For<IServiceScopeFactory>();
     private readonly IServiceScope _serviceScope = Substitute.For<IServiceScope>();
     private readonly IServiceProvider _serviceProvider = Substitute.For<IServiceProvider>();
-    private readonly IDynamicPermissionDefinitionStore _store = Substitute.For<IDynamicPermissionDefinitionStore>();
+    private readonly IDynamicSettingDefinitionStore _store = Substitute.For<IDynamicSettingDefinitionStore>();
     private readonly FakeTimeProvider _timeProvider = new();
 
-    public PermissionsInitializationBackgroundServiceTests()
+    public SettingsInitializationBackgroundServiceTests()
     {
         _serviceScopeFactory.CreateScope().Returns(_serviceScope);
         _serviceScope.ServiceProvider.Returns(_serviceProvider);
-        _serviceProvider.GetService(typeof(IDynamicPermissionDefinitionStore)).Returns(_store);
+        _serviceProvider.GetService(typeof(IDynamicSettingDefinitionStore)).Returns(_store);
     }
 
     #region IInitializer Contract
@@ -33,11 +33,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     {
         // given
         var sut = _CreateSut(
-            new PermissionManagementOptions
-            {
-                SaveStaticPermissionsToDatabase = true,
-                IsDynamicPermissionStoreEnabled = false,
-            }
+            new SettingManagementOptions { SaveStaticSettingsToDatabase = true, IsDynamicSettingStoreEnabled = false }
         );
 
         // then
@@ -49,11 +45,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     {
         // given
         var sut = _CreateSut(
-            new PermissionManagementOptions
-            {
-                SaveStaticPermissionsToDatabase = false,
-                IsDynamicPermissionStoreEnabled = false,
-            }
+            new SettingManagementOptions { SaveStaticSettingsToDatabase = false, IsDynamicSettingStoreEnabled = false }
         );
 
         // when
@@ -67,10 +59,10 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     public async Task should_report_initialized_after_successful_completion()
     {
         // given
-        var options = new PermissionManagementOptions
+        var options = new SettingManagementOptions
         {
-            SaveStaticPermissionsToDatabase = true,
-            IsDynamicPermissionStoreEnabled = false,
+            SaveStaticSettingsToDatabase = true,
+            IsDynamicSettingStoreEnabled = false,
         };
 
         var saveDone = new TaskCompletionSource();
@@ -97,10 +89,10 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     public async Task should_wait_for_initialization_async_completes_after_success()
     {
         // given
-        var options = new PermissionManagementOptions
+        var options = new SettingManagementOptions
         {
-            SaveStaticPermissionsToDatabase = true,
-            IsDynamicPermissionStoreEnabled = false,
+            SaveStaticSettingsToDatabase = true,
+            IsDynamicSettingStoreEnabled = false,
         };
 
         _store.SaveAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
@@ -120,17 +112,17 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     public async Task should_propagate_fault_to_wait_for_initialization_async()
     {
         // given
-        var options = new PermissionManagementOptions
+        var options = new SettingManagementOptions
         {
-            SaveStaticPermissionsToDatabase = false,
-            IsDynamicPermissionStoreEnabled = true,
+            SaveStaticSettingsToDatabase = false,
+            IsDynamicSettingStoreEnabled = true,
         };
 
         var exception = new InvalidOperationException("Store exploded");
 
         _store
-            .GetGroupsAsync(Arg.Any<CancellationToken>())
-            .Returns<IReadOnlyList<PermissionGroupDefinition>>(_ => throw exception);
+            .GetAllAsync(Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<SettingDefinition>>(_ => throw exception);
 
         var sut = _CreateSut(options);
 
@@ -148,10 +140,10 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     public async Task should_propagate_cancellation_to_wait_for_initialization_async_when_stopped()
     {
         // given
-        var options = new PermissionManagementOptions
+        var options = new SettingManagementOptions
         {
-            SaveStaticPermissionsToDatabase = true,
-            IsDynamicPermissionStoreEnabled = false,
+            SaveStaticSettingsToDatabase = true,
+            IsDynamicSettingStoreEnabled = false,
         };
 
         var saveStarted = new TaskCompletionSource();
@@ -184,10 +176,10 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     public async Task should_not_start_when_both_options_disabled()
     {
         // given
-        var options = new PermissionManagementOptions
+        var options = new SettingManagementOptions
         {
-            SaveStaticPermissionsToDatabase = false,
-            IsDynamicPermissionStoreEnabled = false,
+            SaveStaticSettingsToDatabase = false,
+            IsDynamicSettingStoreEnabled = false,
         };
 
         var sut = _CreateSut(options);
@@ -200,21 +192,21 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
 
         // then - store should never be touched
         await _store.DidNotReceive().SaveAsync(Arg.Any<CancellationToken>());
-        await _store.DidNotReceive().GetGroupsAsync(Arg.Any<CancellationToken>());
+        await _store.DidNotReceive().GetAllAsync(Arg.Any<CancellationToken>());
     }
 
     #endregion
 
-    #region Save Static Permissions
+    #region Save Static Settings
 
     [Fact]
-    public async Task should_save_static_permissions_when_enabled()
+    public async Task should_save_static_settings_when_enabled()
     {
         // given
-        var options = new PermissionManagementOptions
+        var options = new SettingManagementOptions
         {
-            SaveStaticPermissionsToDatabase = true,
-            IsDynamicPermissionStoreEnabled = false,
+            SaveStaticSettingsToDatabase = true,
+            IsDynamicSettingStoreEnabled = false,
         };
 
         var saveCalled = new TaskCompletionSource();
@@ -238,25 +230,25 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
 
     #endregion
 
-    #region Pre-cache Dynamic Permissions
+    #region Pre-cache Dynamic Settings
 
     [Fact]
-    public async Task should_pre_cache_dynamic_permissions_when_enabled()
+    public async Task should_pre_cache_dynamic_settings_when_enabled()
     {
         // given
-        var options = new PermissionManagementOptions
+        var options = new SettingManagementOptions
         {
-            SaveStaticPermissionsToDatabase = false,
-            IsDynamicPermissionStoreEnabled = true,
+            SaveStaticSettingsToDatabase = false,
+            IsDynamicSettingStoreEnabled = true,
         };
 
         var preCacheCalled = new TaskCompletionSource();
         _store
-            .GetGroupsAsync(Arg.Any<CancellationToken>())
+            .GetAllAsync(Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 preCacheCalled.TrySetResult();
-                return Task.FromResult<IReadOnlyList<PermissionGroupDefinition>>([]);
+                return Task.FromResult<IReadOnlyList<SettingDefinition>>([]);
             });
 
         var sut = _CreateSut(options);
@@ -265,8 +257,8 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
         await sut.StartAsync(AbortToken);
         await preCacheCalled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        // then - GetGroupsAsync is used to pre-cache
-        await _store.Received(1).GetGroupsAsync(Arg.Any<CancellationToken>());
+        // then - GetAllAsync is used to pre-cache
+        await _store.Received(1).GetAllAsync(Arg.Any<CancellationToken>());
     }
 
     #endregion
@@ -277,10 +269,10 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     public async Task should_retry_on_save_failure()
     {
         // given
-        var options = new PermissionManagementOptions
+        var options = new SettingManagementOptions
         {
-            SaveStaticPermissionsToDatabase = true,
-            IsDynamicPermissionStoreEnabled = false,
+            SaveStaticSettingsToDatabase = true,
+            IsDynamicSettingStoreEnabled = false,
         };
 
         var callCount = 0;
@@ -318,44 +310,6 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
         callCount.Should().BeGreaterThanOrEqualTo(3);
     }
 
-    [Fact]
-    public async Task should_use_10_retries_max()
-    {
-        // given
-        var options = new PermissionManagementOptions
-        {
-            SaveStaticPermissionsToDatabase = true,
-            IsDynamicPermissionStoreEnabled = false,
-        };
-
-        var callCount = 0;
-
-        _store
-            .SaveAsync(Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                callCount++;
-
-                throw new InvalidOperationException("Always fails");
-            });
-
-        using var sut = _CreateSut(options);
-
-        // when
-        await sut.StartAsync(CancellationToken.None);
-
-        // Advance time significantly to allow all retries
-        // Total delay for 10 retries: 2+4+8+16+32+64+128+256+512+1024 = 2046 seconds ~= 34 minutes
-        for (var i = 0; i < 20; i++)
-        {
-            _timeProvider.Advance(TimeSpan.FromMinutes(5));
-            await Task.Delay(50);
-        }
-
-        // then - should have exactly 11 attempts (1 initial + 10 retries)
-        callCount.Should().Be(11);
-    }
-
     #endregion
 
     #region Cancellation
@@ -363,11 +317,11 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     [Fact]
     public async Task should_cancel_on_start_token_cancellation()
     {
-        // given - test that cancellation via input token works
-        var options = new PermissionManagementOptions
+        // given
+        var options = new SettingManagementOptions
         {
-            SaveStaticPermissionsToDatabase = true,
-            IsDynamicPermissionStoreEnabled = false,
+            SaveStaticSettingsToDatabase = true,
+            IsDynamicSettingStoreEnabled = false,
         };
 
         using var cts = new CancellationTokenSource();
@@ -384,7 +338,6 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
 
                 try
                 {
-                    // Wait for cancellation using the provided CancellationToken
                     await Task.Delay(Timeout.Infinite, ct);
                 }
                 catch (OperationCanceledException)
@@ -402,16 +355,13 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
         await sut.StartAsync(cts.Token);
         await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        // Cancel the token
         await cts.CancelAsync();
 
-        // Wait for cancellation to be observed
         var cancelledTask = await Task.WhenAny(saveCancelled.Task, Task.Delay(TimeSpan.FromSeconds(5)));
 
-        // then - the save operation should have been cancelled
+        // then
         cancelledTask.Should().Be(saveCancelled.Task, "cancellation token should cancel the background task");
 
-        // Wait for task completion before dispose
         await Task.WhenAny(taskCompleted.Task, Task.Delay(TimeSpan.FromSeconds(1)));
     }
 
@@ -423,10 +373,10 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     public async Task should_dispose_cancellation_token_source()
     {
         // given
-        var options = new PermissionManagementOptions
+        var options = new SettingManagementOptions
         {
-            SaveStaticPermissionsToDatabase = false,
-            IsDynamicPermissionStoreEnabled = false,
+            SaveStaticSettingsToDatabase = false,
+            IsDynamicSettingStoreEnabled = false,
         };
 
         var sut = _CreateSut(options);
@@ -436,55 +386,20 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
         sut.Dispose();
 
         // then - should not throw on dispose (proper cleanup)
-        // Calling dispose again should also not throw (idempotent)
         var action = () => sut.Dispose();
         action.Should().NotThrow();
     }
 
     #endregion
 
-    #region Error Logging
-
-    [Fact]
-    public async Task should_call_get_groups_on_pre_cache_failure()
-    {
-        // given
-        var options = new PermissionManagementOptions
-        {
-            SaveStaticPermissionsToDatabase = false,
-            IsDynamicPermissionStoreEnabled = true,
-        };
-
-        var getGroupsCalled = new TaskCompletionSource();
-
-        _store
-            .GetGroupsAsync(Arg.Any<CancellationToken>())
-            .Returns<IReadOnlyList<PermissionGroupDefinition>>(_ =>
-            {
-                getGroupsCalled.TrySetResult();
-                throw new InvalidOperationException("Pre-cache failed");
-            });
-
-        var sut = _CreateSut(options);
-
-        // when
-        await sut.StartAsync(CancellationToken.None);
-        await getGroupsCalled.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-        // then
-        await _store.Received(1).GetGroupsAsync(Arg.Any<CancellationToken>());
-    }
-
-    #endregion
-
     #region Helpers
 
-    private PermissionsInitializationBackgroundService _CreateSut(PermissionManagementOptions options)
+    private SettingsInitializationBackgroundService _CreateSut(SettingManagementOptions options)
     {
         var optionsAccessor = Options.Create(options);
-        var logger = LoggerFactory.CreateLogger<PermissionsInitializationBackgroundService>();
+        var logger = LoggerFactory.CreateLogger<SettingsInitializationBackgroundService>();
 
-        return new PermissionsInitializationBackgroundService(
+        return new SettingsInitializationBackgroundService(
             _timeProvider,
             _serviceScopeFactory,
             optionsAccessor,

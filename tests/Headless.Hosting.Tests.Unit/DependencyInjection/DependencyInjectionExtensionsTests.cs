@@ -1,4 +1,6 @@
+using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Tests.DependencyInjection;
 
@@ -552,6 +554,97 @@ public sealed class DependencyInjectionExtensionsTests
         // then
         myServiceWithoutKey.Should().BeNull();
     }
+
+    #region AddInitializerHostedService
+
+    [Fact]
+    public void add_initializer_hosted_service_should_register_T_as_singleton()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddInitializerHostedService<MyInitializerService>();
+        var provider = services.BuildServiceProvider();
+        var resolved = provider.GetRequiredService<MyInitializerService>();
+
+        // then
+        resolved.Should().NotBeNull();
+        resolved.Should().BeOfType<MyInitializerService>();
+    }
+
+    [Fact]
+    public void add_initializer_hosted_service_should_forward_as_IInitializer_using_same_singleton_instance()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddInitializerHostedService<MyInitializerService>();
+        var provider = services.BuildServiceProvider();
+
+        var singleton = provider.GetRequiredService<MyInitializerService>();
+        var initializer = provider.GetServices<IInitializer>().OfType<MyInitializerService>().Single();
+
+        // then
+        initializer.Should().BeSameAs(singleton);
+    }
+
+    [Fact]
+    public void add_initializer_hosted_service_should_forward_as_IHostedService_using_same_singleton_instance()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddInitializerHostedService<MyInitializerService>();
+        var provider = services.BuildServiceProvider();
+
+        var singleton = provider.GetRequiredService<MyInitializerService>();
+        var hostedService = provider.GetServices<IHostedService>().OfType<MyInitializerService>().Single();
+
+        // then
+        hostedService.Should().BeSameAs(singleton);
+    }
+
+    [Fact]
+    public void add_initializer_hosted_service_should_be_idempotent_when_called_twice()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddInitializerHostedService<MyInitializerService>();
+        services.AddInitializerHostedService<MyInitializerService>();
+        var provider = services.BuildServiceProvider();
+
+        // then — no duplicates
+        provider.GetServices<IInitializer>().OfType<MyInitializerService>().Should().HaveCount(1);
+        provider.GetServices<IHostedService>().OfType<MyInitializerService>().Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void add_initializer_hosted_service_should_register_multiple_distinct_types_independently()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddInitializerHostedService<MyInitializerService>();
+        services.AddInitializerHostedService<AnotherInitializerService>();
+        var provider = services.BuildServiceProvider();
+
+        // then — each type gets its own IInitializer and IHostedService entry
+        var initializers = provider.GetServices<IInitializer>().ToList();
+        initializers.Should().ContainSingle(i => i is MyInitializerService);
+        initializers.Should().ContainSingle(i => i is AnotherInitializerService);
+
+        var hostedServices = provider.GetServices<IHostedService>().ToList();
+        hostedServices.Should().ContainSingle(h => h is MyInitializerService);
+        hostedServices.Should().ContainSingle(h => h is AnotherInitializerService);
+    }
+
+    #endregion
 }
 
 public interface IMyService
@@ -567,4 +660,27 @@ public sealed class MyService : IMyService
 public sealed class ReplacementService : IMyService
 {
     public string Greet() => "replacement";
+}
+
+// Helpers for AddInitializerHostedService<T> tests
+public sealed class MyInitializerService : IHostedService, IInitializer
+{
+    public bool IsInitialized => true;
+
+    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+public sealed class AnotherInitializerService : IHostedService, IInitializer
+{
+    public bool IsInitialized => true;
+
+    public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

@@ -5,7 +5,6 @@ using Headless.DistributedLocks.Redis;
 using Headless.Domain;
 using Headless.Messaging;
 using Headless.Permissions;
-using Headless.Permissions.Seeders;
 using Headless.Permissions.Storage.EntityFramework;
 using Headless.Redis;
 using Headless.Testing.Tests;
@@ -69,7 +68,5 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         services
             .AddPermissionsManagementCore()
             .AddPermissionsManagementDbContextStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
-
-        services.RemoveHostedService<PermissionsInitializationBackgroundService>();
     }
 }
