@@ -28,6 +28,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
 {
     private readonly Action<IServiceCollection>? _configureTestServices;
     private readonly Action<IWebHostBuilder>? _configureWebHost;
+    private readonly TimeSpan _initializerTimeout;
     private readonly List<(Func<IServiceProvider, Task> Check, TimeSpan Timeout)> _readinessChecks = [];
     private Action<DatabaseResetOptions>? _configureDatabaseReset;
     private readonly SemaphoreSlim _initGate = new(1, 1);
@@ -42,11 +43,13 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
 
     public HeadlessTestServer(
         Action<IServiceCollection>? configureTestServices = null,
-        Action<IWebHostBuilder>? configureWebHost = null
+        Action<IWebHostBuilder>? configureWebHost = null,
+        TimeSpan? initializerTimeout = null
     )
     {
         _configureTestServices = configureTestServices;
         _configureWebHost = configureWebHost;
+        _initializerTimeout = initializerTimeout ?? TimeSpan.FromSeconds(60);
     }
 
     /// <summary>The fake time provider registered in the test host.</summary>
@@ -252,7 +255,6 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
         await _initGate.WaitAsync().ConfigureAwait(false);
 
         WebApplicationFactory<TProgram>? factory = null;
-        var success = false;
 
         try
         {
@@ -263,7 +265,9 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
                 return;
             }
 
+#pragma warning disable CA2000 // Ownership transferred to _factory on success; finally disposes on failure
             factory = new ServerFactory(_configureTestServices, _configureWebHost);
+#pragma warning restore CA2000
 
             // Force host startup — triggers ConfigureTestServices
             _ = factory.Services;
@@ -275,7 +279,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
 
             foreach (var initializer in initializers)
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+                using var cts = new CancellationTokenSource(_initializerTimeout);
 
                 try
                 {
@@ -284,7 +288,14 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
                 catch (OperationCanceledException) when (cts.IsCancellationRequested)
                 {
                     throw new TimeoutException(
-                        $"Initializer '{initializer.GetType().Name}' did not complete within 60s."
+                        $"Initializer '{initializer.GetType().Name}' did not complete within {_initializerTimeout.TotalSeconds:F0}s."
+                    );
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    throw new InvalidOperationException(
+                        $"Initializer '{initializer.GetType().Name}' faulted during test initialization.",
+                        ex
                     );
                 }
             }
@@ -305,11 +316,11 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
             }
 
             _factory = factory;
-            success = true;
+            factory = null; // ownership transferred; suppress CA2000
         }
         finally
         {
-            if (!success && factory is not null)
+            if (factory is not null)
             {
                 await factory.DisposeAsync().ConfigureAwait(false);
             }

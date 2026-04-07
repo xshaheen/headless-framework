@@ -14,8 +14,8 @@ public interface IInitializer
 {
     /// <summary>
     /// Gets a value indicating whether initialization has completed successfully.
-    /// Returns <c>true</c> only after the initialization sequence finishes without error.
-    /// Returns <c>false</c> while initialization is still in progress, if it was skipped, or if it failed.
+    /// Returns <c>true</c> after the initialization sequence finishes without error, or when it is skipped (no-op).
+    /// Returns <c>false</c> while initialization is still in progress or if it failed.
     /// </summary>
     bool IsInitialized { get; }
 

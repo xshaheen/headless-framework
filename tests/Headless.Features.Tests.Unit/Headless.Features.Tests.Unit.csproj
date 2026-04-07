@@ -3,14 +3,20 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
     <OutputType>Exe</OutputType>
+    <!-- Code coverage thresholds -->
+    <CollectCoverage>true</CollectCoverage>
+    <CoverletOutputFormat>cobertura</CoverletOutputFormat>
+    <Threshold>80</Threshold>
+    <ThresholdType>line,branch</ThresholdType>
+    <ThresholdStat>total</ThresholdStat>
+    <ExcludeByAttribute>CompilerGenerated,GeneratedCode,ExcludeFromCodeCoverage</ExcludeByAttribute>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Headless.Settings.Abstractions\Headless.Settings.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Settings.Core\Headless.Settings.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Features.Core\Headless.Features.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

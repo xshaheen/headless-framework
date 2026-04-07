@@ -22,6 +22,7 @@ public sealed class PermissionsInitializationBackgroundService(
     private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly PermissionManagementOptions _options = optionsAccessor.Value;
+    private CancellationTokenSource? _linkedCts;
     private Task? _initializeDynamicPermissionsTask;
 
     public bool IsInitialized => _tcs.Task.IsCompletedSuccessfully;
@@ -39,7 +40,8 @@ public sealed class PermissionsInitializationBackgroundService(
             return Task.CompletedTask;
         }
 
-        _initializeDynamicPermissionsTask = _InitializeDynamicPermissionsAsync(cancellationToken);
+        _linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cancellationTokenSource.Token);
+        _initializeDynamicPermissionsTask = _InitializeDynamicPermissionsAsync(_linkedCts.Token);
 
         return Task.CompletedTask;
     }
@@ -53,22 +55,16 @@ public sealed class PermissionsInitializationBackgroundService(
             try
             {
 #pragma warning disable VSTHRD003 // IHostedService pattern: task started in StartAsync, awaited in StopAsync
-                await _initializeDynamicPermissionsTask.ConfigureAwait(false);
+                await _initializeDynamicPermissionsTask.WaitAsync(cancellationToken).ConfigureAwait(false);
 #pragma warning restore VSTHRD003
             }
-            catch (OperationCanceledException)
-            {
-                // Expected during shutdown
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Background initialization task faulted");
-            }
+            catch (OperationCanceledException) { }
         }
     }
 
     public void Dispose()
     {
+        _linkedCts?.Dispose();
         _cancellationTokenSource.Dispose();
     }
 
@@ -83,20 +79,20 @@ public sealed class PermissionsInitializationBackgroundService(
 
             await using var scope = serviceScopeFactory.CreateAsyncScope();
 
-            await _SaveStaticPermissionsToDatabaseAsync(scope, cancellationToken);
+            await _SaveStaticPermissionsToDatabaseAsync(scope, cancellationToken).ConfigureAwait(false);
 
             if (cancellationToken.IsCancellationRequested)
             {
                 return;
             }
 
-            await _PreCacheDynamicPermissionsAsync(scope, cancellationToken);
+            await _PreCacheDynamicPermissionsAsync(scope, cancellationToken).ConfigureAwait(false);
 
             _tcs.TrySetResult();
         }
         catch (OperationCanceledException)
         {
-            // Shutdown before completion — leave TCS incomplete so waiters get a timeout.
+            _tcs.TrySetCanceled(cancellationToken);
         }
         catch (Exception ex)
         {
@@ -136,7 +132,7 @@ public sealed class PermissionsInitializationBackgroundService(
 
                 try
                 {
-                    await store.SaveAsync(cancellationToken);
+                    await store.SaveAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception e)
                 {
@@ -162,7 +158,7 @@ public sealed class PermissionsInitializationBackgroundService(
         try
         {
             // Pre-cache permissions, so first request doesn't wait
-            await store.GetGroupsAsync(cancellationToken);
+            await store.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception e)
         {

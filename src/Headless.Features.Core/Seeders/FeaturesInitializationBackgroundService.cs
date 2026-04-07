@@ -22,6 +22,7 @@ public sealed class FeaturesInitializationBackgroundService(
     private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly FeatureManagementOptions _options = optionsAccessor.Value;
+    private CancellationTokenSource? _linkedCts;
     private Task? _initializeDynamicFeaturesTask;
 
     public bool IsInitialized => _tcs.Task.IsCompletedSuccessfully;
@@ -31,15 +32,16 @@ public sealed class FeaturesInitializationBackgroundService(
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        if (_options is not { SaveStaticFeaturesToDatabase: false, IsDynamicFeatureStoreEnabled: false })
-        {
-            _initializeDynamicFeaturesTask = _InitializeDynamicFeaturesAsync(cancellationToken);
-        }
-        else
+        if (_options is { SaveStaticFeaturesToDatabase: false, IsDynamicFeatureStoreEnabled: false })
         {
             // Both features disabled — initialization is a no-op; signal completion immediately.
             _tcs.TrySetResult();
+
+            return Task.CompletedTask;
         }
+
+        _linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cancellationTokenSource.Token);
+        _initializeDynamicFeaturesTask = _InitializeDynamicFeaturesAsync(_linkedCts.Token);
 
         return Task.CompletedTask;
     }
@@ -53,22 +55,16 @@ public sealed class FeaturesInitializationBackgroundService(
             try
             {
 #pragma warning disable VSTHRD003 // IHostedService pattern: task started in StartAsync, awaited in StopAsync
-                await _initializeDynamicFeaturesTask.ConfigureAwait(false);
+                await _initializeDynamicFeaturesTask.WaitAsync(cancellationToken).ConfigureAwait(false);
 #pragma warning restore VSTHRD003
             }
-            catch (OperationCanceledException)
-            {
-                // Expected during shutdown
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Background initialization task faulted");
-            }
+            catch (OperationCanceledException) { }
         }
     }
 
     public void Dispose()
     {
+        _linkedCts?.Dispose();
         _cancellationTokenSource.Dispose();
     }
 
@@ -83,7 +79,7 @@ public sealed class FeaturesInitializationBackgroundService(
 
             await using var scope = serviceScopeFactory.CreateAsyncScope();
 
-            await _SaveStaticFeaturesToDatabaseAsync(scope, cancellationToken);
+            await _SaveStaticFeaturesToDatabaseAsync(scope, cancellationToken).ConfigureAwait(false);
 
             if (cancellationToken.IsCancellationRequested)
             {
@@ -96,7 +92,7 @@ public sealed class FeaturesInitializationBackgroundService(
         }
         catch (OperationCanceledException)
         {
-            // Shutdown before completion — leave TCS incomplete so waiters get a timeout.
+            _tcs.TrySetCanceled(cancellationToken);
         }
         catch (Exception ex)
         {

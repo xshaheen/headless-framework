@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Headless.Abstractions;
+using Headless.Hosting.Initialization;
 using Headless.Testing.AspNetCore;
 using Headless.Testing.Helpers;
 using Microsoft.Extensions.DependencyInjection;
@@ -275,5 +276,46 @@ public sealed class HeadlessTestServerTests : IAsyncLifetime
         providers.Distinct().Should().HaveCount(3);
     }
 
+    [Fact]
+    public async Task should_throw_timeout_when_initializer_exceeds_timeout()
+    {
+        _server = new HeadlessTestServer<Program>(
+            configureTestServices: services => services.AddSingleton<IInitializer>(new NeverCompletesInitializer()),
+            initializerTimeout: TimeSpan.FromMilliseconds(100)
+        );
+
+        Func<Task> act = async () => await _server.InitializeAsync();
+
+        await act.Should().ThrowExactlyAsync<TimeoutException>().WithMessage("*NeverCompletesInitializer*");
+    }
+
+    [Fact]
+    public async Task should_throw_when_initializer_faults()
+    {
+        _server = new HeadlessTestServer<Program>(configureTestServices: services =>
+            services.AddSingleton<IInitializer>(new FaultingInitializer())
+        );
+
+        Func<Task> act = async () => await _server.InitializeAsync();
+
+        await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("*FaultingInitializer*faulted*");
+    }
+
     private sealed class MarkerService;
+
+    private sealed class NeverCompletesInitializer : IInitializer
+    {
+        public bool IsInitialized => false;
+
+        public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
+            Task.Delay(Timeout.Infinite, cancellationToken);
+    }
+
+    private sealed class FaultingInitializer : IInitializer
+    {
+        public bool IsInitialized => false;
+
+        public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
+            Task.FromException(new InvalidOperationException("Initializer exploded"));
+    }
 }

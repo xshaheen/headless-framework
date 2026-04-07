@@ -92,7 +92,7 @@ public sealed class SettingsInitializationBackgroundService(
         }
         catch (OperationCanceledException)
         {
-            // Shutdown before completion — leave TCS incomplete so waiters get a timeout.
+            _tcs.TrySetCanceled(cancellationToken);
         }
         catch (Exception ex)
         {

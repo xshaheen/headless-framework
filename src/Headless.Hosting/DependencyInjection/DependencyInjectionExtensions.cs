@@ -365,11 +365,13 @@ public static class DependencyInjectionExtensions
     /// Equivalent to:
     /// <code>
     /// services.TryAddSingleton&lt;T&gt;();
-    /// services.TryAddEnumerable(ServiceDescriptor.Singleton&lt;IInitializer&gt;(sp => sp.GetRequiredService&lt;T&gt;()));
-    /// services.AddHostedService(sp => sp.GetRequiredService&lt;T&gt;());
+    /// services.TryAddEnumerable(ServiceDescriptor.Singleton&lt;IInitializer, T&gt;(sp => sp.GetRequiredService&lt;T&gt;()));
+    /// services.TryAddEnumerable(ServiceDescriptor.Singleton&lt;IHostedService, T&gt;(sp => sp.GetRequiredService&lt;T&gt;()));
     /// </code>
     /// Using <c>TryAddSingleton</c> and <c>TryAddEnumerable</c> guards against double-registration
-    /// when the setup method is called more than once.
+    /// when the setup method is called more than once. The <c>ImplementationType</c> carried by the
+    /// two-argument overload of <c>ServiceDescriptor.Singleton&lt;TService, TImplementation&gt;</c>
+    /// is what allows <c>TryAddEnumerable</c> to deduplicate by implementation type.
     /// </remarks>
     public static IServiceCollection AddInitializerHostedService<T>(this IServiceCollection services)
         where T : class, IHostedService, IInitializer
@@ -377,8 +379,8 @@ public static class DependencyInjectionExtensions
         Argument.IsNotNull(services);
 
         services.TryAddSingleton<T>();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IInitializer>(sp => sp.GetRequiredService<T>()));
-        services.AddHostedService(sp => sp.GetRequiredService<T>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IInitializer, T>(sp => sp.GetRequiredService<T>()));
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, T>(sp => sp.GetRequiredService<T>()));
 
         return services;
     }

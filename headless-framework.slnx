@@ -106,6 +106,7 @@
         <Project Path="src\Headless.Features.Core\Headless.Features.Core.csproj" />
         <Project Path="src\Headless.Features.Storage.EntityFramework\Headless.Features.Storage.EntityFramework.csproj" />
         <Project Path="tests\Headless.Features.Tests.Integration\Headless.Features.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Features.Tests.Unit\Headless.Features.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Generators/">
         <Project Path="src\Headless.Generator.Primitives.Abstractions\Headless.Generator.Primitives.Abstractions.csproj" />
