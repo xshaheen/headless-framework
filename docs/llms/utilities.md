@@ -395,6 +395,7 @@ Provides essential DI extensions, configuration helpers, options validation, and
 - Database seeder infrastructure (`ISeeder`, `IPreSeeder`)
 - Keyed services helpers
 - Hosted service management
+- Background startup processes can expose readiness signals so dependent flows can wait for initialization completion.
 
 ## Installation
 
