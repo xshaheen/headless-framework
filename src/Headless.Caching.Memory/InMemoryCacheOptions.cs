@@ -30,7 +30,7 @@ public sealed class InMemoryCacheOptions : CacheOptions
     public bool ShouldThrowOnSerializationError { get; set; } = true;
 }
 
-public sealed class InMemoryCacheOptionsValidator : AbstractValidator<InMemoryCacheOptions>
+internal sealed class InMemoryCacheOptionsValidator : AbstractValidator<InMemoryCacheOptions>
 {
     public InMemoryCacheOptionsValidator()
     {

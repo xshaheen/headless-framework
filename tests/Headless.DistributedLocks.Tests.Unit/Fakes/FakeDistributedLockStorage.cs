@@ -9,14 +9,25 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
 {
     private readonly ConcurrentDictionary<string, LockEntry> _locks = new(StringComparer.Ordinal);
 
-    public ValueTask<bool> InsertAsync(string key, string lockId, TimeSpan? ttl = null)
+    public ValueTask<bool> InsertAsync(
+        string key,
+        string lockId,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
     {
         var entry = new LockEntry(lockId, ttl.HasValue ? DateTime.UtcNow.Add(ttl.Value) : null);
         var added = _locks.TryAdd(key, entry);
         return ValueTask.FromResult(added);
     }
 
-    public ValueTask<bool> ReplaceIfEqualAsync(string key, string expectedId, string newId, TimeSpan? newTtl = null)
+    public ValueTask<bool> ReplaceIfEqualAsync(
+        string key,
+        string expectedId,
+        string newId,
+        TimeSpan? newTtl = null,
+        CancellationToken cancellationToken = default
+    )
     {
         if (!_locks.TryGetValue(key, out var existing) || existing.LockId != expectedId)
         {
@@ -28,7 +39,11 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
         return ValueTask.FromResult(replaced);
     }
 
-    public ValueTask<bool> RemoveIfEqualAsync(string key, string expectedId)
+    public ValueTask<bool> RemoveIfEqualAsync(
+        string key,
+        string expectedId,
+        CancellationToken cancellationToken = default
+    )
     {
         if (!_locks.TryGetValue(key, out var existing) || existing.LockId != expectedId)
         {
@@ -39,7 +54,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
         return ValueTask.FromResult(removed);
     }
 
-    public ValueTask<TimeSpan?> GetExpirationAsync(string key)
+    public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
     {
         if (!_locks.TryGetValue(key, out var entry) || entry.Expiration is null)
         {
@@ -50,12 +65,16 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
         return ValueTask.FromResult<TimeSpan?>(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
     }
 
-    public ValueTask<bool> ExistsAsync(string key) => ValueTask.FromResult(_locks.ContainsKey(key));
+    public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult(_locks.ContainsKey(key));
 
-    public ValueTask<string?> GetAsync(string key) =>
+    public ValueTask<string?> GetAsync(string key, CancellationToken cancellationToken = default) =>
         ValueTask.FromResult(_locks.TryGetValue(key, out var entry) ? entry.LockId : null);
 
-    public ValueTask<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(string prefix)
+    public ValueTask<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default
+    )
     {
         var result = _locks
             .Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal))
@@ -64,7 +83,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
         return ValueTask.FromResult<IReadOnlyDictionary<string, string>>(result);
     }
 
-    public ValueTask<long> GetCountAsync(string prefix = "")
+    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         var count = string.IsNullOrEmpty(prefix)
             ? _locks.Count

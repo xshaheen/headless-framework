@@ -16,6 +16,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     /// <summary>Minimum interval between background maintenance runs.</summary>
     private const int _MaintenanceIntervalMs = 250;
 
+    private static readonly long _MaintenanceIntervalTicks = TimeSpan.FromMilliseconds(_MaintenanceIntervalMs).Ticks;
+
     /// <summary>Maximum entries to evict per compaction cycle.</summary>
     private const int _MaxEvictionsPerCompaction = 10;
 
@@ -271,20 +273,25 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             prefixedKey,
             (_, existingEntry) =>
             {
+                wasReplaced = false;
+                sizeDelta = 0;
+
                 if (existingEntry.IsExpired)
                 {
-                    // Entry exists but is expired - don't replace
                     return existingEntry;
                 }
 
-                var oldSize = existingEntry.Size;
-                existingEntry.Value = value;
-                existingEntry.ExpiresAt = expiresAt;
-                existingEntry.Size = entrySize;
-                sizeDelta = entrySize - oldSize;
+                sizeDelta = entrySize - existingEntry.Size;
                 wasReplaced = true;
 
-                return existingEntry;
+                return new CacheEntry(
+                    value,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    entrySize
+                );
             }
         );
 
@@ -336,19 +343,27 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             key,
             (_, existingEntry) =>
             {
+                wasExpectedValue = false;
+                sizeDelta = 0;
+
                 var currentValue = existingEntry.GetValue<T>();
 
-                if (Equals(currentValue, expected))
+                if (!Equals(currentValue, expected))
                 {
-                    var oldSize = existingEntry.Size;
-                    existingEntry.Value = value;
-                    existingEntry.ExpiresAt = expiresAt;
-                    existingEntry.Size = newSize;
-                    sizeDelta = newSize - oldSize;
-                    wasExpectedValue = true;
+                    return existingEntry;
                 }
 
-                return existingEntry;
+                sizeDelta = newSize - existingEntry.Size;
+                wasExpectedValue = true;
+
+                return new CacheEntry(
+                    value,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    newSize
+                );
             }
         );
 
@@ -805,33 +820,32 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        key = _GetKey(key);
-
         if (expiration is { Ticks: <= 0 })
         {
             await SetRemoveAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
             return 0;
         }
 
+        key = _GetKey(key);
+
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         var expiresAt = expiration.HasValue ? utcNow.Add(expiration.Value) : (DateTime?)null;
 
         if (value is string stringValue)
         {
-            var items = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase)
+            var newItems = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase)
             {
                 { stringValue, expiresAt },
             };
-            var entrySize = _CalculateEntrySize(items);
+            var entrySize = _CalculateEntrySize(newItems);
             var entry = new CacheEntry(
-                items,
+                newItems,
                 expiresAt,
                 _timeProvider,
                 _shouldClone,
                 _shouldThrowOnSerializationError,
                 entrySize
             );
-
             long sizeDelta = 0;
 
             _memory.AddOrUpdate(
@@ -846,21 +860,29 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                     if (existingEntry.Value is not IDictionary<string, DateTime?> dictionary)
                     {
                         throw new InvalidOperationException(
-                            $"Unable to add value for key: {existingKey}. Cache value does not contain a dictionary"
+                            $"Unable to add value for key: {existingKey}. Cache value does not contain a set"
                         );
                     }
 
-                    var oldSize = existingEntry.Size;
-                    _ExpireListValues(dictionary);
-                    dictionary[stringValue] = expiresAt;
-                    existingEntry.Value = dictionary;
-                    existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
+                    var updatedDict = new Dictionary<string, DateTime?>(dictionary, StringComparer.OrdinalIgnoreCase);
+                    _ExpireListValues(updatedDict);
+                    updatedDict[stringValue] = expiresAt;
 
-                    var newSize = _CalculateEntrySize(dictionary);
-                    existingEntry.Size = newSize;
-                    sizeDelta = newSize - oldSize;
+                    var newExpiresAt =
+                        updatedDict.Count == 0 ? (DateTime?)DateTime.MinValue
+                        : updatedDict.ContainsValue(null) ? null
+                        : updatedDict.Values.Max();
+                    var newSize = _CalculateEntrySize(updatedDict);
+                    sizeDelta = newSize - existingEntry.Size;
 
-                    return existingEntry;
+                    return new CacheEntry(
+                        updatedDict,
+                        newExpiresAt,
+                        _timeProvider,
+                        _shouldClone,
+                        _shouldThrowOnSerializationError,
+                        newSize
+                    );
                 }
             );
 
@@ -871,32 +893,34 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
             await _StartMaintenanceAsync().ConfigureAwait(false);
 
-            return items.Count;
+            return newItems.Count;
         }
         else
         {
-            var items = new Dictionary<object, DateTime?>();
+            var newItems = new Dictionary<object, DateTime?>();
 
-            foreach (var v in value.Where(v => v is not null))
+            foreach (var v in value)
             {
-                items[v!] = expiresAt;
+                if (v is not null)
+                {
+                    newItems[v] = expiresAt;
+                }
             }
 
-            if (items.Count is 0)
+            if (newItems.Count is 0)
             {
                 return 0;
             }
 
-            var entrySize = _CalculateEntrySize(items);
+            var entrySize = _CalculateEntrySize(newItems);
             var entry = new CacheEntry(
-                items,
+                newItems,
                 expiresAt,
                 _timeProvider,
                 _shouldClone,
                 _shouldThrowOnSerializationError,
                 entrySize
             );
-
             long sizeDelta = 0;
 
             _memory.AddOrUpdate(
@@ -915,22 +939,29 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                         );
                     }
 
-                    var oldSize = existingEntry.Size;
-                    _ExpireListValues(dictionary);
+                    var updatedDict = new Dictionary<object, DateTime?>(dictionary);
+                    _ExpireListValues(updatedDict);
 
-                    foreach (var kvp in items)
+                    foreach (var kvp in newItems)
                     {
-                        dictionary[kvp.Key] = kvp.Value;
+                        updatedDict[kvp.Key] = kvp.Value;
                     }
 
-                    existingEntry.Value = dictionary;
-                    existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
+                    var newExpiresAt =
+                        updatedDict.Count == 0 ? (DateTime?)DateTime.MinValue
+                        : updatedDict.ContainsValue(null) ? null
+                        : updatedDict.Values.Max();
+                    var newSize = _CalculateEntrySize(updatedDict);
+                    sizeDelta = newSize - existingEntry.Size;
 
-                    var newSize = _CalculateEntrySize(dictionary);
-                    existingEntry.Size = newSize;
-                    sizeDelta = newSize - oldSize;
-
-                    return existingEntry;
+                    return new CacheEntry(
+                        updatedDict,
+                        newExpiresAt,
+                        _timeProvider,
+                        _shouldClone,
+                        _shouldThrowOnSerializationError,
+                        newSize
+                    );
                 }
             );
 
@@ -941,7 +972,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
             await _StartMaintenanceAsync().ConfigureAwait(false);
 
-            return items.Count;
+            return newItems.Count;
         }
     }
 
@@ -1094,36 +1125,64 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         Argument.IsPositive(pageIndex);
         cancellationToken.ThrowIfCancellationRequested();
 
-        key = _GetKey(key);
-
-        var dictionaryCacheValue = await GetAsync<IDictionary<T, DateTime?>>(key, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!dictionaryCacheValue.HasValue)
-        {
-            return new CacheValue<ICollection<T>>([], false);
-        }
-
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-        var nonExpiredKeys = dictionaryCacheValue
-            .Value!.Where(kvp => kvp.Value is null || kvp.Value >= utcNow)
-            .Select(kvp => kvp.Key)
-            .ToArray();
 
-        if (nonExpiredKeys.Length is 0)
+        if (typeof(T) == typeof(string))
         {
-            return new CacheValue<ICollection<T>>([], false);
-        }
+            var dictionaryCacheValue = await GetAsync<IDictionary<string, DateTime?>>(key, cancellationToken)
+                .ConfigureAwait(false);
 
-        if (!pageIndex.HasValue)
+            if (!dictionaryCacheValue.HasValue)
+            {
+                return new CacheValue<ICollection<T>>([], false);
+            }
+
+            var nonExpiredKeys = dictionaryCacheValue
+                .Value!.Where(kvp => kvp.Value is null || kvp.Value >= utcNow)
+                .Select(kvp => (T)(object)kvp.Key)
+                .ToArray();
+
+            if (nonExpiredKeys.Length is 0)
+            {
+                return new CacheValue<ICollection<T>>([], false);
+            }
+
+            if (!pageIndex.HasValue)
+            {
+                return new CacheValue<ICollection<T>>(nonExpiredKeys, true);
+            }
+
+            var skip = (pageIndex.Value - 1) * pageSize;
+            return new CacheValue<ICollection<T>>(nonExpiredKeys.Skip(skip).Take(pageSize).ToArray(), true);
+        }
+        else
         {
-            return new CacheValue<ICollection<T>>(nonExpiredKeys, true);
+            var dictionaryCacheValue = await GetAsync<IDictionary<object, DateTime?>>(key, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!dictionaryCacheValue.HasValue)
+            {
+                return new CacheValue<ICollection<T>>([], false);
+            }
+
+            var nonExpiredKeys = dictionaryCacheValue
+                .Value!.Where(kvp => kvp.Value is null || kvp.Value >= utcNow)
+                .Select(kvp => (T)kvp.Key)
+                .ToArray();
+
+            if (nonExpiredKeys.Length is 0)
+            {
+                return new CacheValue<ICollection<T>>([], false);
+            }
+
+            if (!pageIndex.HasValue)
+            {
+                return new CacheValue<ICollection<T>>(nonExpiredKeys, true);
+            }
+
+            var skip = (pageIndex.Value - 1) * pageSize;
+            return new CacheValue<ICollection<T>>(nonExpiredKeys.Skip(skip).Take(pageSize).ToArray(), true);
         }
-
-        var skip = (pageIndex.Value - 1) * pageSize;
-        var pagedItems = nonExpiredKeys.Skip(skip).Take(pageSize).ToArray();
-
-        return new CacheValue<ICollection<T>>(pagedItems, true);
     }
 
     #endregion
@@ -1158,28 +1217,26 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         key = _GetKey(key);
-        var wasExpectedValue = false;
+        var wasRemoved = false;
 
-        _memory.TryUpdate(
-            key,
-            (_, existingEntry) =>
+        while (_memory.TryGetValue(key, out var existingEntry))
+        {
+            if (!Equals(existingEntry.GetValue<T>(), expected))
             {
-                var currentValue = existingEntry.GetValue<T>();
-
-                if (Equals(currentValue, expected))
-                {
-                    existingEntry.ExpiresAt = DateTime.MinValue;
-                    wasExpectedValue = true;
-                }
-
-                return existingEntry;
+                break;
             }
-        );
 
-        var success = wasExpectedValue;
+            if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, existingEntry)))
+            {
+                Interlocked.Add(ref _currentMemorySize, -existingEntry.Size);
+                wasRemoved = true;
+                break;
+            }
+        }
+
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
-        return success;
+        return wasRemoved;
     }
 
     public ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default)
@@ -1209,14 +1266,6 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(prefix);
         cancellationToken.ThrowIfCancellationRequested();
-
-        if (string.IsNullOrEmpty(prefix))
-        {
-            var count = _memory.Count;
-            _memory.Clear();
-            Interlocked.Exchange(ref _currentMemorySize, 0);
-            return new ValueTask<int>(count);
-        }
 
         prefix = _GetKey(prefix);
         var keys = _memory.Keys.ToList();
@@ -1258,41 +1307,39 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         key = _GetKey(key);
-        long removed = 0;
 
         if (value is string stringValue)
         {
-            var items = new HashSet<string>([stringValue], StringComparer.Ordinal);
+            long removed = 0;
 
             _memory.TryUpdate(
                 key,
                 (_, existingEntry) =>
                 {
-                    if (existingEntry.Value is IDictionary<string, DateTime?> { Count: > 0 } dictionary)
+                    if (existingEntry.Value is not IDictionary<string, DateTime?> { Count: > 0 } dictionary)
                     {
-                        _ExpireListValues(dictionary);
-
-                        foreach (var v in items)
-                        {
-                            if (dictionary.Remove(v))
-                            {
-                                Interlocked.Increment(ref removed);
-                            }
-                        }
-
-                        existingEntry.Value = dictionary;
-
-                        if (dictionary.Count > 0)
-                        {
-                            existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
-                        }
-                        else
-                        {
-                            existingEntry.ExpiresAt = DateTime.MinValue;
-                        }
+                        return existingEntry;
                     }
 
-                    return existingEntry;
+                    var updatedDict = new Dictionary<string, DateTime?>(dictionary, StringComparer.OrdinalIgnoreCase);
+                    _ExpireListValues(updatedDict);
+
+                    long localRemoved = updatedDict.Remove(stringValue) ? 1L : 0L;
+                    removed = localRemoved;
+
+                    var newExpiresAt =
+                        updatedDict.Count == 0 ? (DateTime?)DateTime.MinValue
+                        : updatedDict.ContainsValue(null) ? null
+                        : updatedDict.Values.Max();
+
+                    return new CacheEntry(
+                        updatedDict,
+                        newExpiresAt,
+                        _timeProvider,
+                        _shouldClone,
+                        _shouldThrowOnSerializationError,
+                        existingEntry.Size
+                    );
                 }
             );
 
@@ -1300,47 +1347,51 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         }
         else
         {
-            var items = new HashSet<object>();
+            var valuesToRemove = value.Where(v => v is not null).Select(v => (object)v!).ToList();
 
-            foreach (var v in value.Where(v => v is not null))
-            {
-                items.Add(v!);
-            }
-
-            if (items.Count is 0)
+            if (valuesToRemove.Count is 0)
             {
                 return new ValueTask<long>(0L);
             }
+
+            long removed = 0;
 
             _memory.TryUpdate(
                 key,
                 (_, existingEntry) =>
                 {
-                    if (existingEntry.Value is IDictionary<object, DateTime?> { Count: > 0 } dictionary)
+                    if (existingEntry.Value is not IDictionary<object, DateTime?> { Count: > 0 } dictionary)
                     {
-                        _ExpireListValues(dictionary);
+                        return existingEntry;
+                    }
 
-                        foreach (var v in items)
-                        {
-                            if (dictionary.Remove(v))
-                            {
-                                Interlocked.Increment(ref removed);
-                            }
-                        }
+                    var updatedDict = new Dictionary<object, DateTime?>(dictionary);
+                    _ExpireListValues(updatedDict);
+                    long localRemoved = 0;
 
-                        existingEntry.Value = dictionary;
-
-                        if (dictionary.Count > 0)
+                    foreach (var v in valuesToRemove)
+                    {
+                        if (updatedDict.Remove(v))
                         {
-                            existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
-                        }
-                        else
-                        {
-                            existingEntry.ExpiresAt = DateTime.MinValue;
+                            localRemoved++;
                         }
                     }
 
-                    return existingEntry;
+                    removed = localRemoved;
+
+                    var newExpiresAt =
+                        updatedDict.Count == 0 ? (DateTime?)DateTime.MinValue
+                        : updatedDict.ContainsValue(null) ? null
+                        : updatedDict.Values.Max();
+
+                    return new CacheEntry(
+                        updatedDict,
+                        newExpiresAt,
+                        _timeProvider,
+                        _shouldClone,
+                        _shouldThrowOnSerializationError,
+                        existingEntry.Size
+                    );
                 }
             );
 
@@ -1373,6 +1424,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         _keyedLock.Dispose();
         _disposedCts.Cancel();
         _disposedCts.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     private void _ThrowIfDisposed()
@@ -1382,19 +1434,20 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     private string _GetKey(string key)
     {
-        return string.IsNullOrEmpty(_keyPrefix) ? key : $"{_keyPrefix}:{key}";
+        return string.IsNullOrEmpty(_keyPrefix) ? key : string.Concat(_keyPrefix, ":", key);
     }
 
     private List<string> _GetKeys(string prefix)
     {
         var prefixedPrefix = string.IsNullOrEmpty(prefix) ? null : _GetKey(prefix);
+        var stripLength = string.IsNullOrEmpty(_keyPrefix) ? 0 : _keyPrefix.Length + 1;
 
         return _memory
             .Where(kvp =>
                 !kvp.Value.IsExpired
                 && (prefixedPrefix is null || kvp.Key.StartsWith(prefixedPrefix, StringComparison.Ordinal))
             )
-            .Select(kvp => kvp.Key)
+            .Select(kvp => stripLength == 0 ? kvp.Key : kvp.Key[stripLength..])
             .ToList();
     }
 
@@ -1497,7 +1550,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         // Use Interlocked.CompareExchange to ensure only one thread spawns maintenance
         var utcNowTicks = utcNow.Ticks;
         var lastTicks = Volatile.Read(ref _lastMaintenanceTicks);
-        var thresholdTicks = TimeSpan.FromMilliseconds(_MaintenanceIntervalMs).Ticks;
+        var thresholdTicks = _MaintenanceIntervalTicks;
 
         if (utcNowTicks - lastTicks > thresholdTicks)
         {
@@ -1519,29 +1572,36 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             return;
         }
 
-        using (await _lock.LockAsync(_disposedCts.Token).ConfigureAwait(false))
+        try
         {
-            var removalCount = 0;
-
-            while (ShouldCompact && removalCount < _MaxEvictionsPerCompaction)
+            using (await _lock.LockAsync(_disposedCts.Token).ConfigureAwait(false))
             {
-                var keyToRemove = _FindLeastRecentlyUsedOrLargest();
+                var removalCount = 0;
 
-                if (keyToRemove is null)
+                while (ShouldCompact && removalCount < _MaxEvictionsPerCompaction)
                 {
-                    break;
-                }
+                    var keyToRemove = _FindLeastRecentlyUsedOrLargest();
 
-                if (_memory.TryRemove(keyToRemove, out var removedEntry))
-                {
-                    Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
-                    removalCount++;
-                }
-                else
-                {
-                    break;
+                    if (keyToRemove is null)
+                    {
+                        break;
+                    }
+
+                    if (_memory.TryRemove(keyToRemove, out var removedEntry))
+                    {
+                        Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+                        removalCount++;
+                    }
+                    else
+                    {
+                        break;
+                    }
                 }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // Disposal triggered cancellation; safe to ignore
         }
     }
 
@@ -1784,7 +1844,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             }
             set
             {
-                _cacheValue = _shouldClone ? _DeepClone(value) : value;
+                Volatile.Write(ref _cacheValue, _shouldClone ? _DeepClone(value) : value);
                 Interlocked.Exchange(ref _lastAccessTicks, _timeProvider.GetUtcNow().Ticks);
             }
         }

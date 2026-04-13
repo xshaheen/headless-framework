@@ -13,7 +13,12 @@ public sealed class RedisDistributedLockStorage(
 {
     private IDatabase Db => multiplexer.GetDatabase();
 
-    public async ValueTask<bool> InsertAsync(string key, string lockId, TimeSpan? ttl = null)
+    public async ValueTask<bool> InsertAsync(
+        string key,
+        string lockId,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
 
@@ -24,7 +29,8 @@ public sealed class RedisDistributedLockStorage(
         string key,
         string expectedId,
         string newId,
-        TimeSpan? newTtl = null
+        TimeSpan? newTtl = null,
+        CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(key);
@@ -32,31 +38,42 @@ public sealed class RedisDistributedLockStorage(
         return await scriptsLoader.ReplaceIfEqualAsync(Db, key, expectedId, newId, newTtl);
     }
 
-    public async ValueTask<bool> RemoveIfEqualAsync(string key, string expectedId)
+    public async ValueTask<bool> RemoveIfEqualAsync(
+        string key,
+        string expectedId,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrEmpty(key);
 
         return await scriptsLoader.RemoveIfEqualAsync(Db, key, expectedId);
     }
 
-    public async ValueTask<TimeSpan?> GetExpirationAsync(string key) => await Db.KeyTimeToLiveAsync(key);
+    public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>
+        await Db.KeyTimeToLiveAsync(key);
 
-    public async ValueTask<bool> ExistsAsync(string key) => await Db.KeyExistsAsync(key);
+    public async ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
+        await Db.KeyExistsAsync(key);
 
-    public async ValueTask<string?> GetAsync(string key)
+    public async ValueTask<string?> GetAsync(string key, CancellationToken cancellationToken = default)
     {
         var value = await Db.StringGetAsync(key);
 
         return value.HasValue ? value.ToString() : null;
     }
 
-    public async ValueTask<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(string prefix)
+    public async ValueTask<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default
+    )
     {
         var server = multiplexer.GetServers()[0];
         var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
 
         var keys = new List<RedisKey>();
-        await foreach (var key in server.KeysAsync(pattern: pattern, pageSize: 1000))
+        await foreach (
+            var key in server.KeysAsync(pattern: pattern, pageSize: 1000).WithCancellation(cancellationToken)
+        )
         {
             keys.Add(key);
         }
@@ -81,13 +98,13 @@ public sealed class RedisDistributedLockStorage(
         return result;
     }
 
-    public async ValueTask<long> GetCountAsync(string prefix = "")
+    public async ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         var server = multiplexer.GetServers().First();
         var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
 
         long count = 0;
-        await foreach (var _ in server.KeysAsync(pattern: pattern))
+        await foreach (var _ in server.KeysAsync(pattern: pattern).WithCancellation(cancellationToken))
         {
             count++;
         }

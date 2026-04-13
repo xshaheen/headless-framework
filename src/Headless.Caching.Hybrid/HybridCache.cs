@@ -1062,7 +1062,7 @@ public sealed class HybridCache(
 
     private void _ThrowIfDisposed()
     {
-        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) == 1, this);
     }
 
     private TimeSpan? _GetLocalExpiration(TimeSpan? expiration) => options.DefaultLocalExpiration ?? expiration;
@@ -1080,6 +1080,7 @@ public sealed class HybridCache(
         }
 
         _keyedLock.Dispose();
+        GC.SuppressFinalize(this);
         return ValueTask.CompletedTask;
     }
 

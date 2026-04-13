@@ -17,9 +17,10 @@ namespace Headless.Caching;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public class ScopedCache<T>(ICache cache, Func<string> scopeProvider) : ICache<T>
+public sealed class ScopedCache<T>(ICache cache, Func<string> scopeProvider) : ICache<T>
 {
     private string _Prefix() => $"{scopeProvider()}:";
+
     private string _ScopeKey(string key) => $"{_Prefix()}{key}";
 
     public ValueTask<CacheValue<T>> GetOrAddAsync(
@@ -29,12 +30,7 @@ public class ScopedCache<T>(ICache cache, Func<string> scopeProvider) : ICache<T
         CancellationToken cancellationToken = default
     )
     {
-        return cache.GetOrAddAsync(
-            _ScopeKey(key),
-            factory,
-            expiration,
-            cancellationToken
-        );
+        return cache.GetOrAddAsync(_ScopeKey(key), factory, expiration, cancellationToken);
     }
 
     #region Update

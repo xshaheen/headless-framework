@@ -82,7 +82,7 @@ public sealed class DistributedLockProvider(
                 // Try to acquire the lock
                 try
                 {
-                    gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires);
+                    gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires, cts.Token);
                 }
                 catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
                 {
@@ -246,12 +246,12 @@ public sealed class DistributedLockProvider(
         logger.LogReleaseStarted(resource, lockId);
 
         var removed = await Run.WithRetriesAsync(
-                (_storage, resource, lockId),
+                (_storage, resource, lockId, cancellationToken),
                 static state =>
                 {
-                    var (storage, resource, lockId) = state;
+                    var (storage, resource, lockId, ct) = state;
 
-                    return storage.RemoveIfEqualAsync(resource, lockId).AsTask();
+                    return storage.RemoveIfEqualAsync(resource, lockId, ct).AsTask();
                 },
                 maxAttempts: _MaxReleaseRetryAttempts,
                 timeProvider: timeProvider,
@@ -291,12 +291,12 @@ public sealed class DistributedLockProvider(
         logger.LogRenewingLock(resource, lockId, timeUntilExpires);
 
         return Run.WithRetriesAsync(
-            (_storage, resource, lockId, timeUntilExpires),
+            (_storage, resource, lockId, timeUntilExpires, cancellationToken),
             static state =>
             {
-                var (storage, resource, lockId, ttl) = state;
+                var (storage, resource, lockId, ttl, ct) = state;
 
-                return storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl).AsTask();
+                return storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl, ct).AsTask();
             },
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
@@ -312,8 +312,8 @@ public sealed class DistributedLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
 
         return await Run.WithRetriesAsync(
-            (_storage, resource),
-            static x => x._storage.ExistsAsync(x.resource).AsTask(),
+            (_storage, resource, cancellationToken),
+            static x => x._storage.ExistsAsync(x.resource, x.cancellationToken).AsTask(),
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
         );
@@ -328,8 +328,8 @@ public sealed class DistributedLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
 
         return Run.WithRetriesAsync(
-            (_storage, resource),
-            static x => x._storage.GetExpirationAsync(x.resource).AsTask(),
+            (_storage, resource, cancellationToken),
+            static x => x._storage.GetExpirationAsync(x.resource, x.cancellationToken).AsTask(),
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
         );
@@ -340,8 +340,8 @@ public sealed class DistributedLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
 
         var lockId = await Run.WithRetriesAsync(
-                (_storage, resource),
-                static x => x._storage.GetAsync(x.resource).AsTask(),
+                (_storage, resource, cancellationToken),
+                static x => x._storage.GetAsync(x.resource, x.cancellationToken).AsTask(),
                 timeProvider: timeProvider,
                 cancellationToken: cancellationToken
             )
@@ -352,7 +352,7 @@ public sealed class DistributedLockProvider(
             return null;
         }
 
-        var ttl = await _storage.GetExpirationAsync(resource).ConfigureAwait(false);
+        var ttl = await _storage.GetExpirationAsync(resource, cancellationToken).ConfigureAwait(false);
 
         return new LockInfo
         {
@@ -365,8 +365,8 @@ public sealed class DistributedLockProvider(
     public async Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
     {
         var locks = await Run.WithRetriesAsync(
-                _storage,
-                static storage => storage.GetAllByPrefixAsync("").AsTask(),
+                (_storage, cancellationToken),
+                static x => x._storage.GetAllByPrefixAsync("", x.cancellationToken).AsTask(),
                 timeProvider: timeProvider,
                 cancellationToken: cancellationToken
             )
@@ -376,7 +376,7 @@ public sealed class DistributedLockProvider(
 
         foreach (var (resource, lockId) in locks)
         {
-            var ttl = await _storage.GetExpirationAsync(resource).ConfigureAwait(false);
+            var ttl = await _storage.GetExpirationAsync(resource, cancellationToken).ConfigureAwait(false);
             result.Add(
                 new LockInfo
                 {
@@ -393,8 +393,8 @@ public sealed class DistributedLockProvider(
     public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
     {
         return Run.WithRetriesAsync(
-            _storage,
-            static storage => storage.GetCountAsync("").AsTask(),
+            (_storage, cancellationToken),
+            static x => x._storage.GetCountAsync("", x.cancellationToken).AsTask(),
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
         );

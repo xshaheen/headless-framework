@@ -15,7 +15,7 @@ public sealed class RedisCacheOptions : CacheOptions
     public CommandFlags ReadMode { get; set; } = CommandFlags.None;
 }
 
-public sealed class RedisCacheOptionsValidator : AbstractValidator<RedisCacheOptions>
+internal sealed class RedisCacheOptionsValidator : AbstractValidator<RedisCacheOptions>
 {
     public RedisCacheOptionsValidator()
     {

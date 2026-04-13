@@ -53,7 +53,7 @@ public static class RedisCacheSetup
             }
             else
             {
-                services.AddSingleton<ICache>(provider => provider.GetRequiredService<IDistributedCache>());
+                services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<IDistributedCache>());
                 services.AddKeyedSingleton(
                     CacheConstants.DistributedCacheProvider,
                     x => x.GetRequiredService<ICache>()
