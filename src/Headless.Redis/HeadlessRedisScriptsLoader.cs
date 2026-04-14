@@ -31,17 +31,19 @@ public sealed class HeadlessRedisScriptsLoader(
 
     public LoadedLuaScript? SetIfLowerScript { get; private set; }
 
-    public async Task LoadScriptsAsync()
+    public async Task LoadScriptsAsync(CancellationToken cancellationToken = default)
     {
         if (_scriptsLoaded)
         {
             return;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         var timestamp = _timeProvider.GetTimestamp();
         var traceEnabled = logger?.IsEnabled(LogLevel.Trace) ?? false;
 
-        using (await _loadScriptsLock.LockAsync())
+        using (await _loadScriptsLock.LockAsync(cancellationToken).ConfigureAwait(false))
         {
             if (_scriptsLoaded)
             {
@@ -144,10 +146,12 @@ public sealed class HeadlessRedisScriptsLoader(
         RedisKey key,
         string? expectedValue,
         string? newValue,
-        TimeSpan? newTtl = null
+        TimeSpan? newTtl = null,
+        CancellationToken cancellationToken = default
     )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
         var redisResult = await db.ScriptEvaluateAsync(
                 ReplaceIfEqualScript!,
@@ -160,9 +164,15 @@ public sealed class HeadlessRedisScriptsLoader(
         return result > 0;
     }
 
-    public async Task<bool> RemoveIfEqualAsync(IDatabase db, RedisKey key, string? expectedValue)
+    public async Task<bool> RemoveIfEqualAsync(
+        IDatabase db,
+        RedisKey key,
+        string? expectedValue,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetRemoveIfEqualParameters(key, expectedValue);
         var redisResult = await db.ScriptEvaluateAsync(RemoveIfEqualScript!, parameters).ConfigureAwait(false);
         var result = (int)redisResult;
@@ -170,54 +180,96 @@ public sealed class HeadlessRedisScriptsLoader(
         return result > 0;
     }
 
-    public async Task<long> IncrementAsync(IDatabase db, string resource, long value, TimeSpan ttl)
+    public async Task<long> IncrementAsync(
+        IDatabase db,
+        string resource,
+        long value,
+        TimeSpan ttl,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetIncrementParameters(resource, value, ttl);
         var result = await db.ScriptEvaluateAsync(IncrementWithExpireScript!, parameters).ConfigureAwait(false);
 
         return (long)result;
     }
 
-    public async Task<double> IncrementAsync(IDatabase db, string resource, double value, TimeSpan ttl)
+    public async Task<double> IncrementAsync(
+        IDatabase db,
+        string resource,
+        double value,
+        TimeSpan ttl,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetIncrementParameters(resource, value, ttl);
         var result = await db.ScriptEvaluateAsync(IncrementWithExpireScript!, parameters).ConfigureAwait(false);
 
         return (double)result;
     }
 
-    public async Task<long> SetIfLowerAsync(IDatabase db, string key, long value, TimeSpan? ttl = null)
+    public async Task<long> SetIfLowerAsync(
+        IDatabase db,
+        string key,
+        long value,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetIfParameters(key, value, ttl);
         var result = await db.ScriptEvaluateAsync(SetIfLowerScript!, parameters).ConfigureAwait(false);
 
         return (long)result;
     }
 
-    public async Task<double> SetIfLowerAsync(IDatabase db, string key, double value, TimeSpan? ttl = null)
+    public async Task<double> SetIfLowerAsync(
+        IDatabase db,
+        string key,
+        double value,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetIfParameters(key, value, ttl);
         var result = await db.ScriptEvaluateAsync(SetIfLowerScript!, parameters).ConfigureAwait(false);
 
         return (double)result;
     }
 
-    public async Task<long> SetIfHigherAsync(IDatabase db, string key, long value, TimeSpan? ttl = null)
+    public async Task<long> SetIfHigherAsync(
+        IDatabase db,
+        string key,
+        long value,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetIfParameters(key, value, ttl);
         var result = await db.ScriptEvaluateAsync(SetIfHigherScript!, parameters).ConfigureAwait(false);
 
         return (long)result;
     }
 
-    public async Task<double> SetIfHigherAsync(IDatabase db, string key, double value, TimeSpan? ttl = null)
+    public async Task<double> SetIfHigherAsync(
+        IDatabase db,
+        string key,
+        double value,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetIfParameters(key, value, ttl);
         var result = await db.ScriptEvaluateAsync(SetIfHigherScript!, parameters).ConfigureAwait(false);
 

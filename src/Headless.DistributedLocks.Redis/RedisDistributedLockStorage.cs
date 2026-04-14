@@ -35,7 +35,7 @@ public sealed class RedisDistributedLockStorage(
     {
         Argument.IsNotNullOrEmpty(key);
 
-        return await scriptsLoader.ReplaceIfEqualAsync(Db, key, expectedId, newId, newTtl);
+        return await scriptsLoader.ReplaceIfEqualAsync(Db, key, expectedId, newId, newTtl, cancellationToken);
     }
 
     public async ValueTask<bool> RemoveIfEqualAsync(
@@ -46,7 +46,7 @@ public sealed class RedisDistributedLockStorage(
     {
         Argument.IsNotNullOrEmpty(key);
 
-        return await scriptsLoader.RemoveIfEqualAsync(Db, key, expectedId);
+        return await scriptsLoader.RemoveIfEqualAsync(Db, key, expectedId, cancellationToken);
     }
 
     public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>

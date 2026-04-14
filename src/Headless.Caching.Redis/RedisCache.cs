@@ -217,7 +217,7 @@ public sealed class RedisCache(
             return false;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
+        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
         var redisValue = _ToRedisValue(value);
         var expectedValue = _ToRedisValue(expected);
@@ -258,7 +258,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
+        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
@@ -295,7 +295,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
+        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
@@ -332,7 +332,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
+        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
@@ -369,7 +369,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
+        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
@@ -406,7 +406,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
+        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
@@ -443,7 +443,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
+        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
@@ -779,7 +779,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
+        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
         var expectedValue = _ToRedisValue(expected);
         var redisResult = await _database
