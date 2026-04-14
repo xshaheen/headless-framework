@@ -118,12 +118,37 @@ public static class RedisDistributedLockSetup
         /// </summary>
         public IServiceCollection AddKeyedRedisThrottlingDistributedLock(
             string key,
-            ThrottlingDistributedLockOptions options
+            Action<ThrottlingDistributedLockOptions, IServiceProvider> optionSetupAction
         )
         {
             services.TryAddSingleton<HeadlessRedisScriptsLoader>();
 
-            return services.AddKeyedThrottlingDistributedLock(key, options, _CreateThrottlingStorage);
+            return services.AddKeyedThrottlingDistributedLock(key, _CreateThrottlingStorage, optionSetupAction);
+        }
+
+        /// <summary>
+        /// Adds keyed Redis-backed throttling resource lock provider.
+        /// Suitable for distributed rate limiting with multiple configurations.
+        /// </summary>
+        public IServiceCollection AddKeyedRedisThrottlingDistributedLock(
+            string key,
+            Action<ThrottlingDistributedLockOptions> optionSetupAction
+        )
+        {
+            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+            return services.AddKeyedThrottlingDistributedLock(key, _CreateThrottlingStorage, optionSetupAction);
+        }
+
+        /// <summary>
+        /// Adds keyed Redis-backed throttling resource lock provider.
+        /// Suitable for distributed rate limiting with multiple configurations.
+        /// </summary>
+        public IServiceCollection AddKeyedRedisThrottlingDistributedLock(string key, IConfiguration config)
+        {
+            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+            return services.AddKeyedThrottlingDistributedLock(key, _CreateThrottlingStorage, config);
         }
 
         #endregion
