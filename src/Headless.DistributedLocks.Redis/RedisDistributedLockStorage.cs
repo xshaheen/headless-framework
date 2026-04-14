@@ -21,8 +21,9 @@ public sealed class RedisDistributedLockStorage(
     )
     {
         Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        return await Db.StringSetAsync(key, lockId, ttl, When.NotExists, CommandFlags.None);
+        return await Db.StringSetAsync(key, lockId, ttl, When.NotExists, CommandFlags.None).ConfigureAwait(false);
     }
 
     public async ValueTask<bool> ReplaceIfEqualAsync(
@@ -34,8 +35,11 @@ public sealed class RedisDistributedLockStorage(
     )
     {
         Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        return await scriptsLoader.ReplaceIfEqualAsync(Db, key, expectedId, newId, newTtl, cancellationToken);
+        return await scriptsLoader
+            .ReplaceIfEqualAsync(Db, key, expectedId, newId, newTtl, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<bool> RemoveIfEqualAsync(
@@ -45,19 +49,30 @@ public sealed class RedisDistributedLockStorage(
     )
     {
         Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        return await scriptsLoader.RemoveIfEqualAsync(Db, key, expectedId, cancellationToken);
+        return await scriptsLoader.RemoveIfEqualAsync(Db, key, expectedId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>
-        await Db.KeyTimeToLiveAsync(key);
+    public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
 
-    public async ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
-        await Db.KeyExistsAsync(key);
+        return await Db.KeyTimeToLiveAsync(key).ConfigureAwait(false);
+    }
+
+    public async ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return await Db.KeyExistsAsync(key).ConfigureAwait(false);
+    }
 
     public async ValueTask<string?> GetAsync(string key, CancellationToken cancellationToken = default)
     {
-        var value = await Db.StringGetAsync(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var value = await Db.StringGetAsync(key).ConfigureAwait(false);
 
         return value.HasValue ? value.ToString() : null;
     }
@@ -67,12 +82,17 @@ public sealed class RedisDistributedLockStorage(
         CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var server = multiplexer.GetServers()[0];
         var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
 
         var keys = new List<RedisKey>();
         await foreach (
-            var key in server.KeysAsync(pattern: pattern, pageSize: 1000).WithCancellation(cancellationToken)
+            var key in server
+                .KeysAsync(pattern: pattern, pageSize: 1000)
+                .WithCancellation(cancellationToken)
+                .ConfigureAwait(false)
         )
         {
             keys.Add(key);
@@ -84,7 +104,7 @@ public sealed class RedisDistributedLockStorage(
         }
 
         var keyArray = keys.ToArray();
-        var values = await Db.StringGetAsync(keyArray);
+        var values = await Db.StringGetAsync(keyArray).ConfigureAwait(false);
         var result = new Dictionary<string, string>(keyArray.Length, StringComparer.Ordinal);
 
         for (var i = 0; i < keyArray.Length; i++)
@@ -100,11 +120,15 @@ public sealed class RedisDistributedLockStorage(
 
     public async ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var server = multiplexer.GetServers().First();
         var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
 
         long count = 0;
-        await foreach (var _ in server.KeysAsync(pattern: pattern).WithCancellation(cancellationToken))
+        await foreach (
+            var _ in server.KeysAsync(pattern: pattern).WithCancellation(cancellationToken).ConfigureAwait(false)
+        )
         {
             count++;
         }

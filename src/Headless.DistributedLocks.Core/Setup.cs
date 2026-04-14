@@ -1,11 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Checks;
 using Headless.Messaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.DistributedLocks;
 
@@ -137,7 +139,7 @@ public static class AddDistributedLockExtensions
 
         #endregion
 
-        #region Throttling Distributed Lock
+        #region Throttling Distributed Lock - Default
 
         public IServiceCollection AddThrottlingDistributedLock(
             Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory,
@@ -191,9 +193,60 @@ public static class AddDistributedLockExtensions
             return services;
         }
 
+        #endregion
+
+        #region Throttling Distributed Lock - Keyed
+
         public IServiceCollection AddKeyedThrottlingDistributedLock(
             string key,
-            ThrottlingDistributedLockOptions options,
+            Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory,
+            Action<ThrottlingDistributedLockOptions, IServiceProvider> optionSetupAction
+        )
+        {
+            Argument.IsNotNullOrEmpty(key);
+
+            services.Configure<ThrottlingDistributedLockOptions, ThrottlingDistributedLockOptionsValidator>(
+                optionSetupAction,
+                name: key
+            );
+
+            return services._AddKeyedThrottlingDistributedLockCore(key, storageFactory);
+        }
+
+        public IServiceCollection AddKeyedThrottlingDistributedLock(
+            string key,
+            Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory,
+            Action<ThrottlingDistributedLockOptions> optionSetupAction
+        )
+        {
+            Argument.IsNotNullOrEmpty(key);
+
+            services.Configure<ThrottlingDistributedLockOptions, ThrottlingDistributedLockOptionsValidator>(
+                optionSetupAction,
+                name: key
+            );
+
+            return services._AddKeyedThrottlingDistributedLockCore(key, storageFactory);
+        }
+
+        public IServiceCollection AddKeyedThrottlingDistributedLock(
+            string key,
+            Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory,
+            IConfiguration config
+        )
+        {
+            Argument.IsNotNullOrEmpty(key);
+
+            services.Configure<ThrottlingDistributedLockOptions, ThrottlingDistributedLockOptionsValidator>(
+                config,
+                name: key
+            );
+
+            return services._AddKeyedThrottlingDistributedLockCore(key, storageFactory);
+        }
+
+        private IServiceCollection _AddKeyedThrottlingDistributedLockCore(
+            string key,
             Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory
         )
         {
@@ -202,12 +255,13 @@ public static class AddDistributedLockExtensions
 
             services.AddKeyedSingleton<IThrottlingDistributedLockProvider>(
                 key,
-                provider => new ThrottlingDistributedLockProvider(
-                    storageFactory(provider),
-                    options,
-                    provider.GetRequiredService<TimeProvider>(),
-                    provider.GetRequiredService<ILogger<ThrottlingDistributedLockProvider>>()
-                )
+                (provider, _) =>
+                    new ThrottlingDistributedLockProvider(
+                        storageFactory(provider),
+                        provider.GetRequiredService<IOptionsMonitor<ThrottlingDistributedLockOptions>>().Get(key),
+                        provider.GetRequiredService<TimeProvider>(),
+                        provider.GetRequiredService<ILogger<ThrottlingDistributedLockProvider>>()
+                    )
             );
 
             return services;
