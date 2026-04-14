@@ -61,6 +61,12 @@ public sealed class HeadlessRedisScriptsLoader(
             var setIfHigher = LuaScript.Prepare(RedisScripts.SetIfHigher);
             var setIfLower = LuaScript.Prepare(RedisScripts.SetIfLower);
 
+            LoadedLuaScript? loadedIncrement = null;
+            LoadedLuaScript? loadedRemove = null;
+            LoadedLuaScript? loadedReplace = null;
+            LoadedLuaScript? loadedSetIfHigher = null;
+            LoadedLuaScript? loadedSetIfLower = null;
+
             foreach (var endpoint in multiplexer.GetEndPoints())
             {
                 var server = multiplexer.GetServer(endpoint);
@@ -91,12 +97,20 @@ public sealed class HeadlessRedisScriptsLoader(
                     .WithAggregatedExceptions()
                     .ConfigureAwait(false);
 
-                IncrementWithExpireScript = results[0];
-                RemoveIfEqualScript = results[1];
-                ReplaceIfEqualScript = results[2];
-                SetIfHigherScript = results[3];
-                SetIfLowerScript = results[4];
+                loadedIncrement = results[0];
+                loadedRemove = results[1];
+                loadedReplace = results[2];
+                loadedSetIfHigher = results[3];
+                loadedSetIfLower = results[4];
             }
+
+            // Only publish loaded scripts after every master endpoint has loaded successfully.
+            // Partial assignment on failure would leave stale scripts visible to callers.
+            IncrementWithExpireScript = loadedIncrement;
+            RemoveIfEqualScript = loadedRemove;
+            ReplaceIfEqualScript = loadedReplace;
+            SetIfHigherScript = loadedSetIfHigher;
+            SetIfLowerScript = loadedSetIfLower;
 
             _scriptsLoaded = true;
 

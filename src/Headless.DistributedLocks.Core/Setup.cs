@@ -104,11 +104,9 @@ public static class AddDistributedLockExtensions
         private IServiceCollection _AddDistributedLockCore<TStorage>()
             where TStorage : class, IDistributedLockStorage
         {
-            services.TryAddSingleton<IDistributedLockStorage, TStorage>();
+            services.TryAddSingleton<TStorage>();
 
-            return services._AddDistributedLockCore(static provider =>
-                provider.GetRequiredService<IDistributedLockStorage>()
-            );
+            return services._AddDistributedLockCore(static provider => provider.GetRequiredService<TStorage>());
         }
 
         private IServiceCollection _AddDistributedLockCore(
