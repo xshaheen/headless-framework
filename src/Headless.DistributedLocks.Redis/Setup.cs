@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Redis;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
@@ -13,13 +14,15 @@ namespace Headless.DistributedLocks.Redis;
 /// </summary>
 /// <remarks>
 /// Requires <see cref="IConnectionMultiplexer"/> to be registered in the service collection.
-/// Requires a message bus (e.g., Redis pub/sub via Foundatio) to be registered for lock release notifications.
+/// Requires a message bus to be registered for lock release notifications.
 /// </remarks>
 [PublicAPI]
 public static class RedisDistributedLockSetup
 {
     extension(IServiceCollection services)
     {
+        #region Redis Distributed Lock
+
         /// <summary>
         /// Adds Redis-backed resource lock provider.
         /// Suitable for distributed multi-instance deployments.
@@ -30,21 +33,43 @@ public static class RedisDistributedLockSetup
         ///   <item><see cref="IConnectionMultiplexer"/> must be registered</item>
         ///   <item>Messaging must be configured via <c>AddMessages()</c> for lock release notifications</item>
         /// </list>
-        /// This registers:
-        /// <list type="bullet">
-        ///   <item><see cref="HeadlessRedisScriptsLoader"/> for atomic Redis operations</item>
-        ///   <item><see cref="RedisDistributedLockStorage"/> for distributed lock storage</item>
-        ///   <item>Resource lock provider with configurable options</item>
-        /// </list>
         /// </remarks>
         public IServiceCollection AddRedisDistributedLock(
-            Action<DistributedLockOptions, IServiceProvider>? optionSetupAction = null
+            Action<DistributedLockOptions, IServiceProvider> optionSetupAction
         )
         {
             services.TryAddSingleton<HeadlessRedisScriptsLoader>();
 
             return services.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction);
         }
+
+        /// <summary>Adds Redis-backed resource lock provider.</summary>
+        public IServiceCollection AddRedisDistributedLock(Action<DistributedLockOptions> optionSetupAction)
+        {
+            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+            return services.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction);
+        }
+
+        /// <summary>Adds Redis-backed resource lock provider.</summary>
+        public IServiceCollection AddRedisDistributedLock(IConfiguration config)
+        {
+            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+            return services.AddDistributedLock<RedisDistributedLockStorage>(config);
+        }
+
+        /// <summary>Adds Redis-backed resource lock provider with default options.</summary>
+        public IServiceCollection AddRedisDistributedLock()
+        {
+            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+            return services.AddDistributedLock<RedisDistributedLockStorage>();
+        }
+
+        #endregion
+
+        #region Redis Throttling Distributed Lock
 
         /// <summary>
         /// Adds Redis-backed throttling resource lock provider.
@@ -56,18 +81,36 @@ public static class RedisDistributedLockSetup
         ///   <item><see cref="IConnectionMultiplexer"/> must be registered</item>
         /// </list>
         /// </remarks>
-        public IServiceCollection AddRedisThrottlingDistributedLock(ThrottlingDistributedLockOptions options)
+        public IServiceCollection AddRedisThrottlingDistributedLock(
+            Action<ThrottlingDistributedLockOptions, IServiceProvider> optionSetupAction
+        )
         {
             services.TryAddSingleton<HeadlessRedisScriptsLoader>();
 
-            return services.AddThrottlingDistributedLock(
-                options,
-                sp => new RedisThrottlingDistributedLockStorage(
-                    sp.GetRequiredService<IConnectionMultiplexer>(),
-                    sp.GetRequiredService<HeadlessRedisScriptsLoader>()
-                )
-            );
+            return services.AddThrottlingDistributedLock(_CreateThrottlingStorage, optionSetupAction);
         }
+
+        /// <summary>Adds Redis-backed throttling resource lock provider.</summary>
+        public IServiceCollection AddRedisThrottlingDistributedLock(
+            Action<ThrottlingDistributedLockOptions> optionSetupAction
+        )
+        {
+            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+            return services.AddThrottlingDistributedLock(_CreateThrottlingStorage, optionSetupAction);
+        }
+
+        /// <summary>Adds Redis-backed throttling resource lock provider.</summary>
+        public IServiceCollection AddRedisThrottlingDistributedLock(IConfiguration config)
+        {
+            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+            return services.AddThrottlingDistributedLock(_CreateThrottlingStorage, config);
+        }
+
+        #endregion
+
+        #region Keyed Redis Throttling Distributed Lock
 
         /// <summary>
         /// Adds keyed Redis-backed throttling resource lock provider.
@@ -80,14 +123,17 @@ public static class RedisDistributedLockSetup
         {
             services.TryAddSingleton<HeadlessRedisScriptsLoader>();
 
-            return services.AddKeyedThrottlingDistributedLock(
-                key,
-                options,
-                sp => new RedisThrottlingDistributedLockStorage(
-                    sp.GetRequiredService<IConnectionMultiplexer>(),
-                    sp.GetRequiredService<HeadlessRedisScriptsLoader>()
-                )
-            );
+            return services.AddKeyedThrottlingDistributedLock(key, options, _CreateThrottlingStorage);
         }
+
+        #endregion
+    }
+
+    private static RedisThrottlingDistributedLockStorage _CreateThrottlingStorage(this IServiceProvider provider)
+    {
+        return new RedisThrottlingDistributedLockStorage(
+            provider.GetRequiredService<IConnectionMultiplexer>(),
+            provider.GetRequiredService<HeadlessRedisScriptsLoader>()
+        );
     }
 }
