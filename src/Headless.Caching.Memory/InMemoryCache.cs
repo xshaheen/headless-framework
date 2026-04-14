@@ -1554,7 +1554,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     private List<string> _GetKeys(string prefix)
     {
         var prefixedPrefix = string.IsNullOrEmpty(prefix) ? null : _GetKey(prefix);
-        var stripLength = string.IsNullOrEmpty(_keyPrefix) ? 0 : _keyPrefix.Length + 1;
+        var stripLength = _keyPrefix.Length;
 
         return _memory
             .Where(kvp =>

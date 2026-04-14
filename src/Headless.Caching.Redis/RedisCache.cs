@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.ObjectModel;
-using System.Globalization;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;
@@ -609,7 +608,7 @@ public sealed class RedisCache(
         const int chunkSize = 2500;
         var prefixedPrefix = _GetKey(prefix);
         var pattern = $"{prefixedPrefix}*";
-        var stripLength = string.IsNullOrEmpty(_keyPrefix) ? 0 : _keyPrefix.Length + 1;
+        var stripLength = _keyPrefix.Length;
         var keys = new List<string>();
 
         var endpoints = options.ConnectionMultiplexer.GetEndPoints();
