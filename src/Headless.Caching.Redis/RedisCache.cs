@@ -963,7 +963,7 @@ public sealed class RedisCache(
 
     private string _GetKey(string key)
     {
-        return string.IsNullOrEmpty(_keyPrefix) ? key : string.Concat(_keyPrefix, ":", key);
+        return string.IsNullOrEmpty(_keyPrefix) ? key : string.Concat(_keyPrefix, key);
     }
 
     private RedisValue _ToRedisValue<T>(T? value)

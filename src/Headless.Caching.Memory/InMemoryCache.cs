@@ -1548,7 +1548,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     private string _GetKey(string key)
     {
-        return string.IsNullOrEmpty(_keyPrefix) ? key : string.Concat(_keyPrefix, ":", key);
+        return string.IsNullOrEmpty(_keyPrefix) ? key : string.Concat(_keyPrefix, key);
     }
 
     private List<string> _GetKeys(string prefix)
