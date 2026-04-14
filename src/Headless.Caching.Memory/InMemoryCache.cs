@@ -400,22 +400,26 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         var expiresAt = expiration.HasValue
             ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
             : (DateTime?)null;
-        var entrySize = _CalculateEntrySize(amount);
-        var newEntry = new CacheEntry(
-            amount,
-            expiresAt,
-            _timeProvider,
-            _shouldClone,
-            _shouldThrowOnSerializationError,
-            entrySize
-        );
 
-        var result = _memory.AddOrUpdate(
+        long sizeDelta = 0;
+        double resultValue = 0;
+
+        _memory.AddOrUpdate(
             key,
             _ =>
             {
-                Interlocked.Add(ref _currentMemorySize, entrySize);
-                return newEntry;
+                var size = _CalculateEntrySize(amount);
+                sizeDelta = size;
+                resultValue = amount;
+
+                return new CacheEntry(
+                    amount,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    size
+                );
             },
             (_, existingEntry) =>
             {
@@ -430,16 +434,30 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                     // Type conversion failed - treat as new value
                 }
 
-                existingEntry.Value = currentValue.HasValue ? currentValue.Value + amount : amount;
-                existingEntry.ExpiresAt = expiresAt;
+                var computedValue = currentValue.HasValue ? currentValue.Value + amount : amount;
+                var computedSize = _CalculateEntrySize(computedValue);
+                sizeDelta = computedSize - existingEntry.Size;
+                resultValue = computedValue;
 
-                return existingEntry;
+                return new CacheEntry(
+                    computedValue,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    computedSize
+                );
             }
         );
 
+        if (sizeDelta != 0)
+        {
+            Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
+
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
-        return result.GetValue<double>();
+        return resultValue;
     }
 
     public async ValueTask<long> IncrementAsync(
@@ -465,22 +483,26 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         var expiresAt = expiration.HasValue
             ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
             : (DateTime?)null;
-        var entrySize = _CalculateEntrySize(amount);
-        var newEntry = new CacheEntry(
-            amount,
-            expiresAt,
-            _timeProvider,
-            _shouldClone,
-            _shouldThrowOnSerializationError,
-            entrySize
-        );
 
-        var result = _memory.AddOrUpdate(
+        long sizeDelta = 0;
+        long resultValue = 0;
+
+        _memory.AddOrUpdate(
             key,
             _ =>
             {
-                Interlocked.Add(ref _currentMemorySize, entrySize);
-                return newEntry;
+                var size = _CalculateEntrySize(amount);
+                sizeDelta = size;
+                resultValue = amount;
+
+                return new CacheEntry(
+                    amount,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    size
+                );
             },
             (_, existingEntry) =>
             {
@@ -495,16 +517,30 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                     // Type conversion failed - treat as new value
                 }
 
-                existingEntry.Value = currentValue.HasValue ? currentValue.Value + amount : amount;
-                existingEntry.ExpiresAt = expiresAt;
+                var computedValue = currentValue.HasValue ? currentValue.Value + amount : amount;
+                var computedSize = _CalculateEntrySize(computedValue);
+                sizeDelta = computedSize - existingEntry.Size;
+                resultValue = computedValue;
 
-                return existingEntry;
+                return new CacheEntry(
+                    computedValue,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    computedSize
+                );
             }
         );
 
+        if (sizeDelta != 0)
+        {
+            Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
+
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
-        return result.GetValue<long>();
+        return resultValue;
     }
 
     public async ValueTask<double> SetIfHigherAsync(
@@ -530,23 +566,26 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         var expiresAt = expiration.HasValue
             ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
             : (DateTime?)null;
-        var entrySize = _CalculateEntrySize(value);
-        var newEntry = new CacheEntry(
-            value,
-            expiresAt,
-            _timeProvider,
-            _shouldClone,
-            _shouldThrowOnSerializationError,
-            entrySize
-        );
-        var difference = value;
+
+        long sizeDelta = 0;
+        double difference = 0;
 
         _memory.AddOrUpdate(
             key,
             _ =>
             {
-                Interlocked.Add(ref _currentMemorySize, entrySize);
-                return newEntry;
+                var size = _CalculateEntrySize(value);
+                sizeDelta = size;
+                difference = value;
+
+                return new CacheEntry(
+                    value,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    size
+                );
             },
             (_, existingEntry) =>
             {
@@ -564,18 +603,30 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 if (currentValue.HasValue && currentValue.Value < value)
                 {
                     difference = value - currentValue.Value;
-                    existingEntry.Value = value;
-                }
-                else
-                {
-                    difference = 0;
+                    var computedSize = _CalculateEntrySize(value);
+                    sizeDelta = computedSize - existingEntry.Size;
+
+                    return new CacheEntry(
+                        value,
+                        expiresAt,
+                        _timeProvider,
+                        _shouldClone,
+                        _shouldThrowOnSerializationError,
+                        computedSize
+                    );
                 }
 
-                existingEntry.ExpiresAt = expiresAt;
+                difference = 0;
+                sizeDelta = 0;
 
-                return existingEntry;
+                return existingEntry.WithExpiration(expiresAt);
             }
         );
+
+        if (sizeDelta != 0)
+        {
+            Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -605,23 +656,26 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         var expiresAt = expiration.HasValue
             ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
             : (DateTime?)null;
-        var entrySize = _CalculateEntrySize(value);
-        var newEntry = new CacheEntry(
-            value,
-            expiresAt,
-            _timeProvider,
-            _shouldClone,
-            _shouldThrowOnSerializationError,
-            entrySize
-        );
-        var difference = value;
+
+        long sizeDelta = 0;
+        long difference = 0;
 
         _memory.AddOrUpdate(
             key,
             _ =>
             {
-                Interlocked.Add(ref _currentMemorySize, entrySize);
-                return newEntry;
+                var size = _CalculateEntrySize(value);
+                sizeDelta = size;
+                difference = value;
+
+                return new CacheEntry(
+                    value,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    size
+                );
             },
             (_, existingEntry) =>
             {
@@ -639,18 +693,30 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 if (currentValue.HasValue && currentValue.Value < value)
                 {
                     difference = value - currentValue.Value;
-                    existingEntry.Value = value;
-                }
-                else
-                {
-                    difference = 0;
+                    var computedSize = _CalculateEntrySize(value);
+                    sizeDelta = computedSize - existingEntry.Size;
+
+                    return new CacheEntry(
+                        value,
+                        expiresAt,
+                        _timeProvider,
+                        _shouldClone,
+                        _shouldThrowOnSerializationError,
+                        computedSize
+                    );
                 }
 
-                existingEntry.ExpiresAt = expiresAt;
+                difference = 0;
+                sizeDelta = 0;
 
-                return existingEntry;
+                return existingEntry.WithExpiration(expiresAt);
             }
         );
+
+        if (sizeDelta != 0)
+        {
+            Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -680,23 +746,26 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         var expiresAt = expiration.HasValue
             ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
             : (DateTime?)null;
-        var entrySize = _CalculateEntrySize(value);
-        var newEntry = new CacheEntry(
-            value,
-            expiresAt,
-            _timeProvider,
-            _shouldClone,
-            _shouldThrowOnSerializationError,
-            entrySize
-        );
-        var difference = value;
+
+        long sizeDelta = 0;
+        double difference = 0;
 
         _memory.AddOrUpdate(
             key,
             _ =>
             {
-                Interlocked.Add(ref _currentMemorySize, entrySize);
-                return newEntry;
+                var size = _CalculateEntrySize(value);
+                sizeDelta = size;
+                difference = value;
+
+                return new CacheEntry(
+                    value,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    size
+                );
             },
             (_, existingEntry) =>
             {
@@ -714,18 +783,30 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 if (currentValue.HasValue && currentValue.Value > value)
                 {
                     difference = currentValue.Value - value;
-                    existingEntry.Value = value;
-                }
-                else
-                {
-                    difference = 0;
+                    var computedSize = _CalculateEntrySize(value);
+                    sizeDelta = computedSize - existingEntry.Size;
+
+                    return new CacheEntry(
+                        value,
+                        expiresAt,
+                        _timeProvider,
+                        _shouldClone,
+                        _shouldThrowOnSerializationError,
+                        computedSize
+                    );
                 }
 
-                existingEntry.ExpiresAt = expiresAt;
+                difference = 0;
+                sizeDelta = 0;
 
-                return existingEntry;
+                return existingEntry.WithExpiration(expiresAt);
             }
         );
+
+        if (sizeDelta != 0)
+        {
+            Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -755,23 +836,26 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         var expiresAt = expiration.HasValue
             ? _timeProvider.GetUtcNow().UtcDateTime.Add(expiration.Value)
             : (DateTime?)null;
-        var entrySize = _CalculateEntrySize(value);
-        var newEntry = new CacheEntry(
-            value,
-            expiresAt,
-            _timeProvider,
-            _shouldClone,
-            _shouldThrowOnSerializationError,
-            entrySize
-        );
-        var difference = value;
+
+        long sizeDelta = 0;
+        long difference = 0;
 
         _memory.AddOrUpdate(
             key,
             _ =>
             {
-                Interlocked.Add(ref _currentMemorySize, entrySize);
-                return newEntry;
+                var size = _CalculateEntrySize(value);
+                sizeDelta = size;
+                difference = value;
+
+                return new CacheEntry(
+                    value,
+                    expiresAt,
+                    _timeProvider,
+                    _shouldClone,
+                    _shouldThrowOnSerializationError,
+                    size
+                );
             },
             (_, existingEntry) =>
             {
@@ -789,18 +873,30 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 if (currentValue.HasValue && currentValue.Value > value)
                 {
                     difference = currentValue.Value - value;
-                    existingEntry.Value = value;
-                }
-                else
-                {
-                    difference = 0;
+                    var computedSize = _CalculateEntrySize(value);
+                    sizeDelta = computedSize - existingEntry.Size;
+
+                    return new CacheEntry(
+                        value,
+                        expiresAt,
+                        _timeProvider,
+                        _shouldClone,
+                        _shouldThrowOnSerializationError,
+                        computedSize
+                    );
                 }
 
-                existingEntry.ExpiresAt = expiresAt;
+                difference = 0;
+                sizeDelta = 0;
 
-                return existingEntry;
+                return existingEntry.WithExpiration(expiresAt);
             }
         );
+
+        if (sizeDelta != 0)
+        {
+            Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -857,7 +953,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 },
                 (existingKey, existingEntry) =>
                 {
-                    if (existingEntry.Value is not IDictionary<string, DateTime?> dictionary)
+                    if (existingEntry.PeekValue() is not IDictionary<string, DateTime?> dictionary)
                     {
                         throw new InvalidOperationException(
                             $"Unable to add value for key: {existingKey}. Cache value does not contain a set"
@@ -932,7 +1028,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 },
                 (existingKey, existingEntry) =>
                 {
-                    if (existingEntry.Value is not IDictionary<object, DateTime?> dictionary)
+                    if (existingEntry.PeekValue() is not IDictionary<object, DateTime?> dictionary)
                     {
                         throw new InvalidOperationException(
                             $"Unable to add value for key: {existingKey}. Cache value does not contain a set"
@@ -1311,13 +1407,15 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         if (value is string stringValue)
         {
             long removed = 0;
+            long sizeDelta = 0;
 
             _memory.TryUpdate(
                 key,
                 (_, existingEntry) =>
                 {
-                    if (existingEntry.Value is not IDictionary<string, DateTime?> { Count: > 0 } dictionary)
+                    if (existingEntry.PeekValue() is not IDictionary<string, DateTime?> { Count: > 0 } dictionary)
                     {
+                        sizeDelta = 0;
                         return existingEntry;
                     }
 
@@ -1331,6 +1429,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                         updatedDict.Count == 0 ? (DateTime?)DateTime.MinValue
                         : updatedDict.ContainsValue(null) ? null
                         : updatedDict.Values.Max();
+                    var newSize = _CalculateEntrySize(updatedDict);
+                    sizeDelta = newSize - existingEntry.Size;
 
                     return new CacheEntry(
                         updatedDict,
@@ -1338,10 +1438,15 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                         _timeProvider,
                         _shouldClone,
                         _shouldThrowOnSerializationError,
-                        existingEntry.Size
+                        newSize
                     );
                 }
             );
+
+            if (sizeDelta != 0)
+            {
+                Interlocked.Add(ref _currentMemorySize, sizeDelta);
+            }
 
             return new ValueTask<long>(removed);
         }
@@ -1355,13 +1460,15 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             }
 
             long removed = 0;
+            long sizeDelta = 0;
 
             _memory.TryUpdate(
                 key,
                 (_, existingEntry) =>
                 {
-                    if (existingEntry.Value is not IDictionary<object, DateTime?> { Count: > 0 } dictionary)
+                    if (existingEntry.PeekValue() is not IDictionary<object, DateTime?> { Count: > 0 } dictionary)
                     {
+                        sizeDelta = 0;
                         return existingEntry;
                     }
 
@@ -1383,6 +1490,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                         updatedDict.Count == 0 ? (DateTime?)DateTime.MinValue
                         : updatedDict.ContainsValue(null) ? null
                         : updatedDict.Values.Max();
+                    var newSize = _CalculateEntrySize(updatedDict);
+                    sizeDelta = newSize - existingEntry.Size;
 
                     return new CacheEntry(
                         updatedDict,
@@ -1390,10 +1499,15 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                         _timeProvider,
                         _shouldClone,
                         _shouldThrowOnSerializationError,
-                        existingEntry.Size
+                        newSize
                     );
                 }
             );
+
+            if (sizeDelta != 0)
+            {
+                Interlocked.Add(ref _currentMemorySize, sizeDelta);
+            }
 
             return new ValueTask<long>(removed);
         }
@@ -1790,15 +1904,48 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     #region CacheEntry
 
+    /// <summary>
+    /// Immutable snapshot of a cached value. Every field except <c>_lastAccessTicks</c> (LRU bookkeeping)
+    /// is assigned at construction and never mutated afterwards.
+    /// </summary>
+    /// <remarks>
+    /// <para>Why immutable replacement is preferred over in-place mutation:</para>
+    /// <list type="number">
+    /// <item>
+    /// <b>Consistency for concurrent readers.</b> A reader that loads a <see cref="CacheEntry"/> reference
+    /// from <see cref="_memory"/> sees a stable snapshot of <see cref="PeekValue"/>, <see cref="ExpiresAt"/>,
+    /// and <see cref="Size"/>. With mutable setters a reader could observe a new <c>Value</c> together with
+    /// the old <c>ExpiresAt</c> (or vice-versa) — a torn read even under <c>Volatile</c>/<c>Interlocked</c>.
+    /// </item>
+    /// <item>
+    /// <b>Safe composition with <see cref="ConcurrentDictionary{TKey, TValue}.AddOrUpdate(TKey, Func{TKey, TValue}, Func{TKey, TValue, TValue})"/>.</b>
+    /// The add- and update-factories may be invoked multiple times under contention (by design — only
+    /// the CAS-winning result is committed). If factories mutate the existing entry they corrupt state
+    /// visible to other threads before the CAS resolves. Constructing a new entry is side-effect-free,
+    /// so repeated factory calls are harmless: only the winning instance is published.
+    /// </item>
+    /// <item>
+    /// <b>No structural size drift.</b> <see cref="Size"/> is fixed at construction, so every write path
+    /// must compute it exactly once against the final value. This eliminates a whole class of bugs where
+    /// <c>_currentMemorySize</c> diverges from the sum of live entry sizes.
+    /// </item>
+    /// <item>
+    /// <b>Single mutation surface.</b> The only field that still mutates is <c>_lastAccessTicks</c>, which
+    /// is advisory LRU data — benign to race and already guarded by <see cref="Interlocked"/>.
+    /// </item>
+    /// </list>
+    /// <para>Callers update the dictionary via replace-on-write: construct a new <see cref="CacheEntry"/>
+    /// (or call <see cref="WithExpiration"/> when only the TTL changes) and hand it to
+    /// <c>AddOrUpdate</c>/<c>TryUpdate</c>.</para>
+    /// </remarks>
     private sealed class CacheEntry
     {
         private static long _instanceCount;
         private readonly bool _shouldClone;
         private readonly bool _shouldThrowOnSerializationError;
         private readonly TimeProvider _timeProvider;
-        private object? _cacheValue;
+        private readonly object? _cacheValue;
         private long _lastAccessTicks;
-        private long _size;
 
         public CacheEntry(
             object? value,
@@ -1817,41 +1964,54 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             var utcNow = _timeProvider.GetUtcNow();
             _lastAccessTicks = utcNow.Ticks;
             ExpiresAt = expiresAt;
-            _size = size;
+            Size = size;
+            InstanceNumber = Interlocked.Increment(ref _instanceCount);
+        }
+
+        /// <summary>Private constructor used by <see cref="WithExpiration"/> to share the already-cloned
+        /// value without re-cloning.</summary>
+        private CacheEntry(CacheEntry prototype, DateTime? expiresAt)
+        {
+            _timeProvider = prototype._timeProvider;
+            _shouldClone = prototype._shouldClone;
+            _shouldThrowOnSerializationError = prototype._shouldThrowOnSerializationError;
+            _cacheValue = prototype._cacheValue;
+            _lastAccessTicks = _timeProvider.GetUtcNow().Ticks;
+            ExpiresAt = expiresAt;
+            Size = prototype.Size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }
 
         internal long InstanceNumber { get; }
 
-        internal DateTime? ExpiresAt { get; set; }
+        internal DateTime? ExpiresAt { get; }
 
         internal bool IsExpired => ExpiresAt.HasValue && ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
 
         internal long LastAccessTicks => Interlocked.Read(ref _lastAccessTicks);
 
-        internal long Size
+        internal long Size { get; }
+
+        /// <summary>Returns the stored value, touching LRU and cloning when required.</summary>
+        internal object? ReadValue()
         {
-            get => Interlocked.Read(ref _size);
-            set => Interlocked.Exchange(ref _size, value);
+            Interlocked.Exchange(ref _lastAccessTicks, _timeProvider.GetUtcNow().Ticks);
+            return _shouldClone ? _DeepClone(_cacheValue) : _cacheValue;
         }
 
-        internal object? Value
-        {
-            get
-            {
-                Interlocked.Exchange(ref _lastAccessTicks, _timeProvider.GetUtcNow().Ticks);
-                return _shouldClone ? _DeepClone(_cacheValue) : _cacheValue;
-            }
-            set
-            {
-                Volatile.Write(ref _cacheValue, _shouldClone ? _DeepClone(value) : value);
-                Interlocked.Exchange(ref _lastAccessTicks, _timeProvider.GetUtcNow().Ticks);
-            }
-        }
+        /// <summary>Returns the raw stored reference without touching LRU or cloning. Intended for
+        /// use inside <c>AddOrUpdate</c>/<c>TryUpdate</c> factories where the caller is inspecting
+        /// the existing entry to decide the next entry — a context in which LRU touches and clones
+        /// are both incorrect and wasteful.</summary>
+        internal object? PeekValue() => _cacheValue;
+
+        /// <summary>Returns a new entry that shares this entry's value but has a different
+        /// expiration. Used by writers that only need to refresh the TTL.</summary>
+        internal CacheEntry WithExpiration(DateTime? expiresAt) => new(this, expiresAt);
 
         public T? GetValue<T>()
         {
-            var val = Value;
+            var val = ReadValue();
             var t = typeof(T);
 
             if (
