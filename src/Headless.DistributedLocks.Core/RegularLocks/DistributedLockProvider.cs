@@ -84,6 +84,15 @@ public sealed class DistributedLockProvider(
                 {
                     gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires, cts.Token);
                 }
+                catch (OperationCanceledException)
+                {
+                    // Cancellation may have fired after the storage accepted the write but
+                    // before we received the response. Attempt best-effort cleanup so we
+                    // don't strand an orphan lock until TTL expiry.
+                    await _TryReleaseOrphanLockAsync(resource, lockId).ConfigureAwait(false);
+
+                    break;
+                }
                 catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
                 {
                     // Swallow transient errors (network, timeout) and retry
@@ -219,6 +228,19 @@ public sealed class DistributedLockProvider(
             {
                 _autoResetEvents.TryRemove(resource, out _);
             }
+        }
+    }
+
+    private async Task _TryReleaseOrphanLockAsync(string resource, string lockId)
+    {
+        try
+        {
+            using var cleanupCts = TimeSpan.FromSeconds(5).ToCancellationTokenSource();
+            await _storage.RemoveIfEqualAsync(resource, lockId, cleanupCts.Token).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            logger.LogBestEffortLockCleanupFailed(e, resource, lockId);
         }
     }
 

@@ -164,15 +164,9 @@ public sealed class HeadlessRedisScriptsLoader(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
-
-        var redisResult = await db.ScriptEvaluateAsync(
-                ReplaceIfEqualScript!,
-                _GetReplaceIfEqualParameters(key, newValue, expectedValue, newTtl)
-            )
+        var parameters = _GetReplaceIfEqualParameters(key, newValue, expectedValue, newTtl);
+        var redisResult = await _EvaluateAsync(db, _replaceIfEqualSelector, parameters, cancellationToken)
             .ConfigureAwait(false);
-
         var result = (int)redisResult;
 
         return result > 0;
@@ -185,10 +179,9 @@ public sealed class HeadlessRedisScriptsLoader(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetRemoveIfEqualParameters(key, expectedValue);
-        var redisResult = await db.ScriptEvaluateAsync(RemoveIfEqualScript!, parameters).ConfigureAwait(false);
+        var redisResult = await _EvaluateAsync(db, _removeIfEqualSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
         var result = (int)redisResult;
 
         return result > 0;
@@ -202,10 +195,8 @@ public sealed class HeadlessRedisScriptsLoader(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetIncrementParameters(resource, value, ttl);
-        var result = await db.ScriptEvaluateAsync(IncrementWithExpireScript!, parameters).ConfigureAwait(false);
+        var result = await _EvaluateAsync(db, _incrementSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (long)result;
     }
@@ -218,10 +209,8 @@ public sealed class HeadlessRedisScriptsLoader(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetIncrementParameters(resource, value, ttl);
-        var result = await db.ScriptEvaluateAsync(IncrementWithExpireScript!, parameters).ConfigureAwait(false);
+        var result = await _EvaluateAsync(db, _incrementSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (double)result;
     }
@@ -234,10 +223,8 @@ public sealed class HeadlessRedisScriptsLoader(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await db.ScriptEvaluateAsync(SetIfLowerScript!, parameters).ConfigureAwait(false);
+        var result = await _EvaluateAsync(db, _setIfLowerSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (long)result;
     }
@@ -250,10 +237,8 @@ public sealed class HeadlessRedisScriptsLoader(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await db.ScriptEvaluateAsync(SetIfLowerScript!, parameters).ConfigureAwait(false);
+        var result = await _EvaluateAsync(db, _setIfLowerSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (double)result;
     }
@@ -266,10 +251,9 @@ public sealed class HeadlessRedisScriptsLoader(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await db.ScriptEvaluateAsync(SetIfHigherScript!, parameters).ConfigureAwait(false);
+        var result = await _EvaluateAsync(db, _setIfHigherSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
 
         return (long)result;
     }
@@ -282,13 +266,61 @@ public sealed class HeadlessRedisScriptsLoader(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await db.ScriptEvaluateAsync(SetIfHigherScript!, parameters).ConfigureAwait(false);
+        var result = await _EvaluateAsync(db, _setIfHigherSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
 
         return (double)result;
     }
+
+    // Cached selectors avoid per-call delegate allocation on the hot path.
+    private static readonly Func<HeadlessRedisScriptsLoader, LoadedLuaScript> _replaceIfEqualSelector = static x =>
+        x.ReplaceIfEqualScript!;
+    private static readonly Func<HeadlessRedisScriptsLoader, LoadedLuaScript> _removeIfEqualSelector = static x =>
+        x.RemoveIfEqualScript!;
+    private static readonly Func<HeadlessRedisScriptsLoader, LoadedLuaScript> _incrementSelector = static x =>
+        x.IncrementWithExpireScript!;
+    private static readonly Func<HeadlessRedisScriptsLoader, LoadedLuaScript> _setIfLowerSelector = static x =>
+        x.SetIfLowerScript!;
+    private static readonly Func<HeadlessRedisScriptsLoader, LoadedLuaScript> _setIfHigherSelector = static x =>
+        x.SetIfHigherScript!;
+
+    /// <summary>
+    /// Evaluates a Lua script with automatic recovery from NOSCRIPT errors, which occur when the
+    /// server's script cache is invalidated between the caller's <see cref="LoadScriptsAsync"/>
+    /// check and the evaluation (failover, server restart, or SCRIPT FLUSH). On NOSCRIPT we reset,
+    /// reload, and retry exactly once using the freshly-loaded script reference.
+    /// </summary>
+    private async Task<RedisResult> _EvaluateAsync(
+        IDatabase db,
+        Func<HeadlessRedisScriptsLoader, LoadedLuaScript> scriptSelector,
+        object? parameters,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            return await db.ScriptEvaluateAsync(scriptSelector(this), parameters).ConfigureAwait(false);
+        }
+        catch (RedisServerException e) when (_IsNoScriptError(e))
+        {
+            if (logger is not null)
+            {
+                logger.LogNoScriptRetry();
+            }
+
+            ResetScripts();
+            await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
+
+            return await db.ScriptEvaluateAsync(scriptSelector(this), parameters).ConfigureAwait(false);
+        }
+    }
+
+    private static bool _IsNoScriptError(RedisServerException e) =>
+        e.Message.StartsWith("NOSCRIPT", StringComparison.Ordinal);
 
     #region Helpers
 

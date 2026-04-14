@@ -157,4 +157,17 @@ public static partial class RegularLockLoggerExtensions
         Message = "Processing lock released {MessageId} for {Resource}"
     )]
     public static partial void LogProcessingLockReleased(this ILogger logger, string? messageId, string resource);
+
+    [LoggerMessage(
+        EventId = 15,
+        EventName = "BestEffortLockCleanupFailed",
+        Level = LogLevel.Warning,
+        Message = "Best-effort cleanup failed for potentially orphaned lock: R={Resource} Id={LockId}. Lock will expire via TTL."
+    )]
+    public static partial void LogBestEffortLockCleanupFailed(
+        this ILogger logger,
+        Exception exception,
+        string resource,
+        string lockId
+    );
 }
