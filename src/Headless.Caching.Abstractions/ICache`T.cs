@@ -51,8 +51,8 @@ public interface ICache<T>
 
     ValueTask<bool> TryReplaceIfEqualAsync(
         string key,
-        T? value,
         T? expected,
+        T? value,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     );
@@ -155,8 +155,8 @@ public class Cache<T>(ICache cache) : ICache<T>
 
     public ValueTask<bool> TryReplaceIfEqualAsync(
         string key,
-        T? value,
         T? expected,
+        T? value,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     )

@@ -346,6 +346,11 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 wasExpectedValue = false;
                 sizeDelta = 0;
 
+                if (existingEntry.IsExpired)
+                {
+                    return existingEntry;
+                }
+
                 var currentValue = existingEntry.GetValue<T>();
 
                 if (!Equals(currentValue, expected))

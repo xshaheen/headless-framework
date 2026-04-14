@@ -83,8 +83,8 @@ public sealed class ScopedCache<T>(ICache cache, Func<string> scopeProvider) : I
 
     public ValueTask<bool> TryReplaceIfEqualAsync(
         string key,
-        T? value,
         T? expected,
+        T? value,
         TimeSpan expiration,
         CancellationToken cancellationToken = default
     )
