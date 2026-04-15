@@ -268,6 +268,24 @@ public sealed class InMemoryCacheTests : TestBase
     #region TryReplaceIfEqualAsync
 
     [Fact]
+    public async Task should_return_false_when_entry_is_expired()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var expiration = TimeSpan.FromMilliseconds(50);
+        await cache.UpsertAsync(key, 42, expiration, AbortToken);
+
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+
+        // when
+        var result = await cache.TryReplaceIfEqualAsync(key, 42, 99, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_replace_when_value_equals_expected()
     {
         // given

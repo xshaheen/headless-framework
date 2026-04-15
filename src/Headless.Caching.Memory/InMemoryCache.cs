@@ -966,13 +966,13 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                     }
 
                     var updatedDict = new Dictionary<string, DateTime?>(dictionary, StringComparer.OrdinalIgnoreCase);
-                    _ExpireListValues(updatedDict);
+                    var currentMax = _ExpireAndGetMaxExpiration(updatedDict);
                     updatedDict[stringValue] = expiresAt;
 
                     var newExpiresAt =
-                        updatedDict.Count == 0 ? (DateTime?)DateTime.MinValue
-                        : updatedDict.ContainsValue(null) ? null
-                        : updatedDict.Values.Max();
+                        (expiresAt is null || currentMax is null) ? (DateTime?)null
+                        : expiresAt.Value > currentMax.Value ? expiresAt.Value
+                        : currentMax.Value;
                     var newSize = _CalculateEntrySize(updatedDict);
                     sizeDelta = newSize - existingEntry.Size;
 
@@ -1041,7 +1041,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                     }
 
                     var updatedDict = new Dictionary<object, DateTime?>(dictionary);
-                    _ExpireListValues(updatedDict);
+                    var currentMax = _ExpireAndGetMaxExpiration(updatedDict);
 
                     foreach (var kvp in newItems)
                     {
@@ -1049,9 +1049,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                     }
 
                     var newExpiresAt =
-                        updatedDict.Count == 0 ? (DateTime?)DateTime.MinValue
-                        : updatedDict.ContainsValue(null) ? null
-                        : updatedDict.Values.Max();
+                        (expiresAt is null || currentMax is null) ? (DateTime?)null
+                        : expiresAt.Value > currentMax.Value ? expiresAt.Value
+                        : currentMax.Value;
                     var newSize = _CalculateEntrySize(updatedDict);
                     sizeDelta = newSize - existingEntry.Size;
 
@@ -1425,15 +1425,10 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                     }
 
                     var updatedDict = new Dictionary<string, DateTime?>(dictionary, StringComparer.OrdinalIgnoreCase);
-                    _ExpireListValues(updatedDict);
-
                     long localRemoved = updatedDict.Remove(stringValue) ? 1L : 0L;
                     removed = localRemoved;
 
-                    var newExpiresAt =
-                        updatedDict.Count == 0 ? (DateTime?)DateTime.MinValue
-                        : updatedDict.ContainsValue(null) ? null
-                        : updatedDict.Values.Max();
+                    var newExpiresAt = _ExpireAndGetMaxExpiration(updatedDict);
                     var newSize = _CalculateEntrySize(updatedDict);
                     sizeDelta = newSize - existingEntry.Size;
 
@@ -1478,7 +1473,6 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                     }
 
                     var updatedDict = new Dictionary<object, DateTime?>(dictionary);
-                    _ExpireListValues(updatedDict);
                     long localRemoved = 0;
 
                     foreach (var v in valuesToRemove)
@@ -1491,10 +1485,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
                     removed = localRemoved;
 
-                    var newExpiresAt =
-                        updatedDict.Count == 0 ? (DateTime?)DateTime.MinValue
-                        : updatedDict.ContainsValue(null) ? null
-                        : updatedDict.Values.Max();
+                    var newExpiresAt = _ExpireAndGetMaxExpiration(updatedDict);
                     var newSize = _CalculateEntrySize(updatedDict);
                     sizeDelta = newSize - existingEntry.Size;
 
@@ -1543,12 +1534,11 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         _keyedLock.Dispose();
         _disposedCts.Cancel();
         _disposedCts.Dispose();
-        GC.SuppressFinalize(this);
     }
 
     private void _ThrowIfDisposed()
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) != 0, this);
+        Ensure.NotDisposed(Volatile.Read(ref _isDisposed) != 0, this);
     }
 
     private string _GetKey(string key)
@@ -1864,18 +1854,6 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         }
     }
 
-    private void _ExpireListValues<T>(IDictionary<T, DateTime?> dictionary)
-        where T : notnull
-    {
-        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-        var expiredValueKeys = dictionary.Where(kvp => kvp.Value < utcNow).Select(kvp => kvp.Key).ToArray();
-
-        foreach (var expiredKey in expiredValueKeys)
-        {
-            dictionary.Remove(expiredKey);
-        }
-    }
-
     private long _CalculateEntrySize(object? value)
     {
         if (_sizeCalculator is null)
@@ -1920,7 +1898,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     /// <b>Consistency for concurrent readers.</b> A reader that loads a <see cref="CacheEntry"/> reference
     /// from <see cref="_memory"/> sees a stable snapshot of <see cref="PeekValue"/>, <see cref="ExpiresAt"/>,
     /// and <see cref="Size"/>. With mutable setters a reader could observe a new <c>Value</c> together with
-    /// the old <c>ExpiresAt</c> (or vice-versa) — a torn read even under <c>Volatile</c>/<c>Interlocked</c>.
+    /// the old <c>ExpiresAt</c> (or vice versa) — a torn read even under <c>Volatile</c>/<c>Interlocked</c>.
     /// </item>
     /// <item>
     /// <b>Safe composition with <see cref="ConcurrentDictionary{TKey, TValue}.AddOrUpdate(TKey, Func{TKey, TValue}, Func{TKey, TValue, TValue})"/>.</b>
@@ -2105,6 +2083,52 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 return value;
             }
         }
+    }
+
+    private DateTime? _ExpireAndGetMaxExpiration<T>(IDictionary<T, DateTime?> dictionary)
+        where T : notnull
+    {
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        var max = DateTime.MinValue;
+        var hasInfinite = false;
+
+        // Collect keys to remove to avoid "Collection was modified" exception during iteration
+        List<T>? keysToRemove = null;
+
+        foreach (var kvp in dictionary)
+        {
+            if (kvp.Value.HasValue)
+            {
+                if (kvp.Value.Value < utcNow)
+                {
+                    keysToRemove ??= [];
+                    keysToRemove.Add(kvp.Key);
+                }
+                else if (kvp.Value.Value > max)
+                {
+                    max = kvp.Value.Value;
+                }
+            }
+            else
+            {
+                hasInfinite = true;
+            }
+        }
+
+        if (keysToRemove != null)
+        {
+            foreach (var key in keysToRemove)
+            {
+                dictionary.Remove(key);
+            }
+        }
+
+        if (dictionary.Count == 0)
+        {
+            return DateTime.MinValue;
+        }
+
+        return hasInfinite ? null : max;
     }
 
     #endregion
