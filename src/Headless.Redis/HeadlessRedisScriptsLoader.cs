@@ -9,6 +9,8 @@ using StackExchange.Redis;
 
 namespace Headless.Redis;
 
+using ScriptSelector = Func<HeadlessRedisScriptsLoader, LoadedLuaScript?>;
+
 // ReSharper disable InconsistentNaming
 #pragma warning disable IDE1006
 public sealed class HeadlessRedisScriptsLoader(
@@ -17,6 +19,13 @@ public sealed class HeadlessRedisScriptsLoader(
     ILogger<HeadlessRedisScriptsLoader>? logger = null
 ) : IDisposable
 {
+    // Cached selectors avoid per-call delegate allocation on the hot path.
+    private static readonly ScriptSelector _replaceIfEqualSelector = static x => x.ReplaceIfEqualScript;
+    private static readonly ScriptSelector _removeIfEqualSelector = static x => x.RemoveIfEqualScript;
+    private static readonly ScriptSelector _incrementSelector = static x => x.IncrementWithExpireScript;
+    private static readonly ScriptSelector _setIfLowerSelector = static x => x.SetIfLowerScript;
+    private static readonly ScriptSelector _setIfHigherSelector = static x => x.SetIfHigherScript;
+
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private volatile bool _scriptsLoaded;
     private bool _eventsSubscribed;
@@ -42,7 +51,6 @@ public sealed class HeadlessRedisScriptsLoader(
         cancellationToken.ThrowIfCancellationRequested();
 
         var timestamp = _timeProvider.GetTimestamp();
-        var traceEnabled = logger?.IsEnabled(LogLevel.Trace) ?? false;
 
         using (await _loadScriptsLock.LockAsync(cancellationToken).ConfigureAwait(false))
         {
@@ -51,10 +59,7 @@ public sealed class HeadlessRedisScriptsLoader(
                 return;
             }
 
-            if (traceEnabled)
-            {
-                logger!.LogPreparingLuaScript();
-            }
+            logger?.LogPreparingLuaScript();
 
             var incrementWithExpire = LuaScript.Prepare(RedisScripts.IncrementWithExpire);
             var removeIfEqual = LuaScript.Prepare(RedisScripts.RemoveIfEqual);
@@ -77,10 +82,7 @@ public sealed class HeadlessRedisScriptsLoader(
                     continue;
                 }
 
-                if (traceEnabled)
-                {
-                    logger!.LogLoadingLuaScripts(endpoint);
-                }
+                logger?.LogLoadingLuaScripts(endpoint);
 
                 var loadIncrementScriptTask = incrementWithExpire.LoadAsync(server);
                 var loadRemoveScriptTask = removeIfEqual.LoadAsync(server);
@@ -88,16 +90,15 @@ public sealed class HeadlessRedisScriptsLoader(
                 var loadSetIfHigherScriptTask = setIfHigher.LoadAsync(server);
                 var loadSetIfLowerScriptTask = setIfLower.LoadAsync(server);
 
-                var results = await Task.WhenAll(
-                        loadIncrementScriptTask,
-                        loadRemoveScriptTask,
-                        loadReplaceScriptTask,
-                        loadSetIfHigherScriptTask,
-                        loadSetIfLowerScriptTask
-                    )
-                    .WithAggregatedExceptions()
-                    .ConfigureAwait(false);
+                var whenAll = Task.WhenAll(
+                    loadIncrementScriptTask,
+                    loadRemoveScriptTask,
+                    loadReplaceScriptTask,
+                    loadSetIfHigherScriptTask,
+                    loadSetIfLowerScriptTask
+                );
 
+                var results = await whenAll.WithAggregatedExceptions().ConfigureAwait(false);
                 loadedIncrement = results[0];
                 loadedRemove = results[1];
                 loadedReplace = results[2];
@@ -122,11 +123,8 @@ public sealed class HeadlessRedisScriptsLoader(
                 _eventsSubscribed = true;
             }
 
-            if (traceEnabled)
-            {
-                var elapsed = _timeProvider.GetElapsedTime(timestamp);
-                logger!.LogScriptsLoadedSuccessfully(elapsed);
-            }
+            var elapsed = _timeProvider.GetElapsedTime(timestamp);
+            logger?.LogScriptsLoadedSuccessfully(elapsed);
         }
     }
 
@@ -148,11 +146,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
     private void _OnConnectionRestored(object? sender, ConnectionFailedEventArgs e)
     {
-        if (logger is not null)
-        {
-            logger.LogConnectionRestored();
-        }
-
+        logger?.LogConnectionRestored();
         _scriptsLoaded = false;
     }
 
@@ -296,18 +290,6 @@ public sealed class HeadlessRedisScriptsLoader(
         return (double)result;
     }
 
-    // Cached selectors avoid per-call delegate allocation on the hot path.
-    private static readonly Func<HeadlessRedisScriptsLoader, LoadedLuaScript?> _replaceIfEqualSelector = static x =>
-        x.ReplaceIfEqualScript;
-    private static readonly Func<HeadlessRedisScriptsLoader, LoadedLuaScript?> _removeIfEqualSelector = static x =>
-        x.RemoveIfEqualScript;
-    private static readonly Func<HeadlessRedisScriptsLoader, LoadedLuaScript?> _incrementSelector = static x =>
-        x.IncrementWithExpireScript;
-    private static readonly Func<HeadlessRedisScriptsLoader, LoadedLuaScript?> _setIfLowerSelector = static x =>
-        x.SetIfLowerScript;
-    private static readonly Func<HeadlessRedisScriptsLoader, LoadedLuaScript?> _setIfHigherSelector = static x =>
-        x.SetIfHigherScript;
-
     /// <summary>
     /// Evaluates a Lua script with automatic recovery from NOSCRIPT errors, which occur when the
     /// server's script cache is invalidated between the caller's <see cref="LoadScriptsAsync"/>
@@ -316,7 +298,7 @@ public sealed class HeadlessRedisScriptsLoader(
     /// </summary>
     private async Task<RedisResult> _EvaluateAsync(
         IDatabase db,
-        Func<HeadlessRedisScriptsLoader, LoadedLuaScript?> scriptSelector,
+        ScriptSelector scriptSelector,
         object? parameters,
         CancellationToken cancellationToken
     )
@@ -332,11 +314,7 @@ public sealed class HeadlessRedisScriptsLoader(
         }
         catch (RedisServerException e) when (_IsNoScriptError(e))
         {
-            if (logger is not null)
-            {
-                logger.LogNoScriptRetry();
-            }
-
+            logger?.LogNoScriptRetry();
             ResetScripts();
             await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
@@ -345,9 +323,6 @@ public sealed class HeadlessRedisScriptsLoader(
             return await db.ScriptEvaluateAsync(script, parameters).ConfigureAwait(false);
         }
     }
-
-    private static bool _IsNoScriptError(RedisServerException e) =>
-        e.Message.StartsWith("NOSCRIPT", StringComparison.Ordinal);
 
     #region Helpers
 
@@ -374,7 +349,7 @@ public sealed class HeadlessRedisScriptsLoader(
         where T : INumber<T>
     {
         // Convert to string to preserve precision and let Redis handle the type
-        var valueStr = value.ToString(null, CultureInfo.InvariantCulture);
+        var valueStr = value.ToString(format: null, CultureInfo.InvariantCulture);
         return new IncrementParams((RedisKey)resource, valueStr, (int)ttl.TotalMilliseconds);
     }
 
@@ -382,10 +357,15 @@ public sealed class HeadlessRedisScriptsLoader(
         where T : INumber<T>
     {
         // Convert value to string to preserve precision for floating-point numbers
-        var valueStr = value.ToString(null, CultureInfo.InvariantCulture);
+        var valueStr = value.ToString(format: null, CultureInfo.InvariantCulture);
         var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
 
         return new SetIfParams((RedisKey)key, valueStr, expiresValue);
+    }
+
+    private static bool _IsNoScriptError(RedisServerException e)
+    {
+        return e.Message.StartsWith("NOSCRIPT", StringComparison.Ordinal);
     }
 
     #endregion
