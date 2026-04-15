@@ -154,7 +154,7 @@ public static class RedisDistributedLockSetup
         #endregion
     }
 
-    private static RedisThrottlingDistributedLockStorage _CreateThrottlingStorage(this IServiceProvider provider)
+    private static RedisThrottlingDistributedLockStorage _CreateThrottlingStorage(IServiceProvider provider)
     {
         return new RedisThrottlingDistributedLockStorage(
             provider.GetRequiredService<IConnectionMultiplexer>(),

@@ -84,34 +84,78 @@ public sealed class RedisDistributedLockStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var server = multiplexer.GetServers()[0];
         var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        var keys = new List<RedisKey>();
-        await foreach (
-            var key in server
-                .KeysAsync(pattern: pattern, pageSize: 1000)
-                .WithCancellation(cancellationToken)
-                .ConfigureAwait(false)
-        )
+        foreach (var endpoint in multiplexer.GetEndPoints())
         {
-            keys.Add(key);
-        }
-
-        if (keys.Count == 0)
-        {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
-        }
-
-        var keyArray = keys.ToArray();
-        var values = await Db.StringGetAsync(keyArray).ConfigureAwait(false);
-        var result = new Dictionary<string, string>(keyArray.Length, StringComparer.Ordinal);
-
-        for (var i = 0; i < keyArray.Length; i++)
-        {
-            if (values[i].HasValue)
+            var server = multiplexer.GetServer(endpoint);
+            if (server.IsReplica || !server.IsConnected)
             {
-                result[keyArray[i].ToString()] = values[i].ToString();
+                continue;
+            }
+
+            var batch = new List<RedisKey>(1000);
+            await foreach (
+                var key in server
+                    .KeysAsync(pattern: pattern, pageSize: 1000)
+                    .WithCancellation(cancellationToken)
+                    .ConfigureAwait(false)
+            )
+            {
+                batch.Add(key);
+                if (batch.Count >= 1000)
+                {
+                    await _ProcessBatchAsync(batch, result).ConfigureAwait(false);
+                    batch.Clear();
+                }
+            }
+
+            if (batch.Count > 0)
+            {
+                await _ProcessBatchAsync(batch, result).ConfigureAwait(false);
+            }
+        }
+
+        return result;
+    }
+
+    public async ValueTask<
+        IReadOnlyDictionary<string, (string LockId, TimeSpan? Ttl)>
+    > GetAllWithExpirationByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
+        var result = new Dictionary<string, (string, TimeSpan?)>(StringComparer.Ordinal);
+
+        foreach (var endpoint in multiplexer.GetEndPoints())
+        {
+            var server = multiplexer.GetServer(endpoint);
+            if (server.IsReplica || !server.IsConnected)
+            {
+                continue;
+            }
+
+            var batch = new List<RedisKey>(1000);
+            await foreach (
+                var key in server
+                    .KeysAsync(pattern: pattern, pageSize: 1000)
+                    .WithCancellation(cancellationToken)
+                    .ConfigureAwait(false)
+            )
+            {
+                batch.Add(key);
+                if (batch.Count >= 1000)
+                {
+                    await _ProcessBatchWithExpirationAsync(batch, result).ConfigureAwait(false);
+                    batch.Clear();
+                }
+            }
+
+            if (batch.Count > 0)
+            {
+                await _ProcessBatchWithExpirationAsync(batch, result).ConfigureAwait(false);
             }
         }
 
@@ -122,17 +166,62 @@ public sealed class RedisDistributedLockStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var server = multiplexer.GetServers().First();
         var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
+        long totalCount = 0;
 
-        long count = 0;
-        await foreach (
-            var _ in server.KeysAsync(pattern: pattern).WithCancellation(cancellationToken).ConfigureAwait(false)
-        )
+        foreach (var endpoint in multiplexer.GetEndPoints())
         {
-            count++;
+            var server = multiplexer.GetServer(endpoint);
+            if (server.IsReplica || !server.IsConnected)
+            {
+                continue;
+            }
+
+            await foreach (
+                var _ in server.KeysAsync(pattern: pattern).WithCancellation(cancellationToken).ConfigureAwait(false)
+            )
+            {
+                totalCount++;
+            }
         }
 
-        return count;
+        return totalCount;
+    }
+
+    private async ValueTask _ProcessBatchAsync(List<RedisKey> batch, Dictionary<string, string> result)
+    {
+        var keyArray = batch.ToArray();
+        var values = await Db.StringGetAsync(keyArray).ConfigureAwait(false);
+
+        for (var i = 0; i < keyArray.Length; i++)
+        {
+            if (values[i].HasValue)
+            {
+                result[keyArray[i].ToString()] = values[i].ToString();
+            }
+        }
+    }
+
+    private async ValueTask _ProcessBatchWithExpirationAsync(
+        List<RedisKey> batch,
+        Dictionary<string, (string LockId, TimeSpan? Ttl)> result
+    )
+    {
+        var keyArray = batch.ToArray();
+        var task = Db.StringGetAsync(keyArray);
+        var ttlsTask = Task.WhenAll(batch.Select(k => Db.KeyTimeToLiveAsync(k)));
+
+        await Task.WhenAll(task, ttlsTask).ConfigureAwait(false);
+
+        var values = await task.ConfigureAwait(false);
+        var ttls = await ttlsTask.ConfigureAwait(false);
+
+        for (var i = 0; i < keyArray.Length; i++)
+        {
+            if (values[i].HasValue)
+            {
+                result[keyArray[i].ToString()] = (values[i].ToString(), ttls[i]);
+            }
+        }
     }
 }
