@@ -38,6 +38,7 @@ public sealed class DistributedLockProvider(
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan _OrphanLockCleanupTimeout = TimeSpan.FromSeconds(5);
     private const int _MaxReleaseRetryAttempts = 15;
 
     // Configurable limits from options
@@ -67,7 +68,8 @@ public sealed class DistributedLockProvider(
 
         logger.LogAttemptingToAcquireLock(resource, lockId);
 
-        using var cts = (acquireTimeout ?? DefaultAcquireTimeout).ToCancellationTokenSource(cancellationToken);
+        using var timeoutCts = timeProvider.CreateCancellationTokenSource(acquireTimeout ?? DefaultAcquireTimeout);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
         using var activity = _StartLockActivity(resource);
 
         var timestamp = timeProvider.GetTimestamp();
@@ -90,6 +92,11 @@ public sealed class DistributedLockProvider(
                     // before we received the response. Attempt best-effort cleanup so we
                     // don't strand an orphan lock until TTL expiry.
                     await _TryReleaseOrphanLockAsync(resource, lockId).ConfigureAwait(false);
+
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
 
                     break;
                 }
@@ -127,7 +134,11 @@ public sealed class DistributedLockProvider(
                 // Wait until we get a message saying the lock was released by (autoResetEvent.Target.Set())
                 // or delayAmount has elapsed
                 // or acquire timeout cancellation has been requested
-                using var linkedCancellationTokenSource = delayAmount.ToCancellationTokenSource(cts.Token);
+                using var delayCts = timeProvider.CreateCancellationTokenSource(delayAmount);
+                using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(
+                    delayCts.Token,
+                    cts.Token
+                );
                 await autoResetEvent.Target.SafeWaitAsync(linkedCancellationTokenSource.Token).ConfigureAwait(false);
             } while (!cts.IsCancellationRequested);
         }
@@ -235,7 +246,7 @@ public sealed class DistributedLockProvider(
     {
         try
         {
-            using var cleanupCts = TimeSpan.FromSeconds(5).ToCancellationTokenSource();
+            using var cleanupCts = timeProvider.CreateCancellationTokenSource(_OrphanLockCleanupTimeout);
             await _storage.RemoveIfEqualAsync(resource, lockId, cleanupCts.Token).ConfigureAwait(false);
         }
         catch (Exception e)
@@ -388,7 +399,7 @@ public sealed class DistributedLockProvider(
     {
         var locks = await Run.WithRetriesAsync(
                 (_storage, cancellationToken),
-                static x => x._storage.GetAllByPrefixAsync("", x.cancellationToken).AsTask(),
+                static x => x._storage.GetAllWithExpirationByPrefixAsync("", x.cancellationToken).AsTask(),
                 timeProvider: timeProvider,
                 cancellationToken: cancellationToken
             )
@@ -396,17 +407,16 @@ public sealed class DistributedLockProvider(
 
         var result = new List<LockInfo>(locks.Count);
 
-        foreach (var (resource, lockId) in locks)
+        foreach (var (resource, info) in locks)
         {
-            var ttl = await _storage.GetExpirationAsync(resource, cancellationToken).ConfigureAwait(false);
-            result.Add(
-                new LockInfo
-                {
-                    Resource = resource,
-                    LockId = lockId,
-                    TimeToLive = ttl,
-                }
-            );
+            var lockInfo = new LockInfo
+            {
+                Resource = resource,
+                LockId = info.LockId,
+                TimeToLive = info.Ttl,
+            };
+
+            result.Add(lockInfo);
         }
 
         return result;

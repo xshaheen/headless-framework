@@ -36,6 +36,12 @@ public interface IDistributedLockStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>Gets all lock keys, their IDs, and their remaining TTL matching the given prefix.</summary>
+    ValueTask<IReadOnlyDictionary<string, (string LockId, TimeSpan? Ttl)>> GetAllWithExpirationByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Gets the count of locks matching the given prefix.</summary>
     ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default);
 }

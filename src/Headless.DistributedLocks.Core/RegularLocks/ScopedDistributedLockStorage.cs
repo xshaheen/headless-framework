@@ -4,10 +4,8 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
-public sealed class ScopedDistributedLockStorage(
-    IDistributedLockStorage innerDistributedLockStorage,
-    string scopedPrefix
-) : IDistributedLockStorage
+public sealed class ScopedDistributedLockStorage(IDistributedLockStorage inner, string scopedPrefix)
+    : IDistributedLockStorage
 {
     public ValueTask<bool> InsertAsync(
         string key,
@@ -16,7 +14,7 @@ public sealed class ScopedDistributedLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return innerDistributedLockStorage.InsertAsync(_NormalizeResource(key), lockId, ttl, cancellationToken);
+        return inner.InsertAsync(_NormalizeResource(key), lockId, ttl, cancellationToken);
     }
 
     public ValueTask<bool> ReplaceIfEqualAsync(
@@ -27,13 +25,7 @@ public sealed class ScopedDistributedLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return innerDistributedLockStorage.ReplaceIfEqualAsync(
-            _NormalizeResource(key),
-            expectedId,
-            newId,
-            newTtl,
-            cancellationToken
-        );
+        return inner.ReplaceIfEqualAsync(_NormalizeResource(key), expectedId, newId, newTtl, cancellationToken);
     }
 
     public ValueTask<bool> RemoveIfEqualAsync(
@@ -42,22 +34,22 @@ public sealed class ScopedDistributedLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        return innerDistributedLockStorage.RemoveIfEqualAsync(_NormalizeResource(key), expectedId, cancellationToken);
+        return inner.RemoveIfEqualAsync(_NormalizeResource(key), expectedId, cancellationToken);
     }
 
     public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
     {
-        return innerDistributedLockStorage.GetExpirationAsync(_NormalizeResource(key), cancellationToken);
+        return inner.GetExpirationAsync(_NormalizeResource(key), cancellationToken);
     }
 
     public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
     {
-        return innerDistributedLockStorage.ExistsAsync(_NormalizeResource(key), cancellationToken);
+        return inner.ExistsAsync(_NormalizeResource(key), cancellationToken);
     }
 
     public ValueTask<string?> GetAsync(string key, CancellationToken cancellationToken = default)
     {
-        return innerDistributedLockStorage.GetAsync(_NormalizeResource(key), cancellationToken);
+        return inner.GetAsync(_NormalizeResource(key), cancellationToken);
     }
 
     public async ValueTask<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(
@@ -65,18 +57,29 @@ public sealed class ScopedDistributedLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var result = await innerDistributedLockStorage.GetAllByPrefixAsync(
-            _NormalizeResource(prefix),
-            cancellationToken
-        );
+        var result = await inner
+            .GetAllByPrefixAsync(_NormalizeResource(prefix), cancellationToken)
+            .ConfigureAwait(false);
 
         // Strip the scope prefix from keys to return unscoped resource names
         return result.ToDictionary(kv => kv.Key[scopedPrefix.Length..], kv => kv.Value, StringComparer.Ordinal);
     }
 
-    public ValueTask<long> GetCountAsync(string resourcePrefix = "", CancellationToken cancellationToken = default)
+    public async ValueTask<
+        IReadOnlyDictionary<string, (string LockId, TimeSpan? Ttl)>
+    > GetAllWithExpirationByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
     {
-        return innerDistributedLockStorage.GetCountAsync(_NormalizeResource(resourcePrefix), cancellationToken);
+        var result = await inner
+            .GetAllWithExpirationByPrefixAsync(_NormalizeResource(prefix), cancellationToken)
+            .ConfigureAwait(false);
+
+        // Strip the scope prefix from keys to return unscoped resource names
+        return result.ToDictionary(kv => kv.Key[scopedPrefix.Length..], kv => kv.Value, StringComparer.Ordinal);
+    }
+
+    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
+    {
+        return inner.GetCountAsync(_NormalizeResource(prefix), cancellationToken);
     }
 
     private string _NormalizeResource(string resource)
