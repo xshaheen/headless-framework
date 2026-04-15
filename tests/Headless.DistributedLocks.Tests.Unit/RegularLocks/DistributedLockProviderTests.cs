@@ -10,6 +10,7 @@ using Tests.Fakes;
 
 namespace Tests.RegularLocks;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class DistributedLockProviderTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
@@ -474,7 +475,7 @@ public sealed class DistributedLockProviderTests : TestBase
         // then
         await _outboxPublisher
             .Received(1)
-            .PublishAsync<DistributedLockReleased>(
+            .PublishAsync(
                 Arg.Is<DistributedLockReleased>(m => m.Resource == resource && m.LockId == acquiredLock.LockId),
                 Arg.Is<PublishOptions?>(options => options == null),
                 Arg.Any<CancellationToken>()
@@ -601,15 +602,13 @@ public sealed class DistributedLockProviderTests : TestBase
         // happens while the provider is awaiting the storage call.
         storage
             .InsertAsync(resource, Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(
-                new Func<NSubstitute.Core.CallInfo, ValueTask<bool>>(_ =>
-                {
+            .Returns(_ =>
+            {
 #pragma warning disable CA1849, VSTHRD103 // Synchronous Cancel is intentional inside NSubstitute sync callback
-                    cts.Cancel();
+                cts.Cancel();
 #pragma warning restore CA1849, VSTHRD103
-                    return ValueTask.FromException<bool>(new OperationCanceledException(cts.Token));
-                })
-            );
+                return ValueTask.FromException<bool>(new OperationCanceledException(cts.Token));
+            });
 
         // when
         var act = async () => await provider.TryAcquireAsync(resource, cancellationToken: cts.Token);
