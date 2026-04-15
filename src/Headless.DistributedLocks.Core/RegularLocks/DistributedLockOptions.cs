@@ -21,7 +21,7 @@ public sealed class DistributedLockOptions
     public int? MaxWaitersPerResource { get; set; } = 1_000;
 }
 
-public sealed class DistributedLockOptionsValidator : AbstractValidator<DistributedLockOptions>
+internal sealed class DistributedLockOptionsValidator : AbstractValidator<DistributedLockOptions>
 {
     public DistributedLockOptionsValidator()
     {

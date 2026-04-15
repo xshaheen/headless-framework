@@ -3,6 +3,7 @@
 using Headless.Caching;
 using Headless.Redis;
 using Headless.Serializer;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -19,6 +20,13 @@ public static class RedisCacheSetup
         )
         {
             services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(setupAction);
+
+            return services._AddCacheCore(isDefault);
+        }
+
+        public IServiceCollection AddRedisCache(IConfiguration configuration, bool isDefault = true)
+        {
+            services.Configure<RedisCacheOptions, RedisCacheOptionsValidator>(configuration);
 
             return services._AddCacheCore(isDefault);
         }

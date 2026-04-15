@@ -306,7 +306,11 @@ public sealed class HeadlessRedisScriptsLoader(
         cancellationToken.ThrowIfCancellationRequested();
         await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
-        var script = scriptSelector(this) ?? throw new InvalidOperationException("Scripts were not loaded correctly.");
+        var script = scriptSelector(this);
+        if (script is null)
+        {
+            throw new InvalidOperationException("Scripts were not loaded correctly.");
+        }
 
         try
         {
@@ -318,7 +322,11 @@ public sealed class HeadlessRedisScriptsLoader(
             ResetScripts();
             await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
-            script = scriptSelector(this) ?? throw new InvalidOperationException("Scripts were not loaded correctly.");
+            script = scriptSelector(this);
+            if (script is null)
+            {
+                throw new InvalidOperationException("Scripts were not loaded correctly.");
+            }
 
             return await db.ScriptEvaluateAsync(script, parameters).ConfigureAwait(false);
         }

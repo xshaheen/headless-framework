@@ -60,7 +60,7 @@ public sealed class DistributedLockProvider(
     )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
-        _ValidateResourceName(resource);
+        Argument.IsLessThanOrEqualTo(resource.Length, _maxResourceNameLength);
         cancellationToken.ThrowIfCancellationRequested();
 
         timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
@@ -178,15 +178,6 @@ public sealed class DistributedLockProvider(
         return new DisposableDistributedLock(resource, lockId, timeWaitedForLock, this, timeProvider, logger);
     }
 
-    private void _ValidateResourceName(string resource)
-    {
-        if (resource.Length > _maxResourceNameLength)
-        {
-            FormattableString message = $"Resource name exceeds maximum length of {_maxResourceNameLength} characters";
-            throw new ArgumentException(message.ToString(CultureInfo.InvariantCulture), nameof(resource));
-        }
-    }
-
     private ResetEventWithRefCount _IncrementResetEvent(string resource)
     {
         lock (_resetEventLock)
@@ -194,10 +185,9 @@ public sealed class DistributedLockProvider(
             if (_autoResetEvents.TryGetValue(resource, out var existing))
             {
                 // Prevent unbounded waiters per resource (DoS protection)
-                if (_maxWaitersPerResource is { } max && existing.RefCount >= max)
+                if (_maxWaitersPerResource is { } max)
                 {
-                    FormattableString message = $"Maximum waiters per resource ({max}) exceeded";
-                    throw new InvalidOperationException(message.ToString(CultureInfo.InvariantCulture));
+                    Ensure.True(existing.RefCount < max, $"Maximum waiters per resource ({max}) exceeded");
                 }
 
                 existing.Increment();
@@ -206,9 +196,12 @@ public sealed class DistributedLockProvider(
             }
 
             // Prevent unbounded unique resources (DoS protection)
-            if (_maxConcurrentWaitingResources is { } maxResources && _autoResetEvents.Count >= maxResources)
+            if (_maxConcurrentWaitingResources is { } maxResources)
             {
-                throw new InvalidOperationException($"Maximum concurrent waiting resources ({maxResources}) exceeded");
+                Ensure.True(
+                    _autoResetEvents.Count < maxResources,
+                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
+                );
             }
 
             var newEvent = new ResetEventWithRefCount();

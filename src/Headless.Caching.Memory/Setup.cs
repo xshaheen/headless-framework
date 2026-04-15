@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -17,6 +18,13 @@ public static class InMemoryCacheSetup
         )
         {
             services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(setupAction);
+
+            return services._AddCacheCore(isDefault);
+        }
+
+        public IServiceCollection AddInMemoryCache(IConfiguration configuration, bool isDefault = true)
+        {
+            services.Configure<InMemoryCacheOptions, InMemoryCacheOptionsValidator>(configuration);
 
             return services._AddCacheCore(isDefault);
         }

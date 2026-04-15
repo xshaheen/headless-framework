@@ -1369,25 +1369,17 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         prefix = _GetKey(prefix);
-        var keys = _memory.Keys.ToList();
-        var keysToRemove = new List<string>(keys.Count);
+        var removed = 0;
 
-        foreach (var key in keys)
+        foreach (var (key, entry) in _memory)
         {
             if (key.StartsWith(prefix, StringComparison.Ordinal))
             {
-                keysToRemove.Add(key);
-            }
-        }
-
-        var removed = 0;
-
-        foreach (var key in keysToRemove)
-        {
-            if (_memory.TryRemove(key, out var entry))
-            {
-                Interlocked.Add(ref _currentMemorySize, -entry.Size);
-                removed++;
+                if (_memory.TryRemove(key, out var removedEntry))
+                {
+                    Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+                    removed++;
+                }
             }
         }
 
@@ -1813,7 +1805,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
             try
             {
-                foreach (var kvp in _memory.ToArray())
+                foreach (var kvp in _memory)
                 {
                     var lastAccessTimeIsInfrequent = kvp.Value.LastAccessTicks < lastAccessMaximumTicks;
 
