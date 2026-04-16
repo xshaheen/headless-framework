@@ -13,19 +13,21 @@ public sealed class RedisThrottlingDistributedLockStorage(
 {
     private IDatabase Db => multiplexer.GetDatabase();
 
-    public async Task<long> GetHitCountsAsync(string resource)
+    public async Task<long> GetHitCountsAsync(string resource, CancellationToken cancellationToken = default)
     {
-        var redisValue = await Db.StringGetAsync(resource);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var redisValue = await Db.StringGetAsync(resource).ConfigureAwait(false);
 
         return redisValue.HasValue ? (long)redisValue : 0;
     }
 
-    public Task<long> IncrementAsync(string resource, TimeSpan ttl)
+    public Task<long> IncrementAsync(string resource, TimeSpan ttl, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(resource);
         Argument.IsPositive(ttl);
 
-        return scriptsLoader.IncrementAsync(Db, resource, 1, ttl);
+        return scriptsLoader.IncrementAsync(Db, resource, 1, ttl, cancellationToken);
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

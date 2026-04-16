@@ -10,9 +10,10 @@ internal sealed class FakeThrottlingDistributedLockStorage : IThrottlingDistribu
     private readonly ConcurrentDictionary<string, ThrottleEntry> _counters = new(StringComparer.Ordinal);
     private bool _disposed;
 
-    public Task<long> GetHitCountsAsync(string resource)
+    public Task<long> GetHitCountsAsync(string resource, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (!_counters.TryGetValue(resource, out var entry))
         {
@@ -29,9 +30,10 @@ internal sealed class FakeThrottlingDistributedLockStorage : IThrottlingDistribu
         return Task.FromResult(entry.Count);
     }
 
-    public Task<long> IncrementAsync(string resource, TimeSpan ttl)
+    public Task<long> IncrementAsync(string resource, TimeSpan ttl, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var expiration = DateTime.UtcNow.Add(ttl);
 

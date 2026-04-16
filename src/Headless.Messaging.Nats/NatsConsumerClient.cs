@@ -579,7 +579,8 @@ internal sealed class NatsConsumerClient(
 
     private void _ReleaseReceiveTokenState(ReceiveTokenState receiveTokenState)
     {
-        var shouldDispose = false;
+        bool shouldDispose;
+
         lock (_receiveLock)
         {
             receiveTokenState.RefCount--;
@@ -594,40 +595,59 @@ internal sealed class NatsConsumerClient(
 
     private sealed class ReceiveTokenState : IDisposable
     {
+        private readonly Lock _lock = new();
+        private CancellationTokenSource? _linkedSource;
+        private CancellationToken _lastParentToken;
+
         public CancellationTokenSource Source { get; } = new();
 
         public int RefCount { get; set; }
 
         public bool Retired { get; set; }
 
+        public CancellationToken GetLinkedToken(CancellationToken parentToken)
+        {
+            if (parentToken == CancellationToken.None)
+            {
+                return Source.Token;
+            }
+
+            lock (_lock)
+            {
+                if (_linkedSource == null || _lastParentToken != parentToken)
+                {
+                    _linkedSource?.Dispose();
+                    _linkedSource = CancellationTokenSource.CreateLinkedTokenSource(parentToken, Source.Token);
+                    _lastParentToken = parentToken;
+                }
+
+                return _linkedSource.Token;
+            }
+        }
+
         public void Dispose()
         {
+            lock (_lock)
+            {
+                _linkedSource?.Dispose();
+                _linkedSource = null;
+            }
+
             Source.Dispose();
         }
     }
 
-    private sealed class ReceiveTokenLease : IDisposable
+    private sealed class ReceiveTokenLease(
+        NatsConsumerClient owner,
+        NatsConsumerClient.ReceiveTokenState receiveTokenState,
+        CancellationToken cancellationToken
+    ) : IDisposable
     {
-        private readonly CancellationTokenSource _linkedTokenSource;
-        private readonly NatsConsumerClient _owner;
-        private readonly ReceiveTokenState _receiveTokenState;
+        private readonly NatsConsumerClient _owner = owner;
+        private readonly ReceiveTokenState _receiveTokenState = receiveTokenState;
         private int _disposed;
 
-        public ReceiveTokenLease(
-            NatsConsumerClient owner,
-            ReceiveTokenState receiveTokenState,
-            CancellationToken cancellationToken
-        )
-        {
-            _owner = owner;
-            _receiveTokenState = receiveTokenState;
-            _linkedTokenSource = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken,
-                receiveTokenState.Source.Token
-            );
-        }
-
-        public CancellationToken Token => _linkedTokenSource.Token;
+        public CancellationToken Token { get; } = receiveTokenState.GetLinkedToken(cancellationToken);
 
         public void Dispose()
         {
@@ -636,7 +656,6 @@ internal sealed class NatsConsumerClient(
                 return;
             }
 
-            _linkedTokenSource.Dispose();
             _owner._ReleaseReceiveTokenState(_receiveTokenState);
         }
     }

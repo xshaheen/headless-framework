@@ -13,6 +13,7 @@ mono_crash.*
 
 # Worktrees
 .worktrees
+.context
 
 # Build results
 [Dd]ebug/

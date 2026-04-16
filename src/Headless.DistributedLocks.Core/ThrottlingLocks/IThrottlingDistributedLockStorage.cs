@@ -6,7 +6,7 @@ namespace Headless.DistributedLocks;
 
 public interface IThrottlingDistributedLockStorage : IAsyncDisposable
 {
-    Task<long> GetHitCountsAsync(string resource);
+    Task<long> GetHitCountsAsync(string resource, CancellationToken cancellationToken = default);
 
-    Task<long> IncrementAsync(string resource, TimeSpan ttl);
+    Task<long> IncrementAsync(string resource, TimeSpan ttl, CancellationToken cancellationToken = default);
 }

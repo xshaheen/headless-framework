@@ -2,11 +2,14 @@
 
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 using StackExchange.Redis;
 
 namespace Headless.Redis;
+
+using ScriptSelector = Func<HeadlessRedisScriptsLoader, LoadedLuaScript?>;
 
 // ReSharper disable InconsistentNaming
 #pragma warning disable IDE1006
@@ -16,8 +19,15 @@ public sealed class HeadlessRedisScriptsLoader(
     ILogger<HeadlessRedisScriptsLoader>? logger = null
 ) : IDisposable
 {
+    // Cached selectors avoid per-call delegate allocation on the hot path.
+    private static readonly ScriptSelector _replaceIfEqualSelector = static x => x.ReplaceIfEqualScript;
+    private static readonly ScriptSelector _removeIfEqualSelector = static x => x.RemoveIfEqualScript;
+    private static readonly ScriptSelector _incrementSelector = static x => x.IncrementWithExpireScript;
+    private static readonly ScriptSelector _setIfLowerSelector = static x => x.SetIfLowerScript;
+    private static readonly ScriptSelector _setIfHigherSelector = static x => x.SetIfHigherScript;
+
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    private volatile bool _scriptsLoaded;
+    private int _version = 1; // Odd = not loaded, Even = loaded
     private bool _eventsSubscribed;
     private readonly AsyncLock _loadScriptsLock = new();
 
@@ -31,33 +41,37 @@ public sealed class HeadlessRedisScriptsLoader(
 
     public LoadedLuaScript? SetIfLowerScript { get; private set; }
 
-    public async Task LoadScriptsAsync()
+    public async ValueTask LoadScriptsAsync(CancellationToken cancellationToken = default)
     {
-        if (_scriptsLoaded)
+        if ((Volatile.Read(ref _version) & 1) == 0)
         {
             return;
         }
 
-        var timestamp = _timeProvider.GetTimestamp();
-        var traceEnabled = logger?.IsEnabled(LogLevel.Trace) ?? false;
+        cancellationToken.ThrowIfCancellationRequested();
 
-        using (await _loadScriptsLock.LockAsync())
+        var timestamp = _timeProvider.GetTimestamp();
+
+        using (await _loadScriptsLock.LockAsync(cancellationToken).ConfigureAwait(false))
         {
-            if (_scriptsLoaded)
+            if ((_version & 1) == 0)
             {
                 return;
             }
 
-            if (traceEnabled)
-            {
-                logger!.LogPreparingLuaScript();
-            }
+            logger?.LogPreparingLuaScript();
 
             var incrementWithExpire = LuaScript.Prepare(RedisScripts.IncrementWithExpire);
             var removeIfEqual = LuaScript.Prepare(RedisScripts.RemoveIfEqual);
             var replaceIfEqual = LuaScript.Prepare(RedisScripts.ReplaceIfEqual);
             var setIfHigher = LuaScript.Prepare(RedisScripts.SetIfHigher);
             var setIfLower = LuaScript.Prepare(RedisScripts.SetIfLower);
+
+            LoadedLuaScript? loadedIncrement = null;
+            LoadedLuaScript? loadedRemove = null;
+            LoadedLuaScript? loadedReplace = null;
+            LoadedLuaScript? loadedSetIfHigher = null;
+            LoadedLuaScript? loadedSetIfLower = null;
 
             foreach (var endpoint in multiplexer.GetEndPoints())
             {
@@ -68,10 +82,7 @@ public sealed class HeadlessRedisScriptsLoader(
                     continue;
                 }
 
-                if (traceEnabled)
-                {
-                    logger!.LogLoadingLuaScripts(endpoint);
-                }
+                logger?.LogLoadingLuaScripts(endpoint);
 
                 var loadIncrementScriptTask = incrementWithExpire.LoadAsync(server);
                 var loadRemoveScriptTask = removeIfEqual.LoadAsync(server);
@@ -79,24 +90,31 @@ public sealed class HeadlessRedisScriptsLoader(
                 var loadSetIfHigherScriptTask = setIfHigher.LoadAsync(server);
                 var loadSetIfLowerScriptTask = setIfLower.LoadAsync(server);
 
-                var results = await Task.WhenAll(
-                        loadIncrementScriptTask,
-                        loadRemoveScriptTask,
-                        loadReplaceScriptTask,
-                        loadSetIfHigherScriptTask,
-                        loadSetIfLowerScriptTask
-                    )
-                    .WithAggregatedExceptions()
-                    .ConfigureAwait(false);
+                var whenAll = Task.WhenAll(
+                    loadIncrementScriptTask,
+                    loadRemoveScriptTask,
+                    loadReplaceScriptTask,
+                    loadSetIfHigherScriptTask,
+                    loadSetIfLowerScriptTask
+                );
 
-                IncrementWithExpireScript = results[0];
-                RemoveIfEqualScript = results[1];
-                ReplaceIfEqualScript = results[2];
-                SetIfHigherScript = results[3];
-                SetIfLowerScript = results[4];
+                var results = await whenAll.WithAggregatedExceptions().ConfigureAwait(false);
+                loadedIncrement = results[0];
+                loadedRemove = results[1];
+                loadedReplace = results[2];
+                loadedSetIfHigher = results[3];
+                loadedSetIfLower = results[4];
             }
 
-            _scriptsLoaded = true;
+            // Only publish loaded scripts after every master endpoint has loaded successfully.
+            // Partial assignment on failure would leave stale scripts visible to callers.
+            IncrementWithExpireScript = loadedIncrement;
+            RemoveIfEqualScript = loadedRemove;
+            ReplaceIfEqualScript = loadedReplace;
+            SetIfHigherScript = loadedSetIfHigher;
+            SetIfLowerScript = loadedSetIfLower;
+
+            _version++; // Becomes even (loaded)
 
             // Subscribe to connection events for automatic script reload on reconnection
             if (!_eventsSubscribed)
@@ -105,18 +123,31 @@ public sealed class HeadlessRedisScriptsLoader(
                 _eventsSubscribed = true;
             }
 
-            if (traceEnabled)
-            {
-                var elapsed = _timeProvider.GetElapsedTime(timestamp);
-                logger!.LogScriptsLoadedSuccessfully(elapsed);
-            }
+            var elapsed = _timeProvider.GetElapsedTime(timestamp);
+            logger?.LogScriptsLoadedSuccessfully(elapsed);
         }
     }
 
     /// <summary>Resets the scripts loaded state, forcing a reload on next operation.</summary>
     public void ResetScripts()
     {
-        _scriptsLoaded = false;
+        var v = Volatile.Read(ref _version);
+        if ((v & 1) == 0) // If even (loaded)
+        {
+            Interlocked.CompareExchange(ref _version, v + 1, v); // Make it odd (unloaded)
+        }
+    }
+
+    /// <summary>
+    /// Resets the scripts loaded state only if the current version matches the expected version.
+    /// This prevents redundant resets in high-concurrency scenarios.
+    /// </summary>
+    private void _ResetScripts(int expectedVersion)
+    {
+        if ((expectedVersion & 1) == 0) // Only reset if it was even (loaded)
+        {
+            Interlocked.CompareExchange(ref _version, expectedVersion + 1, expectedVersion);
+        }
     }
 
     /// <inheritdoc />
@@ -131,12 +162,8 @@ public sealed class HeadlessRedisScriptsLoader(
 
     private void _OnConnectionRestored(object? sender, ConnectionFailedEventArgs e)
     {
-        if (logger is not null)
-        {
-            logger.LogConnectionRestored();
-        }
-
-        _scriptsLoaded = false;
+        logger?.LogConnectionRestored();
+        ResetScripts();
     }
 
     public async Task<bool> ReplaceIfEqualAsync(
@@ -144,84 +171,190 @@ public sealed class HeadlessRedisScriptsLoader(
         RedisKey key,
         string? expectedValue,
         string? newValue,
-        TimeSpan? newTtl = null
+        TimeSpan? newTtl = null,
+        CancellationToken cancellationToken = default
     )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        Argument.IsNotNull(db);
 
-        var redisResult = await db.ScriptEvaluateAsync(
-                ReplaceIfEqualScript!,
-                _GetReplaceIfEqualParameters(key, newValue, expectedValue, newTtl)
-            )
+        var parameters = _GetReplaceIfEqualParameters(key, newValue, expectedValue, newTtl);
+        var redisResult = await EvaluateAsync(db, _replaceIfEqualSelector, parameters, cancellationToken)
             .ConfigureAwait(false);
-
         var result = (int)redisResult;
 
         return result > 0;
     }
 
-    public async Task<bool> RemoveIfEqualAsync(IDatabase db, RedisKey key, string? expectedValue)
+    public async Task<bool> RemoveIfEqualAsync(
+        IDatabase db,
+        RedisKey key,
+        string? expectedValue,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        Argument.IsNotNull(db);
+
         var parameters = _GetRemoveIfEqualParameters(key, expectedValue);
-        var redisResult = await db.ScriptEvaluateAsync(RemoveIfEqualScript!, parameters).ConfigureAwait(false);
+        var redisResult = await EvaluateAsync(db, _removeIfEqualSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
         var result = (int)redisResult;
 
         return result > 0;
     }
 
-    public async Task<long> IncrementAsync(IDatabase db, string resource, long value, TimeSpan ttl)
+    public async Task<long> IncrementAsync(
+        IDatabase db,
+        string resource,
+        long value,
+        TimeSpan ttl,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        Argument.IsNotNull(db);
+        Argument.IsNotNullOrEmpty(resource);
+
         var parameters = _GetIncrementParameters(resource, value, ttl);
-        var result = await db.ScriptEvaluateAsync(IncrementWithExpireScript!, parameters).ConfigureAwait(false);
+        var result = await EvaluateAsync(db, _incrementSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (long)result;
     }
 
-    public async Task<double> IncrementAsync(IDatabase db, string resource, double value, TimeSpan ttl)
+    public async Task<double> IncrementAsync(
+        IDatabase db,
+        string resource,
+        double value,
+        TimeSpan ttl,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        Argument.IsNotNull(db);
+        Argument.IsNotNullOrEmpty(resource);
+
         var parameters = _GetIncrementParameters(resource, value, ttl);
-        var result = await db.ScriptEvaluateAsync(IncrementWithExpireScript!, parameters).ConfigureAwait(false);
+        var result = await EvaluateAsync(db, _incrementSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (double)result;
     }
 
-    public async Task<long> SetIfLowerAsync(IDatabase db, string key, long value, TimeSpan? ttl = null)
+    public async Task<long> SetIfLowerAsync(
+        IDatabase db,
+        string key,
+        long value,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        Argument.IsNotNull(db);
+        Argument.IsNotNullOrEmpty(key);
+
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await db.ScriptEvaluateAsync(SetIfLowerScript!, parameters).ConfigureAwait(false);
+        var result = await EvaluateAsync(db, _setIfLowerSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (long)result;
     }
 
-    public async Task<double> SetIfLowerAsync(IDatabase db, string key, double value, TimeSpan? ttl = null)
+    public async Task<double> SetIfLowerAsync(
+        IDatabase db,
+        string key,
+        double value,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        Argument.IsNotNull(db);
+        Argument.IsNotNullOrEmpty(key);
+
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await db.ScriptEvaluateAsync(SetIfLowerScript!, parameters).ConfigureAwait(false);
+        var result = await EvaluateAsync(db, _setIfLowerSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (double)result;
     }
 
-    public async Task<long> SetIfHigherAsync(IDatabase db, string key, long value, TimeSpan? ttl = null)
+    public async Task<long> SetIfHigherAsync(
+        IDatabase db,
+        string key,
+        long value,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        Argument.IsNotNull(db);
+        Argument.IsNotNullOrEmpty(key);
+
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await db.ScriptEvaluateAsync(SetIfHigherScript!, parameters).ConfigureAwait(false);
+        var result = await EvaluateAsync(db, _setIfHigherSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (long)result;
     }
 
-    public async Task<double> SetIfHigherAsync(IDatabase db, string key, double value, TimeSpan? ttl = null)
+    public async Task<double> SetIfHigherAsync(
+        IDatabase db,
+        string key,
+        double value,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
     {
-        await LoadScriptsAsync().ConfigureAwait(false);
+        Argument.IsNotNull(db);
+        Argument.IsNotNullOrEmpty(key);
+
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await db.ScriptEvaluateAsync(SetIfHigherScript!, parameters).ConfigureAwait(false);
+        var result = await EvaluateAsync(db, _setIfHigherSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (double)result;
+    }
+
+    /// <summary>
+    /// Evaluates a Lua script with automatic recovery from NOSCRIPT errors, which occur when the
+    /// server's script cache is invalidated between the caller's <see cref="LoadScriptsAsync"/>
+    /// check and the evaluation (failover, server restart, or SCRIPT FLUSH). On NOSCRIPT we reset,
+    /// reload, and retry exactly once using the freshly-loaded script reference.
+    /// </summary>
+    public async Task<RedisResult> EvaluateAsync(
+        IDatabase db,
+        ScriptSelector scriptSelector,
+        object? parameters,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
+
+        var versionAtStart = Volatile.Read(ref _version);
+        var script = scriptSelector(this);
+        if (script is null)
+        {
+            throw new InvalidOperationException("Scripts were not loaded correctly.");
+        }
+
+        try
+        {
+            return await db.ScriptEvaluateAsync(script, parameters).ConfigureAwait(false);
+        }
+        catch (RedisServerException e) when (IsNoScriptError(e))
+        {
+            logger?.LogNoScriptRetry();
+
+            // Only reset if no one has successfully loaded scripts since we started this call.
+            // This prevents redundant reloads in high-concurrency scenarios.
+            _ResetScripts(versionAtStart);
+
+            await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
+
+            script = scriptSelector(this);
+            if (script is null)
+            {
+                throw new InvalidOperationException("Scripts were not loaded correctly.");
+            }
+
+            return await db.ScriptEvaluateAsync(script, parameters).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Returns <c>true</c> when <paramref name="e"/> is a NOSCRIPT error from Redis.</summary>
+    public static bool IsNoScriptError(RedisServerException e)
+    {
+        return e.Message.StartsWith("NOSCRIPT", StringComparison.Ordinal);
     }
 
     #region Helpers
@@ -249,7 +382,7 @@ public sealed class HeadlessRedisScriptsLoader(
         where T : INumber<T>
     {
         // Convert to string to preserve precision and let Redis handle the type
-        var valueStr = value.ToString(null, CultureInfo.InvariantCulture);
+        var valueStr = value.ToString(format: null, CultureInfo.InvariantCulture);
         return new IncrementParams((RedisKey)resource, valueStr, (int)ttl.TotalMilliseconds);
     }
 
@@ -257,7 +390,7 @@ public sealed class HeadlessRedisScriptsLoader(
         where T : INumber<T>
     {
         // Convert value to string to preserve precision for floating-point numbers
-        var valueStr = value.ToString(null, CultureInfo.InvariantCulture);
+        var valueStr = value.ToString(format: null, CultureInfo.InvariantCulture);
         var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
 
         return new SetIfParams((RedisKey)key, valueStr, expiresValue);

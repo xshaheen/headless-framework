@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.ObjectModel;
-using System.Globalization;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;
@@ -11,6 +10,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
 
 namespace Headless.Caching;
+
+using ScriptSelector = Func<HeadlessRedisScriptsLoader, LoadedLuaScript?>;
 
 /// <summary>Redis cache implementation with atomic operations and cluster support.</summary>
 /// <remarks>
@@ -43,6 +44,13 @@ public sealed class RedisCache(
     /// </summary>
     private static readonly RedisValue _NullValue = "@@NULL";
     private const int _BatchSize = 250;
+
+    // Cached selectors avoid per-call delegate allocation on the hot path.
+    private static readonly ScriptSelector _replaceIfEqualSelector = static l => l.ReplaceIfEqualScript;
+    private static readonly ScriptSelector _removeIfEqualSelector = static l => l.RemoveIfEqualScript;
+    private static readonly ScriptSelector _incrementSelector = static l => l.IncrementWithExpireScript;
+    private static readonly ScriptSelector _setIfHigherSelector = static l => l.SetIfHigherScript;
+    private static readonly ScriptSelector _setIfLowerSelector = static l => l.SetIfLowerScript;
 
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
@@ -119,7 +127,7 @@ public sealed class RedisCache(
         Argument.IsPositiveOrZero(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _SetInternalAsync(_GetKey(key), value, expiration);
+        return await _SetInternalAsync(_GetKey(key), value, expiration).ConfigureAwait(false);
     }
 
     public async ValueTask<int> UpsertAllAsync<T>(
@@ -182,7 +190,7 @@ public sealed class RedisCache(
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _SetInternalAsync(_GetKey(key), value, expiration, When.NotExists);
+        return await _SetInternalAsync(_GetKey(key), value, expiration, When.NotExists).ConfigureAwait(false);
     }
 
     public async ValueTask<bool> TryReplaceAsync<T>(
@@ -196,7 +204,7 @@ public sealed class RedisCache(
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _SetInternalAsync(_GetKey(key), value, expiration, When.Exists);
+        return await _SetInternalAsync(_GetKey(key), value, expiration, When.Exists).ConfigureAwait(false);
     }
 
     public async ValueTask<bool> TryReplaceIfEqualAsync<T>(
@@ -217,24 +225,24 @@ public sealed class RedisCache(
             return false;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
-
         var redisValue = _ToRedisValue(value);
         var expectedValue = _ToRedisValue(expected);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var redisResult = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.ReplaceIfEqualScript!,
+        var redisResult = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                _replaceIfEqualSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value = redisValue,
                     expected = expectedValue,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -258,20 +266,20 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
-
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.IncrementWithExpireScript!,
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                _incrementSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value = amount,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -295,20 +303,20 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
-
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.IncrementWithExpireScript!,
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                _incrementSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value = amount,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -332,20 +340,20 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
-
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.SetIfHigherScript!,
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                _setIfHigherSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -369,20 +377,20 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
-
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.SetIfHigherScript!,
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                _setIfHigherSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -406,20 +414,20 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
-
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.SetIfLowerScript!,
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                _setIfLowerSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -443,20 +451,20 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
-
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.SetIfLowerScript!,
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                _setIfLowerSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -539,11 +547,13 @@ public sealed class RedisCache(
         Argument.IsNotNull(cacheKeys);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var redisKeys = cacheKeys is ICollection<string> collection ? new List<RedisKey>(collection.Count) : [];
+        var originalKeys = new List<string>();
+        var redisKeys = new List<RedisKey>();
 
         foreach (var key in cacheKeys.Distinct(StringComparer.Ordinal))
         {
             Argument.IsNotNullOrEmpty(key);
+            originalKeys.Add(key);
             redisKeys.Add(_GetKey(key));
         }
 
@@ -556,14 +566,19 @@ public sealed class RedisCache(
         {
             var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count, StringComparer.Ordinal);
 
-            foreach (var hashSlotGroup in redisKeys.GroupBy(k => options.ConnectionMultiplexer.HashSlot(k)))
+            foreach (
+                var hashSlotGroup in originalKeys
+                    .Select((k, i) => (Original: k, Redis: redisKeys[i]))
+                    .GroupBy(x => options.ConnectionMultiplexer.HashSlot(x.Redis))
+            )
             {
-                var hashSlotKeys = hashSlotGroup.ToArray();
-                var values = await _database.StringGetAsync(hashSlotKeys, options.ReadMode).ConfigureAwait(false);
+                var pairs = hashSlotGroup.ToArray();
+                var hashSlotRedisKeys = pairs.Select(x => x.Redis).ToArray();
+                var values = await _database.StringGetAsync(hashSlotRedisKeys, options.ReadMode).ConfigureAwait(false);
 
-                for (var i = 0; i < hashSlotKeys.Length; i++)
+                for (var i = 0; i < pairs.Length; i++)
                 {
-                    result[hashSlotKeys[i]!] = _RedisValueToCacheValue<T>(values[i]);
+                    result[pairs[i].Original] = _RedisValueToCacheValue<T>(values[i]);
                 }
             }
 
@@ -574,9 +589,9 @@ public sealed class RedisCache(
             var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count, StringComparer.Ordinal);
             var values = await _database.StringGetAsync([.. redisKeys], options.ReadMode).ConfigureAwait(false);
 
-            for (var i = 0; i < redisKeys.Count; i++)
+            for (var i = 0; i < originalKeys.Count; i++)
             {
-                result[redisKeys[i]!] = _RedisValueToCacheValue<T>(values[i]);
+                result[originalKeys[i]] = _RedisValueToCacheValue<T>(values[i]);
             }
 
             return result.AsReadOnly();
@@ -600,7 +615,9 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         const int chunkSize = 2500;
-        var pattern = $"{_GetKey(prefix)}*";
+        var prefixedPrefix = _GetKey(prefix);
+        var pattern = $"{prefixedPrefix}*";
+        var stripLength = _keyPrefix.Length;
         var keys = new List<string>();
 
         var endpoints = options.ConnectionMultiplexer.GetEndPoints();
@@ -618,7 +635,7 @@ public sealed class RedisCache(
                 var key in server.KeysAsync(pattern: pattern, pageSize: chunkSize).WithCancellation(cancellationToken)
             )
             {
-                keys.Add(key!);
+                keys.Add(stripLength == 0 ? key! : ((string)key!)[stripLength..]);
             }
         }
 
@@ -630,7 +647,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _database.KeyExistsAsync(_GetKey(key));
+        return await _database.KeyExistsAsync(_GetKey(key)).ConfigureAwait(false);
     }
 
     public async ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
@@ -699,7 +716,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _database.KeyTimeToLiveAsync(_GetKey(key));
+        return await _database.KeyTimeToLiveAsync(_GetKey(key)).ConfigureAwait(false);
     }
 
     public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
@@ -758,7 +775,7 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _database.KeyDeleteAsync(_GetKey(key));
+        return await _database.KeyDeleteAsync(_GetKey(key)).ConfigureAwait(false);
     }
 
     public async ValueTask<bool> RemoveIfEqualAsync<T>(
@@ -770,13 +787,13 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await scriptsLoader.LoadScriptsAsync().ConfigureAwait(false);
-
         var expectedValue = _ToRedisValue(expected);
-        var redisResult = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.RemoveIfEqualScript!,
-                new { key = (RedisKey)_GetKey(key), expected = expectedValue }
+        var redisResult = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                _removeIfEqualSelector,
+                new { key = (RedisKey)_GetKey(key), expected = expectedValue },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -945,7 +962,7 @@ public sealed class RedisCache(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        await options.ConnectionMultiplexer.FlushAllAsync();
+        await options.ConnectionMultiplexer.FlushAllAsync().ConfigureAwait(false);
     }
 
     #endregion
@@ -954,7 +971,7 @@ public sealed class RedisCache(
 
     private string _GetKey(string key)
     {
-        return string.IsNullOrEmpty(_keyPrefix) ? key : $"{_keyPrefix}{key}";
+        return string.IsNullOrEmpty(_keyPrefix) ? key : string.Concat(_keyPrefix, key);
     }
 
     private RedisValue _ToRedisValue<T>(T? value)
@@ -1211,41 +1228,6 @@ public sealed class RedisCache(
                 _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expiredValues, key);
             }
         }
-    }
-
-    private async Task<int> _FlushAllAsync()
-    {
-        var endpoints = options.ConnectionMultiplexer.GetEndPoints();
-
-        if (endpoints.Length is 0)
-        {
-            return 0;
-        }
-
-        long deleted = 0;
-
-        foreach (var endpoint in endpoints)
-        {
-            var server = options.ConnectionMultiplexer.GetServer(endpoint);
-
-            if (server.IsReplica)
-            {
-                continue;
-            }
-
-            try
-            {
-                var dbSize = await server.DatabaseSizeAsync().ConfigureAwait(false);
-                await server.FlushDatabaseAsync().ConfigureAwait(false);
-                deleted += dbSize;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unable to flush database on {Endpoint}", server.EndPoint);
-            }
-        }
-
-        return (int)deleted;
     }
 
     private async Task<long> _DeleteKeysAsync(RedisKey[] keys, bool isCluster)

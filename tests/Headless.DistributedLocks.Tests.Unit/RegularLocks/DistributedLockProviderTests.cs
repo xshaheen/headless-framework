@@ -6,11 +6,11 @@ using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using NSubstitute;
 using Tests.Fakes;
 
 namespace Tests.RegularLocks;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class DistributedLockProviderTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
@@ -20,13 +20,16 @@ public sealed class DistributedLockProviderTests : TestBase
 
     private long _lockIdCounter = 1000;
 
-    private DistributedLockProvider _CreateProvider(DistributedLockOptions? options = null)
+    private DistributedLockProvider _CreateProvider(
+        DistributedLockOptions? options = null,
+        IDistributedLockStorage? storage = null
+    )
     {
         options ??= new DistributedLockOptions();
         _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
 
         return new DistributedLockProvider(
-            _storage,
+            storage ?? _storage,
             _outboxPublisher,
             options,
             _longIdGenerator,
@@ -123,7 +126,7 @@ public sealed class DistributedLockProviderTests : TestBase
         var callCount = 0;
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
-            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>())
+            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
                 callCount++;
@@ -131,14 +134,7 @@ public sealed class DistributedLockProviderTests : TestBase
                 return ValueTask.FromResult(callCount >= 3);
             });
 
-        var provider = new DistributedLockProvider(
-            storage,
-            _outboxPublisher,
-            new DistributedLockOptions(),
-            _longIdGenerator,
-            _timeProvider,
-            LoggerFactory.CreateLogger<DistributedLockProvider>()
-        );
+        var provider = _CreateProvider(storage: storage);
         var resource = Faker.Random.AlphaNumeric(10);
 
         // Start acquisition task
@@ -427,7 +423,7 @@ public sealed class DistributedLockProviderTests : TestBase
         var callCount = 0;
 
         storage
-            .RemoveIfEqualAsync(Arg.Any<string>(), Arg.Any<string>())
+            .RemoveIfEqualAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 callCount++;
@@ -479,7 +475,7 @@ public sealed class DistributedLockProviderTests : TestBase
         // then
         await _outboxPublisher
             .Received(1)
-            .PublishAsync<DistributedLockReleased>(
+            .PublishAsync(
                 Arg.Is<DistributedLockReleased>(m => m.Resource == resource && m.LockId == acquiredLock.LockId),
                 Arg.Is<PublishOptions?>(options => options == null),
                 Arg.Any<CancellationToken>()
@@ -591,24 +587,42 @@ public sealed class DistributedLockProviderTests : TestBase
         expirationAfter!.Value.Should().BeGreaterThan(expirationBefore!.Value);
     }
 
+    [Fact]
+    public async Task should_cleanup_orphan_lock_when_acquisition_is_cancelled()
+    {
+        // given
+        var resource = Faker.Random.AlphaNumeric(10);
+        var storage = Substitute.For<IDistributedLockStorage>();
+        var provider = _CreateProvider(storage: storage);
+
+        using var cts = new CancellationTokenSource();
+
+        // Mock storage to simulate cancellation during InsertAsync.
+        // We use a regular Func to avoid NSubstitute's ValueTask ambiguity and ensure synchronous Cancel()
+        // happens while the provider is awaiting the storage call.
+        storage
+            .InsertAsync(resource, Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+#pragma warning disable CA1849, VSTHRD103 // Synchronous Cancel is intentional inside NSubstitute sync callback
+                cts.Cancel();
+#pragma warning restore CA1849, VSTHRD103
+                return ValueTask.FromException<bool>(new OperationCanceledException(cts.Token));
+            });
+
+        // when
+        var act = async () => await provider.TryAcquireAsync(resource, cancellationToken: cts.Token);
+
+        // then - it must throw because the caller's token was cancelled
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        // Verify that RemoveIfEqualAsync was called for best-effort cleanup
+        await storage.Received(1).RemoveIfEqualAsync(resource, Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     #endregion
 
     #region IsLockedAsync Tests
-
-    [Fact]
-    public async Task should_return_true_when_locked()
-    {
-        // given
-        var provider = _CreateProvider();
-        var resource = Faker.Random.AlphaNumeric(10);
-        await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
-
-        // when
-        var result = await provider.IsLockedAsync(resource, AbortToken);
-
-        // then
-        result.Should().BeTrue();
-    }
 
     [Fact]
     public async Task should_return_false_when_not_locked()

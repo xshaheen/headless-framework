@@ -268,6 +268,24 @@ public sealed class InMemoryCacheTests : TestBase
     #region TryReplaceIfEqualAsync
 
     [Fact]
+    public async Task should_return_false_when_entry_is_expired()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var expiration = TimeSpan.FromMilliseconds(50);
+        await cache.UpsertAsync(key, 42, expiration, AbortToken);
+
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+
+        // when
+        var result = await cache.TryReplaceIfEqualAsync(key, 42, 99, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_replace_when_value_equals_expected()
     {
         // given
@@ -1392,6 +1410,59 @@ public sealed class InMemoryCacheTests : TestBase
 
         // then
         ReferenceEquals(result1.Value, result2.Value).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_handle_reference_equality_limitation_when_clone_enabled()
+    {
+        // given
+        var options = new InMemoryCacheOptions { CloneValues = true };
+        using var cache = _CreateCache(options);
+        var key = Faker.Random.AlphaNumeric(10);
+        var original = new TestClass { Value = 42 };
+        await cache.UpsertAsync(key, original, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        // even though 'original' has the same values, it is a different instance than what's in cache
+        // because the cache stores a deep-cloned copy. object.Equals will fail.
+        var result = await cache.TryReplaceIfEqualAsync(
+            key,
+            original,
+            new TestClass { Value = 99 },
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+
+        // then
+        result.Should().BeFalse("reference equality fails for cloned custom classes that don't override Equals");
+    }
+
+    [Fact]
+    public async Task should_not_corrupt_memory_size_on_failed_replace_with_cloning()
+    {
+        // given
+        var options = new InMemoryCacheOptions
+        {
+            CloneValues = true,
+            SizeCalculator = _ => 100,
+            MaxMemorySize = 1000,
+        };
+        using var cache = _CreateCache(options);
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, new TestClass { Value = 1 }, TimeSpan.FromMinutes(5), AbortToken);
+        var initialSize = cache.CurrentMemorySize;
+
+        // when - failed replacement (wrong expected value)
+        await cache.TryReplaceIfEqualAsync(
+            key,
+            new TestClass { Value = 99 },
+            new TestClass { Value = 2 },
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+
+        // then - size should still be exactly 100
+        cache.CurrentMemorySize.Should().Be(initialSize);
     }
 
     #endregion

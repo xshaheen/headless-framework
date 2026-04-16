@@ -16,7 +16,7 @@ public sealed class ThrottlingDistributedLockOptions
     public TimeSpan ThrottlingPeriod { get; set; } = TimeSpan.FromMinutes(15);
 }
 
-public sealed class ThrottlingDistributedLockOptionsValidator : AbstractValidator<ThrottlingDistributedLockOptions>
+internal sealed class ThrottlingDistributedLockOptionsValidator : AbstractValidator<ThrottlingDistributedLockOptions>
 {
     public ThrottlingDistributedLockOptionsValidator()
     {

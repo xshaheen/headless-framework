@@ -38,4 +38,12 @@ internal static partial class RedisLoggerExtensions
         Message = "Redis connection restored, scripts will be reloaded"
     )]
     public static partial void LogConnectionRestored(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "NoScriptRetry",
+        Level = LogLevel.Debug,
+        Message = "Redis returned NOSCRIPT; reloading Lua scripts and retrying once"
+    )]
+    public static partial void LogNoScriptRetry(this ILogger logger);
 }

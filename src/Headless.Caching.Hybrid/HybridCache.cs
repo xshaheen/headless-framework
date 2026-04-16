@@ -1062,7 +1062,7 @@ public sealed class HybridCache(
 
     private void _ThrowIfDisposed()
     {
-        ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
+        Ensure.NotDisposed(Volatile.Read(ref _isDisposed) == 1, this);
     }
 
     private TimeSpan? _GetLocalExpiration(TimeSpan? expiration) => options.DefaultLocalExpiration ?? expiration;

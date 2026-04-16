@@ -38,6 +38,7 @@ public sealed class DistributedLockProvider(
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan _OrphanLockCleanupTimeout = TimeSpan.FromSeconds(5);
     private const int _MaxReleaseRetryAttempts = 15;
 
     // Configurable limits from options
@@ -59,7 +60,7 @@ public sealed class DistributedLockProvider(
     )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
-        _ValidateResourceName(resource);
+        Argument.IsLessThanOrEqualTo(resource.Length, _maxResourceNameLength);
         cancellationToken.ThrowIfCancellationRequested();
 
         timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
@@ -67,7 +68,8 @@ public sealed class DistributedLockProvider(
 
         logger.LogAttemptingToAcquireLock(resource, lockId);
 
-        using var cts = (acquireTimeout ?? DefaultAcquireTimeout).ToCancellationTokenSource(cancellationToken);
+        using var timeoutCts = timeProvider.CreateCancellationTokenSource(acquireTimeout ?? DefaultAcquireTimeout);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
         using var activity = _StartLockActivity(resource);
 
         var timestamp = timeProvider.GetTimestamp();
@@ -82,7 +84,21 @@ public sealed class DistributedLockProvider(
                 // Try to acquire the lock
                 try
                 {
-                    gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires);
+                    gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires, cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Cancellation may have fired after the storage accepted the write but
+                    // before we received the response. Attempt best-effort cleanup so we
+                    // don't strand an orphan lock until TTL expiry.
+                    await _TryReleaseOrphanLockAsync(resource, lockId).ConfigureAwait(false);
+
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+
+                    break;
                 }
                 catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
                 {
@@ -118,7 +134,11 @@ public sealed class DistributedLockProvider(
                 // Wait until we get a message saying the lock was released by (autoResetEvent.Target.Set())
                 // or delayAmount has elapsed
                 // or acquire timeout cancellation has been requested
-                using var linkedCancellationTokenSource = delayAmount.ToCancellationTokenSource(cts.Token);
+                using var delayCts = timeProvider.CreateCancellationTokenSource(delayAmount);
+                using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(
+                    delayCts.Token,
+                    cts.Token
+                );
                 await autoResetEvent.Target.SafeWaitAsync(linkedCancellationTokenSource.Token).ConfigureAwait(false);
             } while (!cts.IsCancellationRequested);
         }
@@ -158,15 +178,6 @@ public sealed class DistributedLockProvider(
         return new DisposableDistributedLock(resource, lockId, timeWaitedForLock, this, timeProvider, logger);
     }
 
-    private void _ValidateResourceName(string resource)
-    {
-        if (resource.Length > _maxResourceNameLength)
-        {
-            FormattableString message = $"Resource name exceeds maximum length of {_maxResourceNameLength} characters";
-            throw new ArgumentException(message.ToString(CultureInfo.InvariantCulture), nameof(resource));
-        }
-    }
-
     private ResetEventWithRefCount _IncrementResetEvent(string resource)
     {
         lock (_resetEventLock)
@@ -174,10 +185,9 @@ public sealed class DistributedLockProvider(
             if (_autoResetEvents.TryGetValue(resource, out var existing))
             {
                 // Prevent unbounded waiters per resource (DoS protection)
-                if (_maxWaitersPerResource is { } max && existing.RefCount >= max)
+                if (_maxWaitersPerResource is { } max)
                 {
-                    FormattableString message = $"Maximum waiters per resource ({max}) exceeded";
-                    throw new InvalidOperationException(message.ToString(CultureInfo.InvariantCulture));
+                    Ensure.True(existing.RefCount < max, $"Maximum waiters per resource ({max}) exceeded");
                 }
 
                 existing.Increment();
@@ -186,9 +196,12 @@ public sealed class DistributedLockProvider(
             }
 
             // Prevent unbounded unique resources (DoS protection)
-            if (_maxConcurrentWaitingResources is { } maxResources && _autoResetEvents.Count >= maxResources)
+            if (_maxConcurrentWaitingResources is { } maxResources)
             {
-                throw new InvalidOperationException($"Maximum concurrent waiting resources ({maxResources}) exceeded");
+                Ensure.True(
+                    _autoResetEvents.Count < maxResources,
+                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
+                );
             }
 
             var newEvent = new ResetEventWithRefCount();
@@ -222,6 +235,19 @@ public sealed class DistributedLockProvider(
         }
     }
 
+    private async Task _TryReleaseOrphanLockAsync(string resource, string lockId)
+    {
+        try
+        {
+            using var cleanupCts = timeProvider.CreateCancellationTokenSource(_OrphanLockCleanupTimeout);
+            await _storage.RemoveIfEqualAsync(resource, lockId, cleanupCts.Token).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            logger.LogBestEffortLockCleanupFailed(e, resource, lockId);
+        }
+    }
+
     private static TimeSpan _GetBackoffDelay(int attempt)
     {
         // Exponential backoff: 50ms, 100ms, 200ms, 400ms, ... capped at 3s
@@ -246,12 +272,12 @@ public sealed class DistributedLockProvider(
         logger.LogReleaseStarted(resource, lockId);
 
         var removed = await Run.WithRetriesAsync(
-                (_storage, resource, lockId),
+                (_storage, resource, lockId, cancellationToken),
                 static state =>
                 {
-                    var (storage, resource, lockId) = state;
+                    var (storage, resource, lockId, ct) = state;
 
-                    return storage.RemoveIfEqualAsync(resource, lockId).AsTask();
+                    return storage.RemoveIfEqualAsync(resource, lockId, ct).AsTask();
                 },
                 maxAttempts: _MaxReleaseRetryAttempts,
                 timeProvider: timeProvider,
@@ -291,12 +317,12 @@ public sealed class DistributedLockProvider(
         logger.LogRenewingLock(resource, lockId, timeUntilExpires);
 
         return Run.WithRetriesAsync(
-            (_storage, resource, lockId, timeUntilExpires),
+            (_storage, resource, lockId, timeUntilExpires, cancellationToken),
             static state =>
             {
-                var (storage, resource, lockId, ttl) = state;
+                var (storage, resource, lockId, ttl, ct) = state;
 
-                return storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl).AsTask();
+                return storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl, ct).AsTask();
             },
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
@@ -312,8 +338,8 @@ public sealed class DistributedLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
 
         return await Run.WithRetriesAsync(
-            (_storage, resource),
-            static x => x._storage.ExistsAsync(x.resource).AsTask(),
+            (_storage, resource, cancellationToken),
+            static x => x._storage.ExistsAsync(x.resource, x.cancellationToken).AsTask(),
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
         );
@@ -328,8 +354,8 @@ public sealed class DistributedLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
 
         return Run.WithRetriesAsync(
-            (_storage, resource),
-            static x => x._storage.GetExpirationAsync(x.resource).AsTask(),
+            (_storage, resource, cancellationToken),
+            static x => x._storage.GetExpirationAsync(x.resource, x.cancellationToken).AsTask(),
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
         );
@@ -340,8 +366,8 @@ public sealed class DistributedLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
 
         var lockId = await Run.WithRetriesAsync(
-                (_storage, resource),
-                static x => x._storage.GetAsync(x.resource).AsTask(),
+                (_storage, resource, cancellationToken),
+                static x => x._storage.GetAsync(x.resource, x.cancellationToken).AsTask(),
                 timeProvider: timeProvider,
                 cancellationToken: cancellationToken
             )
@@ -352,7 +378,7 @@ public sealed class DistributedLockProvider(
             return null;
         }
 
-        var ttl = await _storage.GetExpirationAsync(resource).ConfigureAwait(false);
+        var ttl = await _storage.GetExpirationAsync(resource, cancellationToken).ConfigureAwait(false);
 
         return new LockInfo
         {
@@ -365,8 +391,8 @@ public sealed class DistributedLockProvider(
     public async Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
     {
         var locks = await Run.WithRetriesAsync(
-                _storage,
-                static storage => storage.GetAllByPrefixAsync("").AsTask(),
+                (_storage, cancellationToken),
+                static x => x._storage.GetAllWithExpirationByPrefixAsync("", x.cancellationToken).AsTask(),
                 timeProvider: timeProvider,
                 cancellationToken: cancellationToken
             )
@@ -374,17 +400,16 @@ public sealed class DistributedLockProvider(
 
         var result = new List<LockInfo>(locks.Count);
 
-        foreach (var (resource, lockId) in locks)
+        foreach (var (resource, info) in locks)
         {
-            var ttl = await _storage.GetExpirationAsync(resource).ConfigureAwait(false);
-            result.Add(
-                new LockInfo
-                {
-                    Resource = resource,
-                    LockId = lockId,
-                    TimeToLive = ttl,
-                }
-            );
+            var lockInfo = new LockInfo
+            {
+                Resource = resource,
+                LockId = info.LockId,
+                TimeToLive = info.Ttl,
+            };
+
+            result.Add(lockInfo);
         }
 
         return result;
@@ -393,8 +418,8 @@ public sealed class DistributedLockProvider(
     public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
     {
         return Run.WithRetriesAsync(
-            _storage,
-            static storage => storage.GetCountAsync("").AsTask(),
+            (_storage, cancellationToken),
+            static x => x._storage.GetCountAsync("", x.cancellationToken).AsTask(),
             timeProvider: timeProvider,
             cancellationToken: cancellationToken
         );
