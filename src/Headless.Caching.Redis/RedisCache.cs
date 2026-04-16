@@ -216,24 +216,24 @@ public sealed class RedisCache(
             return false;
         }
 
-        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
-
         var redisValue = _ToRedisValue(value);
         var expectedValue = _ToRedisValue(expected);
 
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var redisResult = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.ReplaceIfEqualScript!,
+        var redisResult = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                l => l.ReplaceIfEqualScript,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value = redisValue,
                     expected = expectedValue,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -257,20 +257,20 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
-
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.IncrementWithExpireScript!,
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                l => l.IncrementWithExpireScript,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value = amount,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -294,20 +294,20 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
-
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.IncrementWithExpireScript!,
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                l => l.IncrementWithExpireScript,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value = amount,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -331,20 +331,20 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
-
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.SetIfHigherScript!,
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                l => l.SetIfHigherScript,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -368,20 +368,20 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
-
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.SetIfHigherScript!,
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                l => l.SetIfHigherScript,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -405,20 +405,20 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
-
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.SetIfLowerScript!,
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                l => l.SetIfLowerScript,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -442,20 +442,20 @@ public sealed class RedisCache(
             return 0;
         }
 
-        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
-
         var expiresMs = _GetExpirationMilliseconds(expiration);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
-        var result = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.SetIfLowerScript!,
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                l => l.SetIfLowerScript,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value,
                     expires = expiresArg,
-                }
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 

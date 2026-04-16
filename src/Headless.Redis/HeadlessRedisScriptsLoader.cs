@@ -162,7 +162,7 @@ public sealed class HeadlessRedisScriptsLoader(
         Argument.IsNotNull(db);
 
         var parameters = _GetReplaceIfEqualParameters(key, newValue, expectedValue, newTtl);
-        var redisResult = await _EvaluateAsync(db, _replaceIfEqualSelector, parameters, cancellationToken)
+        var redisResult = await EvaluateAsync(db, _replaceIfEqualSelector, parameters, cancellationToken)
             .ConfigureAwait(false);
         var result = (int)redisResult;
 
@@ -179,7 +179,7 @@ public sealed class HeadlessRedisScriptsLoader(
         Argument.IsNotNull(db);
 
         var parameters = _GetRemoveIfEqualParameters(key, expectedValue);
-        var redisResult = await _EvaluateAsync(db, _removeIfEqualSelector, parameters, cancellationToken)
+        var redisResult = await EvaluateAsync(db, _removeIfEqualSelector, parameters, cancellationToken)
             .ConfigureAwait(false);
         var result = (int)redisResult;
 
@@ -198,7 +198,7 @@ public sealed class HeadlessRedisScriptsLoader(
         Argument.IsNotNullOrEmpty(resource);
 
         var parameters = _GetIncrementParameters(resource, value, ttl);
-        var result = await _EvaluateAsync(db, _incrementSelector, parameters, cancellationToken).ConfigureAwait(false);
+        var result = await EvaluateAsync(db, _incrementSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (long)result;
     }
@@ -215,7 +215,7 @@ public sealed class HeadlessRedisScriptsLoader(
         Argument.IsNotNullOrEmpty(resource);
 
         var parameters = _GetIncrementParameters(resource, value, ttl);
-        var result = await _EvaluateAsync(db, _incrementSelector, parameters, cancellationToken).ConfigureAwait(false);
+        var result = await EvaluateAsync(db, _incrementSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (double)result;
     }
@@ -232,7 +232,7 @@ public sealed class HeadlessRedisScriptsLoader(
         Argument.IsNotNullOrEmpty(key);
 
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await _EvaluateAsync(db, _setIfLowerSelector, parameters, cancellationToken).ConfigureAwait(false);
+        var result = await EvaluateAsync(db, _setIfLowerSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (long)result;
     }
@@ -249,7 +249,7 @@ public sealed class HeadlessRedisScriptsLoader(
         Argument.IsNotNullOrEmpty(key);
 
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await _EvaluateAsync(db, _setIfLowerSelector, parameters, cancellationToken).ConfigureAwait(false);
+        var result = await EvaluateAsync(db, _setIfLowerSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (double)result;
     }
@@ -266,8 +266,7 @@ public sealed class HeadlessRedisScriptsLoader(
         Argument.IsNotNullOrEmpty(key);
 
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await _EvaluateAsync(db, _setIfHigherSelector, parameters, cancellationToken)
-            .ConfigureAwait(false);
+        var result = await EvaluateAsync(db, _setIfHigherSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (long)result;
     }
@@ -284,11 +283,12 @@ public sealed class HeadlessRedisScriptsLoader(
         Argument.IsNotNullOrEmpty(key);
 
         var parameters = _GetIfParameters(key, value, ttl);
-        var result = await _EvaluateAsync(db, _setIfHigherSelector, parameters, cancellationToken)
-            .ConfigureAwait(false);
+        var result = await EvaluateAsync(db, _setIfHigherSelector, parameters, cancellationToken).ConfigureAwait(false);
 
         return (double)result;
     }
+
+    public delegate LoadedLuaScript? ScriptSelector(HeadlessRedisScriptsLoader loader);
 
     /// <summary>
     /// Evaluates a Lua script with automatic recovery from NOSCRIPT errors, which occur when the
@@ -296,11 +296,11 @@ public sealed class HeadlessRedisScriptsLoader(
     /// check and the evaluation (failover, server restart, or SCRIPT FLUSH). On NOSCRIPT we reset,
     /// reload, and retry exactly once using the freshly-loaded script reference.
     /// </summary>
-    private async Task<RedisResult> _EvaluateAsync(
+    public async Task<RedisResult> EvaluateAsync(
         IDatabase db,
         ScriptSelector scriptSelector,
         object? parameters,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -316,7 +316,7 @@ public sealed class HeadlessRedisScriptsLoader(
         {
             return await db.ScriptEvaluateAsync(script, parameters).ConfigureAwait(false);
         }
-        catch (RedisServerException e) when (_IsNoScriptError(e))
+        catch (RedisServerException e) when (IsNoScriptError(e))
         {
             logger?.LogNoScriptRetry();
             ResetScripts();
@@ -330,6 +330,11 @@ public sealed class HeadlessRedisScriptsLoader(
 
             return await db.ScriptEvaluateAsync(script, parameters).ConfigureAwait(false);
         }
+    }
+
+    public static bool IsNoScriptError(RedisServerException e)
+    {
+        return e.Message.StartsWith("NOSCRIPT", StringComparison.Ordinal);
     }
 
     #region Helpers
