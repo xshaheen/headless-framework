@@ -6,8 +6,7 @@ namespace Headless.Jobs;
 
 public static class JobsCancellationTokenManager
 {
-    private static readonly ConcurrentDictionary<Guid, JobsCancellationTokenDetails> _TickerCancellationTokens =
-        new();
+    private static readonly ConcurrentDictionary<Guid, JobsCancellationTokenDetails> _TickerCancellationTokens = new();
     private static readonly ConcurrentDictionary<Guid, ConcurrentHashSet<Guid>> _ParentIdIndex = new();
 
     internal static void AddTickerCancellationToken(

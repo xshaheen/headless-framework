@@ -52,18 +52,19 @@ public sealed class AuditLogOptions
     /// Framework-managed property names excluded by default during change capture.
     /// Consumers can add, remove, or clear entries to match their model.
     /// </summary>
-    public HashSet<string> DefaultExcludedProperties { get; set; } = new(StringComparer.Ordinal)
-    {
-        "ConcurrencyStamp",
-        "DateCreated",
-        "DateUpdated",
-        "DateDeleted",
-        "DateSuspended",
-        "CreatedById",
-        "UpdatedById",
-        "DeletedById",
-        "SuspendedById",
-    };
+    public HashSet<string> DefaultExcludedProperties { get; set; } =
+        new(StringComparer.Ordinal)
+        {
+            "ConcurrencyStamp",
+            "DateCreated",
+            "DateUpdated",
+            "DateDeleted",
+            "DateSuspended",
+            "CreatedById",
+            "UpdatedById",
+            "DeletedById",
+            "SuspendedById",
+        };
 }
 
 /// <summary>Validates <see cref="AuditLogOptions"/>.</summary>

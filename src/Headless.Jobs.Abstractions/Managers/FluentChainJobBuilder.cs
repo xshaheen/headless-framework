@@ -284,11 +284,7 @@ public class FluentChainJobBuilder<TTimeJob>
         private readonly TTimeJob _child;
         private readonly int _childIndex;
 
-        internal SecondChildBuilder(
-            FluentChainJobBuilder<TTimeJob> mainBuilder,
-            TTimeJob child,
-            int childIndex
-        )
+        internal SecondChildBuilder(FluentChainJobBuilder<TTimeJob> mainBuilder, TTimeJob child, int childIndex)
         {
             _mainBuilder = mainBuilder;
             _child = child;
@@ -493,11 +489,7 @@ public class FluentChainJobBuilder<TTimeJob>
         private readonly TTimeJob _child;
         private readonly int _childIndex;
 
-        internal FourthChildBuilder(
-            FluentChainJobBuilder<TTimeJob> mainBuilder,
-            TTimeJob child,
-            int childIndex
-        )
+        internal FourthChildBuilder(FluentChainJobBuilder<TTimeJob> mainBuilder, TTimeJob child, int childIndex)
         {
             _mainBuilder = mainBuilder;
             _child = child;
@@ -842,9 +834,6 @@ public static class FluentChainJobBuilderExtensions
     /// <summary>
     /// Start building a fluent chain job by configuring the parent
     /// </summary>
-    public static FluentChainJobBuilder<TTimeJob> BeginWith<TTimeJob>(
-        Action<ParentBuilder<TTimeJob>> configure
-    )
-        where TTimeJob : TimeJobEntity<TTimeJob>, new() =>
-        FluentChainJobBuilder<TTimeJob>.BeginWith(configure);
+    public static FluentChainJobBuilder<TTimeJob> BeginWith<TTimeJob>(Action<ParentBuilder<TTimeJob>> configure)
+        where TTimeJob : TimeJobEntity<TTimeJob>, new() => FluentChainJobBuilder<TTimeJob>.BeginWith(configure);
 }

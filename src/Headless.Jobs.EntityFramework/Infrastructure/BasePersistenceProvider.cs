@@ -143,10 +143,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-    public async Task<int> UpdateTimeJob(
-        InternalFunctionContext functionContexts,
-        CancellationToken cancellationToken
-    )
+    public async Task<int> UpdateTimeJob(InternalFunctionContext functionContexts, CancellationToken cancellationToken)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -154,7 +151,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return await dbContext
             .Set<TTimeJob>()
             .Where(x => x.Id == functionContexts.JobId)
-            .ExecuteUpdateAsync(setter => setter.UpdateTimeJob(functionContexts, TimeProvider.GetUtcNow().UtcDateTime), cancellationToken)
+            .ExecuteUpdateAsync(
+                setter => setter.UpdateTimeJob(functionContexts, TimeProvider.GetUtcNow().UtcDateTime),
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -171,7 +171,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         await dbContext
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)timeJobIds).Contains(x.Id))
-            .ExecuteUpdateAsync(setter => setter.UpdateTimeJob(functionContext, TimeProvider.GetUtcNow().UtcDateTime), cancellationToken)
+            .ExecuteUpdateAsync(
+                setter => setter.UpdateTimeJob(functionContext, TimeProvider.GetUtcNow().UtcDateTime),
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -484,9 +487,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Include(x => x.CronJob)
             .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
             .Where(x => x.ExecutionTime <= fallbackThreshold) // Only tasks older than 1 second
-            .Select(
-                MappingExtensions.ForQueueCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>()
-            )
+            .Select(MappingExtensions.ForQueueCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
             .ToArrayAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -705,22 +706,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only items within the 1-second main scheduler window
             .WhereCanAcquire(LockHolder)
             .OrderBy(x => x.ExecutionTime)
-            .Select(
-                MappingExtensions.ForLatestQueuedCronJobOccurrence<
-                    CronJobOccurrenceEntity<TCronJob>,
-                    TCronJob
-                >()
-            )
+            .Select(MappingExtensions.ForLatestQueuedCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
 
         return occurrence!;
     }
 
-    public async Task<byte[]> GetCronJobOccurrenceRequest(
-        Guid jobId,
-        CancellationToken cancellationToken = default
-    )
+    public async Task<byte[]> GetCronJobOccurrenceRequest(Guid jobId, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)

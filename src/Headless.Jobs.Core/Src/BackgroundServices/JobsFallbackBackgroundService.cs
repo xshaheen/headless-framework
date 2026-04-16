@@ -42,12 +42,7 @@ internal class JobsFallbackBackgroundService(
                 {
                     foreach (var function in functions)
                     {
-                        if (
-                            JobFunctionProvider.JobFunctions.TryGetValue(
-                                function.FunctionName,
-                                out var tickerItem
-                            )
-                        )
+                        if (JobFunctionProvider.JobFunctions.TryGetValue(function.FunctionName, out var tickerItem))
                         {
                             function.CachedDelegate = tickerItem.Delegate;
                             function.CachedPriority = tickerItem.Priority;
@@ -56,12 +51,7 @@ internal class JobsFallbackBackgroundService(
 
                         foreach (var child in function.TimeJobChildren)
                         {
-                            if (
-                                JobFunctionProvider.JobFunctions.TryGetValue(
-                                    child.FunctionName,
-                                    out var childItem
-                                )
-                            )
+                            if (JobFunctionProvider.JobFunctions.TryGetValue(child.FunctionName, out var childItem))
                             {
                                 child.CachedDelegate = childItem.Delegate;
                                 child.CachedPriority = childItem.Priority;

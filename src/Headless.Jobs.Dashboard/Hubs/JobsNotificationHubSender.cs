@@ -96,9 +96,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
         await _hubContext.Clients.Group(groupId.ToString()).SendAsync("UpdateCronOccurrenceNotification", occurrence);
     }
 
-    public Task UpdateTimeJobFromInternalFunctionContext<TTimeJob>(
-        InternalFunctionContext internalFunctionContext
-    )
+    public Task UpdateTimeJobFromInternalFunctionContext<TTimeJob>(InternalFunctionContext internalFunctionContext)
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
         // Debounce high-frequency updates into a single notification

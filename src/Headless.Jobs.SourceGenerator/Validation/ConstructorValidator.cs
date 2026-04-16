@@ -53,11 +53,7 @@ internal static class ConstructorValidator
                                 "Headless.Jobs.Base.JobsConstructorAttribute",
                                 StringComparison.Ordinal
                             )
-                            || string.Equals(
-                                fullName,
-                                "Headless.Jobs.Base.JobsConstructor",
-                                StringComparison.Ordinal
-                            );
+                            || string.Equals(fullName, "Headless.Jobs.Base.JobsConstructor", StringComparison.Ordinal);
                     });
 
                 if (hasJobsAttribute)

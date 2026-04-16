@@ -18,10 +18,7 @@ namespace Headless.Messaging.Dashboard.GatewayProxy;
 /// </remarks>
 public sealed class GatewayProxyEndpointFilter(IServiceProvider serviceProvider) : IEndpointFilter
 {
-    public async ValueTask<object?> InvokeAsync(
-        EndpointFilterInvocationContext context,
-        EndpointFilterDelegate next
-    )
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var agent = serviceProvider.GetService<GatewayProxyAgent>();
         if (agent is not null)

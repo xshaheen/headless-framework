@@ -88,7 +88,12 @@ public sealed class RetryBehaviorTests
         services.AddSingleton(instrumentation);
         var serviceProvider = services.BuildServiceProvider();
 
-        var handler = new JobsExecutionTaskHandler(serviceProvider, TimeProvider.System, instrumentation, internalManager);
+        var handler = new JobsExecutionTaskHandler(
+            serviceProvider,
+            TimeProvider.System,
+            instrumentation,
+            internalManager
+        );
 
         var attempts = new List<Attempt>();
 

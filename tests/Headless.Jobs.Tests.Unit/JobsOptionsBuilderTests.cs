@@ -15,8 +15,7 @@ public sealed class JobsOptionsBuilderTests
 
     private sealed class FakeExceptionHandler : IJobExceptionHandler
     {
-        public Task HandleExceptionAsync(Exception exception, Guid jobId, JobType jobType) =>
-            Task.CompletedTask;
+        public Task HandleExceptionAsync(Exception exception, Guid jobId, JobType jobType) => Task.CompletedTask;
 
         public Task HandleCanceledExceptionAsync(Exception exception, Guid jobId, JobType jobType) =>
             Task.CompletedTask;

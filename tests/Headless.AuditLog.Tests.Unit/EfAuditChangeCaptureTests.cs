@@ -143,7 +143,10 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     {
         var opts = new AuditLogOptions();
         configure?.Invoke(opts);
-        return new EfAuditChangeCapture(Options.Create(opts), logger ?? Substitute.For<ILogger<EfAuditChangeCapture>>());
+        return new EfAuditChangeCapture(
+            Options.Create(opts),
+            logger ?? Substitute.For<ILogger<EfAuditChangeCapture>>()
+        );
     }
 
     private static IReadOnlyList<AuditLogEntryData> _Capture(EfAuditChangeCapture sut, TestDbContext db)
@@ -848,11 +851,27 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 }
             );
 
-            db.Orders.Add(new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555" });
+            db.Orders.Add(
+                new Order
+                {
+                    Id = Guid.NewGuid(),
+                    CustomerName = "Alice",
+                    Email = "a@b.com",
+                    Phone = "555",
+                }
+            );
             _ = _Capture(sut, db);
             await db.SaveChangesAsync();
 
-            db.Orders.Add(new Order { Id = Guid.NewGuid(), CustomerName = "Bob", Email = "b@b.com", Phone = "666" });
+            db.Orders.Add(
+                new Order
+                {
+                    Id = Guid.NewGuid(),
+                    CustomerName = "Bob",
+                    Email = "b@b.com",
+                    Phone = "666",
+                }
+            );
             _ = _Capture(sut, db);
 
             // then
@@ -877,11 +896,27 @@ public sealed class EfAuditChangeCaptureTests : TestBase
                 }
             );
 
-            db.Orders.Add(new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555" });
+            db.Orders.Add(
+                new Order
+                {
+                    Id = Guid.NewGuid(),
+                    CustomerName = "Alice",
+                    Email = "a@b.com",
+                    Phone = "555",
+                }
+            );
             _ = _Capture(sut, db);
             await db.SaveChangesAsync();
 
-            db.Orders.Add(new Order { Id = Guid.NewGuid(), CustomerName = "Bob", Email = "b@b.com", Phone = "666" });
+            db.Orders.Add(
+                new Order
+                {
+                    Id = Guid.NewGuid(),
+                    CustomerName = "Bob",
+                    Email = "b@b.com",
+                    Phone = "666",
+                }
+            );
             _ = _Capture(sut, db);
 
             // then
@@ -898,7 +933,15 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (db)
         {
             var logger = Substitute.For<ILogger<EfAuditChangeCapture>>();
-            db.Orders.Add(new Order { Id = Guid.NewGuid(), CustomerName = "Alice", Email = "a@b.com", Phone = "555" });
+            db.Orders.Add(
+                new Order
+                {
+                    Id = Guid.NewGuid(),
+                    CustomerName = "Alice",
+                    Email = "a@b.com",
+                    Phone = "555",
+                }
+            );
             var sut = _CreateSut(
                 opts =>
                 {
@@ -926,7 +969,14 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         await using (conn)
         await using (db)
         {
-            db.CompositeKeyOrders.Add(new CompositeKeyOrder { TenantId = "tenant,a", OrderId = "order,1", Name = "Alice" });
+            db.CompositeKeyOrders.Add(
+                new CompositeKeyOrder
+                {
+                    TenantId = "tenant,a",
+                    OrderId = "order,1",
+                    Name = "Alice",
+                }
+            );
             var sut = _CreateSut();
 
             // when
@@ -981,6 +1031,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
         var arguments = call.GetArguments();
         return arguments.Length == 5
             && arguments[0] is LogLevel.Warning
-            && arguments[2]?.ToString()?.Contains("Sensitive value transformer threw", StringComparison.Ordinal) == true;
+            && arguments[2]?.ToString()?.Contains("Sensitive value transformer threw", StringComparison.Ordinal)
+                == true;
     }
 }

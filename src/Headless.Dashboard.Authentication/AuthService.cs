@@ -81,8 +81,10 @@ public sealed class AuthService : IAuthService
         // Query strings leak to server logs, browser history, and Referer headers,
         // so we restrict this to SignalR endpoints where WebSocket auth requires it.
         var path = context.Request.Path.Value ?? "";
-        if (path.Contains("/hub", StringComparison.OrdinalIgnoreCase)
-            || path.Contains("/negotiate", StringComparison.OrdinalIgnoreCase))
+        if (
+            path.Contains("/hub", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/negotiate", StringComparison.OrdinalIgnoreCase)
+        )
         {
             var accessToken = context.Request.Query["access_token"].FirstOrDefault();
             if (!string.IsNullOrEmpty(accessToken))

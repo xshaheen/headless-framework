@@ -22,9 +22,12 @@ public sealed class AuditLogSetupTests
         // then
         var assertions = options.Invoking(x => x.Value).Should().Throw<OptionsValidationException>();
         assertions
-            .And.Failures
-            .Should()
-            .Contain(failure => failure.Contains("SensitiveValueTransformer must be configured when SensitiveDataStrategy is Transform."));
+            .And.Failures.Should()
+            .Contain(failure =>
+                failure.Contains(
+                    "SensitiveValueTransformer must be configured when SensitiveDataStrategy is Transform."
+                )
+            );
     }
 
     [Fact]

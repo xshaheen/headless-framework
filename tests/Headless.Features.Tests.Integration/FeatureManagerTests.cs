@@ -1,9 +1,9 @@
 using Headless.Exceptions;
 using Headless.Features;
 using Headless.Features.Definitions;
+using Headless.Features.Entities;
 using Headless.Features.Models;
 using Headless.Features.Repositories;
-using Headless.Features.Entities;
 using Headless.Features.ValueProviders;
 using Headless.Features.Values;
 using Microsoft.Extensions.DependencyInjection;
@@ -215,12 +215,14 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
             cancellationToken: AbortToken
         );
 
-        (await featureManager.GetAsync(
-            featureName,
-            FeatureValueProviderNames.Edition,
-            editionId,
-            cancellationToken: AbortToken
-        ))
+        (
+            await featureManager.GetAsync(
+                featureName,
+                FeatureValueProviderNames.Edition,
+                editionId,
+                cancellationToken: AbortToken
+            )
+        )
             .Value.Should()
             .Be("true");
 
@@ -243,12 +245,14 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
         await valueRepository.UpdateAsync(updatedRecord, AbortToken);
 
         // then
-        (await featureManager.GetAsync(
-            featureName,
-            FeatureValueProviderNames.Edition,
-            editionId,
-            cancellationToken: AbortToken
-        ))
+        (
+            await featureManager.GetAsync(
+                featureName,
+                FeatureValueProviderNames.Edition,
+                editionId,
+                cancellationToken: AbortToken
+            )
+        )
             .Value.Should()
             .Be(updatedValue);
     }

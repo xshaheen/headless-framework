@@ -23,7 +23,14 @@ public sealed class AuthMiddlewareTests : TestBase
     public async Task skips_excluded_paths(string path)
     {
         var nextCalled = false;
-        var middleware = new AuthMiddleware(_ => { nextCalled = true; return Task.CompletedTask; }, _logger);
+        var middleware = new AuthMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            _logger
+        );
         var context = new DefaultHttpContext();
         context.Request.Path = path;
 
@@ -36,7 +43,14 @@ public sealed class AuthMiddlewareTests : TestBase
     public async Task skips_non_api_paths()
     {
         var nextCalled = false;
-        var middleware = new AuthMiddleware(_ => { nextCalled = true; return Task.CompletedTask; }, _logger);
+        var middleware = new AuthMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            _logger
+        );
         var context = new DefaultHttpContext();
         context.Request.Path = "/some-page";
 
@@ -48,11 +62,7 @@ public sealed class AuthMiddlewareTests : TestBase
     [Fact]
     public async Task returns_401_for_unauthenticated_api_request()
     {
-        var config = new AuthConfig
-        {
-            Mode = AuthMode.ApiKey,
-            ApiKey = "secret",
-        };
+        var config = new AuthConfig { Mode = AuthMode.ApiKey, ApiKey = "secret" };
 
         var services = new ServiceCollection();
         services.AddSingleton(config);
@@ -72,11 +82,7 @@ public sealed class AuthMiddlewareTests : TestBase
     [Fact]
     public async Task passes_through_for_authenticated_api_request()
     {
-        var config = new AuthConfig
-        {
-            Mode = AuthMode.ApiKey,
-            ApiKey = "secret",
-        };
+        var config = new AuthConfig { Mode = AuthMode.ApiKey, ApiKey = "secret" };
 
         var services = new ServiceCollection();
         services.AddSingleton(config);
@@ -85,7 +91,14 @@ public sealed class AuthMiddlewareTests : TestBase
         var sp = services.BuildServiceProvider();
 
         var nextCalled = false;
-        var middleware = new AuthMiddleware(_ => { nextCalled = true; return Task.CompletedTask; }, _logger);
+        var middleware = new AuthMiddleware(
+            _ =>
+            {
+                nextCalled = true;
+                return Task.CompletedTask;
+            },
+            _logger
+        );
         var context = new DefaultHttpContext { RequestServices = sp };
         context.Request.Path = "/api/data";
         context.Request.Headers.Authorization = "Bearer secret";

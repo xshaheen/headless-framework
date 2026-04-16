@@ -289,8 +289,7 @@ public sealed class SettingManagerTests : TestBase
         var result = await _sut.GetAllAsync(providerName, providerKey, fallback: true, cancellationToken: AbortToken);
 
         // then — provider-specific value wins over fallback
-        result.Should().ContainSingle()
-            .Which.Value.Should().Be("en-US");
+        result.Should().ContainSingle().Which.Value.Should().Be("en-US");
     }
 
     [Fact]

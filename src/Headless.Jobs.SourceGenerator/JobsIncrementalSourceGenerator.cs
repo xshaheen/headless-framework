@@ -532,9 +532,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 sb.Append(delegateCode);
             }
 
-            sb.AppendLine(
-                $"      JobFunctionProvider.RegisterFunctions(jobFunctionDelegateDict, {delegateCount});"
-            );
+            sb.AppendLine($"      JobFunctionProvider.RegisterFunctions(jobFunctionDelegateDict, {delegateCount});");
         }
 
         sb.AppendLine("      RegisterRequestTypes();");
@@ -577,9 +575,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         sb.AppendLine("      JobFunctionContext context,");
         sb.AppendLine("      CancellationToken cancellationToken)");
         sb.AppendLine("    {");
-        sb.AppendLine(
-            "      var request = await JobsRequestProvider.GetRequestAsync<T>(context, cancellationToken);"
-        );
+        sb.AppendLine("      var request = await JobsRequestProvider.GetRequestAsync<T>(context, cancellationToken);");
         sb.AppendLine("      return new JobFunctionContext<T>(context, request);");
         sb.AppendLine("    }");
     }
@@ -619,9 +615,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
                 );
             }
 
-            sb.AppendLine(
-                $"            JobFunctionProvider.RegisterRequestType(requestTypes, {requestTypesCount});"
-            );
+            sb.AppendLine($"            JobFunctionProvider.RegisterRequestType(requestTypes, {requestTypesCount});");
         }
 
         sb.AppendLine("        }");

@@ -25,10 +25,7 @@ public static class MessagingDashboardSetup
     /// Configure the Messaging Dashboard middleware pipeline using app.Map branching.
     /// Matches the Jobs Dashboard middleware pipeline pattern.
     /// </summary>
-    internal static void UseMessagingDashboard(
-        this IApplicationBuilder app,
-        MessagingDashboardOptionsBuilder config
-    )
+    internal static void UseMessagingDashboard(this IApplicationBuilder app, MessagingDashboardOptionsBuilder config)
     {
         var assembly = Assembly.GetExecutingAssembly();
         var embeddedFileProvider = new EmbeddedFileProvider(assembly, _EmbeddedFileNamespace);

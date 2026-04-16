@@ -22,11 +22,7 @@ public class CronJobOccurrenceConfigurations<TCronJob>(string schema = Constants
 
         builder.HasIndex("Status", "ExecutionTime").HasDatabaseName("IX_CronJobOccurrence_Status_ExecutionTime");
 
-        builder
-            .HasOne(x => x.CronJob)
-            .WithMany()
-            .HasForeignKey(x => x.CronJobId)
-            .OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(x => x.CronJob).WithMany().HasForeignKey(x => x.CronJobId).OnDelete(DeleteBehavior.Cascade);
 
         builder.HasIndex("CronJobId", "ExecutionTime").IsUnique().HasDatabaseName("UQ_CronJobId_ExecutionTime");
 

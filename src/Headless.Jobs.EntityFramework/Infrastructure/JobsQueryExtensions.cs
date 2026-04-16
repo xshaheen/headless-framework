@@ -6,10 +6,7 @@ namespace Headless.Jobs.Infrastructure;
 
 public static class JobsQueryExtensions
 {
-    public static IQueryable<TTimeJob> WhereCanAcquire<TTimeJob>(
-        this IQueryable<TTimeJob> q,
-        string lockHolder
-    )
+    public static IQueryable<TTimeJob> WhereCanAcquire<TTimeJob>(this IQueryable<TTimeJob> q, string lockHolder)
         where TTimeJob : TimeJobEntity<TTimeJob>
     {
         Expression<Func<TTimeJob, bool>> pred = e =>

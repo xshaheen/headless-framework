@@ -134,18 +134,12 @@ internal static class DashboardEndpoints
             .WithSummary("Get cron job occurrences");
 
         apiGroup
-            .MapGet(
-                "/cron-job-occurrences/{cronJobId}/paginated",
-                _GetCronJobOccurrencesPaginated<TTimeJob, TCronJob>
-            )
+            .MapGet("/cron-job-occurrences/{cronJobId}/paginated", _GetCronJobOccurrencesPaginated<TTimeJob, TCronJob>)
             .WithName("GetCronJobOccurrencesPaginated")
             .WithSummary("Get paginated cron job occurrences");
 
         apiGroup
-            .MapGet(
-                "/cron-job-occurrences/{cronJobId}/graph-data",
-                _GetCronJobOccurrencesGraphData<TTimeJob, TCronJob>
-            )
+            .MapGet("/cron-job-occurrences/{cronJobId}/graph-data", _GetCronJobOccurrencesGraphData<TTimeJob, TCronJob>)
             .WithName("GetCronJobOccurrencesGraphData")
             .WithSummary("Get cron job occurrences graph data");
 

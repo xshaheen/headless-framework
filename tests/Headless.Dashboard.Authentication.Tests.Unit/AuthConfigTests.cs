@@ -95,11 +95,7 @@ public sealed class AuthConfigTests : TestBase
     [Fact]
     public void validate_passes_for_apikey_with_key()
     {
-        var config = new AuthConfig
-        {
-            Mode = AuthMode.ApiKey,
-            ApiKey = "test-api-key",
-        };
+        var config = new AuthConfig { Mode = AuthMode.ApiKey, ApiKey = "test-api-key" };
 
         var act = () => config.Validate();
 
@@ -109,11 +105,7 @@ public sealed class AuthConfigTests : TestBase
     [Fact]
     public void validate_passes_for_custom_with_validator()
     {
-        var config = new AuthConfig
-        {
-            Mode = AuthMode.Custom,
-            CustomValidator = (_, _) => true,
-        };
+        var config = new AuthConfig { Mode = AuthMode.Custom, CustomValidator = (_, _) => true };
 
         var act = () => config.Validate();
 

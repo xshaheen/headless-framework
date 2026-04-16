@@ -209,14 +209,13 @@ public sealed class GatewayProxyAgentTests : TestBase
         private readonly Exception? _exception;
 
         public MockHttpMessageHandler(HttpResponseMessage response) => _response = response;
+
         public MockHttpMessageHandler(Exception exception) => _exception = exception;
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken
-        ) => _exception is not null
-            ? Task.FromException<HttpResponseMessage>(_exception)
-            : Task.FromResult(_response!);
+        ) => _exception is not null ? Task.FromException<HttpResponseMessage>(_exception) : Task.FromResult(_response!);
     }
 
     private static DefaultHttpContext _CreateHttpContext()

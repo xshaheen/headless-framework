@@ -111,11 +111,7 @@ public sealed class ScopedCacheTests : TestBase
     {
         // given
         var sut = _CreateSut();
-        var values = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["key1"] = "val1",
-            ["key2"] = "val2",
-        };
+        var values = new Dictionary<string, string>(StringComparer.Ordinal) { ["key1"] = "val1", ["key2"] = "val2" };
 
         _currentScope = "scope-a";
         await sut.UpsertAllAsync(values, _DefaultExpiration, AbortToken);

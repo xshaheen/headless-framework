@@ -437,7 +437,8 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             .ToList();
 
         var pastData = grouped.Where(d => d.Date < today).OrderBy(d => d.Date).ToList();
-        var todayData = grouped.FirstOrDefault(d => d.Date == today)
+        var todayData =
+            grouped.FirstOrDefault(d => d.Date == today)
             ?? new CronOccurrenceJobGraphData { Date = today, Results = [] };
         var futureData = grouped.Where(d => d.Date > today).OrderBy(d => d.Date).ToList();
 

@@ -65,8 +65,9 @@ public static class ServiceExtensions
             services.AddSingleton<DashboardOptionsBuilder>(_ => dashboardConfig);
 
             // Auto-inject dashboard middleware pipeline via IStartupFilter
-            services.AddTransient<IStartupFilter>(_ =>
-                new JobsDashboardStartupFilter<TTimeJob, TCronJob>(dashboardConfig));
+            services.AddTransient<IStartupFilter>(_ => new JobsDashboardStartupFilter<TTimeJob, TCronJob>(
+                dashboardConfig
+            ));
         };
 
         return jobsConfiguration;
