@@ -9,26 +9,6 @@ namespace Tests;
 public sealed class PulsarTlsOptionsTests : TestBase
 {
     [Fact]
-    public void should_have_default_use_tls_from_pulsar_client_configuration()
-    {
-        // given
-        var options = new PulsarTlsOptions();
-
-        // when, then - defaults come from PulsarClientConfiguration.Default
-        options.UseTls.Should().BeFalse(); // Default is typically false
-    }
-
-    [Fact]
-    public void should_allow_setting_use_tls()
-    {
-        // given
-        var options = new PulsarTlsOptions { UseTls = true };
-
-        // when, then
-        options.UseTls.Should().BeTrue();
-    }
-
-    [Fact]
     public void should_have_tls_hostname_verification_enable_property()
     {
         // given

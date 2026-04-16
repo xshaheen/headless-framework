@@ -643,7 +643,9 @@ internal sealed class NatsConsumerClient(
         CancellationToken cancellationToken
     ) : IDisposable
     {
+#pragma warning disable CA2213 // _owner is a parent reference, not owned by this lease
         private readonly NatsConsumerClient _owner = owner;
+#pragma warning restore CA2213
         private readonly ReceiveTokenState _receiveTokenState = receiveTokenState;
         private int _disposed;
 

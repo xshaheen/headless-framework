@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Emails;
 using MailKit.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
@@ -79,7 +78,7 @@ public sealed class MailkitEmailSender(
 
         if (options.HasCredentials)
         {
-            await client.AuthenticateAsync(options.User, options.Password, cancellationToken).ConfigureAwait(false);
+            await client.AuthenticateAsync(options.User!, options.Password!, cancellationToken).ConfigureAwait(false);
         }
     }
 }

@@ -41,7 +41,7 @@ public sealed class MessagingPulsarOptionsTests : TestBase
     public void should_support_tls_options()
     {
         // given
-        var tlsOptions = new PulsarTlsOptions { UseTls = true };
+        var tlsOptions = new PulsarTlsOptions { TlsHostnameVerificationEnable = true };
         var options = new MessagingPulsarOptions
         {
             ServiceUrl = "pulsar+ssl://localhost:6651",
@@ -50,7 +50,7 @@ public sealed class MessagingPulsarOptionsTests : TestBase
 
         // when, then
         options.TlsOptions.Should().BeSameAs(tlsOptions);
-        options.TlsOptions.UseTls.Should().BeTrue();
+        options.TlsOptions.TlsHostnameVerificationEnable.Should().BeTrue();
     }
 
     [Fact]

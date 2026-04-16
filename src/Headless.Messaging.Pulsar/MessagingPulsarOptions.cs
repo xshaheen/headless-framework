@@ -23,7 +23,6 @@ public sealed class PulsarTlsOptions
 {
     private static readonly PulsarClientConfiguration _Default = PulsarClientConfiguration.Default;
 
-    public bool UseTls { get; set; } = _Default.UseTls;
     public bool TlsHostnameVerificationEnable { get; set; } = _Default.TlsHostnameVerificationEnable;
     public bool TlsAllowInsecureConnection { get; set; } = _Default.TlsAllowInsecureConnection;
     public X509Certificate2 TlsTrustCertificate { get; set; } = _Default.TlsTrustCertificate;
