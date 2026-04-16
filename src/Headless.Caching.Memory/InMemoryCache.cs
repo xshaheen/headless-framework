@@ -28,6 +28,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     private const int _HotAccessWindowMs = 300;
 
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new(StringComparer.Ordinal);
+    private readonly PriorityQueue<string, long> _expirationQueue = new();
+    private readonly object _expirationLock = new();
+    private readonly ConcurrentQueue<string> _lruQueue = new();
     private readonly AsyncLock _lock = new();
     private readonly KeyedAsyncLock _keyedLock = new();
     private readonly CancellationTokenSource _disposedCts = new();
@@ -295,9 +298,11 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             }
         );
 
-        if (wasReplaced && sizeDelta != 0)
+        if (wasReplaced)
         {
-            Interlocked.Add(ref _currentMemorySize, sizeDelta);
+            if (sizeDelta != 0)
+                Interlocked.Add(ref _currentMemorySize, sizeDelta);
+            _TrackUpdate(prefixedKey, expiresAt);
         }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
@@ -372,9 +377,11 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             }
         );
 
-        if (wasExpectedValue && sizeDelta != 0)
+        if (wasExpectedValue)
         {
-            Interlocked.Add(ref _currentMemorySize, sizeDelta);
+            if (sizeDelta != 0)
+                Interlocked.Add(ref _currentMemorySize, sizeDelta);
+            _TrackUpdate(key, expiresAt);
         }
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
@@ -460,6 +467,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
+        _TrackUpdate(key, expiresAt);
+
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return resultValue;
@@ -542,6 +551,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         {
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
+
+        _TrackUpdate(key, expiresAt);
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -633,6 +644,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
+        _TrackUpdate(key, expiresAt);
+
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return difference;
@@ -722,6 +735,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         {
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
+
+        _TrackUpdate(key, expiresAt);
 
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -813,6 +828,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
+        _TrackUpdate(key, expiresAt);
+
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return difference;
@@ -903,6 +920,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
+        _TrackUpdate(key, expiresAt);
+
         await _StartMaintenanceAsync().ConfigureAwait(false);
 
         return difference;
@@ -992,6 +1011,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
             }
 
+            _TrackUpdate(key, entry.ExpiresAt);
+
             await _StartMaintenanceAsync().ConfigureAwait(false);
 
             return newItems.Count;
@@ -1070,6 +1091,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             {
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
             }
+
+            _TrackUpdate(key, entry.ExpiresAt);
 
             await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -1522,6 +1545,13 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         }
 
         _memory.Clear();
+
+        lock (_expirationLock)
+        {
+            _expirationQueue.Clear();
+        }
+
+        _lruQueue.Clear();
         Interlocked.Exchange(ref _currentMemorySize, 0);
         _keyedLock.Dispose();
         _disposedCts.Cancel();
@@ -1531,6 +1561,19 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     private void _ThrowIfDisposed()
     {
         Ensure.NotDisposed(Volatile.Read(ref _isDisposed) != 0, this);
+    }
+
+    private void _TrackUpdate(string key, DateTime? expiresAt)
+    {
+        if (expiresAt.HasValue)
+        {
+            lock (_expirationLock)
+            {
+                _expirationQueue.Enqueue(key, expiresAt.Value.Ticks);
+            }
+        }
+
+        _lruQueue.Enqueue(key);
     }
 
     private string _GetKey(string key)
@@ -1615,6 +1658,11 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         if (sizeDelta != 0)
         {
             Interlocked.Add(ref _currentMemorySize, sizeDelta);
+        }
+
+        if (wasUpdated)
+        {
+            _TrackUpdate(key, entry.ExpiresAt);
         }
 
         await _StartMaintenanceAsync(ShouldCompact).ConfigureAwait(false);
@@ -1708,88 +1756,74 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
     private string? _FindLeastRecentlyUsedOrLargest()
     {
-        // Redis-style random sampling using reservoir sampling (Algorithm R).
-        // This is O(n) iteration but O(k) memory where k is sample size.
-        // Avoids materializing Keys.ToArray() which would allocate O(n) memory.
+        // Sample-based selection from the head of the FIFO queue.
+        // This is O(K) where K is sample size, much better than O(N).
 
-        // When memory-constrained, prefer evicting larger items that are also less frequently used
-        // When item-count constrained, prefer evicting least recently used (LRU)
         var isMemoryConstrained = _maxMemorySize.HasValue && Interlocked.Read(ref _currentMemorySize) > _maxMemorySize;
         (string? Key, long LastAccessTicks, long InstanceNumber, long Size) best = (null, long.MaxValue, 0, 0);
 
-        // Reservoir sampling: fill reservoir with first k items, then probabilistically replace
-        var reservoir = new (string Key, CacheEntry Entry)[_EvictionSampleSize];
-        var reservoirCount = 0;
-        var itemIndex = 0;
+        var sampledKeys = new List<string>(_EvictionSampleSize);
 
-        foreach (var kvp in _memory)
+        // Dequeue up to K candidates
+        for (var i = 0; i < _EvictionSampleSize; i++)
         {
-            if (kvp.Value.IsExpired)
+            if (_lruQueue.TryDequeue(out var key))
             {
-                // Always prefer expired items first - return immediately
-                return kvp.Key;
-            }
-
-            if (reservoirCount < _EvictionSampleSize)
-            {
-                reservoir[reservoirCount++] = (kvp.Key, kvp.Value);
-            }
-            else
-            {
-                // Replace element at random index with decreasing probability
-                var j = Random.Shared.Next(itemIndex + 1);
-
-                if (j < _EvictionSampleSize)
+                if (_memory.TryGetValue(key, out var entry))
                 {
-                    reservoir[j] = (kvp.Key, kvp.Value);
-                }
-            }
+                    sampledKeys.Add(key);
 
-            itemIndex++;
-        }
+                    var isBetter = false;
 
-        if (reservoirCount == 0)
-        {
-            return null;
-        }
+                    if (isMemoryConstrained)
+                    {
+                        // When memory constrained: prefer larger items, breaking ties by LRU
+                        if (
+                            entry.Size > best.Size
+                            || (entry.Size == best.Size && entry.LastAccessTicks < best.LastAccessTicks)
+                            || (
+                                entry.Size == best.Size
+                                && entry.LastAccessTicks == best.LastAccessTicks
+                                && entry.InstanceNumber < best.InstanceNumber
+                            )
+                        )
+                        {
+                            isBetter = true;
+                        }
+                    }
+                    else
+                    {
+                        // Standard LRU
+                        if (
+                            entry.LastAccessTicks < best.LastAccessTicks
+                            || (
+                                entry.LastAccessTicks == best.LastAccessTicks
+                                && entry.InstanceNumber < best.InstanceNumber
+                            )
+                        )
+                        {
+                            isBetter = true;
+                        }
+                    }
 
-        // Find best candidate from reservoir
-        for (var i = 0; i < reservoirCount; i++)
-        {
-            var (key, entry) = reservoir[i];
-            var isBetter = false;
-
-            if (isMemoryConstrained)
-            {
-                // When memory constrained: prefer larger items, breaking ties by LRU
-                if (
-                    entry.Size > best.Size
-                    || (entry.Size == best.Size && entry.LastAccessTicks < best.LastAccessTicks)
-                    || (
-                        entry.Size == best.Size
-                        && entry.LastAccessTicks == best.LastAccessTicks
-                        && entry.InstanceNumber < best.InstanceNumber
-                    )
-                )
-                {
-                    isBetter = true;
+                    if (isBetter)
+                    {
+                        best = (key, entry.LastAccessTicks, entry.InstanceNumber, entry.Size);
+                    }
                 }
             }
             else
             {
-                // Standard LRU
-                if (
-                    entry.LastAccessTicks < best.LastAccessTicks
-                    || (entry.LastAccessTicks == best.LastAccessTicks && entry.InstanceNumber < best.InstanceNumber)
-                )
-                {
-                    isBetter = true;
-                }
+                break;
             }
+        }
 
-            if (isBetter)
+        // Put back the ones we didn't pick
+        foreach (var key in sampledKeys)
+        {
+            if (key != best.Key)
             {
-                best = (key, entry.LastAccessTicks, entry.InstanceNumber, entry.Size);
+                _lruQueue.Enqueue(key);
             }
         }
 
@@ -1800,32 +1834,50 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     {
         try
         {
-            var utcNow = _timeProvider.GetUtcNow().UtcDateTime.AddMilliseconds(50);
-            var lastAccessMaximumTicks = utcNow.AddMilliseconds(-_HotAccessWindowMs).Ticks;
+            var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+            var nowTicks = utcNow.Ticks;
 
             try
             {
-                foreach (var kvp in _memory)
+                // Prune some stale items from the LRU queue to prevent memory growth
+                for (var i = 0; i < 100; i++)
                 {
-                    var lastAccessTimeIsInfrequent = kvp.Value.LastAccessTicks < lastAccessMaximumTicks;
-
-                    if (!lastAccessTimeIsInfrequent)
+                    if (_lruQueue.TryDequeue(out var key))
                     {
-                        continue;
-                    }
-
-                    var expiresAt = kvp.Value.ExpiresAt;
-
-                    if (!expiresAt.HasValue)
-                    {
-                        continue;
-                    }
-
-                    if (expiresAt < DateTime.MaxValue && expiresAt <= utcNow)
-                    {
-                        if (_memory.TryRemove(kvp.Key, out var removedEntry))
+                        if (_memory.ContainsKey(key))
                         {
-                            Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+                            _lruQueue.Enqueue(key);
+                        }
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                while (true)
+                {
+                    string? key;
+                    long expiresAtTicks;
+
+                    lock (_expirationLock)
+                    {
+                        if (!_expirationQueue.TryPeek(out key, out expiresAtTicks) || expiresAtTicks > nowTicks)
+                        {
+                            break;
+                        }
+
+                        _expirationQueue.Dequeue();
+                    }
+
+                    if (key is not null && _memory.TryGetValue(key, out var entry))
+                    {
+                        if (entry.ExpiresAt.HasValue && entry.ExpiresAt.Value.Ticks <= expiresAtTicks)
+                        {
+                            if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
+                            {
+                                Interlocked.Add(ref _currentMemorySize, -entry.Size);
+                            }
                         }
                     }
                 }
