@@ -190,14 +190,31 @@ public sealed class RedisDistributedLockStorage(
 
     private async ValueTask _ProcessBatchAsync(List<RedisKey> batch, Dictionary<string, string> result)
     {
-        var keyArray = batch.ToArray();
-        var values = await Db.StringGetAsync(keyArray).ConfigureAwait(false);
+        // NOTE: We use individual async tasks instead of Db.StringGetAsync(keyArray)
+        // for absolute cluster safety across any sharding topology.
+        // StackExchange.Redis automatically pipelines these concurrent requests
+        // while correctly routing them to the appropriate nodes based on hash slots.
+        var tasks = new List<(RedisKey Key, Task<RedisValue> ValueTask)>(batch.Count);
 
-        for (var i = 0; i < keyArray.Length; i++)
+        foreach (var key in batch)
         {
-            if (values[i].HasValue)
+            tasks.Add((key, Db.StringGetAsync(key)));
+        }
+
+        var allTasks = new List<Task>(batch.Count);
+        foreach (var tuple in tasks)
+        {
+            allTasks.Add(tuple.ValueTask);
+        }
+
+        await Task.WhenAll(allTasks).ConfigureAwait(false);
+
+        foreach (var (key, valueTask) in tasks)
+        {
+            var value = await valueTask.ConfigureAwait(false);
+            if (value.HasValue)
             {
-                result[keyArray[i].ToString()] = values[i].ToString();
+                result[key.ToString()] = value.ToString();
             }
         }
     }
@@ -207,15 +224,24 @@ public sealed class RedisDistributedLockStorage(
         Dictionary<string, (string LockId, TimeSpan? Ttl)> result
     )
     {
-        var batchCommands = Db.CreateBatch();
+        // NOTE: We avoid IDatabase.CreateBatch() because IBatch is bound to a single node.
+        // Using individual tasks allows the multiplexer to handle routing naturally
+        // while still benefiting from network-level pipelining.
         var tasks = new List<(RedisKey Key, Task<RedisValue> ValueTask, Task<TimeSpan?> TtlTask)>(batch.Count);
 
         foreach (var key in batch)
         {
-            tasks.Add((key, batchCommands.StringGetAsync(key), batchCommands.KeyTimeToLiveAsync(key)));
+            tasks.Add((key, Db.StringGetAsync(key), Db.KeyTimeToLiveAsync(key)));
         }
 
-        batchCommands.Execute();
+        var allTasks = new List<Task>(batch.Count * 2);
+        foreach (var tuple in tasks)
+        {
+            allTasks.Add(tuple.ValueTask);
+            allTasks.Add(tuple.TtlTask);
+        }
+
+        await Task.WhenAll(allTasks).ConfigureAwait(false);
 
         foreach (var (key, valueTask, ttlTask) in tasks)
         {
