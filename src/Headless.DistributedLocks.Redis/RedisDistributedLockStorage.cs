@@ -207,20 +207,23 @@ public sealed class RedisDistributedLockStorage(
         Dictionary<string, (string LockId, TimeSpan? Ttl)> result
     )
     {
-        var keyArray = batch.ToArray();
-        var task = Db.StringGetAsync(keyArray);
-        var ttlsTask = Task.WhenAll(batch.Select(k => Db.KeyTimeToLiveAsync(k)));
+        var batchCommands = Db.CreateBatch();
+        var tasks = new List<(RedisKey Key, Task<RedisValue> ValueTask, Task<TimeSpan?> TtlTask)>(batch.Count);
 
-        await Task.WhenAll(task, ttlsTask).ConfigureAwait(false);
-
-        var values = await task.ConfigureAwait(false);
-        var ttls = await ttlsTask.ConfigureAwait(false);
-
-        for (var i = 0; i < keyArray.Length; i++)
+        foreach (var key in batch)
         {
-            if (values[i].HasValue)
+            tasks.Add((key, batchCommands.StringGetAsync(key), batchCommands.KeyTimeToLiveAsync(key)));
+        }
+
+        batchCommands.Execute();
+
+        foreach (var (key, valueTask, ttlTask) in tasks)
+        {
+            var value = await valueTask.ConfigureAwait(false);
+            if (value.HasValue)
             {
-                result[keyArray[i].ToString()] = (values[i].ToString(), ttls[i]);
+                var ttl = await ttlTask.ConfigureAwait(false);
+                result[key.ToString()] = (value.ToString(), ttl);
             }
         }
     }

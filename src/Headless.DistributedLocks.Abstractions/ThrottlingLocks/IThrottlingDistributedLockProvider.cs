@@ -36,5 +36,8 @@ public interface IThrottlingDistributedLockProvider
     /// <summary>
     /// Checks if a specified resource is currently locked.
     /// </summary>
-    Task<bool> IsLockedAsync(string resource);
+    /// <param name="resource">The resource to check.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True if the resource is locked; otherwise, false.</returns>
+    Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default);
 }

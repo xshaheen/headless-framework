@@ -53,7 +53,7 @@ public sealed class ThrottlingDistributedLockProvider(
                     logger.LogThrottlingInfo(_Now(), _DatePeriodStarted(), cacheKey);
                 }
 
-                var hitCount = await storage.GetHitCountsAsync(cacheKey).ConfigureAwait(false);
+                var hitCount = await storage.GetHitCountsAsync(cacheKey, cts.Token).ConfigureAwait(false);
 
                 logger.LogThrottlingHitCount(resource, hitCount, options.MaxHitsPerPeriod);
 
@@ -61,7 +61,7 @@ public sealed class ThrottlingDistributedLockProvider(
                 {
                     var ttl = _DatePeriodEnded().Subtract(_Now());
 
-                    hitCount = await storage.IncrementAsync(cacheKey, ttl).ConfigureAwait(false);
+                    hitCount = await storage.IncrementAsync(cacheKey, ttl, cts.Token).ConfigureAwait(false);
 
                     // Make sure someone didn't beat us to it.
                     if (hitCount <= options.MaxHitsPerPeriod)
@@ -145,12 +145,12 @@ public sealed class ThrottlingDistributedLockProvider(
 
     #region IsLocked
 
-    public async Task<bool> IsLockedAsync(string resource)
+    public async Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(resource);
 
         var cacheKey = _GetCacheKey(resource);
-        var hitCount = await storage.GetHitCountsAsync(cacheKey).ConfigureAwait(false);
+        var hitCount = await storage.GetHitCountsAsync(cacheKey, cancellationToken).ConfigureAwait(false);
 
         return hitCount >= options.MaxHitsPerPeriod;
     }

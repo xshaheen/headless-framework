@@ -41,7 +41,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
     public LoadedLuaScript? SetIfLowerScript { get; private set; }
 
-    public async Task LoadScriptsAsync(CancellationToken cancellationToken = default)
+    public async ValueTask LoadScriptsAsync(CancellationToken cancellationToken = default)
     {
         if (_scriptsLoaded)
         {
