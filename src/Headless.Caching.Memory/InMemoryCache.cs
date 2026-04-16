@@ -13,23 +13,9 @@ namespace Headless.Caching;
 /// <summary>In-memory cache implementation with LRU eviction, expiration, and list/set operations.</summary>
 public sealed class InMemoryCache : IInMemoryCache, IDisposable
 {
-    /// <summary>Minimum interval between background maintenance runs.</summary>
-    private const int _MaintenanceIntervalMs = 250;
-
-    private static readonly long _MaintenanceIntervalTicks = TimeSpan.FromMilliseconds(_MaintenanceIntervalMs).Ticks;
-
-    /// <summary>Maximum entries to evict per compaction cycle.</summary>
-    private const int _MaxEvictionsPerCompaction = 10;
-
-    /// <summary>Number of random entries to sample when finding eviction candidates (Redis-style).</summary>
-    private const int _EvictionSampleSize = 5;
-
-    /// <summary>Entries accessed within this window are skipped during maintenance (considered hot).</summary>
-    private const int _HotAccessWindowMs = 300;
-
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new(StringComparer.Ordinal);
     private readonly PriorityQueue<string, long> _expirationQueue = new();
-    private readonly object _expirationLock = new();
+    private readonly Lock _expirationLock = new();
     private readonly ConcurrentQueue<string> _lruQueue = new();
     private readonly AsyncLock _lock = new();
     private readonly KeyedAsyncLock _keyedLock = new();
@@ -44,6 +30,10 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     private readonly Func<object?, long>? _sizeCalculator;
     private readonly bool _shouldThrowOnMaxEntrySizeExceeded;
     private readonly bool _shouldThrowOnSerializationError;
+    private readonly long _maintenanceIntervalTicks;
+    private readonly int _maxEvictionsPerCompaction;
+    private readonly int _evictionSampleSize;
+    private readonly long _hotAccessWindowTicks;
     private long _currentMemorySize;
     private long _lastMaintenanceTicks;
     private int _maintenanceRunning;
@@ -64,6 +54,10 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         _sizeCalculator = options.SizeCalculator;
         _shouldThrowOnMaxEntrySizeExceeded = options.ShouldThrowOnMaxEntrySizeExceeded;
         _shouldThrowOnSerializationError = options.ShouldThrowOnSerializationError;
+        _maintenanceIntervalTicks = options.MaintenanceInterval.Ticks;
+        _maxEvictionsPerCompaction = options.MaxEvictionsPerCompaction;
+        _evictionSampleSize = options.EvictionSampleSize;
+        _hotAccessWindowTicks = options.HotAccessWindow.Ticks;
 
         if ((_maxMemorySize.HasValue || _maxEntrySize.HasValue) && _sizeCalculator is null)
         {
@@ -1699,7 +1693,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         // Use Interlocked.CompareExchange to ensure only one thread spawns maintenance
         var utcNowTicks = utcNow.Ticks;
         var lastTicks = Volatile.Read(ref _lastMaintenanceTicks);
-        var thresholdTicks = _MaintenanceIntervalTicks;
+        var thresholdTicks = _maintenanceIntervalTicks;
 
         if (utcNowTicks - lastTicks > thresholdTicks)
         {
@@ -1727,7 +1721,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             {
                 var removalCount = 0;
 
-                while (ShouldCompact && removalCount < _MaxEvictionsPerCompaction)
+                while (ShouldCompact && removalCount < _maxEvictionsPerCompaction)
                 {
                     var keyToRemove = _FindLeastRecentlyUsedOrLargest();
 
@@ -1762,10 +1756,10 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         var isMemoryConstrained = _maxMemorySize.HasValue && Interlocked.Read(ref _currentMemorySize) > _maxMemorySize;
         (string? Key, long LastAccessTicks, long InstanceNumber, long Size) best = (null, long.MaxValue, 0, 0);
 
-        var sampledKeys = new List<string>(_EvictionSampleSize);
+        var sampledKeys = new List<string>(_evictionSampleSize);
 
         // Dequeue up to K candidates
-        for (var i = 0; i < _EvictionSampleSize; i++)
+        for (var i = 0; i < _evictionSampleSize; i++)
         {
             if (_lruQueue.TryDequeue(out var key))
             {
