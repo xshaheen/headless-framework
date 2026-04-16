@@ -15,7 +15,9 @@ public sealed class RedisThrottlingDistributedLockStorage(
 
     public async Task<long> GetHitCountsAsync(string resource, CancellationToken cancellationToken = default)
     {
-        var redisValue = await Db.StringGetAsync(resource).WaitAsync(cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var redisValue = await Db.StringGetAsync(resource).ConfigureAwait(false);
 
         return redisValue.HasValue ? (long)redisValue : 0;
     }

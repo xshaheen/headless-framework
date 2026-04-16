@@ -44,16 +44,6 @@ public static class AddDistributedLockExtensions
             return services._AddDistributedLockCore<TStorage>();
         }
 
-        public IServiceCollection AddDistributedLock<TStorage>()
-            where TStorage : class, IDistributedLockStorage
-        {
-            services.Configure<DistributedLockOptions, DistributedLockOptionsValidator>(
-                (Action<DistributedLockOptions>?)null
-            );
-
-            return services._AddDistributedLockCore<TStorage>();
-        }
-
         #endregion
 
         #region Distributed Lock - Custom Storage Factory
@@ -84,15 +74,6 @@ public static class AddDistributedLockExtensions
         )
         {
             services.Configure<DistributedLockOptions, DistributedLockOptionsValidator>(config);
-
-            return services._AddDistributedLockCore(storageFactory);
-        }
-
-        public IServiceCollection AddDistributedLock(Func<IServiceProvider, IDistributedLockStorage> storageFactory)
-        {
-            services.Configure<DistributedLockOptions, DistributedLockOptionsValidator>(
-                (Action<DistributedLockOptions>?)null
-            );
 
             return services._AddDistributedLockCore(storageFactory);
         }

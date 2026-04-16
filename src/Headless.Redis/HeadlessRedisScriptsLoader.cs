@@ -142,7 +142,7 @@ public sealed class HeadlessRedisScriptsLoader(
     /// Resets the scripts loaded state only if the current version matches the expected version.
     /// This prevents redundant resets in high-concurrency scenarios.
     /// </summary>
-    public void ResetScripts(int expectedVersion)
+    private void _ResetScripts(int expectedVersion)
     {
         if ((expectedVersion & 1) == 0) // Only reset if it was even (loaded)
         {
@@ -304,8 +304,6 @@ public sealed class HeadlessRedisScriptsLoader(
         return (double)result;
     }
 
-    public delegate LoadedLuaScript? ScriptSelector(HeadlessRedisScriptsLoader loader);
-
     /// <summary>
     /// Evaluates a Lua script with automatic recovery from NOSCRIPT errors, which occur when the
     /// server's script cache is invalidated between the caller's <see cref="LoadScriptsAsync"/>
@@ -339,7 +337,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
             // Only reset if no one has successfully loaded scripts since we started this call.
             // This prevents redundant reloads in high-concurrency scenarios.
-            ResetScripts(versionAtStart);
+            _ResetScripts(versionAtStart);
 
             await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
@@ -353,6 +351,7 @@ public sealed class HeadlessRedisScriptsLoader(
         }
     }
 
+    /// <summary>Returns <c>true</c> when <paramref name="e"/> is a NOSCRIPT error from Redis.</summary>
     public static bool IsNoScriptError(RedisServerException e)
     {
         return e.Message.StartsWith("NOSCRIPT", StringComparison.Ordinal);
@@ -395,11 +394,6 @@ public sealed class HeadlessRedisScriptsLoader(
         var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
 
         return new SetIfParams((RedisKey)key, valueStr, expiresValue);
-    }
-
-    private static bool _IsNoScriptError(RedisServerException e)
-    {
-        return e.Message.StartsWith("NOSCRIPT", StringComparison.Ordinal);
     }
 
     #endregion

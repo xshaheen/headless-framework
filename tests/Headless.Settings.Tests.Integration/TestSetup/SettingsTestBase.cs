@@ -62,7 +62,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
         services.AddSingleton<HeadlessRedisScriptsLoader>();
         // Resource Lock
-        services.AddDistributedLock<RedisDistributedLockStorage>();
+        services.AddDistributedLock<RedisDistributedLockStorage>(static _ => { });
         services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
         services

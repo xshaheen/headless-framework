@@ -11,6 +11,8 @@ using StackExchange.Redis;
 
 namespace Headless.Caching;
 
+using ScriptSelector = Func<HeadlessRedisScriptsLoader, LoadedLuaScript?>;
+
 /// <summary>Redis cache implementation with atomic operations and cluster support.</summary>
 /// <remarks>
 /// <para>
@@ -42,6 +44,13 @@ public sealed class RedisCache(
     /// </summary>
     private static readonly RedisValue _NullValue = "@@NULL";
     private const int _BatchSize = 250;
+
+    // Cached selectors avoid per-call delegate allocation on the hot path.
+    private static readonly ScriptSelector _replaceIfEqualSelector = static l => l.ReplaceIfEqualScript;
+    private static readonly ScriptSelector _removeIfEqualSelector = static l => l.RemoveIfEqualScript;
+    private static readonly ScriptSelector _incrementSelector = static l => l.IncrementWithExpireScript;
+    private static readonly ScriptSelector _setIfHigherSelector = static l => l.SetIfHigherScript;
+    private static readonly ScriptSelector _setIfLowerSelector = static l => l.SetIfLowerScript;
 
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
@@ -225,7 +234,7 @@ public sealed class RedisCache(
         var redisResult = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                l => l.ReplaceIfEqualScript,
+                _replaceIfEqualSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -263,7 +272,7 @@ public sealed class RedisCache(
         var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                l => l.IncrementWithExpireScript,
+                _incrementSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -300,7 +309,7 @@ public sealed class RedisCache(
         var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                l => l.IncrementWithExpireScript,
+                _incrementSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -337,7 +346,7 @@ public sealed class RedisCache(
         var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                l => l.SetIfHigherScript,
+                _setIfHigherSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -374,7 +383,7 @@ public sealed class RedisCache(
         var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                l => l.SetIfHigherScript,
+                _setIfHigherSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -411,7 +420,7 @@ public sealed class RedisCache(
         var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                l => l.SetIfLowerScript,
+                _setIfLowerSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -448,7 +457,7 @@ public sealed class RedisCache(
         var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                l => l.SetIfLowerScript,
+                _setIfLowerSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -778,13 +787,13 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        await scriptsLoader.LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
-
         var expectedValue = _ToRedisValue(expected);
-        var redisResult = await _database
-            .ScriptEvaluateAsync(
-                scriptsLoader.RemoveIfEqualScript!,
-                new { key = (RedisKey)_GetKey(key), expected = expectedValue }
+        var redisResult = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                _removeIfEqualSelector,
+                new { key = (RedisKey)_GetKey(key), expected = expectedValue },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -1247,6 +1256,5 @@ public sealed class RedisCache(
     public void Dispose()
     {
         _keyedLock.Dispose();
-        GC.SuppressFinalize(this);
     }
 }

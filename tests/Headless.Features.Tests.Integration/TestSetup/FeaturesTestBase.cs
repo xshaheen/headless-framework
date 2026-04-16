@@ -61,7 +61,7 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
         services.AddSingleton<HeadlessRedisScriptsLoader>();
         // Resource Lock
-        services.AddDistributedLock<RedisDistributedLockStorage>();
+        services.AddDistributedLock<RedisDistributedLockStorage>(static _ => { });
 
         services
             .AddFeaturesManagementCore()

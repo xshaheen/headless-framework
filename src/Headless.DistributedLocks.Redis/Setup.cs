@@ -59,14 +59,6 @@ public static class RedisDistributedLockSetup
             return services.AddDistributedLock<RedisDistributedLockStorage>(config);
         }
 
-        /// <summary>Adds Redis-backed resource lock provider with default options.</summary>
-        public IServiceCollection AddRedisDistributedLock()
-        {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddDistributedLock<RedisDistributedLockStorage>();
-        }
-
         #endregion
 
         #region Redis Throttling Distributed Lock

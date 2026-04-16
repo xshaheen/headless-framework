@@ -59,13 +59,10 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         _evictionSampleSize = options.EvictionSampleSize;
         _hotAccessWindowTicks = options.HotAccessWindow.Ticks;
 
-        if ((_maxMemorySize.HasValue || _maxEntrySize.HasValue) && _sizeCalculator is null)
-        {
-            throw new ArgumentException(
-                @"SizeCalculator is required when MaxMemorySize or MaxEntrySize is set.",
-                nameof(options)
-            );
-        }
+        Ensure.True(
+            !(_maxMemorySize.HasValue || _maxEntrySize.HasValue) || _sizeCalculator is not null,
+            "SizeCalculator is required when MaxMemorySize or MaxEntrySize is set."
+        );
     }
 
     /// <inheritdoc />
@@ -962,7 +959,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             );
             long sizeDelta = 0;
 
-            _memory.AddOrUpdate(
+            var committed = _memory.AddOrUpdate(
                 key,
                 _ =>
                 {
@@ -1005,7 +1002,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
             }
 
-            _TrackUpdate(key, entry.ExpiresAt);
+            _TrackUpdate(key, committed.ExpiresAt);
 
             await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -1039,7 +1036,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             );
             long sizeDelta = 0;
 
-            _memory.AddOrUpdate(
+            var committed = _memory.AddOrUpdate(
                 key,
                 _ =>
                 {
@@ -1086,7 +1083,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
             }
 
-            _TrackUpdate(key, entry.ExpiresAt);
+            _TrackUpdate(key, committed.ExpiresAt);
 
             await _StartMaintenanceAsync().ConfigureAwait(false);
 

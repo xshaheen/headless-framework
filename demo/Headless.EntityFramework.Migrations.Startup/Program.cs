@@ -82,5 +82,5 @@ static void addInMemoryDistributedLock(IServiceCollection services)
     });
 
     // Resource Locks
-    services.AddDistributedLock<CacheDistributedLockStorage>();
+    services.AddDistributedLock<CacheDistributedLockStorage>(static _ => { });
 }
