@@ -27,7 +27,7 @@ public sealed class HeadlessRedisScriptsLoader(
     private static readonly ScriptSelector _setIfHigherSelector = static x => x.SetIfHigherScript;
 
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    private volatile bool _scriptsLoaded;
+    private int _version = 1; // Odd = not loaded, Even = loaded
     private bool _eventsSubscribed;
     private readonly AsyncLock _loadScriptsLock = new();
 
@@ -43,7 +43,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
     public async ValueTask LoadScriptsAsync(CancellationToken cancellationToken = default)
     {
-        if (_scriptsLoaded)
+        if ((Volatile.Read(ref _version) & 1) == 0)
         {
             return;
         }
@@ -54,7 +54,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
         using (await _loadScriptsLock.LockAsync(cancellationToken).ConfigureAwait(false))
         {
-            if (_scriptsLoaded)
+            if ((_version & 1) == 0)
             {
                 return;
             }
@@ -114,7 +114,7 @@ public sealed class HeadlessRedisScriptsLoader(
             SetIfHigherScript = loadedSetIfHigher;
             SetIfLowerScript = loadedSetIfLower;
 
-            _scriptsLoaded = true;
+            _version++; // Becomes even (loaded)
 
             // Subscribe to connection events for automatic script reload on reconnection
             if (!_eventsSubscribed)
@@ -131,7 +131,23 @@ public sealed class HeadlessRedisScriptsLoader(
     /// <summary>Resets the scripts loaded state, forcing a reload on next operation.</summary>
     public void ResetScripts()
     {
-        _scriptsLoaded = false;
+        var v = Volatile.Read(ref _version);
+        if ((v & 1) == 0) // If even (loaded)
+        {
+            Interlocked.CompareExchange(ref _version, v + 1, v); // Make it odd (unloaded)
+        }
+    }
+
+    /// <summary>
+    /// Resets the scripts loaded state only if the current version matches the expected version.
+    /// This prevents redundant resets in high-concurrency scenarios.
+    /// </summary>
+    public void ResetScripts(int expectedVersion)
+    {
+        if ((expectedVersion & 1) == 0) // Only reset if it was even (loaded)
+        {
+            Interlocked.CompareExchange(ref _version, expectedVersion + 1, expectedVersion);
+        }
     }
 
     /// <inheritdoc />
@@ -147,7 +163,7 @@ public sealed class HeadlessRedisScriptsLoader(
     private void _OnConnectionRestored(object? sender, ConnectionFailedEventArgs e)
     {
         logger?.LogConnectionRestored();
-        _scriptsLoaded = false;
+        ResetScripts();
     }
 
     public async Task<bool> ReplaceIfEqualAsync(
@@ -306,6 +322,7 @@ public sealed class HeadlessRedisScriptsLoader(
         cancellationToken.ThrowIfCancellationRequested();
         await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
+        var versionAtStart = Volatile.Read(ref _version);
         var script = scriptSelector(this);
         if (script is null)
         {
@@ -319,7 +336,11 @@ public sealed class HeadlessRedisScriptsLoader(
         catch (RedisServerException e) when (IsNoScriptError(e))
         {
             logger?.LogNoScriptRetry();
-            ResetScripts();
+
+            // Only reset if no one has successfully loaded scripts since we started this call.
+            // This prevents redundant reloads in high-concurrency scenarios.
+            ResetScripts(versionAtStart);
+
             await LoadScriptsAsync(cancellationToken).ConfigureAwait(false);
 
             script = scriptSelector(this);
