@@ -28,7 +28,7 @@ The epic is decomposed into the smallest phases that each deliver a coherent, sh
 
 | Phase | Title | Focus | Depends on | Unit count |
 |---|---|---|---|---|
-| 1 | Send/Broadcast split + tenancy + observability foundations | Intent-explicit publishers, first-class TenantId, uniform retry, OTel enricher, NATS ergonomics, abstracted DLQ observer | — | 9 |
+| 1 | Send/Broadcast split + tenancy + observability foundations | Intent-explicit publishers, first-class TenantId, uniform retry, OTel enricher, NATS ergonomics, abstracted DLQ observer | — | 12 (1, 1b, 2, 3a, 3b, 3c, 4, 5, 6, 7, 8, 9) |
 | 2 | Publish/Consume behavior pipeline | `IPublishBehavior<T>` + `IConsumeBehavior<T>` with ordered DI registration; outbox and OTel wrappers re-express as behaviors | 1 | 1 |
 | 3 | Auto-`TenantId` propagation behavior | `TenantPropagationPublishBehavior` reads `ITenantContext` and sets `PublishOptions.TenantId` when not explicitly set | 1, 2 | 1 |
 | 4 | Polymorphic publish | On `BroadcastAsync<T>`, dispatch to consumers registered for any base type or interface of `T`; ambiguity surfaces at startup | 1 | 1 |
@@ -123,21 +123,24 @@ Surveyed during session discussion. Captured here so future readers see which sh
 
 Established during session; table is authoritative for registration decisions.
 
-| Transport | `ISendPublisher` | `IBroadcastPublisher` | Fan-out mechanism | Notes |
-|---|---|---|---|---|
-| NATS (core + JetStream) | ✅ | ✅ | Native (subject fan-out) | Queue group vs subject fan-out |
-| Kafka | ✅ | ✅ | Emulated (distinct `group.id` per subscriber) | Broadcast requires one consumer group per subscriber; operational cost is N groups on shared topic |
-| RabbitMQ | ✅ | ✅ | Native (fanout/topic exchange) | Direct exchange vs fanout/topic exchange |
-| AzureServiceBus | ✅ | ✅ | Native (topic + subscription) | Queue vs Topic+Subscription resources |
-| Pulsar | ✅ | ✅ | Native (Shared/Failover subscription) | Shared vs Exclusive/Failover subscription |
-| RedisStreams | ✅ | ✅ | Emulated (per-subscriber consumer groups) | Operational cost is N consumer groups per stream |
-| AwsSqs | ✅ | ❌ (Phase 1; arrives in Phase 10) | — (Phase 10: SNS-fronted SQS, native) | SNS fan-out scheduled for Phase 10; throws at registration until then |
-| PostgreSql (outbox) | ✅ | ❌ | — | Competing queue only |
-| SqlServer (outbox) | ✅ | ❌ | — | Competing queue only |
-| InMemoryQueue | ✅ | ❌ | — | Queue-only by design |
-| InMemoryStorage | ✅ | ✅ | In-process | In-process list; fan-out trivially supported |
+| Transport | `ISendPublisher` | `IBroadcastPublisher` | Publisher mechanism | Subscriber requirement for broadcast | Axis & operational cost |
+|---|---|---|---|---|---|
+| NATS (core + JetStream) | ✅ | ✅ | Distinct subject via `MessagingConventions.GetBroadcastTopicName` | No queue group on the broadcast subject (every subscriber receives every message) | Convention-axis. Native subject fan-out at the broker level once subscribers comply |
+| Kafka | ✅ | ✅ | Distinct topic via `MessagingConventions.GetBroadcastTopicName` | Distinct `group.id` per subscriber on the broadcast topic | Convention-axis. Operational cost: N consumer groups linear in subscriber count |
+| RabbitMQ | ✅ | ✅ | Fanout (or topic) exchange — different exchange type from send's direct exchange | Independent queues bound to the fanout exchange | **Publisher-axis.** Topology fully enforced at publish time |
+| AzureServiceBus | ✅ | ✅ | Topic resource — different sender from send's queue resource | Independent subscriptions on the topic | **Publisher-axis.** Topology fully enforced at publish time |
+| Pulsar | ✅ | ✅ | Distinct topic via `MessagingConventions.GetBroadcastTopicName` | One Pulsar subscription per logical subscriber on the broadcast topic (subscription type stays consumer-side) | Convention-axis. Subscription type (Exclusive/Shared/Failover) is consumer-controlled |
+| RedisStreams | ✅ | ✅ | Distinct stream via `MessagingConventions.GetBroadcastTopicName` | Distinct consumer group per subscriber on the broadcast stream | Convention-axis. Operational cost: N consumer groups per stream |
+| AwsSqs | ✅ | ❌ (Phase 1; arrives in Phase 10) | — (Phase 10: SNS topic resource — publisher-axis) | — (Phase 10: SQS queues subscribed to the SNS topic) | Publisher-axis once Phase 10 lands; throws at registration until then |
+| PostgreSql (outbox) | ✅ | ❌ | — | — | Competing queue only |
+| SqlServer (outbox) | ✅ | ❌ | — | — | Competing queue only |
+| InMemoryQueue | ✅ | ❌ | — | — | Queue-only by design |
+| InMemoryStorage | ✅ | ✅ | In-process subscriber enumeration | N/A (in-process) | In-process; fan-out trivially supported |
 
-**Why fan-out mechanism matters:** "✅ Broadcast" describes semantic capability, not operational cost. Native fan-out (RabbitMQ fanout, ASB topics, NATS subjects) scales horizontally with the broker. Emulated fan-out (Kafka distinct group.ids, Redis per-subscriber groups) multiplies consumer-side resource usage linearly with subscriber count. Operators sizing a cluster need the distinction even when both are checkmarked.
+**Axis terminology and why it matters:**
+- **Publisher-axis** (RabbitMQ, AzureServiceBus, AwsSqs+SNS in Phase 10): the publisher's API call materially differs between send and broadcast (different exchange / different sender resource). Broadcast topology is fully enforced from the publish side. `IDirectBroadcastPublisher` and `IDirectSendPublisher` invoke distinct broker primitives.
+- **Convention-axis** (NATS, Kafka, Pulsar, RedisStreams): the wire protocol for send and broadcast is the same (write to a topic/subject/stream); the publisher distinguishes the two by writing to a distinct topic name produced by `MessagingConventions.GetBroadcastTopicName`. **Subscriber configuration must match the convention** — if a subscriber wires up a queue group on a NATS broadcast subject, shares a `group.id` on a Kafka broadcast topic, or reuses one Pulsar subscription across logical subscribers, broadcast semantics silently degrade to competing-consumer behavior. The publisher cannot enforce subscriber wiring; capability validation in Unit 3a/3b emits startup warnings when convention-axis broadcast topics are observed with mismatched subscriber configuration.
+- **Operational cost:** convention-axis fan-out on Kafka and RedisStreams multiplies consumer-side resource usage linearly with subscriber count (one consumer group per subscriber). Publisher-axis broadcast (RabbitMQ, ASB) scales horizontally with the broker. Operators sizing a cluster need the distinction even when both are checkmarked.
 
 ### Key Technical Decisions
 
@@ -145,10 +148,14 @@ Established during session; table is authoritative for registration decisions.
 - **Durability axis preserved via inheritance.** `IDirectSendPublisher : ISendPublisher`, `IOutboxSendPublisher : ISendPublisher`, same for broadcast. Durability markers stay exactly as they are conceptually; only the semantic axis is added.
 - **TenantId as typed property, not a magic header.** `TenantId? : string` on `PublishOptions` and `ConsumeContext`; provider maps it to `Headers.TenantId` on the wire. Consumers read the property, not the header dictionary.
 - **Capability declared at registration.** Provider `AddXxxMessaging(...)` extensions register only the interfaces the transport actually implements. No runtime `NotSupportedException` from a method that exists but refuses; instead DI resolution fails fast with a readable message.
+- **Outbox lives in Core, not per-provider.** `IOutboxSendPublisher` and `IOutboxBroadcastPublisher` are bound to a single transport-agnostic `OutboxPublisherDecorator<TTransport>` in `Headless.Messaging.Core` that persists envelopes via `IOutboxStore` and lets `OutboxDrainer<TTransport>` redispatch through the registered Direct publisher for `TTransport`. Provider packages implement only the Direct interfaces; Outbox composes via `services.AddOutbox<TTransport>()`. Rationale: keeps the transport × durability surface flat (11 transports × 2 Direct interfaces = 22 transport classes, plus 1 decorator + 1 drainer + N store implementations) instead of multiplying to 44; concentrates tenancy stamping, composite `(TenantId, MessageId)` dedup, retry backoff, and dead-letter observation in exactly one place; matches the Brighter / Wolverine split where outbox is a pipeline concern, not a transport concern. The decorator is also the single point where `PublishOptions.TenantId` is captured onto the persisted envelope before the drainer fires — provider code never touches tenancy.
+- **`MessagingConventions.GetBroadcastTopicName` is the publisher-side mechanism for convention-axis transports.** For Kafka, NATS, Pulsar, and RedisStreams, broadcast and send share a wire protocol (one publish call to one topic/subject/stream); the publisher distinguishes the two by writing to a distinct topic name produced by this helper. Capability validation in Unit 3a/3b asserts the helper is wired into both the publisher and the consumer subscription path so a `BroadcastAsync<T>` call materially differs from `SendAsync<T>` on the wire. Subscribers MUST configure distinct consumer groups (Kafka, RedisStreams) / queue groups (NATS) / subscriptions (Pulsar) for broadcast semantics — the publisher cannot enforce this; integration tests in Unit 3a/3b emit a warning when broadcast topics see fewer than two distinct subscriber group IDs.
+- **Completion contract for `await SendAsync<T>` / `await BroadcastAsync<T>` is broker-acknowledged durable accept.** Phase 1 pins a single mental model across all 11 transports: a publisher call returns successfully only after the broker has durably accepted the message (transport-defined "durable accept" — JetStream `PubAck`, Kafka `acks=all`, RabbitMQ publisher confirms, ASB `SendMessageAsync` ack, SQS `SendMessageAsync` ack, Pulsar producer ack, RedisStreams `XADD` reply). For `IOutboxSendPublisher` / `IOutboxBroadcastPublisher`, the contract is **outbox-row commit** — the call returns when the row has committed in the outbox store (the drainer reaches broker-ack later, asynchronously, with retry). Providers that cannot meet broker-ack by default (NATS core without JetStream, Kafka with `acks < all`, RabbitMQ without publisher confirms) MUST configure their producer for ack-by-default at registration time, or the `MessagingCapabilityOptionsValidator` rejects `IDirectSendPublisher` / `IDirectBroadcastPublisher` registration with a readable `OptionsValidationException` at host startup. Rationale: the durability marker (`IDirect…Publisher` vs `IOutbox…Publisher`) implies a guarantee — Phase 1 is the right time to make the runtime actually deliver it, before more code accumulates against the today's "knowable from reading provider source" semantic. XML docs on `ISendPublisher.SendAsync<T>` and `IBroadcastPublisher.BroadcastAsync<T>` state the contract verbatim. The OTel enricher (Unit 5) records `headless.messaging.completion = "broker_ack" | "outbox_commit"` so traces self-describe which path the publish took. Attribute uses the `headless.messaging.*` prefix (not `messaging.headless.*`) because OTel's naming spec discourages reusing existing semconv namespaces as prefixes for third-party attributes — see Unit 5 Goal for the full rationale. Out of scope for Phase 1: caller-selectable lower-latency `OnEnqueue` mode — deferred to a future phase if a hot-path use case surfaces; collapsing it into Phase 1 would re-introduce per-call configurability and dilute the single-contract value.
 - **Consumer surface unchanged.** `IConsume<T>` stays the single entry point. Whether `T` arrived via Send or Broadcast is observable via `ConsumeContext.DeliveryKind` (new enum) for diagnostics and tracing. **Business logic branching on `DeliveryKind` is discouraged**: if send vs broadcast means different behavior, model it as two distinct message types or two distinct consumers, not one consumer that forks. XML docs on `DeliveryKind` state this explicitly.
 - **`IMessagePublisher` becomes `internal`.** Remains a shared base type for pipeline behavior (outbox, OpenTelemetry wrap) but is not a public resolution seam. Greenfield posture (per `CLAUDE.md`) makes re-exposing trivial if a concrete wrapper use case ever surfaces; YAGNI until then.
 - **NATS stream config uses a callback-shaped options surface.** Matches the existing Headless FluentValidation + hosting options pattern; no direct `StreamConfig` exposure in abstractions.
 - **Capability fail-fast via FluentValidation on a capability-descriptor options type.** Per `CLAUDE.md`, validation flows through `services.AddOptions<T, TValidator>().ValidateOnStart()` — not a bespoke `IHostedService`. Each provider's `AddXxxMessaging` extension registers a `MessagingCapabilityOptions` (declared publisher set, forbidden set, per-transport flags) bound via the standard options pipeline, with an internal `MessagingCapabilityOptionsValidator : AbstractValidator<MessagingCapabilityOptions>` that asserts the declared interfaces are actually registered in the container (via a post-build check wired into the validator). `ValidateOnStart()` surfaces any mismatch before the host reaches consumer startup. No `IHostedService`, no custom exception hierarchy — validation failures throw `OptionsValidationException` with the structured message list FluentValidation already produces.
+- **P1⇄P2 transition contract for the outbox decorator (binding).** `OutboxPublisherDecorator<TTransport>`, `OutboxDrainer<TTransport>`, `IOutboxStore`, and `services.AddOutbox<TTransport>()` ship in Phase 1 / Unit 1b and survive into Phase 2 unchanged in class signature, DI registration, keying, and runtime semantics. Phase 2's behavior pipeline composes **around** the decorator (`BehaviorChain → OutboxPublisherDecorator<T> → IDirectSendPublisher<T>` on persist; `BehaviorChain → IDirectSendPublisher<T>` on drainer redispatch); it does not absorb, replace, or re-express outbox as an `IPublishBehavior<T>`. Rationale: the decorator is on the **transport axis** (`<TTransport>`) and is stateful (owns `IOutboxStore` lifecycle, the drainer, and per-transport publisher resolution); behaviors are on the **message axis** (`<T>`) and stateless. Collapsing both onto one seam would re-introduce keyed-DI resolution inside a per-message generic, split outbox's identity across multiple registrations, and risk double-pipelining (behaviors running once on persist, again on redispatch through a behavior-shaped outbox). Provider packages that landed in Units 3a/3b continue to register only the Direct interfaces in Phase 2. Any future "behavior-shaped" outbox proposal is out of scope for Phase 2 and would require its own RFC.
 - **Deduplication keys include `TenantId` when tenancy is in use.** Outbox tables, Redis idempotency keys, and any provider-level "seen-MessageId" dedupe use a composite `(TenantId, MessageId)` key when `TenantId` is non-null, and fall back to `MessageId` alone when `TenantId` is null. Single-tenant applications (no `AddHeadlessMultiTenancy`, no explicit `PublishOptions.TenantId`) see identical behavior to today — this matches Wolverine and Brighter's single-key dedup. Multi-tenant applications get cross-tenant collision protection automatically as soon as `TenantId` starts flowing. Schema: dedup tables store `TenantId` as a nullable column; the composite unique constraint treats `NULL` as a distinct value (standard SQL semantics), which is the desired behavior — a single-tenant app can never collide with a multi-tenant app sharing the same store because they never share a `TenantId` value.
 
 ### Open Questions
@@ -184,6 +191,13 @@ src/Headless.Messaging.Abstractions/
   MessagingConventions.cs              # + GetBroadcastTopicName helper
   IDeadLetterObserver.cs               # new: transport-agnostic DLQ/terminal-failure observer
   DeadLetterEvent.cs                   # new: envelope carrying TenantId, MessageId, MessageType, attempts, reason
+
+src/Headless.Messaging.Core/
+  IOutboxStore.cs                      # new: persist + composite-(TenantId, MessageId) dedup + drain cursor
+  OutboxEnvelope.cs                    # new: persisted record (payload, headers, tenancy, attempts, status)
+  OutboxPublisherDecorator.cs          # new: implements IOutboxSendPublisher + IOutboxBroadcastPublisher; persists via IOutboxStore
+  OutboxDrainer.cs                     # new: BackgroundService<TTransport> that drains store and dispatches via the registered Direct publisher
+  OutboxRegistration.cs                # new: services.AddOutbox<TTransport>() extension
 
 src/Headless.Messaging.OpenTelemetry/
   IActivityTagEnricher.cs              # new hook for consumer apps
@@ -257,12 +271,15 @@ ConsumeContext.TenantId = "acme"  (typed, not header lookup)
 - Modify: `src/Headless.Messaging.Abstractions/IMessagePublisher.cs` (make `internal`, keep as shared base)
 - Modify: `src/Headless.Messaging.Abstractions/MessagePublisherExtensions.cs` (split extensions per-interface)
 - Delete: `src/Headless.Messaging.Abstractions/IDirectPublisher.cs` and `IOutboxPublisher.cs` (replaced by the four new markers)
+- Modify: `src/Headless.Messaging.Abstractions/MessagingConventions.cs` — add `GetBroadcastTopicName(Type messageType)` helper used by every convention-axis provider in Units 3a/3b (NATS subjects, Kafka topics, Pulsar topics, RedisStreams streams). Helper produces a deterministic distinct name so `BroadcastAsync<T>` routes to a different wire destination than `SendAsync<T>` on transports where the publisher API does not encode the semantic difference natively.
 - Test: `tests/Headless.Messaging.Tests.Unit/Abstractions/PublisherInterfaceShapeTests.cs`
+- Test: `tests/Headless.Messaging.Tests.Unit/Abstractions/MessagingConventionsBroadcastTopicTests.cs` — asserts the helper returns a name distinct from the send-side name for the same type, is deterministic across calls, and survives generic type arguments.
 
 **Approach:**
 - `ISendPublisher.SendAsync<T>` and `IBroadcastPublisher.BroadcastAsync<T>` share a method signature shape with the existing `PublishAsync`; only the name and intent differ.
 - Durability markers are empty interfaces — they exist for DI resolution and XML docs, just like today's `IDirectPublisher`.
 - `DeliveryKind` is a plain enum `{ Send, Broadcast }` exposed on `ConsumeContext`.
+- XML docs on `ISendPublisher.SendAsync<T>` and `IBroadcastPublisher.BroadcastAsync<T>` state the completion contract verbatim per the Key Technical Decisions bullet: "the returned task completes only after the broker has durably accepted the message (transport-defined durable accept)." The corresponding doc on the `IOutbox…Publisher` markers states: "the returned task completes when the outbox row has committed; the drainer reaches broker-ack asynchronously."
 
 **Patterns to follow:**
 - Existing empty-marker pattern in `IDirectPublisher.cs` / `IOutboxPublisher.cs`.
@@ -276,6 +293,52 @@ ConsumeContext.TenantId = "acme"  (typed, not header lookup)
 **Verification:**
 - Solution builds with `dotnet build --no-incremental -v:q -nologo /clp:ErrorsOnly` clean.
 - No provider project references `IDirectPublisher` or `IOutboxPublisher` by their old names (Unit 3 lands the provider edits).
+
+---
+
+- [ ] **Unit 1b: Land the transport-agnostic Outbox decorator + store + drainer in `Headless.Messaging.Core`**
+
+**Goal:** Implement Outbox once as a Core decorator over the Direct interfaces, so provider packages in Units 3a/3b only need to ship Direct publishers. Bind `IOutboxSendPublisher` / `IOutboxBroadcastPublisher` to the Core decorator via `services.AddOutbox<TTransport>()`. Eliminates the 11-providers × 2-durability × 2-semantic = 44-class explosion; replaces it with 22 Direct classes + 1 decorator + 1 drainer + N stores.
+
+**Requirements:** R1, R2, R3 (capability registration is pure Direct after this unit; Outbox markers register only when `AddOutbox<TTransport>()` is called).
+
+**Dependencies:** Unit 1.
+
+**Files:**
+- Create: `src/Headless.Messaging.Core/IOutboxStore.cs` — persist, dedup-by-`(TenantId, MessageId)`, claim-and-drain cursor, mark-completed, mark-failed-with-attempt-count.
+- Create: `src/Headless.Messaging.Core/OutboxEnvelope.cs` — payload, headers, `TenantId`, `MessageId`, `CorrelationId`, status (`Pending` / `Dispatched` / `Failed`), `AttemptCount`, `NextAttemptAt`, `DeliveryKind`.
+- Create: `src/Headless.Messaging.Core/OutboxPublisherDecorator.cs` — implements `IOutboxSendPublisher` and `IOutboxBroadcastPublisher`. On `SendAsync` / `BroadcastAsync`: snapshots `PublishOptions.TenantId` (or resolves from `ITenantContext` later in Phase 3), writes one `OutboxEnvelope` row to `IOutboxStore` inside the ambient transaction, returns immediately. Never calls the transport directly.
+- Create: `src/Headless.Messaging.Core/OutboxDrainer.cs` — `BackgroundService` generic over `TTransport`. Polls `IOutboxStore` for pending rows scoped to `TTransport`, dispatches each via the registered Direct publisher (`IDirectSendPublisher` for `DeliveryKind.Send`, `IDirectBroadcastPublisher` for `DeliveryKind.Broadcast`), applies `IRetryBackoffStrategy` per Unit 4, emits `DeadLetterEvent` via `IDeadLetterObserver` per Unit 8 on terminal failure.
+- Create: `src/Headless.Messaging.Core/OutboxRegistration.cs` — `services.AddOutbox<TTransport>()` extension that binds the Outbox markers to the decorator and registers the drainer hosted service. Validates (via FluentValidation + `ValidateOnStart()`, per `CLAUDE.md`) that `IDirectSendPublisher` and/or `IDirectBroadcastPublisher` are registered for `TTransport` — otherwise startup fails with `OptionsValidationException`.
+- Test: `tests/Headless.Messaging.Core.Tests.Unit/Outbox/OutboxPublisherDecoratorTests.cs` — asserts `SendAsync` writes to store and does not invoke transport.
+- Test: `tests/Headless.Messaging.Core.Tests.Unit/Outbox/OutboxDrainerTests.cs` — asserts drainer dispatches via Direct publisher, retries via backoff, emits `DeadLetterEvent` after max attempts.
+- Test: `tests/Headless.Messaging.Core.Tests.Integration/Outbox/CompositeDedupKeyTests.cs` — same `MessageId` across two `TenantId`s yields two distinct envelopes; same `(TenantId, MessageId)` is deduped.
+
+**Approach:**
+- The decorator is the *only* place that captures tenancy onto the persisted envelope. Provider transport classes remain tenancy-agnostic — they read tenancy off `OutboxEnvelope.Headers` exactly as they would for any incoming `Headers["headless-tenant-id"]`.
+- `IOutboxStore` is an interface in Core; concrete implementations (`PostgreSqlOutboxStore`, `SqlServerOutboxStore`) live in their own packages and ship in their respective provider Units (3a/3b for the SQL providers, no impact on transport-only providers like NATS/Kafka).
+- Drainer is generic over `TTransport` so multiple Outbox+Transport pairs can coexist (e.g., `AddOutbox<NatsTransport>()` and `AddOutbox<RabbitMqTransport>()` in the same host run independent drainers against the same store with distinct transport tags).
+- Composite dedup key `(TenantId, MessageId)` is enforced at the store level; null `TenantId` is treated as a distinct value per standard SQL semantics (single-tenant apps continue to work unchanged).
+- The decorator is registered with `ServiceLifetime.Scoped` so it picks up the ambient `IOutboxTransaction` / `DbContext` from the caller's scope.
+- **P1⇄P2 binding contract (carried forward from Key Technical Decisions).** The class signatures of `OutboxPublisherDecorator<TTransport>`, `OutboxDrainer<TTransport>`, `IOutboxStore`, and the public `services.AddOutbox<TTransport>()` extension shipped in this Unit are binding through Phase 2 — Phase 2's behavior pipeline composes around them (`BehaviorChain → OutboxPublisherDecorator<T> → IDirectSendPublisher<T>` on persist; `BehaviorChain → IDirectSendPublisher<T>` on drainer redispatch) and does not re-express outbox as an `IPublishBehavior<T>`. Implementation choices in this Unit that would force a Phase 2 rewrite of the decorator's transport-axis identity (e.g., resolving the underlying Direct publisher through a per-message generic, splitting tenancy stamping out of the decorator, moving `(TenantId, MessageId)` dedup into a separate behavior) are out of scope and rejected at review.
+
+**Patterns to follow:**
+- `Headless.DistributedLocks.Core` package layout — abstractions + Core implementation, providers shipping concrete stores.
+- `Headless.Caching.Hybrid` decorator pattern over `ICache` — same shape, different concern.
+- FluentValidation + `services.AddOptions<T, TValidator>().ValidateOnStart()` per `CLAUDE.md`.
+
+**Test scenarios:**
+- Happy path: `SendAsync` persists envelope, returns; drainer dispatches and marks `Dispatched`.
+- Happy path: `BroadcastAsync` persists with `DeliveryKind = Broadcast`; drainer routes to `IDirectBroadcastPublisher`.
+- Edge case: Transport throws transient → drainer reschedules per `IRetryBackoffStrategy` → eventually succeeds.
+- Edge case: Transport throws terminal → drainer emits `DeadLetterEvent` after `MaxAttempts` and marks `Failed`.
+- Edge case: Same `MessageId` published twice for same `TenantId` → second insert deduped by composite-key constraint, drainer dispatches once.
+- Edge case: Same `MessageId` for two different `TenantId`s → two envelopes, two dispatches.
+- Error path: `AddOutbox<TTransport>()` called without a registered `IDirectSendPublisher` for `TTransport` → host startup fails with `OptionsValidationException` listing the missing registration.
+
+**Verification:**
+- No provider package under `src/Headless.Messaging.Nats/`, `Kafka/`, `RabbitMq/`, etc. contains an `IOutboxSendPublisher` or `IOutboxBroadcastPublisher` implementation. Verified by `grep -r "class.*: IOutbox" src/Headless.Messaging.* --include='*.cs'` returning only the Core decorator.
+- `services.AddHeadlessMessagingNats(...).AddOutbox<NatsTransport>()` resolves all four publisher markers; omitting `AddOutbox` leaves only the two Direct markers resolvable (DI failure on Outbox resolution is the expected behavior, surfaced at host startup, not at runtime).
 
 ---
 
@@ -296,7 +359,7 @@ ConsumeContext.TenantId = "acme"  (typed, not header lookup)
 
 **Approach:**
 - On publish: if `PublishOptions.TenantId` is set, the pipeline **overwrites** `headers["headless-tenant-id"]` with the property value (property always wins, raw header is not preserved). If the caller set the raw header but not the property, the header is left untouched. When property and raw header disagree, a debug log emits both values for diagnosis: `TenantId property overrode raw header. property={prop} header={hdr}`.
-- On consume: the pipeline reads `headers["headless-tenant-id"]` and populates `ConsumeContext.TenantId`. Missing header → property is `null`.
+- On consume: the pipeline reads `headers["headless-tenant-id"]` and populates `ConsumeContext.TenantId`. Missing header → property is `null`. The consume-side header value is bounds-checked to the same 200-char limit and character-set rules applied on publish (via `Headless.Checks`); a header that exceeds the limit or carries disallowed characters is treated as a malformed envelope — the message is rejected (logged at warning, surfaced to `IDeadLetterObserver` per Unit 8) rather than silently truncated. This blocks an upstream sender on a shared broker from forging an oversized `headless-tenant-id` value that would propagate into the outbox `TenantId` column or OTel spans.
 - Validate `TenantId` length (match `MessageId` 200-char limit for symmetry) via `Headless.Checks` at the publisher boundary.
 
 **Patterns to follow:**
@@ -323,20 +386,28 @@ Unit 2 introduces the envelope contract (property + header + shared pipeline). P
 
 **Goal:** Land the reference implementations for the highest-traffic providers first. NATS anchors the broadcast-capable shape; SQS anchors the Send-only / capability-not-registered shape. ASB and RabbitMQ validate that the topology-per-semantics approach works outside NATS.
 
+**Note on "register all four markers" wording (applies to Units 3a and 3b):** Per the Core-decorator decision in Key Technical Decisions and Unit 1b, provider packages register only the Direct interfaces (`IDirectSendPublisher` / `IDirectBroadcastPublisher`) keyed by their transport type. The Outbox interfaces resolve through `OutboxPublisherDecorator<TTransport>` once the consumer chains `services.AddOutbox<TTransport>()`. Capability-registration tests in this Unit must cover both the Direct-only and Direct+Outbox configurations to assert end-to-end resolvability.
+
 **Requirements:** R1, R2, R3.
 
-**Dependencies:** Unit 1.
+**Dependencies:** Unit 1, Unit 1b.
 
 **Files:**
-- Modify: `src/Headless.Messaging.Nats/` — register all four markers (Direct/Outbox × Send/Broadcast). Reference implementation.
-- Modify: `src/Headless.Messaging.RabbitMq/` — register all four markers (fanout exchange for broadcast, direct exchange for send).
-- Modify: `src/Headless.Messaging.AzureServiceBus/` — register all four markers (topic + subscription for broadcast, queue for send).
-- Modify: `src/Headless.Messaging.AwsSqs/` — Send markers only; do **not** register broadcast (SNS-fronted topology lands in a follow-up plan).
-- Add: per-provider `MessagingCapabilityOptions` + `MessagingCapabilityOptionsValidator : AbstractValidator<MessagingCapabilityOptions>` (same-file pattern, per `CLAUDE.md`), wired via `services.AddOptions<MessagingCapabilityOptions, MessagingCapabilityOptionsValidator>().ValidateOnStart()`. Shared validation helper in `Headless.Messaging.Core` performs the "declared interfaces are registered" cross-check. No `IHostedService`, no custom exception type — failures surface as `OptionsValidationException` at host startup.
+- Modify: `src/Headless.Messaging.Nats/` — register the Direct send + Direct broadcast publishers keyed by `NatsTransport`. **Completion contract enforcement:** registration validator rejects the Direct interfaces unless JetStream is configured (NATS core has no broker ack); core-only consumers must register `IOutboxSendPublisher` / `IOutboxBroadcastPublisher` instead and pair with `services.AddOutbox<NatsTransport>()`.
+- Modify: `src/Headless.Messaging.RabbitMq/` — register Direct send (direct exchange) + Direct broadcast (fanout exchange) publishers keyed by `RabbitMqTransport`. **Completion contract enforcement:** registration validator rejects Direct interfaces unless publisher confirms are enabled on the channel (`ConfirmSelectAsync` + `WaitForConfirmsOrDieAsync` on every publish); the validator inspects the channel-factory options and fails fast if confirms are not opted in.
+- Modify: `src/Headless.Messaging.AzureServiceBus/` — register Direct send (queue) + Direct broadcast (topic + subscription) publishers keyed by `AzureServiceBusTransport`. ASB's `SendMessageAsync` is broker-ack by default; no extra producer config required to satisfy the completion contract.
+- Modify: `src/Headless.Messaging.AwsSqs/` — register Direct send only keyed by `AwsSqsTransport`; do **not** register broadcast (SNS-fronted topology lands in a follow-up plan). SQS `SendMessageAsync` is broker-ack by default.
+- Add: per-provider `MessagingCapabilityOptions` + `MessagingCapabilityOptionsValidator : AbstractValidator<MessagingCapabilityOptions>` (same-file pattern, per `CLAUDE.md`), wired via `services.AddOptions<MessagingCapabilityOptions, MessagingCapabilityOptionsValidator>().ValidateOnStart()`. Shared validation helper in `Headless.Messaging.Core` performs (a) the "declared interfaces are registered" cross-check **and** (b) the completion-contract cross-check (Direct interfaces registered only when the producer is configured to deliver broker-ack durable accept per the Key Technical Decisions bullet). No `IHostedService`, no custom exception type — failures surface as `OptionsValidationException` at host startup with the offending transport, the failing rule, and the remediation in the message.
 - Test: `tests/Headless.Messaging.Nats.Tests.Integration/CapabilityRegistrationTests.cs`
 - Test: `tests/Headless.Messaging.RabbitMq.Tests.Integration/CapabilityRegistrationTests.cs`
 - Test: `tests/Headless.Messaging.AzureServiceBus.Tests.Integration/CapabilityRegistrationTests.cs`
 - Test: `tests/Headless.Messaging.AwsSqs.Tests.Integration/CapabilityRegistrationTests.cs`
+- Test: `tests/Headless.Messaging.Nats.Tests.Integration/BroadcastConventionAxisWarningTests.cs`
+
+**Convention-axis warning test scenarios (NATS, this Unit):**
+- Two consumers subscribe to the broadcast subject produced by `MessagingConventions.GetBroadcastTopicName<T>()` with the **same** queue group → assertion that startup logs a warning at WARN level: `"NATS broadcast subject {subject} has subscribers sharing queue group '{group}'; broadcast semantics will degrade to competing-consumer (one subscriber receives each message). Configure distinct queue groups per subscriber for broadcast, or omit the queue group entirely."` Capability validation does not fail the host — broadcast on convention-axis transports is a subscriber-side contract; the publisher and host can only warn.
+- Sanity counterpart: two consumers subscribe with **distinct** queue groups (or no queue group) → no warning logged; both consumers receive every published message.
+- Send-side regression guard: a `SendAsync<T>` integration test asserts the wire subject differs from `GetBroadcastTopicName<T>()` so the two semantic axes do not collide on the same subject by accident.
 
 - [ ] **Unit 3b: Migrate Tier-2 providers (Kafka, Pulsar, RedisStreams, InMemoryStorage, InMemoryQueue, PostgreSql, SqlServer)**
 
@@ -347,14 +418,24 @@ Unit 2 introduces the envelope contract (property + header + shared pipeline). P
 **Dependencies:** Unit 3a landed.
 
 **Files:**
-- Modify: `src/Headless.Messaging.Kafka/` — register all four markers (broadcast via distinct consumer groups on the same topic).
-- Modify: `src/Headless.Messaging.Pulsar/` — register all four markers (Exclusive for send, Shared/Failover for broadcast).
-- Modify: `src/Headless.Messaging.RedisStreams/` — register all four markers (distinct consumer groups for broadcast).
-- Modify: `src/Headless.Messaging.InMemoryStorage/` — register all four markers; in-memory fan-out is trivially supported.
-- Modify: `src/Headless.Messaging.InMemoryQueue/` — Send markers only; broadcast is out of scope for this provider by design.
-- Modify: `src/Headless.Messaging.PostgreSql/` — Send markers only (see Deferred: transactional broadcast bridge).
-- Modify: `src/Headless.Messaging.SqlServer/` — Send markers only.
+- Modify: `src/Headless.Messaging.Kafka/` — register Direct send + Direct broadcast publishers keyed by `KafkaTransport` (broadcast via distinct consumer groups on the same topic). **Completion contract enforcement:** registration validator rejects Direct interfaces unless `ProducerConfig.Acks == Acks.All` (broker-quorum acknowledgement); lower ack levels are configurable but require explicit opt-in via `MessagingCapabilityOptions.AllowReducedAcks = true` plus the human reason recorded in options metadata.
+- Modify: `src/Headless.Messaging.Pulsar/` — register Direct send (Exclusive) + Direct broadcast (Shared/Failover) publishers keyed by `PulsarTransport`. Pulsar `SendAsync` is broker-ack by default; no extra producer config required.
+- Modify: `src/Headless.Messaging.RedisStreams/` — register Direct send + Direct broadcast publishers keyed by `RedisStreamsTransport` (distinct consumer groups for broadcast). Redis `XADD` reply is treated as broker-ack-equivalent (memory persistence); the validator records the AOF-config caveat in startup logs once per host.
+- Modify: `src/Headless.Messaging.InMemoryStorage/` — register Direct send + Direct broadcast publishers keyed by `InMemoryStorageTransport`; in-memory fan-out is trivially supported and the call returns when the in-memory store has accepted the envelope (treated as broker-ack-equivalent for this provider per the Key Technical Decisions bullet).
+- Modify: `src/Headless.Messaging.InMemoryQueue/` — register Direct send only keyed by `InMemoryQueueTransport`; broadcast is out of scope for this provider by design. Channel-accept is treated as broker-ack-equivalent for this provider.
+- Modify: `src/Headless.Messaging.PostgreSql/` — register Direct send only keyed by `PostgreSqlTransport` (see Deferred: transactional broadcast bridge). Direct send returns when the row INSERT commits (the publisher *is* the durable store for this transport); contract is satisfied by definition. Also ships `PostgreSqlOutboxStore : IOutboxStore` so consumers can pair `AddHeadlessMessagingPostgreSql(...)` with `AddOutbox<NatsTransport>()` (or any transport) and persist the outbox table in their PG database.
+- Modify: `src/Headless.Messaging.SqlServer/` — register Direct send only keyed by `SqlServerTransport`; same row-commit semantic as PostgreSql. Also ships `SqlServerOutboxStore : IOutboxStore` for consumers using SQL Server as their outbox store.
 - Test: `tests/Headless.Messaging.*.Tests.Integration/CapabilityRegistrationTests.cs` per provider.
+- Test: `tests/Headless.Messaging.Kafka.Tests.Integration/BroadcastConventionAxisWarningTests.cs`
+- Test: `tests/Headless.Messaging.Pulsar.Tests.Integration/BroadcastConventionAxisWarningTests.cs`
+- Test: `tests/Headless.Messaging.RedisStreams.Tests.Integration/BroadcastConventionAxisWarningTests.cs`
+
+**Convention-axis warning test scenarios (Kafka, Pulsar, RedisStreams):**
+- **Kafka:** two consumers subscribe to the broadcast topic produced by `MessagingConventions.GetBroadcastTopicName<T>()` with the **same** `group.id` → assertion that startup logs WARN: `"Kafka broadcast topic {topic} has subscribers sharing group.id='{group}'; broadcast semantics will degrade to competing-consumer (one subscriber receives each message). Configure distinct group.id per subscriber for broadcast."` Distinct `group.id` counterpart logs no warning.
+- **RedisStreams:** two consumers subscribe to the broadcast stream with the **same** consumer group → assertion that startup logs WARN: `"RedisStreams broadcast stream {stream} has subscribers sharing consumer group '{group}'; broadcast semantics will degrade to competing-consumer. Configure distinct consumer groups per subscriber for broadcast."` Distinct consumer-group counterpart logs no warning.
+- **Pulsar:** two logical subscribers reuse the **same** subscription name on the broadcast topic → assertion that startup logs WARN: `"Pulsar broadcast topic {topic} has subscribers sharing subscription '{name}'; broadcast semantics will degrade to competing-consumer under Shared/Failover subscription types. Configure distinct subscription names per logical subscriber for broadcast."` Distinct subscription names counterpart logs no warning.
+- **Send-side regression guard (all three):** a `SendAsync<T>` integration test asserts the wire topic/stream/subscription differs from `GetBroadcastTopicName<T>()` so the two semantic axes do not collide on the same destination by accident.
+- **Out of scope:** InMemoryStorage in-process fan-out is verified by existing per-consumer-delivery tests, no convention-axis warning needed (no group concept). InMemoryQueue and PostgreSql/SqlServer register Send only; broadcast warning tests do not apply.
 
 - [ ] **Unit 3c: Downstream consumer migration — existing tests, demos, samples**
 
@@ -463,7 +544,7 @@ Unit 2 introduces the envelope contract (property + header + shared pipeline). P
 
 - [ ] **Unit 5: Add `IActivityTagEnricher` to `Headless.Messaging.OpenTelemetry`**
 
-**Goal:** Let consumer apps attach custom OpenTelemetry tags to publish/consume spans without forking the package. Default implementation adds `messaging.headless.tenant_id` and `messaging.headless.delivery_kind` automatically when the values are present.
+**Goal:** Let consumer apps attach custom OpenTelemetry tags to publish/consume spans without forking the package. Default implementation adds `headless.messaging.tenant_id`, `headless.messaging.delivery_kind`, and `headless.messaging.completion` automatically when the values are present. The `headless.messaging.completion` tag carries `"broker_ack"` or `"outbox_commit"` per the publish-time completion contract in Key Technical Decisions; provider Direct publishers stamp it via `IMessageTagContext.SetCompletion(string mode)` from inside the publish wrapper after the broker ack returns, and the Outbox decorator stamps `"outbox_commit"` after the row commits. **Namespace rationale:** OTel's attribute-naming spec explicitly discourages using existing semconv namespaces (including `messaging.*`) as prefixes for third-party attributes — a future OTel messaging registry update could collide with `messaging.headless.*`. The library uses the reverse-domain-style `headless.messaging.*` prefix for all custom attributes; OTel-standardized attributes (`messaging.operation.type`, `messaging.system`, `messaging.destination.name`) keep their canonical names so vendor dashboards work without configuration.
 
 **Requirements:** R6, R4 (tenancy visibility in traces).
 
@@ -477,7 +558,8 @@ Unit 2 introduces the envelope contract (property + header + shared pipeline). P
 - Test: `tests/Headless.Messaging.Tests.Unit/OpenTelemetry/ActivityTagEnricherTests.cs`
 
 **Approach:**
-- `IActivityTagEnricher.Enrich(Activity, IMessageTagContext)` — context exposes typed `TenantId`, `DeliveryKind`, `MessageType`, `Topic`, and the raw `Headers`.
+- `IActivityTagEnricher.Enrich(Activity, IMessageTagContext)` — context exposes typed `TenantId`, `DeliveryKind`, `MessageType`, `Topic`, `Completion` (set to `"broker_ack"` or `"outbox_commit"` by provider Direct publishers / the Outbox decorator after their respective acknowledgement event), and the raw `Headers`. The default enricher emits these as `headless.messaging.tenant_id`, `headless.messaging.delivery_kind`, and `headless.messaging.completion` respectively (custom prefix per OTel naming guidance — see Goal above).
+- The default enricher also stamps the OTel-standardized attributes from the messaging semantic conventions: `messaging.operation.type` (`"send"` for `IDirectSendPublisher` / `IDirectBroadcastPublisher` / Outbox-redispatch publish spans, `"process"` for consume spans, `"create"` for the Outbox-persist span on the publisher side), and `messaging.system` per provider using the registered enum values (`"kafka"`, `"rabbitmq"`, `"pulsar"`, `"servicebus"`, `"aws_sqs"`; NATS uses the unregistered `"nats"` value pending OTel registration; in-memory transports, the in-process queue, and the SQL transports omit `messaging.system` because OTel registers no enum value for them, and stamping a non-registered string would itself be a violation of the standard). The standardized `messaging.destination.name` carries the topic / subject / stream / queue resolved at publish time. **Why two layers of attributes:** standardized names (`messaging.operation.type`, `messaging.system`, `messaging.destination.name`) make vendor messaging dashboards (Honeycomb, Datadog, Grafana Tempo, Aspire) light up out of the box without per-app configuration; the `headless.messaging.*` attributes layer Headless-axis distinctions (Send vs Broadcast, broker-ack vs outbox-commit, tenant) on top so custom dashboards can pivot on them without colliding with future OTel registry updates. `messaging.operation.type` enum is intentionally narrow (`send` / `receive` / `process` / `settle` / `create` / `deliver`) and does not distinguish unicast Send from multicast Broadcast — that distinction lives in `headless.messaging.delivery_kind`.
 - Multiple enrichers compose; resolved `IEnumerable<IActivityTagEnricher>` preserves registration order.
 - Default enricher always runs first via **explicit options-driven ordering**, not `services.Insert(0, ...)`. `OpenTelemetryMessagingOptions.EnricherOrder` (a `List<Type>`) defaults to `[typeof(DefaultActivityTagEnricher)]`. The publish/consume wrappers resolve `IEnumerable<IActivityTagEnricher>` from DI and sort by `EnricherOrder` index (unordered types run after ordered ones, in registration order). This matches OTel SDK conventions (ordered processors via options), survives arbitrary DI registration order, and avoids the fragility of descriptor-list position, which breaks when `TryAddEnumerable` or later `services.Insert` calls re-shuffle the list.
 
@@ -485,11 +567,14 @@ Unit 2 introduces the envelope contract (property + header + shared pipeline). P
 - `IConsumerLifecycle` multi-registration pattern already present in abstractions.
 
 **Test scenarios:**
-- Happy path: Default enricher adds `messaging.headless.tenant_id` when `TenantId` is set.
+- Happy path: Default enricher adds `headless.messaging.tenant_id` when `TenantId` is set.
 - Happy path: Default enricher skips the tag when `TenantId` is null (no empty-string tag).
 - Happy path: User-supplied enricher runs after default and can add additional tags.
+- Happy path: A `IDirectSendPublisher.SendAsync<T>` publish span carries `headless.messaging.completion = "broker_ack"` and the OTel-standardized `messaging.operation.type = "send"`.
+- Happy path: A `IOutboxSendPublisher.SendAsync<T>` publish span carries `headless.messaging.completion = "outbox_commit"` and `messaging.operation.type = "create"`; the redispatched span emitted by `OutboxDrainer<TTransport>` carries `headless.messaging.completion = "broker_ack"` and `messaging.operation.type = "send"`, and shares the parent trace via the persisted W3C trace-context headers in the envelope.
+- Happy path: Provider with a registered `messaging.system` enum value (NATS, Kafka, RabbitMQ, ASB, SQS, Pulsar) emits `messaging.system` on every span; in-memory / in-process / SQL transports omit `messaging.system` (no fabricated value).
 - Edge case: Enricher throws → span is still emitted, enricher exception is logged but not propagated.
-- Integration: A publish→consume round-trip produces two connected spans both carrying `messaging.headless.tenant_id`.
+- Integration: A publish→consume round-trip produces two connected spans both carrying `headless.messaging.tenant_id`, with the publish span carrying `messaging.operation.type = "send"` and the consume span carrying `messaging.operation.type = "process"`.
 
 **Verification:**
 - OpenTelemetry test harness confirms tag presence and order.
@@ -673,16 +758,19 @@ Unit 2 introduces the envelope contract (property + header + shared pipeline). P
 
 ## Phase 2 — Publish/Consume Behavior Pipeline
 
-**Goal:** Introduce `IPublishBehavior<T>` and `IConsumeBehavior<T>` as the single pipeline-extension seam across Headless.Messaging. Re-express the OpenTelemetry span wrappers and the outbox dispatcher internally as behaviors so the pipeline eats its own dog food.
+**Goal:** Introduce `IPublishBehavior<T>` and `IConsumeBehavior<T>` as the single pipeline-extension seam for **message-axis cross-cutting concerns** (`<T>` is the message type). Re-express the OpenTelemetry span wrappers internally as behaviors so the pipeline eats its own dog food on the concerns that genuinely belong on the message axis. **Outbox does not port to a behavior** — it remains the `OutboxPublisherDecorator<TTransport>` shipped in Phase 1 / Unit 1b. Rationale: outbox is on the **transport axis** (`<TTransport>`), is stateful (owns `IOutboxStore` lifecycle and the drainer), and owns publisher resolution per transport — none of which fits the message-typed, stateless, single-call wrapper shape that `IPublishBehavior<T>` defines. Forcing outbox into a behavior would re-introduce keyed-DI resolution inside a per-message generic and split its identity across multiple registrations. The behavior pipeline composes **around** the outbox decorator at runtime: `BehaviorChain → OutboxPublisherDecorator<T> → IDirectSendPublisher<T>` on persist; the drainer's redispatch path runs the behavior chain again around `IDirectSendPublisher<T>` (so the redispatched envelope still gets OTel spans, tenant-propagation defaults, etc.).
 
 **Depends on:** Phase 1.
 
 **Units outline:**
 - Define `IPublishBehavior<T>` and `IConsumeBehavior<T>` in `Headless.Messaging.Abstractions` with ordered DI registration semantics (`services.AddPublishBehavior<T>()`, explicit order parameter).
 - Refactor the shared publisher/consumer base in `Headless.Messaging.Core` to execute behaviors as an onion around the transport call.
-- Port existing OpenTelemetry span + outbox wrappers to the new seam; verify no parity regression via existing tests.
+- Port the existing OpenTelemetry span wrapper to the new seam; verify no parity regression via existing tests.
+- Verify (with an integration test) that publishes through `IOutboxSendPublisher` flow as `BehaviorChain → OutboxPublisherDecorator<T> → IDirectSendPublisher<T>` on the persist hop, and that the drainer's redispatch flows as `BehaviorChain → IDirectSendPublisher<T>` (so OTel/tenant-propagation behaviors run on both hops, the persist span and the redispatch span are linked via the persisted W3C trace-context headers, and the outbox decorator is **not** registered as a behavior).
 
-**Key decisions (carried forward):** Ordering is explicit and deterministic — not reflection-based. Behaviors are per-type (`<T>`) with an `object` fallback; closed-generic resolution precedence mirrors `IConsume<T>`.
+**Key decisions (carried forward):**
+- Ordering is explicit and deterministic — not reflection-based. Behaviors are per-type (`<T>`) with an `object` fallback; closed-generic resolution precedence mirrors `IConsume<T>`.
+- **P1⇄P2 transition contract for the outbox decorator (binding):** `OutboxPublisherDecorator<TTransport>`, `OutboxDrainer<TTransport>`, `IOutboxStore`, and `services.AddOutbox<TTransport>()` ship in Phase 1 / Unit 1b and survive into Phase 2 unchanged in class signature, DI registration, keying, and runtime semantics. Phase 2 does not rewrite outbox as a behavior, does not register the decorator as a behavior, and does not move tenancy stamping or composite-`(TenantId, MessageId)` dedup out of the decorator. Provider packages that landed in Units 3a/3b continue to register only the Direct interfaces. Any future "behavior-shaped" outbox proposal is out of scope for Phase 2 and would require its own RFC.
 
 ---
 
@@ -690,12 +778,12 @@ Unit 2 introduces the envelope contract (property + header + shared pipeline). P
 
 **Goal:** When the caller does not set `PublishOptions.TenantId`, a standard publish behavior reads `ICurrentTenant` (from `Headless.Abstractions`, wired via `Headless.Api.MultiTenancySetup.AddHeadlessMultiTenancy`) and populates it automatically. Explicit caller value always wins.
 
-**Note:** Multi-tenancy lives in the existing `Headless.Abstractions` + `Headless.Api` packages — there is no separate `Headless.MultiTenancy` package. The tenant-propagation behavior references `ICurrentTenant` directly; consumer apps that never call `AddHeadlessMultiTenancy` see a null-returning accessor and the behavior leaves `TenantId` as `null`.
+**Note:** Multi-tenancy lives inside the existing `Headless.Core` package (under the `Headless.Abstractions` namespace) — there is no separate `Headless.MultiTenancy` package. The tenant-propagation behavior references `ICurrentTenant` directly; consumer apps that never call `AddHeadlessMultiTenancy` see a null-returning accessor and the behavior leaves `TenantId` as `null`.
 
 **Depends on:** Phase 1 (envelope field), Phase 2 (behavior pipeline).
 
 **Units outline:**
-- Add `TenantPropagationPublishBehavior` in `Headless.Messaging.Core`, referencing `Headless.Abstractions.ICurrentTenant` directly (no separate multi-tenancy package — `Headless.Abstractions` is already a transitive dependency of `Headless.Messaging.Abstractions`).
+- Add `TenantPropagationPublishBehavior` in `Headless.Messaging.Core`, referencing `Headless.Abstractions.ICurrentTenant` directly. `Headless.Messaging.Abstractions` currently has zero `ProjectReference` entries, so adding the `Headless.Core` reference is a Phase 3 prerequisite (called out here because Phase 1 / Unit 2 deliberately keeps `Headless.Messaging.Abstractions` reference-free; the dependency is added in Phase 3 alongside the behavior, not retroactively in Phase 1).
 - DI extension `services.AddHeadlessMessagingTenantPropagation()` registers the behavior at a well-defined order slot.
 - Unit + integration tests: explicit `TenantId` wins; missing tenant context with no caller value → `TenantId` stays `null`; behavior survives scope-captured publishers (e.g., background jobs without an ambient tenant).
 
