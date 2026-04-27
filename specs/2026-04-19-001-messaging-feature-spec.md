@@ -9,7 +9,15 @@ date: 2026-04-19
 
 ## Overview
 
-Define the target feature shape of `Headless.Messaging` across `Headless.Messaging.Abstractions`, all 11 transport providers, and the satellite packages (`Headless.Messaging.Core`, `Headless.Messaging.OpenTelemetry`, `Headless.Messaging.Testing`, `Headless.Messaging.Dashboard`). The epic is structured as a sequence of **small, independently shippable phases**. Phase 1 lands the load-bearing changes (Send/Broadcast split, first-class tenancy, uniform retry, OpenTelemetry enricher, NATS ergonomics, abstracted DLQ observer) and anchors every later phase. Subsequent phases each add one focused capability on top of the Phase 1 surface. Greenfield posture: breaking changes are acceptable.
+Define the target feature shape of `Headless.Messaging` across `Headless.Messaging.Abstractions`, all 11 transport providers, and the satellite packages (`Headless.Messaging.Core`, `Headless.Messaging.OpenTelemetry`, `Headless.Messaging.Testing`, `Headless.Messaging.Dashboard`). The epic is structured as a sequence of **small, independently shippable phases**. Phase 1 lands the foundational envelope and observability primitives (first-class tenancy, uniform retry, OpenTelemetry enricher, capability matrix); the Send/Broadcast split, transactional outbox, and NATS ergonomics ship in subsequent phases on top of that foundation. Greenfield posture: breaking changes are acceptable.
+
+> **Amendment — 2026-04-27 (Phase 1 rescope).** During plan-document review, Phase 1 was narrowed to reduce blast radius and ship the load-bearing envelope/observability primitives first. The new phasing is:
+>
+> - **Phase 1 (ships now):** U2 (envelope: `TenantId` + `DeliveryKind`) + U4 (`IRetryBackoffStrategy`) + U5 (`IActivityTagEnricher`) + U6 (capability matrix doc).
+> - **Phase 2 (deferred from original Phase 1):** U1 (publisher-interface rename `IDirectSendPublisher` / `IOutboxSendPublisher` / `IDirectBroadcastPublisher` / `IOutboxBroadcastPublisher`) + U1b (transport-agnostic `OutboxPublisherDecorator<TTransport>` + `IOutboxStore`) + U3a / U3b / U3c (provider migration to the new publisher shape).
+> - **NATS-ergonomics phase (post-Phase 2):** U7 (`StreamAutoCreationMode` with hardened production gate) + U8 (`IDeadLetterObserver` + opt-in `DeadLetterEventScrubOptions`) + U9 (declarative stream routing).
+>
+> The authoritative phasing source is the **Sequencing Summary** in [`docs/plans/2026-04-26-001-feat-messaging-phase1-plan.md`](../docs/plans/2026-04-26-001-feat-messaging-phase1-plan.md). Unit-level descriptions in this spec retain their original numbering (U1, U1b, U3a, etc.) for cross-reference; their phase assignment is governed by the plan, not by the position they occupy in this document.
 
 ## Problem Frame
 
@@ -28,7 +36,9 @@ The epic is decomposed into the smallest phases that each deliver a coherent, sh
 
 | Phase | Title | Focus | Depends on | Unit count |
 |---|---|---|---|---|
-| 1 | Send/Broadcast split + tenancy + observability foundations | Intent-explicit publishers, first-class TenantId, uniform retry, OTel enricher, NATS ergonomics, abstracted DLQ observer | — | 12 (1, 1b, 2, 3a, 3b, 3c, 4, 5, 6, 7, 8, 9) |
+| 1 | Envelope + observability foundations | First-class `TenantId` + `DeliveryKind`, uniform retry strategy, OTel tag enricher, capability matrix | — | 4 (2, 4, 5, 6) — see 2026-04-27 amendment above |
+| 1.5 | Send/Broadcast split + transactional outbox | Intent-explicit publisher rename + transport-agnostic outbox decorator + per-provider migration | 1 | 5 (1, 1b, 3a, 3b, 3c) — deferred from original Phase 1 |
+| 1.6 | NATS ergonomics + DLQ observer | `StreamAutoCreationMode` (production-gated), `IDeadLetterObserver` + opt-in scrubber, declarative stream routing | 1.5 | 3 (7, 8, 9) — deferred from original Phase 1 |
 | 2 | Publish/Consume behavior pipeline | `IPublishBehavior<T>` + `IConsumeBehavior<T>` with ordered DI registration; outbox and OTel wrappers re-express as behaviors | 1 | 1 |
 | 3 | Auto-`TenantId` propagation behavior | `TenantPropagationPublishBehavior` reads `ITenantContext` and sets `PublishOptions.TenantId` when not explicitly set | 1, 2 | 1 |
 | 4 | Polymorphic publish | On `BroadcastAsync<T>`, dispatch to consumers registered for any base type or interface of `T`; ambiguity surfaces at startup | 1 | 1 |
@@ -46,6 +56,7 @@ The epic is decomposed into the smallest phases that each deliver a coherent, sh
 - A later phase never modifies Phase 1 abstractions without an explicit amendment note in this document.
 - Phase dependencies are hard; a phase cannot start until its dependencies land in `main`.
 - Each phase gets its own per-phase plan file under `docs/plans/` when scheduled, generated from the sketch in this spec.
+- **Post-2026-04-27 amendment:** The "Depends on 1" entry in the rows below originally referenced the pre-amendment Phase 1 scope (which included U1, U1b, U3a/b/c, U7/8/9). After the rescope, phases that need the publisher-interface rename or outbox depend on Phase 1.5; phases that need NATS ergonomics depend on Phase 1.6. The plan-document Sequencing Summary is authoritative for unit-level dependencies; the table below is left unchanged to minimize diff scope.
 
 ## Requirements Trace
 
