@@ -141,6 +141,7 @@ internal sealed class ConsumeExecutionPipeline(
         var messageProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Message))!;
         var messageIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.MessageId))!;
         var correlationIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.CorrelationId))!;
+        var tenantIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.TenantId))!;
         var headersCtxProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Headers))!;
         var timestampProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Timestamp))!;
         var topicProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Topic))!;
@@ -183,6 +184,11 @@ internal sealed class ConsumeExecutionPipeline(
 
         var correlationIdBinding = Expression.Bind(correlationIdProperty, correlationIdExpression);
 
+        var tenantIdBinding = Expression.Bind(
+            tenantIdProperty,
+            Expression.Call(typeof(ConsumeExecutionPipeline), nameof(_ResolveTenantId), null, headersProperty)
+        );
+
         var headersBinding = Expression.Bind(headersCtxProperty, consumeHeadersParam);
 
         var timestampBinding = Expression.Bind(
@@ -210,6 +216,7 @@ internal sealed class ConsumeExecutionPipeline(
             messageBinding,
             messageIdBinding,
             correlationIdBinding,
+            tenantIdBinding,
             headersBinding,
             timestampBinding,
             topicBinding
@@ -222,6 +229,24 @@ internal sealed class ConsumeExecutionPipeline(
             consumeHeadersParam
         );
         return lambda.CompileFast();
+    }
+
+    // Lenient consume-side tenant resolution: missing, whitespace, or oversized header values map
+    // to null instead of failing the message. Mirrors the publish-side rules in
+    // MessagePublishRequestFactory._ApplyTenantId / _ValidateTenantId (see #228).
+    private static string? _ResolveTenantId(IDictionary<string, string?> headers)
+    {
+        if (!headers.TryGetValue(Headers.TenantId, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (value.Length > PublishOptions.TenantIdMaxLength)
+        {
+            return null;
+        }
+
+        return value;
     }
 
     private static DateTimeOffset _ResolveTimestamp(IDictionary<string, string?> headers, DateTime added)
