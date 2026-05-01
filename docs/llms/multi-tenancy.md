@@ -126,16 +126,18 @@ foreach (var tenantId in tenantIds)
 
 ### Message Consumers
 
-If your transport carries tenant information in headers, extract it in the consumer and establish scope manually:
+If your transport carries tenant information on the envelope, read the typed `ConsumeContext.TenantId` and establish scope manually:
 
 ```csharp
-var tenantId = context.Headers["TenantId"];
+var tenantId = context.TenantId;
 
 using (currentTenant.Change(tenantId))
 {
     await handler.HandleAsync(message, cancellationToken);
 }
 ```
+
+The `TenantId` envelope property is populated automatically from the canonical `headless-tenant-id` wire header (see `Headers.TenantId`). On the publish side, set `PublishOptions.TenantId` rather than writing the header directly — the publish pipeline rejects raw header writes via `InvalidOperationException`.
 
 Automatic tenant propagation in consumer pipelines is intentionally out of scope.
 
