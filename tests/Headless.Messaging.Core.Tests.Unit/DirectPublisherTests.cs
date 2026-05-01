@@ -278,6 +278,196 @@ public sealed class DirectPublisherTests : TestBase
     }
 
     [Fact]
+    public async Task should_stamp_tenant_id_header_when_typed_property_is_set_and_raw_header_is_absent()
+    {
+        // given (case a: typed-only)
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var publishOptions = new PublishOptions { TenantId = "acme" };
+
+        // when
+        await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].Headers[Headers.TenantId].Should().Be("acme");
+    }
+
+    [Fact]
+    public async Task should_emit_tenant_id_header_when_typed_property_and_raw_header_agree()
+    {
+        // given (case c: both set, equal)
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var publishOptions = new PublishOptions
+        {
+            TenantId = "acme",
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "acme" },
+        };
+
+        // when
+        await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].Headers[Headers.TenantId].Should().Be("acme");
+    }
+
+    [Fact]
+    public async Task should_reject_publish_when_raw_tenant_id_header_is_set_without_typed_property()
+    {
+        // given (case b: raw-only — the typed property must be the source of truth)
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var publishOptions = new PublishOptions
+        {
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "evil" },
+        };
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*'{Headers.TenantId}' is reserved*{nameof(PublishOptions.TenantId)}*");
+        testTransport.SentMessages.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_reject_publish_when_typed_property_and_raw_header_disagree()
+    {
+        // given (case d: both set, disagree)
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var publishOptions = new PublishOptions
+        {
+            TenantId = "acme",
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "acme-evil" },
+        };
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*'acme'*'acme-evil'*");
+        testTransport.SentMessages.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_omit_tenant_id_header_when_typed_property_is_null()
+    {
+        // given (case: neither set)
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+
+        // when
+        await publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
+
+        // then
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].Headers.Should().NotContainKey(Headers.TenantId);
+    }
+
+    [Fact]
+    public async Task should_treat_whitespace_raw_tenant_id_header_as_unset()
+    {
+        // given: whitespace raw header with no typed property — symmetric with consume-side leniency
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var publishOptions = new PublishOptions
+        {
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.TenantId] = "   " },
+        };
+
+        // when
+        await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].Headers.Should().NotContainKey(Headers.TenantId);
+    }
+
+    [Fact]
+    public async Task should_reject_whitespace_typed_tenant_id()
+    {
+        // given: whitespace typed value — must throw because TenantId has no auto-generated default
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var publishOptions = new PublishOptions { TenantId = "   " };
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("tenantId");
+        testTransport.SentMessages.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_reject_oversized_typed_tenant_id()
+    {
+        // given
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var publishOptions = new PublishOptions { TenantId = new string('t', PublishOptions.TenantIdMaxLength + 1) };
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<ArgumentOutOfRangeException>()
+            .WithParameterName("tenantId")
+            .WithMessage($"*{PublishOptions.TenantIdMaxLength} characters or fewer*");
+        testTransport.SentMessages.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_allow_maximum_supported_tenant_id_length()
+    {
+        // given
+        var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+
+        var publisher = _CreateDirectPublisher(testTransport, options);
+        var maxTenantId = new string('t', PublishOptions.TenantIdMaxLength);
+        var publishOptions = new PublishOptions { TenantId = maxTenantId };
+
+        // when
+        await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].Headers[Headers.TenantId].Should().Be(maxTenantId);
+    }
+
+    [Fact]
     public async Task should_serialize_message_content()
     {
         // given

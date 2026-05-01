@@ -76,6 +76,7 @@ internal sealed class MessagePublishRequestFactory(
                 : new Dictionary<string, string?>(StringComparer.Ordinal);
 
         _ValidateCustomHeaders(headers);
+        _ApplyTenantId(headers, options);
 
         var messageId = string.IsNullOrWhiteSpace(options?.MessageId)
             ? _idGenerator.Create().ToString(CultureInfo.InvariantCulture)
@@ -114,6 +115,59 @@ internal sealed class MessagePublishRequestFactory(
         );
 
         return messageId;
+    }
+
+    // Strict 4-case publish-time tenant integrity policy. PublishOptions.TenantId is the source of
+    // truth; writing the wire header directly is reserved for transport-internal use. Whitespace
+    // raw headers are treated as unset to mirror the lenient consume-side mapping in
+    // ConsumeExecutionPipeline._ResolveTenantId (see #228).
+    private static void _ApplyTenantId(Dictionary<string, string?> headers, PublishOptions? options)
+    {
+        var typed = options?.TenantId;
+        var rawPresent = headers.TryGetValue(Headers.TenantId, out var raw);
+        var rawSet = rawPresent && !string.IsNullOrWhiteSpace(raw);
+
+        if (typed is null)
+        {
+            if (rawSet)
+            {
+                throw new InvalidOperationException(
+                    $"Header '{Headers.TenantId}' is reserved. "
+                        + $"Use {nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)} to set the tenant identifier."
+                );
+            }
+
+            // Strip any whitespace-only key so transports do not see it.
+            if (rawPresent)
+            {
+                headers.Remove(Headers.TenantId);
+            }
+
+            return;
+        }
+
+        _ValidateTenantId(typed);
+
+        if (rawSet && !string.Equals(raw, typed, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"PublishOptions.TenantId='{typed}' disagrees with header '{Headers.TenantId}'='{raw}'. "
+                    + "Set the typed property only."
+            );
+        }
+
+        headers[Headers.TenantId] = typed;
+    }
+
+    private static void _ValidateTenantId(string tenantId)
+    {
+        Argument.IsNotNullOrWhiteSpace(tenantId, paramName: nameof(tenantId));
+        Argument.IsLessThanOrEqualTo(
+            tenantId.Length,
+            PublishOptions.TenantIdMaxLength,
+            $"PublishOptions.TenantId must be {PublishOptions.TenantIdMaxLength} characters or fewer before durable storage.",
+            paramName: nameof(tenantId)
+        );
     }
 
     private void _ValidateCustomHeaders(IReadOnlyDictionary<string, string?> headers)
