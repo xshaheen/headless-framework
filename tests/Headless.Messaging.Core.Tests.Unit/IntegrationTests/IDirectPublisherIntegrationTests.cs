@@ -252,6 +252,82 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
     }
 
     [Fact]
+    public async Task should_round_trip_tenant_id_when_set_via_publish_options()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging(x => x.AddProvider(LoggerProvider));
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.DefaultGroupName = "test-group";
+            messaging.Version = "v1";
+            messaging.WithTopicMapping<DirectTestMessage>("tenant-test-topic");
+            messaging.Subscribe<DirectTestConsumerWithHeaders>().Topic("tenant-test-topic");
+            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemoryStorage();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        await using var scope = provider.CreateAsyncScope();
+        var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
+
+        // when
+        await directPublisher.PublishAsync(
+            new DirectTestMessage("tenant-set-value"),
+            new PublishOptions { TenantId = "acme" },
+            AbortToken
+        );
+
+        var received = await DirectTestConsumerWithHeaders.WaitForContextAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        received.Should().BeTrue("Message should be delivered");
+        DirectTestConsumerWithHeaders.ReceivedContexts.Should().HaveCount(1);
+
+        var ctx = DirectTestConsumerWithHeaders.ReceivedContexts.First();
+        ctx.TenantId.Should().Be("acme");
+        ctx.Headers[Headers.TenantId].Should().Be("acme");
+    }
+
+    [Fact]
+    public async Task should_observe_null_tenant_id_when_publish_options_tenant_id_is_unset()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging(x => x.AddProvider(LoggerProvider));
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.DefaultGroupName = "test-group";
+            messaging.Version = "v1";
+            messaging.WithTopicMapping<DirectTestMessage>("tenant-unset-topic");
+            messaging.Subscribe<DirectTestConsumerWithHeaders>().Topic("tenant-unset-topic");
+            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemoryStorage();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+
+        await using var scope = provider.CreateAsyncScope();
+        var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
+
+        // when
+        await directPublisher.PublishAsync(new DirectTestMessage("no-tenant-value"), cancellationToken: AbortToken);
+
+        var received = await DirectTestConsumerWithHeaders.WaitForContextAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        received.Should().BeTrue("Message should be delivered");
+        DirectTestConsumerWithHeaders.ReceivedContexts.Should().HaveCount(1);
+
+        var ctx = DirectTestConsumerWithHeaders.ReceivedContexts.First();
+        ctx.TenantId.Should().BeNull();
+        ctx.Headers.Should().NotContainKey(Headers.TenantId);
+    }
+
+    [Fact]
     public async Task should_send_multiple_messages_in_sequence()
     {
         // given
