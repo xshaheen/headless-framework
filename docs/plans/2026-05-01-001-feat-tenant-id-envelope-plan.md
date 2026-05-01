@@ -1,7 +1,7 @@
 ---
 title: "feat: TenantId first-class envelope property"
 type: feat
-status: active
+status: completed
 date: 2026-05-01
 origin: docs/brainstorms/2026-05-01-tenant-id-envelope-requirements.md
 issue: https://github.com/xshaheen/headless-framework/issues/228
