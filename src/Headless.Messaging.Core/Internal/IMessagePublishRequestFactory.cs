@@ -131,10 +131,14 @@ internal sealed class MessagePublishRequestFactory(
         {
             if (rawSet)
             {
-                throw new InvalidOperationException(
+                var safeRawForReservedMessage = LogSanitizer.Sanitize(raw, PublishOptions.TenantIdMaxLength);
+                var ex = new InvalidOperationException(
                     $"Header '{Headers.TenantId}' is reserved. "
                         + $"Use {nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)} to set the tenant identifier."
                 );
+                ex.Data["Headless.Messaging.FailureCode"] = "ReservedTenantHeader";
+                ex.Data["Headers.TenantId.Raw"] = safeRawForReservedMessage;
+                throw ex;
             }
 
             // Strip any whitespace-only key so transports do not see it.
@@ -150,10 +154,18 @@ internal sealed class MessagePublishRequestFactory(
 
         if (rawSet && !string.Equals(raw, typed, StringComparison.Ordinal))
         {
-            throw new InvalidOperationException(
-                $"PublishOptions.TenantId='{typed}' disagrees with header '{Headers.TenantId}'='{raw}'. "
+            // Sanitize wire-side raw value before interpolating into the exception message.
+            // R4 delegates charset validation to consumers, so a malicious caller could otherwise
+            // smuggle CR/LF/control chars into Exception.Message and downstream log sinks.
+            var safeRaw = LogSanitizer.Sanitize(raw, PublishOptions.TenantIdMaxLength);
+            var ex = new InvalidOperationException(
+                $"PublishOptions.TenantId='{typed}' disagrees with header '{Headers.TenantId}'='{safeRaw}'. "
                     + "Set the typed property only."
             );
+            ex.Data["Headless.Messaging.FailureCode"] = "TenantIdMismatch";
+            ex.Data[$"{nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)}"] = typed;
+            ex.Data["Headers.TenantId.Raw"] = safeRaw;
+            throw ex;
         }
 
         headers[Headers.TenantId] = typed;

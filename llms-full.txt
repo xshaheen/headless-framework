@@ -2908,7 +2908,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
 - **Topic mapping**: Map message types to topics via `options.WithTopicMapping<TMessage>("topic.name")` or conventions.
-- **Multi-tenancy**: Set `PublishOptions.TenantId` for typed envelope tenancy. Read `ConsumeContext.TenantId` on consume. Do NOT write `Headers["headless-tenant-id"]` directly — the publish pipeline rejects raw header writes via `InvalidOperationException` (typed property is the source of truth).
+- **Multi-tenancy**: Set `PublishOptions.TenantId` for typed envelope tenancy. Read `ConsumeContext.TenantId` on consume. The publish pipeline enforces a 4-case integrity policy: raw-only writes to `Headers["headless-tenant-id"]` and writes that disagree with the typed property are rejected with `InvalidOperationException`; a raw write that matches the typed property is accepted. Consume-side values are untrusted wire data — validate before use in URLs/SQL/logs.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 

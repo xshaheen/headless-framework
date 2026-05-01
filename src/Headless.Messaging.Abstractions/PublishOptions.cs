@@ -58,13 +58,15 @@ public sealed class PublishOptions
     /// <para>
     /// When set, the publish pipeline stamps the value into the <see cref="Headers.TenantId"/> wire header.
     /// When <see langword="null"/>, no header is written and consumers observe a <see langword="null"/>
-    /// <see cref="ConsumeContext{TMessage}"/>.TenantId.
+    /// <see cref="ConsumeContext{TMessage}.TenantId"/>.
     /// </para>
     /// <para>
-    /// The publish pipeline enforces a strict integrity policy: writing to <see cref="Headers.TenantId"/>
-    /// directly via <see cref="Headers"/> without setting this typed property is rejected with
-    /// <see cref="InvalidOperationException"/>. If both this property and the raw header are set, the values
-    /// must agree or the publish is rejected.
+    /// The publish pipeline enforces a strict 4-case integrity policy. A raw write to
+    /// <see cref="Headers.TenantId"/> through <see cref="Headers"/> without setting this typed property
+    /// is rejected with <see cref="InvalidOperationException"/>. If the typed property and a matching
+    /// raw header are both set, the publish is accepted as a no-op reconciliation; if they disagree,
+    /// the publish is rejected. Inspect <see cref="System.Exception.Data"/> for the
+    /// <c>Headless.Messaging.FailureCode</c> entry to distinguish failure modes programmatically.
     /// </para>
     /// <para>
     /// Values longer than <see cref="TenantIdMaxLength"/> or whitespace-only values are rejected at publish time.

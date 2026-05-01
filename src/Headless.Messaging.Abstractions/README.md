@@ -101,7 +101,7 @@ Runtime delegates use the same scoped consume pipeline as `IConsume<T>` handlers
 
 `PublishOptions.MessageId` is a logical transport-level identifier. Durable outbox providers keep their own numeric storage ID for retries, monitoring, requeue, and delete operations. When a message is published durably, `MessageId` is capped at `PublishOptions.MessageIdMaxLength` characters.
 
-`PublishOptions.TenantId` is the typed surface for multi-tenancy on the envelope. Set it instead of writing to `Headers["headless-tenant-id"]` directly — the publish pipeline rejects raw header writes via `InvalidOperationException`. The corresponding `ConsumeContext.TenantId` is populated from the wire header (`Headers.TenantId`) and is `null` when absent, empty, whitespace, or longer than `PublishOptions.TenantIdMaxLength` (lenient consume-side handling).
+`PublishOptions.TenantId` is the typed surface for multi-tenancy on the envelope. Use it instead of writing the wire header directly. The publish pipeline enforces a strict 4-case integrity policy: a raw write to `Headers["headless-tenant-id"]` without a typed property is rejected with `InvalidOperationException`; a raw write that disagrees with the typed property is also rejected; a raw write that matches the typed property is accepted (no-op reconciliation). The corresponding `ConsumeContext.TenantId` is populated from the wire header (`Headers.TenantId`) and is `null` when absent, empty, whitespace, or longer than `PublishOptions.TenantIdMaxLength` (lenient consume-side handling). Consume-side values are untrusted wire data — validate the charset before downstream use in URLs, SQL, or log lines.
 
 ```csharp
 public sealed class ProjectionWarmup(IRuntimeSubscriber subscriber)
