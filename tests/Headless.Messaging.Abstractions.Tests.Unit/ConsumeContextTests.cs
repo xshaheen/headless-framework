@@ -172,6 +172,117 @@ public sealed class ConsumeContextTests : TestBase
     }
 
     [Fact]
+    public void should_default_tenantId_to_null_when_not_set()
+    {
+        // given
+        var message = new TestMessage("order-123", 99.99m);
+
+        // when
+        var context = new ConsumeContext<TestMessage>
+        {
+            Message = message,
+            MessageId = Faker.Random.Guid().ToString(),
+            CorrelationId = null,
+            Timestamp = DateTimeOffset.UtcNow,
+            Topic = "test.topic",
+            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+        };
+
+        // then
+        context.TenantId.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_expose_tenantId_when_set()
+    {
+        // given
+        const string tenantId = "acme";
+
+        // when
+        var context = new ConsumeContext<TestMessage>
+        {
+            Message = new TestMessage("order-123", 99.99m),
+            MessageId = Faker.Random.Guid().ToString(),
+            CorrelationId = null,
+            Timestamp = DateTimeOffset.UtcNow,
+            Topic = "test.topic",
+            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+            TenantId = tenantId,
+        };
+
+        // then
+        context.TenantId.Should().Be(tenantId);
+    }
+
+    [Fact]
+    public void should_allow_null_tenantId()
+    {
+        // given
+        var message = new TestMessage("order-123", 99.99m);
+
+        // when
+        var context = new ConsumeContext<TestMessage>
+        {
+            Message = message,
+            MessageId = Faker.Random.Guid().ToString(),
+            CorrelationId = null,
+            Timestamp = DateTimeOffset.UtcNow,
+            Topic = "test.topic",
+            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+            TenantId = null,
+        };
+
+        // then
+        context.TenantId.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_throw_when_tenantId_is_empty_string()
+    {
+        // given
+        var message = new TestMessage("order-123", 99.99m);
+
+        // when
+        var act = () =>
+            new ConsumeContext<TestMessage>
+            {
+                Message = message,
+                MessageId = Faker.Random.Guid().ToString(),
+                CorrelationId = null,
+                Timestamp = DateTimeOffset.UtcNow,
+                Topic = "test.topic",
+                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+                TenantId = "",
+            };
+
+        // then
+        act.Should().Throw<ArgumentException>().WithMessage("*TenantId cannot be an empty or whitespace string*");
+    }
+
+    [Fact]
+    public void should_throw_when_tenantId_is_whitespace()
+    {
+        // given
+        var message = new TestMessage("order-123", 99.99m);
+
+        // when
+        var act = () =>
+            new ConsumeContext<TestMessage>
+            {
+                Message = message,
+                MessageId = Faker.Random.Guid().ToString(),
+                CorrelationId = null,
+                Timestamp = DateTimeOffset.UtcNow,
+                Topic = "test.topic",
+                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+                TenantId = "   ",
+            };
+
+        // then
+        act.Should().Throw<ArgumentException>().WithMessage("*TenantId cannot be an empty or whitespace string*");
+    }
+
+    [Fact]
     public void should_expose_message_payload()
     {
         // given

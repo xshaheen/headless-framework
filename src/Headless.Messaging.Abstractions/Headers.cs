@@ -59,6 +59,14 @@ public static class Headers
     public const string CallbackName = "headless-callback-name";
 
     /// <summary>
+    /// Multi-tenancy identifier for the message, populated from <see cref="PublishOptions"/>.TenantId at publish time
+    /// and exposed on <see cref="ConsumeContext{TMessage}"/>.TenantId at consume time.
+    /// The publish pipeline rejects writes to this key via raw headers (use the typed property instead).
+    /// Value: "headless-tenant-id"
+    /// </summary>
+    public const string TenantId = "headless-tenant-id";
+
+    /// <summary>
     /// Identifier of the application instance that executed or is executing the message.
     /// Useful in distributed systems to track which instance processed a message.
     /// Value: "headless-exec-instance-id"
