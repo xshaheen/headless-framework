@@ -76,6 +76,7 @@ internal sealed class MessagePublishRequestFactory(
                 : new Dictionary<string, string?>(StringComparer.Ordinal);
 
         _ValidateCustomHeaders(headers);
+        _ApplyTenantId(headers, options);
 
         var messageId = string.IsNullOrWhiteSpace(options?.MessageId)
             ? _idGenerator.Create().ToString(CultureInfo.InvariantCulture)
@@ -114,6 +115,71 @@ internal sealed class MessagePublishRequestFactory(
         );
 
         return messageId;
+    }
+
+    // Strict 4-case publish-time tenant integrity policy. PublishOptions.TenantId is the source of
+    // truth; writing the wire header directly is reserved for transport-internal use. Whitespace
+    // raw headers are treated as unset to mirror the lenient consume-side mapping in
+    // ConsumeExecutionPipeline._ResolveTenantId (see #228).
+    private static void _ApplyTenantId(Dictionary<string, string?> headers, PublishOptions? options)
+    {
+        var typed = options?.TenantId;
+        var rawPresent = headers.TryGetValue(Headers.TenantId, out var raw);
+        var rawSet = rawPresent && !string.IsNullOrWhiteSpace(raw);
+
+        if (typed is null)
+        {
+            if (rawSet)
+            {
+                var safeRawForReservedMessage = LogSanitizer.Sanitize(raw, PublishOptions.TenantIdMaxLength);
+                var ex = new InvalidOperationException(
+                    $"Header '{Headers.TenantId}' is reserved. "
+                        + $"Use {nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)} to set the tenant identifier."
+                );
+                ex.Data["Headless.Messaging.FailureCode"] = "ReservedTenantHeader";
+                ex.Data["Headers.TenantId.Raw"] = safeRawForReservedMessage;
+                throw ex;
+            }
+
+            // Strip any whitespace-only key so transports do not see it.
+            if (rawPresent)
+            {
+                headers.Remove(Headers.TenantId);
+            }
+
+            return;
+        }
+
+        _ValidateTenantId(typed);
+
+        if (rawSet && !string.Equals(raw, typed, StringComparison.Ordinal))
+        {
+            // Sanitize wire-side raw value before interpolating into the exception message.
+            // R4 delegates charset validation to consumers, so a malicious caller could otherwise
+            // smuggle CR/LF/control chars into Exception.Message and downstream log sinks.
+            var safeRaw = LogSanitizer.Sanitize(raw, PublishOptions.TenantIdMaxLength);
+            var ex = new InvalidOperationException(
+                $"PublishOptions.TenantId='{typed}' disagrees with header '{Headers.TenantId}'='{safeRaw}'. "
+                    + "Set the typed property only."
+            );
+            ex.Data["Headless.Messaging.FailureCode"] = "TenantIdMismatch";
+            ex.Data[$"{nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)}"] = typed;
+            ex.Data["Headers.TenantId.Raw"] = safeRaw;
+            throw ex;
+        }
+
+        headers[Headers.TenantId] = typed;
+    }
+
+    private static void _ValidateTenantId(string tenantId)
+    {
+        Argument.IsNotNullOrWhiteSpace(tenantId, paramName: nameof(tenantId));
+        Argument.IsLessThanOrEqualTo(
+            tenantId.Length,
+            PublishOptions.TenantIdMaxLength,
+            $"PublishOptions.TenantId must be {PublishOptions.TenantIdMaxLength} characters or fewer before durable storage.",
+            paramName: nameof(tenantId)
+        );
     }
 
     private void _ValidateCustomHeaders(IReadOnlyDictionary<string, string?> headers)

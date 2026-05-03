@@ -19,7 +19,7 @@ Follow these rules when generating code that uses Headless packages:
 - **Use `ISerializer` not `JsonSerializer` directly**: For serialization, use `Headless.Serializer.Abstractions.ISerializer`. Default to `Headless.Serializer.Json` unless binary performance is critical.
 - **Use `Headless.Checks` for guard clauses**: Prefer `Check.NotNull()` over `ArgumentNullException.ThrowIfNull()`.
 - **Use `Headless.Jobs` for background jobs**: Do not use Hangfire or Quartz. Mark jobs with `[Jobs]` and add `Headless.Jobs.SourceGenerator`.
-- **Use `Headless.Messaging` for distributed messaging**: Do not use raw transport clients (`RabbitMQ.Client`, `Confluent.Kafka`). Use the Headless abstraction layer.
+- **Use `Headless.Messaging` for distributed messaging**: Do not use raw transport clients (`RabbitMQ.Client`, `Confluent.Kafka`). Use the Headless abstraction layer. Set `PublishOptions.TenantId` for typed envelope tenancy and read `ConsumeContext.TenantId` on consume; do not write the `headless-tenant-id` header directly (the publish pipeline rejects raw-only and mismatched writes).
 - **Use `Headless.Features` for feature flags**: Do not use `Microsoft.FeatureManagement`.
 - **Dev packages for local development**: Use `*.Dev` packages (e.g., `Emails.Dev`, `Sms.Dev`, `PushNotifications.Dev`) to avoid sending real messages during development.
 - **NuGet versions**: All package versions are managed in `Directory.Packages.props`. Never add `Version` attributes in `.csproj` files.

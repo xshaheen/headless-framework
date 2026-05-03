@@ -157,12 +157,14 @@ It should also preserve optional headers such as:
 
 - `Headers.CallbackName`
 - `Headers.DelayTime`
+- `Headers.TenantId` (multi-tenancy identifier; populated from `PublishOptions.TenantId`, exposed on `ConsumeContext.TenantId`)
 - `Headers.TraceParent`
 - custom application headers
 
 Additional rules:
 
 - `Headers.Group` is added on consume, not publish
+- `Headers.TenantId` is enforced by a strict 4-case integrity policy in the core publish pipeline; transports must round-trip the value verbatim and never originate, rewrite, or strip it
 - the body should be treated as raw bytes unless the broker API forces encoding/decoding
 - exception details, credentials, and other secrets must not be leaked through headers or `BrokerAddress`
 

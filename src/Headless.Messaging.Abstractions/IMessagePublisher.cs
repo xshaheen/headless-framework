@@ -15,5 +15,20 @@ public interface IMessagePublisher
     /// <param name="options">Optional publish overrides for topic, correlation, and custom headers.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task representing the publish operation.</returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <see cref="PublishOptions.TenantId"/> is set to an empty or whitespace value.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <see cref="PublishOptions.MessageId"/> exceeds <see cref="PublishOptions.MessageIdMaxLength"/>
+    /// or <see cref="PublishOptions.TenantId"/> exceeds <see cref="PublishOptions.TenantIdMaxLength"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <see cref="PublishOptions.Headers"/> contains a reserved messaging header
+    /// (use <see cref="PublishOptions"/> overrides instead), when a raw <see cref="Headers.TenantId"/>
+    /// header is supplied without setting <see cref="PublishOptions.TenantId"/>, or when both are
+    /// supplied with disagreeing values. The <c>Headless.Messaging.FailureCode</c> entry on
+    /// <see cref="System.Exception.Data"/> distinguishes <c>ReservedTenantHeader</c> from
+    /// <c>TenantIdMismatch</c> for programmatic callers.
+    /// </exception>
     Task PublishAsync<T>(T? contentObj, PublishOptions? options = null, CancellationToken cancellationToken = default);
 }
