@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 priority: p1
 issue_id: "008"
 tags: [testing, messaging, multi-tenancy]
@@ -33,6 +33,18 @@ Two related coverage gaps remain on `Headless.Messaging.Core.Internal.ConsumeExe
 
 ## Acceptance Criteria
 
-- [ ] Three new tests in `Headless.Messaging.Core.Tests.Unit` exercising `_ResolveTenantId` for happy path, oversized → null, and exact 200-char boundary.
-- [ ] Tests pass without modifying production-code visibility.
-- [ ] Total `Headless.Messaging.Core.Tests.Unit` count increases by 3.
+- [x] Three new tests in `Headless.Messaging.Core.Tests.Unit` exercising `_ResolveTenantId` for happy path, oversized → null, and exact 200-char boundary.
+- [x] Tests pass without modifying production-code visibility.
+- [x] Total `Headless.Messaging.Core.Tests.Unit` count increases by 3.
+
+## Resolution
+
+Resolved while addressing PR #239 review thread `PRRT_kwDOMVBhN85_EJNx` (copilot reviewer).
+
+Three tests landed in `tests/Headless.Messaging.Core.Tests.Unit/SubscribeInvokerTests.cs`:
+
+- `should_populate_tenant_id_from_inbound_header` — happy path; raw `Headers.TenantId = "tenant-123"` flows to `ConsumeContext<T>.TenantId`.
+- `should_handle_max_length_tenant_id_on_consume` — boundary; `new string('x', PublishOptions.TenantIdMaxLength)` (200 chars) is preserved verbatim.
+- `should_handle_oversized_tenant_id_leniently_on_consume` — R6 lenient consume; `new string('x', PublishOptions.TenantIdMaxLength + 1)` (201 chars) maps to `null` instead of throwing.
+
+The existing `_CreateMediumMessage` helper gained an optional `tenantId` parameter; tests exercise `_ResolveTenantId` end-to-end through `ISubscribeInvoker` (the public surface that drives `ConsumeExecutionPipeline._CompileFactory`). No `InternalsVisibleTo` change, no visibility downgrade on the resolver, no reflection. Test count for the class went from 9 to 12; full class run is green.
