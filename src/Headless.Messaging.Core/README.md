@@ -140,7 +140,7 @@ public sealed class MetricsPublisher(IDirectPublisher publisher)
         var options = new PublishOptions
         {
             CorrelationId = Guid.NewGuid().ToString(),
-            Headers = new Dictionary<string, string?> { ["tenant-id"] = "demo" },
+            TenantId = "demo",
         };
         await publisher.PublishAsync(metric, options, ct);
     }

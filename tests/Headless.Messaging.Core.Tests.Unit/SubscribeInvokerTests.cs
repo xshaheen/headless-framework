@@ -299,13 +299,106 @@ public sealed class SubscribeInvokerTests : TestBase
         InvokerTestConsumer.LastConsumed!.Timestamp.Should().Be(sentTime);
     }
 
+    [Fact]
+    public async Task should_populate_tenant_id_from_inbound_header()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+
+        var mediumMessage = _CreateMediumMessage(
+            new InvokerTestMessage("tenant-happy"),
+            "test.topic",
+            tenantId: "tenant-123"
+        );
+        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var context = new ConsumerContext(descriptor, mediumMessage);
+
+        // when
+        await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        InvokerTestConsumer.LastConsumed.Should().NotBeNull();
+        InvokerTestConsumer.LastConsumed!.TenantId.Should().Be("tenant-123");
+    }
+
+    [Fact]
+    public async Task should_handle_max_length_tenant_id_on_consume()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+
+        var maxLengthTenantId = new string('x', PublishOptions.TenantIdMaxLength);
+        var mediumMessage = _CreateMediumMessage(
+            new InvokerTestMessage("tenant-boundary"),
+            "test.topic",
+            tenantId: maxLengthTenantId
+        );
+        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var context = new ConsumerContext(descriptor, mediumMessage);
+
+        // when
+        await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        InvokerTestConsumer.LastConsumed.Should().NotBeNull();
+        InvokerTestConsumer.LastConsumed!.TenantId.Should().Be(maxLengthTenantId);
+    }
+
+    [Fact]
+    public async Task should_handle_oversized_tenant_id_leniently_on_consume()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+
+        var oversizedTenantId = new string('x', PublishOptions.TenantIdMaxLength + 1);
+        var mediumMessage = _CreateMediumMessage(
+            new InvokerTestMessage("tenant-oversized"),
+            "test.topic",
+            tenantId: oversizedTenantId
+        );
+        var descriptor = _CreateDescriptor<InvokerTestMessage>();
+        var context = new ConsumerContext(descriptor, mediumMessage);
+
+        // when
+        await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        InvokerTestConsumer.LastConsumed.Should().NotBeNull();
+        InvokerTestConsumer.LastConsumed!.TenantId.Should().BeNull();
+    }
+
     private static MediumMessage _CreateMediumMessage<T>(
         T message,
         string topicName,
         string? messageId = null,
         Guid? correlationId = null,
         string? callbackName = null,
-        DateTimeOffset? sentTime = null
+        DateTimeOffset? sentTime = null,
+        string? tenantId = null
     )
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -327,6 +420,11 @@ public sealed class SubscribeInvokerTests : TestBase
         if (sentTime.HasValue)
         {
             headers[Headers.SentTime] = sentTime.Value.UtcDateTime.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (tenantId is not null)
+        {
+            headers[Headers.TenantId] = tenantId;
         }
 
         var json = JsonSerializer.Serialize(message);

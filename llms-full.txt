@@ -2908,6 +2908,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
 - **Topic mapping**: Map message types to topics via `options.WithTopicMapping<TMessage>("topic.name")` or conventions.
+- **Multi-tenancy**: Set `PublishOptions.TenantId` for typed envelope tenancy. Read `ConsumeContext.TenantId` on consume. The publish pipeline enforces a 4-case integrity policy: raw-only writes to `Headers["headless-tenant-id"]` and writes that disagree with the typed property are rejected with `InvalidOperationException`; a raw write that matches the typed property is accepted. Consume-side values are untrusted wire data — validate before use in URLs/SQL/logs.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 
@@ -2925,7 +2926,7 @@ Provides standardized interfaces for building reliable distributed messaging sys
 - **Type-Safe Consumption**: `IConsume<TMessage>` interface with `ConsumeContext<TMessage>` for compile-time verification (5-8x faster than reflection)
 - **Outbox Publishing**: `IOutboxPublisher` for transactional message publishing with database consistency
 - **Direct Publishing**: `IDirectPublisher` for fire-and-forget, low-latency message delivery
-- **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
+- **Rich Metadata**: Message ID, correlation ID, tenant ID, timestamps, headers, and topic routing
 - **Consumer Configuration**: `IMessagingBuilder` for assembly scanning and manual consumer registration
 - **Delayed Publishing**: Schedule messages for future delivery
 - **Multi-Type Consumers**: Single consumer can handle multiple message types

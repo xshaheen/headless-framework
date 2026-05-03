@@ -105,6 +105,40 @@ public sealed class ConsumeContext<TMessage>
     }
 
     /// <summary>
+    /// Gets the multi-tenancy identifier for this message.
+    /// </summary>
+    /// <value>
+    /// The tenant identifier carried on the <see cref="Headers.TenantId"/> wire header
+    /// (<c>"headless-tenant-id"</c>), populated from <see cref="PublishOptions"/>.TenantId at publish time.
+    /// Returns <see langword="null"/> when the header is absent, empty, whitespace, or longer than
+    /// <see cref="PublishOptions.TenantIdMaxLength"/> (lenient consume-side handling).
+    /// </value>
+    /// <exception cref="ArgumentException">
+    /// Thrown when attempting to set an empty or whitespace string.
+    /// Use <see langword="null"/> instead to indicate no tenant.
+    /// </exception>
+    /// <remarks>
+    /// This property is the typed surface for tenancy on the consume side. Reading the wire header
+    /// directly via <see cref="Headers"/> is supported but discouraged — the typed property is canonical.
+    /// </remarks>
+    public string? TenantId
+    {
+        get;
+        init
+        {
+            if (value is not null && string.IsNullOrWhiteSpace(value))
+            {
+                throw new ArgumentException(
+                    "TenantId cannot be an empty or whitespace string. Use null to indicate no tenant.",
+                    nameof(value)
+                );
+            }
+
+            field = value;
+        }
+    }
+
+    /// <summary>
     /// Gets the collection of custom headers attached to this message.
     /// </summary>
     /// <value>
@@ -126,9 +160,12 @@ public sealed class ConsumeContext<TMessage>
     /// <list type="bullet">
     /// <item><description><c>FailureReason</c>: Exception type from previous failure</description></item>
     /// <item><description><c>Region</c>: Geographic region for routing</description></item>
-    /// <item><description><c>TenantId</c>: Multi-tenancy identifier</description></item>
     /// <item><description><c>UserId</c>: Originating user for audit trails</description></item>
     /// </list>
+    /// </para>
+    /// <para>
+    /// Multi-tenancy is first-class: prefer <see cref="ConsumeContext{TMessage}.TenantId"/> over reading the
+    /// <see cref="Headers.TenantId"/> header directly.
     /// </para>
     /// </remarks>
     public required MessageHeader Headers { get; init; }
