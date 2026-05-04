@@ -17,7 +17,8 @@ internal interface IMessagePublishRequestFactory
 internal sealed class MessagePublishRequestFactory(
     ILongIdGenerator idGenerator,
     TimeProvider timeProvider,
-    IOptions<MessagingOptions> optionsAccessor
+    IOptions<MessagingOptions> optionsAccessor,
+    ICurrentTenant currentTenant
 ) : IMessagePublishRequestFactory
 {
     private static readonly HashSet<string> _ReservedHeaders = new(StringComparer.Ordinal)
@@ -36,6 +37,7 @@ internal sealed class MessagePublishRequestFactory(
     private readonly MessagingOptions _options = optionsAccessor.Value;
     private readonly ILongIdGenerator _idGenerator = idGenerator;
     private readonly TimeProvider _timeProvider = timeProvider;
+    private readonly ICurrentTenant _currentTenant = currentTenant;
 
     public PreparedPublishMessage Create<T>(T? contentObj, PublishOptions? options = null, TimeSpan? delayTime = null)
     {
@@ -117,30 +119,61 @@ internal sealed class MessagePublishRequestFactory(
         return messageId;
     }
 
-    // Strict 4-case publish-time tenant integrity policy. PublishOptions.TenantId is the source of
-    // truth; writing the wire header directly is reserved for transport-internal use. Whitespace
-    // raw headers are treated as unset to mirror the lenient consume-side mapping in
-    // ConsumeExecutionPipeline._ResolveTenantId (see #228).
-    private static void _ApplyTenantId(Dictionary<string, string?> headers, PublishOptions? options)
+    // Strict publish-time tenant integrity policy.
+    //
+    // U2 4-case header check (shipped in #228): PublishOptions.TenantId is the source of truth;
+    // writing the wire header directly is reserved for transport-internal use. Whitespace raw
+    // headers are treated as unset to mirror the lenient consume-side mapping in
+    // ConsumeExecutionPipeline._ResolveTenantId.
+    //
+    // U10 ambient fallback (#238): when MessagingOptions.TenantContextRequired = true and the
+    // typed property is unset, resolve from the ambient ICurrentTenant. If both are null, throw
+    // MissingTenantContextException. Sibling of the EF (#234) and Mediator (#236) tenancy guards.
+    //
+    // Failure-code priority: ReservedTenantHeader (raw header without typed property) → fires
+    // before any U10 logic so caller bugs / injection attempts surface first.
+    // TenantIdMismatch (raw and typed disagree) → fires after the typed value is resolved
+    // (either from PublishOptions or ambient), preserving U2 semantics for explicit publishes.
+    private void _ApplyTenantId(Dictionary<string, string?> headers, PublishOptions? options)
     {
         var typed = options?.TenantId;
         var rawPresent = headers.TryGetValue(Headers.TenantId, out var raw);
         var rawSet = rawPresent && !string.IsNullOrWhiteSpace(raw);
 
-        if (typed is null)
+        // U2: typed unset, raw set → reject regardless of TenantContextRequired so injection
+        // attempts cannot bypass by enabling strict tenancy.
+        if (typed is null && rawSet)
         {
-            if (rawSet)
+            var safeRawForReservedMessage = LogSanitizer.Sanitize(raw, PublishOptions.TenantIdMaxLength);
+            var ex = new InvalidOperationException(
+                $"Header '{Headers.TenantId}' is reserved. "
+                    + $"Use {nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)} to set the tenant identifier."
+            );
+            ex.Data["Headless.Messaging.FailureCode"] = "ReservedTenantHeader";
+            ex.Data["Headers.TenantId.Raw"] = safeRawForReservedMessage;
+            throw ex;
+        }
+
+        // U10: typed unset (and raw unset since the path above rejected) — fall back to ambient
+        // tenant when strict tenancy is required.
+        if (typed is null && _options.TenantContextRequired)
+        {
+            typed = _currentTenant.Id;
+            if (string.IsNullOrWhiteSpace(typed))
             {
-                var safeRawForReservedMessage = LogSanitizer.Sanitize(raw, PublishOptions.TenantIdMaxLength);
-                var ex = new InvalidOperationException(
-                    $"Header '{Headers.TenantId}' is reserved. "
-                        + $"Use {nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)} to set the tenant identifier."
+                var ex = new MissingTenantContextException(
+                    "Publish requires an ambient tenant context but none was set. "
+                        + "Set PublishOptions.TenantId explicitly, or wrap the publish in "
+                        + "ICurrentTenant.Change(tenantId) to scope the AsyncLocal accessor "
+                        + "(common pattern for background workers and IHostedService callers)."
                 );
-                ex.Data["Headless.Messaging.FailureCode"] = "ReservedTenantHeader";
-                ex.Data["Headers.TenantId.Raw"] = safeRawForReservedMessage;
+                ex.Data["Headless.Messaging.FailureCode"] = "MissingTenantContext";
                 throw ex;
             }
+        }
 
+        if (typed is null)
+        {
             // Strip any whitespace-only key so transports do not see it.
             if (rawPresent)
             {

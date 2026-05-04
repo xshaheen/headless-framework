@@ -70,7 +70,12 @@ public static class OrmEntityFrameworkSetup
             services.TryAddSingleton<IClock, Clock>();
             services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
             services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
-            services.TryAddSingleton<ICurrentTenant, CurrentTenant>();
+            // AddOrReplace (not TryAdd) so the real ambient-tenant resolver always wins
+            // over any fallback (e.g. Headless.Messaging.Core's NullCurrentTenant)
+            // regardless of package registration order. Without this, registering
+            // messaging before EF would leave the app stuck on NullCurrentTenant and
+            // unstamp tenant ids on EF writes.
+            services.AddOrReplaceSingleton<ICurrentTenant, CurrentTenant>();
             services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
             services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();
             services._ReplaceCompiledQueryCacheKeyGenerator();

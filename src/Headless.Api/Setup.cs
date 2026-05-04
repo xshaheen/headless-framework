@@ -163,7 +163,10 @@ public static class ApiSetup
         builder.Services.TryAddSingleton<ICurrentUser, HttpCurrentUser>();
         builder.Services.TryAddSingleton<ICurrentTimeZone, LocalCurrentTimeZone>();
         builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
-        builder.Services.TryAddSingleton<ICurrentTenant, CurrentTenant>();
+        // AddOrReplace (not TryAdd) so the real ambient-tenant resolver always wins over
+        // any fallback (e.g. Headless.Messaging.Core's NullCurrentTenant) regardless of
+        // package registration order. Mirrors MultiTenancySetup.AddHeadlessMultiTenancy.
+        builder.Services.AddOrReplaceSingleton<ICurrentTenant, CurrentTenant>();
         builder.Services.TryAddSingleton<IWebClientInfoProvider, HttpWebClientInfoProvider>();
 
         builder.Services.TryAddScoped<IRequestContext, HttpRequestContext>();

@@ -141,6 +141,30 @@ The `TenantId` envelope property is populated automatically from the canonical `
 
 Automatic tenant propagation in consumer pipelines is intentionally out of scope.
 
+#### Strict Publish Tenancy (`TenantContextRequired`)
+
+Set `MessagingOptions.TenantContextRequired = true` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.Abstractions.MissingTenantContextException` (failure code `Headless.Messaging.FailureCode = "MissingTenantContext"` on `Exception.Data`). This is the messaging sibling of the EF write guard (#234) and the Mediator behavior (#236).
+
+Defaults to `false` to preserve today's behavior. The U2 raw-header integrity rules above (`ReservedTenantHeader`, `TenantIdMismatch`) always apply and run before the strict-tenancy fallback, so injection attempts cannot bypass the guard by enabling the flag.
+
+To remediate a `MissingTenantContextException` from a background worker or `IHostedService`:
+
+```csharp
+// Option A: explicit per-publish tenant
+await publisher.PublishAsync(
+    message,
+    new PublishOptions { TenantId = tenantId },
+    cancellationToken);
+
+// Option B: ambient scope around the publish
+using (currentTenant.Change(tenantId))
+{
+    await publisher.PublishAsync(message, cancellationToken);
+}
+```
+
+Register a real `ICurrentTenant` (the default `AddHeadlessApi()` / `AddHeadlessDbContextServices()` registration is sufficient) so the ambient fallback can resolve a value when option B is used.
+
 ### SignalR
 
 SignalR hub invocations start new execution flows after the initial upgrade request. HTTP middleware does not preserve tenant context for later hub method calls. Use a hub-specific solution such as an `IHubFilter`.
