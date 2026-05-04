@@ -355,7 +355,8 @@ before any provider integration tests run.
   spec U4 §"Two distinct backoff option types".
 - *Where does the strict-tenancy guard run?* In `MessagePublishRequestFactory._ApplyTenantId`
   (extending the existing U2 method), so providers inherit it without per-provider duplication.
-  U10 extends `_ApplyTenantId` and adds a sibling `_ResolveAmbientTenant` step.
+  U10 extends `_ApplyTenantId` with an inline ambient-tenant fallback branch that runs after
+  the U2 reserved-header check resolves the typed value.
 - *Is `headless.messaging.delivery_kind` emitted in Phase 1?* Yes, with the static value
   `"send"`. Phase 2 widens it to `"send" | "broadcast"` once `ConsumeContext.DeliveryKind`
   exists. Emitting the tag in Phase 1 lets vendor dashboards reserve the column up front.
@@ -453,14 +454,15 @@ MessagePublishRequestFactory._ApplyTenantId  (after U2 4-case check)
 ## Output Structure
 
 ```text
+src/Headless.Core/Abstractions/
+  MissingTenantContextException.cs                 # new (U10) — namespace Headless.Abstractions, : Exception
+
 src/Headless.Messaging.Abstractions/
-  Exceptions/MissingTenantContextException.cs     # new (U10)
   IRetryBackoffStrategy.cs                         # unchanged
 
 src/Headless.Messaging.Core/
   Configuration/MessagingOptions.cs                # + TenantContextRequired (U10)
-  Configuration/MessagingOptionsValidator.cs       # extend or create (U10 cross-check)
-  Internal/IMessagePublishRequestFactory.cs        # + ambient tenant resolution (U10)
+  Internal/IMessagePublishRequestFactory.cs        # + ambient tenant resolution + publish-time guard (U10)
   Retry/RetryBackoffOptions.cs                     # new (U4) + same-file Validator
   Retry/ExponentialBackoffStrategy.cs              # extended (U4) — new ctor reading IOptions<RetryBackoffOptions>
   Internal/SubscribeExecutor.cs                    # extended (U4) — read in-flight options + per-instance counter
@@ -808,16 +810,27 @@ consistent failure shape.
 those.
 
 **Files:**
-- Create: `src/Headless.Messaging.Abstractions/Exceptions/MissingTenantContextException.cs`
+- Create: `src/Headless.Core/Abstractions/MissingTenantContextException.cs` —
+  `namespace Headless.Abstractions`, `public sealed class MissingTenantContextException : Exception`.
+  Lives in `Headless.Core` (not `Headless.Messaging.Abstractions`) so the same type is
+  shared with the EF write guard (#234) and Mediator behavior (#236); inherits directly
+  from `Exception` so cross-cutting middleware can catch the single cross-layer guard
+  type without sweeping unrelated `InvalidOperationException`s. Layer-specific failure
+  codes are stamped into `Exception.Data` (e.g.,
+  `"Headless.Messaging.FailureCode" = "MissingTenantContext"`).
 - Modify: `src/Headless.Messaging.Core/Configuration/MessagingOptions.cs` — add
   `bool TenantContextRequired { get; set; } = false`.
-- Modify: `src/Headless.Messaging.Core/Configuration/MessagingOptionsValidator.cs` (extend if
-  exists, otherwise create same-file validator) — when `TenantContextRequired = true`, assert
-  `ICurrentTenant` is registered as something other than `NullCurrentTenant` (cross-package
-  contract — fail at startup, not at first publish).
+- Modify: `src/Headless.Messaging.Core/Setup.cs` — register
+  `services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>()` as a fallback so the
+  publish-time guard always has an `ICurrentTenant` to consult. Hosts that need ambient
+  tenant resolution register a real `ICurrentTenant` (typically via
+  `Headless.Api/Setup.cs:166`'s `AsyncLocalCurrentTenantAccessor` wiring) before
+  `AddHeadlessMessaging`. `NullCurrentTenant.Id` is always `null`, so the publish-time
+  guard fails fast with `MissingTenantContextException` when `TenantContextRequired = true`
+  and no explicit `PublishOptions.TenantId` was supplied — no startup validator needed.
 - Modify: `src/Headless.Messaging.Core/Internal/IMessagePublishRequestFactory.cs` — extend the
   factory's primary constructor to accept `ICurrentTenant`; extend `_ApplyTenantId` with the
-  ambient-tenant resolution step described under Key Technical Decisions (8) and (9). The
+  publish-time guard described under Key Technical Decisions (8) and (9). The
   factory remains **singleton** (current registration in `Setup.cs:96`); `ICurrentTenant`
   remains **singleton** with the existing `AsyncLocalCurrentTenantAccessor`
   (`Headless.Api/Setup.cs:166`). The AsyncLocal accessor reads per-call from the publish
@@ -832,8 +845,10 @@ those.
   U10 guard's failure message names `ICurrentTenant.Change(...)` as the remediation; U6
   includes a worked example for background-job authors and a callout referencing the
   outbox-drainer pattern.
-- Test: `tests/Headless.Messaging.Core.Tests.Unit/Internal/StrictTenancyPublishGuardTests.cs`
-- Test: `tests/Headless.Messaging.Core.Tests.Unit/Configuration/MessagingOptionsValidatorTenancyTests.cs`
+- Test: `tests/Headless.Messaging.Core.Tests.Unit/Internal/StrictTenancyPublishGuardTests.cs` —
+  exercises every publish-time branch (typed set, ambient set, both null, both set,
+  background-worker `Change(...)` scope) since the publish-time guard is the single
+  enforcement point.
 
 **Approach:**
 - The new option `TenantContextRequired` defaults to `false` to preserve today's behavior.
@@ -848,16 +863,24 @@ those.
       reconciliation).
     - If both are null, throw `MissingTenantContextException` with
       `Data["Headless.Messaging.FailureCode"] = "MissingTenantContext"`.
-- `MissingTenantContextException : InvalidOperationException` (preserves catch-compat with the
-  existing publish-failure exception family). Lives in
-  `Headless.Messaging.Abstractions/Exceptions/` so consumer apps can `catch (MissingTenantContextException)`
-  without a `Core` dependency.
-- `MessagingOptionsValidator` cross-checks: when `TenantContextRequired = true` is set,
-  `ICurrentTenant` must be registered as a non-`NullCurrentTenant` implementation. This is
-  detected by resolving `ICurrentTenant` once at startup and failing if the concrete type is
-  `NullCurrentTenant`. Failure message: "MessagingOptions.TenantContextRequired = true but
-  ICurrentTenant is not registered. Add Headless.Core (or a custom ICurrentTenant) to the DI
-  container before calling AddMessaging."
+- `MissingTenantContextException : Exception` lives at
+  `src/Headless.Core/Abstractions/MissingTenantContextException.cs` in
+  `namespace Headless.Abstractions`. It is the single cross-layer guard type shared with the
+  EF write guard (#234) and Mediator behavior (#236) so consumer apps catch one type instead
+  of three layer-specific copies. Inheriting directly from `Exception` lets cross-cutting
+  middleware (HTTP 400 mappers, retry suppression) target the guard without sweeping
+  unrelated `InvalidOperationException`s; layer-specific failure codes are stamped into
+  `Exception.Data` (`"Headless.Messaging.FailureCode" = "MissingTenantContext"`) so log
+  aggregators can group failures per layer.
+- **No startup validator.** A `MessagingOptionsValidator` cross-check that asserted
+  `ICurrentTenant` is not `NullCurrentTenant` when `TenantContextRequired = true` was
+  considered and rejected — it cannot distinguish "host forgot to register `Headless.Core`"
+  from "host intentionally relies on per-publish `PublishOptions.TenantId` without an
+  ambient accessor", and the publish-time guard already surfaces the misconfiguration at
+  first publish with a precise remediation message that names `ICurrentTenant.Change(...)`.
+  The fallback `services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>()` in
+  `Headless.Messaging.Core/Setup.cs` guarantees the factory always has an `ICurrentTenant`
+  to consult, so the guard never NREs.
 - The guard runs **after** the existing 4-case header check from U2. If both a header injection
   AND a missing tenant context exist on the same publish, the U2 check fires first
   (failure code `"ReservedTenantHeader"`). The U10 check is a separate failure path with code
@@ -890,8 +913,12 @@ those.
 - **Edge case (background worker no-tenant):** `TenantContextRequired = true`, publish runs
   in an `IHostedService` without `Change` and without `PublishOptions.TenantId` →
   `MissingTenantContextException`. Same failure as the HTTP path.
-- **Edge case:** `TenantContextRequired = true` but `ICurrentTenant` is `NullCurrentTenant` →
-  startup fails with `OptionsValidationException` (caught by `ValidateOnStart`).
+- **Edge case:** `TenantContextRequired = true` but `ICurrentTenant` is `NullCurrentTenant`
+  (no `Headless.Core` ambient accessor registered) and `PublishOptions.TenantId` is null →
+  publish-time `MissingTenantContextException`. Startup is intentionally **not** failed:
+  hosts that always pass `PublishOptions.TenantId` explicitly remain a supported setup, so
+  the misconfiguration surfaces at the first ambient-relying publish instead of at
+  `ValidateOnStart`.
 - **Edge case:** `TenantContextRequired = true`, raw header set without typed property → U2's
   `ReservedTenantHeader` check fires first; U10 does not run on this path.
 - **Edge case:** `TenantContextRequired = true`, raw header and typed property disagree → U2's
@@ -899,17 +926,21 @@ those.
 - **Error path:** `MissingTenantContextException` thrown from the publish wrapper does **not**
   emit an envelope to any transport — assertion via a fake provider that no `OnPublish` call
   was observed.
-- **Integration:** The exception type is catchable as `InvalidOperationException` (base class
-  parity for log aggregators that group on the base exception).
+- **Integration:** The exception type is catchable as the cross-layer
+  `Headless.Abstractions.MissingTenantContextException`. It inherits directly from
+  `Exception` (not `InvalidOperationException`) so cross-cutting middleware can target the
+  single guard type without sweeping unrelated `InvalidOperationException`s; the same type
+  is thrown by the EF write guard (#234) and Mediator behavior (#236).
 
 **Verification:**
 - `dotnet test` green for `Headless.Messaging.Core.Tests.Unit`.
 - A targeted integration test in
   `tests/Headless.Messaging.InMemoryStorage.Tests.Integration/StrictTenancyTests.cs` (new)
   exercises the guard end-to-end against a real transport.
-- `grep -r "MissingTenantContextException" src/ tests/` finds the type in exactly one source
-  file and the expected test references; the failure code string `"MissingTenantContext"`
-  matches the documented contract in U6.
+- `grep -r "MissingTenantContextException" src/ tests/` finds the type defined in exactly one
+  source file (`src/Headless.Core/Abstractions/MissingTenantContextException.cs`), thrown
+  from `MessagePublishRequestFactory._ApplyTenantId`, and the expected test references; the
+  failure code string `"MissingTenantContext"` matches the documented contract in U6.
 
 ---
 
@@ -1002,9 +1033,14 @@ planned reality.
   decision point for retry-vs-DLQ across providers (already shipped at
   `SubscribeExecutor.cs:208`). Strategy exceptions are caught and logged; the executor
   routes to the durable retry table rather than crashing. `MissingTenantContextException`
-  is a new publish-time failure mode that propagates to the caller exactly like the existing
-  U2 4-case integrity violations; downstream callers that already catch
-  `InvalidOperationException` from `_ApplyTenantId` continue to work without code changes.
+  is a new publish-time failure mode that propagates to the caller alongside the existing
+  U2 4-case integrity violations. The U2 reserved-header / mismatch failures still throw
+  `InvalidOperationException`; the new U10 absence guard throws the cross-layer
+  `Headless.Abstractions.MissingTenantContextException` (inherits directly from
+  `Exception`). Downstream callers that already catch broad `Exception` at the publish
+  boundary continue to work; callers that catch the U2 `InvalidOperationException`
+  specifically should add a `MissingTenantContextException` branch when they enable
+  `TenantContextRequired = true`.
 - **State lifecycle risks:** `Headers.Attempt` is a per-instance counter held by
   `SubscribeExecutor` keyed by `MessageId`. After lease expiry on a peer instance the counter
   restarts from the inbound wire value — documented as accepted residual risk. The OTel
