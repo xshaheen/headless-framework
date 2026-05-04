@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Messages;
@@ -185,6 +186,21 @@ public class MessagingOptions : IMessagingBuilder
     /// For fixed interval retries, use <see cref="FixedIntervalBackoffStrategy"/>.
     /// </summary>
     public IRetryBackoffStrategy RetryBackoffStrategy { get; set; } = new ExponentialBackoffStrategy();
+
+    /// <summary>
+    /// Gets or sets a value indicating whether publish calls require a resolved tenant identifier.
+    /// When <see langword="true"/>, the publish wrapper rejects calls where neither
+    /// <see cref="PublishOptions.TenantId"/> nor the ambient <c>ICurrentTenant.Id</c> resolves a
+    /// tenant, throwing <see cref="MissingTenantContextException"/>. Sibling of the EF write guard
+    /// (#234) and the Mediator behavior (#236) for cross-layer tenant safety.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to <see langword="false"/> to preserve today's behavior. Background workers and
+    /// <c>IHostedService</c> callers without an ambient request scope must wrap publishes in
+    /// <c>using (currentTenant.Change(tenantId))</c> or set <see cref="PublishOptions.TenantId"/>
+    /// explicitly when this flag is enabled.
+    /// </remarks>
+    public bool TenantContextRequired { get; set; }
 
     /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.

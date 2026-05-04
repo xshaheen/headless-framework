@@ -93,6 +93,12 @@ public static class Setup
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();
+        // Fallback ICurrentTenant when Headless.Api is not in the host. The factory's strict
+        // tenancy guard (#238) consults this — NullCurrentTenant returns Id = null so the
+        // guard fails fast at publish time when TenantContextRequired = true and no explicit
+        // PublishOptions.TenantId is supplied. Hosts that need ambient tenant resolution
+        // register a real ICurrentTenant before AddHeadlessMessaging.
+        services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
         services.TryAddSingleton<OutboxPublisher>();
         services.TryAddSingleton<IOutboxPublisher>(sp => sp.GetRequiredService<OutboxPublisher>());
@@ -182,6 +188,7 @@ public static class Setup
             opt.SchedulerBatchSize = options.SchedulerBatchSize;
             opt.UseStorageLock = options.UseStorageLock;
             opt.RetryBackoffStrategy = options.RetryBackoffStrategy;
+            opt.TenantContextRequired = options.TenantContextRequired;
 
             // Copy internal collections
             foreach (var mapping in options.TopicMappings)

@@ -566,14 +566,19 @@ public sealed class DirectPublisherTests : TestBase
         publisher.Should().BeOfType<DirectPublisher>();
     }
 
-    private static IDirectPublisher _CreateDirectPublisher(ITransport transport, MessagingOptions options)
+    private static IDirectPublisher _CreateDirectPublisher(
+        ITransport transport,
+        MessagingOptions options,
+        ICurrentTenant? currentTenant = null
+    )
     {
         var optionsAccessor = Options.Create(options);
         var serializer = new JsonUtf8Serializer(optionsAccessor);
         var publishRequestFactory = new MessagePublishRequestFactory(
             new SnowflakeIdLongIdGenerator(),
             TimeProvider.System,
-            optionsAccessor
+            optionsAccessor,
+            currentTenant ?? new NullCurrentTenant()
         );
 
         return new DirectPublisher(serializer, transport, publishRequestFactory);
