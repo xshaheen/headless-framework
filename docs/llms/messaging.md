@@ -28,6 +28,7 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
         - [IDirectPublisher (Fire-and-Forget)](#idirectpublisher-fire-and-forget)
         - [Callback Headers (Async Response Routing)](#callback-headers-async-response-routing)
     - [Configuration](#configuration-1)
+    - [Strict Publish Tenancy](#strict-publish-tenancy)
     - [Message Ordering Guarantees](#message-ordering-guarantees)
         - [Transport-Specific Ordering](#transport-specific-ordering)
         - [Configuration Impact on Ordering](#configuration-impact-on-ordering)
@@ -255,6 +256,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 - **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
+- **Strict publish tenancy is opt-in**: Set `options.TenantContextRequired = true` to require every publish to resolve a tenant from `PublishOptions.TenantId` or the ambient `ICurrentTenant`. When neither is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 
 ---
 
@@ -529,8 +531,39 @@ builder.Services.AddHeadlessMessaging(options =>
     options.SucceedMessageExpiredAfter = 24 * 3600;
     options.ConsumerThreadCount = 1;
     options.DefaultGroupName = "myapp";
+
+    // Reject publishes without a resolved tenant (off by default)
+    options.TenantContextRequired = true;
 });
 ```
+
+## Strict Publish Tenancy
+
+`MessagingOptions.TenantContextRequired` is the messaging sibling of the EF write guard (#234) and the Mediator behavior (#236). Defaults to `false` to preserve today's behavior. When set to `true`, every publish must resolve a tenant identifier:
+
+1. `PublishOptions.TenantId` if set (the source of truth — see `Headers.TenantId` integrity rules in [Multi-Tenancy / Message Consumers](multi-tenancy.md#message-consumers)).
+2. Otherwise, the ambient `ICurrentTenant.Id`.
+3. If neither resolves, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`, with `Exception.Data["Headless.Messaging.FailureCode"] = "MissingTenantContext"` for log aggregation.
+
+The U2 raw-header checks (`ReservedTenantHeader`, `TenantIdMismatch`) still run first, so flipping `TenantContextRequired` cannot bypass them.
+
+**Remediation for background workers / `IHostedService` callers (no ambient HTTP scope):**
+
+```csharp
+// Option A: pass the tenant explicitly
+await publisher.PublishAsync(
+    message,
+    new PublishOptions { TenantId = tenantId },
+    cancellationToken);
+
+// Option B: scope the AsyncLocal accessor before publishing
+using (currentTenant.Change(tenantId))
+{
+    await publisher.PublishAsync(message, cancellationToken);
+}
+```
+
+Catch `MissingTenantContextException` directly (it inherits from `Exception`, not `InvalidOperationException`) when a cross-cutting handler needs to map it to an HTTP 4xx or suppress retries.
 
 ## Message Ordering Guarantees
 

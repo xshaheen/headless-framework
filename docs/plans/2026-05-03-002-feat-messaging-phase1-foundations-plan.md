@@ -309,7 +309,9 @@ before any provider integration tests run.
      known.
    - `TenantContextRequired = true`: at publish time, if `PublishOptions.TenantId` is null,
      the wrapper resolves `ICurrentTenant.Id`. If both are null, throw
-     `MissingTenantContextException` (a new type in `Headless.Messaging.Abstractions/Exceptions`).
+     `MissingTenantContextException` (a new cross-layer guard type at
+     `src/Headless.Core/Abstractions/MissingTenantContextException.cs` in
+     `namespace Headless.Abstractions`, inheriting directly from `Exception`).
      If `ICurrentTenant.Id` is non-null and `PublishOptions.TenantId` is null, the wrapper
      stamps the resolved tenant onto the header (preserving the four-case integrity invariant
      from U2: typed and raw header are reconciled identically to `_ApplyTenantId`).
@@ -322,9 +324,16 @@ before any provider integration tests run.
    (current pattern at `Headless.Messaging.Core/Setup.cs:96` and `Headless.Api/Setup.cs:166`).
    `ICurrentTenant` is wired to `AsyncLocalCurrentTenantAccessor` so per-call resolution
    reads from the publish scope's flow context — no factory-lifetime change is required for
-   U10. When `Headless.Core` is not registered, `NullCurrentTenant` is the fallback and
-   `TenantContextRequired = true` becomes a startup-time contradiction caught by
-   `MessagingOptionsValidator` (U10 augments the existing validator).
+   U10. When `Headless.Core` is not registered, `Headless.Messaging.Core/Setup.cs` registers
+   `NullCurrentTenant` as the fallback `ICurrentTenant`; its `Id` is always `null`, so a publish
+   under `TenantContextRequired = true` without an explicit `PublishOptions.TenantId` fails
+   fast at the publish wrapper with `MissingTenantContextException`. A startup
+   `MessagingOptionsValidator` that rejected `TenantContextRequired = true` against
+   `NullCurrentTenant` was considered and rejected: it cannot distinguish "host forgot to
+   register `Headless.Core`" (the case it would catch) from "host intentionally relies on
+   per-publish `PublishOptions.TenantId` without an ambient accessor" (a legitimate setup),
+   and the publish-time guard already surfaces the misconfiguration at first publish with a
+   precise remediation message.
 10. **Documentation lives in `docs/llms/messaging-envelope.md` and is referenced from every
     provider README + `Headless.Messaging.Abstractions/README.md`.** The existing
     `docs/llms/messaging.md` is left intact and grows a "see also" cross-link; the envelope doc
@@ -364,9 +373,16 @@ before any provider integration tests run.
   today's behavior; if no durable storage is configured, log at warning + drop. Documented
   in U6 alongside the retry contract.
 - **Whether `MissingTenantContextException` lives in `Headless.Messaging.Abstractions` or
-  `Headless.Messaging.Core`.** Lean: `Abstractions` so consumer apps can `catch` it without
-  a `Core` dependency. Mirrors the `Headless.Checks` pattern of throwing well-known exception
-  types from abstractions.
+  `Headless.Core/Abstractions`.** Resolved during implementation: lifted to
+  `src/Headless.Core/Abstractions/MissingTenantContextException.cs` in
+  `namespace Headless.Abstractions` so the same type is shared with the EF write guard
+  (#234) and Mediator behavior (#236) — the cross-layer tenancy stack catches a single
+  exception instead of three layer-specific copies. Inherits directly from `Exception` so
+  cross-cutting middleware (HTTP 400 mappers, retry suppression) can catch this single type
+  without sweeping unrelated `InvalidOperationException`s. Layer-specific call sites enrich
+  `Exception.Data` with a failure code (e.g.,
+  `"Headless.Messaging.FailureCode" = "MissingTenantContext"`) so log aggregators still
+  group failures per layer.
 - **Exact set of `_ReservedHeaders` additions.** Phase 1 adds `Headers.Attempt`. Whether
   the U2-shipped `Headers.TenantId` should also be added (it currently flows through
   `_ApplyTenantId` rather than `_ValidateCustomHeaders`) is implementer's choice — both
