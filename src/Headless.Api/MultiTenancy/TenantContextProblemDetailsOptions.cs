@@ -19,8 +19,9 @@ public sealed class TenantContextProblemDetailsOptions
 {
     /// <summary>
     /// Consumer-controlled URI namespace for the response's <c>type</c> field. The final URL is
-    /// <c>{TypeUriPrefix}/tenant-required</c>; any trailing slash is trimmed so the joined URL has
-    /// a single separator. Default: <c>https://errors.headless/tenancy</c>.
+    /// composed by <c>IProblemDetailsCreator.TenantRequired</c> as <c>{TypeUriPrefix}/tenant-required</c>;
+    /// any trailing slash on this property is trimmed by the factory so the joined URL has a single
+    /// separator. Default: <c>https://errors.headless/tenancy</c>.
     /// </summary>
     public string TypeUriPrefix { get; init; } = "https://errors.headless/tenancy";
 

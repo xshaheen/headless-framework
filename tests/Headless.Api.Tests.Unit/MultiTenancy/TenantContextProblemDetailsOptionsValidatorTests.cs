@@ -55,10 +55,11 @@ public sealed class TenantContextProblemDetailsOptionsValidatorTests : TestBase
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void should_fail_when_type_uri_prefix_is_blank(string prefix)
+    [InlineData(null)]
+    public void should_fail_when_type_uri_prefix_is_blank(string? prefix)
     {
         // given
-        var options = new TenantContextProblemDetailsOptions { TypeUriPrefix = prefix };
+        var options = new TenantContextProblemDetailsOptions { TypeUriPrefix = prefix! };
 
         // when
         var result = _validator.Validate(options);
@@ -87,10 +88,11 @@ public sealed class TenantContextProblemDetailsOptionsValidatorTests : TestBase
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void should_fail_when_error_code_is_blank(string errorCode)
+    [InlineData(null)]
+    public void should_fail_when_error_code_is_blank(string? errorCode)
     {
         // given
-        var options = new TenantContextProblemDetailsOptions { ErrorCode = errorCode };
+        var options = new TenantContextProblemDetailsOptions { ErrorCode = errorCode! };
 
         // when
         var result = _validator.Validate(options);
