@@ -103,7 +103,8 @@ public sealed class TenantContextProblemDetailsSetupTests : TestBase
             .Where(h => h is TenantContextExceptionHandler)
             .ToList();
 
-        // then - AddExceptionHandler<T> uses TryAddEnumerable internally; same descriptor only registers once
+        // then - the helper uses TryAddEnumerable directly (since AddExceptionHandler<T> uses
+        // plain AddSingleton, which is not idempotent), so the same descriptor registers only once
         handlers.Should().HaveCount(1);
     }
 
