@@ -16,6 +16,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 namespace Tests.MultiTenancy;
 
@@ -206,8 +207,10 @@ public sealed class TenantContextExceptionHandlerTests : TestBase
         var options = Options.Create(
             optionsValue ?? new TenantContextProblemDetailsOptions { TypeUriPrefix = _DefaultPrefix }
         );
+        var jsonOptions = Options.Create(new JsonOptions());
         return new TenantContextExceptionHandler(
             options,
+            jsonOptions,
             problemDetailsService,
             creator,
             NullLogger<TenantContextExceptionHandler>.Instance

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 namespace Headless.Api.MultiTenancy;
 
@@ -23,6 +24,7 @@ namespace Headless.Api.MultiTenancy;
 /// </remarks>
 internal sealed partial class TenantContextExceptionHandler(
     IOptions<TenantContextProblemDetailsOptions> options,
+    IOptions<JsonOptions> jsonOptions,
     IProblemDetailsService problemDetailsService,
     IProblemDetailsCreator problemDetailsCreator,
     ILogger<TenantContextExceptionHandler> logger
@@ -56,14 +58,13 @@ internal sealed partial class TenantContextExceptionHandler(
 
         if (httpContext.Response.HasStarted)
         {
-            LogResponseAlreadyStarted(logger);
+            LogResponseAlreadyStarted(logger, optionsValue.ErrorCode);
             return false;
         }
 
-        httpContext.Response.ContentType = "application/problem+json";
         await httpContext.Response.WriteAsJsonAsync(
             problemDetails,
-            options: null,
+            jsonOptions.Value.SerializerOptions,
             contentType: "application/problem+json",
             cancellationToken: cancellationToken
         );
@@ -84,8 +85,8 @@ internal sealed partial class TenantContextExceptionHandler(
         EventId = 5006,
         EventName = "TenantContextResponseAlreadyStarted",
         Level = LogLevel.Error,
-        Message = "Cannot map MissingTenantContextException: response has already started; client receives the partial response",
+        Message = "Cannot map MissingTenantContextException (errorCode: {ErrorCode}): response has already started; client receives the partial response",
         SkipEnabledCheck = true
     )]
-    private static partial void LogResponseAlreadyStarted(ILogger logger);
+    private static partial void LogResponseAlreadyStarted(ILogger logger, string errorCode);
 }
