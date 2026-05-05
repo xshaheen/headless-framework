@@ -31,6 +31,7 @@ public static class HeadlessProblemDetailsConstants
         public const string Conflict = "conflict-request";
         public const string InternalError = "unhandled-exception";
         public const string TooManyRequests = "too-many-requests";
+        public const string TenantContextRequired = "tenant-context-required";
     }
 
     public static class Details
@@ -51,5 +52,7 @@ public static class HeadlessProblemDetailsConstants
         public const string UnprocessableEntity = "One or more validation errors occurred.";
         public const string InternalError = "An error occurred while processing your request.";
         public const string TooManyRequests = "Too many requests - please try again later.";
+
+        public const string TenantContextRequired = "An operation required an ambient tenant context but none was set.";
     }
 }
