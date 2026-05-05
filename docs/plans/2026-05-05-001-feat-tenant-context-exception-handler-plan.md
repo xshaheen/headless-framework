@@ -272,7 +272,7 @@ TryHandleAsync(ctx, exception, ct):
 - Error path: `IProblemDetailsService.TryWriteAsync` returns `false` AND `Response.HasStarted == false` → fallback `WriteAsJsonAsync` runs with `application/problem+json`. Use NSubstitute to mock `IProblemDetailsService` returning `false`; verify response body and content type.
 - Error path: `IProblemDetailsService.TryWriteAsync` returns `false` AND `Response.HasStarted == true` → handler returns `false` (no write attempted, no exception thrown). Verify the `EventId = 5006` `Error` log entry was emitted so operators have the signal.
 - Error path: handler emits the `EventId = 5005` `Warning` log entry on the happy path with structured `ErrorCode` property present (verify with a test logger).
-- Negative assertion: response body never contains an `entityType` extension, an entity CLR name, the exception message, or any value from `exception.Data` — only `code` plus the standard normalized extensions. This is the no-information-disclosure invariant.
+- Negative assertion: response body never contains an `entityType` extension, an entity CLR name, the exception message, the exception's `InnerException` data, or any value from `exception.Data` — only `code` plus the standard normalized extensions. This is the no-information-disclosure invariant. Cover with a test that throws `new MissingTenantContextException("outer", new InvalidOperationException("inner sensitive detail"))` and asserts the inner message does not appear anywhere in the response body.
 
 **Verification:**
 - Throwing `MissingTenantContextException` from a request handler produces a 400 with the expected ProblemDetails shape and a `traceId` extension.
@@ -351,6 +351,7 @@ TryHandleAsync(ctx, exception, ct):
 - Edge case: exception thrown with `Exception.Data["Headless.Messaging.FailureCode"] = "MissingTenantContext"` → the data tag does NOT appear in the response body. Information-disclosure invariant.
 - Edge case: exception thrown with a custom message → the message does NOT appear as `detail`. The framework-owned `HeadlessProblemDetailsConstants.Details.TenantContextRequired` is used regardless. Information-disclosure invariant.
 - Error path: endpoint throws `InvalidOperationException` (not the tenancy exception) → handler does NOT process it; response is the framework default 500 from the rest of the pipeline (or whatever Minimal API filter is configured). Asserts the new handler did not steal the response.
+- Edge case: handler-chain ordering — register `TenantContextExceptionHandler` followed by a stub catch-all `IExceptionHandler` that returns `true` for any exception. Throw `MissingTenantContextException`. Assert the tenancy handler wins (response shape is the tenancy 400, not whatever the catch-all would have produced). Also register them in reverse order and assert the catch-all wins, proving order matters and the documentation guidance is correct.
 - Integration: response after `await response.Content.ReadFromJsonAsync<ProblemDetails>()` contains `traceId` matching `Activity.Current?.Id` or the request's `TraceIdentifier` — proves `IProblemDetailsCreator.Normalize` ran via the factory.
 
 **Verification:**
