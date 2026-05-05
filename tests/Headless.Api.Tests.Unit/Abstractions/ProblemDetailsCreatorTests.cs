@@ -281,6 +281,84 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         result.Extensions.Should().NotContainKey("errors");
     }
 
+    [Fact]
+    public void should_create_tenant_required_with_400()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.TenantRequired("https://errors.example.com/tenancy", "tenancy.tenant-required");
+
+        // then
+        result.Status.Should().Be(StatusCodes.Status400BadRequest);
+        result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.TenantContextRequired);
+        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.TenantContextRequired);
+        result.Type.Should().Be("https://errors.example.com/tenancy/tenant-required");
+        result.Extensions.Should().ContainKey("code").WhoseValue.Should().Be("tenancy.tenant-required");
+    }
+
+    [Fact]
+    public void should_normalize_tenant_required_response()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.TenantRequired("https://errors.example.com/tenancy", "tenancy.tenant-required");
+
+        // then - Normalize ran (traceId/buildNumber/commitNumber/timestamp present)
+        result.Extensions.Should().ContainKey("traceId");
+        result.Extensions.Should().ContainKey("buildNumber");
+        result.Extensions.Should().ContainKey("commitNumber");
+        result.Extensions.Should().ContainKey("timestamp");
+    }
+
+    [Fact]
+    public void should_trim_trailing_slash_from_type_uri_prefix()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.TenantRequired("https://errors.example.com/tenancy/", "tenancy.tenant-required");
+
+        // then
+        result.Type.Should().Be("https://errors.example.com/tenancy/tenant-required");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData(null)]
+    public void should_reject_blank_type_uri_prefix_in_tenant_required(string? prefix)
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var act = () => creator.TenantRequired(prefix!, "tenancy.tenant-required");
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData(null)]
+    public void should_reject_blank_error_code_in_tenant_required(string? errorCode)
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var act = () => creator.TenantRequired("https://errors.example.com/tenancy", errorCode!);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
     #endregion
 
     #region Normalize Tests

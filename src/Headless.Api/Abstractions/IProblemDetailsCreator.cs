@@ -29,6 +29,32 @@ public interface IProblemDetailsCreator
 
     ProblemDetails Forbidden(params IReadOnlyCollection<ErrorDescriptor> errors);
 
+    /// <summary>
+    /// Builds a normalized 400 <see cref="ProblemDetails"/> for the cross-layer
+    /// "missing tenant context" guard (see <c>Headless.Abstractions.MissingTenantContextException</c>).
+    /// </summary>
+    /// <param name="typeUriPrefix">
+    /// Consumer-controlled URI namespace for the response's <c>type</c> field. The final URL is
+    /// <c>{typeUriPrefix}/tenant-required</c>; any trailing slash on the prefix is trimmed so the
+    /// joined URL has a single separator.
+    /// </param>
+    /// <param name="errorCode">Stable client-routing identifier written to <c>Extensions["code"]</c>.</param>
+    /// <returns>
+    /// A <see cref="ProblemDetails"/> already passed through <see cref="Normalize"/> — callers should
+    /// not call <see cref="Normalize"/> again. Contains <c>Status = 400</c>, the canonical
+    /// <c>tenant-context-required</c> title, the framework-owned detail message, and the
+    /// <c>code</c> extension. Deliberately surfaces no entity name, exception message, or layer
+    /// tag — those belong in server logs, not the HTTP response.
+    /// </returns>
+    /// <remarks>
+    /// This is the canonical factory for the tenancy 400 response. The framework's
+    /// <c>TenantContextExceptionHandler</c> delegates to this method; direct callers (e.g., a
+    /// pre-handler that wants to short-circuit a request) should also prefer it over hand-building
+    /// a <see cref="ProblemDetails"/>. Requires the host to have called
+    /// <c>services.AddHeadlessProblemDetails()</c> so the underlying creator can run normalization.
+    /// </remarks>
+    ProblemDetails TenantRequired(string typeUriPrefix, string errorCode);
+
     void Normalize(ProblemDetails problemDetails);
 }
 
@@ -144,6 +170,25 @@ public sealed class ProblemDetailsCreator(
         {
             problemDetails.Extensions["errors"] = errors;
         }
+
+        _Normalize(problemDetails);
+
+        return problemDetails;
+    }
+
+    public ProblemDetails TenantRequired(string typeUriPrefix, string errorCode)
+    {
+        Argument.IsNotNullOrWhiteSpace(typeUriPrefix);
+        Argument.IsNotNullOrWhiteSpace(errorCode);
+
+        var problemDetails = new ProblemDetails
+        {
+            Status = StatusCodes.Status400BadRequest,
+            Title = HeadlessProblemDetailsConstants.Titles.TenantContextRequired,
+            Detail = HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+            Type = $"{typeUriPrefix.TrimEnd('/')}/tenant-required",
+            Extensions = { ["code"] = errorCode },
+        };
 
         _Normalize(problemDetails);
 
