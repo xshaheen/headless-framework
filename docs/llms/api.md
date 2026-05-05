@@ -14,6 +14,7 @@ packages: Api, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.L
     - [Key Features](#key-features)
     - [Installation](#installation)
     - [Quick Start](#quick-start)
+    - [Tenant-Context Exception Mapping](#tenant-context-exception-mapping)
     - [Configuration](#configuration)
         - [String Encryption](#string-encryption)
         - [String Hashing](#string-hashing)
@@ -113,6 +114,7 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 - One-call service registration via `AddHeadlessApi()`
 - Response compression (Brotli, Gzip) with optimized settings
 - Problem details standardization
+- Tenant-context exception mapping via `AddTenantContextProblemDetails()` (maps `MissingTenantContextException` → 400)
 - JWT token factory and claims principal handling
 - HSTS security configuration
 - API versioning integration
@@ -149,6 +151,48 @@ app.UseHsts();
 
 app.Run();
 ```
+
+## Tenant-Context Exception Mapping
+
+`Headless.Api.MultiTenancy.AddTenantContextProblemDetails()` registers an `IExceptionHandler` that maps `Headless.Abstractions.MissingTenantContextException` (raised by EF write guards, Mediator behaviors, the messaging publish guard, and any consumer code that requires tenant context) to a normalized 400 ProblemDetails:
+
+```csharp
+builder.Services.AddHeadlessProblemDetails();
+builder.Services.AddTenantContextProblemDetails(o =>
+{
+    o.TypeUriPrefix = "https://errors.example.com/tenancy"; // optional, default: https://errors.headless/tenancy
+    o.ErrorCode = "tenancy.tenant-required";                 // optional, default
+});
+
+var app = builder.Build();
+app.UseExceptionHandler(); // required — this helper only registers the handler
+```
+
+Resulting response shape:
+
+```json
+{
+  "type": "https://errors.example.com/tenancy/tenant-required",
+  "title": "tenant-context-required",
+  "status": 400,
+  "detail": "An operation required an ambient tenant context but none was set.",
+  "code": "tenancy.tenant-required",
+  "traceId": "...",
+  "instance": "/path",
+  "timestamp": "..."
+}
+```
+
+**Information-disclosure invariant:** the body contains only the framework-owned `type`, `title`, `status`, `detail`, `code`, plus the standard normalized extensions. The exception's `Message`, `Data` (e.g., `Headless.Messaging.FailureCode`), and `InnerException` are deliberately NOT surfaced — they belong in server logs. Consumers who need entity-level routing should branch on the `code` extension and check their own request payload.
+
+**Prerequisites:**
+
+- `services.AddHeadlessProblemDetails()` must also be registered. The handler depends on `IProblemDetailsCreator` and `IProblemDetailsService`; DI throws at handler resolution if missing.
+- Call `app.UseExceptionHandler()` yourself; this helper only registers the handler in the chain.
+
+**Handler-chain ordering:** `IExceptionHandler` instances run in registration order. Register `AddTenantContextProblemDetails(...)` **before** any catch-all handler that returns `true` for every exception, otherwise the catch-all swallows `MissingTenantContextException` first and the tenancy mapping never runs.
+
+**Related factory:** `IProblemDetailsCreator.TenantRequired(string typeUriPrefix, string errorCode)` produces the same response shape for direct callers (e.g., a request-pipeline pre-check that wants to short-circuit without throwing).
 
 ## Configuration
 

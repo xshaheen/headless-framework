@@ -10,6 +10,7 @@ packages: Api, Core, Orm.EntityFramework, Permissions.Core
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [HTTP Setup](#http-setup)
+- [HTTP Failure Mapping](#http-failure-mapping)
 - [Tenant Semantics](#tenant-semantics)
 - [EF Core Integration](#ef-core-integration)
 - [Permissions and Caching](#permissions-and-caching)
@@ -74,6 +75,47 @@ app.UseAuthorization();
 - Uses `MultiTenancyOptions.ClaimType` when configured
 - Calls `currentTenant.Change(tenantId)` only when the principal is authenticated and the tenant claim is not blank
 - Restores the previous tenant automatically when the request finishes
+
+## HTTP Failure Mapping
+
+`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the Mediator behavior (#236), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. To surface it as a normalized 400 ProblemDetails for HTTP clients, register the framework's exception handler:
+
+```csharp
+builder.Services.AddHeadlessProblemDetails();
+builder.Services.AddTenantContextProblemDetails(o =>
+{
+    o.TypeUriPrefix = "https://errors.example.com/tenancy"; // optional, default: https://errors.headless/tenancy
+    o.ErrorCode = "tenancy.tenant-required";                 // optional, default
+});
+
+var app = builder.Build();
+app.UseExceptionHandler();
+```
+
+Resulting response shape:
+
+```json
+{
+  "type": "https://errors.example.com/tenancy/tenant-required",
+  "title": "tenant-context-required",
+  "status": 400,
+  "detail": "An operation required an ambient tenant context but none was set.",
+  "code": "tenancy.tenant-required",
+  "traceId": "...",
+  "instance": "/path",
+  "timestamp": "..."
+}
+```
+
+The body deliberately surfaces only `code`, `type`, `title`, `status`, `detail`, plus the standard normalized extensions (`traceId`, `buildNumber`, `commitNumber`, `timestamp`, `instance`). The exception's `Message`, `Data` (e.g., `Headless.Messaging.FailureCode = "MissingTenantContext"`), and `InnerException` are NOT included in the response — they belong in server logs (the data tag remains on the exception for log aggregation; see [Strict Publish Tenancy](#strict-publish-tenancy-tenantcontextrequired) for the messaging side). This is intentional information-disclosure protection: external callers should branch on the `code` extension, not on internal entity names.
+
+Prerequisites:
+
+- `services.AddHeadlessProblemDetails()` must also be registered (handler depends on `IProblemDetailsCreator` and `IProblemDetailsService`).
+- Call `app.UseExceptionHandler()` yourself; the helper only registers the handler.
+- Handler-chain ordering matters: register `AddTenantContextProblemDetails(...)` **before** any catch-all `IExceptionHandler` that returns `true` for every exception, otherwise the catch-all swallows the tenancy mapping.
+
+The same shape is reachable without the handler via `IProblemDetailsCreator.TenantRequired(typeUriPrefix, errorCode)` for direct callers (e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing).
 
 ## Tenant Semantics
 

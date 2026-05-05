@@ -10,6 +10,7 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 
 - One-call service registration via `AddHeadlessApi()`
 - Multi-tenancy primitives via `AddHeadlessMultiTenancy()` and `UseTenantResolution()`
+- Tenant-context exception mapping via `AddTenantContextProblemDetails()` (maps `MissingTenantContextException` → 400 ProblemDetails)
 - Response compression (Brotli, Gzip) with optimized settings
 - Problem details standardization
 - JWT token factory and claims principal handling
@@ -79,6 +80,43 @@ app.UseAuthorization();
 ```
 
 Place `UseTenantResolution()` after authentication and before authorization.
+
+### Tenant-Context Exception Handler
+
+Register `AddTenantContextProblemDetails(...)` to map `Headless.Abstractions.MissingTenantContextException` (raised by EF write guards, Mediator behaviors, messaging publish guards, and any tenant-required code path) to a normalized 400 ProblemDetails response:
+
+```csharp
+builder.Services.AddHeadlessProblemDetails();
+builder.Services.AddTenantContextProblemDetails(o =>
+{
+    o.TypeUriPrefix = "https://errors.example.com/tenancy"; // optional
+    o.ErrorCode = "tenancy.tenant-required";                 // optional
+});
+
+var app = builder.Build();
+app.UseExceptionHandler();
+```
+
+Response shape (with all standard normalized extensions):
+
+```json
+{
+  "type": "https://errors.example.com/tenancy/tenant-required",
+  "title": "tenant-context-required",
+  "status": 400,
+  "detail": "An operation required an ambient tenant context but none was set.",
+  "code": "tenancy.tenant-required",
+  "traceId": "...",
+  "instance": "/path",
+  "timestamp": "..."
+}
+```
+
+The body deliberately surfaces no entity name, exception message, `Exception.Data` tag, or inner exception — those belong in server logs, not API responses. Clients route on the stable `code` extension.
+
+Prerequisites: `AddHeadlessProblemDetails()` must also be registered, and consumers must call `app.UseExceptionHandler()` themselves. Register `AddTenantContextProblemDetails(...)` before any catch-all `IExceptionHandler` so the tenancy mapping isn't swallowed.
+
+The same shape is reachable for direct callers via `IProblemDetailsCreator.TenantRequired(typeUriPrefix, errorCode)`.
 
 ## Configuration
 
