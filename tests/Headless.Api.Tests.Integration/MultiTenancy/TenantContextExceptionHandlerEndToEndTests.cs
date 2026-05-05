@@ -75,6 +75,26 @@ public sealed class TenantContextExceptionHandlerEndToEndTests : TestBase
     }
 
     [Fact]
+    public async Task should_use_custom_error_code()
+    {
+        // given
+        await using var app = await _CreateAppAsync(
+            handlerSetup: services =>
+                services.AddTenantContextProblemDetails(o => o.ErrorCode = "zad.tenancy.required"),
+            endpoint: () => throw new MissingTenantContextException()
+        );
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/throw", AbortToken);
+
+        // then
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("code").GetString().Should().Be("zad.tenancy.required");
+    }
+
+    [Fact]
     public async Task should_not_leak_exception_message_data_or_inner_exception_in_response_body()
     {
         // given - exception with sensitive message, Data tag, and inner exception
