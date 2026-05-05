@@ -23,13 +23,13 @@ public sealed class TenantContextProblemDetailsOptions
     /// any trailing slash on this property is trimmed by the factory so the joined URL has a single
     /// separator. Default: <c>https://errors.headless/tenancy</c>.
     /// </summary>
-    public string TypeUriPrefix { get; init; } = "https://errors.headless/tenancy";
+    public string TypeUriPrefix { get; set; } = "https://errors.headless/tenancy";
 
     /// <summary>
     /// Stable client-routing identifier written to <c>Extensions["code"]</c>. Default:
     /// <c>tenancy.tenant-required</c>.
     /// </summary>
-    public string ErrorCode { get; init; } = "tenancy.tenant-required";
+    public string ErrorCode { get; set; } = "tenancy.tenant-required";
 }
 
 internal sealed class TenantContextProblemDetailsOptionsValidator
