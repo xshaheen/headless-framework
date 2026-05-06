@@ -91,7 +91,7 @@ Additional packages:
 
 - Use `AddHeadless()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, or problem details.
 - Call `ApiSetup.ConfigureGlobalSettings()` before `AddHeadless()` to set regex timeout, FluentValidation, and JWT defaults.
-- Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.WithValidation<T>()` on endpoints for FluentValidation integration.
+- Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`) for `IFormFile` validation — do not write manual file validation logic.
 - Use `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` to persist Data Protection keys in distributed/containerized environments.
@@ -154,7 +154,7 @@ app.Run();
 
 ## Exception Mapping
 
-`AddHeadlessProblemDetails()` (called by `AddHeadless()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that maps framework-known exceptions to normalized ProblemDetails responses. The same mapping covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs.
+`AddHeadlessProblemDetails()` (called by `AddHeadless()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that maps framework-known exceptions to normalized ProblemDetails responses. Covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
 
 | Exception | Response |
 |-----------|----------|
@@ -517,7 +517,7 @@ builder.AddHeadless().ConfigureMinimalApi();
 var app = builder.Build();
 
 app.MapGet("/orders/{id}", (int id) => Results.Ok(new { id }))
-   .WithValidation<GetOrderRequest>();
+   .Validate<GetOrderRequest>();
 
 app.Run();
 ```

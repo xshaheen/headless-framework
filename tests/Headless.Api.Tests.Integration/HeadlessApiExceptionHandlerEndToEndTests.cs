@@ -2,7 +2,6 @@
 
 using System.Net;
 using System.Net.Mime;
-using System.Text.Json;
 using FluentValidation.Results;
 using Headless.Abstractions;
 using Headless.Api;
@@ -155,6 +154,75 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         body.Should().NotContain(HeadlessProblemDetailsConstants.Codes.TenantContextRequired);
     }
 
+    [Theory]
+    [InlineData("EntityNotFoundException")]
+    [InlineData("DbUpdateConcurrencyException")]
+    [InlineData("TimeoutException")]
+    [InlineData("NotImplementedException")]
+    public async Task should_not_leak_sentinel_message_in_response_body_for_mapped_exception(string kind)
+    {
+        // given - a sentinel string that must never appear in any response body for any mapped
+        // exception type. Note: ConflictException and ValidationException intentionally expose the
+        // caller-provided ErrorDescriptor / FailureMessage payloads via the `errors` extension —
+        // covered by other tests; not asserted here as those payloads are part of the contract.
+        const string sentinel = "LEAKED-SENTINEL-XYZ";
+        Action endpoint = kind switch
+        {
+            "EntityNotFoundException" => () => throw new EntityNotFoundException(sentinel, sentinel),
+            "DbUpdateConcurrencyException" => () => throw new DbUpdateConcurrencyException(sentinel),
+            "TimeoutException" => () => throw new TimeoutException(sentinel),
+            "NotImplementedException" => () => throw new NotImplementedException(sentinel),
+            _ => throw new InvalidOperationException($"unknown kind {kind}"),
+        };
+
+        await using var app = await _CreateAppAsync(handlerSetup: _ => { }, endpoint: endpoint);
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/throw", AbortToken);
+
+        // then - body must never echo the exception message
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+        body.Should().NotContain(sentinel);
+    }
+
+    [Fact]
+    public async Task should_map_missing_tenant_context_exception_thrown_from_mvc_controller_to_normalized_400()
+    {
+        // given - same global handler reaches MVC controllers as well as Minimal-API endpoints
+        var builder = WebApplication.CreateBuilder(
+            new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
+        );
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+
+        builder.Services.AddRouting();
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
+        builder.Services.AddHeadlessProblemDetails();
+        builder.Services.AddControllers().AddApplicationPart(typeof(TenancyThrowingController).Assembly);
+
+        await using var app = builder.Build();
+        app.UseExceptionHandler();
+        app.MapControllers();
+        await app.StartAsync(AbortToken);
+
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/mvc/throw-tenancy", AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.GetProperty("status").GetInt32().Should().Be(400);
+        root.GetProperty("code").GetString().Should().Be(HeadlessProblemDetailsConstants.Codes.TenantContextRequired);
+    }
+
     [Fact]
     public async Task should_lose_when_catch_all_registered_before_problem_details_setup()
     {
@@ -241,4 +309,19 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
             return true;
         }
     }
+
+    /// <summary>
+    /// Test exception named to match EF Core's <c>DbUpdateConcurrencyException</c> for the
+    /// duck-typing detection in <c>HeadlessApiExceptionHandler</c>. Avoids a hard EF Core
+    /// dependency in the integration test project.
+    /// </summary>
+    private sealed class DbUpdateConcurrencyException(string message) : Exception(message);
+}
+
+[Microsoft.AspNetCore.Mvc.ApiController]
+[Microsoft.AspNetCore.Mvc.Route("mvc")]
+public sealed class TenancyThrowingController : Microsoft.AspNetCore.Mvc.ControllerBase
+{
+    [Microsoft.AspNetCore.Mvc.HttpGet("throw-tenancy")]
+    public Microsoft.AspNetCore.Mvc.IActionResult ThrowTenancy() => throw new MissingTenantContextException();
 }

@@ -4,6 +4,7 @@ using FluentValidation;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
 using Headless.Api.Resources;
+using Headless.Constants;
 using Headless.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
@@ -17,14 +18,21 @@ namespace Headless.Api;
 /// <summary>
 /// Maps framework-known exceptions to normalized ProblemDetails responses through ASP.NET Core's
 /// <see cref="IExceptionHandler"/> pipeline. Replaces the per-package <c>MvcApiExceptionFilter</c>
-/// and <c>MinimalApiExceptionFilter</c>: a single mapping covers MVC actions, Minimal-API endpoints,
-/// middleware, hosted services, and SignalR hubs.
+/// and <c>MinimalApiExceptionFilter</c>.
 /// </summary>
 /// <remarks>
+/// <para>
+/// Covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware —
+/// typically MVC actions and Minimal-API endpoints. Middleware running before
+/// <c>UseExceptionHandler</c>, hosted/background services, and SignalR hubs need their own catch
+/// sites.
+/// </para>
+/// <para>
 /// Information-disclosure invariant: response bodies surface only the framework-owned fields
 /// produced by <see cref="IProblemDetailsCreator"/> plus the standard normalized extensions.
 /// Exception messages, <see cref="System.Exception.Data"/>, and inner-exception content are NOT
 /// surfaced — they belong in server logs.
+/// </para>
 /// </remarks>
 internal sealed partial class HeadlessApiExceptionHandler(
     IOptions<JsonOptions> jsonOptions,
@@ -33,6 +41,8 @@ internal sealed partial class HeadlessApiExceptionHandler(
     ILogger<HeadlessApiExceptionHandler> logger
 ) : IExceptionHandler
 {
+    private const string _DbUpdateConcurrencyExceptionTypeName = "DbUpdateConcurrencyException";
+
     public async ValueTask<bool> TryHandleAsync(
         HttpContext httpContext,
         Exception exception,
@@ -44,6 +54,16 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
         switch (exception)
         {
+            // Cancellation handled first (covers OCE at any nesting depth from Task.WhenAll etc.).
+            case Exception when _IsCancellationException(exception):
+                // Client closed the request — status only, no body. The client is gone.
+                if (httpContext.Response.HasStarted)
+                {
+                    return false;
+                }
+                httpContext.Response.StatusCode = StatusCodes.Status499ClientClosedRequest;
+                return true;
+
             case MissingTenantContextException:
                 problemDetails = problemDetailsCreator.TenantRequired();
                 statusCode = StatusCodes.Status400BadRequest;
@@ -70,8 +90,12 @@ internal sealed partial class HeadlessApiExceptionHandler(
             // will be mapped to 409 here. We accept this trade-off because the alternative
             // (FullName match against "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException")
             // would silently miss future EF Core type renames.
-            case not null
-                when string.Equals(exception.GetType().Name, "DbUpdateConcurrencyException", StringComparison.Ordinal):
+            case Exception
+                when string.Equals(
+                    exception.GetType().Name,
+                    _DbUpdateConcurrencyExceptionTypeName,
+                    StringComparison.Ordinal
+                ):
                 _LogDbConcurrencyException(logger, exception);
                 problemDetails = problemDetailsCreator.Conflict([GeneralMessageDescriber.ConcurrencyFailure()]);
                 statusCode = StatusCodes.Status409Conflict;
@@ -79,36 +103,14 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
             case TimeoutException:
                 _LogRequestTimeoutException(logger, exception);
-                problemDetails = new ProblemDetails
-                {
-                    Status = StatusCodes.Status408RequestTimeout,
-                    Title = "Request Timeout",
-                    Detail = "The request timed out",
-                };
-                problemDetailsCreator.Normalize(problemDetails);
+                problemDetails = problemDetailsCreator.RequestTimeout();
                 statusCode = StatusCodes.Status408RequestTimeout;
                 break;
 
             case NotImplementedException:
-                problemDetails = new ProblemDetails
-                {
-                    Status = StatusCodes.Status501NotImplemented,
-                    Title = "Not Implemented",
-                    Detail = "This functionality is not implemented",
-                };
-                problemDetailsCreator.Normalize(problemDetails);
+                problemDetails = problemDetailsCreator.NotImplemented();
                 statusCode = StatusCodes.Status501NotImplemented;
                 break;
-
-            case OperationCanceledException:
-            case { InnerException: OperationCanceledException }:
-                // Client closed the request — status only, no body. The client is gone.
-                if (httpContext.Response.HasStarted)
-                {
-                    return false;
-                }
-                httpContext.Response.StatusCode = StatusCodes.Status499ClientClosedRequest;
-                return true;
 
             default:
                 return false;
@@ -116,9 +118,16 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
         httpContext.Response.StatusCode = statusCode;
 
-        var written = await problemDetailsService.TryWriteAsync(
-            new ProblemDetailsContext { HttpContext = httpContext, ProblemDetails = problemDetails }
-        );
+        var written = await problemDetailsService
+            .TryWriteAsync(
+                new ProblemDetailsContext
+                {
+                    HttpContext = httpContext,
+                    Exception = exception,
+                    ProblemDetails = problemDetails,
+                }
+            )
+            .ConfigureAwait(false);
 
         if (written)
         {
@@ -131,15 +140,55 @@ internal sealed partial class HeadlessApiExceptionHandler(
             return false;
         }
 
-        await httpContext
-            .Response.WriteAsJsonAsync(
-                problemDetails,
-                jsonOptions.Value.SerializerOptions,
-                contentType: "application/problem+json",
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-        return true;
+        // Accept-header gate: only emit the JSON-shaped fallback when the client actually accepts
+        // JSON. Otherwise let the platform render its default response (mirrors the gate that the
+        // deleted MvcApiExceptionFilter / MinimalApiExceptionFilter applied).
+        if (!_AcceptsJsonProblemDetails(httpContext.Request))
+        {
+            return false;
+        }
+
+        try
+        {
+            await httpContext
+                .Response.WriteAsJsonAsync(
+                    problemDetails,
+                    jsonOptions.Value.SerializerOptions,
+                    contentType: "application/problem+json",
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            // Client cancelled while we were writing the fallback body — nothing else we can do.
+            return false;
+        }
+#pragma warning disable CA1031 // Do not catch general exception types — last-resort fallback path; we must not re-throw.
+        catch (Exception fallbackError)
+#pragma warning restore CA1031
+        {
+            _LogFallbackWriteFailed(logger, fallbackError, fallbackError.GetType().Name);
+            return false;
+        }
+    }
+
+    private static bool _IsCancellationException(Exception ex)
+    {
+        for (var current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is OperationCanceledException)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool _AcceptsJsonProblemDetails(HttpRequest request)
+    {
+        return request.CanAccept(ContentTypes.Applications.Json, ContentTypes.Applications.ProblemJson);
     }
 
     [LoggerMessage(
@@ -168,4 +217,13 @@ internal sealed partial class HeadlessApiExceptionHandler(
         SkipEnabledCheck = true
     )]
     private static partial void _LogResponseAlreadyStarted(ILogger logger, string exceptionType);
+
+    [LoggerMessage(
+        EventId = 5007,
+        EventName = "FallbackWriteFailed",
+        Level = LogLevel.Error,
+        Message = "Failed to write fallback ProblemDetails response ({FallbackErrorType}); pipeline will produce the default response",
+        SkipEnabledCheck = true
+    )]
+    private static partial void _LogFallbackWriteFailed(ILogger logger, Exception exception, string fallbackErrorType);
 }

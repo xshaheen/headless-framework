@@ -29,7 +29,7 @@ builder.AddHeadless().ConfigureMinimalApi();
 var app = builder.Build();
 
 app.MapGet("/orders/{id}", (int id) => Results.Ok(new { id }))
-   .WithValidation<GetOrderRequest>();
+   .Validate<GetOrderRequest>();
 
 app.Run();
 ```
@@ -47,3 +47,7 @@ No additional configuration beyond what `AddHeadless()` requires. Configure `Hea
 ## Side Effects
 
 - Configures `JsonOptions` for Minimal APIs
+
+## Migration
+
+`MinimalApiExceptionFilter` and `RouteGroupBuilder.AddExceptionFilter()` were removed. Exception-to-ProblemDetails mapping is now handled globally by `HeadlessApiExceptionHandler` (registered via `services.AddHeadlessProblemDetails()` and activated by `app.UseExceptionHandler()` in `Headless.Api`). Remove any per-route or per-group `AddExceptionFilter()` calls.

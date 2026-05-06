@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using FluentValidation.Results;
 using Headless.Abstractions;
 using Headless.Api;
@@ -9,10 +8,10 @@ using Headless.Constants;
 using Headless.Exceptions;
 using Headless.Primitives;
 using Headless.Testing.Tests;
-using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -266,7 +265,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
         var httpContext = new DefaultHttpContext();
-        httpContext.Features.Set<IHttpResponseFeature>(new _StartedResponseFeature());
+        httpContext.Features.Set<IHttpResponseFeature>(new StartedResponseFeature());
 
         // when
         var result = await handler.TryHandleAsync(
@@ -321,7 +320,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(false);
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
         var httpContext = new DefaultHttpContext();
-        httpContext.Features.Set<IHttpResponseFeature>(new _StartedResponseFeature());
+        httpContext.Features.Set<IHttpResponseFeature>(new StartedResponseFeature());
 
         // when
         var result = await handler.TryHandleAsync(
@@ -364,9 +363,75 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         body.Should().Contain(HeadlessProblemDetailsConstants.Codes.TenantContextRequired);
     }
 
+    [Fact]
+    public async Task should_log_db_concurrency_exception_with_event_id_5003()
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(true);
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
+        var httpContext = new DefaultHttpContext();
+
+        // when
+        await handler.TryHandleAsync(
+            httpContext,
+            new DbUpdateConcurrencyException("conflict"),
+            TestContext.Current.CancellationToken
+        );
+
+        // then
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5003);
+    }
+
+    [Fact]
+    public async Task should_log_timeout_exception_with_event_id_5004()
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(true);
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
+        var httpContext = new DefaultHttpContext();
+
+        // when
+        await handler.TryHandleAsync(
+            httpContext,
+            new TimeoutException("timed out"),
+            TestContext.Current.CancellationToken
+        );
+
+        // then
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5004);
+    }
+
+    [Fact]
+    public async Task should_log_response_already_started_with_event_id_5006_when_fallback_path_runs()
+    {
+        // given - response has started AND problem details service fails, forcing the fallback log path
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(false);
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Features.Set<IHttpResponseFeature>(new StartedResponseFeature());
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new MissingTenantContextException(),
+            TestContext.Current.CancellationToken
+        );
+
+        // then
+        result.Should().BeFalse();
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5006);
+    }
+
     private static HeadlessApiExceptionHandler _CreateHandler(
         IProblemDetailsService problemDetailsService,
-        IProblemDetailsCreator creator
+        IProblemDetailsCreator creator,
+        ILogger<HeadlessApiExceptionHandler>? logger = null
     )
     {
         var jsonOptions = Options.Create(new JsonOptions());
@@ -374,7 +439,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             jsonOptions,
             problemDetailsService,
             creator,
-            NullLogger<HeadlessApiExceptionHandler>.Instance
+            logger ?? NullLogger<HeadlessApiExceptionHandler>.Instance
         );
     }
 
@@ -389,7 +454,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         return new ProblemDetailsCreator(timeProvider, buildInfo, httpContextAccessor, apiBehaviorOptions);
     }
 
-    private sealed class _StartedResponseFeature : IHttpResponseFeature
+    private sealed class StartedResponseFeature : IHttpResponseFeature
     {
         public int StatusCode { get; set; } = 200;
         public string? ReasonPhrase { get; set; }
@@ -408,4 +473,27 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     /// test project.
     /// </summary>
     private sealed class DbUpdateConcurrencyException(string message) : Exception(message);
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            Entries.Add(new LogEntry(logLevel, eventId, exception, formatter(state, exception)));
+        }
+
+        public sealed record LogEntry(LogLevel Level, EventId EventId, Exception? Exception, string Message);
+    }
 }

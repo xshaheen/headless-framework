@@ -362,33 +362,6 @@ public sealed class ProblemDetailsTests : TestBase
      * }
      */
 
-    // UseDeveloperExceptionHandler (Development)
-
-    /*
-     * {
-     *   "type" : "https://tools.ietf.org/html/rfc9110#section-15.6.1",
-     *   "title" : "unhandled-exception",
-     *   "status" : 500,
-     *   "detail" : "This is a test exception.",
-     *   "instance" : "/minimal/internal-error",
-     *   "exception" : {
-     *     "details" : "System.InvalidOperationException: This is a test exception.\r\n   at Headless.Api.Demo.Endpoints.ProblemsEndpoints.<>c.<MapProblemsEndpoints>b__0_2() in D:\\Dev\\headless-framework\\demo\\Headless.Api.Demo\\Endpoints\\ProblemsEndpoints.cs:line 32\r\n   at lambda_method48(Closure, EndpointFilterInvocationContext)\r\n   at Microsoft.AspNetCore.Builder.MinimalApiExceptionFilter.InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next) in D:\\Dev\\headless-framework\\src\\Headless.Api.MinimalApi\\Filters\\MinimalApiExceptionFilter.cs:line 43\r\n   at Microsoft.AspNetCore.Http.RequestDelegateFactory.<ExecuteValueTaskOfObject>g__ExecuteAwaited|128_0(ValueTask`1 valueTask, HttpContext httpContext, JsonTypeInfo`1 jsonTypeInfo)\r\n   at NSwag.AspNetCore.Middlewares.SwaggerUiIndexMiddleware.Invoke(HttpContext context)\r\n   at NSwag.AspNetCore.Middlewares.RedirectToIndexMiddleware.Invoke(HttpContext context)\r\n   at NSwag.AspNetCore.Middlewares.OpenApiDocumentMiddleware.Invoke(HttpContext context)\r\n   at Headless.Api.Middlewares.StatusCodesRewriterMiddleware.InvokeAsync(HttpContext context, RequestDelegate next) in D:\\Dev\\headless-framework\\src\\Headless.Api\\Middlewares\\StatusCodesRewriterMiddleware.cs:line 13\r\n   at Microsoft.AspNetCore.Builder.UseMiddlewareExtensions.InterfaceMiddlewareBinder.<>c__DisplayClass2_0.<<CreateMiddleware>b__0>d.MoveNext()\r\n--- End of stack trace from previous location ---\r\n   at Microsoft.AspNetCore.Diagnostics.DeveloperExceptionPageMiddlewareImpl.Invoke(HttpContext context)",
-     *     "headers" : {
-     *       "content-Type" : [ "text/plain; charset=utf-8" ],
-     *       "content-Length" : [ "0" ],
-     *       "host" : [ "localhost" ]
-     *     },
-     *     "path" : "/minimal/internal-error",
-     *     "endpoint" : "HTTP: POST minimal/internal-error",
-     *     "routeValues" : null
-     *   },
-     *   "traceId" : "00-988ce453442fc521ec4ed1e5aba288a6-de267659253f8c4d-00",
-     *   "buildNumber" : "2.16.1.109",
-     *   "commitNumber" : "2.16.1.109",
-     *   "timestamp" : "2025-01-29T21:59:34.4677538+00:00"
-     * }
-     */
-
     [Theory]
     [InlineData(EnvironmentNames.Development)]
     [InlineData(EnvironmentNames.Staging)]

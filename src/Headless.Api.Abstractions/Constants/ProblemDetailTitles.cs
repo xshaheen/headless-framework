@@ -18,11 +18,13 @@ public static class HeadlessProblemDetailsConstants
         public const string Conflict = "https://tools.ietf.org/html/rfc9110#section-15.5.10";
         public const string InternalError = "https://tools.ietf.org/html/rfc9110#section-15.6.1";
         public const string TooManyRequests = "https://datatracker.ietf.org/doc/html/rfc6585#section-4";
+        public const string RequestTimeout = "https://tools.ietf.org/html/rfc9110#section-15.5.9";
+        public const string NotImplemented = "https://tools.ietf.org/html/rfc9110#section-15.6.2";
     }
 
     public static class Codes
     {
-        public const string TenantContextRequired = "tenancy.tenant-required";
+        public const string TenantContextRequired = "tenancy:tenant-required";
     }
 
     public static class Titles
@@ -36,6 +38,8 @@ public static class HeadlessProblemDetailsConstants
         public const string Conflict = "conflict-request";
         public const string InternalError = "unhandled-exception";
         public const string TooManyRequests = "too-many-requests";
+        public const string RequestTimeout = "request-timeout";
+        public const string NotImplemented = "not-implemented";
     }
 
     public static class Details
@@ -56,6 +60,8 @@ public static class HeadlessProblemDetailsConstants
         public const string UnprocessableEntity = "One or more validation errors occurred.";
         public const string InternalError = "An error occurred while processing your request.";
         public const string TooManyRequests = "Too many requests - please try again later.";
+        public const string RequestTimeout = "The request timed out.";
+        public const string NotImplemented = "This functionality is not implemented.";
 
         public const string TenantContextRequired = "An operation required an ambient tenant context but none was set.";
     }

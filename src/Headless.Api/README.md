@@ -10,7 +10,7 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 
 - One-call service registration via `AddHeadless()`
 - Multi-tenancy primitives via `AddHeadlessMultiTenancy()` and `UseTenantResolution()`
-- Unified exception-to-ProblemDetails mapping via `HeadlessApiExceptionHandler` (auto-registered by `AddHeadlessProblemDetails()`): covers tenancy, conflict, validation, not-found, EF concurrency, timeout, not-implemented, and cancellation across MVC, Minimal API, middleware, hosted services, and hubs
+- Unified exception-to-ProblemDetails mapping via `HeadlessApiExceptionHandler` (auto-registered by `AddHeadlessProblemDetails()`): covers tenancy, conflict, validation, not-found, EF concurrency, timeout, not-implemented, and cancellation for any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware (typically MVC actions and Minimal-API endpoints)
 - Response compression (Brotli, Gzip) with optimized settings
 - Problem details standardization
 - JWT token factory and claims principal handling
@@ -83,18 +83,18 @@ Place `UseTenantResolution()` after authentication and before authorization.
 
 ### Exception Mapping
 
-`AddHeadlessProblemDetails()` (called by `AddHeadless()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs:
+`AddHeadlessProblemDetails()` (called by `AddHeadless()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
 
 | Exception | Response |
 |-----------|----------|
-| `MissingTenantContextException` | 400 (standard `bad-request` title; identified by `code: tenancy.tenant-required`) |
+| `MissingTenantContextException` | 400 (standard `bad-request` title; identified by `code: tenancy.tenant-required`). Previously surfaced as 500 (unhandled); now 400 — terminal, do not retry. |
 | `ConflictException` | 409 with `errors` |
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `EntityNotFoundException` | 404 |
 | EF Core `DbUpdateConcurrencyException` (matched by type name) | 409 with concurrency-failure error |
 | `TimeoutException` | 408 |
 | `NotImplementedException` | 501 |
-| `OperationCanceledException` (or inner OCE) | 499 (no body — client closed request) |
+| `OperationCanceledException` (or inner OCE at any depth) | 499 (no body — client closed request) |
 
 ```csharp
 builder.AddHeadless();
@@ -124,7 +124,14 @@ The body deliberately surfaces no entity name, exception message, `Exception.Dat
 
 Prerequisites: call `app.UseExceptionHandler()` to wire the `IExceptionHandler` chain into the pipeline. The handler is registered by `AddHeadlessProblemDetails()`, so consumers who need their own catch-all to win must register it **before** that call.
 
-The same tenancy shape is reachable for direct callers via `IProblemDetailsCreator.TenantRequired()` (parameterless).
+The same tenancy shape is reachable for direct callers via `IProblemDetailsCreator.TenantRequired()` (parameterless). The 408 (`RequestTimeout()`) and 501 (`NotImplemented()`) shapes are reachable the same way.
+
+> **Side effects of `AddHeadlessProblemDetails()`**: this method also registers `HeadlessApiExceptionHandler` as an `IExceptionHandler` via `TryAddEnumerable`. Consumer-registered `IExceptionHandler`s placed **before** this call run first.
+
+### Breaking Changes & Migration
+
+- `IProblemDetailsCreator` gained `TenantRequired()`, `RequestTimeout()`, and `NotImplemented()`. Custom implementers must add these members.
+- The per-package `MvcApiExceptionFilter` and `MinimalApiExceptionFilter` (and `RouteGroupBuilder.AddExceptionFilter()` / `options.Filters.Add<MvcApiExceptionFilter>()`) were removed. They are replaced by the global `HeadlessApiExceptionHandler` registered via `services.AddHeadlessProblemDetails()` plus `app.UseExceptionHandler()` in the request pipeline.
 
 ## Configuration
 

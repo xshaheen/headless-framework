@@ -52,6 +52,40 @@ public interface IProblemDetailsCreator
     /// </remarks>
     ProblemDetails TenantRequired();
 
+    /// <summary>
+    /// Builds a normalized 408 <see cref="ProblemDetails"/> for request-timeout responses
+    /// (typically mapped from <see cref="System.TimeoutException"/>).
+    /// </summary>
+    /// <returns>
+    /// A <see cref="ProblemDetails"/> already passed through <see cref="Normalize"/> — callers should
+    /// not call <see cref="Normalize"/> again. Contains <c>Status = 408</c>, the standard
+    /// <c>request-timeout</c> title and detail, and the standard normalized extensions.
+    /// Deliberately surfaces no exception message or inner-exception content — those belong in
+    /// server logs, not the HTTP response.
+    /// </returns>
+    /// <remarks>
+    /// Requires the host to have called <c>services.AddHeadlessProblemDetails()</c> so the
+    /// underlying creator can run normalization.
+    /// </remarks>
+    ProblemDetails RequestTimeout();
+
+    /// <summary>
+    /// Builds a normalized 501 <see cref="ProblemDetails"/> for unimplemented-functionality
+    /// responses (typically mapped from <see cref="System.NotImplementedException"/>).
+    /// </summary>
+    /// <returns>
+    /// A <see cref="ProblemDetails"/> already passed through <see cref="Normalize"/> — callers should
+    /// not call <see cref="Normalize"/> again. Contains <c>Status = 501</c>, the standard
+    /// <c>not-implemented</c> title and detail, and the standard normalized extensions.
+    /// Deliberately surfaces no exception message or inner-exception content — those belong in
+    /// server logs, not the HTTP response.
+    /// </returns>
+    /// <remarks>
+    /// Requires the host to have called <c>services.AddHeadlessProblemDetails()</c> so the
+    /// underlying creator can run normalization.
+    /// </remarks>
+    ProblemDetails NotImplemented();
+
     void Normalize(ProblemDetails problemDetails);
 }
 
@@ -181,6 +215,34 @@ public sealed class ProblemDetailsCreator(
             Title = HeadlessProblemDetailsConstants.Titles.BadRequest,
             Detail = HeadlessProblemDetailsConstants.Details.TenantContextRequired,
             Extensions = { ["code"] = HeadlessProblemDetailsConstants.Codes.TenantContextRequired },
+        };
+
+        _Normalize(problemDetails);
+
+        return problemDetails;
+    }
+
+    public ProblemDetails RequestTimeout()
+    {
+        var problemDetails = new ProblemDetails
+        {
+            Status = StatusCodes.Status408RequestTimeout,
+            Title = HeadlessProblemDetailsConstants.Titles.RequestTimeout,
+            Detail = HeadlessProblemDetailsConstants.Details.RequestTimeout,
+        };
+
+        _Normalize(problemDetails);
+
+        return problemDetails;
+    }
+
+    public ProblemDetails NotImplemented()
+    {
+        var problemDetails = new ProblemDetails
+        {
+            Status = StatusCodes.Status501NotImplemented,
+            Title = HeadlessProblemDetailsConstants.Titles.NotImplemented,
+            Detail = HeadlessProblemDetailsConstants.Details.NotImplemented,
         };
 
         _Normalize(problemDetails);
