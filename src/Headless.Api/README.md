@@ -8,9 +8,9 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 
 ## Key Features
 
-- One-call service registration via `AddHeadlessApi()`
+- One-call service registration via `AddHeadless()`
 - Multi-tenancy primitives via `AddHeadlessMultiTenancy()` and `UseTenantResolution()`
-- Tenant-context exception mapping via `AddTenantContextProblemDetails()` (maps `MissingTenantContextException` → 400 ProblemDetails)
+- Unified exception-to-ProblemDetails mapping via `HeadlessApiExceptionHandler` (auto-registered by `AddHeadlessProblemDetails()`): covers tenancy, conflict, validation, not-found, EF concurrency, timeout, not-implemented, and cancellation across MVC, Minimal API, middleware, hosted services, and hubs
 - Response compression (Brotli, Gzip) with optimized settings
 - Problem details standardization
 - JWT token factory and claims principal handling
@@ -37,7 +37,7 @@ var builder = WebApplication.CreateBuilder(args);
 ApiSetup.ConfigureGlobalSettings();
 
 // Register all framework API services
-builder.AddHeadlessApi();
+builder.AddHeadless();
 builder.AddHeadlessMultiTenancy();
 
 var app = builder.Build();
@@ -54,19 +54,19 @@ app.UseAuthorization();
 app.Run();
 ```
 
-`AddHeadlessApi()` requires the `Headless:StringEncryption` and `Headless:StringHash` configuration sections.
+`AddHeadless()` requires the `Headless:StringEncryption` and `Headless:StringHash` configuration sections.
 
-If you do not want the default `Headless:*` binding, `AddHeadlessApi()` also exposes explicit overloads for:
+If you do not want the default `Headless:*` binding, `AddHeadless()` also exposes explicit overloads for:
 
 - `IConfiguration stringEncryptionConfig, IConfiguration stringHashConfig`
 - `Action<StringEncryptionOptions>, Action<StringHashOptions>?`
 - `Action<StringEncryptionOptions, IServiceProvider>, Action<StringHashOptions, IServiceProvider>?`
 
-When the hash callback is omitted, `AddHeadlessApi(...)` still binds `Headless:StringHash` by default.
+When the hash callback is omitted, `AddHeadless(...)` still binds `Headless:StringHash` by default.
 
 ## Multi-Tenancy
 
-`AddHeadlessApi()` registers `CurrentTenant` by default, and `Headless.Orm.EntityFramework` now uses the same default for `AddHeadlessDbContextServices()`. For claim-based HTTP tenant resolution, opt in with:
+`AddHeadless()` registers `CurrentTenant` by default, and `Headless.Orm.EntityFramework` now uses the same default for `AddHeadlessDbContextServices()`. For claim-based HTTP tenant resolution, opt in with:
 
 ```csharp
 builder.AddHeadlessMultiTenancy(options =>
@@ -81,27 +81,33 @@ app.UseAuthorization();
 
 Place `UseTenantResolution()` after authentication and before authorization.
 
-### Tenant-Context Exception Handler
+### Exception Mapping
 
-Register `AddTenantContextProblemDetails(...)` to map `Headless.Abstractions.MissingTenantContextException` (raised by EF write guards, Mediator behaviors, messaging publish guards, and any tenant-required code path) to a normalized 400 ProblemDetails response:
+`AddHeadlessProblemDetails()` (called by `AddHeadless()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs:
+
+| Exception | Response |
+|-----------|----------|
+| `MissingTenantContextException` | 400 (`tenant-context-required`, `code: tenancy.tenant-required`) |
+| `ConflictException` | 409 with `errors` |
+| `FluentValidation.ValidationException` | 422 with field errors |
+| `EntityNotFoundException` | 404 |
+| EF Core `DbUpdateConcurrencyException` (matched by type name) | 409 with concurrency-failure error |
+| `TimeoutException` | 408 |
+| `NotImplementedException` | 501 |
+| `OperationCanceledException` (or inner OCE) | 499 (no body — client closed request) |
 
 ```csharp
-builder.Services.AddHeadlessProblemDetails();
-builder.Services.AddTenantContextProblemDetails(o =>
-{
-    o.TypeUriPrefix = "https://errors.example.com/tenancy"; // optional
-    o.ErrorCode = "tenancy.tenant-required";                 // optional
-});
+builder.AddHeadless();
 
 var app = builder.Build();
 app.UseExceptionHandler();
 ```
 
-Response shape (with all standard normalized extensions):
+Tenancy response shape (other exceptions follow the same normalization):
 
 ```json
 {
-  "type": "https://errors.example.com/tenancy/tenant-required",
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
   "title": "tenant-context-required",
   "status": 400,
   "detail": "An operation required an ambient tenant context but none was set.",
@@ -112,11 +118,11 @@ Response shape (with all standard normalized extensions):
 }
 ```
 
-The body deliberately surfaces no entity name, exception message, `Exception.Data` tag, or inner exception — those belong in server logs, not API responses. Clients route on the stable `code` extension.
+The body deliberately surfaces no entity name, exception message, `Exception.Data` tag, or inner exception — those belong in server logs, not API responses. Clients route on stable `code` and `status` values.
 
-Prerequisites: `AddHeadlessProblemDetails()` must also be registered, and consumers must call `app.UseExceptionHandler()` themselves. Register `AddTenantContextProblemDetails(...)` before any catch-all `IExceptionHandler` so the tenancy mapping isn't swallowed.
+Prerequisites: call `app.UseExceptionHandler()` to wire the `IExceptionHandler` chain into the pipeline. The handler is registered by `AddHeadlessProblemDetails()`, so consumers who need their own catch-all to win must register it **before** that call.
 
-The same shape is reachable for direct callers via `IProblemDetailsCreator.TenantRequired(typeUriPrefix, errorCode)`.
+The same tenancy shape is reachable for direct callers via `IProblemDetailsCreator.TenantRequired()` (parameterless).
 
 ## Configuration
 
@@ -148,7 +154,7 @@ The same shape is reachable for direct callers via `IProblemDetailsCreator.Tenan
   }
 }
 ```
-`AddHeadlessApi()` binds both `Headless:StringEncryption` and `Headless:StringHash`, and requires both sections to exist.
+`AddHeadless()` binds both `Headless:StringEncryption` and `Headless:StringHash`, and requires both sections to exist.
 
 ## Dependencies
 

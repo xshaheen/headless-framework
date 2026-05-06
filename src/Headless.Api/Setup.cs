@@ -17,6 +17,7 @@ using Headless.Core;
 using Headless.Serializer;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Identity;
@@ -47,7 +48,7 @@ public static class ApiSetup
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
     }
 
-    public static WebApplicationBuilder AddHeadlessApi(this WebApplicationBuilder builder)
+    public static WebApplicationBuilder AddHeadless(this WebApplicationBuilder builder)
     {
         Argument.IsNotNull(builder);
 
@@ -57,7 +58,7 @@ public static class ApiSetup
         return _AddCore(builder);
     }
 
-    public static WebApplicationBuilder AddHeadlessApi(
+    public static WebApplicationBuilder AddHeadless(
         this WebApplicationBuilder builder,
         IConfiguration stringEncryptionConfig,
         IConfiguration stringHashConfig
@@ -73,7 +74,7 @@ public static class ApiSetup
         return _AddCore(builder);
     }
 
-    public static WebApplicationBuilder AddHeadlessApi(
+    public static WebApplicationBuilder AddHeadless(
         this WebApplicationBuilder builder,
         Action<StringEncryptionOptions> configureEncryption,
         Action<StringHashOptions>? configureHash = null
@@ -96,7 +97,7 @@ public static class ApiSetup
         return _AddCore(builder);
     }
 
-    public static WebApplicationBuilder AddHeadlessApi(
+    public static WebApplicationBuilder AddHeadless(
         this WebApplicationBuilder builder,
         Action<StringEncryptionOptions, IServiceProvider> configureEncryption,
         Action<StringHashOptions, IServiceProvider>? configureHash = null
@@ -215,6 +216,13 @@ public static class ApiSetup
                 normalizer.Normalize(context.ProblemDetails);
             };
         });
+
+        // Single IExceptionHandler covers framework-known exceptions (tenancy, conflict, validation,
+        // not-found, EF concurrency, timeout, not-implemented, cancellation) for MVC actions,
+        // Minimal-API endpoints, middleware, hosted services, and hubs. ASP.NET Core's
+        // AddExceptionHandler<T>() uses plain AddSingleton which is not idempotent; using
+        // TryAddEnumerable directly collapses duplicate registrations to a single descriptor.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExceptionHandler, HeadlessApiExceptionHandler>());
 
         return services;
     }

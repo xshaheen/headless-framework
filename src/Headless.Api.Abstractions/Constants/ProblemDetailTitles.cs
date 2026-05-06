@@ -20,6 +20,11 @@ public static class HeadlessProblemDetailsConstants
         public const string TooManyRequests = "https://datatracker.ietf.org/doc/html/rfc6585#section-4";
     }
 
+    public static class Codes
+    {
+        public const string TenantContextRequired = "tenancy.tenant-required";
+    }
+
     public static class Titles
     {
         public const string EndpointNotFound = "endpoint-not-found";

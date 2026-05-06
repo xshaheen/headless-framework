@@ -22,12 +22,12 @@ Each consumer rewriting this mapping locally produces drift — different type U
 
 ## Requirements
 
-- R1. `IProblemDetailsCreator` gains a `TenantRequired(string typeUriPrefix, string errorCode)` factory method that builds a 400 `ProblemDetails` with the canonical title (`HeadlessProblemDetailsConstants.Titles.TenantContextRequired`), composed `Type` URL (`{prefix}/tenant-required`), and `Extensions["code"]`, then runs `Normalize` to inject `traceId`/`buildNumber`/`commitNumber`/`timestamp`/`Instance`.
-- R2. `TenantContextProblemDetailsOptions` exposes `TypeUriPrefix` (consumer error-doc namespace) and `ErrorCode` (stable client-routing code). No `Title` field — the title is a centralized constant. No `EntityType` / `ExposeEntityType` field — entity names are not exposed in API responses (information disclosure: see Key Technical Decisions).
-- R3. `TenantContextExceptionHandler` implements `IExceptionHandler`. Returns `false` for any exception other than `MissingTenantContextException`. For matches: delegates to `IProblemDetailsCreator.TenantRequired(...)`, sets `HttpContext.Response.StatusCode = 400`, calls `IProblemDetailsService.TryWriteAsync` so consumer customizations layer on top, and falls back to `WriteAsJsonAsync` only when the service returns `false` AND `Response.HasStarted == false`.
-- R4. Single-call registration helper `services.AddTenantContextProblemDetails(...)` exists with three overloads (`IConfiguration`, `Action<TOptions>`, `Action<TOptions, IServiceProvider>`) — matching the framework's option-registration convention. Idempotent: calling twice does not register the handler twice.
-- R5. Default `Title` is kebab-case (`"tenant-context-required"`), centralized in `HeadlessProblemDetailsConstants.Titles.TenantContextRequired`.
-- R6. Integration test proves: throwing `MissingTenantContextException` from a request handler yields a 400 with stable `code`, `type`, `title`; `traceId` extension is present (proves normalization ran via `IProblemDetailsService`).
+- R1. `IProblemDetailsCreator` gains a parameterless `TenantRequired()` factory method that builds a 400 `ProblemDetails` with the canonical title (`HeadlessProblemDetailsConstants.Titles.TenantContextRequired`), the framework-owned detail message, and the framework-owned `Extensions["code"] = HeadlessProblemDetailsConstants.Codes.TenantContextRequired`, then runs `Normalize` to inject `traceId`/`buildNumber`/`commitNumber`/`timestamp`/`Instance`. The `Type` URL is filled by `Normalize` from `ApiBehaviorOptions.ClientErrorMapping[400]` — the same standard 400 RFC URL the rest of the framework uses (matching `Conflict`, `EntityNotFound`, `MalformedSyntax`).
+- R2. ~~No options class~~ The framework owns the response shape end-to-end. `TypeUriPrefix` and `ErrorCode` are not configurable per-app — consumers branch on the stable `code` extension (`HeadlessProblemDetailsConstants.Codes.TenantContextRequired`), matching how `Forbidden`/`Conflict`/`EntityNotFound` work today. Consumers who need a different response shape write their own factory.
+- R3. `TenantContextExceptionHandler` implements `IExceptionHandler`. Returns `false` for any exception other than `MissingTenantContextException`. For matches: delegates to `IProblemDetailsCreator.TenantRequired()`, sets `HttpContext.Response.StatusCode = 400`, calls `IProblemDetailsService.TryWriteAsync` so consumer customizations layer on top, and falls back to `WriteAsJsonAsync` only when the service returns `false` AND `Response.HasStarted == false`.
+- R4. The handler is registered automatically by `AddHeadlessProblemDetails()` (called by `AddHeadless()`). Idempotent registration via `TryAddEnumerable`. No standalone helper.
+- R5. Default `Title` is kebab-case (`"tenant-context-required"`), centralized in `HeadlessProblemDetailsConstants.Titles.TenantContextRequired`. Default `Code` is `"tenancy.tenant-required"`, centralized in `HeadlessProblemDetailsConstants.Codes.TenantContextRequired`.
+- R6. Integration test proves: throwing `MissingTenantContextException` from a request handler yields a 400 with stable `code`, `title`; `traceId` extension is present (proves normalization ran via `IProblemDetailsService`).
 - R7. Documentation surfaces are updated in lockstep: `docs/llms/api.md`, `docs/llms/multi-tenancy.md`, `src/Headless.Api/README.md`. Each surface documents the no-entity-leakage choice so consumers understand the response shape is intentional.
 
 ## Scope Boundaries
@@ -69,15 +69,15 @@ External research was not needed: the codebase has strong local patterns for exc
 
 ## Key Technical Decisions
 
-- **Factory method on `IProblemDetailsCreator`, not a standalone handler shape.** The handler delegates to `creator.TenantRequired(typeUriPrefix, errorCode)`. Rationale: matches existing `EntityNotFound` / `Conflict` / `Forbidden` factory shape; any caller with the creator injected can produce the same response without going through the global exception pipeline; keeps the canonical ProblemDetails-construction logic in one class.
+- **Factory method on `IProblemDetailsCreator`, not a standalone handler shape.** The handler delegates to `creator.TenantRequired()`. Rationale: matches existing `EntityNotFound` / `Conflict` / `Forbidden` factory shape; any caller with the creator injected can produce the same response without going through the global exception pipeline; keeps the canonical ProblemDetails-construction logic in one class.
 - **No entity name in the response.** The original issue proposed an `entityType` extension gated by an `ExposeEntityType` option. **Dropped** — exposing CLR entity type names to API clients is information disclosure: external callers can enumerate the persistence model from error responses. The `code` extension (`tenancy.tenant-required`) is sufficient for client-side routing; entity names belong in server logs (via `Exception.Data` tags), not HTTP bodies. If a downstream consumer needs entity context for error tracking, they catch and log on the throwing side.
 - **`MissingTenantContextException` is not modified.** No new `EntityType` property, no new constructor. Exception identity is "tenancy guard fired"; per-layer context is in `Exception.Data` (server-only).
-- **`Title` is a centralized constant, not configurable.** Defaults across the framework's ProblemDetails (`EntityNotFound`, `Conflict`, etc.) are fixed strings in `HeadlessProblemDetailsConstants.Titles`. The tenant-required title joins that pattern. Consumers who need a different title can write their own factory; the framework keeps one canonical title per error class.
+- **No options class.** The original design had `TenantContextProblemDetailsOptions { TypeUriPrefix, ErrorCode }`. **Dropped** — `Forbidden`, `Conflict`, `EntityNotFound`, etc. are not configurable per-app, and tenancy joins that pattern. Consumers branch on the stable `code` extension; if a consumer needs a different response shape, they write their own factory and skip the helper. The framework owns one canonical shape per error class.
+- **`Title` and `Code` are centralized constants, not configurable.** They live in `HeadlessProblemDetailsConstants.Titles.TenantContextRequired` and `HeadlessProblemDetailsConstants.Codes.TenantContextRequired`.
+- **`Type` URL uses the standard 400 RFC URL.** Filled by `Normalize` from `ApiBehaviorOptions.ClientErrorMapping[400].Link` — same as `Conflict`, `MalformedSyntax`, `EntityNotFound`. Differentiation between error classes is done via the `code` extension, not the `type` URL.
 - **Sub-namespace, not sub-project.** New code lives at `src/Headless.Api/MultiTenancy/` with namespace `Headless.Api.MultiTenancy`. Splitting into a `Headless.Api.MultiTenancy` package would fight the existing `MultiTenancySetup.cs` placement and add a NuGet release for one handler. Rationale: minimum diff, consistent with how tenancy already lives.
 - **Use `IProblemDetailsService.TryWriteAsync` (ASP.NET Core's built-in service), not a direct write.** This is the only way `ProblemDetailsOptions.CustomizeProblemDetails` runs (so consumer customizations layer on top of `Normalize`). The fallback `WriteAsJsonAsync` path runs only when the service returns `false` AND `Response.HasStarted == false`. Because the factory already calls `Normalize` before returning, the fallback path does not need to re-call it — the `ProblemDetails` is already normalized.
-- **`ErrorCode` default is `"tenancy.tenant-required"`** (per issue). Stamped into `ProblemDetails.Extensions["code"]` by the factory.
-- **Type URL is built as `$"{TypeUriPrefix.TrimEnd('/')}/tenant-required"`.** Default prefix `"https://errors.headless/tenancy"` → final URL `"https://errors.headless/tenancy/tenant-required"`. Prefix-based composition lets each consumer route to its own error-doc namespace without rewriting the path segment.
-- **Logging.** Use source-generated `LoggerMessage` (per project `.NET` rules). `EventId` allocated in the existing `Headless.Api` 5xxx range — picking `5005` to avoid collision with `5003/5004` already used in `MinimalApiExceptionFilter`. Log level `Warning` (operator-actionable but expected per consumer error). Structured properties: `ErrorCode`, plus the layer tag from `exception.Data` if present, so log dashboards can group by layer without the response leaking it.
+- **Logging.** Use source-generated `LoggerMessage` (per project `.NET` rules). `EventId` allocated in the existing `Headless.Api` 5xxx range — picking `5005` to avoid collision with `5003/5004` already used in `MinimalApiExceptionFilter`. Log level `Warning` (operator-actionable but expected per consumer error). Structured properties: `ErrorCode` (the stable framework constant), so log dashboards can group by error class.
 
 ## Open Questions
 
@@ -136,7 +136,7 @@ External research was not needed: the codebase has strong local patterns for exc
 - Test: `tests/Headless.Api.Tests.Unit/Abstractions/ProblemDetailsCreatorTests.cs` (TenantRequired branch)
 
 **Approach:**
-- Add to the interface: `ProblemDetails TenantRequired(string typeUriPrefix, string errorCode);`. Both parameters required (no overload); the handler reads them from `TenantContextProblemDetailsOptions` and the registration extension provides sensible defaults.
+- Add to the interface: `ProblemDetails TenantRequired();`. No parameters — title, code, and detail come from `HeadlessProblemDetailsConstants`; the type URL is filled by `Normalize` from `ApiBehaviorOptions.ClientErrorMapping[400]`.
 - Add to the concrete `ProblemDetailsCreator`:
   ```csharp
   public ProblemDetails TenantRequired(string typeUriPrefix, string errorCode)
@@ -179,41 +179,16 @@ External research was not needed: the codebase has strong local patterns for exc
 
 ---
 
-- U3. **`TenantContextProblemDetailsOptions` + inline validator**
+- U3. **~~Options class~~ — removed during implementation**
 
-**Goal:** Define the configurable surface (just `TypeUriPrefix` + `ErrorCode`) and validate invariants at startup.
+The originally-planned `TenantContextProblemDetailsOptions` was dropped. Rationale: the rest of the framework's ProblemDetails factories (`Forbidden`, `Conflict`, `EntityNotFound`, `MalformedSyntax`) are not configurable per-app — title, type, and detail are framework-owned constants. Tenancy joins that pattern. Consumers branch on the stable `code` extension (`HeadlessProblemDetailsConstants.Codes.TenantContextRequired`); if they need a different shape they write their own factory and skip the helper.
 
-**Requirements:** R2
+The two values that were going to be configurable are now framework constants:
+- `HeadlessProblemDetailsConstants.Titles.TenantContextRequired = "tenant-context-required"` (added in U1)
+- `HeadlessProblemDetailsConstants.Codes.TenantContextRequired = "tenancy.tenant-required"` (added alongside U1)
+- The `Type` URL is the standard 400 RFC URL, populated by `Normalize` from `ApiBehaviorOptions.ClientErrorMapping[400]` — no per-app override.
 
-**Dependencies:** None.
-
-**Files:**
-- Create: `src/Headless.Api/MultiTenancy/TenantContextProblemDetailsOptions.cs`
-- Test: `tests/Headless.Api.Tests.Unit/MultiTenancy/TenantContextProblemDetailsOptionsValidatorTests.cs`
-
-**Approach:**
-- Namespace `Headless.Api.MultiTenancy`.
-- `public sealed class TenantContextProblemDetailsOptions` with two `init`-only properties:
-  - `TypeUriPrefix` (default `"https://errors.headless/tenancy"`)
-  - `ErrorCode` (default `"tenancy.tenant-required"`)
-- No `Title` field — title is centralized in `HeadlessProblemDetailsConstants.Titles.TenantContextRequired`.
-- No `EntityType` / `ExposeEntityType` field — entity names are not exposed in the response.
-- Inline `internal sealed class TenantContextProblemDetailsOptionsValidator : AbstractValidator<...>` directly below the options class.
-- Validator rules: `TypeUriPrefix` not empty, must be a well-formed absolute URI (use FluentValidation's `Must(...)` with `Uri.TryCreate(value, UriKind.Absolute, out _)`); `ErrorCode` not empty.
-
-**Patterns to follow:**
-- `src/Headless.Api/MultiTenancySetup.cs` — exact options + inline validator structure.
-- FluentValidation rule style used across other validators in the framework.
-
-**Test scenarios:**
-- Happy path: defaults pass validation.
-- Edge case: empty `TypeUriPrefix` fails validation with a clear error.
-- Edge case: malformed `TypeUriPrefix` (e.g., `"not a url"`) fails validation.
-- Edge case: `TypeUriPrefix` with trailing slash is accepted (factory trims).
-- Edge case: empty `ErrorCode` fails validation.
-
-**Verification:**
-- Validator catches each invalid configuration before the app starts (verified via DI `ValidateOnStart()` in U5's test).
+R2 was rewritten to reflect this.
 
 ---
 
@@ -223,7 +198,7 @@ External research was not needed: the codebase has strong local patterns for exc
 
 **Requirements:** R3, R6
 
-**Dependencies:** U2 (factory), U3 (options).
+**Dependencies:** U2 (factory).
 
 **Files:**
 - Create: `src/Headless.Api/MultiTenancy/TenantContextExceptionHandler.cs`
@@ -232,14 +207,13 @@ External research was not needed: the codebase has strong local patterns for exc
 **Approach:**
 - Namespace `Headless.Api.MultiTenancy`. `internal sealed class` (consumers register via the public `AddTenantContextProblemDetails` extension; the type itself does not need to be public).
 - Implements `Microsoft.AspNetCore.Diagnostics.IExceptionHandler`.
-- Primary constructor injects `IOptions<TenantContextProblemDetailsOptions> options`, `IProblemDetailsService problemDetailsService`, `IProblemDetailsCreator problemDetailsCreator`, `ILogger<TenantContextExceptionHandler> logger`.
+- Primary constructor injects `IOptions<JsonOptions> jsonOptions`, `IProblemDetailsService problemDetailsService`, `IProblemDetailsCreator problemDetailsCreator`, `ILogger<TenantContextExceptionHandler> logger`. No `IOptions<TenantContextProblemDetailsOptions>` — the response shape is framework-owned constants.
 - `TryHandleAsync(httpContext, exception, cancellationToken)`:
   - If `exception is not MissingTenantContextException`, return `false`.
-  - Read `TypeUriPrefix` and `ErrorCode` from `options.Value`.
-  - Delegate: `var problemDetails = problemDetailsCreator.TenantRequired(prefix, code);`. The factory already calls `Normalize`.
+  - Delegate: `var problemDetails = problemDetailsCreator.TenantRequired();`. The factory already calls `Normalize`.
   - Set `httpContext.Response.StatusCode = StatusCodes.Status400BadRequest` before the write attempt.
   - Try `await problemDetailsService.TryWriteAsync(new ProblemDetailsContext { HttpContext = httpContext, ProblemDetails = problemDetails })`. If it returns `true`, log at `Warning` (source-generated) and return `true`.
-  - Fallback: only if `!httpContext.Response.HasStarted`, write directly: `await httpContext.Response.WriteAsJsonAsync(problemDetails, cancellationToken: cancellationToken)` with `ContentType = "application/problem+json"`. Log and return `true`. (No need to re-call `Normalize` — the factory already did.)
+  - Fallback: only if `!httpContext.Response.HasStarted`, write directly: `await httpContext.Response.WriteAsJsonAsync(problemDetails, jsonOptions.Value.SerializerOptions, contentType: "application/problem+json", cancellationToken)`. Log and return `true`. (No need to re-call `Normalize` — the factory already did.)
   - If `Response.HasStarted == true` and `TryWriteAsync` failed, log at `Error` (`EventId 5006`) and return `false` (cannot safely write).
 
 **Technical design (directional):**
@@ -247,7 +221,7 @@ External research was not needed: the codebase has strong local patterns for exc
 ```
 TryHandleAsync(ctx, exception, ct):
   if exception is not MissingTenantContextException: return false
-  pd = creator.TenantRequired(options.Value.TypeUriPrefix, options.Value.ErrorCode)  # already normalized
+  pd = creator.TenantRequired()  # already normalized; uses framework-owned title/code constants
   ctx.Response.StatusCode = 400
   if await pds.TryWriteAsync({ ctx, pd }): log Warning(5005); return true
   if ctx.Response.HasStarted: log Error(5006); return false
@@ -266,9 +240,8 @@ TryHandleAsync(ctx, exception, ct):
 - **EventId allocation note:** the framework does not maintain a centralized `EventId` registry. Each `Headless.Api*` package allocates its own range (e.g., `Headless.Api.MinimalApi` uses 5003/5004 in `MinimalApiExceptionFilter`; `Headless.Api.DataProtection` uses 1-8). 5005/5006 continue the `Headless.Api.MinimalApi` range without collision. If a future contributor adds another exception handler in `Headless.Api`, allocate the next free EventId in this range and grep `EventId = 5` to verify no collision before merging.
 
 **Test scenarios:**
-- Happy path: `MissingTenantContextException` thrown → `TryHandleAsync` returns `true`, response status is 400, `pd.Status == 400`, `pd.Type` ends with `/tenant-required`, `pd.Title == "tenant-context-required"`, `pd.Extensions["code"] == "tenancy.tenant-required"`. (Integration coverage in U6 verifies the full pipeline including normalization.)
+- Happy path: `MissingTenantContextException` thrown → `TryHandleAsync` returns `true`, response status is 400, `pd.Status == 400`, `pd.Title == HeadlessProblemDetailsConstants.Titles.TenantContextRequired`, `pd.Extensions["code"] == HeadlessProblemDetailsConstants.Codes.TenantContextRequired`. (Integration coverage in U6 verifies the full pipeline including normalization.)
 - Edge case: any exception other than `MissingTenantContextException` → `TryHandleAsync` returns `false` and writes nothing.
-- Edge case: custom `TypeUriPrefix = "https://zad.org/errors/tenancy/"` (trailing slash) → final `Type == "https://zad.org/errors/tenancy/tenant-required"` (single slash; verified via the U2 factory test, but also asserted end-to-end here).
 - Error path: `IProblemDetailsService.TryWriteAsync` returns `false` AND `Response.HasStarted == false` → fallback `WriteAsJsonAsync` runs with `application/problem+json`. Use NSubstitute to mock `IProblemDetailsService` returning `false`; verify response body and content type.
 - Error path: `IProblemDetailsService.TryWriteAsync` returns `false` AND `Response.HasStarted == true` → handler returns `false` (no write attempted, no exception thrown). Verify the `EventId = 5006` `Error` log entry was emitted so operators have the signal.
 - Error path: handler emits the `EventId = 5005` `Warning` log entry on the happy path with structured `ErrorCode` property present (verify with a test logger).
@@ -281,47 +254,33 @@ TryHandleAsync(ctx, exception, ct):
 
 ---
 
-- U5. **`AddTenantContextProblemDetails` registration extension**
+- U5. **~~Standalone registration helper~~ — replaced with auto-registration in `AddHeadlessProblemDetails()`**
 
-**Goal:** Provide the consumer-facing single-call API with the standard 3-overload shape.
-
-**Requirements:** R4
-
-**Dependencies:** U3 (registers options + validator), U4 (registers handler).
+The originally-planned `AddTenantContextProblemDetails()` extension was dropped. The handler is now registered automatically by `AddHeadlessProblemDetails()` (and therefore by `AddHeadless()`, which calls it). Rationale: consumers who already use the framework's ProblemDetails infrastructure get the tenancy mapping for free; the handler depends only on services that `AddHeadlessProblemDetails()` already registers (`IProblemDetailsCreator`, `IProblemDetailsService`); no per-app configuration exists, so an opt-in helper added friction without value.
 
 **Files:**
-- Create: `src/Headless.Api/MultiTenancy/TenantContextProblemDetailsSetup.cs`
-- Test: `tests/Headless.Api.Tests.Integration/MultiTenancy/TenantContextProblemDetailsSetupTests.cs`
+- Modify: `src/Headless.Api/Setup.cs` — `AddHeadlessProblemDetails()` adds `services.TryAddEnumerable(ServiceDescriptor.Singleton<IExceptionHandler, TenantContextExceptionHandler>())`.
 
 **Approach:**
-- Namespace `Headless.Api.MultiTenancy` (or `Microsoft.Extensions.DependencyInjection` if the codebase prefers DI extensions there — `RedisCacheSetup` uses `Headless.Caching` so we'll match by keeping the new namespace alongside the type). Decide during implementation by mirroring whichever sibling pattern dominates in `Headless.Api`.
-- `[PublicAPI] public static class TenantContextProblemDetailsSetup` with a C# 14 `extension(IServiceCollection services)` block.
-- Three overloads in this order (matching `RedisCacheSetup`):
-  1. `AddTenantContextProblemDetails(Action<TenantContextProblemDetailsOptions, IServiceProvider> setupAction)`
-  2. `AddTenantContextProblemDetails(IConfiguration configuration)`
-  3. `AddTenantContextProblemDetails(Action<TenantContextProblemDetailsOptions> setupAction)`
-- Each overload calls `services.Configure<TenantContextProblemDetailsOptions, TenantContextProblemDetailsOptionsValidator>(...)` then a private `_AddCore()` helper that registers the handler.
-- The `_AddCore()` helper must be idempotent — `AddExceptionHandler<T>` registers a transient, but multiple calls would add multiple registrations. Use `services.TryAddEnumerable(ServiceDescriptor.Transient<IExceptionHandler, TenantContextExceptionHandler>())` directly, OR guard the `AddExceptionHandler<T>()` call with a `services.Any(...)` check.
+- Use `TryAddEnumerable` directly. ASP.NET Core's `AddExceptionHandler<T>()` uses plain `AddSingleton` which is not idempotent — `TryAddEnumerable` collapses duplicate registrations to a single descriptor.
 
 **Patterns to follow:**
 - `src/Headless.Caching.Redis/Setup.cs:13-74` — exact 3-overload shape with private core helper and `services.Configure<TOption, TValidator>(...)` calls.
 - `Headless.Hosting.OptionsServiceCollectionExtensions.Configure<TOption, TValidator>(...)` — the typed `Configure` overload with FluentValidation + `ValidateOnStart()`.
 
 **XML documentation requirements (R7 prerequisite):**
-- Each public overload of `AddTenantContextProblemDetails` carries an XML `<summary>` plus a `<remarks>` block stating two prerequisites:
+- The `AddTenantContextProblemDetails()` extension carries an XML `<summary>` plus a `<remarks>` block stating two prerequisites:
   1. `services.AddHeadlessProblemDetails()` must also be registered (DI will throw `Unable to resolve service for type 'IProblemDetailsCreator'` at handler construction otherwise — the message is sufficient, no custom check is added).
   2. The consumer must call `app.UseExceptionHandler()` themselves; this helper only registers the handler in the chain.
-- Document handler-chain ordering: ASP.NET Core invokes `IExceptionHandler` instances in registration order. Consumers with multiple handlers should register `AddTenantContextProblemDetails(...)` **before** any catch-all handler that returns `true` for every exception, otherwise the catch-all will swallow `MissingTenantContextException` first and the tenancy mapping will never run. Mirror this guidance in `docs/llms/api.md` (U7).
+- Document handler-chain ordering: ASP.NET Core invokes `IExceptionHandler` instances in registration order. Consumers with multiple handlers should register `AddTenantContextProblemDetails()` **before** any catch-all handler that returns `true` for every exception, otherwise the catch-all will swallow `MissingTenantContextException` first and the tenancy mapping will never run. Mirror this guidance in `docs/llms/api.md` (U7).
+- Document that the framework's MVC and Minimal-API exception filters already map `MissingTenantContextException` for endpoint code; this handler is primarily a safety net for non-endpoint paths (middleware, hosted services, hubs).
 
 **Test scenarios:**
-- Happy path: `services.AddTenantContextProblemDetails(o => o.TypeUriPrefix = "https://example.com/errors")` registers the handler and resolves it from DI.
-- Happy path: `services.AddTenantContextProblemDetails(configuration)` binds from a config section.
-- Happy path: `services.AddTenantContextProblemDetails((o, sp) => ...)` resolves a service-provider-aware delegate.
-- Error path: invalid options (empty `TypeUriPrefix`) → `Host.Start()` throws `OptionsValidationException` (proves `ValidateOnStart` ran).
-- Edge case: calling `AddTenantContextProblemDetails(...)` twice does not register the handler twice (no duplicate handler invocations).
+- Happy path: `services.AddTenantContextProblemDetails()` registers the handler and resolves it from DI.
+- Edge case: calling `AddTenantContextProblemDetails()` twice does not register the handler twice (no duplicate handler invocations).
 
 **Verification:**
-- Each of the three overloads compiles, registers the handler, and the handler is invoked end-to-end for a request that throws `MissingTenantContextException`.
+- The single overload compiles, registers the handler, and the handler is invoked end-to-end for a request that throws `MissingTenantContextException`.
 
 ---
 
@@ -346,13 +305,11 @@ TryHandleAsync(ctx, exception, ct):
 - `tests/Headless.Api.Tests.Integration/ProblemDetailsTests.cs` — assertion shape for ProblemDetails responses (especially the `_ValidateCoreProblemDetails` helper for traceId/timestamp).
 
 **Test scenarios:**
-- Happy path: endpoint throws `new MissingTenantContextException()` → response is 400, `Content-Type: application/problem+json`, body has `type` ending with `/tenant-required`, `title == "tenant-context-required"`, `status == 400`, `detail == HeadlessProblemDetailsConstants.Details.TenantContextRequired`, `extensions.code == "tenancy.tenant-required"`, `extensions.traceId` is present (proves normalization).
-- Edge case: custom `TypeUriPrefix = "https://zad.org/errors/tenancy"` → response `type == "https://zad.org/errors/tenancy/tenant-required"`.
+- Happy path: endpoint throws `new MissingTenantContextException()` → response is 400, `Content-Type: application/problem+json`, body has `title == HeadlessProblemDetailsConstants.Titles.TenantContextRequired`, `status == 400`, `detail == HeadlessProblemDetailsConstants.Details.TenantContextRequired`, `extensions.code == HeadlessProblemDetailsConstants.Codes.TenantContextRequired`, `extensions.traceId` is present (proves normalization).
 - Edge case: exception thrown with `Exception.Data["Headless.Messaging.FailureCode"] = "MissingTenantContext"` → the data tag does NOT appear in the response body. Information-disclosure invariant.
 - Edge case: exception thrown with a custom message → the message does NOT appear as `detail`. The framework-owned `HeadlessProblemDetailsConstants.Details.TenantContextRequired` is used regardless. Information-disclosure invariant.
-- Error path: endpoint throws `InvalidOperationException` (not the tenancy exception) → handler does NOT process it; response is the framework default 500 from the rest of the pipeline (or whatever Minimal API filter is configured). Asserts the new handler did not steal the response.
-- Edge case: handler-chain ordering — register `TenantContextExceptionHandler` followed by a stub catch-all `IExceptionHandler` that returns `true` for any exception. Throw `MissingTenantContextException`. Assert the tenancy handler wins (response shape is the tenancy 400, not whatever the catch-all would have produced). Also register them in reverse order and assert the catch-all wins, proving order matters and the documentation guidance is correct.
-- Integration: response after `await response.Content.ReadFromJsonAsync<ProblemDetails>()` contains `traceId` matching `Activity.Current?.Id` or the request's `TraceIdentifier` — proves `IProblemDetailsCreator.Normalize` ran via the factory.
+- Error path: endpoint throws `InvalidOperationException` (not the tenancy exception) → handler does NOT process it; response is the framework default 500 from the rest of the pipeline. Asserts the new handler did not steal the response.
+- Edge case: handler-chain ordering — register `TenantContextExceptionHandler` followed by a stub catch-all `IExceptionHandler` that returns `true` for any exception. Throw `MissingTenantContextException`. Assert the tenancy handler wins. Also register them in reverse order and assert the catch-all wins, proving order matters and the documentation guidance is correct.
 
 **Verification:**
 - All scenarios above pass against a running ASP.NET Core test host.
@@ -374,7 +331,7 @@ TryHandleAsync(ctx, exception, ct):
 - Modify: `docs/llms/api.md` TOC and `docs/llms/multi-tenancy.md` TOC to include the new headings
 
 **Approach:**
-- Keep documentation factual, code-snippet-light. Show one minimal registration example with default options and one customized example (`TypeUriPrefix` override).
+- Keep documentation factual, code-snippet-light. Show the default-coverage path (filters via `AddHeadless()`) and the opt-in `AddTenantContextProblemDetails()` registration for non-endpoint paths.
 - Cross-link between the API doc and the multi-tenancy doc — readers landing on either should be able to find the other in two clicks.
 - Document the dependency: `AddTenantContextProblemDetails` requires `AddHeadlessProblemDetails` to also be registered (so normalization runs); call this out explicitly in both docs.
 - Document that consumers must call `app.UseExceptionHandler()` themselves — the helper only registers the handler; pipeline middleware is the consumer's responsibility. Note that `UseExceptionHandler()` should be placed early in the pipeline so it covers downstream middleware that may throw `MissingTenantContextException` during request execution.
@@ -393,6 +350,87 @@ TryHandleAsync(ctx, exception, ct):
 - All four documentation surfaces mention the new helper, the new `IProblemDetailsCreator.TenantRequired` factory, and the no-information-disclosure response shape.
 - Cross-references between API doc and multi-tenancy doc are present.
 - No internal links are broken.
+
+- U9. **Consolidate exception mapping into a single global `HeadlessApiExceptionHandler`**
+
+**Goal:** Replace the per-package `MvcApiExceptionFilter` and `MinimalApiExceptionFilter` with one `IExceptionHandler` (`HeadlessApiExceptionHandler`) in `Headless.Api`. ASP.NET Core's `IExceptionHandler` chain is the modern story; consolidating eliminates parallel switch statements and gives middleware/hosted-services/hubs the same exception-to-ProblemDetails coverage that endpoints get.
+
+**Requirements:** R1, R3 (extends both surfaces; same response shape).
+
+**Dependencies:** U1-U7 (the tenancy handler is the seed; this unit absorbs the rest of the exception list).
+
+**Files:**
+- Create: `src/Headless.Api/HeadlessApiExceptionHandler.cs`
+- Delete: `src/Headless.Api/MultiTenancy/TenantContextExceptionHandler.cs`
+- Delete: `src/Headless.Api.Mvc/Filters/MvcApiExceptionFilter.cs`
+- Delete: `src/Headless.Api.MinimalApi/Filters/MinimalApiExceptionFilter.cs`
+- Modify: `src/Headless.Api/Setup.cs` — register `HeadlessApiExceptionHandler` instead of `TenantContextExceptionHandler`.
+- Modify: `src/Headless.Api.Mvc/Options/ConfigureMvcApiOptions.cs` — remove the `options.Filters.Add<MvcApiExceptionFilter>()` line.
+- Modify: `src/Headless.Api.MinimalApi/Filters/RouteBuilderExtensions.cs` — remove the now-unused `AddExceptionFilter` extension method.
+- Modify: `demo/Headless.Api.Demo/Endpoints/ProblemsEndpoints.cs` — drop the `.AddExceptionFilter()` call.
+- Create: `tests/Headless.Api.Tests.Unit/HeadlessApiExceptionHandlerTests.cs` covering all exception cases.
+- Delete: `tests/Headless.Api.Mvc.Tests.Unit/Filters/MvcApiExceptionFilterTests.cs`, `tests/Headless.Api.MinimalApi.Tests.Unit/Filters/MinimalApiExceptionFilterTests.cs`, `tests/Headless.Api.Tests.Unit/MultiTenancy/TenantContextExceptionHandlerTests.cs`.
+- Rename: `tests/Headless.Api.Tests.Integration/MultiTenancy/TenantContextExceptionHandlerEndToEndTests.cs` → `tests/Headless.Api.Tests.Integration/HeadlessApiExceptionHandlerEndToEndTests.cs`.
+
+**Approach:**
+- The unified handler covers the same set the filters covered: `MissingTenantContextException` (400 via `TenantRequired()`), `ConflictException` (409), `FluentValidation.ValidationException` (422), `EntityNotFoundException` (404), EF Core `DbUpdateConcurrencyException` matched by type name (409), `TimeoutException` (408), `NotImplementedException` (501), `OperationCanceledException` and inner-OCE (499 with no body).
+- Use `IProblemDetailsService.TryWriteAsync` for the body cases, with `WriteAsJsonAsync` fallback when the service returns `false` and `Response.HasStarted == false`.
+- For 499 cancellation, write status only — the client is gone; a body is wasted bandwidth and matches what the old `MinimalApiExceptionFilter` did.
+- EF Core's `DbUpdateConcurrencyException` is matched by `exception.GetType().Name == "DbUpdateConcurrencyException"` to avoid pulling EF Core into `Headless.Api`'s dependency graph.
+- Logging: keep `EventId 5003` for DB concurrency (Warning), `5004` for timeout (Debug), and `5006` for response-already-started (Error). `5005` is intentionally not used since we no longer log per-success on the tenancy path.
+
+**Patterns to follow:**
+- Existing `TenantContextExceptionHandler` for the `IProblemDetailsService.TryWriteAsync` + fallback shape and `LoggerMessage` style.
+- The existing factories in `IProblemDetailsCreator` already produce normalized ProblemDetails — the handler just selects which factory to call per exception type.
+
+**Test scenarios:**
+- One unit test per exception type asserting status code and (where applicable) `code`/`title` extensions.
+- Cancellation path produces no body and does not invoke `IProblemDetailsService`.
+- Fallback path writes `application/problem+json` with the framework-owned content when the service returns `false`.
+- Information-disclosure invariant test: an exception with sensitive `Message`/`Data`/`InnerException` does not leak into the response.
+
+**Verification:**
+- `dotnet build` clean across solution.
+- All unit tests pass; the new unit-test file covers the exception list end-to-end.
+- The integration end-to-end test (`HeadlessApiExceptionHandlerEndToEndTests`) covers the full pipeline including `IProblemDetailsCreator.Normalize` extensions.
+
+---
+
+- U8. **Filter catch arms for `MissingTenantContextException` (defense-in-depth)**
+
+> **Superseded by U9.** This unit shipped briefly as a parallel-coverage step; U9 replaced both filters with a single global handler, so the filter catch arms no longer exist. Kept here for plan continuity.
+
+**Goal:** Map `MissingTenantContextException` thrown from inside endpoint code to the same normalized 400 ProblemDetails shape, without requiring consumers to register `AddTenantContextProblemDetails(...)` and wire `UseExceptionHandler()`. The global `IExceptionHandler` (U4) remains the safety net for non-endpoint paths (middleware, hosted services, hubs); the filters cover the common endpoint case.
+
+**Requirements:** R1, R3 (extends both surfaces; same response shape).
+
+**Dependencies:** U2 (factory), U3 (options).
+
+**Files:**
+- Modify: `src/Headless.Api.MinimalApi/Filters/MinimalApiExceptionFilter.cs`
+- Modify: `src/Headless.Api.Mvc/Filters/MvcApiExceptionFilter.cs`
+- Test: `tests/Headless.Api.MinimalApi.Tests.Unit/Filters/MinimalApiExceptionFilterTests.cs`
+- Test: `tests/Headless.Api.Mvc.Tests.Unit/Filters/MvcApiExceptionFilterTests.cs`
+
+**Approach:**
+- Both filters call `creator.TenantRequired()` directly — no options injection, since the response shape is framework-owned constants (`HeadlessProblemDetailsConstants.Titles.TenantContextRequired`, `HeadlessProblemDetailsConstants.Codes.TenantContextRequired`).
+- `MinimalApiExceptionFilter` adds a new `catch (MissingTenantContextException)` arm before `ConflictException`. Body: call `creator.TenantRequired()`, return `TypedResults.Problem(details)`.
+- `MvcApiExceptionFilter` adds a new switch arm `MissingTenantContextException e => _Handle(httpContext, e)` first in the switch, plus a private `_Handle(HttpContext, MissingTenantContextException)` method that calls the same factory and returns `Results.Problem(problemDetails).ExecuteAsync(context)`.
+- No logging on this branch — `MissingTenantContextException` is operator-actionable through the issuer (EF write guard, mediator behavior, messaging publish guard) which already log; double-logging on the response side adds noise.
+
+**Patterns to follow:**
+- Existing arms in both filters (e.g., `ConflictException`, `EntityNotFoundException`) — same primary-constructor-injected dependency style, same `creator.<X>(...)` + `Results.Problem(...)` shape.
+
+**Test scenarios:**
+- Happy path (MinimalApi): `MissingTenantContextException` thrown inside an endpoint → filter returns `ProblemHttpResult` with `StatusCode == 400`. Verify `creator.TenantRequired()` was called.
+- Happy path (Mvc): `MissingTenantContextException` thrown inside an action → filter sets `ExceptionHandled = true`, response status `400`, response body's `title` matches `HeadlessProblemDetailsConstants.Titles.TenantContextRequired`, `code` extension matches `HeadlessProblemDetailsConstants.Codes.TenantContextRequired`.
+
+**Verification:**
+- Both filters' unit tests pass with new arms.
+- Both filters build and run cleanly with the existing `IProblemDetailsCreator` registration — no extra DI setup required.
+- The global `IExceptionHandler` from U4 still handles `MissingTenantContextException` raised outside endpoint code.
+
+---
 
 ## System-Wide Impact
 

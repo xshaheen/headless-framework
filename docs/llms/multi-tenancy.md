@@ -36,7 +36,7 @@ For HTTP apps, the recommended setup is:
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi();
+builder.AddHeadless();
 builder.AddHeadlessMultiTenancy();
 
 var app = builder.Build();
@@ -48,7 +48,7 @@ app.UseAuthorization();
 
 `UseTenantResolution()` must run after `UseAuthentication()` and before `UseAuthorization()`.
 
-`AddHeadlessApi()` also requires `Headless:StringEncryption` and `Headless:StringHash` to be configured.
+`AddHeadless()` also requires `Headless:StringEncryption` and `Headless:StringHash` to be configured.
 
 ## Agent Instructions
 
@@ -63,7 +63,7 @@ app.UseAuthorization();
 
 ## HTTP Setup
 
-`AddHeadlessApi()` and `AddHeadlessDbContextServices()` now register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. `AddHeadlessMultiTenancy()` is the opt-in helper that:
+`AddHeadless()` and `AddHeadlessDbContextServices()` now register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. `AddHeadlessMultiTenancy()` is the opt-in helper that:
 
 - Ensures `ICurrentTenant` resolves to `CurrentTenant`
 - Registers `ICurrentTenantAccessor` if needed
@@ -78,25 +78,22 @@ app.UseAuthorization();
 
 ## HTTP Failure Mapping
 
-`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the Mediator behavior (#236), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. To surface it as a normalized 400 ProblemDetails for HTTP clients, register the framework's exception handler:
+`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the Mediator behavior (#236), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. The framework maps it to a normalized 400 ProblemDetails through `HeadlessApiExceptionHandler` — a single `IExceptionHandler` auto-registered by `AddHeadlessProblemDetails()` (called by `AddHeadless()`). The same handler covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs.
 
 ```csharp
-builder.Services.AddHeadlessProblemDetails();
-builder.Services.AddTenantContextProblemDetails(o =>
-{
-    o.TypeUriPrefix = "https://errors.example.com/tenancy"; // optional, default: https://errors.headless/tenancy
-    o.ErrorCode = "tenancy.tenant-required";                 // optional, default
-});
+builder.AddHeadless();
+// AddHeadless() calls AddHeadlessProblemDetails() which auto-registers
+// HeadlessApiExceptionHandler. No opt-in needed.
 
 var app = builder.Build();
 app.UseExceptionHandler();
 ```
 
-Resulting response shape:
+Resulting response shape (same for both surfaces):
 
 ```json
 {
-  "type": "https://errors.example.com/tenancy/tenant-required",
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
   "title": "tenant-context-required",
   "status": 400,
   "detail": "An operation required an ambient tenant context but none was set.",
@@ -107,15 +104,14 @@ Resulting response shape:
 }
 ```
 
-The body deliberately surfaces only `code`, `type`, `title`, `status`, `detail`, plus the standard normalized extensions (`traceId`, `buildNumber`, `commitNumber`, `timestamp`, `instance`). The exception's `Message`, `Data` (e.g., `Headless.Messaging.FailureCode = "MissingTenantContext"`), and `InnerException` are NOT included in the response — they belong in server logs (the data tag remains on the exception for log aggregation; see [Strict Publish Tenancy](#strict-publish-tenancy-tenantcontextrequired) for the messaging side). This is intentional information-disclosure protection: external callers should branch on the `code` extension, not on internal entity names.
+The body deliberately surfaces only `code`, `type`, `title`, `status`, `detail`, plus the standard normalized extensions (`traceId`, `buildNumber`, `commitNumber`, `timestamp`, `instance`). The exception's `Message`, `Data` (e.g., `Headless.Messaging.FailureCode = "MissingTenantContext"`), and `InnerException` are NOT included in the response — they belong in server logs (the data tag remains on the exception for log aggregation; see [Strict Publish Tenancy](#strict-publish-tenancy-tenantcontextrequired) for the messaging side). This is intentional information-disclosure protection: external callers should branch on the stable `code` extension.
 
 Prerequisites:
 
-- `services.AddHeadlessProblemDetails()` must also be registered (handler depends on `IProblemDetailsCreator` and `IProblemDetailsService`).
-- Call `app.UseExceptionHandler()` yourself; the helper only registers the handler.
-- Handler-chain ordering matters: register `AddTenantContextProblemDetails(...)` **before** any catch-all `IExceptionHandler` that returns `true` for every exception, otherwise the catch-all swallows the tenancy mapping.
+- Call `app.UseExceptionHandler()` yourself to wire the `IExceptionHandler` chain into the pipeline.
+- Handler-chain ordering matters: the tenancy handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, they must register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadless()`, which calls it).
 
-The same shape is reachable without the handler via `IProblemDetailsCreator.TenantRequired(typeUriPrefix, errorCode)` for direct callers (e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing).
+The same shape is reachable without going through the handler via `IProblemDetailsCreator.TenantRequired()` (parameterless) for direct callers — e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing.
 
 ## Tenant Semantics
 
@@ -205,7 +201,7 @@ using (currentTenant.Change(tenantId))
 }
 ```
 
-Register a real `ICurrentTenant` (the default `AddHeadlessApi()` / `AddHeadlessDbContextServices()` registration is sufficient) so the ambient fallback can resolve a value when option B is used.
+Register a real `ICurrentTenant` (the default `AddHeadless()` / `AddHeadlessDbContextServices()` registration is sufficient) so the ambient fallback can resolve a value when option B is used.
 
 ### SignalR
 

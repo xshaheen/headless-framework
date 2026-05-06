@@ -37,7 +37,7 @@ dotnet add package Headless.Orm.EntityFramework
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi();
+builder.AddHeadless();
 
 builder.Services.AddHeadlessRedisCache(options =>
 {

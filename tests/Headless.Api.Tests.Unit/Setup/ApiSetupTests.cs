@@ -20,7 +20,7 @@ public sealed class ApiSetupTests
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
-        builder.AddHeadlessApi();
+        builder.AddHeadless();
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
         var currentTenant = serviceProvider.GetRequiredService<ICurrentTenant>();
@@ -39,7 +39,7 @@ public sealed class ApiSetupTests
         var configuration = _CreateSecuritySectionConfiguration();
 
         // when
-        builder.AddHeadlessApi(
+        builder.AddHeadless(
             configuration.GetRequiredSection("Security:StringEncryption"),
             configuration.GetRequiredSection("Security:StringHash")
         );
@@ -63,7 +63,7 @@ public sealed class ApiSetupTests
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
-        builder.AddHeadlessApi(
+        builder.AddHeadless(
             encryption =>
             {
                 encryption.DefaultPassPhrase = "ActionPassPhrase123";
@@ -96,7 +96,7 @@ public sealed class ApiSetupTests
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
-        builder.AddHeadlessApi(encryption =>
+        builder.AddHeadless(encryption =>
         {
             encryption.DefaultPassPhrase = "ActionPassPhrase123";
             encryption.InitVectorBytes = "ActionIV01234567"u8.ToArray();
@@ -129,7 +129,7 @@ public sealed class ApiSetupTests
         );
 
         // when
-        builder.AddHeadlessApi(
+        builder.AddHeadless(
             (encryption, serviceProvider) =>
             {
                 var values = serviceProvider.GetRequiredService<SecurityTestValues>();

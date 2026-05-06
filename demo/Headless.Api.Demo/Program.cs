@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi().ConfigureMinimalApi();
+builder.AddHeadless().ConfigureMinimalApi();
 builder.Services.AddNswagOpenApi();
 builder.Services.ConfigureMvc();
 builder.Services.AddStatusCodesRewriterMiddleware();
