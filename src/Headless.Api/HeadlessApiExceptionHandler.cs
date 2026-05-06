@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using FluentValidation;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
@@ -8,6 +9,7 @@ using Headless.Constants;
 using Headless.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -54,14 +56,23 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
         switch (exception)
         {
-            // Cancellation handled first (covers OCE at any nesting depth from Task.WhenAll etc.).
+            // Cancellation handled first. Only treat OCE as client-cancelled when RequestAborted
+            // signaled (matches the contract a per-pipeline RequestCanceled middleware would have
+            // applied). Server-side cancellations and library-thrown OCE fall through to default.
             case Exception when _IsCancellationException(exception):
-                // Client closed the request — status only, no body. The client is gone.
+                if (!httpContext.RequestAborted.IsCancellationRequested)
+                {
+                    return false;
+                }
                 if (httpContext.Response.HasStarted)
                 {
                     return false;
                 }
                 httpContext.Response.StatusCode = StatusCodes.Status499ClientClosedRequest;
+                httpContext
+                    .Features.Get<IHttpActivityFeature>()
+                    ?.Activity?.AddEvent(new ActivityEvent("Client cancelled the request"));
+                _LogRequestCanceled(logger);
                 return true;
 
             case MissingTenantContextException:
@@ -205,6 +216,14 @@ internal sealed partial class HeadlessApiExceptionHandler(
     {
         return request.CanAccept(ContentTypes.Applications.Json, ContentTypes.Applications.ProblemJson);
     }
+
+    [LoggerMessage(
+        EventId = 5002,
+        EventName = "RequestCancelled",
+        Level = LogLevel.Information,
+        Message = "Client cancelled the request"
+    )]
+    private static partial void _LogRequestCanceled(ILogger logger);
 
     [LoggerMessage(
         EventId = 5003,

@@ -216,12 +216,12 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     }
 
     [Fact]
-    public async Task should_map_operation_canceled_exception_to_499_with_no_body()
+    public async Task should_map_operation_canceled_exception_to_499_with_no_body_when_request_aborted()
     {
         // given
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
-        var httpContext = new DefaultHttpContext();
+        var httpContext = _CreateAbortedContext();
         var responseBody = new MemoryStream();
         httpContext.Response.Body = responseBody;
 
@@ -240,12 +240,34 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_false_for_canceled_when_request_was_not_aborted()
+    {
+        // given - OCE thrown but RequestAborted not signaled (server-side cancellation, e.g.
+        // RequestTimeouts middleware fired its own token, or a library threw OCE for a non-abort
+        // reason). 499 ("Client Closed Request") would be misleading; let the default handler render.
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var httpContext = new DefaultHttpContext();
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new OperationCanceledException(),
+            TestContext.Current.CancellationToken
+        );
+
+        // then
+        result.Should().BeFalse();
+        await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
+    }
+
+    [Fact]
     public async Task should_map_inner_operation_canceled_to_499_with_no_body()
     {
         // given
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
-        var httpContext = new DefaultHttpContext();
+        var httpContext = _CreateAbortedContext();
         var inner = new OperationCanceledException("inner");
         var outer = new InvalidOperationException("outer", inner);
 
@@ -265,7 +287,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // Reproduces a Task.WhenAll(taskA, taskB) where taskA failed and taskB cancelled.
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
-        var httpContext = new DefaultHttpContext();
+        var httpContext = _CreateAbortedContext();
         var aggregate = new AggregateException(
             new InvalidOperationException("first inner is not cancellation"),
             new OperationCanceledException("second inner is cancellation")
@@ -288,7 +310,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // the recursive helper looks inside non-aggregate inners too.
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
-        var httpContext = new DefaultHttpContext();
+        var httpContext = _CreateAbortedContext();
         var aggregate = new AggregateException(
             new InvalidOperationException("first"),
             new InvalidOperationException("second wraps cancellation", new OperationCanceledException())
@@ -304,12 +326,40 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     }
 
     [Fact]
+    public async Task should_log_event_id_5002_and_add_activity_event_when_request_aborted()
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
+        var httpContext = _CreateAbortedContext();
+        var activity = new System.Diagnostics.Activity("TestActivity");
+        activity.Start();
+        var activityFeature = Substitute.For<IHttpActivityFeature>();
+        activityFeature.Activity.Returns(activity);
+        httpContext.Features.Set(activityFeature);
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new OperationCanceledException(),
+            TestContext.Current.CancellationToken
+        );
+
+        // then
+        result.Should().BeTrue();
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5002);
+        activity.Events.Should().ContainSingle(e => e.Name == "Client cancelled the request");
+        activity.Stop();
+    }
+
+    [Fact]
     public async Task should_return_false_when_canceled_after_response_started()
     {
         // given
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
-        var httpContext = new DefaultHttpContext();
+        var httpContext = _CreateAbortedContext();
         httpContext.Features.Set<IHttpResponseFeature>(new StartedResponseFeature());
 
         // when
@@ -486,6 +536,17 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             creator,
             logger ?? NullLogger<HeadlessApiExceptionHandler>.Instance
         );
+    }
+
+    private static DefaultHttpContext _CreateAbortedContext()
+    {
+        var context = new DefaultHttpContext();
+        var lifetime = Substitute.For<IHttpRequestLifetimeFeature>();
+        var cts = new CancellationTokenSource();
+        cts.Cancel();
+        lifetime.RequestAborted.Returns(cts.Token);
+        context.Features.Set(lifetime);
+        return context;
     }
 
     private static ProblemDetailsCreator _CreateRealCreator()

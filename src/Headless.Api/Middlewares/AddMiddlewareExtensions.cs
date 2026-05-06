@@ -60,29 +60,10 @@ public static class AddMiddlewareExtensions
         return app.UseMiddleware<StatusCodesRewriterMiddleware>();
     }
 
-    /// <summary>
-    /// Handles <see cref="OperationCanceledException"/> caused by the HTTP request being aborted,
-    /// then shortcuts and returns an error status code.
-    /// </summary>
-    public static IServiceCollection AddRequestCanceledMiddleware(this IServiceCollection services)
-    {
-        return services.AddSingleton<RequestCanceledMiddleware>();
-    }
-
     /// <summary>Adds middleware that resolves the current tenant from authenticated user claims.</summary>
     public static IServiceCollection AddTenantResolution(this IServiceCollection services)
     {
         return services.AddSingleton<TenantResolutionMiddleware>();
-    }
-
-    /// <summary>
-    /// Handles <see cref="OperationCanceledException"/> caused by the HTTP request being aborted, then shortcuts and
-    /// returns an error status code.
-    /// See https://andrewlock.net/using-cancellationtokens-in-asp-net-core-minimal-apis/.
-    /// </summary>
-    public static IApplicationBuilder UseRequestCanceled(this IApplicationBuilder application)
-    {
-        return application.UseMiddleware<RequestCanceledMiddleware>();
     }
 
     /// <summary>
