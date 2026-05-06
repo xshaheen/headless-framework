@@ -185,6 +185,8 @@ Tenancy response shape:
   "detail": "An operation required an ambient tenant context but none was set.",
   "code": "tenancy.tenant-required",
   "traceId": "...",
+  "buildNumber": "...",
+  "commitNumber": "...",
   "instance": "/path",
   "timestamp": "..."
 }
