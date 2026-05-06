@@ -44,7 +44,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         var root = doc.RootElement;
 
         root.GetProperty("status").GetInt32().Should().Be(400);
-        root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.TenantContextRequired);
+        root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.BadRequest);
         root.GetProperty("detail")
             .GetString()
             .Should()
@@ -109,10 +109,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
     public async Task should_map_validation_exception_to_normalized_422()
     {
         // given
-        var failures = new[]
-        {
-            new ValidationFailure("Name", "Name is required") { ErrorCode = "NotEmpty" },
-        };
+        var failures = new[] { new ValidationFailure("Name", "Name is required") { ErrorCode = "NotEmpty" } };
         await using var app = await _CreateAppAsync(
             handlerSetup: _ => { },
             endpoint: () => throw new FluentValidation.ValidationException(failures)
@@ -152,10 +149,10 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         // then - the tenancy handler returned false; the default 500 page (or empty body) is sent
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
-        // Negative assertion: response is not the tenancy 400 shape
+        // Negative assertion: response is not the tenancy 400 shape — the unique tenancy code
+        // is the identifier; title is shared `bad-request` so it can't be used to distinguish.
         var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().NotContain(HeadlessProblemDetailsConstants.Codes.TenantContextRequired);
-        body.Should().NotContain(HeadlessProblemDetailsConstants.Titles.TenantContextRequired);
     }
 
     [Fact]
@@ -181,10 +178,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 
         await using var app = builder.Build();
         app.UseExceptionHandler();
-        app.MapGet(
-            "/throw",
-            (Action)(() => throw new MissingTenantContextException())
-        );
+        app.MapGet("/throw", (Action)(() => throw new MissingTenantContextException()));
         await app.StartAsync(AbortToken);
 
         using var client = _CreateClient(app);

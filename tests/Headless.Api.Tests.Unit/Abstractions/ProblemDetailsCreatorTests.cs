@@ -292,7 +292,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
 
         // then
         result.Status.Should().Be(StatusCodes.Status400BadRequest);
-        result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.TenantContextRequired);
+        result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.BadRequest);
         result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.TenantContextRequired);
         result
             .Extensions.Should()

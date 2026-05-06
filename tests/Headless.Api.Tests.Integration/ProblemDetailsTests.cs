@@ -423,14 +423,10 @@ public sealed class ProblemDetailsTests : TestBase
 
     private static async Task _VerifyInternalServerError(HttpResponseMessage response, string environment)
     {
+        _ = environment; // Demo no longer registers UseDeveloperExceptionPage; behavior is uniform.
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         var jsonElement = JsonDocument.Parse(json).RootElement;
-
-        var details =
-            environment is EnvironmentNames.Development
-                ? "This is a test exception."
-                : HeadlessProblemDetailsConstants.Details.InternalError;
 
         _ValidateCoreProblemDetails(
             jsonElement,
@@ -438,14 +434,10 @@ public sealed class ProblemDetailsTests : TestBase
             HeadlessProblemDetailsConstants.Types.InternalError,
             HeadlessProblemDetailsConstants.Titles.InternalError,
             StatusCodes.Status500InternalServerError,
-            details
+            HeadlessProblemDetailsConstants.Details.InternalError
         );
 
-        if (environment is EnvironmentNames.Development)
-        {
-            jsonElement.GetProperty("exception").EnumerateObject().Should().HaveCountGreaterThan(0);
-        }
-        jsonElement.EnumerateObject().Should().HaveCount(environment is EnvironmentNames.Development ? 10 : 9); // dev has "exception" property
+        jsonElement.EnumerateObject().Should().HaveCount(9);
     }
 
     #endregion

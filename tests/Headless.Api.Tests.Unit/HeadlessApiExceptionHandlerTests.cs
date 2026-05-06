@@ -67,7 +67,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             .TryWriteAsync(
                 Arg.Is<ProblemDetailsContext>(c =>
                     c.ProblemDetails.Status == 400
-                    && c.ProblemDetails.Title == HeadlessProblemDetailsConstants.Titles.TenantContextRequired
+                    && c.ProblemDetails.Title == HeadlessProblemDetailsConstants.Titles.BadRequest
                     && (string)c.ProblemDetails.Extensions["code"]!
                         == HeadlessProblemDetailsConstants.Codes.TenantContextRequired
                 )

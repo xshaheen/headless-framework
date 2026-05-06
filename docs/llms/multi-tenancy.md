@@ -94,7 +94,7 @@ Resulting response shape (same for both surfaces):
 ```json
 {
   "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-  "title": "tenant-context-required",
+  "title": "bad-request",
   "status": 400,
   "detail": "An operation required an ambient tenant context but none was set.",
   "code": "tenancy.tenant-required",

@@ -158,7 +158,7 @@ app.Run();
 
 | Exception | Response |
 |-----------|----------|
-| `Headless.Abstractions.MissingTenantContextException` | 400 (`tenant-context-required`, `code: tenancy.tenant-required`) |
+| `Headless.Abstractions.MissingTenantContextException` | 400 (standard `bad-request` title; identified by `code: tenancy.tenant-required`) |
 | `Headless.Exceptions.ConflictException` | 409 with `errors` |
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `Headless.Exceptions.EntityNotFoundException` | 404 |
@@ -180,7 +180,7 @@ Tenancy response shape:
 ```json
 {
   "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-  "title": "tenant-context-required",
+  "title": "bad-request",
   "status": 400,
   "detail": "An operation required an ambient tenant context but none was set.",
   "code": "tenancy.tenant-required",

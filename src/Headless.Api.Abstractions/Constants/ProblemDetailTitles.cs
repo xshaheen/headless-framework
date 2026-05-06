@@ -36,7 +36,6 @@ public static class HeadlessProblemDetailsConstants
         public const string Conflict = "conflict-request";
         public const string InternalError = "unhandled-exception";
         public const string TooManyRequests = "too-many-requests";
-        public const string TenantContextRequired = "tenant-context-required";
     }
 
     public static class Details

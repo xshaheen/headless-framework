@@ -35,13 +35,13 @@ public interface IProblemDetailsCreator
     /// </summary>
     /// <returns>
     /// A <see cref="ProblemDetails"/> already passed through <see cref="Normalize"/> — callers should
-    /// not call <see cref="Normalize"/> again. Contains <c>Status = 400</c>, the canonical
-    /// <c>tenant-context-required</c> title, the framework-owned detail message, the standard 400
-    /// <c>type</c> URL (filled by <see cref="Normalize"/> from
+    /// not call <see cref="Normalize"/> again. Contains <c>Status = 400</c>, the standard
+    /// <c>bad-request</c> title (so clients see this as a regular 400), a tenancy-specific detail
+    /// message, the standard 400 <c>type</c> URL (filled by <see cref="Normalize"/> from
     /// <see cref="ApiBehaviorOptions.ClientErrorMapping"/>), and the stable <c>code</c> extension
-    /// (<c>HeadlessProblemDetailsConstants.Codes.TenantContextRequired</c>). Deliberately surfaces no
-    /// entity name, exception message, or layer tag — those belong in server logs, not the HTTP
-    /// response.
+    /// (<c>HeadlessProblemDetailsConstants.Codes.TenantContextRequired</c>) — the only field that
+    /// distinguishes this from any other 400. Deliberately surfaces no entity name, exception
+    /// message, or layer tag — those belong in server logs, not the HTTP response.
     /// </returns>
     /// <remarks>
     /// This is the canonical factory for the tenancy 400 response. The framework's
@@ -178,7 +178,7 @@ public sealed class ProblemDetailsCreator(
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status400BadRequest,
-            Title = HeadlessProblemDetailsConstants.Titles.TenantContextRequired,
+            Title = HeadlessProblemDetailsConstants.Titles.BadRequest,
             Detail = HeadlessProblemDetailsConstants.Details.TenantContextRequired,
             Extensions = { ["code"] = HeadlessProblemDetailsConstants.Codes.TenantContextRequired },
         };
