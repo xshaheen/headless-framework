@@ -174,16 +174,31 @@ internal sealed partial class HeadlessApiExceptionHandler(
         }
     }
 
-    private static bool _IsCancellationException(Exception ex)
+    private static bool _IsCancellationException(Exception? ex)
     {
-        for (var current = ex; current is not null; current = current.InnerException)
+        if (ex is null)
         {
-            if (current is OperationCanceledException)
-            {
-                return true;
-            }
+            return false;
         }
-        return false;
+
+        if (ex is OperationCanceledException)
+        {
+            return true;
+        }
+
+        if (ex is AggregateException aggregate)
+        {
+            foreach (var inner in aggregate.InnerExceptions)
+            {
+                if (_IsCancellationException(inner))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        return _IsCancellationException(ex.InnerException);
     }
 
     private static bool _AcceptsJsonProblemDetails(HttpRequest request)

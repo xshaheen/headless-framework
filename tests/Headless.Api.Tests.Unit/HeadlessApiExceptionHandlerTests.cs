@@ -259,6 +259,51 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     }
 
     [Fact]
+    public async Task should_map_aggregate_with_non_first_canceled_to_499()
+    {
+        // given - AggregateException whose first inner is NOT OCE; OCE is the second inner.
+        // Reproduces a Task.WhenAll(taskA, taskB) where taskA failed and taskB cancelled.
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var httpContext = new DefaultHttpContext();
+        var aggregate = new AggregateException(
+            new InvalidOperationException("first inner is not cancellation"),
+            new OperationCanceledException("second inner is cancellation")
+        );
+
+        // when
+        var result = await handler.TryHandleAsync(httpContext, aggregate, TestContext.Current.CancellationToken);
+
+        // then
+        result.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status499ClientClosedRequest);
+        await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
+    }
+
+    [Fact]
+    public async Task should_map_aggregate_with_canceled_nested_in_non_first_child_to_499()
+    {
+        // given - AggregateException whose second inner is a non-AggregateException wrapping OCE.
+        // Flatten() alone would not unwrap a regular Exception's InnerException, so this asserts
+        // the recursive helper looks inside non-aggregate inners too.
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var httpContext = new DefaultHttpContext();
+        var aggregate = new AggregateException(
+            new InvalidOperationException("first"),
+            new InvalidOperationException("second wraps cancellation", new OperationCanceledException())
+        );
+
+        // when
+        var result = await handler.TryHandleAsync(httpContext, aggregate, TestContext.Current.CancellationToken);
+
+        // then
+        result.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status499ClientClosedRequest);
+        await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
+    }
+
+    [Fact]
     public async Task should_return_false_when_canceled_after_response_started()
     {
         // given
