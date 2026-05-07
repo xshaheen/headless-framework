@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
+using Headless.Checks;
 using Headless.Domain;
 using Headless.Linq;
 using Headless.Orm.EntityFramework.Configurations;
@@ -463,6 +464,30 @@ public static class EntityTypeBuilderExtensions
         where T : class, IHasExtraProperties
     {
         b.Cast<EntityTypeBuilder>().TryConfigureExtraProperties();
+    }
+
+    #endregion
+
+    #region Configure IHasETag
+
+    /// <summary>Configures the ETag concurrency token for the entity type if it implements the IHasETag interface.</summary>
+    public static void TryConfigureEtagConcurrencyToken(this EntityTypeBuilder builder)
+    {
+        Argument.IsNotNull(builder);
+
+        if (!typeof(IHasETag).IsAssignableFrom(builder.Metadata.ClrType))
+        {
+            return;
+        }
+
+        builder.Property(nameof(IHasETag.ETag)).IsRowVersion();
+    }
+
+    /// <inheritdoc cref="TryConfigureEtagConcurrencyToken(EntityTypeBuilder)"/>
+    public static void ConfigureConfigureEtagConcurrencyToken<T>(this EntityTypeBuilder<T> b)
+        where T : class, IHasETag
+    {
+        b.Cast<EntityTypeBuilder>().TryConfigureEtagConcurrencyToken();
     }
 
     #endregion
