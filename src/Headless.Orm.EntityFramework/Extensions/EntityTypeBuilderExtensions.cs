@@ -90,6 +90,7 @@ public static class EntityTypeBuilderExtensions
         builder.TryConfigureCreateAudit();
         builder.TryConfigureUpdateAudit();
         builder.TryConfigureSuspendAudit();
+        builder.TryConfigureEtagConcurrencyToken();
     }
 
     #region Configure ICreateAudit
