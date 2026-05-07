@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
-namespace Headless.Api;
+namespace Headless.Api.Middlewares;
 
 /// <summary>
 /// Maps framework-known exceptions to normalized ProblemDetails responses through ASP.NET Core's
@@ -60,7 +60,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
             // Cancellation handled first. Only treat OCE as client-cancelled when RequestAborted
             // signaled (matches the contract a per-pipeline RequestCanceled middleware would have
             // applied). Server-side cancellations and library-thrown OCE fall through to default.
-            case Exception when _IsCancellationException(exception):
+            case not null when _IsCancellationException(exception):
                 if (!httpContext.RequestAborted.IsCancellationRequested)
                 {
                     return false;
@@ -103,7 +103,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
             // are eliminated; future EF Core type renames (rare; would be caught by tests) will
             // silently stop being mapped — accepted because consumer namespace collisions are
             // the more common real-world risk.
-            case Exception when _IsDbUpdateConcurrencyException(exception):
+            case not null when _IsDbUpdateConcurrencyException(exception):
                 _LogDbConcurrencyException(logger, exception);
                 problemDetails = problemDetailsCreator.Conflict([GeneralMessageDescriber.ConcurrencyFailure()]);
                 statusCode = StatusCodes.Status409Conflict;

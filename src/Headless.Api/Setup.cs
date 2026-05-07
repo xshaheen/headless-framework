@@ -49,283 +49,140 @@ public static class ApiSetup
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
     }
 
-    public static WebApplicationBuilder AddHeadlessFramework(this WebApplicationBuilder builder)
+    extension(WebApplicationBuilder builder)
     {
-        Argument.IsNotNull(builder);
-
-        _AddDefaultStringEncryptionService(builder);
-        _AddDefaultStringHashService(builder);
-
-        return _AddCore(builder);
-    }
-
-    public static WebApplicationBuilder AddHeadlessFramework(
-        this WebApplicationBuilder builder,
-        IConfiguration stringEncryptionConfig,
-        IConfiguration stringHashConfig
-    )
-    {
-        Argument.IsNotNull(builder);
-        Argument.IsNotNull(stringEncryptionConfig);
-        Argument.IsNotNull(stringHashConfig);
-
-        builder.Services.AddStringEncryptionService(stringEncryptionConfig);
-        builder.Services.AddStringHashService(stringHashConfig);
-
-        return _AddCore(builder);
-    }
-
-    public static WebApplicationBuilder AddHeadlessFramework(
-        this WebApplicationBuilder builder,
-        Action<StringEncryptionOptions> configureEncryption,
-        Action<StringHashOptions>? configureHash = null
-    )
-    {
-        Argument.IsNotNull(builder);
-        Argument.IsNotNull(configureEncryption);
-
-        builder.Services.AddStringEncryptionService(configureEncryption);
-
-        if (configureHash is null)
+        public WebApplicationBuilder AddHeadlessFramework()
         {
-            _AddDefaultStringHashService(builder);
-        }
-        else
-        {
-            builder.Services.AddStringHashService(configureHash);
+            Argument.IsNotNull(builder);
+
+            builder._AddDefaultStringEncryptionService();
+            builder._AddDefaultStringHashService();
+
+            return builder._AddCore();
         }
 
-        return _AddCore(builder);
-    }
-
-    public static WebApplicationBuilder AddHeadlessFramework(
-        this WebApplicationBuilder builder,
-        Action<StringEncryptionOptions, IServiceProvider> configureEncryption,
-        Action<StringHashOptions, IServiceProvider>? configureHash = null
-    )
-    {
-        Argument.IsNotNull(builder);
-        Argument.IsNotNull(configureEncryption);
-
-        builder.Services.AddStringEncryptionService(configureEncryption);
-
-        if (configureHash is null)
+        public WebApplicationBuilder AddHeadlessFramework(
+            IConfiguration stringEncryptionConfig,
+            IConfiguration stringHashConfig
+        )
         {
-            _AddDefaultStringHashService(builder);
-        }
-        else
-        {
-            builder.Services.AddStringHashService(configureHash);
+            Argument.IsNotNull(builder);
+            Argument.IsNotNull(stringEncryptionConfig);
+            Argument.IsNotNull(stringHashConfig);
+
+            builder.Services.AddStringEncryptionService(stringEncryptionConfig);
+            builder.Services.AddStringHashService(stringHashConfig);
+
+            return builder._AddCore();
         }
 
-        return _AddCore(builder);
-    }
-
-    private static void _AddDefaultStringEncryptionService(WebApplicationBuilder builder)
-    {
-        builder.Services.AddStringEncryptionService(
-            builder.Configuration.GetRequiredSection(_StringEncryptionSectionName)
-        );
-    }
-
-    private static void _AddDefaultStringHashService(WebApplicationBuilder builder)
-    {
-        builder.Services.AddStringHashService(builder.Configuration.GetRequiredSection(_StringHashSectionName));
-    }
-
-    private static WebApplicationBuilder _AddCore(WebApplicationBuilder builder)
-    {
-        builder.Services.AddEndpointsApiExplorer();
-        builder.Services.AddHttpContextAccessor();
-        builder.Services.AddResilienceEnricher();
-        builder.Services.AddJsonService();
-        builder.Services.AddTimeService();
-        builder.Services.AddApiResponseCompression();
-        builder.Services.AddHeadlessProblemDetails();
-        builder.Services.AddApiConfigurations();
-        builder.Services.ConfigureHstsOptions();
-
-        builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
-        builder.Services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
-        builder.Services.TryAddSingleton<IEnumLocaleAccessor, DefaultEnumLocaleAccessor>();
-        builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
-        builder.Services.TryAddSingleton<IApplicationInformationAccessor, ApplicationInformationAccessor>();
-        builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
-
-        builder.Services.TryAddSingleton<IPasswordGenerator, PasswordGenerator>();
-        builder.Services.TryAddSingleton<IFileFormatInspector>(FileFormatInspector);
-        builder.Services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
-        builder.Services.TryAddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
-
-        builder.Services.TryAddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();
-        builder.Services.TryAddSingleton<IJwtTokenFactory, JwtTokenFactory>();
-
-        builder.Services.TryAddSingleton<ICurrentLocale, CurrentCultureCurrentLocale>();
-        builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, HttpContextCurrentPrincipalAccessor>();
-        builder.Services.TryAddSingleton<ICurrentUser, HttpCurrentUser>();
-        builder.Services.TryAddSingleton<ICurrentTimeZone, LocalCurrentTimeZone>();
-        builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
-        // AddOrReplace (not TryAdd) so the real ambient-tenant resolver always wins over
-        // any fallback (e.g. Headless.Messaging.Core's NullCurrentTenant) regardless of
-        // package registration order. Mirrors MultiTenancySetup.AddHeadlessMultiTenancy.
-        builder.Services.AddOrReplaceSingleton<ICurrentTenant, CurrentTenant>();
-        builder.Services.TryAddSingleton<IWebClientInfoProvider, HttpWebClientInfoProvider>();
-
-        builder.Services.TryAddScoped<IRequestContext, HttpRequestContext>();
-        builder.Services.TryAddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
-        builder.Services.TryAddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
-
-        builder.Services.AddOrReplaceSingleton<ILookupNormalizer, HeadlessLookupNormalizer>();
-        builder.Services.AddOrReplaceSingleton<IAuthenticationSchemeProvider, DynamicAuthenticationSchemeProvider>();
-
-        // Turn on resilience by default
-        builder.Services.ConfigureHttpClientDefaults(http => http.AddStandardResilienceHandler());
-
-        return builder;
-    }
-
-    public static IServiceCollection AddJsonService(this IServiceCollection services)
-    {
-        services.TryAddSingleton<IJsonOptionsProvider>(new DefaultJsonOptionsProvider());
-        services.TryAddSingleton<IJsonSerializer>(sp => new SystemJsonSerializer(
-            sp.GetRequiredService<IJsonOptionsProvider>()
-        ));
-        services.TryAddSingleton<ITextSerializer>(x => x.GetRequiredService<IJsonSerializer>());
-        services.TryAddSingleton<ISerializer>(x => x.GetRequiredService<IJsonSerializer>());
-
-        return services;
-    }
-
-    public static IServiceCollection AddTimeService(this IServiceCollection services)
-    {
-        services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<IClock, Clock>();
-        services.TryAddSingleton<ITimezoneProvider, TzConvertTimezoneProvider>();
-
-        return services;
-    }
-
-    public static IServiceCollection AddHeadlessProblemDetails(this IServiceCollection services)
-    {
-        services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
-
-        services.AddProblemDetails(options =>
+        public WebApplicationBuilder AddHeadlessFramework(
+            Action<StringEncryptionOptions> configureEncryption,
+            Action<StringHashOptions>? configureHash = null
+        )
         {
-            options.CustomizeProblemDetails += context =>
+            Argument.IsNotNull(builder);
+            Argument.IsNotNull(configureEncryption);
+
+            builder.Services.AddStringEncryptionService(configureEncryption);
+
+            if (configureHash is null)
             {
-                var normalizer = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
-                normalizer.Normalize(context.ProblemDetails);
-            };
-        });
-
-        // Single IExceptionHandler covers framework-known exceptions (tenancy, conflict, validation,
-        // not-found, EF concurrency, timeout, not-implemented, cancellation) for MVC actions,
-        // Minimal-API endpoints, middleware, hosted services, and hubs. ASP.NET Core's
-        // AddExceptionHandler<T>() uses plain AddSingleton which is not idempotent; using
-        // TryAddEnumerable directly collapses duplicate registrations to a single descriptor.
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IExceptionHandler, HeadlessApiExceptionHandler>());
-
-        return services;
-    }
-
-    public static IServiceCollection AddApiResponseCompression(this IServiceCollection services)
-    {
-        services
-            .AddResponseCompression(options =>
+                builder._AddDefaultStringHashService();
+            }
+            else
             {
-                options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat([
-                    ContentTypes.Applications.ProblemJson,
-                    ContentTypes.Images.SvgXml,
-                    ContentTypes.Images.Icon,
-                ]);
+                builder.Services.AddStringHashService(configureHash);
+            }
 
-                options.Providers.Add<BrotliCompressionProvider>();
-                options.Providers.Add<GzipCompressionProvider>();
-            })
-            .Configure<BrotliCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest)
-            .Configure<GzipCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
-
-        return services;
-    }
-
-    public static IServiceCollection AddApiConfigurations(this IServiceCollection services)
-    {
-        services.Configure<RouteOptions>(options =>
-        {
-            options.LowercaseUrls = true;
-            options.AppendTrailingSlash = false;
-        });
-
-        services.Configure<FormOptions>(options =>
-        {
-            options.ValueLengthLimit = 1024 * 1024 * 4; // 4MB
-            options.MultipartHeadersLengthLimit = 1024 * 16; // 16KB
-            options.MultipartBodyLengthLimit = 1024 * 1024 * 30; // 30 MB
-        });
-
-        return services;
-    }
-
-    public static IServiceCollection ConfigureHstsOptions(this IServiceCollection services)
-    {
-        /*
-         * Configures the Strict-Transport-Security HTTP header on responses. This HTTP header is only relevant if you are
-         * using TLS. It ensures that content is loaded over HTTPS and refuses to connect in case of certificate errors and
-         * warnings. See https://developer.mozilla.org/en-US/docs/Web/Security/HTTP_strict_transport_security and
-         * http://www.troyhunt.com/2015/06/understanding-http-strict-transport.html
-         * Note: Including subdomains and a minimum maxage of 18 weeks is required for preloading.
-         * Note: You can refer to the following article to clear the HSTS cache in your browser
-         * http://classically.me/blogs/how-clear-hsts-settings-major-browsers.
-         */
-        services.Configure<HstsOptions>(options =>
-        {
-            // Preload the HSTS HTTP header for better security. See https://hstspreload.org/
-            options.IncludeSubDomains = true;
-            options.Preload = true;
-            options.MaxAge = TimeSpan.FromDays(365);
-        });
-
-        return services;
-    }
-
-    extension(WebApplication app)
-    {
-        [MustDisposeResource]
-        public IDisposable AddApiBadRequestDiagnosticListeners()
-        {
-            var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
-            var badRequest = new BadRequestDiagnosticAdapter(app.Logger);
-            var badRequestSubscription = diagnosticListener.SubscribeWithAdapter(badRequest);
-
-            return badRequestSubscription;
+            return builder._AddCore();
         }
 
-        [MustDisposeResource]
-        public IDisposable AddMiddlewareAnalysisDiagnosticListeners()
+        public WebApplicationBuilder AddHeadlessFramework(
+            Action<StringEncryptionOptions, IServiceProvider> configureEncryption,
+            Action<StringHashOptions, IServiceProvider>? configureHash = null
+        )
         {
-            var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
-            var middlewareAnalysis = new MiddlewareAnalysisDiagnosticAdapter(app.Logger);
-            var middlewareAnalysisSubscription = diagnosticListener.SubscribeWithAdapter(middlewareAnalysis);
+            Argument.IsNotNull(builder);
+            Argument.IsNotNull(configureEncryption);
 
-            return middlewareAnalysisSubscription;
+            builder.Services.AddStringEncryptionService(configureEncryption);
+
+            if (configureHash is null)
+            {
+                builder._AddDefaultStringHashService();
+            }
+            else
+            {
+                builder.Services.AddStringHashService(configureHash);
+            }
+
+            return builder._AddCore();
         }
 
-        [MustDisposeResource]
-        public IDisposable AddHeadlessApiDiagnosticListeners()
+        private void _AddDefaultStringEncryptionService()
         {
-            var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
+            builder.Services.AddStringEncryptionService(
+                builder.Configuration.GetRequiredSection(_StringEncryptionSectionName)
+            );
+        }
 
-            var badRequest = new BadRequestDiagnosticAdapter(app.Logger);
-            var badRequestSubscription = diagnosticListener.SubscribeWithAdapter(badRequest);
+        private void _AddDefaultStringHashService()
+        {
+            builder.Services.AddStringHashService(builder.Configuration.GetRequiredSection(_StringHashSectionName));
+        }
 
-            var middlewareAnalysis = new MiddlewareAnalysisDiagnosticAdapter(app.Logger);
-            var middlewareAnalysisSubscription = diagnosticListener.SubscribeWithAdapter(middlewareAnalysis);
+        private WebApplicationBuilder _AddCore()
+        {
+            builder.Services.AddEndpointsApiExplorer();
+            builder.Services.AddHttpContextAccessor();
+            builder.Services.AddResilienceEnricher();
+            builder.Services.AddHeadlessJsonService();
+            builder.Services.AddHeadlessTimeService();
+            builder.Services.AddHeadlessApiResponseCompression();
+            builder.Services.AddHeadlessProblemDetails();
+            builder.Services.ConfigureHeadlessDefaultApi();
 
-            return DisposableFactory.Create(() =>
-            {
-                badRequestSubscription.Dispose();
-                middlewareAnalysisSubscription.Dispose();
-            });
+            builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
+            builder.Services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
+            builder.Services.TryAddSingleton<IEnumLocaleAccessor, DefaultEnumLocaleAccessor>();
+            builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
+            builder.Services.TryAddSingleton<IApplicationInformationAccessor, ApplicationInformationAccessor>();
+            builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
+
+            builder.Services.TryAddSingleton<IPasswordGenerator, PasswordGenerator>();
+            builder.Services.TryAddSingleton<IFileFormatInspector>(FileFormatInspector);
+            builder.Services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
+            builder.Services.TryAddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
+
+            builder.Services.TryAddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();
+            builder.Services.TryAddSingleton<IJwtTokenFactory, JwtTokenFactory>();
+
+            builder.Services.TryAddSingleton<ICurrentLocale, CurrentCultureCurrentLocale>();
+            builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, HttpContextCurrentPrincipalAccessor>();
+            builder.Services.TryAddSingleton<ICurrentUser, HttpCurrentUser>();
+            builder.Services.TryAddSingleton<ICurrentTimeZone, LocalCurrentTimeZone>();
+            builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+            // AddOrReplace (not TryAdd) so the real ambient-tenant resolver always wins over
+            // any fallback (e.g. Headless.Messaging.Core's NullCurrentTenant) regardless of
+            // package registration order. Mirrors MultiTenancySetup.AddHeadlessMultiTenancy.
+            builder.Services.AddOrReplaceSingleton<ICurrentTenant, CurrentTenant>();
+            builder.Services.TryAddSingleton<IWebClientInfoProvider, HttpWebClientInfoProvider>();
+
+            builder.Services.TryAddScoped<IRequestContext, HttpRequestContext>();
+            builder.Services.TryAddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
+            builder.Services.TryAddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
+
+            builder.Services.AddOrReplaceSingleton<ILookupNormalizer, HeadlessLookupNormalizer>();
+            builder.Services.AddOrReplaceSingleton<
+                IAuthenticationSchemeProvider,
+                DynamicAuthenticationSchemeProvider
+            >();
+
+            // Turn on resilience by default
+            builder.Services.ConfigureHttpClientDefaults(http => http.AddStandardResilienceHandler());
+
+            return builder;
         }
     }
 }
