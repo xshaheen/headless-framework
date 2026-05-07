@@ -503,11 +503,11 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     }
 
     [Fact]
-    public async Task should_log_response_already_started_with_event_id_5006_when_fallback_path_runs()
+    public async Task should_log_5006_via_early_guard_and_skip_TryWriteAsync_when_response_has_started_at_entry()
     {
-        // given - response has started AND problem details service fails, forcing the fallback log path
+        // given - response has already started before the handler runs; the early guard must
+        // short-circuit before attempting to mutate StatusCode or call TryWriteAsync.
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
-        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(false);
         var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
         var httpContext = new DefaultHttpContext();
@@ -523,6 +523,39 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // then
         result.Should().BeFalse();
         logger.Entries.Should().Contain(e => e.EventId.Id == 5006);
+        await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
+    }
+
+    [Fact]
+    public async Task should_log_5006_via_fallback_guard_when_TryWriteAsync_starts_response_then_fails()
+    {
+        // given - HasStarted is false at entry (early guard passes), but TryWriteAsync flips it to
+        // true mid-write and then returns false. The fallback guard must catch this and log 5006.
+        var responseFeature = new MutableResponseFeature();
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService
+            .TryWriteAsync(Arg.Any<ProblemDetailsContext>())
+            .Returns(_ =>
+            {
+                responseFeature.HasStarted = true;
+                return ValueTask.FromResult(false);
+            });
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Features.Set<IHttpResponseFeature>(responseFeature);
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new MissingTenantContextException(),
+            TestContext.Current.CancellationToken
+        );
+
+        // then
+        result.Should().BeFalse();
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5006);
+        await problemDetailsService.Received(1).TryWriteAsync(Arg.Any<ProblemDetailsContext>());
     }
 
     private static HeadlessApiExceptionHandler _CreateHandler(
@@ -569,6 +602,19 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         public IHeaderDictionary Headers { get; set; } = new HeaderDictionary();
         public Stream Body { get; set; } = Stream.Null;
         public bool HasStarted => true;
+
+        public void OnStarting(Func<object, Task> callback, object state) { }
+
+        public void OnCompleted(Func<object, Task> callback, object state) { }
+    }
+
+    private sealed class MutableResponseFeature : IHttpResponseFeature
+    {
+        public int StatusCode { get; set; } = 200;
+        public string? ReasonPhrase { get; set; }
+        public IHeaderDictionary Headers { get; set; } = new HeaderDictionary();
+        public Stream Body { get; set; } = Stream.Null;
+        public bool HasStarted { get; set; }
 
         public void OnStarting(Func<object, Task> callback, object state) { }
 
