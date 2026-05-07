@@ -43,7 +43,8 @@ internal sealed partial class HeadlessApiExceptionHandler(
     ILogger<HeadlessApiExceptionHandler> logger
 ) : IExceptionHandler
 {
-    private const string _DbUpdateConcurrencyExceptionTypeName = "DbUpdateConcurrencyException";
+    private const string _DbUpdateConcurrencyExceptionFullName =
+        "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
 
     public async ValueTask<bool> TryHandleAsync(
         HttpContext httpContext,
@@ -95,18 +96,14 @@ internal sealed partial class HeadlessApiExceptionHandler(
                 statusCode = StatusCodes.Status404NotFound;
                 break;
 
-            // EF Core's DbUpdateConcurrencyException matched by simple type name to avoid a hard
-            // EF Core dependency in Headless.Api. Known caveat: any unrelated user-defined
-            // exception coincidentally named "DbUpdateConcurrencyException" in another namespace
-            // will be mapped to 409 here. We accept this trade-off because the alternative
-            // (FullName match against "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException")
-            // would silently miss future EF Core type renames.
-            case Exception
-                when string.Equals(
-                    exception.GetType().Name,
-                    _DbUpdateConcurrencyExceptionTypeName,
-                    StringComparison.Ordinal
-                ):
+            // EF Core's DbUpdateConcurrencyException matched by full type name (walking the
+            // inheritance chain) to avoid a hard EF Core dependency in Headless.Api while
+            // accepting subclasses defined by consumers. Trade-offs vs. simple-name match:
+            // false positives from unrelated user types named DbUpdateConcurrencyException
+            // are eliminated; future EF Core type renames (rare; would be caught by tests) will
+            // silently stop being mapped — accepted because consumer namespace collisions are
+            // the more common real-world risk.
+            case Exception when _IsDbUpdateConcurrencyException(exception):
                 _LogDbConcurrencyException(logger, exception);
                 problemDetails = problemDetailsCreator.Conflict([GeneralMessageDescriber.ConcurrencyFailure()]);
                 statusCode = StatusCodes.Status409Conflict;
@@ -183,6 +180,18 @@ internal sealed partial class HeadlessApiExceptionHandler(
             _LogFallbackWriteFailed(logger, fallbackError, fallbackError.GetType().Name);
             return false;
         }
+    }
+
+    private static bool _IsDbUpdateConcurrencyException(Exception ex)
+    {
+        for (var type = ex.GetType(); type is not null && type != typeof(Exception); type = type.BaseType)
+        {
+            if (string.Equals(type.FullName, _DbUpdateConcurrencyExceptionFullName, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static bool _IsCancellationException(Exception? ex)

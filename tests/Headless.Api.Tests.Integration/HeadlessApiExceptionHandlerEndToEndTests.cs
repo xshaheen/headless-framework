@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -309,13 +310,6 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
             return true;
         }
     }
-
-    /// <summary>
-    /// Test exception named to match EF Core's <c>DbUpdateConcurrencyException</c> for the
-    /// duck-typing detection in <c>HeadlessApiExceptionHandler</c>. Avoids a hard EF Core
-    /// dependency in the integration test project.
-    /// </summary>
-    private sealed class DbUpdateConcurrencyException(string message) : Exception(message);
 }
 
 [Microsoft.AspNetCore.Mvc.ApiController]

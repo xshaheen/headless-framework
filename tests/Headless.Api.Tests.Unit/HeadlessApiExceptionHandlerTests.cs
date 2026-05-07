@@ -11,6 +11,7 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -572,13 +573,6 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
 
         public void OnCompleted(Func<object, Task> callback, object state) { }
     }
-
-    /// <summary>
-    /// Test exception class named to match EF Core's DbUpdateConcurrencyException for the
-    /// duck-typing detection in HeadlessApiExceptionHandler. Avoids a hard EF Core dep in the
-    /// test project.
-    /// </summary>
-    private sealed class DbUpdateConcurrencyException(string message) : Exception(message);
 
     private sealed class CapturingLogger<T> : ILogger<T>
     {
