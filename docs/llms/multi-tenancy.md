@@ -36,7 +36,7 @@ For HTTP apps, the recommended setup is:
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadless();
+builder.AddHeadlessFramework();
 builder.AddHeadlessMultiTenancy();
 
 var app = builder.Build();
@@ -48,7 +48,7 @@ app.UseAuthorization();
 
 `UseTenantResolution()` must run after `UseAuthentication()` and before `UseAuthorization()`.
 
-`AddHeadless()` also requires `Headless:StringEncryption` and `Headless:StringHash` to be configured.
+`AddHeadlessFramework()` also requires `Headless:StringEncryption` and `Headless:StringHash` to be configured.
 
 ## Agent Instructions
 
@@ -63,7 +63,7 @@ app.UseAuthorization();
 
 ## HTTP Setup
 
-`AddHeadless()` and `AddHeadlessDbContextServices()` now register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. `AddHeadlessMultiTenancy()` is the opt-in helper that:
+`AddHeadlessFramework()` and `AddHeadlessDbContextServices()` now register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. `AddHeadlessMultiTenancy()` is the opt-in helper that:
 
 - Ensures `ICurrentTenant` resolves to `CurrentTenant`
 - Registers `ICurrentTenantAccessor` if needed
@@ -78,11 +78,11 @@ app.UseAuthorization();
 
 ## HTTP Failure Mapping
 
-`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the Mediator behavior (#236), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. The framework maps it to a normalized 400 ProblemDetails through `HeadlessApiExceptionHandler` — a single `IExceptionHandler` auto-registered by `AddHeadlessProblemDetails()` (called by `AddHeadless()`). The same handler covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs.
+`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the Mediator behavior (#236), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. The framework maps it to a normalized 400 ProblemDetails through `HeadlessApiExceptionHandler` — a single `IExceptionHandler` auto-registered by `AddHeadlessProblemDetails()` (called by `AddHeadlessFramework()`). The same handler covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs.
 
 ```csharp
-builder.AddHeadless();
-// AddHeadless() calls AddHeadlessProblemDetails() which auto-registers
+builder.AddHeadlessFramework();
+// AddHeadlessFramework() calls AddHeadlessProblemDetails() which auto-registers
 // HeadlessApiExceptionHandler. No opt-in needed.
 
 var app = builder.Build();
@@ -111,7 +111,7 @@ The body deliberately surfaces only `code`, `type`, `title`, `status`, `detail`,
 Prerequisites:
 
 - Call `app.UseExceptionHandler()` yourself to wire the `IExceptionHandler` chain into the pipeline.
-- Handler-chain ordering matters: the tenancy handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, they must register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadless()`, which calls it).
+- Handler-chain ordering matters: the tenancy handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, they must register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadlessFramework()`, which calls it).
 
 The same shape is reachable without going through the handler via `IProblemDetailsCreator.TenantRequired()` (parameterless) for direct callers — e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing.
 
@@ -203,7 +203,7 @@ using (currentTenant.Change(tenantId))
 }
 ```
 
-Register a real `ICurrentTenant` (the default `AddHeadless()` / `AddHeadlessDbContextServices()` registration is sufficient) so the ambient fallback can resolve a value when option B is used.
+Register a real `ICurrentTenant` (the default `AddHeadlessFramework()` / `AddHeadlessDbContextServices()` registration is sufficient) so the ambient fallback can resolve a value when option B is used.
 
 ### SignalR
 

@@ -2,10 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Api;
-using Headless.Constants;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -185,54 +182,6 @@ public sealed class ApiSetupTests
         public required byte[] EncryptionSalt { get; init; }
 
         public required string HashSalt { get; init; }
-    }
-
-    [Fact]
-    public void add_headless_problem_details_should_register_408_in_client_error_mapping()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessProblemDetails();
-
-        using var serviceProvider = services.BuildServiceProvider();
-        var apiBehavior = serviceProvider.GetRequiredService<IOptions<ApiBehaviorOptions>>().Value;
-
-        // then
-        apiBehavior.ClientErrorMapping.Should().ContainKey(StatusCodes.Status408RequestTimeout);
-        apiBehavior
-            .ClientErrorMapping[StatusCodes.Status408RequestTimeout]
-            .Title.Should()
-            .Be(HeadlessProblemDetailsConstants.Titles.RequestTimeout);
-        apiBehavior
-            .ClientErrorMapping[StatusCodes.Status408RequestTimeout]
-            .Link.Should()
-            .Be(HeadlessProblemDetailsConstants.Types.RequestTimeout);
-    }
-
-    [Fact]
-    public void add_headless_problem_details_should_register_501_in_client_error_mapping()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessProblemDetails();
-
-        using var serviceProvider = services.BuildServiceProvider();
-        var apiBehavior = serviceProvider.GetRequiredService<IOptions<ApiBehaviorOptions>>().Value;
-
-        // then
-        apiBehavior.ClientErrorMapping.Should().ContainKey(StatusCodes.Status501NotImplemented);
-        apiBehavior
-            .ClientErrorMapping[StatusCodes.Status501NotImplemented]
-            .Title.Should()
-            .Be(HeadlessProblemDetailsConstants.Titles.NotImplemented);
-        apiBehavior
-            .ClientErrorMapping[StatusCodes.Status501NotImplemented]
-            .Link.Should()
-            .Be(HeadlessProblemDetailsConstants.Types.NotImplemented);
     }
 
     private static void _AddDefaultHeadlessSecurityConfiguration(IConfigurationBuilder configuration)

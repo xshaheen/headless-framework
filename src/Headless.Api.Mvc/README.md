@@ -64,7 +64,3 @@ No additional configuration beyond what `AddHeadlessFramework()` requires. Confi
 ## Side Effects
 
 - Configures `MvcOptions` and `JsonOptions` for controllers
-
-## Migration
-
-`MvcApiExceptionFilter` was removed. Exception-to-ProblemDetails mapping is now handled globally by `HeadlessApiExceptionHandler` (registered via `services.AddHeadlessProblemDetails()` and activated by `app.UseExceptionHandler()` in `Headless.Api`). Remove any `options.Filters.Add<MvcApiExceptionFilter>()` calls from your MVC configuration.

@@ -56,6 +56,7 @@ builder.Services.AddAwsSesEmail(options =>
 });
 
 var app = builder.Build();
+app.UseExceptionHandler();
 app.UseResponseCompression();
 app.UseHsts();
 app.Run();

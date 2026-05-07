@@ -24,7 +24,7 @@ public static class HeadlessProblemDetailsConstants
 
     public static class Codes
     {
-        public const string TenantContextRequired = "tenancy.tenant-required";
+        public const string TenantContextRequired = "tenancy:tenant-required";
     }
 
     public static class Titles

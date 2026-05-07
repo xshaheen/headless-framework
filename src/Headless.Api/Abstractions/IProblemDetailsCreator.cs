@@ -285,6 +285,24 @@ public sealed class ProblemDetailsCreator(
                 );
 
                 break;
+            // 408 and 501 are not in ASP.NET Core's default ApiBehaviorOptions.ClientErrorMapping,
+            // so the lookup above leaves Title and Type null. Backfill from the framework's own
+            // constants here — same path as 500/404 — so empty-body responses written by
+            // RequestTimeoutsMiddleware (408) or any middleware that just sets the status code (501)
+            // produce the same shape as the IProblemDetailsCreator.RequestTimeout()/NotImplemented()
+            // factories. Detail is also filled, which ClientErrorMapping cannot carry.
+            case 408:
+                problemDetails.Title ??= HeadlessProblemDetailsConstants.Titles.RequestTimeout;
+                problemDetails.Type ??= HeadlessProblemDetailsConstants.Types.RequestTimeout;
+                problemDetails.Detail ??= HeadlessProblemDetailsConstants.Details.RequestTimeout;
+
+                break;
+            case 501:
+                problemDetails.Title ??= HeadlessProblemDetailsConstants.Titles.NotImplemented;
+                problemDetails.Type ??= HeadlessProblemDetailsConstants.Types.NotImplemented;
+                problemDetails.Detail ??= HeadlessProblemDetailsConstants.Details.NotImplemented;
+
+                break;
         }
 
         if (!problemDetails.Extensions.ContainsKey("traceId"))

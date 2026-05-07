@@ -22,7 +22,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.StaticFiles;
@@ -216,25 +215,6 @@ public static class ApiSetup
             {
                 var normalizer = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
                 normalizer.Normalize(context.ProblemDetails);
-            };
-        });
-
-        // Backfill ApiBehaviorOptions.ClientErrorMapping for status codes the framework maps but
-        // ASP.NET Core's defaults omit (408, 501). With these entries present, status-code-pages
-        // bodies emitted for empty 408/501 responses (e.g., from RequestTimeoutsMiddleware) get the
-        // same Title + Type the IProblemDetailsCreator factories produce — both paths converge on
-        // one wire shape.
-        services.Configure<ApiBehaviorOptions>(options =>
-        {
-            options.ClientErrorMapping[StatusCodes.Status408RequestTimeout] = new ClientErrorData
-            {
-                Title = HeadlessProblemDetailsConstants.Titles.RequestTimeout,
-                Link = HeadlessProblemDetailsConstants.Types.RequestTimeout,
-            };
-            options.ClientErrorMapping[StatusCodes.Status501NotImplemented] = new ClientErrorData
-            {
-                Title = HeadlessProblemDetailsConstants.Titles.NotImplemented,
-                Link = HeadlessProblemDetailsConstants.Types.NotImplemented,
             };
         });
 

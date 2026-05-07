@@ -47,7 +47,3 @@ No additional configuration beyond what `AddHeadlessFramework()` requires. Confi
 ## Side Effects
 
 - Configures `JsonOptions` for Minimal APIs
-
-## Migration
-
-`MinimalApiExceptionFilter` and `RouteGroupBuilder.AddExceptionFilter()` were removed. Exception-to-ProblemDetails mapping is now handled globally by `HeadlessApiExceptionHandler` (registered via `services.AddHeadlessProblemDetails()` and activated by `app.UseExceptionHandler()` in `Headless.Api`). Remove any per-route or per-group `AddExceptionFilter()` calls.

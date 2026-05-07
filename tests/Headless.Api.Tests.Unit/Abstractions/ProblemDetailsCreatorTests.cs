@@ -459,5 +459,81 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         problemDetails.Extensions["traceId"].Should().Be("existing-trace-id");
     }
 
+    [Fact]
+    public void should_fill_request_timeout_title_type_and_detail_for_408_when_unset()
+    {
+        // given - bare 408 (e.g., from RequestTimeoutsMiddleware via UseStatusCodePages)
+        var creator = _CreateCreator();
+        var problemDetails = new ProblemDetails { Status = 408 };
+
+        // when
+        creator.Normalize(problemDetails);
+
+        // then
+        problemDetails.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.RequestTimeout);
+        problemDetails.Type.Should().Be(HeadlessProblemDetailsConstants.Types.RequestTimeout);
+        problemDetails.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.RequestTimeout);
+    }
+
+    [Fact]
+    public void should_preserve_existing_title_type_and_detail_for_408()
+    {
+        // given - factory-built 408 (TimeoutException path) already has fields set
+        var creator = _CreateCreator();
+        var problemDetails = new ProblemDetails
+        {
+            Status = 408,
+            Title = "custom-title",
+            Type = "custom-type",
+            Detail = "custom-detail",
+        };
+
+        // when
+        creator.Normalize(problemDetails);
+
+        // then - Normalize must not overwrite caller-supplied values
+        problemDetails.Title.Should().Be("custom-title");
+        problemDetails.Type.Should().Be("custom-type");
+        problemDetails.Detail.Should().Be("custom-detail");
+    }
+
+    [Fact]
+    public void should_fill_not_implemented_title_type_and_detail_for_501_when_unset()
+    {
+        // given
+        var creator = _CreateCreator();
+        var problemDetails = new ProblemDetails { Status = 501 };
+
+        // when
+        creator.Normalize(problemDetails);
+
+        // then
+        problemDetails.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.NotImplemented);
+        problemDetails.Type.Should().Be(HeadlessProblemDetailsConstants.Types.NotImplemented);
+        problemDetails.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.NotImplemented);
+    }
+
+    [Fact]
+    public void should_preserve_existing_title_type_and_detail_for_501()
+    {
+        // given
+        var creator = _CreateCreator();
+        var problemDetails = new ProblemDetails
+        {
+            Status = 501,
+            Title = "custom-title",
+            Type = "custom-type",
+            Detail = "custom-detail",
+        };
+
+        // when
+        creator.Normalize(problemDetails);
+
+        // then
+        problemDetails.Title.Should().Be("custom-title");
+        problemDetails.Type.Should().Be("custom-type");
+        problemDetails.Detail.Should().Be("custom-detail");
+    }
+
     #endregion
 }
