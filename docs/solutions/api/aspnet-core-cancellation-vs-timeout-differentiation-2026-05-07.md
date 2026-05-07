@@ -41,7 +41,7 @@ The first row is the OCE path. The second is *also* an OCE underneath, but it ne
 
 ## 1. The OCE arm with `RequestAborted` gate
 
-`src/Headless.Api/HeadlessApiExceptionHandler.cs`:
+`src/Headless.Api/Middlewares/HeadlessApiExceptionHandler.cs`:
 
 ```csharp
 // Cancellation handled first. Only treat OCE as client-cancelled when RequestAborted
@@ -210,13 +210,12 @@ if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();   // outer: catches what UseExceptionHandler rethrows
 }
-app.UseExceptionHandler();             // inner: framework handlers run; rethrows on no match
-
-app.UseRequestTimeouts();
-app.UseStatusCodePages();              // fills body for bare 408 from RequestTimeouts
+app.UseStatusCodePages();              // outer: re-execute on bare statuses set later in pipeline
+app.UseExceptionHandler();             // framework handlers run; rethrows on no match
+app.UseRequestTimeouts();              // sets bare 408; UseStatusCodePages above fills the body
 ```
 
-Without `UseStatusCodePages` after `UseRequestTimeouts`, server-side timeouts return a bare 408 with no body. With it, `IProblemDetailsService` is invoked, `CustomizeProblemDetails` runs `Normalize`, and the 408 backfill case produces the same wire shape as the `TimeoutException` path.
+`UseStatusCodePages` must be registered **before** any middleware whose status codes it should observe. Middleware ordering executes top-down on request and bottom-up on response, so for `UseStatusCodePages` to see the bare 408 written by `UseRequestTimeouts`, it has to be the outer of the two. Same reasoning for `UseExceptionHandler` — if the handler itself sets a status with no body, the outer `UseStatusCodePages` re-executes and lets `IProblemDetailsService` fill `Title`/`Type`/`Detail` via the `Normalize` 408 backfill case, producing the same wire shape as the `TimeoutException` path.
 
 # Why ClientErrorMapping isn't enough
 
@@ -274,7 +273,7 @@ Unit test coverage for `HeadlessApiExceptionHandler`:
 
 # Files Referenced
 
-- `src/Headless.Api/HeadlessApiExceptionHandler.cs` — handler, OCE arm, `_IsCancellationException`, `case TimeoutException`
+- `src/Headless.Api/Middlewares/HeadlessApiExceptionHandler.cs` — handler, OCE arm, `_IsCancellationException`, `case TimeoutException`
 - `src/Headless.Api/Abstractions/IProblemDetailsCreator.cs` — `Normalize` with 408/501 backfill, `RequestTimeout()` / `NotImplemented()` factories
 - `src/Headless.Api.Abstractions/Constants/ProblemDetailTitles.cs` — Types/Titles/Details constants
 - `src/Headless.Api/Setup.cs` — `AddHeadlessProblemDetails` + `TryAddEnumerable` registration
