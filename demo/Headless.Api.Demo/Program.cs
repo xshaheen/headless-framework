@@ -38,11 +38,10 @@ builder
 
 var app = builder.Build();
 
-// UseExceptionHandler runs in every environment so the framework's HeadlessApiExceptionHandler
-// (auto-registered by AddHeadlessFramework()) maps framework-known exceptions to ProblemDetails consistently
-// in Development and Production. UseDeveloperExceptionPage is intentionally not registered: it
-// would intercept exceptions before the IExceptionHandler chain can see them and would break the
-// API contract this demo is meant to showcase.
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+}
 app.UseExceptionHandler();
 
 app.UseStatusCodesRewriter();
