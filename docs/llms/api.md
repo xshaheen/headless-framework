@@ -163,10 +163,13 @@ app.Run();
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `Headless.Exceptions.EntityNotFoundException` | 404 |
 | EF Core `DbUpdateConcurrencyException` (matched by type name) | 409 with concurrency-failure error |
-| `TimeoutException` | 408 |
+| `TimeoutException` (code-thrown — HTTP client, downstream call, custom timer) | 408 with full ProblemDetails body |
 | `NotImplementedException` | 501 |
-| `OperationCanceledException` (or `InnerException is OperationCanceledException`) | 499 (no body — client closed request) |
+| `OperationCanceledException` **and** `HttpContext.RequestAborted.IsCancellationRequested` is true (walked recursively through `InnerException` and `AggregateException.InnerExceptions`) | 499 (no body — client closed request) |
+| `OperationCanceledException` from any other source (server-side cancel, library-thrown OCE) | passes through (handler returns `false`) |
 | Anything else | passes through (handler returns `false`) |
+
+**Cancellation vs timeout — three flavors:** the table covers two of three OCE paths. The third — server-side request timeouts via ASP.NET Core's `RequestTimeoutsMiddleware` — never reaches this handler: the middleware translates its CTS-fired OCE into a bare 408 status. Pair `app.UseStatusCodePages()` (registered **before** `app.UseRequestTimeouts()` and `app.UseExceptionHandler()`) with `IProblemDetailsCreator.Normalize`'s 408 backfill so the bare-status path produces the same `Title`/`Type`/`Detail` shape as the `case TimeoutException` arm. Full pattern, including the AggregateException trap and pipeline ordering, lives in [`docs/solutions/api/aspnet-core-cancellation-vs-timeout-differentiation-2026-05-07.md`](../solutions/api/aspnet-core-cancellation-vs-timeout-differentiation-2026-05-07.md).
 
 ```csharp
 builder.AddHeadlessFramework();
