@@ -50,7 +50,7 @@ public static class ApiSetup
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
     }
 
-    public static WebApplicationBuilder AddHeadless(this WebApplicationBuilder builder)
+    public static WebApplicationBuilder AddHeadlessFramework(this WebApplicationBuilder builder)
     {
         Argument.IsNotNull(builder);
 
@@ -60,7 +60,7 @@ public static class ApiSetup
         return _AddCore(builder);
     }
 
-    public static WebApplicationBuilder AddHeadless(
+    public static WebApplicationBuilder AddHeadlessFramework(
         this WebApplicationBuilder builder,
         IConfiguration stringEncryptionConfig,
         IConfiguration stringHashConfig
@@ -76,7 +76,7 @@ public static class ApiSetup
         return _AddCore(builder);
     }
 
-    public static WebApplicationBuilder AddHeadless(
+    public static WebApplicationBuilder AddHeadlessFramework(
         this WebApplicationBuilder builder,
         Action<StringEncryptionOptions> configureEncryption,
         Action<StringHashOptions>? configureHash = null
@@ -99,7 +99,7 @@ public static class ApiSetup
         return _AddCore(builder);
     }
 
-    public static WebApplicationBuilder AddHeadless(
+    public static WebApplicationBuilder AddHeadlessFramework(
         this WebApplicationBuilder builder,
         Action<StringEncryptionOptions, IServiceProvider> configureEncryption,
         Action<StringHashOptions, IServiceProvider>? configureHash = null

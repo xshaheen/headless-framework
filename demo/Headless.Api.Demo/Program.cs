@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadless().ConfigureMinimalApi();
+builder.AddHeadlessFramework().ConfigureMinimalApi();
 builder.Services.AddNswagOpenApi();
 builder.Services.ConfigureMvc();
 builder.Services.AddStatusCodesRewriterMiddleware();
@@ -39,7 +39,7 @@ builder
 var app = builder.Build();
 
 // UseExceptionHandler runs in every environment so the framework's HeadlessApiExceptionHandler
-// (auto-registered by AddHeadless()) maps framework-known exceptions to ProblemDetails consistently
+// (auto-registered by AddHeadlessFramework()) maps framework-known exceptions to ProblemDetails consistently
 // in Development and Production. UseDeveloperExceptionPage is intentionally not registered: it
 // would intercept exceptions before the IExceptionHandler chain can see them and would break the
 // API contract this demo is meant to showcase.

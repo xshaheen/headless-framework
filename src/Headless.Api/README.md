@@ -8,7 +8,7 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 
 ## Key Features
 
-- One-call service registration via `AddHeadless()`
+- One-call service registration via `AddHeadlessFramework()`
 - Multi-tenancy primitives via `AddHeadlessMultiTenancy()` and `UseTenantResolution()`
 - Unified exception-to-ProblemDetails mapping via `HeadlessApiExceptionHandler` (auto-registered by `AddHeadlessProblemDetails()`): covers tenancy, conflict, validation, not-found, EF concurrency, timeout, not-implemented, and cancellation for any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware (typically MVC actions and Minimal-API endpoints)
 - Response compression (Brotli, Gzip) with optimized settings
@@ -37,7 +37,7 @@ var builder = WebApplication.CreateBuilder(args);
 ApiSetup.ConfigureGlobalSettings();
 
 // Register all framework API services
-builder.AddHeadless();
+builder.AddHeadlessFramework();
 builder.AddHeadlessMultiTenancy();
 
 var app = builder.Build();
@@ -54,19 +54,19 @@ app.UseAuthorization();
 app.Run();
 ```
 
-`AddHeadless()` requires the `Headless:StringEncryption` and `Headless:StringHash` configuration sections.
+`AddHeadlessFramework()` requires the `Headless:StringEncryption` and `Headless:StringHash` configuration sections.
 
-If you do not want the default `Headless:*` binding, `AddHeadless()` also exposes explicit overloads for:
+If you do not want the default `Headless:*` binding, `AddHeadlessFramework()` also exposes explicit overloads for:
 
 - `IConfiguration stringEncryptionConfig, IConfiguration stringHashConfig`
 - `Action<StringEncryptionOptions>, Action<StringHashOptions>?`
 - `Action<StringEncryptionOptions, IServiceProvider>, Action<StringHashOptions, IServiceProvider>?`
 
-When the hash callback is omitted, `AddHeadless(...)` still binds `Headless:StringHash` by default.
+When the hash callback is omitted, `AddHeadlessFramework(...)` still binds `Headless:StringHash` by default.
 
 ## Multi-Tenancy
 
-`AddHeadless()` registers `CurrentTenant` by default, and `Headless.Orm.EntityFramework` now uses the same default for `AddHeadlessDbContextServices()`. For claim-based HTTP tenant resolution, opt in with:
+`AddHeadlessFramework()` registers `CurrentTenant` by default, and `Headless.Orm.EntityFramework` now uses the same default for `AddHeadlessDbContextServices()`. For claim-based HTTP tenant resolution, opt in with:
 
 ```csharp
 builder.AddHeadlessMultiTenancy(options =>
@@ -83,7 +83,7 @@ Place `UseTenantResolution()` after authentication and before authorization.
 
 ### Exception Mapping
 
-`AddHeadlessProblemDetails()` (called by `AddHeadless()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
+`AddHeadlessProblemDetails()` (called by `AddHeadlessFramework()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
 
 | Exception | Response |
 |-----------|----------|
@@ -97,7 +97,7 @@ Place `UseTenantResolution()` after authentication and before authorization.
 | `OperationCanceledException` (or inner OCE at any depth) | 499 (no body — client closed request) |
 
 ```csharp
-builder.AddHeadless();
+builder.AddHeadlessFramework();
 
 var app = builder.Build();
 app.UseExceptionHandler();
@@ -163,7 +163,7 @@ The same tenancy shape is reachable for direct callers via `IProblemDetailsCreat
   }
 }
 ```
-`AddHeadless()` binds both `Headless:StringEncryption` and `Headless:StringHash`, and requires both sections to exist.
+`AddHeadlessFramework()` binds both `Headless:StringEncryption` and `Headless:StringHash`, and requires both sections to exist.
 
 ## Dependencies
 
