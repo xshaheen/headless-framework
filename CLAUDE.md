@@ -61,3 +61,4 @@ This framework delegates certain input validation to consuming applications:
 
 - Keep public API XML docs in sync with the code.
 - Keep each package `README.md` in sync with the code; package READMEs live under `src/Headless.*`.
+- `docs/solutions/` is a searchable knowledge store of past fixes and patterns, organized by category (`api`, `concurrency`, `guides`, `messaging`, etc.) with YAML frontmatter (`module`, `tags`, `problem_type`). Search it before implementing features, debugging issues, or making decisions in a documented area.
