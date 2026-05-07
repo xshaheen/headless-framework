@@ -396,7 +396,10 @@ public sealed class ProblemDetailsTests : TestBase
 
     private static async Task _VerifyInternalServerError(HttpResponseMessage response, string environment)
     {
-        _ = environment; // Demo no longer registers UseDeveloperExceptionPage; behavior is uniform.
+        // Behavior is uniform across environments. Demo registers UseDeveloperExceptionPage in
+        // Development, but UseExceptionHandler runs inside it and writes the normalized 500
+        // ProblemDetails via IProblemDetailsService before the dev page sees the exception.
+        _ = environment;
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         var jsonElement = JsonDocument.Parse(json).RootElement;

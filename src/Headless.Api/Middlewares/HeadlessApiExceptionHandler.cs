@@ -124,6 +124,14 @@ internal sealed partial class HeadlessApiExceptionHandler(
                 return false;
         }
 
+        // Guard before mutating the response: setting StatusCode after the response has started
+        // throws on Kestrel. Mirrors the OCE branch's HasStarted check for partial-write safety.
+        if (httpContext.Response.HasStarted)
+        {
+            _LogResponseAlreadyStarted(logger, exception.GetType().Name);
+            return false;
+        }
+
         httpContext.Response.StatusCode = statusCode;
 
         var written = await problemDetailsService
