@@ -461,6 +461,87 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_false_when_problem_details_service_fails_and_request_does_not_accept_json()
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(false);
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Headers.Accept = "text/html"; // Explicit non-JSON accept
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new MissingTenantContextException(),
+            TestContext.Current.CancellationToken
+        );
+
+        // then
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_log_5007_when_fallback_write_fails()
+    {
+        // given - TryWriteAsync fails, but WriteAsJsonAsync (the manual fallback) throws
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(false);
+
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
+
+        var httpContext = new DefaultHttpContext();
+        // Force WriteAsJsonAsync to fail by providing a body that throws on write
+        var failingStream = Substitute.For<Stream>();
+        failingStream.CanWrite.Returns(true);
+        failingStream
+            .WriteAsync(Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ValueTask.FromException(new IOException("disk full")));
+        httpContext.Response.Body = failingStream;
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new MissingTenantContextException(),
+            TestContext.Current.CancellationToken
+        );
+
+        // then
+        result.Should().BeFalse();
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5007);
+        logger.Entries.Should().Contain(e => e.Message.Contains("IOException"));
+    }
+
+    [Fact]
+    public async Task should_return_false_when_fallback_write_is_canceled()
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(false);
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var httpContext = new DefaultHttpContext();
+
+        var failingStream = Substitute.For<Stream>();
+        failingStream.CanWrite.Returns(true);
+        failingStream
+            .WriteAsync(Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ValueTask.FromException(new OperationCanceledException()));
+        httpContext.Response.Body = failingStream;
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new MissingTenantContextException(),
+            TestContext.Current.CancellationToken
+        );
+
+        // then
+        result.Should().BeFalse();
+        // Should not log 5007 for cancellation (it has its own catch block)
+    }
+
+    [Fact]
     public async Task should_log_db_concurrency_exception_with_event_id_5003()
     {
         // given
@@ -522,7 +603,9 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
 
         // then
         result.Should().BeFalse();
-        logger.Entries.Should().Contain(e => e.EventId.Id == 5006);
+        logger
+            .Entries.Should()
+            .Contain(e => e.EventId.Id == 5006 && e.Message.Contains(nameof(MissingTenantContextException)));
         await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
     }
 
