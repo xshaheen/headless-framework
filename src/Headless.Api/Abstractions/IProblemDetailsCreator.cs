@@ -325,7 +325,7 @@ public sealed class ProblemDetailsCreator(
         {
             // Project to a minimal { code, description } shape — Severity and Params are
             // server-side metadata that don't belong on the wire for the single-error discriminator.
-            problemDetails.Extensions["error"] = new ProblemErrorInfo(error.Code, error.Description);
+            problemDetails.Extensions["error"] = error;
         }
     }
 
@@ -345,5 +345,3 @@ public sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 }
-
-internal sealed record ProblemErrorInfo(string Code, string Description);

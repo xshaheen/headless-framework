@@ -33,8 +33,8 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         if (httpContextAccessor is null)
         {
             httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-            var httpContext = new DefaultHttpContext();
-            httpContext.Request.Path = "/api/test";
+            var httpContext = new DefaultHttpContext { Request = { Path = "/api/test" } };
+
             httpContextAccessor.HttpContext.Returns(httpContext);
         }
 
@@ -64,8 +64,8 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     {
         // given
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        var httpContext = new DefaultHttpContext();
-        httpContext.Request.Path = "/api/users/123";
+        var httpContext = new DefaultHttpContext { Request = { Path = "/api/users/123" } };
+
         httpContextAccessor.HttpContext.Returns(httpContext);
         var creator = _CreateCreator(httpContextAccessor: httpContextAccessor);
 
@@ -102,11 +102,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         var result = creator.EntityNotFound(error);
 
         // then
-        result
-            .Extensions.Should()
-            .ContainKey("error")
-            .WhoseValue.Should()
-            .BeEquivalentTo(new ProblemErrorInfo(error.Code, error.Description));
+        result.Extensions.Should().ContainKey("error").WhoseValue.Should().BeEquivalentTo(error);
     }
 
     [Fact]
@@ -162,11 +158,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         var result = creator.BadRequest(error: error);
 
         // then
-        result
-            .Extensions.Should()
-            .ContainKey("error")
-            .WhoseValue.Should()
-            .BeEquivalentTo(new ProblemErrorInfo(error.Code, error.Description));
+        result.Extensions.Should().ContainKey("error").WhoseValue.Should().BeEquivalentTo(error);
     }
 
     [Fact]
@@ -419,8 +411,12 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         Activity.Current?.Stop();
 
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        var httpContext = new DefaultHttpContext { TraceIdentifier = "http-trace-123" };
-        httpContext.Request.Path = "/api/test";
+        var httpContext = new DefaultHttpContext
+        {
+            TraceIdentifier = "http-trace-123",
+            Request = { Path = "/api/test" },
+        };
+
         httpContextAccessor.HttpContext.Returns(httpContext);
         var creator = _CreateCreator(httpContextAccessor: httpContextAccessor);
         var problemDetails = new ProblemDetails { Status = 400 };
@@ -491,8 +487,8 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     {
         // given
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        var httpContext = new DefaultHttpContext();
-        httpContext.Request.Path = "/api/orders/42";
+        var httpContext = new DefaultHttpContext { Request = { Path = "/api/orders/42" } };
+
         httpContextAccessor.HttpContext.Returns(httpContext);
         var creator = _CreateCreator(httpContextAccessor: httpContextAccessor);
         var problemDetails = new ProblemDetails { Status = 400 };

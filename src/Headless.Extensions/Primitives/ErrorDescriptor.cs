@@ -38,9 +38,11 @@ public sealed class ErrorDescriptor
     public string Description { get; private init; }
 
     /// <summary>The severity of the error.</summary>
+    [JsonIgnore]
     public ValidationSeverity Severity { get; private init; }
 
     /// <summary>Object containing parameter values related to the error.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyDictionary<string, object?>? Params => _params;
 
     public ErrorDescriptor WithParam(string key, object? value)

@@ -63,10 +63,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // then
         result.Should().BeTrue();
         httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
-        var expectedError = new ProblemErrorInfo(
-            HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code,
-            HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Description
-        );
+        var expectedError = HeadlessProblemDetailsConstants.Errors.TenantContextRequired;
+
         await problemDetailsService
             .Received(1)
             .TryWriteAsync(
@@ -445,8 +443,10 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     {
         // given - exception with sensitive inner exception and custom message
         var sensitiveInner = new InvalidOperationException("INNER_SECRET_DETAIL");
-        var exception = new MissingTenantContextException("CUSTOM_OUTER_MESSAGE", sensitiveInner);
-        exception.Data["Headless.Messaging.FailureCode"] = "SENSITIVE_LAYER_TAG";
+        var exception = new MissingTenantContextException("CUSTOM_OUTER_MESSAGE", sensitiveInner)
+        {
+            Data = { ["Headless.Messaging.FailureCode"] = "SENSITIVE_LAYER_TAG" },
+        };
 
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(false);
