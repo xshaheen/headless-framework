@@ -107,7 +107,7 @@ public abstract class ApiControllerBase : ControllerBase
     }
 
     [NonAction]
-    protected ConflictObjectResult ConflictProblemDetails(IEnumerable<ErrorDescriptor> errorDescriptors)
+    protected ConflictObjectResult ConflictProblemDetails(IReadOnlyCollection<ErrorDescriptor> errorDescriptors)
     {
         return base.Conflict(ProblemDetailsCreator.Conflict(errorDescriptors));
     }

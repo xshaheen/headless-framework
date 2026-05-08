@@ -261,7 +261,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
             .Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" });
 
         creator
-            .Conflict(Arg.Any<IEnumerable<ErrorDescriptor>>())
+            .Conflict(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>())
             .Returns(ci => new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Conflict" });
 
         return creator;

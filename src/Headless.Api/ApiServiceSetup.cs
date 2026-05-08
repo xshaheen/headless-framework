@@ -44,8 +44,8 @@ public static class ApiServiceSetup
         public IServiceCollection AddHeadlessProblemDetails()
         {
             services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
-
             services.AddProblemDetails();
+
             // Resolve IProblemDetailsCreator lazily on each request rather than at options-build
             // time. ProblemDetailsCreator depends on IOptions<ProblemDetailsOptions>; capturing
             // the singleton via Configure<TDep>() at build time would create a circular DI
@@ -53,9 +53,10 @@ public static class ApiServiceSetup
             services.Configure<Microsoft.AspNetCore.Http.ProblemDetailsOptions>(options =>
             {
                 options.CustomizeProblemDetails += context =>
-                    context
-                        .HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>()
-                        .Normalize(context.ProblemDetails);
+                {
+                    var creator = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
+                    creator.Normalize(context.ProblemDetails);
+                };
             });
 
             // Single IExceptionHandler covers framework-known exceptions (tenancy, conflict, validation,

@@ -209,8 +209,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     [Fact]
     public void should_invoke_entity_not_found_factory_for_NotFoundError()
     {
-        // given - entity/key are deliberately not surfaced to the response; ensure the factory is
-        // called without them (the exception's identity remains in server logs only).
+        // given
         var creator = _CreateProblemDetailsCreator();
         var error = new NotFoundError { Entity = "Order", Key = "ORD-456" };
 
@@ -267,8 +266,8 @@ public sealed class ApiResultExtensionsTests : TestBase
         creator
             .Received(1)
             .Conflict(
-                Arg.Is<IEnumerable<ErrorDescriptor>>(errors =>
-                    errors.Count() == 3
+                Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(errors =>
+                    errors.Count == 3
                     && errors.Any(e => e.Code == "error1" && e.Description == "First error")
                     && errors.Any(e => e.Code == "error2" && e.Description == "Second error")
                     && errors.Any(e => e.Code == "error3" && e.Description == "Third error")
@@ -305,7 +304,7 @@ public sealed class ApiResultExtensionsTests : TestBase
             .Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" });
 
         creator
-            .Conflict(Arg.Any<IEnumerable<ErrorDescriptor>>())
+            .Conflict(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>())
             .Returns(ci => new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Conflict" });
 
         return creator;
