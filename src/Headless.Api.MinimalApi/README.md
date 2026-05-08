@@ -4,13 +4,12 @@ Framework integration for ASP.NET Core Minimal APIs with JSON configuration, val
 
 ## Problem Solved
 
-Provides consistent JSON serialization, validation, and exception handling for Minimal API endpoints matching the framework's conventions.
+Provides consistent JSON serialization and validation for Minimal API endpoints matching the framework's conventions. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`).
 
 ## Key Features
 
 - Pre-configured JSON serialization options
 - `MinimalApiValidatorFilter` - FluentValidation integration
-- `MinimalApiExceptionFilter` - Standardized exception-to-problem-details mapping
 - API versioning integration
 - Endpoint discovery extensions
 
@@ -25,19 +24,19 @@ dotnet add package Headless.Api.MinimalApi
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi().ConfigureMinimalApi();
+builder.AddHeadlessFramework().ConfigureMinimalApi();
 
 var app = builder.Build();
 
 app.MapGet("/orders/{id}", (int id) => Results.Ok(new { id }))
-   .WithValidation<GetOrderRequest>();
+   .Validate<GetOrderRequest>();
 
 app.Run();
 ```
 
 ## Configuration
 
-No additional configuration beyond what `AddHeadlessApi()` requires. Configure `Headless:StringEncryption` and `Headless:StringHash`.
+No additional configuration beyond what `AddHeadlessFramework()` requires. Configure `Headless:StringEncryption` and `Headless:StringHash`.
 
 ## Dependencies
 

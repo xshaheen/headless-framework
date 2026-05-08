@@ -207,7 +207,7 @@ public sealed class ApiResultExtensionsTests : TestBase
     #region Edge Cases
 
     [Fact]
-    public void should_pass_entity_and_key_to_creator_for_NotFoundError()
+    public void should_invoke_entity_not_found_factory_for_NotFoundError()
     {
         // given
         var creator = _CreateProblemDetailsCreator();
@@ -217,7 +217,7 @@ public sealed class ApiResultExtensionsTests : TestBase
         _ = error.ToHttpResult(creator);
 
         // then
-        creator.Received(1).EntityNotFound("Order", "ORD-456");
+        creator.Received(1).EntityNotFound();
     }
 
     [Fact]
@@ -266,8 +266,8 @@ public sealed class ApiResultExtensionsTests : TestBase
         creator
             .Received(1)
             .Conflict(
-                Arg.Is<IEnumerable<ErrorDescriptor>>(errors =>
-                    errors.Count() == 3
+                Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(errors =>
+                    errors.Count == 3
                     && errors.Any(e => e.Code == "error1" && e.Description == "First error")
                     && errors.Any(e => e.Code == "error2" && e.Description == "Second error")
                     && errors.Any(e => e.Code == "error3" && e.Description == "Third error")
@@ -284,8 +284,8 @@ public sealed class ApiResultExtensionsTests : TestBase
         var creator = Substitute.For<IProblemDetailsCreator>();
 
         creator
-            .EntityNotFound(Arg.Any<string>(), Arg.Any<string>())
-            .Returns(ci => new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = "Entity Not Found" });
+            .EntityNotFound()
+            .Returns(new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = "Entity Not Found" });
 
         creator
             .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
@@ -304,7 +304,7 @@ public sealed class ApiResultExtensionsTests : TestBase
             .Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" });
 
         creator
-            .Conflict(Arg.Any<IEnumerable<ErrorDescriptor>>())
+            .Conflict(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>())
             .Returns(ci => new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Conflict" });
 
         return creator;

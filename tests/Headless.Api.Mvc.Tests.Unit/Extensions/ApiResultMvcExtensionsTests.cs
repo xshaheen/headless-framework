@@ -241,8 +241,8 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         var creator = Substitute.For<IProblemDetailsCreator>();
 
         creator
-            .EntityNotFound(Arg.Any<string>(), Arg.Any<string>())
-            .Returns(ci => new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = "Entity Not Found" });
+            .EntityNotFound()
+            .Returns(new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = "Entity Not Found" });
 
         creator
             .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
@@ -261,7 +261,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
             .Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" });
 
         creator
-            .Conflict(Arg.Any<IEnumerable<ErrorDescriptor>>())
+            .Conflict(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>())
             .Returns(ci => new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Conflict" });
 
         return creator;

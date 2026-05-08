@@ -37,7 +37,7 @@ dotnet add package Headless.Orm.EntityFramework
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi();
+builder.AddHeadlessFramework();
 
 builder.Services.AddHeadlessRedisCache(options =>
 {
@@ -56,6 +56,7 @@ builder.Services.AddAwsSesEmail(options =>
 });
 
 var app = builder.Build();
+app.UseExceptionHandler();
 app.UseResponseCompression();
 app.UseHsts();
 app.Run();

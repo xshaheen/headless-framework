@@ -26,7 +26,7 @@ public sealed class ApiExtraInformationOperationProcessor : IOperationProcessor
     {
         var operation = context.OperationDescription.Operation;
 
-        operation.IsDeprecated |= context.ApiDescription.IsDeprecated();
+        operation.IsDeprecated |= context.ApiDescription.IsDeprecated;
 
         // Add supported response types like text/json, application/json, ...
         _AddSupportedResponseTypes(context, operation);

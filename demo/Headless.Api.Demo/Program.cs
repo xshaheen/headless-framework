@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi().ConfigureMinimalApi();
+builder.AddHeadlessFramework().ConfigureMinimalApi();
 builder.Services.AddNswagOpenApi();
 builder.Services.ConfigureMvc();
 builder.Services.AddStatusCodesRewriterMiddleware();
@@ -42,10 +42,7 @@ if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
 }
-else
-{
-    app.UseExceptionHandler();
-}
+app.UseExceptionHandler();
 
 app.UseStatusCodesRewriter();
 app.UseAuthentication();

@@ -33,8 +33,8 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         if (httpContextAccessor is null)
         {
             httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-            var httpContext = new DefaultHttpContext();
-            httpContext.Request.Path = "/api/test";
+            var httpContext = new DefaultHttpContext { Request = { Path = "/api/test" } };
+
             httpContextAccessor.HttpContext.Returns(httpContext);
         }
 
@@ -64,8 +64,8 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     {
         // given
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        var httpContext = new DefaultHttpContext();
-        httpContext.Request.Path = "/api/users/123";
+        var httpContext = new DefaultHttpContext { Request = { Path = "/api/users/123" } };
+
         httpContextAccessor.HttpContext.Returns(httpContext);
         var creator = _CreateCreator(httpContextAccessor: httpContextAccessor);
 
@@ -83,41 +83,82 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         var creator = _CreateCreator();
 
         // when
-        var result = creator.EntityNotFound("User", "123");
+        var result = creator.EntityNotFound();
 
         // then
         result.Status.Should().Be(StatusCodes.Status404NotFound);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.EntityNotFound);
+        result.Extensions.Should().NotContainKey("error");
     }
 
     [Fact]
-    public void should_not_expose_entity_or_key_in_entity_not_found()
+    public void should_attach_supplied_error_to_entity_not_found()
+    {
+        // given
+        var creator = _CreateCreator();
+        var error = new ErrorDescriptor("custom-code", "custom description");
+
+        // when
+        var result = creator.EntityNotFound(error);
+
+        // then
+        result.Extensions.Should().ContainKey("error").WhoseValue.Should().BeEquivalentTo(error);
+    }
+
+    [Fact]
+    public void should_emit_default_detail_in_entity_not_found()
     {
         // given
         var creator = _CreateCreator();
 
         // when
-        var result = creator.EntityNotFound("User", "secret-id-123");
+        var result = creator.EntityNotFound();
 
         // then
-        result.Detail.Should().NotContain("User");
-        result.Detail.Should().NotContain("secret-id-123");
         result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.EntityNotFound);
     }
 
     [Fact]
-    public void should_create_malformed_syntax_with_400()
+    public void should_create_bad_request_with_400()
     {
         // given
         var creator = _CreateCreator();
 
         // when
-        var result = creator.MalformedSyntax();
+        var result = creator.BadRequest();
 
         // then
         result.Status.Should().Be(StatusCodes.Status400BadRequest);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.BadRequest);
         result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.BadRequest);
+        result.Extensions.Should().NotContainKey("error");
+    }
+
+    [Fact]
+    public void should_use_supplied_detail_in_bad_request()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.BadRequest(detail: "custom detail");
+
+        // then
+        result.Detail.Should().Be("custom detail");
+    }
+
+    [Fact]
+    public void should_attach_supplied_error_to_bad_request()
+    {
+        // given
+        var creator = _CreateCreator();
+        var error = HeadlessProblemDetailsConstants.Errors.TenantContextRequired;
+
+        // when
+        var result = creator.BadRequest(error: error);
+
+        // then
+        result.Extensions.Should().ContainKey("error").WhoseValue.Should().BeEquivalentTo(error);
     }
 
     [Fact]
@@ -281,6 +322,67 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         result.Extensions.Should().NotContainKey("errors");
     }
 
+    [Fact]
+    public void should_normalize_bad_request_response_when_error_supplied()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.BadRequest(
+            detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+            error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+        );
+
+        // then - Normalize ran (traceId/buildNumber/commitNumber/timestamp present)
+        result.Extensions.Should().ContainKey("traceId");
+        result.Extensions.Should().ContainKey("buildNumber");
+        result.Extensions.Should().ContainKey("commitNumber");
+        result.Extensions.Should().ContainKey("timestamp");
+    }
+
+    [Fact]
+    public void should_create_request_timeout_with_408()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.RequestTimeout();
+
+        // then
+        result.Status.Should().Be(StatusCodes.Status408RequestTimeout);
+        result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.RequestTimeout);
+        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.RequestTimeout);
+        result.Extensions.Should().NotContainKey("errors");
+        result.Extensions.Should().NotContainKey("error");
+        result.Extensions.Should().ContainKey("traceId");
+        result.Extensions.Should().ContainKey("buildNumber");
+        result.Extensions.Should().ContainKey("commitNumber");
+        result.Extensions.Should().ContainKey("timestamp");
+    }
+
+    [Fact]
+    public void should_create_not_implemented_with_501()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.NotImplemented();
+
+        // then
+        result.Status.Should().Be(StatusCodes.Status501NotImplemented);
+        result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.NotImplemented);
+        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.NotImplemented);
+        result.Extensions.Should().NotContainKey("errors");
+        result.Extensions.Should().NotContainKey("error");
+        result.Extensions.Should().ContainKey("traceId");
+        result.Extensions.Should().ContainKey("buildNumber");
+        result.Extensions.Should().ContainKey("commitNumber");
+        result.Extensions.Should().ContainKey("timestamp");
+    }
+
     #endregion
 
     #region Normalize Tests
@@ -309,8 +411,12 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         Activity.Current?.Stop();
 
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        var httpContext = new DefaultHttpContext { TraceIdentifier = "http-trace-123" };
-        httpContext.Request.Path = "/api/test";
+        var httpContext = new DefaultHttpContext
+        {
+            TraceIdentifier = "http-trace-123",
+            Request = { Path = "/api/test" },
+        };
+
         httpContextAccessor.HttpContext.Returns(httpContext);
         var creator = _CreateCreator(httpContextAccessor: httpContextAccessor);
         var problemDetails = new ProblemDetails { Status = 400 };
@@ -381,8 +487,8 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     {
         // given
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
-        var httpContext = new DefaultHttpContext();
-        httpContext.Request.Path = "/api/orders/42";
+        var httpContext = new DefaultHttpContext { Request = { Path = "/api/orders/42" } };
+
         httpContextAccessor.HttpContext.Returns(httpContext);
         var creator = _CreateCreator(httpContextAccessor: httpContextAccessor);
         var problemDetails = new ProblemDetails { Status = 400 };
@@ -421,6 +527,82 @@ public sealed class ProblemDetailsCreatorTests : TestBase
 
         // then
         problemDetails.Extensions["traceId"].Should().Be("existing-trace-id");
+    }
+
+    [Fact]
+    public void should_fill_request_timeout_title_type_and_detail_for_408_when_unset()
+    {
+        // given - bare 408 (e.g., from RequestTimeoutsMiddleware via UseStatusCodePages)
+        var creator = _CreateCreator();
+        var problemDetails = new ProblemDetails { Status = 408 };
+
+        // when
+        creator.Normalize(problemDetails);
+
+        // then
+        problemDetails.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.RequestTimeout);
+        problemDetails.Type.Should().Be(HeadlessProblemDetailsConstants.Types.RequestTimeout);
+        problemDetails.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.RequestTimeout);
+    }
+
+    [Fact]
+    public void should_preserve_existing_title_type_and_detail_for_408()
+    {
+        // given - factory-built 408 (TimeoutException path) already has fields set
+        var creator = _CreateCreator();
+        var problemDetails = new ProblemDetails
+        {
+            Status = 408,
+            Title = "custom-title",
+            Type = "custom-type",
+            Detail = "custom-detail",
+        };
+
+        // when
+        creator.Normalize(problemDetails);
+
+        // then - Normalize must not overwrite caller-supplied values
+        problemDetails.Title.Should().Be("custom-title");
+        problemDetails.Type.Should().Be("custom-type");
+        problemDetails.Detail.Should().Be("custom-detail");
+    }
+
+    [Fact]
+    public void should_fill_not_implemented_title_type_and_detail_for_501_when_unset()
+    {
+        // given
+        var creator = _CreateCreator();
+        var problemDetails = new ProblemDetails { Status = 501 };
+
+        // when
+        creator.Normalize(problemDetails);
+
+        // then
+        problemDetails.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.NotImplemented);
+        problemDetails.Type.Should().Be(HeadlessProblemDetailsConstants.Types.NotImplemented);
+        problemDetails.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.NotImplemented);
+    }
+
+    [Fact]
+    public void should_preserve_existing_title_type_and_detail_for_501()
+    {
+        // given
+        var creator = _CreateCreator();
+        var problemDetails = new ProblemDetails
+        {
+            Status = 501,
+            Title = "custom-title",
+            Type = "custom-type",
+            Detail = "custom-detail",
+        };
+
+        // when
+        creator.Normalize(problemDetails);
+
+        // then
+        problemDetails.Title.Should().Be("custom-title");
+        problemDetails.Type.Should().Be("custom-type");
+        problemDetails.Detail.Should().Be("custom-detail");
     }
 
     #endregion

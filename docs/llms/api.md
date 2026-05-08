@@ -14,6 +14,7 @@ packages: Api, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.L
     - [Key Features](#key-features)
     - [Installation](#installation)
     - [Quick Start](#quick-start)
+    - [Tenant-Context Exception Mapping](#tenant-context-exception-mapping)
     - [Configuration](#configuration)
         - [String Encryption](#string-encryption)
         - [String Hashing](#string-hashing)
@@ -73,7 +74,7 @@ packages: Api, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.L
 
 ## Quick Orientation
 
-The core package is `Headless.Api` — call `AddHeadlessApi()` to register compression, security headers, problem details, JWT, identity, and validation in one shot. Then choose an endpoint style:
+The core package is `Headless.Api` — call `AddHeadlessFramework()` to register compression, security headers, problem details, JWT, identity, and validation in one shot. Then choose an endpoint style:
 
 - **Minimal API** (recommended for new projects): Add `Headless.Api.MinimalApi` and call `ConfigureMinimalApi()` for JSON config, validation filters, and exception handling.
 - **MVC/Controllers**: Add `Headless.Api.Mvc` and call `ConfigureMvc()` for base controllers, exception filters, and URL canonicalization.
@@ -88,15 +89,15 @@ Additional packages:
 
 ## Agent Instructions
 
-- Use `AddHeadlessApi()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, or problem details.
-- Call `ApiSetup.ConfigureGlobalSettings()` before `AddHeadlessApi()` to set regex timeout, FluentValidation, and JWT defaults.
-- Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.WithValidation<T>()` on endpoints for FluentValidation integration.
+- Use `AddHeadlessFramework()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, or problem details.
+- Call `ApiSetup.ConfigureGlobalSettings()` before `AddHeadlessFramework()` to set regex timeout, FluentValidation, and JWT defaults.
+- Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`) for `IFormFile` validation — do not write manual file validation logic.
 - Use `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` to persist Data Protection keys in distributed/containerized environments.
 - For Serilog enrichment, call `AddSerilogEnrichers()` on services and `UseSerilogEnrichers()` on the app — place the middleware early in the pipeline.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
-- `AddHeadlessApi()` auto-binds `Headless:StringEncryption` and `Headless:StringHash` through `Headless.Security`, and also exposes explicit overloads for configuration sections and option callbacks when the defaults are not suitable. When the hash callback is omitted, it still binds `Headless:StringHash` by default.
+- `AddHeadlessFramework()` auto-binds `Headless:StringEncryption` and `Headless:StringHash` through `Headless.Security`, and also exposes explicit overloads for configuration sections and option callbacks when the defaults are not suitable. When the hash callback is omitted, it still binds `Headless:StringHash` by default.
 
 ---
 
@@ -110,9 +111,10 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 
 ## Key Features
 
-- One-call service registration via `AddHeadlessApi()`
+- One-call service registration via `AddHeadlessFramework()`
 - Response compression (Brotli, Gzip) with optimized settings
 - Problem details standardization
+- Unified exception-to-ProblemDetails mapping via `HeadlessApiExceptionHandler` (auto-registered by `AddHeadlessProblemDetails()`): covers tenancy, conflict, validation, not-found, EF concurrency, timeout, not-implemented, and cancellation across MVC, Minimal API, middleware, hosted services, and hubs
 - JWT token factory and claims principal handling
 - HSTS security configuration
 - API versioning integration
@@ -137,7 +139,7 @@ var builder = WebApplication.CreateBuilder(args);
 ApiSetup.ConfigureGlobalSettings();
 
 // Register all framework API services
-builder.AddHeadlessApi();
+builder.AddHeadlessFramework();
 
 var app = builder.Build();
 
@@ -149,6 +151,62 @@ app.UseHsts();
 
 app.Run();
 ```
+
+## Exception Mapping
+
+`AddHeadlessProblemDetails()` (called by `AddHeadlessFramework()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that maps framework-known exceptions to normalized ProblemDetails responses. Covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
+
+| Exception | Response |
+|-----------|----------|
+| `Headless.Abstractions.MissingTenantContextException` | 400 (standard `bad-request` title; identified by `error.code: g:tenant-required`) |
+| `Headless.Exceptions.ConflictException` | 409 with `errors` |
+| `FluentValidation.ValidationException` | 422 with field errors |
+| `Headless.Exceptions.EntityNotFoundException` | 404 |
+| EF Core `DbUpdateConcurrencyException` (matched by type name) | 409 with concurrency-failure error |
+| `TimeoutException` (code-thrown — HTTP client, downstream call, custom timer) | 408 with full ProblemDetails body |
+| `NotImplementedException` | 501 |
+| `OperationCanceledException` **and** `HttpContext.RequestAborted.IsCancellationRequested` is true (walked recursively through `InnerException` and `AggregateException.InnerExceptions`) | 499 (no body — client closed request) |
+| `OperationCanceledException` from any other source (server-side cancel, library-thrown OCE) | passes through (handler returns `false`) |
+| Anything else | passes through (handler returns `false`) |
+
+**Cancellation vs timeout — three flavors:** the table covers two of three OCE paths. The third — server-side request timeouts via ASP.NET Core's `RequestTimeoutsMiddleware` — never reaches this handler: the middleware translates its CTS-fired OCE into a bare 408 status. Pair `app.UseStatusCodePages()` (registered **before** `app.UseRequestTimeouts()` and `app.UseExceptionHandler()`) with `IProblemDetailsCreator.Normalize`'s 408 backfill so the bare-status path produces the same `Title`/`Type`/`Detail` shape as the `case TimeoutException` arm. Full pattern, including the AggregateException trap and pipeline ordering, lives in [`docs/solutions/api/aspnet-core-cancellation-vs-timeout-differentiation-2026-05-07.md`](../solutions/api/aspnet-core-cancellation-vs-timeout-differentiation-2026-05-07.md).
+
+```csharp
+builder.AddHeadlessFramework();
+
+var app = builder.Build();
+app.UseExceptionHandler(); // required — wires the IExceptionHandler chain into the pipeline.
+```
+
+Tenancy response shape:
+
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+  "title": "bad-request",
+  "status": 400,
+  "detail": "An operation required an ambient tenant context but none was set.",
+  "error": {
+    "code": "g:tenant-required",
+    "description": "An operation required an ambient tenant context but none was set."
+  },
+  "traceId": "...",
+  "buildNumber": "...",
+  "commitNumber": "...",
+  "instance": "/path",
+  "timestamp": "..."
+}
+```
+
+**Information-disclosure invariant:** the body contains only the framework-owned `type`, `title`, `status`, `detail`, optional `error` discriminator, plus the standard normalized extensions. Exception `Message`, `Data`, and `InnerException` content are deliberately NOT surfaced — they belong in server logs. Clients route on stable `error.code` (when present) and `status` values. The `error` extension is opt-in: factories only stamp it when the caller supplies an `ErrorDescriptor`; the tenancy mapping uses `HeadlessProblemDetailsConstants.Errors.TenantContextRequired`.
+
+**Prerequisites:**
+
+- Call `app.UseExceptionHandler()` to wire the `IExceptionHandler` chain into the pipeline.
+
+**Handler-chain ordering:** `IExceptionHandler` instances run in registration order. The framework handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadlessFramework()`, which calls it).
+
+**Related factory:** `IProblemDetailsCreator.TenantRequired()` (parameterless) produces the same tenancy response shape for direct callers (e.g., a request-pipeline pre-check that wants to short-circuit without throwing).
 
 ## Configuration
 
@@ -440,13 +498,12 @@ Framework integration for ASP.NET Core Minimal APIs with JSON configuration, val
 
 ## Problem Solved
 
-Provides consistent JSON serialization, validation, and exception handling for Minimal API endpoints matching the framework's conventions.
+Provides consistent JSON serialization and validation for Minimal API endpoints matching the framework's conventions. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`).
 
 ## Key Features
 
 - Pre-configured JSON serialization options
 - `MinimalApiValidatorFilter` - FluentValidation integration
-- `MinimalApiExceptionFilter` - Standardized exception-to-problem-details mapping
 - API versioning integration
 - Endpoint discovery extensions
 
@@ -461,12 +518,12 @@ dotnet add package Headless.Api.MinimalApi
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi().ConfigureMinimalApi();
+builder.AddHeadlessFramework().ConfigureMinimalApi();
 
 var app = builder.Build();
 
 app.MapGet("/orders/{id}", (int id) => Results.Ok(new { id }))
-   .WithValidation<GetOrderRequest>();
+   .Validate<GetOrderRequest>();
 
 app.Run();
 ```
@@ -493,12 +550,11 @@ Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JS
 
 ## Problem Solved
 
-Provides consistent MVC configuration, base controllers, exception filters, and URL canonicalization for traditional controller-based APIs.
+Provides consistent MVC configuration, base controllers, and URL canonicalization for traditional controller-based APIs. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`), so MVC actions get the same response shape as Minimal-API endpoints.
 
 ## Key Features
 
 - `ApiControllerBase` - Base controller with common utilities
-- `MvcApiExceptionFilter` - Standardized exception handling
 - Environment-based action filters (`BlockInEnvironmentAttribute`, `RequireEnvironmentAttribute`)
 - URL canonicalization middleware (`RedirectToCanonicalUrlRule`)
 - Pre-configured JSON and MVC options
@@ -515,7 +571,7 @@ dotnet add package Headless.Api.Mvc
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessApi().ConfigureMvc();
+builder.AddHeadlessFramework().ConfigureMvc();
 builder.Services.AddControllers();
 
 var app = builder.Build();

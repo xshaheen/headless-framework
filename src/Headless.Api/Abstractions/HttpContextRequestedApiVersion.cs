@@ -8,5 +8,5 @@ namespace Headless.Api.Abstractions;
 public sealed class HttpContextRequestedApiVersion(IHttpContextAccessor accessor) : IRequestedApiVersion
 {
     public string? Current =>
-        accessor.HttpContext?.GetRequestedApiVersion()?.ToString(format: null, CultureInfo.InvariantCulture);
+        accessor.HttpContext?.RequestedApiVersion?.ToString(format: null, CultureInfo.InvariantCulture);
 }

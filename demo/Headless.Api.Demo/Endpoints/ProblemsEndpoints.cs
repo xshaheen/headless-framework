@@ -9,9 +9,9 @@ public static class ProblemsEndpoints
 {
     public static void MapProblemsEndpoints(this IEndpointRouteBuilder app)
     {
-        var api = app.MapGroup("minimal").AddExceptionFilter();
+        var api = app.MapGroup("minimal");
 
-        api.MapGet("malformed-syntax", (IProblemDetailsCreator factory) => Results.Problem(factory.MalformedSyntax()));
+        api.MapGet("malformed-syntax", (IProblemDetailsCreator factory) => Results.Problem(factory.BadRequest()));
         api.MapGet("authorized", () => Results.Ok()).RequireAuthorization();
         api.MapGet("policy-authorized", () => Results.Ok()).RequireAuthorization("NamePolicy");
 

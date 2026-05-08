@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Filters;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
@@ -25,8 +24,8 @@ public sealed class ConfigureMvcApiOptions : IConfigureOptions<MvcOptions>, ICon
         options.ModelValidatorProviders.Clear();
         options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider());
 
-        // Add the ApiExceptionFilter to the global filter collection.
-        options.Filters.Add<MvcApiExceptionFilter>();
+        // Exception mapping is handled globally by HeadlessApiExceptionHandler (registered in
+        // AddHeadlessProblemDetails). No MVC IExceptionFilter needed.
     }
 
     public void Configure(ApiBehaviorOptions options)
