@@ -158,7 +158,7 @@ app.Run();
 
 | Exception | Response |
 |-----------|----------|
-| `Headless.Abstractions.MissingTenantContextException` | 400 (standard `bad-request` title; identified by `code: tenancy.tenant-required`) |
+| `Headless.Abstractions.MissingTenantContextException` | 400 (standard `bad-request` title; identified by `error.code: g:tenant-required`) |
 | `Headless.Exceptions.ConflictException` | 409 with `errors` |
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `Headless.Exceptions.EntityNotFoundException` | 404 |
@@ -186,7 +186,10 @@ Tenancy response shape:
   "title": "bad-request",
   "status": 400,
   "detail": "An operation required an ambient tenant context but none was set.",
-  "code": "tenancy.tenant-required",
+  "error": {
+    "code": "g:tenant-required",
+    "description": "An operation required an ambient tenant context but none was set."
+  },
   "traceId": "...",
   "buildNumber": "...",
   "commitNumber": "...",
@@ -195,7 +198,7 @@ Tenancy response shape:
 }
 ```
 
-**Information-disclosure invariant:** the body contains only the framework-owned `type`, `title`, `status`, `detail`, `code`, plus the standard normalized extensions. Exception `Message`, `Data`, and `InnerException` content are deliberately NOT surfaced — they belong in server logs. Clients route on stable `code` and `status` values.
+**Information-disclosure invariant:** the body contains only the framework-owned `type`, `title`, `status`, `detail`, optional `error` discriminator, plus the standard normalized extensions. Exception `Message`, `Data`, and `InnerException` content are deliberately NOT surfaced — they belong in server logs. Clients route on stable `error.code` (when present) and `status` values. The `error` extension is opt-in: factories only stamp it when the caller supplies an `ErrorDescriptor`; the tenancy mapping uses `HeadlessProblemDetailsConstants.Errors.TenantContextRequired`.
 
 **Prerequisites:**
 

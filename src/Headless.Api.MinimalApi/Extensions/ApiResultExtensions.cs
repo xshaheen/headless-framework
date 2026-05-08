@@ -32,7 +32,7 @@ public static class ApiResultExtensions
     {
         return error switch
         {
-            NotFoundError e => TypedResults.Problem(creator.EntityNotFound(e.Entity, e.Key)),
+            NotFoundError => TypedResults.Problem(creator.EntityNotFound()),
 
             ValidationError e => TypedResults.Problem(creator.UnprocessableEntity(e.ToErrorDescriptorDictionary())),
 

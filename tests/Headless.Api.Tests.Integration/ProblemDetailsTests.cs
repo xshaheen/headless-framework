@@ -123,6 +123,7 @@ public sealed class ProblemDetailsTests : TestBase
             HeadlessProblemDetailsConstants.Details.BadRequest
         );
 
+        jsonElement.TryGetProperty("error", out _).Should().BeFalse();
         jsonElement.EnumerateObject().Should().HaveCount(9);
     }
 
@@ -188,6 +189,7 @@ public sealed class ProblemDetailsTests : TestBase
         );
 
         // Entity/key params removed for security (OWASP A01:2021 - prevents info disclosure)
+        jsonElement.TryGetProperty("error", out _).Should().BeFalse();
         jsonElement.EnumerateObject().Should().HaveCount(9);
     }
 
@@ -261,6 +263,7 @@ public sealed class ProblemDetailsTests : TestBase
         var errors = jsonElement.GetProperty("errors").EnumerateArray().ToList();
         errors.Should().ContainSingle();
         _ValidateErrorDescriptor(errors[0]);
+        jsonElement.TryGetProperty("error", out _).Should().BeFalse();
         jsonElement.EnumerateObject().Should().HaveCount(10);
     }
 
@@ -517,6 +520,7 @@ public sealed class ProblemDetailsTests : TestBase
             HeadlessProblemDetailsConstants.Details.Forbidden
         );
 
+        jsonElement.TryGetProperty("error", out _).Should().BeFalse();
         jsonElement.EnumerateObject().Should().HaveCount(9);
     }
 

@@ -97,7 +97,10 @@ Resulting response shape (same for both surfaces):
   "title": "bad-request",
   "status": 400,
   "detail": "An operation required an ambient tenant context but none was set.",
-  "code": "tenancy.tenant-required",
+  "error": {
+    "code": "g:tenant-required",
+    "description": "An operation required an ambient tenant context but none was set."
+  },
   "traceId": "...",
   "buildNumber": "...",
   "commitNumber": "...",
@@ -106,7 +109,7 @@ Resulting response shape (same for both surfaces):
 }
 ```
 
-The body deliberately surfaces only `code`, `type`, `title`, `status`, `detail`, plus the standard normalized extensions (`traceId`, `buildNumber`, `commitNumber`, `timestamp`, `instance`). The exception's `Message`, `Data` (e.g., `Headless.Messaging.FailureCode = "MissingTenantContext"`), and `InnerException` are NOT included in the response — they belong in server logs (the data tag remains on the exception for log aggregation; see [Strict Publish Tenancy](#strict-publish-tenancy-tenantcontextrequired) for the messaging side). This is intentional information-disclosure protection: external callers should branch on the stable `code` extension.
+The body surfaces only `type`, `title`, `status`, `detail`, the optional `error` discriminator, plus the standard normalized extensions (`traceId`, `buildNumber`, `commitNumber`, `timestamp`, `instance`). The exception's `Message`, `Data` (e.g., `Headless.Messaging.FailureCode = "MissingTenantContext"`), and `InnerException` are NOT included in the response — they belong in server logs (the data tag remains on the exception for log aggregation; see [Strict Publish Tenancy](#strict-publish-tenancy-tenantcontextrequired) for the messaging side). External callers branch on the stable `error.code` value.
 
 Prerequisites:
 

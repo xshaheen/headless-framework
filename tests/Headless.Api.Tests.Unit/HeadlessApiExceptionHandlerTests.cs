@@ -63,14 +63,17 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // then
         result.Should().BeTrue();
         httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        var expectedError = new ProblemErrorInfo(
+            HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code,
+            HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Description
+        );
         await problemDetailsService
             .Received(1)
             .TryWriteAsync(
                 Arg.Is<ProblemDetailsContext>(c =>
                     c.ProblemDetails.Status == 400
                     && c.ProblemDetails.Title == HeadlessProblemDetailsConstants.Titles.BadRequest
-                    && (string)c.ProblemDetails.Extensions["code"]!
-                        == HeadlessProblemDetailsConstants.Codes.TenantContextRequired
+                    && expectedError.Equals(c.ProblemDetails.Extensions["error"])
                 )
             );
     }
@@ -223,7 +226,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // given
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
-        var httpContext = _CreateAbortedContext();
+        await using var aborted = _CreateAbortedContext();
+        var httpContext = aborted.HttpContext;
         var responseBody = new MemoryStream();
         httpContext.Response.Body = responseBody;
 
@@ -269,7 +273,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // given
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
-        var httpContext = _CreateAbortedContext();
+        await using var aborted = _CreateAbortedContext();
+        var httpContext = aborted.HttpContext;
         var inner = new OperationCanceledException("inner");
         var outer = new InvalidOperationException("outer", inner);
 
@@ -289,7 +294,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // Reproduces a Task.WhenAll(taskA, taskB) where taskA failed and taskB cancelled.
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
-        var httpContext = _CreateAbortedContext();
+        await using var aborted = _CreateAbortedContext();
+        var httpContext = aborted.HttpContext;
         var aggregate = new AggregateException(
             new InvalidOperationException("first inner is not cancellation"),
             new OperationCanceledException("second inner is cancellation")
@@ -312,7 +318,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // the recursive helper looks inside non-aggregate inners too.
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
-        var httpContext = _CreateAbortedContext();
+        await using var aborted = _CreateAbortedContext();
+        var httpContext = aborted.HttpContext;
         var aggregate = new AggregateException(
             new InvalidOperationException("first"),
             new InvalidOperationException("second wraps cancellation", new OperationCanceledException())
@@ -334,7 +341,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
-        var httpContext = _CreateAbortedContext();
+        await using var aborted = _CreateAbortedContext();
+        var httpContext = aborted.HttpContext;
         var activity = new System.Diagnostics.Activity("TestActivity");
         activity.Start();
         var activityFeature = Substitute.For<IHttpActivityFeature>();
@@ -361,7 +369,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // given
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
-        var httpContext = _CreateAbortedContext();
+        await using var aborted = _CreateAbortedContext();
+        var httpContext = aborted.HttpContext;
         httpContext.Features.Set<IHttpResponseFeature>(new StartedResponseFeature());
 
         // when
@@ -403,10 +412,11 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             cancellationToken: TestContext.Current.CancellationToken
         );
         doc.RootElement.GetProperty("status").GetInt32().Should().Be(400);
-        doc.RootElement.GetProperty("code")
+        doc.RootElement.GetProperty("error")
+            .GetProperty("code")
             .GetString()
             .Should()
-            .Be(HeadlessProblemDetailsConstants.Codes.TenantContextRequired);
+            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
 
     [Fact]
@@ -457,15 +467,15 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         body.Should().NotContain("CUSTOM_OUTER_MESSAGE");
         body.Should().NotContain("SENSITIVE_LAYER_TAG");
         body.Should().NotContain("Headless.Messaging.FailureCode");
-        body.Should().Contain(HeadlessProblemDetailsConstants.Codes.TenantContextRequired);
+        body.Should().Contain(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
 
     [Fact]
-    public async Task should_return_false_when_problem_details_service_fails_and_request_does_not_accept_json()
+    public async Task should_return_false_when_accept_header_is_html_only()
     {
-        // given
+        // given - Accept-header gate must run BEFORE TryWriteAsync. Browser-style requests that
+        // only accept HTML must yield false so the platform's default page renders.
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
-        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(false);
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
         var httpContext = new DefaultHttpContext();
         httpContext.Request.Headers.Accept = "text/html"; // Explicit non-JSON accept
@@ -479,6 +489,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
 
         // then
         result.Should().BeFalse();
+        // Body never written; status not mutated; primary writer not invoked.
+        await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
     }
 
     [Fact]
@@ -509,7 +521,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
 
         // then
         result.Should().BeFalse();
-        logger.Entries.Should().Contain(e => e.EventId.Id == 5007);
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5007 && e.Level == LogLevel.Error);
         logger.Entries.Should().Contain(e => e.Message.Contains("IOException"));
     }
 
@@ -519,7 +531,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // given
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(false);
-        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
         var httpContext = new DefaultHttpContext();
 
         var failingStream = Substitute.For<Stream>();
@@ -539,6 +552,61 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // then
         result.Should().BeFalse();
         // Should not log 5007 for cancellation (it has its own catch block)
+        logger.Entries.Should().NotContain(e => e.EventId.Id == 5007);
+    }
+
+    [Fact]
+    public async Task should_return_false_and_log_event_id_5008_when_primary_writer_throws()
+    {
+        // given - IProblemDetailsService.TryWriteAsync throws a non-OCE exception
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService
+            .TryWriteAsync(Arg.Any<ProblemDetailsContext>())
+            .Returns<ValueTask<bool>>(_ => throw new InvalidOperationException("primary write failure"));
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
+        var httpContext = new DefaultHttpContext();
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new MissingTenantContextException(),
+            TestContext.Current.CancellationToken
+        );
+
+        // then
+        result.Should().BeFalse();
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5008 && e.Level == LogLevel.Warning);
+        // The Exception parameter is passed to the logger so the stack trace is captured.
+        logger.Entries.Single(e => e.EventId.Id == 5008).Exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task should_return_false_and_log_event_id_5009_when_creator_throws()
+    {
+        // given - IProblemDetailsCreator factory throws while building the ProblemDetails
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        var creator = Substitute.For<IProblemDetailsCreator>();
+        creator
+            .BadRequest(Arg.Any<string?>(), Arg.Any<ErrorDescriptor?>())
+            .Returns(_ => throw new InvalidOperationException("creator failure"));
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, creator, logger);
+        var httpContext = new DefaultHttpContext();
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new MissingTenantContextException(),
+            TestContext.Current.CancellationToken
+        );
+
+        // then
+        result.Should().BeFalse();
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5009 && e.Level == LogLevel.Warning);
+        logger.Entries.Single(e => e.EventId.Id == 5009).Exception.Should().BeOfType<InvalidOperationException>();
+        // Primary writer never invoked because the creator failed before it.
+        await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
     }
 
     [Fact]
@@ -559,7 +627,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         );
 
         // then
-        logger.Entries.Should().Contain(e => e.EventId.Id == 5003);
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5003 && e.Level == LogLevel.Warning);
     }
 
     [Fact]
@@ -579,8 +647,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             TestContext.Current.CancellationToken
         );
 
-        // then
-        logger.Entries.Should().Contain(e => e.EventId.Id == 5004);
+        // then - Fix 11 raised the level from Debug to Warning so timeouts appear in default sinks.
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5004 && e.Level == LogLevel.Warning);
     }
 
     [Fact]
@@ -605,7 +673,11 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         result.Should().BeFalse();
         logger
             .Entries.Should()
-            .Contain(e => e.EventId.Id == 5006 && e.Message.Contains(nameof(MissingTenantContextException)));
+            .Contain(e =>
+                e.EventId.Id == 5006
+                && e.Level == LogLevel.Error
+                && e.Message.Contains(nameof(MissingTenantContextException))
+            );
         await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
     }
 
@@ -637,7 +709,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
 
         // then
         result.Should().BeFalse();
-        logger.Entries.Should().Contain(e => e.EventId.Id == 5006);
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5006 && e.Level == LogLevel.Error);
         await problemDetailsService.Received(1).TryWriteAsync(Arg.Any<ProblemDetailsContext>());
     }
 
@@ -656,7 +728,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         );
     }
 
-    private static DefaultHttpContext _CreateAbortedContext()
+    private static AbortedContext _CreateAbortedContext()
     {
         var context = new DefaultHttpContext();
         var lifetime = Substitute.For<IHttpRequestLifetimeFeature>();
@@ -664,7 +736,19 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         cts.Cancel();
         lifetime.RequestAborted.Returns(cts.Token);
         context.Features.Set(lifetime);
-        return context;
+        return new AbortedContext { HttpContext = context, Source = cts };
+    }
+
+    private sealed class AbortedContext : IAsyncDisposable
+    {
+        public required HttpContext HttpContext { get; init; }
+        public required CancellationTokenSource Source { get; init; }
+
+        public ValueTask DisposeAsync()
+        {
+            Source.Dispose();
+            return ValueTask.CompletedTask;
+        }
     }
 
     private static ProblemDetailsCreator _CreateRealCreator()

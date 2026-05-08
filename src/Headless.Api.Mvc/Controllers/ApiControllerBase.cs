@@ -91,7 +91,7 @@ public abstract class ApiControllerBase : ControllerBase
     [NonAction]
     protected BadRequestObjectResult MalformedSyntax()
     {
-        return base.BadRequest(ProblemDetailsCreator.MalformedSyntax());
+        return base.BadRequest(ProblemDetailsCreator.BadRequest());
     }
 
     [NonAction]
@@ -101,9 +101,9 @@ public abstract class ApiControllerBase : ControllerBase
     }
 
     [NonAction]
-    protected NotFoundObjectResult NotFoundProblemDetails(string entity, string key)
+    protected NotFoundObjectResult NotFoundProblemDetails()
     {
-        return base.NotFound(ProblemDetailsCreator.EntityNotFound(entity, key));
+        return base.NotFound(ProblemDetailsCreator.EntityNotFound());
     }
 
     [NonAction]

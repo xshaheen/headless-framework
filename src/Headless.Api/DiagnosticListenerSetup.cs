@@ -36,13 +36,10 @@ public static class DiagnosticListenerSetup
         [MustDisposeResource]
         public IDisposable AddHeadlessApiDiagnosticListeners()
         {
-            var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
-
-            var badRequest = new BadRequestDiagnosticAdapter(app.Logger);
-            var badRequestSubscription = diagnosticListener.SubscribeWithAdapter(badRequest);
-
-            var middlewareAnalysis = new MiddlewareAnalysisDiagnosticAdapter(app.Logger);
-            var middlewareAnalysisSubscription = diagnosticListener.SubscribeWithAdapter(middlewareAnalysis);
+            // Delegate to the per-listener registrations to keep one source of truth for each
+            // adapter; compose the returned disposables into a single root disposable.
+            var badRequestSubscription = app.AddApiBadRequestDiagnosticListeners();
+            var middlewareAnalysisSubscription = app.AddMiddlewareAnalysisDiagnosticListeners();
 
             return DisposableFactory.Create(() =>
             {

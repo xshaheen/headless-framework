@@ -13,78 +13,59 @@ namespace Headless.Api.Abstractions;
 
 public interface IProblemDetailsCreator
 {
-    ProblemDetails EndpointNotFound();
-
-    ProblemDetails EntityNotFound(string entity, string key);
-
-    ProblemDetails MalformedSyntax();
-
-    ProblemDetails TooManyRequests(int retryAfterSeconds);
-
-    ProblemDetails UnprocessableEntity(Dictionary<string, List<ErrorDescriptor>> errors);
-
-    ProblemDetails Conflict(params IEnumerable<ErrorDescriptor> errors);
-
-    ProblemDetails Unauthorized();
-
-    ProblemDetails Forbidden(params IReadOnlyCollection<ErrorDescriptor> errors);
+    ProblemDetails EndpointNotFound(ErrorDescriptor? error = null);
 
     /// <summary>
-    /// Builds a normalized 400 <see cref="ProblemDetails"/> for the cross-layer
-    /// "missing tenant context" guard (see <c>Headless.Abstractions.MissingTenantContextException</c>).
+    /// Builds a normalized 404 <see cref="ProblemDetails"/> for entity-not-found responses
+    /// (typically mapped from <see cref="Headless.Exceptions.EntityNotFoundException"/>).
     /// </summary>
+    /// <param name="error">
+    /// Optional <see cref="ErrorDescriptor"/> stamped into <c>Extensions["error"]</c>. Omit to
+    /// emit a 404 carrying no machine-readable discriminator.
+    /// </param>
     /// <returns>
-    /// A <see cref="ProblemDetails"/> already passed through <see cref="Normalize"/> — callers should
-    /// not call <see cref="Normalize"/> again. Contains <c>Status = 400</c>, the standard
-    /// <c>bad-request</c> title (so clients see this as a regular 400), a tenancy-specific detail
-    /// message, the standard 400 <c>type</c> URL (filled by <see cref="Normalize"/> from
-    /// <see cref="ApiBehaviorOptions.ClientErrorMapping"/>), and the stable <c>code</c> extension
-    /// (<c>HeadlessProblemDetailsConstants.Codes.TenantContextRequired</c>) — the only field that
-    /// distinguishes this from any other 400. Deliberately surfaces no entity name, exception
-    /// message, or layer tag — those belong in server logs, not the HTTP response.
+    /// A <see cref="ProblemDetails"/> already passed through <see cref="Normalize"/>. Deliberately
+    /// surfaces no entity name or key — those belong in server logs, not the HTTP response.
     /// </returns>
-    /// <remarks>
-    /// This is the canonical factory for the tenancy 400 response. The framework's
-    /// <c>HeadlessApiExceptionHandler</c> delegates to this method; direct callers (e.g., a
-    /// pre-handler that wants to short-circuit a request) should also prefer it over hand-building
-    /// a <see cref="ProblemDetails"/>. Requires the host to have called
-    /// <c>services.AddHeadlessProblemDetails()</c> so the underlying creator can run normalization.
-    /// </remarks>
-    ProblemDetails TenantRequired();
+    ProblemDetails EntityNotFound(ErrorDescriptor? error = null);
+
+    /// <summary>
+    /// Builds a normalized 400 <see cref="ProblemDetails"/>. Callers attach a stable
+    /// <see cref="ErrorDescriptor"/> to discriminate specific 400 cases (e.g., the cross-layer
+    /// "missing tenant context" guard uses
+    /// <c>HeadlessProblemDetailsConstants.Errors.TenantContextRequired</c>).
+    /// </summary>
+    /// <param name="detail">
+    /// Optional detail message. Defaults to the framework's generic malformed-syntax message
+    /// when <see langword="null"/>.
+    /// </param>
+    /// <param name="error">
+    /// Optional <see cref="ErrorDescriptor"/> written to <c>Extensions["error"]</c>. Clients branch
+    /// on this to handle specific 400 cases without relying on detail text.
+    /// </param>
+    ProblemDetails BadRequest(string? detail = null, ErrorDescriptor? error = null);
+
+    ProblemDetails TooManyRequests(int retryAfterSeconds, ErrorDescriptor? error = null);
+
+    ProblemDetails UnprocessableEntity(Dictionary<string, List<ErrorDescriptor>> errors, ErrorDescriptor? error = null);
+
+    ProblemDetails Conflict(IEnumerable<ErrorDescriptor> errors, ErrorDescriptor? error = null);
+
+    ProblemDetails Unauthorized(ErrorDescriptor? error = null);
+
+    ProblemDetails Forbidden(IReadOnlyCollection<ErrorDescriptor>? errors = null, ErrorDescriptor? error = null);
 
     /// <summary>
     /// Builds a normalized 408 <see cref="ProblemDetails"/> for request-timeout responses
     /// (typically mapped from <see cref="System.TimeoutException"/>).
     /// </summary>
-    /// <returns>
-    /// A <see cref="ProblemDetails"/> already passed through <see cref="Normalize"/> — callers should
-    /// not call <see cref="Normalize"/> again. Contains <c>Status = 408</c>, the standard
-    /// <c>request-timeout</c> title and detail, and the standard normalized extensions.
-    /// Deliberately surfaces no exception message or inner-exception content — those belong in
-    /// server logs, not the HTTP response.
-    /// </returns>
-    /// <remarks>
-    /// Requires the host to have called <c>services.AddHeadlessProblemDetails()</c> so the
-    /// underlying creator can run normalization.
-    /// </remarks>
-    ProblemDetails RequestTimeout();
+    ProblemDetails RequestTimeout(ErrorDescriptor? error = null);
 
     /// <summary>
     /// Builds a normalized 501 <see cref="ProblemDetails"/> for unimplemented-functionality
     /// responses (typically mapped from <see cref="System.NotImplementedException"/>).
     /// </summary>
-    /// <returns>
-    /// A <see cref="ProblemDetails"/> already passed through <see cref="Normalize"/> — callers should
-    /// not call <see cref="Normalize"/> again. Contains <c>Status = 501</c>, the standard
-    /// <c>not-implemented</c> title and detail, and the standard normalized extensions.
-    /// Deliberately surfaces no exception message or inner-exception content — those belong in
-    /// server logs, not the HTTP response.
-    /// </returns>
-    /// <remarks>
-    /// Requires the host to have called <c>services.AddHeadlessProblemDetails()</c> so the
-    /// underlying creator can run normalization.
-    /// </remarks>
-    ProblemDetails NotImplemented();
+    ProblemDetails NotImplemented(ErrorDescriptor? error = null);
 
     void Normalize(ProblemDetails problemDetails);
 }
@@ -97,7 +78,7 @@ public sealed class ProblemDetailsCreator(
     IOptions<ProblemDetailsOptions>? problemOptionsAccessor = null
 ) : IProblemDetailsCreator
 {
-    public ProblemDetails EndpointNotFound()
+    public ProblemDetails EndpointNotFound(ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
@@ -108,16 +89,14 @@ public sealed class ProblemDetailsCreator(
             ),
         };
 
+        _SetError(problemDetails, error);
         _Normalize(problemDetails);
 
         return problemDetails;
     }
 
-    public ProblemDetails EntityNotFound(string entity, string key)
+    public ProblemDetails EntityNotFound(ErrorDescriptor? error = null)
     {
-        _ = entity;
-        _ = key;
-
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status404NotFound,
@@ -125,26 +104,31 @@ public sealed class ProblemDetailsCreator(
             Detail = HeadlessProblemDetailsConstants.Details.EntityNotFound,
         };
 
+        _SetError(problemDetails, error);
         _Normalize(problemDetails);
 
         return problemDetails;
     }
 
-    public ProblemDetails MalformedSyntax()
+    public ProblemDetails BadRequest(string? detail = null, ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status400BadRequest,
             Title = HeadlessProblemDetailsConstants.Titles.BadRequest,
-            Detail = HeadlessProblemDetailsConstants.Details.BadRequest,
+            Detail = detail ?? HeadlessProblemDetailsConstants.Details.BadRequest,
         };
 
+        _SetError(problemDetails, error);
         _Normalize(problemDetails);
 
         return problemDetails;
     }
 
-    public ProblemDetails UnprocessableEntity(Dictionary<string, List<ErrorDescriptor>> errors)
+    public ProblemDetails UnprocessableEntity(
+        Dictionary<string, List<ErrorDescriptor>> errors,
+        ErrorDescriptor? error = null
+    )
     {
         var problemDetails = new ProblemDetails
         {
@@ -154,12 +138,13 @@ public sealed class ProblemDetailsCreator(
             Extensions = { ["errors"] = errors },
         };
 
+        _SetError(problemDetails, error);
         _Normalize(problemDetails);
 
         return problemDetails;
     }
 
-    public ProblemDetails Conflict(params IEnumerable<ErrorDescriptor> errors)
+    public ProblemDetails Conflict(IEnumerable<ErrorDescriptor> errors, ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
@@ -169,12 +154,13 @@ public sealed class ProblemDetailsCreator(
             Extensions = { ["errors"] = errors },
         };
 
+        _SetError(problemDetails, error);
         _Normalize(problemDetails);
 
         return problemDetails;
     }
 
-    public ProblemDetails Unauthorized()
+    public ProblemDetails Unauthorized(ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
@@ -183,12 +169,13 @@ public sealed class ProblemDetailsCreator(
             Detail = HeadlessProblemDetailsConstants.Details.Unauthorized,
         };
 
+        _SetError(problemDetails, error);
         _Normalize(problemDetails);
 
         return problemDetails;
     }
 
-    public ProblemDetails Forbidden(params IReadOnlyCollection<ErrorDescriptor> errors)
+    public ProblemDetails Forbidden(IReadOnlyCollection<ErrorDescriptor>? errors = null, ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
@@ -197,32 +184,18 @@ public sealed class ProblemDetailsCreator(
             Detail = HeadlessProblemDetailsConstants.Details.Forbidden,
         };
 
-        if (errors.Count > 0)
+        if (errors is { Count: > 0 })
         {
             problemDetails.Extensions["errors"] = errors;
         }
 
+        _SetError(problemDetails, error);
         _Normalize(problemDetails);
 
         return problemDetails;
     }
 
-    public ProblemDetails TenantRequired()
-    {
-        var problemDetails = new ProblemDetails
-        {
-            Status = StatusCodes.Status400BadRequest,
-            Title = HeadlessProblemDetailsConstants.Titles.BadRequest,
-            Detail = HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-            Extensions = { ["code"] = HeadlessProblemDetailsConstants.Codes.TenantContextRequired },
-        };
-
-        _Normalize(problemDetails);
-
-        return problemDetails;
-    }
-
-    public ProblemDetails RequestTimeout()
+    public ProblemDetails RequestTimeout(ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
@@ -231,12 +204,13 @@ public sealed class ProblemDetailsCreator(
             Detail = HeadlessProblemDetailsConstants.Details.RequestTimeout,
         };
 
+        _SetError(problemDetails, error);
         _Normalize(problemDetails);
 
         return problemDetails;
     }
 
-    public ProblemDetails NotImplemented()
+    public ProblemDetails NotImplemented(ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
@@ -245,6 +219,7 @@ public sealed class ProblemDetailsCreator(
             Detail = HeadlessProblemDetailsConstants.Details.NotImplemented,
         };
 
+        _SetError(problemDetails, error);
         _Normalize(problemDetails);
 
         return problemDetails;
@@ -344,7 +319,17 @@ public sealed class ProblemDetailsCreator(
         }
     }
 
-    public ProblemDetails TooManyRequests(int retryAfterSeconds)
+    private static void _SetError(ProblemDetails problemDetails, ErrorDescriptor? error)
+    {
+        if (error is not null)
+        {
+            // Project to a minimal { code, description } shape — Severity and Params are
+            // server-side metadata that don't belong on the wire for the single-error discriminator.
+            problemDetails.Extensions["error"] = new ProblemErrorInfo(error.Code, error.Description);
+        }
+    }
+
+    public ProblemDetails TooManyRequests(int retryAfterSeconds, ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
@@ -354,8 +339,11 @@ public sealed class ProblemDetailsCreator(
             Extensions = { ["retryAfter"] = retryAfterSeconds },
         };
 
+        _SetError(problemDetails, error);
         _Normalize(problemDetails);
 
         return problemDetails;
     }
 }
+
+internal sealed record ProblemErrorInfo(string Code, string Description);

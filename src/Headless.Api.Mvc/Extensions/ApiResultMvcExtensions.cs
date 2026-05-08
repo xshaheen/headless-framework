@@ -46,7 +46,7 @@ public static class ApiResultMvcExtensions
     {
         return error switch
         {
-            NotFoundError e => controller.NotFound(creator.EntityNotFound(e.Entity, e.Key)),
+            NotFoundError => controller.NotFound(creator.EntityNotFound()),
 
             ValidationError e => controller.UnprocessableEntity(
                 creator.UnprocessableEntity(e.ToErrorDescriptorDictionary())

@@ -11,7 +11,7 @@ public static class ProblemsEndpoints
     {
         var api = app.MapGroup("minimal");
 
-        api.MapGet("malformed-syntax", (IProblemDetailsCreator factory) => Results.Problem(factory.MalformedSyntax()));
+        api.MapGet("malformed-syntax", (IProblemDetailsCreator factory) => Results.Problem(factory.BadRequest()));
         api.MapGet("authorized", () => Results.Ok()).RequireAuthorization();
         api.MapGet("policy-authorized", () => Results.Ok()).RequireAuthorization("NamePolicy");
 

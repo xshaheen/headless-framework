@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Primitives;
+
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Headless.Constants;
@@ -22,9 +24,14 @@ public static class HeadlessProblemDetailsConstants
         public const string NotImplemented = "https://tools.ietf.org/html/rfc9110#section-15.6.2";
     }
 
-    public static class Codes
+    public static class Errors
     {
-        public const string TenantContextRequired = "tenancy:tenant-required";
+        public static ErrorDescriptor TenantContextRequired { get; } =
+            new(
+                code: "g:tenant-required",
+                description: Details.TenantContextRequired,
+                severity: ValidationSeverity.Error
+            );
     }
 
     public static class Titles

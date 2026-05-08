@@ -49,7 +49,11 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
             .GetString()
             .Should()
             .Be(HeadlessProblemDetailsConstants.Details.TenantContextRequired);
-        root.GetProperty("code").GetString().Should().Be(HeadlessProblemDetailsConstants.Codes.TenantContextRequired);
+        root.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
         root.GetProperty("traceId").GetString().Should().NotBeNullOrWhiteSpace();
         root.GetProperty("instance").GetString().Should().Be("/throw");
     }
@@ -74,7 +78,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         body.Should().NotContain("CUSTOM_OUTER_MESSAGE");
         body.Should().NotContain("SENSITIVE_LAYER_TAG");
         body.Should().NotContain("Headless.Messaging.FailureCode");
-        body.Should().Contain(HeadlessProblemDetailsConstants.Codes.TenantContextRequired);
+        body.Should().Contain(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
 
     [Fact]
@@ -152,7 +156,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         // Negative assertion: response is not the tenancy 400 shape — the unique tenancy code
         // is the identifier; title is shared `bad-request` so it can't be used to distinguish.
         var body = await response.Content.ReadAsStringAsync(AbortToken);
-        body.Should().NotContain(HeadlessProblemDetailsConstants.Codes.TenantContextRequired);
+        body.Should().NotContain(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
 
     [Theory]
@@ -221,7 +225,11 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         root.GetProperty("status").GetInt32().Should().Be(400);
-        root.GetProperty("code").GetString().Should().Be(HeadlessProblemDetailsConstants.Codes.TenantContextRequired);
+        root.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
 
     [Fact]
@@ -260,6 +268,11 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().Contain("CATCH_ALL_MARKER");
     }
+
+    // OCE -> 499 is exercised at the unit level (HeadlessApiExceptionHandlerTests). An end-to-end
+    // assertion is unreliable: the only realistic way to fire RequestAborted server-side is to call
+    // HttpContext.Abort(), which severs the TCP connection — so the client cannot observe the 499.
+    // The 499 status is recorded for server-side logging/metrics only, never delivered on the wire.
 
     private async Task<WebApplication> _CreateAppAsync(Action<IServiceCollection> handlerSetup, Action endpoint)
     {

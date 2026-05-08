@@ -83,41 +83,90 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         var creator = _CreateCreator();
 
         // when
-        var result = creator.EntityNotFound("User", "123");
+        var result = creator.EntityNotFound();
 
         // then
         result.Status.Should().Be(StatusCodes.Status404NotFound);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.EntityNotFound);
+        result.Extensions.Should().NotContainKey("error");
     }
 
     [Fact]
-    public void should_not_expose_entity_or_key_in_entity_not_found()
+    public void should_attach_supplied_error_to_entity_not_found()
+    {
+        // given
+        var creator = _CreateCreator();
+        var error = new ErrorDescriptor("custom-code", "custom description");
+
+        // when
+        var result = creator.EntityNotFound(error);
+
+        // then
+        result
+            .Extensions.Should()
+            .ContainKey("error")
+            .WhoseValue.Should()
+            .BeEquivalentTo(new ProblemErrorInfo(error.Code, error.Description));
+    }
+
+    [Fact]
+    public void should_emit_default_detail_in_entity_not_found()
     {
         // given
         var creator = _CreateCreator();
 
         // when
-        var result = creator.EntityNotFound("User", "secret-id-123");
+        var result = creator.EntityNotFound();
 
         // then
-        result.Detail.Should().NotContain("User");
-        result.Detail.Should().NotContain("secret-id-123");
         result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.EntityNotFound);
     }
 
     [Fact]
-    public void should_create_malformed_syntax_with_400()
+    public void should_create_bad_request_with_400()
     {
         // given
         var creator = _CreateCreator();
 
         // when
-        var result = creator.MalformedSyntax();
+        var result = creator.BadRequest();
 
         // then
         result.Status.Should().Be(StatusCodes.Status400BadRequest);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.BadRequest);
         result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.BadRequest);
+        result.Extensions.Should().NotContainKey("error");
+    }
+
+    [Fact]
+    public void should_use_supplied_detail_in_bad_request()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.BadRequest(detail: "custom detail");
+
+        // then
+        result.Detail.Should().Be("custom detail");
+    }
+
+    [Fact]
+    public void should_attach_supplied_error_to_bad_request()
+    {
+        // given
+        var creator = _CreateCreator();
+        var error = HeadlessProblemDetailsConstants.Errors.TenantContextRequired;
+
+        // when
+        var result = creator.BadRequest(error: error);
+
+        // then
+        result
+            .Extensions.Should()
+            .ContainKey("error")
+            .WhoseValue.Should()
+            .BeEquivalentTo(new ProblemErrorInfo(error.Code, error.Description));
     }
 
     [Fact]
@@ -282,35 +331,60 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     }
 
     [Fact]
-    public void should_create_tenant_required_with_400()
+    public void should_normalize_bad_request_response_when_error_supplied()
     {
         // given
         var creator = _CreateCreator();
 
         // when
-        var result = creator.TenantRequired();
+        var result = creator.BadRequest(
+            detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+            error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+        );
 
-        // then
-        result.Status.Should().Be(StatusCodes.Status400BadRequest);
-        result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.BadRequest);
-        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.TenantContextRequired);
-        result
-            .Extensions.Should()
-            .ContainKey("code")
-            .WhoseValue.Should()
-            .Be(HeadlessProblemDetailsConstants.Codes.TenantContextRequired);
+        // then - Normalize ran (traceId/buildNumber/commitNumber/timestamp present)
+        result.Extensions.Should().ContainKey("traceId");
+        result.Extensions.Should().ContainKey("buildNumber");
+        result.Extensions.Should().ContainKey("commitNumber");
+        result.Extensions.Should().ContainKey("timestamp");
     }
 
     [Fact]
-    public void should_normalize_tenant_required_response()
+    public void should_create_request_timeout_with_408()
     {
         // given
         var creator = _CreateCreator();
 
         // when
-        var result = creator.TenantRequired();
+        var result = creator.RequestTimeout();
 
-        // then - Normalize ran (traceId/buildNumber/commitNumber/timestamp present)
+        // then
+        result.Status.Should().Be(StatusCodes.Status408RequestTimeout);
+        result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.RequestTimeout);
+        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.RequestTimeout);
+        result.Extensions.Should().NotContainKey("errors");
+        result.Extensions.Should().NotContainKey("error");
+        result.Extensions.Should().ContainKey("traceId");
+        result.Extensions.Should().ContainKey("buildNumber");
+        result.Extensions.Should().ContainKey("commitNumber");
+        result.Extensions.Should().ContainKey("timestamp");
+    }
+
+    [Fact]
+    public void should_create_not_implemented_with_501()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.NotImplemented();
+
+        // then
+        result.Status.Should().Be(StatusCodes.Status501NotImplemented);
+        result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.NotImplemented);
+        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.NotImplemented);
+        result.Extensions.Should().NotContainKey("errors");
+        result.Extensions.Should().NotContainKey("error");
         result.Extensions.Should().ContainKey("traceId");
         result.Extensions.Should().ContainKey("buildNumber");
         result.Extensions.Should().ContainKey("commitNumber");

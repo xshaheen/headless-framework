@@ -207,9 +207,10 @@ public sealed class ApiResultExtensionsTests : TestBase
     #region Edge Cases
 
     [Fact]
-    public void should_pass_entity_and_key_to_creator_for_NotFoundError()
+    public void should_invoke_entity_not_found_factory_for_NotFoundError()
     {
-        // given
+        // given - entity/key are deliberately not surfaced to the response; ensure the factory is
+        // called without them (the exception's identity remains in server logs only).
         var creator = _CreateProblemDetailsCreator();
         var error = new NotFoundError { Entity = "Order", Key = "ORD-456" };
 
@@ -217,7 +218,7 @@ public sealed class ApiResultExtensionsTests : TestBase
         _ = error.ToHttpResult(creator);
 
         // then
-        creator.Received(1).EntityNotFound("Order", "ORD-456");
+        creator.Received(1).EntityNotFound();
     }
 
     [Fact]
@@ -284,8 +285,8 @@ public sealed class ApiResultExtensionsTests : TestBase
         var creator = Substitute.For<IProblemDetailsCreator>();
 
         creator
-            .EntityNotFound(Arg.Any<string>(), Arg.Any<string>())
-            .Returns(ci => new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = "Entity Not Found" });
+            .EntityNotFound()
+            .Returns(new ProblemDetails { Status = StatusCodes.Status404NotFound, Title = "Entity Not Found" });
 
         creator
             .UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())

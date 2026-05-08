@@ -51,7 +51,7 @@ public sealed class IdempotencyMiddleware(
         }
 
         logger.LogWarning("Idempotency key {IdempotencyKey} already exists, returning 409 Conflict.", idempotencyKey);
-        var problemDetails = problemDetailsCreator.Conflict(GeneralMessageDescriber.DuplicatedRequest());
+        var problemDetails = problemDetailsCreator.Conflict([GeneralMessageDescriber.DuplicatedRequest()]);
         await Results.Problem(problemDetails).ExecuteAsync(context).ConfigureAwait(false);
     }
 }

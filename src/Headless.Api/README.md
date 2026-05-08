@@ -87,7 +87,7 @@ Place `UseTenantResolution()` after authentication and before authorization.
 
 | Exception | Response |
 |-----------|----------|
-| `MissingTenantContextException` | 400 (standard `bad-request` title; identified by `code: tenancy.tenant-required`). Previously surfaced as 500 (unhandled); now 400 — terminal, do not retry. |
+| `MissingTenantContextException` | 400 (standard `bad-request` title; identified by `error.code: g:tenant-required`). Previously surfaced as 500 (unhandled); now 400 — terminal, do not retry. |
 | `ConflictException` | 409 with `errors` |
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `EntityNotFoundException` | 404 |
@@ -111,7 +111,10 @@ Tenancy response shape (other exceptions follow the same normalization):
   "title": "bad-request",
   "status": 400,
   "detail": "An operation required an ambient tenant context but none was set.",
-  "code": "tenancy.tenant-required",
+  "error": {
+    "code": "g:tenant-required",
+    "description": "An operation required an ambient tenant context but none was set."
+  },
   "traceId": "...",
   "buildNumber": "...",
   "commitNumber": "...",
@@ -120,7 +123,7 @@ Tenancy response shape (other exceptions follow the same normalization):
 }
 ```
 
-The body deliberately surfaces no entity name, exception message, `Exception.Data` tag, or inner exception — those belong in server logs, not API responses. Clients route on stable `code` and `status` values.
+The body deliberately surfaces no entity name, exception message, `Exception.Data` tag, or inner exception — those belong in server logs, not API responses. Clients route on the stable `error.code` and `status` values; the `error` extension is only present when the framework attaches a discriminator (currently the tenancy guard).
 
 Prerequisites: call `app.UseExceptionHandler()` to wire the `IExceptionHandler` chain into the pipeline. The handler is registered by `AddHeadlessProblemDetails()`, so consumers who need their own catch-all to win must register it **before** that call.
 
