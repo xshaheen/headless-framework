@@ -44,15 +44,21 @@ internal sealed class ConsumeExecutionPipeline(
         var provider = scope.ServiceProvider;
         // Filter chain: executing in registration order, executed/exception in reverse — mirrors ASP.NET MVC.
         var filters = provider.GetServices<IConsumeFilter>().ToArray();
+        // Tracks how many executing-phase filters completed; only those participate in the exception phase
+        // when an early filter throws during executing — matches ASP.NET MVC stack-discipline semantics.
+        var enteredCount = 0;
         object? resultObj = null;
 
         try
         {
             var executeParams = new object?[] { consumeContext, cancellationToken };
             var etContext = new ExecutingContext(context, executeParams);
-            foreach (var filter in filters)
+            for (var i = 0; i < filters.Length; i++)
             {
-                await filter.OnSubscribeExecutingAsync(etContext).ConfigureAwait(false);
+                // Increment before the call so a filter that throws during executing is counted
+                // as "entered" and gets its exception phase invoked during stack unwind.
+                enteredCount = i + 1;
+                await filters[i].OnSubscribeExecutingAsync(etContext).ConfigureAwait(false);
             }
 
             if (
@@ -83,13 +89,14 @@ internal sealed class ConsumeExecutionPipeline(
         }
         catch (Exception e)
         {
-            if (filters.Length == 0)
+            if (enteredCount == 0)
             {
                 throw;
             }
 
             var exContext = new ExceptionContext(context, e);
-            for (var i = filters.Length - 1; i >= 0; i--)
+            // Only filters whose executing phase completed participate; reverse stack-unwind order.
+            for (var i = enteredCount - 1; i >= 0; i--)
             {
                 await filters[i].OnSubscribeExceptionAsync(exContext).ConfigureAwait(false);
             }

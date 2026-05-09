@@ -121,6 +121,76 @@ public sealed class ConsumeFilterPipelineTests : TestBase
     }
 
     [Fact]
+    public async Task should_only_invoke_exception_phase_for_filters_whose_executing_phase_completed()
+    {
+        // given: A enters executing fine, B throws during executing, C never enters
+        var recorder = new FilterCallRecorder();
+        var services = _BuildServiceCollection(recorder);
+        new MessagingBuilder(services)
+            .AddSubscribeFilter<RecordingFilterA>()
+            .AddSubscribeFilter<ExecutingThrowingFilter>()
+            .AddSubscribeFilter<RecordingFilterB>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        var act = async () =>
+            await pipeline.ExecuteAsync(_BuildConsumerContext(), new SimpleMessage("hi"), typeof(SimpleMessage), AbortToken);
+
+        // then — A and ExecutingThrow ran executing; only those two appear in the exception phase.
+        // B never entered executing, so its exception phase MUST NOT run (otherwise filters might dispose
+        // state they never initialized, mirroring the ASP.NET MVC stack-unwind contract).
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("filter executing boom");
+        recorder.Calls.Should().Equal(
+            "A.executing",
+            "ExecutingThrow.executing",
+            "ExecutingThrow.exception",
+            "A.exception"
+        );
+        recorder.Calls.Should().NotContain("B.executing");
+        recorder.Calls.Should().NotContain("B.exception");
+    }
+
+    [Fact]
+    public async Task should_propagate_executed_result_mutation_from_inner_filter_to_outer_filter()
+    {
+        // given
+        var recorder = new FilterCallRecorder();
+        var services = _BuildServiceCollection(recorder);
+        new MessagingBuilder(services)
+            .AddSubscribeFilter<OuterResultObservingFilter>()
+            .AddSubscribeFilter<InnerResultMutatingFilter>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await pipeline.ExecuteAsync(_BuildConsumerContext(), new SimpleMessage("hi"), typeof(SimpleMessage), AbortToken);
+
+        // then — inner runs first in reverse, sets Result; outer (last in reverse) observes the mutation
+        recorder.Calls.Should().Contain("Inner.executed.set-result");
+        recorder.Calls.Should().Contain("Outer.executed.observed=mutated-by-inner");
+    }
+
+    [Fact]
+    public async Task should_preserve_handled_exception_result_back_to_resultObj()
+    {
+        // given — pipeline throws; handling filter sets ExceptionHandled=true AND a fallback Result
+        var recorder = new FilterCallRecorder();
+        var services = _BuildServiceCollection(recorder, dispatcherShouldThrow: true);
+        new MessagingBuilder(services).AddSubscribeFilter<HandlingFilterWithFallback>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        var result = await pipeline.ExecuteAsync(
+            _BuildConsumerContext(),
+            new SimpleMessage("hi"),
+            typeof(SimpleMessage),
+            AbortToken
+        );
+
+        // then — exception was swallowed; fallback Result surfaces in ConsumerExecutedResult
+        result.Result.Should().Be("fallback-from-handler");
+    }
+
+    [Fact]
     public async Task should_throw_when_no_filters_are_registered_and_dispatcher_throws()
     {
         // given
@@ -248,6 +318,51 @@ internal sealed class HandlingFilter(FilterCallRecorder recorder) : ConsumeFilte
     {
         context.ExceptionHandled = true;
         recorder.Record($"Handling.exception(handled={context.ExceptionHandled.ToString().ToLowerInvariant()})");
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class ExecutingThrowingFilter(FilterCallRecorder recorder) : ConsumeFilter
+{
+    public override ValueTask OnSubscribeExecutingAsync(ExecutingContext context)
+    {
+        recorder.Record("ExecutingThrow.executing");
+        throw new InvalidOperationException("filter executing boom");
+    }
+
+    public override ValueTask OnSubscribeExceptionAsync(ExceptionContext context)
+    {
+        recorder.Record("ExecutingThrow.exception");
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class InnerResultMutatingFilter(FilterCallRecorder recorder) : ConsumeFilter
+{
+    public override ValueTask OnSubscribeExecutedAsync(ExecutedContext context)
+    {
+        recorder.Record("Inner.executed.set-result");
+        context.Result = "mutated-by-inner";
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class OuterResultObservingFilter(FilterCallRecorder recorder) : ConsumeFilter
+{
+    public override ValueTask OnSubscribeExecutedAsync(ExecutedContext context)
+    {
+        recorder.Record($"Outer.executed.observed={context.Result ?? "<null>"}");
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class HandlingFilterWithFallback(FilterCallRecorder recorder) : ConsumeFilter
+{
+    public override ValueTask OnSubscribeExceptionAsync(ExceptionContext context)
+    {
+        recorder.Record("HandlingWithFallback.exception");
+        context.ExceptionHandled = true;
+        context.Result = "fallback-from-handler";
         return ValueTask.CompletedTask;
     }
 }
