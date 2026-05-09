@@ -16,7 +16,7 @@ namespace Headless.Messaging;
 /// </list>
 /// </para>
 /// </remarks>
-public sealed class ConsumeContext<TMessage>
+public sealed record ConsumeContext<TMessage>
     where TMessage : class
 {
     /// <summary>

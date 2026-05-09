@@ -5,7 +5,12 @@ namespace Headless.Messaging;
 /// <summary>
 /// Configures a publish operation with explicit topic, correlation, and custom header overrides.
 /// </summary>
-public sealed class PublishOptions
+/// <remarks>
+/// This type is a record so publish-side filters can mutate a single property via a <c>with</c>
+/// expression (for example, <c>options with { TenantId = "acme" }</c>) without manually copying
+/// every other property. Equality is value-based across all properties.
+/// </remarks>
+public sealed record PublishOptions
 {
     /// <summary>
     /// Maximum supported length for <see cref="MessageId"/> when publishing messages that may be stored durably.
