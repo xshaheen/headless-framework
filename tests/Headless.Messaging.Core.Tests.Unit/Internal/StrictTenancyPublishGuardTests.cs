@@ -87,7 +87,7 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
     }
 
     [Fact]
-    public void should_expose_failure_code_on_missing_tenant_context_exception()
+    public void should_not_attach_data_to_missing_tenant_context_exception()
     {
         // given
         var factory = _CreateFactory(tenantContextRequired: true, ambientTenantId: null);
@@ -97,7 +97,6 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
 
         // then
         var exception = act.Should().Throw<MissingTenantContextException>().Which;
-        exception.FailureCode.Should().Be(MissingTenantContextException.DefaultFailureCode);
         exception.Data.Count.Should().Be(0);
     }
 

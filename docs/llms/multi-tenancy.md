@@ -38,7 +38,7 @@ For HTTP apps, the recommended setup is:
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessFramework();
+builder.AddHeadlessApiInfrastructure();
 builder.AddHeadlessMultiTenancy();
 
 var app = builder.Build();
@@ -50,7 +50,7 @@ app.UseAuthorization();
 
 `UseTenantResolution()` must run after `UseAuthentication()` and before `UseAuthorization()`.
 
-`AddHeadlessFramework()` also requires `Headless:StringEncryption` and `Headless:StringHash` to be configured.
+`AddHeadlessApiInfrastructure()` also requires `Headless:StringEncryption` and `Headless:StringHash` to be configured.
 
 ## Agent Instructions
 
@@ -66,7 +66,7 @@ app.UseAuthorization();
 
 ## HTTP Setup
 
-`AddHeadlessFramework()` and `AddHeadlessDbContextServices()` now register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. `AddHeadlessMultiTenancy()` is the opt-in helper that:
+`AddHeadlessApiInfrastructure()` and `AddHeadlessDbContextServices()` now register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. `AddHeadlessMultiTenancy()` is the opt-in helper that:
 
 - Ensures `ICurrentTenant` resolves to `CurrentTenant`
 - Registers `ICurrentTenantAccessor` if needed
@@ -81,11 +81,11 @@ app.UseAuthorization();
 
 ## HTTP Failure Mapping
 
-`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the Mediator behavior (#236), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. The framework maps it to a normalized 400 ProblemDetails through `HeadlessApiExceptionHandler` — a single `IExceptionHandler` auto-registered by `AddHeadlessProblemDetails()` (called by `AddHeadlessFramework()`). The same handler covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs.
+`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the Mediator behavior (#236), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. The framework maps it to a normalized 400 ProblemDetails through `HeadlessApiExceptionHandler` — a single `IExceptionHandler` auto-registered by `AddHeadlessProblemDetails()` (called by `AddHeadlessApiInfrastructure()`). The same handler covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs.
 
 ```csharp
-builder.AddHeadlessFramework();
-// AddHeadlessFramework() calls AddHeadlessProblemDetails() which auto-registers
+builder.AddHeadlessApiInfrastructure();
+// AddHeadlessApiInfrastructure() calls AddHeadlessProblemDetails() which auto-registers
 // HeadlessApiExceptionHandler. No opt-in needed.
 
 var app = builder.Build();
@@ -112,12 +112,12 @@ Resulting response shape (same for both surfaces):
 }
 ```
 
-The body surfaces only `type`, `title`, `status`, `detail`, the optional `error` discriminator, plus the standard normalized extensions (`traceId`, `buildNumber`, `commitNumber`, `timestamp`, `instance`). The exception's `Message`, `Data`, `FailureCode`, and `InnerException` are NOT included in the response — they belong in server logs. External callers branch on the stable `error.code` value.
+The body surfaces only `type`, `title`, `status`, `detail`, the optional `error` discriminator, plus the standard normalized extensions (`traceId`, `buildNumber`, `commitNumber`, `timestamp`, `instance`). The exception's `Message`, `Data`, and `InnerException` are NOT included in the response — they belong in server logs. External callers branch on the stable `error.code` value.
 
 Prerequisites:
 
 - Call `app.UseExceptionHandler()` yourself to wire the `IExceptionHandler` chain into the pipeline.
-- Handler-chain ordering matters: the tenancy handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, they must register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadlessFramework()`, which calls it).
+- Handler-chain ordering matters: the tenancy handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, they must register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadlessApiInfrastructure()`, which calls it).
 
 The same shape is reachable without going through the handler via `IProblemDetailsCreator.TenantRequired()` (parameterless) for direct callers — e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing.
 
@@ -142,7 +142,7 @@ public sealed record RebuildSearchIndex : IRequest<RebuildSearchIndexResponse>;
 public sealed record RebuildSearchIndexResponse(int DocumentCount);
 ```
 
-When a non-opted-out request runs without a tenant, `TenantRequiredBehavior<TRequest, TResponse>` throws `MissingTenantContextException` with `FailureCode = "MissingTenantContext"`. HTTP hosts that use `UseExceptionHandler()` get the same normalized 400 response documented in [HTTP Failure Mapping](#http-failure-mapping). Non-HTTP hosts should let the exception fail the dispatch or handle it at their process boundary.
+When a non-opted-out request runs without a tenant, `TenantRequiredBehavior<TRequest, TResponse>` throws `MissingTenantContextException`. HTTP hosts that use `UseExceptionHandler()` get the same normalized 400 response documented in [HTTP Failure Mapping](#http-failure-mapping). Non-HTTP hosts should let the exception fail the dispatch or handle it at their process boundary.
 
 Recommended Mediator pipeline order:
 
@@ -220,7 +220,7 @@ Automatic tenant propagation in consumer pipelines is intentionally out of scope
 
 #### Strict Publish Tenancy (`TenantContextRequired`)
 
-Set `MessagingOptions.TenantContextRequired = true` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.Abstractions.MissingTenantContextException` with `FailureCode = "MissingTenantContext"`. This is the messaging sibling of the EF write guard (#234) and the Mediator behavior (#236).
+Set `MessagingOptions.TenantContextRequired = true` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.Abstractions.MissingTenantContextException`. This is the messaging sibling of the EF write guard (#234) and the Mediator behavior (#236).
 
 Defaults to `false` to preserve today's behavior. The U2 raw-header integrity rules above (`ReservedTenantHeader`, `TenantIdMismatch`) always apply and run before the strict-tenancy fallback, so injection attempts cannot bypass the guard by enabling the flag.
 
@@ -240,7 +240,7 @@ using (currentTenant.Change(tenantId))
 }
 ```
 
-Register a real `ICurrentTenant` (the default `AddHeadlessFramework()` / `AddHeadlessDbContextServices()` registration is sufficient) so the ambient fallback can resolve a value when option B is used.
+Register a real `ICurrentTenant` (the default `AddHeadlessApiInfrastructure()` / `AddHeadlessDbContextServices()` registration is sufficient) so the ambient fallback can resolve a value when option B is used.
 
 ### SignalR
 

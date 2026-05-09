@@ -129,8 +129,7 @@ background processes.
 ## Failure Behavior
 
 When a request is not marked with `[AllowMissingTenant]` and `ICurrentTenant.Id`
-is null, empty, or whitespace, the behavior throws `MissingTenantContextException`
-with `FailureCode = "MissingTenantContext"`.
+is null, empty, or whitespace, the behavior throws `MissingTenantContextException`.
 
 `Headless.Api` already maps this exception type to the standard tenant-required
 400 ProblemDetails response when `UseExceptionHandler()` is configured.
