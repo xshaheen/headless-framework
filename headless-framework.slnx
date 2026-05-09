@@ -171,6 +171,10 @@
         <Project Path="src\Headless.Media.Indexing\Headless.Media.Indexing.csproj" />
         <Project Path="tests\Headless.Media.Indexing.Tests.Unit\Headless.Media.Indexing.Tests.Unit.csproj" />
     </Folder>
+    <Folder Name="/Mediator/">
+        <Project Path="src\Headless.Mediator\Headless.Mediator.csproj" />
+        <Project Path="tests\Headless.Mediator.Tests.Unit\Headless.Mediator.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Messaging/" />
     <Folder Name="/Messaging/Demo/">
         <Project Path="demo/Headless.Messaging.AwsSqs.InMemory.Demo/Headless.Messaging.AwsSqs.InMemory.Demo.csproj" />

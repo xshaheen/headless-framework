@@ -1,6 +1,6 @@
 ---
 domain: Multi-Tenancy
-packages: Api, Core, Orm.EntityFramework, Permissions.Core
+packages: Api, Core, Mediator, Orm.EntityFramework, Permissions.Core
 ---
 
 # Multi-Tenancy
@@ -11,6 +11,7 @@ packages: Api, Core, Orm.EntityFramework, Permissions.Core
 - [Agent Instructions](#agent-instructions)
 - [HTTP Setup](#http-setup)
 - [HTTP Failure Mapping](#http-failure-mapping)
+- [Mediator-Boundary Enforcement](#mediator-boundary-enforcement)
 - [Tenant Semantics](#tenant-semantics)
 - [EF Core Integration](#ef-core-integration)
 - [Permissions and Caching](#permissions-and-caching)
@@ -24,10 +25,11 @@ packages: Api, Core, Orm.EntityFramework, Permissions.Core
 
 ## Quick Orientation
 
-Headless multi-tenancy is built from four pieces:
+Headless multi-tenancy is built from five pieces:
 
 - `ICurrentTenant` and `ICurrentTenantAccessor` live in the `Headless.Abstractions` namespace (implemented in `src/Headless.Core/Abstractions`) and hold the current tenant in an `AsyncLocal` scope.
 - `Headless.Api` resolves tenant context for HTTP requests via `UseTenantResolution()`.
+- `Headless.Mediator` enforces tenant presence at request dispatch boundaries via `AddTenantRequiredBehavior()`.
 - `Headless.Orm.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities.
 - `Headless.Permissions.Core` scopes permission grant cache keys by tenant via `ScopedCache<PermissionGrantCacheItem>`.
 
@@ -54,6 +56,7 @@ app.UseAuthorization();
 
 - Use `ICurrentTenant` for tenant-aware application logic; do not pass tenant ID around manually once the execution context is established.
 - In HTTP apps, call `AddHeadlessMultiTenancy()` on the builder and `UseTenantResolution()` in the middleware pipeline.
+- For Mediator request boundaries, call `services.AddTenantRequiredBehavior()` and mark only intentional host-level requests with `[AllowMissingTenant]`.
 - The default claim type is `tenant_id`. Override it with `AddHeadlessMultiTenancy(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
 - When no tenant claim is present, the middleware intentionally skips `Change(null)`. This preserves the distinction between "never set" and "explicitly null".
 - For EF Core, inherit from `HeadlessDbContext` and let the built-in model processor apply tenant filters to `IMultiTenant` entities.
@@ -109,7 +112,7 @@ Resulting response shape (same for both surfaces):
 }
 ```
 
-The body surfaces only `type`, `title`, `status`, `detail`, the optional `error` discriminator, plus the standard normalized extensions (`traceId`, `buildNumber`, `commitNumber`, `timestamp`, `instance`). The exception's `Message`, `Data` (e.g., `Headless.Messaging.FailureCode = "MissingTenantContext"`), and `InnerException` are NOT included in the response — they belong in server logs (the data tag remains on the exception for log aggregation; see [Strict Publish Tenancy](#strict-publish-tenancy-tenantcontextrequired) for the messaging side). External callers branch on the stable `error.code` value.
+The body surfaces only `type`, `title`, `status`, `detail`, the optional `error` discriminator, plus the standard normalized extensions (`traceId`, `buildNumber`, `commitNumber`, `timestamp`, `instance`). The exception's `Message`, `Data` (e.g., `Headless.Mediator.FailureCode = "MissingTenantContext"` or `Headless.Messaging.FailureCode = "MissingTenantContext"`), and `InnerException` are NOT included in the response — they belong in server logs (the data tag remains on the exception for log aggregation; see [Strict Publish Tenancy](#strict-publish-tenancy-tenantcontextrequired) for the messaging side). External callers branch on the stable `error.code` value.
 
 Prerequisites:
 
@@ -117,6 +120,37 @@ Prerequisites:
 - Handler-chain ordering matters: the tenancy handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, they must register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadlessFramework()`, which calls it).
 
 The same shape is reachable without going through the handler via `IProblemDetailsCreator.TenantRequired()` (parameterless) for direct callers — e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing.
+
+## Mediator-Boundary Enforcement
+
+`Headless.Mediator` provides tenant enforcement at the Mediator request boundary:
+
+- Register with `services.AddTenantRequiredBehavior()`.
+- Register a real `ICurrentTenant` separately; the package does not own tenant resolution.
+- Requests require `ICurrentTenant.Id` to be non-blank by default.
+- Mark intentional host-level, public, system, or console-bootstrap requests with `[AllowMissingTenant]`.
+- Do not add runtime opt-out flags or handler-level policy checks; the marker attribute is the enrollment surface.
+
+```csharp
+builder.Services.AddTenantRequiredBehavior();
+
+public sealed record CreateInvoice(Guid CustomerId) : IRequest<CreateInvoiceResponse>;
+
+[AllowMissingTenant]
+public sealed record RebuildSearchIndex : IRequest<RebuildSearchIndexResponse>;
+
+public sealed record RebuildSearchIndexResponse(int DocumentCount);
+```
+
+When a non-opted-out request runs without a tenant, `TenantRequiredBehavior<TRequest, TResponse>` throws `MissingTenantContextException` and adds `Headless.Mediator.FailureCode = "MissingTenantContext"` to `Exception.Data`. HTTP hosts that use `UseExceptionHandler()` get the same normalized 400 response documented in [HTTP Failure Mapping](#http-failure-mapping). Non-HTTP hosts should let the exception fail the dispatch or handle it at their process boundary.
+
+Recommended Mediator pipeline order:
+
+```text
+Auth -> TenantRequired -> Idempotency
+```
+
+Ordering is consumer-owned and not framework-enforced. Register the tenant guard after the identity/auth behavior that establishes tenant context and before idempotency, caching, or side-effect behaviors that could persist host-scoped state.
 
 ## Tenant Semantics
 
