@@ -96,6 +96,28 @@ public sealed class HeadlessApiDefaultsTests : TestBase
         body.Should().Be("https://api.example.test");
     }
 
+    [Fact]
+    public async Task should_rewrite_bare_404_to_headless_problem_details()
+    {
+        // given
+        await using var app = await _CreateAppAsync(_ => { });
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/missing", AbortToken);
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.ContentType?.MediaType.Should().Be(ContentTypes.Applications.ProblemJson);
+
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+        root.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status404NotFound);
+        root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.EndpointNotFound);
+        root.GetProperty("detail").GetString().Should().Contain("/missing");
+    }
+
     private async Task<WebApplication> _CreateAppAsync(
         Action<WebApplication> map,
         Action<HeadlessApiDefaultsOptions>? configure = null

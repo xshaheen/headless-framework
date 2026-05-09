@@ -136,6 +136,7 @@ public static class ApiSetup
             builder.Services.AddHeadlessTimeService();
             builder.Services.AddHeadlessApiResponseCompression();
             builder.Services.AddHeadlessProblemDetails();
+            builder.Services.AddStatusCodesRewriterMiddleware();
             builder.Services.ConfigureHeadlessDefaultApi();
 
             builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
@@ -223,6 +224,7 @@ public static class ApiSetup
         if (options.UseStatusCodePages)
         {
             app.UseStatusCodePages();
+            app.UseStatusCodesRewriter();
         }
 
         if (options.UseExceptionHandler)

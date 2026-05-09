@@ -164,12 +164,13 @@ app.Run();
 - `UseForwardedHeaders()`
 - `UseResponseCompression()`
 - `UseStatusCodePages()`
+- `UseStatusCodesRewriter()`
 - `UseExceptionHandler()`
 - `UseHttpsRedirection()`
 - `UseHsts()` outside Development
 - no-cache response header when the response did not set `Cache-Control`
 
-`UseStatusCodePages()` intentionally runs before `UseExceptionHandler()` so bare status responses, including middleware-emitted 408s, can be normalized by `IProblemDetailsCreator.Normalize`.
+`UseStatusCodePages()` intentionally runs before `UseExceptionHandler()` so bare status responses, including middleware-emitted 408s, can be normalized by `IProblemDetailsCreator.Normalize`. `UseStatusCodesRewriter()` runs inside it so bare 401, 403, and unmatched-route 404 responses use the framework-specific `IProblemDetailsCreator` factories before the generic status-code page fills the response.
 
 `TrustForwardedHeadersFromAnyProxy` defaults to `false`. Turn it on only when the app is not directly reachable by untrusted clients; otherwise clients can spoof forwarded host/scheme values.
 

@@ -94,6 +94,7 @@ Place `UseTenantResolution()` after authentication and before authorization.
 - `UseForwardedHeaders()`
 - `UseResponseCompression()`
 - `UseStatusCodePages()`
+- `UseStatusCodesRewriter()`
 - `UseExceptionHandler()`
 - `UseHttpsRedirection()`
 - `UseHsts()` outside Development

@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Api;
+using Headless.Api.Middlewares;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
@@ -46,6 +47,7 @@ public sealed class ApiSetupTests
         using var serviceProvider = builder.Services.BuildServiceProvider();
         var kestrelOptions = serviceProvider.GetRequiredService<IOptions<KestrelServerOptions>>().Value;
         var healthCheckService = serviceProvider.GetRequiredService<HealthCheckService>();
+        var statusCodesRewriter = serviceProvider.GetRequiredService<StatusCodesRewriterMiddleware>();
         var healthReport = await healthCheckService.CheckHealthAsync(
             registration => registration.Tags.Contains("live"),
             CancellationToken.None
@@ -55,6 +57,7 @@ public sealed class ApiSetupTests
         kestrelOptions.AddServerHeader.Should().BeFalse();
         kestrelOptions.Limits.MaxRequestBodySize.Should().Be(1024 * 1024 * 30);
         kestrelOptions.Limits.MaxRequestHeaderCount.Should().Be(40);
+        statusCodesRewriter.Should().NotBeNull();
         healthReport.Entries.Should().ContainKey("self");
         healthReport.Status.Should().Be(HealthStatus.Healthy);
     }
