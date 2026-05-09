@@ -5,7 +5,7 @@ using Headless.Checks;
 using Mediator;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Mediator.Behaviors;
+namespace Headless.Mediator;
 
 /// <summary>
 /// Logs Mediator messages before their handlers execute.

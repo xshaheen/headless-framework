@@ -4,7 +4,7 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Mediator;
 
-namespace Headless.Mediator.Behaviors;
+namespace Headless.Mediator;
 
 /// <summary>
 /// Enforces that Mediator requests run with an ambient tenant context unless the request
