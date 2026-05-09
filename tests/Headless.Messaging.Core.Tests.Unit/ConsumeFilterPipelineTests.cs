@@ -1,0 +1,298 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Reflection;
+using Headless.Messaging;
+using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
+using Headless.Messaging.Messages;
+using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+
+namespace Tests;
+
+/// <summary>
+/// Tests covering multi-filter chain registration and pipeline ordering for <see cref="IConsumeFilter"/>.
+/// Drives <see cref="ConsumeExecutionPipeline"/> directly with a real <see cref="IServiceProvider"/>
+/// and a substituted <see cref="IMessageDispatcher"/>.
+/// </summary>
+public sealed class ConsumeFilterPipelineTests : TestBase
+{
+    [Fact]
+    public void should_register_multiple_subscribe_filters_via_enumerable_resolution()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = new MessagingBuilder(services);
+
+        // when
+        builder.AddSubscribeFilter<RecordingFilterA>().AddSubscribeFilter<RecordingFilterB>();
+        services.AddSingleton<FilterCallRecorder>();
+        var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var resolved = scope.ServiceProvider.GetServices<IConsumeFilter>().ToArray();
+
+        // then
+        resolved.Should().HaveCount(2);
+        resolved.Select(f => f.GetType()).Should().Equal(typeof(RecordingFilterA), typeof(RecordingFilterB));
+    }
+
+    [Fact]
+    public void should_be_idempotent_when_same_filter_type_is_registered_twice()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = new MessagingBuilder(services);
+
+        // when
+        builder.AddSubscribeFilter<RecordingFilterA>().AddSubscribeFilter<RecordingFilterA>();
+        services.AddSingleton<FilterCallRecorder>();
+        var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var resolved = scope.ServiceProvider.GetServices<IConsumeFilter>().ToArray();
+
+        // then
+        resolved.Should().HaveCount(1);
+        resolved.Single().Should().BeOfType<RecordingFilterA>();
+    }
+
+    [Fact]
+    public async Task should_invoke_executing_phase_in_registration_order_then_consumer_then_executed_phase_in_reverse_order()
+    {
+        // given
+        var recorder = new FilterCallRecorder();
+        var services = _BuildServiceCollection(recorder);
+        new MessagingBuilder(services).AddSubscribeFilter<RecordingFilterA>().AddSubscribeFilter<RecordingFilterB>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await pipeline.ExecuteAsync(_BuildConsumerContext(), new SimpleMessage("hi"), typeof(SimpleMessage), AbortToken);
+
+        // then
+        recorder.Calls.Should().Equal(
+            "A.executing",
+            "B.executing",
+            "dispatcher",
+            "B.executed",
+            "A.executed"
+        );
+    }
+
+    [Fact]
+    public async Task should_invoke_exception_phase_in_reverse_order_when_dispatcher_throws()
+    {
+        // given
+        var recorder = new FilterCallRecorder();
+        var services = _BuildServiceCollection(recorder, dispatcherShouldThrow: true);
+        new MessagingBuilder(services).AddSubscribeFilter<RecordingFilterA>().AddSubscribeFilter<RecordingFilterB>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        var act = async () =>
+            await pipeline.ExecuteAsync(_BuildConsumerContext(), new SimpleMessage("hi"), typeof(SimpleMessage), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("dispatcher boom");
+        recorder.Calls.Should().Equal(
+            "A.executing",
+            "B.executing",
+            "dispatcher.throw",
+            "B.exception",
+            "A.exception"
+        );
+    }
+
+    [Fact]
+    public async Task should_swallow_exception_when_any_filter_sets_exception_handled_true()
+    {
+        // given
+        var recorder = new FilterCallRecorder();
+        var services = _BuildServiceCollection(recorder, dispatcherShouldThrow: true);
+        new MessagingBuilder(services).AddSubscribeFilter<HandlingFilter>().AddSubscribeFilter<RecordingFilterB>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await pipeline.ExecuteAsync(_BuildConsumerContext(), new SimpleMessage("hi"), typeof(SimpleMessage), AbortToken);
+
+        // then — both exception filters ran; outer Handling filter swallowed the exception
+        recorder.Calls.Should().Contain("dispatcher.throw");
+        recorder.Calls.Should().Contain("B.exception");
+        recorder.Calls.Should().Contain("Handling.exception(handled=true)");
+    }
+
+    [Fact]
+    public async Task should_throw_when_no_filters_are_registered_and_dispatcher_throws()
+    {
+        // given
+        var recorder = new FilterCallRecorder();
+        var services = _BuildServiceCollection(recorder, dispatcherShouldThrow: true);
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        var act = async () =>
+            await pipeline.ExecuteAsync(_BuildConsumerContext(), new SimpleMessage("hi"), typeof(SimpleMessage), AbortToken);
+
+        // then — zero-filter case rethrows directly
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("dispatcher boom");
+    }
+
+    private static ServiceCollection _BuildServiceCollection(
+        FilterCallRecorder recorder,
+        bool dispatcherShouldThrow = false
+    )
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(recorder);
+        services.AddSingleton<IMessageDispatcher>(new RecordingMessageDispatcher(recorder, dispatcherShouldThrow));
+        return services;
+    }
+
+    private static ConsumeExecutionPipeline _BuildPipeline(ServiceCollection services)
+    {
+        var provider = services.BuildServiceProvider();
+        var registry = NSubstitute.Substitute.For<IRuntimeConsumerRegistry>();
+        return new ConsumeExecutionPipeline(provider, registry);
+    }
+
+    private static ConsumerContext _BuildConsumerContext()
+    {
+        var descriptor = new ConsumerExecutorDescriptor
+        {
+            MethodInfo = typeof(ConsumeFilterPipelineTests).GetMethod(
+                nameof(_BuildConsumerContext),
+                BindingFlags.NonPublic | BindingFlags.Static
+            )!,
+            ImplTypeInfo = typeof(ConsumeFilterPipelineTests).GetTypeInfo(),
+            TopicName = "test.topic",
+            GroupName = "test-group",
+            // HandlerId left default (null) so the pipeline takes the dispatcher branch.
+        };
+
+        var origin = new Message(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "msg-1",
+                [Headers.MessageName] = "test.topic",
+            },
+            new SimpleMessage("payload")
+        );
+
+        var medium = new MediumMessage
+        {
+            StorageId = 1,
+            Origin = origin,
+            Content = "{}",
+            Added = DateTime.UtcNow,
+        };
+
+        return new ConsumerContext(descriptor, medium);
+    }
+}
+
+internal sealed record SimpleMessage(string Value);
+
+internal sealed class FilterCallRecorder
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _calls = new();
+
+    public IReadOnlyList<string> Calls => _calls.ToArray();
+
+    public void Record(string call) => _calls.Enqueue(call);
+}
+
+internal sealed class RecordingFilterA(FilterCallRecorder recorder) : ConsumeFilter
+{
+    public override ValueTask OnSubscribeExecutingAsync(ExecutingContext context)
+    {
+        recorder.Record("A.executing");
+        return ValueTask.CompletedTask;
+    }
+
+    public override ValueTask OnSubscribeExecutedAsync(ExecutedContext context)
+    {
+        recorder.Record("A.executed");
+        return ValueTask.CompletedTask;
+    }
+
+    public override ValueTask OnSubscribeExceptionAsync(ExceptionContext context)
+    {
+        recorder.Record("A.exception");
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class RecordingFilterB(FilterCallRecorder recorder) : ConsumeFilter
+{
+    public override ValueTask OnSubscribeExecutingAsync(ExecutingContext context)
+    {
+        recorder.Record("B.executing");
+        return ValueTask.CompletedTask;
+    }
+
+    public override ValueTask OnSubscribeExecutedAsync(ExecutedContext context)
+    {
+        recorder.Record("B.executed");
+        return ValueTask.CompletedTask;
+    }
+
+    public override ValueTask OnSubscribeExceptionAsync(ExceptionContext context)
+    {
+        recorder.Record("B.exception");
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class HandlingFilter(FilterCallRecorder recorder) : ConsumeFilter
+{
+    public override ValueTask OnSubscribeExceptionAsync(ExceptionContext context)
+    {
+        context.ExceptionHandled = true;
+        recorder.Record($"Handling.exception(handled={context.ExceptionHandled.ToString().ToLowerInvariant()})");
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class RecordingMessageDispatcher(FilterCallRecorder recorder, bool shouldThrow) : IMessageDispatcher
+{
+    public Task DispatchAsync<TMessage>(ConsumeContext<TMessage> context, CancellationToken cancellationToken)
+        where TMessage : class
+    {
+        return DispatchInScopeAsync(serviceProvider: null!, context, cancellationToken);
+    }
+
+    public Task DispatchInScopeAsync<TMessage>(
+        IServiceProvider serviceProvider,
+        ConsumeContext<TMessage> context,
+        CancellationToken cancellationToken
+    )
+        where TMessage : class
+    {
+        return _Run();
+    }
+
+    public Task DispatchInScopeAsync<TMessage>(
+        IServiceProvider serviceProvider,
+        ConsumerExecutorDescriptor descriptor,
+        ConsumeContext<TMessage> context,
+        CancellationToken cancellationToken
+    )
+        where TMessage : class
+    {
+        return _Run();
+    }
+
+    private Task _Run()
+    {
+        // Return a faulted task instead of throwing synchronously — the pipeline calls the dispatcher
+        // via reflection (`MethodInfo.Invoke`) and a synchronous throw would be wrapped in
+        // TargetInvocationException, masking the original exception type.
+        if (shouldThrow)
+        {
+            recorder.Record("dispatcher.throw");
+            return Task.FromException(new InvalidOperationException("dispatcher boom"));
+        }
+
+        recorder.Record("dispatcher");
+        return Task.CompletedTask;
+    }
+}

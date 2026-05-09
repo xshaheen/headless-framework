@@ -42,15 +42,16 @@ internal sealed class ConsumeExecutionPipeline(
 
         await using var scope = serviceProvider.CreateAsyncScope();
         var provider = scope.ServiceProvider;
-        var filter = provider.GetService<IConsumeFilter>();
+        // Filter chain: executing in registration order, executed/exception in reverse — mirrors ASP.NET MVC.
+        var filters = provider.GetServices<IConsumeFilter>().ToArray();
         object? resultObj = null;
 
         try
         {
-            if (filter != null)
+            var executeParams = new object?[] { consumeContext, cancellationToken };
+            var etContext = new ExecutingContext(context, executeParams);
+            foreach (var filter in filters)
             {
-                var executeParams = new object?[] { consumeContext, cancellationToken };
-                var etContext = new ExecutingContext(context, executeParams);
                 await filter.OnSubscribeExecutingAsync(etContext).ConfigureAwait(false);
             }
 
@@ -73,32 +74,34 @@ internal sealed class ConsumeExecutionPipeline(
                     .ConfigureAwait(false);
             }
 
-            if (filter != null)
+            var edContext = new ExecutedContext(context, resultObj);
+            for (var i = filters.Length - 1; i >= 0; i--)
             {
-                var edContext = new ExecutedContext(context, resultObj);
-                await filter.OnSubscribeExecutedAsync(edContext).ConfigureAwait(false);
-                resultObj = edContext.Result;
+                await filters[i].OnSubscribeExecutedAsync(edContext).ConfigureAwait(false);
             }
+            resultObj = edContext.Result;
         }
         catch (Exception e)
         {
-            if (filter != null)
-            {
-                var exContext = new ExceptionContext(context, e);
-                await filter.OnSubscribeExceptionAsync(exContext).ConfigureAwait(false);
-                if (!exContext.ExceptionHandled)
-                {
-                    exContext.Exception.ReThrow();
-                }
-
-                if (exContext.Result != null)
-                {
-                    resultObj = exContext.Result;
-                }
-            }
-            else
+            if (filters.Length == 0)
             {
                 throw;
+            }
+
+            var exContext = new ExceptionContext(context, e);
+            for (var i = filters.Length - 1; i >= 0; i--)
+            {
+                await filters[i].OnSubscribeExceptionAsync(exContext).ConfigureAwait(false);
+            }
+
+            if (!exContext.ExceptionHandled)
+            {
+                exContext.Exception.ReThrow();
+            }
+
+            if (exContext.Result != null)
+            {
+                resultObj = exContext.Result;
             }
         }
 

@@ -106,12 +106,20 @@ public sealed class MessagingBuilder(IServiceCollection services)
     /// </summary>
     /// <typeparam name="T">
     /// The type of the filter to register. Must implement <see cref="IConsumeFilter"/> and be instantiable.
-    /// The filter is registered with a scoped lifetime, meaning a new instance is created per request/scope.
+    /// The filter is registered with a scoped lifetime; a new instance is created per consumed message.
     /// </typeparam>
     /// <returns>The current <see cref="MessagingBuilder"/> instance to support fluent method chaining.</returns>
     /// <remarks>
-    /// Multiple filters can be registered by calling this method multiple times. Filters are executed in the order
-    /// they are registered, allowing for layered processing of subscriber messages.
+    /// <para>
+    /// Multiple filter types can be registered by calling this method with different type arguments. The
+    /// executing phase runs in registration order, and the executed and exception phases run in reverse,
+    /// matching ASP.NET Core MVC filter pipeline semantics.
+    /// </para>
+    /// <para>
+    /// Registration is idempotent under the same type argument — calling
+    /// <c>AddSubscribeFilter&lt;T&gt;()</c> twice with the same <typeparamref name="T"/> registers the
+    /// filter once. Calls with different type arguments register additional filters.
+    /// </para>
     /// </remarks>
     /// <example>
     /// <code>
@@ -127,7 +135,7 @@ public sealed class MessagingBuilder(IServiceCollection services)
     public MessagingBuilder AddSubscribeFilter<T>()
         where T : class, IConsumeFilter
     {
-        Services.TryAddScoped<IConsumeFilter, T>();
+        Services.TryAddEnumerable(ServiceDescriptor.Scoped<IConsumeFilter, T>());
         return this;
     }
 }

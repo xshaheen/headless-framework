@@ -5,6 +5,13 @@ using Headless.Messaging.Messages;
 namespace Headless.Messaging;
 
 /// <summary>A filter that surrounds execution of the subscriber.</summary>
+/// <remarks>
+/// When multiple filters are registered via <see cref="Configuration.MessagingBuilder.AddSubscribeFilter{T}"/>,
+/// they form a pipeline: the executing phase runs in registration order; the executed and exception phases
+/// run in reverse, matching ASP.NET Core MVC filter pipeline semantics. Filters share a single
+/// <see cref="ExecutingContext"/>, <see cref="ExecutedContext"/>, and <see cref="ExceptionContext"/>
+/// instance per phase, so a downstream filter sees mutations applied by upstream filters.
+/// </remarks>
 public interface IConsumeFilter
 {
     /// <summary>Called before the subscriber executes.</summary>
@@ -16,6 +23,13 @@ public interface IConsumeFilter
     ValueTask OnSubscribeExecutedAsync(ExecutedContext context);
 
     /// <summary>Called after the subscriber has thrown an <see cref="System.Exception" />.</summary>
+    /// <remarks>
+    /// Setting <see cref="ExceptionContext.ExceptionHandled"/> to <see langword="true"/> swallows the
+    /// exception and prevents it from propagating out of the consume pipeline. When multiple filters
+    /// are present, <see cref="ExceptionContext.ExceptionHandled"/> persists across the reverse-order
+    /// exception chain — a downstream filter that sets it to <see langword="false"/> can re-arm
+    /// propagation, but the typical pattern is upstream filters reading the flag set by inner filters.
+    /// </remarks>
     /// <param name="context">The <see cref="ExceptionContext" />.</param>
     ValueTask OnSubscribeExceptionAsync(ExceptionContext context);
 }
@@ -51,14 +65,21 @@ public sealed class ExecutingContext(ConsumerContext context, object?[] argument
 
 public sealed class ExecutedContext(ConsumerContext context, object? result) : FilterContext(context)
 {
-    public object? Result { get; init; } = result;
+    /// <summary>Gets or sets the result returned by the subscriber. Filters may mutate this value.</summary>
+    public object? Result { get; set; } = result;
 }
 
 public sealed class ExceptionContext(ConsumerContext context, Exception exception) : FilterContext(context)
 {
+    /// <summary>Gets the exception thrown by the subscriber.</summary>
     public Exception Exception { get; init; } = exception;
 
-    public bool ExceptionHandled { get; init; }
+    /// <summary>
+    /// Gets or sets whether the exception was handled. When set <see langword="true"/> by any filter,
+    /// the consume pipeline does not rethrow the exception.
+    /// </summary>
+    public bool ExceptionHandled { get; set; }
 
-    public object? Result { get; init; }
+    /// <summary>Gets or sets a fallback result to surface when the exception is handled.</summary>
+    public object? Result { get; set; }
 }
