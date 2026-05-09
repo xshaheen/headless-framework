@@ -12,8 +12,9 @@ and messaging dispatch surfaces can share the same ambient tenant invariant.
 - `TenantRequiredBehavior<TRequest, TResponse>` enforces `ICurrentTenant.Id`
 - `[AllowMissingTenant]` opt-out marker for host-level and public requests
 - `ValidationRequestPreProcessor<TMessage, TResponse>` runs FluentValidation validators before handlers
+- Request, response, and slow-request logging behaviors for Mediator pipelines
 - `MissingTenantContextException` reuse for existing HTTP 400 failure mapping
-- Idempotent setup extensions for tenant and validation pipeline registration
+- Idempotent setup extensions for tenant, validation, and logging pipeline registration
 
 ## Installation
 
@@ -34,6 +35,7 @@ builder.Services.AddMediator(options =>
 
 builder.Services.AddTenantRequiredBehavior();
 builder.Services.AddValidationRequestPreProcessor();
+builder.Services.AddMediatorLoggingBehaviors();
 ```
 
 ```csharp
@@ -110,6 +112,19 @@ public sealed class CreateOrderValidator : AbstractValidator<CreateOrder>
 Register validators through your normal FluentValidation DI setup. The validation
 pipeline is HTTP-agnostic; `Headless.Api` maps `ValidationException` to the standard
 422 response when its exception handler is configured.
+
+### Request and Response Logging
+
+`AddMediatorLoggingBehaviors()` registers:
+
+- `RequestLoggingBehavior<TMessage, TResponse>` — logs before handler execution
+- `ResponseLoggingBehavior<TMessage, TResponse>` — logs after handler execution
+- `CriticalRequestLoggingBehavior<TMessage, TResponse>` — logs requests slower than one second
+
+These behaviors use `ICurrentUser` from `Headless.Core` instead of ASP.NET request
+context, so they work in API, worker, and console hosts. Register a real
+`ICurrentUser` where user identity exists, or `NullCurrentUser` for host-level
+background processes.
 
 ## Failure Behavior
 

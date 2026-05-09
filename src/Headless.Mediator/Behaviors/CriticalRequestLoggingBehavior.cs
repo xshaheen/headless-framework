@@ -2,19 +2,27 @@
 
 using System.Diagnostics;
 using Headless.Abstractions;
-using Humanizer;
+using Headless.Checks;
 using Mediator;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Api.Mediator;
+namespace Headless.Mediator.Behaviors;
 
+/// <summary>
+/// Logs Mediator requests that take longer than the configured critical threshold.
+/// </summary>
 [PublicAPI]
-public sealed class ApiCriticalRequestLoggingBehavior<TMessage, TResponse>(
-    IRequestContext requestContext,
-    ILogger<ApiCriticalRequestLoggingBehavior<TMessage, TResponse>> logger
+public sealed class CriticalRequestLoggingBehavior<TMessage, TResponse>(
+    ICurrentUser currentUser,
+    ILogger<CriticalRequestLoggingBehavior<TMessage, TResponse>> logger
 ) : IPipelineBehavior<TMessage, TResponse>
     where TMessage : IRequest<TResponse>
 {
+    private static readonly TimeSpan _CriticalThreshold = TimeSpan.FromSeconds(1);
+
+    private readonly ICurrentUser _currentUser = Argument.IsNotNull(currentUser);
+    private readonly ILogger<CriticalRequestLoggingBehavior<TMessage, TResponse>> _logger = Argument.IsNotNull(logger);
+
     public async ValueTask<TResponse> Handle(
         TMessage message,
         MessageHandlerDelegate<TMessage, TResponse> next,
@@ -25,11 +33,11 @@ public sealed class ApiCriticalRequestLoggingBehavior<TMessage, TResponse>(
         var response = await next.Invoke(message, cancellationToken);
         var elapsed = Stopwatch.GetElapsedTime(timestamp);
 
-        if (elapsed >= 1.Seconds())
+        if (elapsed >= _CriticalThreshold)
         {
             _LogMediatorSlowResponse(
-                logger,
-                userId: requestContext.User.UserId,
+                _logger,
+                userId: _currentUser.UserId?.ToString(),
                 elapsed: elapsed,
                 messageName: typeof(TMessage).Name,
                 message: message,

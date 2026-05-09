@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Mediator.Behaviors;
 using Mediator;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -48,6 +49,31 @@ public static class MediatorSetup
 
             services.TryAddEnumerable(
                 ServiceDescriptor.Transient(typeof(IPipelineBehavior<,>), typeof(ValidationRequestPreProcessor<,>))
+            );
+
+            return services;
+        }
+
+        /// <summary>
+        /// Adds the standard Mediator request, response, and slow-request logging behaviors.
+        /// </summary>
+        /// <remarks>
+        /// Consumers must register <see cref="Headless.Abstractions.ICurrentUser" /> separately.
+        /// Registration is idempotent.
+        /// </remarks>
+        /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
+        public IServiceCollection AddMediatorLoggingBehaviors()
+        {
+            Argument.IsNotNull(services);
+
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient(typeof(IPipelineBehavior<,>), typeof(RequestLoggingBehavior<,>))
+            );
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient(typeof(IPipelineBehavior<,>), typeof(ResponseLoggingBehavior<,>))
+            );
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient(typeof(IPipelineBehavior<,>), typeof(CriticalRequestLoggingBehavior<,>))
             );
 
             return services;

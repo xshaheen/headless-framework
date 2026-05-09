@@ -1,23 +1,30 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Checks;
 using Mediator;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Api.Mediator;
+namespace Headless.Mediator.Behaviors;
 
+/// <summary>
+/// Logs Mediator messages before their handlers execute.
+/// </summary>
 [PublicAPI]
-public sealed class ApiRequestLoggingBehavior<TMessage, TResponse>(
-    IRequestContext requestContext,
-    ILogger<ApiRequestLoggingBehavior<TMessage, TResponse>> logger
+public sealed class RequestLoggingBehavior<TMessage, TResponse>(
+    ICurrentUser currentUser,
+    ILogger<RequestLoggingBehavior<TMessage, TResponse>> logger
 ) : MessagePreProcessor<TMessage, TResponse>
     where TMessage : IMessage
 {
+    private readonly ICurrentUser _currentUser = Argument.IsNotNull(currentUser);
+    private readonly ILogger<RequestLoggingBehavior<TMessage, TResponse>> _logger = Argument.IsNotNull(logger);
+
     protected override ValueTask Handle(TMessage message, CancellationToken cancellationToken)
     {
         _LogMediatorMessage(
-            logger,
-            userId: requestContext.User.UserId,
+            _logger,
+            userId: _currentUser.UserId?.ToString(),
             messageName: typeof(TMessage).Name,
             message: message
         );

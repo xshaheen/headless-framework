@@ -6,6 +6,7 @@
   <ItemGroup>
     <PackageReference Include="Asp.Versioning.Mvc" />
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" />
+    <PackageReference Include="Mediator.Abstractions" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
   </ItemGroup>
   <ItemGroup>

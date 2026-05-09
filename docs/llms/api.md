@@ -252,7 +252,6 @@ Tenancy response shape:
 - `Asp.Versioning.Http`
 - `DeviceDetector.NET`
 - `FluentValidation`
-- `Mediator.Abstractions`
 - `Microsoft.AspNetCore.OpenApi`
 - `Microsoft.Extensions.Http.Resilience`
 - `NetEscapades.AspNetCore.SecurityHeaders`
