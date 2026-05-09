@@ -26,9 +26,7 @@ public interface IMessagePublisher
     /// Thrown when <see cref="PublishOptions.Headers"/> contains a reserved messaging header
     /// (use <see cref="PublishOptions"/> overrides instead), when a raw <see cref="Headers.TenantId"/>
     /// header is supplied without setting <see cref="PublishOptions.TenantId"/>, or when both are
-    /// supplied with disagreeing values. The <c>Headless.Messaging.FailureCode</c> entry on
-    /// <see cref="System.Exception.Data"/> distinguishes <c>ReservedTenantHeader</c> from
-    /// <c>TenantIdMismatch</c> for programmatic callers.
+    /// supplied with disagreeing values.
     /// </exception>
     Task PublishAsync<T>(T? contentObj, PublishOptions? options = null, CancellationToken cancellationToken = default);
 }

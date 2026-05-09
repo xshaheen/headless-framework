@@ -9,14 +9,15 @@ namespace Headless.Abstractions;
 /// enforces a "tenant must be resolved" invariant.
 /// </summary>
 /// <remarks>
-/// Each call site enriches <see cref="System.Exception.Data"/> with a layer-specific
-/// failure code (e.g., <c>"Headless.Messaging.FailureCode" = "MissingTenantContext"</c>)
-/// so log aggregators can group failures per layer. Inherits from <see cref="Exception"/>
-/// directly so cross-cutting middleware (HTTP 400 mappers, retry suppression) can catch
-/// this single type without sweeping unrelated <see cref="InvalidOperationException"/>s.
+/// Inherits from <see cref="Exception"/> directly so cross-cutting middleware (HTTP 400 mappers,
+/// retry suppression) can catch this single type without sweeping unrelated
+/// <see cref="InvalidOperationException"/>s. Use <see cref="FailureCode"/> for
+/// machine-readable diagnostics instead of <see cref="Exception.Data"/>.
 /// </remarks>
 public sealed class MissingTenantContextException : Exception
 {
+    public const string DefaultFailureCode = "MissingTenantContext";
+
     public MissingTenantContextException()
         : base(_DefaultMessage) { }
 
@@ -25,6 +26,11 @@ public sealed class MissingTenantContextException : Exception
 
     public MissingTenantContextException(string message, Exception? innerException)
         : base(message, innerException) { }
+
+    /// <summary>
+    /// Gets the stable machine-readable failure code for tenant-required failures.
+    /// </summary>
+    public string FailureCode { get; init; } = DefaultFailureCode;
 
     private const string _DefaultMessage =
         "An operation required an ambient tenant context but none was set. "

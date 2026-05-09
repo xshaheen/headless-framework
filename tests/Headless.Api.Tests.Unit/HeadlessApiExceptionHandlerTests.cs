@@ -445,7 +445,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var sensitiveInner = new InvalidOperationException("INNER_SECRET_DETAIL");
         var exception = new MissingTenantContextException("CUSTOM_OUTER_MESSAGE", sensitiveInner)
         {
-            Data = { ["Headless.Messaging.FailureCode"] = "SENSITIVE_LAYER_TAG" },
+            Data = { ["Sensitive.Layer.Tag"] = "SENSITIVE_LAYER_TAG" },
         };
 
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
@@ -466,7 +466,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         body.Should().NotContain("INNER_SECRET_DETAIL");
         body.Should().NotContain("CUSTOM_OUTER_MESSAGE");
         body.Should().NotContain("SENSITIVE_LAYER_TAG");
-        body.Should().NotContain("Headless.Messaging.FailureCode");
+        body.Should().NotContain("Sensitive.Layer.Tag");
         body.Should().Contain(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
 

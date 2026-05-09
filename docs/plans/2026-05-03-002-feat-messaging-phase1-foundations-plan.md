@@ -80,7 +80,7 @@ plan are listed.
   `messaging.destination.name` per provider.
 - **R9.** Public XML docs and package READMEs stay in sync with the new shape; a single capability
   matrix doc at `docs/llms/messaging-envelope.md` is the source of truth, including the
-  publish-time failure-code list (`ReservedTenantHeader`, `TenantIdMismatch`,
+  publish-time failure path list (`ReservedTenantHeader`, `TenantIdMismatch`,
   `MissingTenantContext`) inherited from U2 + U10.
 - **#238 / R4 supplementary.** When a host is configured with `TenantContextRequired = true`, a
   publish call that resolves no `TenantId` (neither `PublishOptions.TenantId` nor
@@ -315,10 +315,8 @@ before any provider integration tests run.
      If `ICurrentTenant.Id` is non-null and `PublishOptions.TenantId` is null, the wrapper
      stamps the resolved tenant onto the header (preserving the four-case integrity invariant
      from U2: typed and raw header are reconciled identically to `_ApplyTenantId`).
-   - The guard runs **after** the existing 4-case integrity check from U2 — header injection
-     and tenant absence are surfaced as distinct failure codes:
-     `Data["Headless.Messaging.FailureCode"] = "ReservedTenantHeader"` (U2),
-     `"TenantIdMismatch"` (U2), `"MissingTenantContext"` (U10).
+   - The guard runs **after** the existing 4-case integrity check from U2 — header injection,
+     tenant mismatch, and tenant absence remain distinct exception paths.
 9. **`ICurrentTenant` is consumed via DI, never via static accessors.** Both
    `MessagePublishRequestFactory` and `ICurrentTenant` are registered **singleton**
    (current pattern at `Headless.Messaging.Core/Setup.cs:96` and `Headless.Api/Setup.cs:166`).
@@ -380,10 +378,7 @@ before any provider integration tests run.
   (#234) and Mediator behavior (#236) — the cross-layer tenancy stack catches a single
   exception instead of three layer-specific copies. Inherits directly from `Exception` so
   cross-cutting middleware (HTTP 400 mappers, retry suppression) can catch this single type
-  without sweeping unrelated `InvalidOperationException`s. Layer-specific call sites enrich
-  `Exception.Data` with a failure code (e.g.,
-  `"Headless.Messaging.FailureCode" = "MissingTenantContext"`) so log aggregators still
-  group failures per layer.
+  without sweeping unrelated `InvalidOperationException`s.
 - **Exact set of `_ReservedHeaders` additions.** Phase 1 adds `Headers.Attempt`. Whether
   the U2-shipped `Headers.TenantId` should also be added (it currently flows through
   `_ApplyTenantId` rather than `_ValidateCustomHeaders`) is implementer's choice — both
@@ -727,8 +722,7 @@ forking the package. Default implementation emits `headless.messaging.tenant_id`
   tenant identifiers in their message text and `Data` dictionary. Without intervention,
   `SuppressTenantIdTag = true` would still leak tenant data through `exception.message`.
   U5 introduces a small `KnownFrameworkExceptionRedactor` invoked before every `AddException`
-  call: when the exception is a known Headless framework type (matched by exact type +
-  `Data["Headless.Messaging.FailureCode"]` value), the redactor stamps a synthetic
+  call: when the exception is a known Headless framework type, the redactor stamps a synthetic
   `exception.type` + `exception.message` (with the tenant-bearing fields replaced by
   `[redacted]`) and `exception.stacktrace` directly via `activity.SetTag(...)`, then calls
   `activity.SetStatus(ActivityStatusCode.Error, redactedDescription)` to preserve the
@@ -815,9 +809,7 @@ those.
   Lives in `Headless.Core` (not `Headless.Messaging.Abstractions`) so the same type is
   shared with the EF write guard (#234) and Mediator behavior (#236); inherits directly
   from `Exception` so cross-cutting middleware can catch the single cross-layer guard
-  type without sweeping unrelated `InvalidOperationException`s. Layer-specific failure
-  codes are stamped into `Exception.Data` (e.g.,
-  `"Headless.Messaging.FailureCode" = "MissingTenantContext"`).
+  type without sweeping unrelated `InvalidOperationException`s.
 - Modify: `src/Headless.Messaging.Core/Configuration/MessagingOptions.cs` — add
   `bool TenantContextRequired { get; set; } = false`.
 - Modify: `src/Headless.Messaging.Core/Setup.cs` — register
@@ -861,17 +853,14 @@ those.
     - If the resolved value is non-null, set `typed = resolved` and re-enter the U2 stamping
       flow (so the four-case integrity check stays the single point of truth for header/typed
       reconciliation).
-    - If both are null, throw `MissingTenantContextException` with
-      `Data["Headless.Messaging.FailureCode"] = "MissingTenantContext"`.
+    - If both are null, throw `MissingTenantContextException`.
 - `MissingTenantContextException : Exception` lives at
   `src/Headless.Core/Abstractions/MissingTenantContextException.cs` in
   `namespace Headless.Abstractions`. It is the single cross-layer guard type shared with the
   EF write guard (#234) and Mediator behavior (#236) so consumer apps catch one type instead
   of three layer-specific copies. Inheriting directly from `Exception` lets cross-cutting
   middleware (HTTP 400 mappers, retry suppression) target the guard without sweeping
-  unrelated `InvalidOperationException`s; layer-specific failure codes are stamped into
-  `Exception.Data` (`"Headless.Messaging.FailureCode" = "MissingTenantContext"`) so log
-  aggregators can group failures per layer.
+  unrelated `InvalidOperationException`s.
 - **No startup validator.** A `MessagingOptionsValidator` cross-check that asserted
   `ICurrentTenant` is not `NullCurrentTenant` when `TenantContextRequired = true` was
   considered and rejected — it cannot distinguish "host forgot to register `Headless.Core`"
@@ -882,16 +871,12 @@ those.
   `Headless.Messaging.Core/Setup.cs` guarantees the factory always has an `ICurrentTenant`
   to consult, so the guard never NREs.
 - The guard runs **after** the existing 4-case header check from U2. If both a header injection
-  AND a missing tenant context exist on the same publish, the U2 check fires first
-  (failure code `"ReservedTenantHeader"`). The U10 check is a separate failure path with code
-  `"MissingTenantContext"`.
+  AND a missing tenant context exist on the same publish, the U2 check fires first.
+  The U10 check is a separate failure path.
 
 **Patterns to follow:**
-- `MessagePublishRequestFactory._ApplyTenantId` (U2-shipped) for the validation shape and the
-  `Data["Headless.Messaging.FailureCode"]` key naming.
-- The cross-layer guard pattern from #234 (EF write guard) and #236 (Mediator behavior) —
-  the failure code and exception type align with those siblings so log aggregators can group
-  by `Headless.*.FailureCode`.
+- `MessagePublishRequestFactory._ApplyTenantId` (U2-shipped) for the validation shape.
+- The cross-layer guard pattern from #234 (EF write guard) and #236 (Mediator behavior).
 
 **Test scenarios:**
 - **Happy path:** `TenantContextRequired = false`, no tenant set → publish succeeds with
@@ -904,8 +889,8 @@ those.
   `ICurrentTenant.Id = "beta"` → publish succeeds with `TenantId = "acme"` (explicit publish-side
   value wins; ambient is a fallback only).
 - **Edge case:** `TenantContextRequired = true`, both null → throws
-  `MissingTenantContextException` with `FailureCode = "MissingTenantContext"` and a remediation
-  message naming `ICurrentTenant.Change(...)`.
+  `MissingTenantContextException` with a remediation message naming
+  `ICurrentTenant.Change(...)`.
 - **Edge case (background worker happy path):** `TenantContextRequired = true`, publish runs
   inside `using (currentTenant.Change("acme"))` from an `IHostedService` (no ambient HTTP
   scope) → publish succeeds with `TenantId = "acme"` resolved from the AsyncLocal scope set
@@ -939,8 +924,7 @@ those.
   exercises the guard end-to-end against a real transport.
 - `grep -r "MissingTenantContextException" src/ tests/` finds the type defined in exactly one
   source file (`src/Headless.Core/Abstractions/MissingTenantContextException.cs`), thrown
-  from `MessagePublishRequestFactory._ApplyTenantId`, and the expected test references; the
-  failure code string `"MissingTenantContext"` matches the documented contract in U6.
+  from `MessagePublishRequestFactory._ApplyTenantId`, and the expected test references.
 
 ---
 
@@ -954,7 +938,7 @@ abstractions README.
 **Requirements:** R9.
 
 **Dependencies:** U4 (retry contract definitions), U5 (OTel attribute table), U10 (strict-
-tenancy failure-code list). Lands last in the plan so the matrix reflects shipped reality, not
+tenancy failure paths). Lands last in the plan so the matrix reflects shipped reality, not
 planned reality.
 
 **Files:**
@@ -987,7 +971,7 @@ planned reality.
   4. **OTel attribute table** — every attribute the package emits (`headless.messaging.*` plus
      OTel-standardized `messaging.*`), with cardinality notes and a "what to alert on" tip.
      Includes `SuppressTenantIdTag` operational guidance for cross-tenant trace storage.
-  5. **Strict-tenancy guard** — `TenantContextRequired` semantics, the four failure codes
+  5. **Strict-tenancy guard** — `TenantContextRequired` semantics, the failure paths
      (`ReservedTenantHeader`, `TenantIdMismatch`, `MissingTenantContext`, plus the existing
      header-validation failures), a worked example showing the U2 + U10 interaction.
   6. **Convention-axis operational runbook** — for transports where Send vs Broadcast is a

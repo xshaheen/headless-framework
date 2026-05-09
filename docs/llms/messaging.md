@@ -543,7 +543,7 @@ builder.Services.AddHeadlessMessaging(options =>
 
 1. `PublishOptions.TenantId` if set (the source of truth — see `Headers.TenantId` integrity rules in [Multi-Tenancy / Message Consumers](multi-tenancy.md#message-consumers)).
 2. Otherwise, the ambient `ICurrentTenant.Id`.
-3. If neither resolves, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`, with `Exception.Data["Headless.Messaging.FailureCode"] = "MissingTenantContext"` for log aggregation.
+3. If neither resolves, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException` with `FailureCode = "MissingTenantContext"`.
 
 The U2 raw-header checks (`ReservedTenantHeader`, `TenantIdMismatch`) still run first, so flipping `TenantContextRequired` cannot bypass them.
 

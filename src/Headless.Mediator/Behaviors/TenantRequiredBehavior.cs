@@ -12,9 +12,8 @@ namespace Headless.Mediator;
 /// </summary>
 /// <remarks>
 /// Register <see cref="ICurrentTenant" /> separately before using this behavior. Missing
-/// tenant failures throw <see cref="MissingTenantContextException" /> and add the
-/// <c>Headless.Mediator.FailureCode</c> exception data value for layer-specific logging.
-/// The exception default message carries the remediation guidance.
+/// tenant failures throw <see cref="MissingTenantContextException" />. The exception default
+/// message carries the remediation guidance.
 /// </remarks>
 [PublicAPI]
 public sealed class TenantRequiredBehavior<TRequest, TResponse>(ICurrentTenant currentTenant)
@@ -40,9 +39,6 @@ public sealed class TenantRequiredBehavior<TRequest, TResponse>(ICurrentTenant c
             return next.Invoke(message, cancellationToken);
         }
 
-        var exception = new MissingTenantContextException();
-        exception.Data["Headless.Mediator.FailureCode"] = "MissingTenantContext";
-
-        throw exception;
+        throw new MissingTenantContextException();
     }
 }

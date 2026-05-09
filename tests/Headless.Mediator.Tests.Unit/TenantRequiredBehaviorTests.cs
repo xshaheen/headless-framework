@@ -93,7 +93,8 @@ public sealed class TenantRequiredBehaviorTests
 
         // then
         var exception = await action.Should().ThrowExactlyAsync<MissingTenantContextException>();
-        exception.Which.Data["Headless.Mediator.FailureCode"].Should().Be("MissingTenantContext");
+        exception.Which.FailureCode.Should().Be(MissingTenantContextException.DefaultFailureCode);
+        exception.Which.Data.Count.Should().Be(0);
         callCount.Should().Be(0);
     }
 

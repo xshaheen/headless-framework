@@ -112,7 +112,7 @@ Resulting response shape (same for both surfaces):
 }
 ```
 
-The body surfaces only `type`, `title`, `status`, `detail`, the optional `error` discriminator, plus the standard normalized extensions (`traceId`, `buildNumber`, `commitNumber`, `timestamp`, `instance`). The exception's `Message`, `Data` (e.g., `Headless.Mediator.FailureCode = "MissingTenantContext"` or `Headless.Messaging.FailureCode = "MissingTenantContext"`), and `InnerException` are NOT included in the response — they belong in server logs (the data tag remains on the exception for log aggregation; see [Strict Publish Tenancy](#strict-publish-tenancy-tenantcontextrequired) for the messaging side). External callers branch on the stable `error.code` value.
+The body surfaces only `type`, `title`, `status`, `detail`, the optional `error` discriminator, plus the standard normalized extensions (`traceId`, `buildNumber`, `commitNumber`, `timestamp`, `instance`). The exception's `Message`, `Data`, `FailureCode`, and `InnerException` are NOT included in the response — they belong in server logs. External callers branch on the stable `error.code` value.
 
 Prerequisites:
 
@@ -142,7 +142,7 @@ public sealed record RebuildSearchIndex : IRequest<RebuildSearchIndexResponse>;
 public sealed record RebuildSearchIndexResponse(int DocumentCount);
 ```
 
-When a non-opted-out request runs without a tenant, `TenantRequiredBehavior<TRequest, TResponse>` throws `MissingTenantContextException` and adds `Headless.Mediator.FailureCode = "MissingTenantContext"` to `Exception.Data`. HTTP hosts that use `UseExceptionHandler()` get the same normalized 400 response documented in [HTTP Failure Mapping](#http-failure-mapping). Non-HTTP hosts should let the exception fail the dispatch or handle it at their process boundary.
+When a non-opted-out request runs without a tenant, `TenantRequiredBehavior<TRequest, TResponse>` throws `MissingTenantContextException` with `FailureCode = "MissingTenantContext"`. HTTP hosts that use `UseExceptionHandler()` get the same normalized 400 response documented in [HTTP Failure Mapping](#http-failure-mapping). Non-HTTP hosts should let the exception fail the dispatch or handle it at their process boundary.
 
 Recommended Mediator pipeline order:
 
@@ -220,7 +220,7 @@ Automatic tenant propagation in consumer pipelines is intentionally out of scope
 
 #### Strict Publish Tenancy (`TenantContextRequired`)
 
-Set `MessagingOptions.TenantContextRequired = true` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.Abstractions.MissingTenantContextException` (failure code `Headless.Messaging.FailureCode = "MissingTenantContext"` on `Exception.Data`). This is the messaging sibling of the EF write guard (#234) and the Mediator behavior (#236).
+Set `MessagingOptions.TenantContextRequired = true` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.Abstractions.MissingTenantContextException` with `FailureCode = "MissingTenantContext"`. This is the messaging sibling of the EF write guard (#234) and the Mediator behavior (#236).
 
 Defaults to `false` to preserve today's behavior. The U2 raw-header integrity rules above (`ReservedTenantHeader`, `TenantIdMismatch`) always apply and run before the strict-tenancy fallback, so injection attempts cannot bypass the guard by enabling the flag.
 

@@ -130,11 +130,7 @@ background processes.
 
 When a request is not marked with `[AllowMissingTenant]` and `ICurrentTenant.Id`
 is null, empty, or whitespace, the behavior throws `MissingTenantContextException`
-and sets:
-
-```csharp
-exception.Data["Headless.Mediator.FailureCode"] = "MissingTenantContext";
-```
+with `FailureCode = "MissingTenantContext"`.
 
 `Headless.Api` already maps this exception type to the standard tenant-required
 400 ProblemDetails response when `UseExceptionHandler()` is configured.

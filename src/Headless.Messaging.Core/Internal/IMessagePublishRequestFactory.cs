@@ -130,10 +130,6 @@ internal sealed class MessagePublishRequestFactory(
     // typed property is unset, resolve from the ambient ICurrentTenant. If both are null, throw
     // MissingTenantContextException. Sibling of the EF (#234) and Mediator (#236) tenancy guards.
     //
-    // Failure-code priority: ReservedTenantHeader (raw header without typed property) → fires
-    // before any U10 logic so caller bugs / injection attempts surface first.
-    // TenantIdMismatch (raw and typed disagree) → fires after the typed value is resolved
-    // (either from PublishOptions or ambient), preserving U2 semantics for explicit publishes.
     private void _ApplyTenantId(Dictionary<string, string?> headers, PublishOptions? options)
     {
         var typed = options?.TenantId;
@@ -149,7 +145,6 @@ internal sealed class MessagePublishRequestFactory(
                 $"Header '{Headers.TenantId}' is reserved. "
                     + $"Use {nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)} to set the tenant identifier."
             );
-            ex.Data["Headless.Messaging.FailureCode"] = "ReservedTenantHeader";
             ex.Data["Headers.TenantId.Raw"] = safeRawForReservedMessage;
             throw ex;
         }
@@ -167,7 +162,6 @@ internal sealed class MessagePublishRequestFactory(
                         + "ICurrentTenant.Change(tenantId) to scope the AsyncLocal accessor "
                         + "(common pattern for background workers and IHostedService callers)."
                 );
-                ex.Data["Headless.Messaging.FailureCode"] = "MissingTenantContext";
                 throw ex;
             }
         }
@@ -195,7 +189,6 @@ internal sealed class MessagePublishRequestFactory(
                 $"PublishOptions.TenantId='{typed}' disagrees with header '{Headers.TenantId}'='{safeRaw}'. "
                     + "Set the typed property only."
             );
-            ex.Data["Headless.Messaging.FailureCode"] = "TenantIdMismatch";
             ex.Data[$"{nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)}"] = typed;
             ex.Data["Headers.TenantId.Raw"] = safeRaw;
             throw ex;

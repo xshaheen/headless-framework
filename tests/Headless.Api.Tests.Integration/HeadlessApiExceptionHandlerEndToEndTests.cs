@@ -61,10 +61,10 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
     [Fact]
     public async Task should_not_leak_exception_message_data_or_inner_exception_in_response_body()
     {
-        // given - exception with sensitive message, Data tag, and inner exception
+        // given - exception with sensitive message, Data value, and inner exception
         var sensitiveInner = new InvalidOperationException("INNER_SECRET_DETAIL_query=user-id-42");
         var exception = new MissingTenantContextException("CUSTOM_OUTER_MESSAGE_with_sensitive_data", sensitiveInner);
-        exception.Data["Headless.Messaging.FailureCode"] = "SENSITIVE_LAYER_TAG";
+        exception.Data["Sensitive.Layer.Tag"] = "SENSITIVE_LAYER_TAG";
 
         await using var app = await _CreateAppAsync(handlerSetup: _ => { }, endpoint: () => throw exception);
         using var client = _CreateClient(app);
@@ -77,7 +77,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         body.Should().NotContain("INNER_SECRET_DETAIL");
         body.Should().NotContain("CUSTOM_OUTER_MESSAGE");
         body.Should().NotContain("SENSITIVE_LAYER_TAG");
-        body.Should().NotContain("Headless.Messaging.FailureCode");
+        body.Should().NotContain("Sensitive.Layer.Tag");
         body.Should().Contain(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
 

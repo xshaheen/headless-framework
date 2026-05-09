@@ -87,7 +87,7 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
     }
 
     [Fact]
-    public void should_attach_failure_code_to_missing_tenant_context_exception()
+    public void should_expose_failure_code_on_missing_tenant_context_exception()
     {
         // given
         var factory = _CreateFactory(tenantContextRequired: true, ambientTenantId: null);
@@ -96,9 +96,9 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
         Action act = () => factory.Create(new TestMessage("v"), options: null);
 
         // then
-        act.Should()
-            .Throw<MissingTenantContextException>()
-            .Where(ex => "MissingTenantContext".Equals(ex.Data["Headless.Messaging.FailureCode"]));
+        var exception = act.Should().Throw<MissingTenantContextException>().Which;
+        exception.FailureCode.Should().Be(MissingTenantContextException.DefaultFailureCode);
+        exception.Data.Count.Should().Be(0);
     }
 
     [Fact]
@@ -112,9 +112,9 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
         Action act = () => factory.Create(new TestMessage("v"), new PublishOptions { Headers = headers });
 
         // then
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .Where(ex => "ReservedTenantHeader".Equals(ex.Data["Headless.Messaging.FailureCode"]));
+        var exception = act.Should().Throw<InvalidOperationException>().WithMessage("*reserved*").Which;
+        exception.Data.Count.Should().Be(1);
+        exception.Data["Headers.TenantId.Raw"].Should().Be("injected");
     }
 
     [Fact]
@@ -129,9 +129,10 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
             factory.Create(new TestMessage("v"), new PublishOptions { Headers = headers, TenantId = "explicit" });
 
         // then
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .Where(ex => "TenantIdMismatch".Equals(ex.Data["Headless.Messaging.FailureCode"]));
+        var exception = act.Should().Throw<InvalidOperationException>().WithMessage("*disagrees*").Which;
+        exception.Data.Count.Should().Be(2);
+        exception.Data[$"{nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)}"].Should().Be("explicit");
+        exception.Data["Headers.TenantId.Raw"].Should().Be("wire-side");
     }
 
     [Fact]

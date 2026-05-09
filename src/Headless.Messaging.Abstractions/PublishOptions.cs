@@ -65,8 +65,7 @@ public sealed class PublishOptions
     /// <see cref="Headers.TenantId"/> through <see cref="Headers"/> without setting this typed property
     /// is rejected with <see cref="InvalidOperationException"/>. If the typed property and a matching
     /// raw header are both set, the publish is accepted as a no-op reconciliation; if they disagree,
-    /// the publish is rejected. Inspect <see cref="System.Exception.Data"/> for the
-    /// <c>Headless.Messaging.FailureCode</c> entry to distinguish failure modes programmatically.
+    /// the publish is rejected.
     /// </para>
     /// <para>
     /// Values longer than <see cref="TenantIdMaxLength"/> or whitespace-only values are rejected at publish time.
