@@ -33,7 +33,7 @@ namespace Headless.Api.Middlewares;
 /// <para>
 /// Information-disclosure invariant: response bodies surface only the framework-owned fields
 /// produced by <see cref="IProblemDetailsCreator"/> plus the standard normalized extensions.
-/// Exception messages, <see cref="System.Exception.Data"/>, and inner-exception content are NOT
+/// Exception messages, <see cref="Exception.Data"/>, and inner-exception content are NOT
 /// surfaced — they belong in server logs.
 /// </para>
 /// </remarks>

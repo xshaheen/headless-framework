@@ -8,7 +8,9 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 
 ## Key Features
 
-- One-call service registration via `AddHeadlessFramework()`
+- One-call service registration via `AddHeadlessInfrastructure()`
+- One-call middleware defaults via `UseHeadlessDefaults()`
+- Operational endpoints via `MapHeadlessDefaultEndpoints()` (`/health`, `/alive`)
 - Multi-tenancy primitives via `AddHeadlessMultiTenancy()` and `UseTenantResolution()`
 - Unified exception-to-ProblemDetails mapping via `HeadlessApiExceptionHandler` (auto-registered by `AddHeadlessProblemDetails()`): covers tenancy, conflict, validation, not-found, EF concurrency, timeout, not-implemented, and cancellation for any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware (typically MVC actions and Minimal-API endpoints)
 - Response compression (Brotli, Gzip) with optimized settings
@@ -37,7 +39,7 @@ var builder = WebApplication.CreateBuilder(args);
 ApiSetup.ConfigureGlobalSettings();
 
 // Register all framework API services
-builder.AddHeadlessFramework();
+builder.AddHeadlessInfrastructure();
 builder.AddHeadlessMultiTenancy();
 
 var app = builder.Build();
@@ -45,28 +47,32 @@ var app = builder.Build();
 // Optional: Add diagnostic listeners for debugging
 using var _ = app.AddHeadlessApiDiagnosticListeners();
 
-app.UseResponseCompression();
-app.UseHsts();
+app.UseHeadlessDefaults(options =>
+{
+    // Enable only when the app is reachable exclusively through trusted proxy infrastructure.
+    options.TrustForwardedHeadersFromAnyProxy = false;
+});
 app.UseAuthentication();
 app.UseTenantResolution();
 app.UseAuthorization();
+app.MapHeadlessDefaultEndpoints();
 
 app.Run();
 ```
 
-`AddHeadlessFramework()` requires the `Headless:StringEncryption` and `Headless:StringHash` configuration sections.
+`AddHeadlessInfrastructure()` requires the `Headless:StringEncryption` and `Headless:StringHash` configuration sections.
 
-If you do not want the default `Headless:*` binding, `AddHeadlessFramework()` also exposes explicit overloads for:
+If you do not want the default `Headless:*` binding, `AddHeadlessInfrastructure()` also exposes explicit overloads for:
 
 - `IConfiguration stringEncryptionConfig, IConfiguration stringHashConfig`
 - `Action<StringEncryptionOptions>, Action<StringHashOptions>?`
 - `Action<StringEncryptionOptions, IServiceProvider>, Action<StringHashOptions, IServiceProvider>?`
 
-When the hash callback is omitted, `AddHeadlessFramework(...)` still binds `Headless:StringHash` by default.
+When the hash callback is omitted, `AddHeadlessInfrastructure(...)` still binds `Headless:StringHash` by default.
 
 ## Multi-Tenancy
 
-`AddHeadlessFramework()` registers `CurrentTenant` by default, and `Headless.Orm.EntityFramework` now uses the same default for `AddHeadlessDbContextServices()`. For claim-based HTTP tenant resolution, opt in with:
+`AddHeadlessInfrastructure()` registers `CurrentTenant` by default, and `Headless.Orm.EntityFramework` now uses the same default for `AddHeadlessDbContextServices()`. For claim-based HTTP tenant resolution, opt in with:
 
 ```csharp
 builder.AddHeadlessMultiTenancy(options =>
@@ -81,9 +87,32 @@ app.UseAuthorization();
 
 Place `UseTenantResolution()` after authentication and before authorization.
 
+## API Defaults
+
+`UseHeadlessDefaults()` applies the standard middleware order for Headless APIs:
+
+- `UseForwardedHeaders()`
+- `UseResponseCompression()`
+- `UseStatusCodePages()`
+- `UseExceptionHandler()`
+- `UseHttpsRedirection()`
+- `UseHsts()` outside Development
+- no-cache response header when the response did not set `Cache-Control`
+
+`TrustForwardedHeadersFromAnyProxy` defaults to `false`. Turn it on only when the service is not directly reachable by untrusted clients; otherwise clients can spoof forwarded host/scheme values.
+
+`ConfigureHeadlessDefaultApi()` also applies conservative Kestrel limits: 30MB max request body and 40 request headers by default.
+
+`MapHeadlessDefaultEndpoints()` maps:
+
+- `/health` for all registered health checks, with a JSON body containing `status` and per-check `results`
+- `/alive` for health checks tagged `live`
+
+Both endpoints are named, excluded from OpenAPI descriptions, and allow anonymous requests by default. `AddHeadlessInfrastructure()` registers the default `self` liveness check and disables Kestrel's `Server` response header.
+
 ### Exception Mapping
 
-`AddHeadlessProblemDetails()` (called by `AddHeadlessFramework()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
+`AddHeadlessProblemDetails()` (called by `AddHeadlessInfrastructure()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
 
 | Exception | Response |
 |-----------|----------|
@@ -97,7 +126,7 @@ Place `UseTenantResolution()` after authentication and before authorization.
 | `OperationCanceledException` (or inner OCE at any depth) | 499 (no body — client closed request) |
 
 ```csharp
-builder.AddHeadlessFramework();
+builder.AddHeadlessInfrastructure();
 
 var app = builder.Build();
 app.UseExceptionHandler();
@@ -166,7 +195,7 @@ The same tenancy shape is reachable for direct callers via `IProblemDetailsCreat
   }
 }
 ```
-`AddHeadlessFramework()` binds both `Headless:StringEncryption` and `Headless:StringHash`, and requires both sections to exist.
+`AddHeadlessInfrastructure()` binds both `Headless:StringEncryption` and `Headless:StringHash`, and requires both sections to exist.
 
 ## Dependencies
 
@@ -192,4 +221,6 @@ The same tenancy shape is reachable for direct callers via `IProblemDetailsCreat
 - Configures route options (lowercase URLs)
 - Configures form options (file upload limits)
 - Configures HSTS options
+- Disables Kestrel's `Server` response header
+- Registers default `self` health check tagged `live`
 - Adds resilience handler to `HttpClient` defaults

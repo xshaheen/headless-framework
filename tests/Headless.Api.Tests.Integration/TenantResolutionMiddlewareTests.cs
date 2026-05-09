@@ -102,7 +102,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
-        builder.AddHeadlessFramework();
+        builder.AddHeadlessInfrastructure();
 
         if (configure is not null)
         {

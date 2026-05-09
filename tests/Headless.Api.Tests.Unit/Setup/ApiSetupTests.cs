@@ -3,8 +3,10 @@
 using Headless.Abstractions;
 using Headless.Api;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
@@ -20,7 +22,7 @@ public sealed class ApiSetupTests
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
-        builder.AddHeadlessFramework();
+        builder.AddHeadlessInfrastructure();
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
         var currentTenant = serviceProvider.GetRequiredService<ICurrentTenant>();
@@ -32,6 +34,32 @@ public sealed class ApiSetupTests
     }
 
     [Fact]
+    public async Task add_headless_api_should_register_service_defaults()
+    {
+        // given
+        var builder = WebApplication.CreateBuilder();
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
+
+        // when
+        builder.AddHeadlessInfrastructure();
+
+        using var serviceProvider = builder.Services.BuildServiceProvider();
+        var kestrelOptions = serviceProvider.GetRequiredService<IOptions<KestrelServerOptions>>().Value;
+        var healthCheckService = serviceProvider.GetRequiredService<HealthCheckService>();
+        var healthReport = await healthCheckService.CheckHealthAsync(
+            registration => registration.Tags.Contains("live"),
+            CancellationToken.None
+        );
+
+        // then
+        kestrelOptions.AddServerHeader.Should().BeFalse();
+        kestrelOptions.Limits.MaxRequestBodySize.Should().Be(1024 * 1024 * 30);
+        kestrelOptions.Limits.MaxRequestHeaderCount.Should().Be(40);
+        healthReport.Entries.Should().ContainKey("self");
+        healthReport.Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [Fact]
     public void add_headless_api_should_allow_configuration_sections()
     {
         // given
@@ -39,7 +67,7 @@ public sealed class ApiSetupTests
         var configuration = _CreateSecuritySectionConfiguration();
 
         // when
-        builder.AddHeadlessFramework(
+        builder.AddHeadlessInfrastructure(
             configuration.GetRequiredSection("Security:StringEncryption"),
             configuration.GetRequiredSection("Security:StringHash")
         );
@@ -63,7 +91,7 @@ public sealed class ApiSetupTests
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
-        builder.AddHeadlessFramework(
+        builder.AddHeadlessInfrastructure(
             encryption =>
             {
                 encryption.DefaultPassPhrase = "ActionPassPhrase123";
@@ -96,7 +124,7 @@ public sealed class ApiSetupTests
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
-        builder.AddHeadlessFramework(encryption =>
+        builder.AddHeadlessInfrastructure(encryption =>
         {
             encryption.DefaultPassPhrase = "ActionPassPhrase123";
             encryption.InitVectorBytes = "ActionIV01234567"u8.ToArray();
@@ -129,7 +157,7 @@ public sealed class ApiSetupTests
         );
 
         // when
-        builder.AddHeadlessFramework(
+        builder.AddHeadlessInfrastructure(
             (encryption, serviceProvider) =>
             {
                 var values = serviceProvider.GetRequiredService<SecurityTestValues>();

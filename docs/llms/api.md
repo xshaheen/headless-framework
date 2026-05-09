@@ -74,7 +74,7 @@ packages: Api, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.L
 
 ## Quick Orientation
 
-The core package is `Headless.Api` — call `AddHeadlessFramework()` to register compression, security headers, problem details, JWT, identity, and validation in one shot. Then choose an endpoint style:
+The core package is `Headless.Api` — call `AddHeadlessInfrastructure()` to register compression, health checks, problem details, JWT, identity, and validation in one shot. Use `UseHeadlessDefaults()` for the standard middleware order and `MapHeadlessDefaultEndpoints()` for `/health` and `/alive`. Then choose an endpoint style:
 
 - **Minimal API** (recommended for new projects): Add `Headless.Api.MinimalApi` and call `ConfigureMinimalApi()` for JSON config, validation filters, and exception handling.
 - **MVC/Controllers**: Add `Headless.Api.Mvc` and call `ConfigureMvc()` for base controllers, exception filters, and URL canonicalization.
@@ -89,15 +89,18 @@ Additional packages:
 
 ## Agent Instructions
 
-- Use `AddHeadlessFramework()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, or problem details.
-- Call `ApiSetup.ConfigureGlobalSettings()` before `AddHeadlessFramework()` to set regex timeout, FluentValidation, and JWT defaults.
+- Use `AddHeadlessInfrastructure()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, or problem details.
+- Use `UseHeadlessDefaults()` for the default middleware order (`UseStatusCodePages()` before `UseExceptionHandler()`), then add auth/tenant middleware, then map endpoints.
+- Use `MapHeadlessDefaultEndpoints()` to expose `/health` and `/alive`. `AddHeadlessInfrastructure()` registers a `self` health check tagged `live`.
+- Keep `TrustForwardedHeadersFromAnyProxy` disabled unless the service is reachable only through trusted proxy infrastructure.
+- Call `ApiSetup.ConfigureGlobalSettings()` before `AddHeadlessInfrastructure()` to set regex timeout, FluentValidation, and JWT defaults.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`) for `IFormFile` validation — do not write manual file validation logic.
 - Use `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` to persist Data Protection keys in distributed/containerized environments.
 - For Serilog enrichment, call `AddSerilogEnrichers()` on services and `UseSerilogEnrichers()` on the app — place the middleware early in the pipeline.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
-- `AddHeadlessFramework()` auto-binds `Headless:StringEncryption` and `Headless:StringHash` through `Headless.Security`, and also exposes explicit overloads for configuration sections and option callbacks when the defaults are not suitable. When the hash callback is omitted, it still binds `Headless:StringHash` by default.
+- `AddHeadlessInfrastructure()` auto-binds `Headless:StringEncryption` and `Headless:StringHash` through `Headless.Security`, and also exposes explicit overloads for configuration sections and option callbacks when the defaults are not suitable. When the hash callback is omitted, it still binds `Headless:StringHash` by default.
 
 ---
 
@@ -111,7 +114,9 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 
 ## Key Features
 
-- One-call service registration via `AddHeadlessFramework()`
+- One-call service registration via `AddHeadlessInfrastructure()`
+- One-call middleware defaults via `UseHeadlessDefaults()`
+- Operational health endpoints via `MapHeadlessDefaultEndpoints()`
 - Response compression (Brotli, Gzip) with optimized settings
 - Problem details standardization
 - Unified exception-to-ProblemDetails mapping via `HeadlessApiExceptionHandler` (auto-registered by `AddHeadlessProblemDetails()`): covers tenancy, conflict, validation, not-found, EF concurrency, timeout, not-implemented, and cancellation across MVC, Minimal API, middleware, hosted services, and hubs
@@ -139,22 +144,40 @@ var builder = WebApplication.CreateBuilder(args);
 ApiSetup.ConfigureGlobalSettings();
 
 // Register all framework API services
-builder.AddHeadlessFramework();
+builder.AddHeadlessInfrastructure();
 
 var app = builder.Build();
 
 // Optional: Add diagnostic listeners for debugging
 using var _ = app.AddHeadlessApiDiagnosticListeners();
 
-app.UseResponseCompression();
-app.UseHsts();
+app.UseHeadlessDefaults();
+app.MapHeadlessDefaultEndpoints();
 
 app.Run();
 ```
 
+## API Defaults
+
+`UseHeadlessDefaults()` applies Headless' standard ASP.NET Core middleware order:
+
+- `UseForwardedHeaders()`
+- `UseResponseCompression()`
+- `UseStatusCodePages()`
+- `UseExceptionHandler()`
+- `UseHttpsRedirection()`
+- `UseHsts()` outside Development
+- no-cache response header when the response did not set `Cache-Control`
+
+`UseStatusCodePages()` intentionally runs before `UseExceptionHandler()` so bare status responses, including middleware-emitted 408s, can be normalized by `IProblemDetailsCreator.Normalize`.
+
+`TrustForwardedHeadersFromAnyProxy` defaults to `false`. Turn it on only when the app is not directly reachable by untrusted clients; otherwise clients can spoof forwarded host/scheme values.
+
+`MapHeadlessDefaultEndpoints()` maps `/health` for all health checks with a JSON body containing `status` and per-check `results`, plus `/alive` for checks tagged `live`. Both endpoints are named, excluded from OpenAPI descriptions, and allow anonymous requests by default. `AddHeadlessInfrastructure()` registers the default `self` liveness check, disables Kestrel's `Server` response header, and applies conservative Kestrel limits: 30MB max request body and 40 request headers.
+
 ## Exception Mapping
 
-`AddHeadlessProblemDetails()` (called by `AddHeadlessFramework()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that maps framework-known exceptions to normalized ProblemDetails responses. Covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
+`AddHeadlessProblemDetails()` (called by `AddHeadlessInfrastructure()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that maps framework-known exceptions to normalized ProblemDetails responses. Covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
 
 | Exception | Response |
 |-----------|----------|
@@ -172,10 +195,10 @@ app.Run();
 **Cancellation vs timeout — three flavors:** the table covers two of three OCE paths. The third — server-side request timeouts via ASP.NET Core's `RequestTimeoutsMiddleware` — never reaches this handler: the middleware translates its CTS-fired OCE into a bare 408 status. Pair `app.UseStatusCodePages()` (registered **before** `app.UseRequestTimeouts()` and `app.UseExceptionHandler()`) with `IProblemDetailsCreator.Normalize`'s 408 backfill so the bare-status path produces the same `Title`/`Type`/`Detail` shape as the `case TimeoutException` arm. Full pattern, including the AggregateException trap and pipeline ordering, lives in [`docs/solutions/api/aspnet-core-cancellation-vs-timeout-differentiation-2026-05-07.md`](../solutions/api/aspnet-core-cancellation-vs-timeout-differentiation-2026-05-07.md).
 
 ```csharp
-builder.AddHeadlessFramework();
+builder.AddHeadlessInfrastructure();
 
 var app = builder.Build();
-app.UseExceptionHandler(); // required — wires the IExceptionHandler chain into the pipeline.
+app.UseHeadlessDefaults(); // includes UseExceptionHandler() in the correct Headless order.
 ```
 
 Tenancy response shape:
@@ -202,9 +225,9 @@ Tenancy response shape:
 
 **Prerequisites:**
 
-- Call `app.UseExceptionHandler()` to wire the `IExceptionHandler` chain into the pipeline.
+- Call `app.UseHeadlessDefaults()` or `app.UseExceptionHandler()` to wire the `IExceptionHandler` chain into the pipeline.
 
-**Handler-chain ordering:** `IExceptionHandler` instances run in registration order. The framework handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadlessFramework()`, which calls it).
+**Handler-chain ordering:** `IExceptionHandler` instances run in registration order. The framework handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadlessInfrastructure()`, which calls it).
 
 **Related factory:** `IProblemDetailsCreator.TenantRequired()` (parameterless) produces the same tenancy response shape for direct callers (e.g., a request-pipeline pre-check that wants to short-circuit without throwing).
 
@@ -517,7 +540,7 @@ dotnet add package Headless.Api.MinimalApi
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessFramework().ConfigureMinimalApi();
+builder.AddHeadlessInfrastructure().ConfigureMinimalApi();
 
 var app = builder.Build();
 
@@ -570,7 +593,7 @@ dotnet add package Headless.Api.Mvc
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessFramework().ConfigureMvc();
+builder.AddHeadlessInfrastructure().ConfigureMvc();
 builder.Services.AddControllers();
 
 var app = builder.Build();

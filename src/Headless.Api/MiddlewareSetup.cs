@@ -2,6 +2,7 @@
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Api.Middlewares;
 
@@ -14,8 +15,8 @@ public static class AddMiddlewareExtensions
     )
     {
         services.Configure<IdempotencyMiddlewareOptions, IdempotencyMiddlewareOptionsValidator>(setupAction);
-
-        return services.AddSingleton<IdempotencyMiddleware>();
+        services.TryAddSingleton<IdempotencyMiddleware>();
+        return services;
     }
 
     /// <summary>Adds the idempotency middleware.</summary>
@@ -25,14 +26,15 @@ public static class AddMiddlewareExtensions
     )
     {
         services.Configure<IdempotencyMiddlewareOptions, IdempotencyMiddlewareOptionsValidator>(setupAction);
-
-        return services.AddSingleton<IdempotencyMiddleware>();
+        services.TryAddSingleton<IdempotencyMiddleware>();
+        return services;
     }
 
     /// <summary>Adds the server timing middleware.</summary>
     public static IServiceCollection AddServerTimingMiddleware(this IServiceCollection services)
     {
-        return services.AddSingleton<ServerTimingMiddleware>();
+        services.TryAddSingleton<ServerTimingMiddleware>();
+        return services;
     }
 
     /// <summary>
@@ -45,10 +47,17 @@ public static class AddMiddlewareExtensions
         return application.UseMiddleware<ServerTimingMiddleware>();
     }
 
+    /// <summary>Adds a default no-cache response header when the response did not set cache headers.</summary>
+    public static IApplicationBuilder UseNoCacheWhenMissingCacheHeaders(this IApplicationBuilder application)
+    {
+        return application.UseMiddleware<NoCacheHeadersMiddleware>();
+    }
+
     /// <summary>This is a custom middleware that rewrites the status code of the response.</summary>
     public static IServiceCollection AddStatusCodesRewriterMiddleware(this IServiceCollection services)
     {
-        return services.AddSingleton<StatusCodesRewriterMiddleware>();
+        services.TryAddSingleton<StatusCodesRewriterMiddleware>();
+        return services;
     }
 
     /// <summary>
@@ -63,7 +72,8 @@ public static class AddMiddlewareExtensions
     /// <summary>Adds middleware that resolves the current tenant from authenticated user claims.</summary>
     public static IServiceCollection AddTenantResolution(this IServiceCollection services)
     {
-        return services.AddSingleton<TenantResolutionMiddleware>();
+        services.TryAddSingleton<TenantResolutionMiddleware>();
+        return services;
     }
 
     /// <summary>

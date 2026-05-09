@@ -25,7 +25,7 @@ dotnet add package Headless.Api.Mvc
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessFramework().ConfigureMvc();
+builder.AddHeadlessInfrastructure().ConfigureMvc();
 builder.Services.AddControllers();
 
 var app = builder.Build();
@@ -52,7 +52,7 @@ public sealed class OrdersController : ApiControllerBase
 
 ## Configuration
 
-No additional configuration beyond what `AddHeadlessFramework()` requires. Configure `Headless:StringEncryption` and `Headless:StringHash`.
+No additional configuration beyond what `AddHeadlessInfrastructure()` requires. Configure `Headless:StringEncryption` and `Headless:StringHash`.
 
 ## Dependencies
 

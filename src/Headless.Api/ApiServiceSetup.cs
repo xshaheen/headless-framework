@@ -11,8 +11,10 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Headless.Api;
 
@@ -93,6 +95,15 @@ public static class ApiServiceSetup
 
         public IServiceCollection ConfigureHeadlessDefaultApi()
         {
+            services.Configure<KestrelServerOptions>(options =>
+            {
+                options.AddServerHeader = false;
+                options.Limits.MaxRequestBodySize = 1024 * 1024 * 30; // 30MB
+                options.Limits.MaxRequestHeaderCount = 40;
+            });
+
+            services.AddHealthChecks().AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
+
             services.Configure<RouteOptions>(options =>
             {
                 options.LowercaseUrls = true;

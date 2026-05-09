@@ -1,33 +1,28 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
-using System.IO.Compression;
 using FileSignatures;
 using FluentValidation;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
-using Headless.Api.Diagnostics;
 using Headless.Api.Identity.Normalizer;
 using Headless.Api.Identity.Schemes;
+using Headless.Api.Middlewares;
 using Headless.Api.Security.Claims;
 using Headless.Api.Security.Jwt;
 using Headless.Checks;
 using Headless.Constants;
-using Headless.Core;
-using Headless.Serializer;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Headless.Api;
@@ -51,7 +46,7 @@ public static class ApiSetup
 
     extension(WebApplicationBuilder builder)
     {
-        public WebApplicationBuilder AddHeadlessFramework()
+        public WebApplicationBuilder AddHeadlessInfrastructure()
         {
             Argument.IsNotNull(builder);
 
@@ -61,7 +56,7 @@ public static class ApiSetup
             return builder._AddCore();
         }
 
-        public WebApplicationBuilder AddHeadlessFramework(
+        public WebApplicationBuilder AddHeadlessInfrastructure(
             IConfiguration stringEncryptionConfig,
             IConfiguration stringHashConfig
         )
@@ -76,7 +71,7 @@ public static class ApiSetup
             return builder._AddCore();
         }
 
-        public WebApplicationBuilder AddHeadlessFramework(
+        public WebApplicationBuilder AddHeadlessInfrastructure(
             Action<StringEncryptionOptions> configureEncryption,
             Action<StringHashOptions>? configureHash = null
         )
@@ -98,7 +93,7 @@ public static class ApiSetup
             return builder._AddCore();
         }
 
-        public WebApplicationBuilder AddHeadlessFramework(
+        public WebApplicationBuilder AddHeadlessInfrastructure(
             Action<StringEncryptionOptions, IServiceProvider> configureEncryption,
             Action<StringHashOptions, IServiceProvider>? configureHash = null
         )
@@ -184,5 +179,155 @@ public static class ApiSetup
 
             return builder;
         }
+    }
+
+    /// <summary>Applies the default Headless API middleware order.</summary>
+    public static WebApplication UseHeadlessDefaults(
+        this WebApplication app,
+        Action<HeadlessApiDefaultsOptions>? configure = null
+    )
+    {
+        Argument.IsNotNull(app);
+
+        var applicationBuilder = (IApplicationBuilder)app;
+
+        if (applicationBuilder.Properties.ContainsKey(HeadlessApiDefaultsOptions.AppliedKey))
+        {
+            return app;
+        }
+
+        var options = new HeadlessApiDefaultsOptions();
+        configure?.Invoke(options);
+
+        applicationBuilder.Properties[HeadlessApiDefaultsOptions.AppliedKey] = true;
+
+        if (options.UseForwardedHeaders)
+        {
+            var forwardedHeadersOptions = new ForwardedHeadersOptions { ForwardedHeaders = options.ForwardedHeaders };
+
+            if (options.TrustForwardedHeadersFromAnyProxy)
+            {
+                forwardedHeadersOptions.KnownIPNetworks.Clear();
+                forwardedHeadersOptions.KnownProxies.Clear();
+            }
+
+            options.ConfigureForwardedHeaders?.Invoke(forwardedHeadersOptions);
+            app.UseForwardedHeaders(forwardedHeadersOptions);
+        }
+
+        if (options.UseResponseCompression)
+        {
+            app.UseResponseCompression();
+        }
+
+        if (options.UseStatusCodePages)
+        {
+            app.UseStatusCodePages();
+        }
+
+        if (options.UseExceptionHandler)
+        {
+            app.UseExceptionHandler();
+        }
+
+        if (options.UseHttpsRedirection)
+        {
+            app.UseHttpsRedirection();
+        }
+
+        if (options.UseHsts && !app.Environment.IsDevelopment())
+        {
+            app.UseHsts();
+        }
+
+        if (options.SetNoCacheWhenMissingCacheHeaders)
+        {
+            app.UseNoCacheWhenMissingCacheHeaders();
+        }
+
+        return app;
+    }
+
+    /// <summary>Maps the default Headless API operational endpoints.</summary>
+    public static IEndpointRouteBuilder MapHeadlessDefaultEndpoints(
+        this IEndpointRouteBuilder endpoints,
+        Action<HeadlessApiDefaultEndpointOptions>? configure = null
+    )
+    {
+        Argument.IsNotNull(endpoints);
+
+        var options = new HeadlessApiDefaultEndpointOptions();
+        configure?.Invoke(options);
+
+        if (options.MapHealthEndpoint)
+        {
+            var healthChecks = endpoints.MapHealthChecks(
+                options.HealthPath,
+                new HealthCheckOptions { ResponseWriter = options.HealthResponseWriter }
+            );
+
+            _ConfigureOperationalEndpoint(healthChecks, options.HealthEndpointName, options);
+        }
+
+        if (options.MapAliveEndpoint)
+        {
+            var aliveCheck = endpoints.MapHealthChecks(
+                options.AlivePath,
+                new HealthCheckOptions { Predicate = registration => registration.Tags.Contains(options.AliveTag) }
+            );
+
+            _ConfigureOperationalEndpoint(aliveCheck, options.AliveEndpointName, options);
+        }
+
+        return endpoints;
+    }
+
+    private static void _ConfigureOperationalEndpoint(
+        IEndpointConventionBuilder endpoint,
+        string name,
+        HeadlessApiDefaultEndpointOptions options
+    )
+    {
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            endpoint.WithName(name);
+        }
+
+        if (options.ExcludeFromDescription)
+        {
+            endpoint.ExcludeFromDescription();
+        }
+
+        if (options.AllowAnonymous)
+        {
+            endpoint.AllowAnonymous();
+        }
+    }
+
+    internal static async Task WriteHealthReportAsync(HttpContext context, HealthReport report)
+    {
+        context.Response.ContentType = ContentTypes.Applications.Json;
+
+        await using var writer = new Utf8JsonWriter(context.Response.Body);
+        writer.WriteStartObject();
+        writer.WriteString("status", report.Status.ToString());
+        writer.WriteStartObject("results");
+
+        foreach (var (name, entry) in report.Entries)
+        {
+            writer.WriteStartObject(name);
+            writer.WriteString("status", entry.Status.ToString());
+
+            if (entry.Description is not null)
+            {
+                writer.WriteString("description", entry.Description);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndObject();
+        writer.WriteEndObject();
+        await writer.FlushAsync(context.RequestAborted).ConfigureAwait(false);
     }
 }
