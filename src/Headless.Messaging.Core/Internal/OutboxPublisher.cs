@@ -13,7 +13,8 @@ internal sealed class OutboxPublisher(
     IDataStorage storage,
     IDispatcher dispatcher,
     IMessagePublishRequestFactory publishRequestFactory,
-    IOutboxTransactionAccessor transactionAccessor
+    IOutboxTransactionAccessor transactionAccessor,
+    IPublishExecutionPipeline publishPipeline
 ) : IOutboxPublisher, IScheduledPublisher
 {
     // ReSharper disable once InconsistentNaming
@@ -24,6 +25,7 @@ internal sealed class OutboxPublisher(
     private readonly IDispatcher _dispatcher = dispatcher;
     private readonly IMessagePublishRequestFactory _publishRequestFactory = publishRequestFactory;
     private readonly IOutboxTransactionAccessor _transactionAccessor = transactionAccessor;
+    private readonly IPublishExecutionPipeline _publishPipeline = publishPipeline;
 
     public Task PublishAsync<T>(
         T? contentObj,
@@ -31,7 +33,14 @@ internal sealed class OutboxPublisher(
         CancellationToken cancellationToken = default
     )
     {
-        return _PublishInternalAsync(_publishRequestFactory.Create(contentObj, options), cancellationToken);
+        return _publishPipeline.ExecuteAsync(
+            contentObj,
+            options,
+            delayTime: null,
+            innerPublish: (filteredOptions, _, ct) =>
+                _PublishInternalAsync(_publishRequestFactory.Create(contentObj, filteredOptions), ct),
+            cancellationToken
+        );
     }
 
     public Task PublishDelayAsync<T>(
@@ -41,7 +50,21 @@ internal sealed class OutboxPublisher(
         CancellationToken cancellationToken = default
     )
     {
-        return _PublishInternalAsync(_publishRequestFactory.Create(contentObj, options, delayTime), cancellationToken);
+        return _publishPipeline.ExecuteAsync(
+            contentObj,
+            options,
+            delayTime,
+            innerPublish: (filteredOptions, filteredDelay, ct) =>
+            {
+                // Filter mutated DelayTime to null → drop to immediate-publish path; otherwise use the
+                // filter-mutated value, falling back to the caller-supplied delay if the filter left it untouched.
+                var request = filteredDelay.HasValue
+                    ? _publishRequestFactory.Create(contentObj, filteredOptions, filteredDelay.Value)
+                    : _publishRequestFactory.Create(contentObj, filteredOptions);
+                return _PublishInternalAsync(request, ct);
+            },
+            cancellationToken
+        );
     }
 
     private async Task _PublishInternalAsync(PreparedPublishMessage publishRequest, CancellationToken cancellationToken)

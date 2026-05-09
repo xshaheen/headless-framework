@@ -2,12 +2,65 @@
 
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
+using Headless.Messaging.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
 public sealed class MessagingBuilderTests
 {
+    [Fact]
+    public void should_register_publish_filter_via_enumerable_resolution()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = new MessagingBuilder(services);
+
+        // when
+        builder.AddPublishFilter<NoopPublishFilterX>().AddPublishFilter<NoopPublishFilterY>();
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var resolved = scope.ServiceProvider.GetServices<IPublishFilter>().ToArray();
+
+        // then
+        resolved.Should().HaveCount(2);
+        resolved.Select(f => f.GetType()).Should().Equal(typeof(NoopPublishFilterX), typeof(NoopPublishFilterY));
+    }
+
+    [Fact]
+    public void should_be_idempotent_when_same_publish_filter_type_is_registered_twice()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = new MessagingBuilder(services);
+
+        // when
+        builder.AddPublishFilter<NoopPublishFilterX>().AddPublishFilter<NoopPublishFilterX>();
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var resolved = scope.ServiceProvider.GetServices<IPublishFilter>().ToArray();
+
+        // then
+        resolved.Should().HaveCount(1);
+        resolved.Single().Should().BeOfType<NoopPublishFilterX>();
+    }
+
+    [Fact]
+    public void should_register_publish_filter_with_scoped_lifetime()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = new MessagingBuilder(services);
+
+        // when
+        builder.AddPublishFilter<NoopPublishFilterX>();
+
+        // then
+        var descriptor = services.Single(d => d.ImplementationType == typeof(NoopPublishFilterX));
+        descriptor.Lifetime.Should().Be(ServiceLifetime.Scoped);
+        descriptor.ServiceType.Should().Be<IPublishFilter>();
+    }
+
     [Fact]
     public void should_register_consumers_via_scan()
     {
@@ -678,3 +731,8 @@ public sealed class InvalidConsumer
 {
     // Does not implement IConsume<T>
 }
+
+// Publish filter test types for AddPublishFilter registration tests
+internal sealed class NoopPublishFilterX : PublishFilter;
+
+internal sealed class NoopPublishFilterY : PublishFilter;

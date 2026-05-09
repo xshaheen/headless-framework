@@ -112,6 +112,12 @@ public abstract class PublishFilterContext
     /// <see cref="IScheduledPublisher.PublishDelayAsync"/>. Filters may reassign this property
     /// to extend, shorten, or remove the delay before the publish wrapper acts on it.
     /// </summary>
+    /// <remarks>
+    /// Mutating this property only takes effect when the publisher entry point is delay-aware.
+    /// Setting <see cref="DelayTime"/> from a filter during an immediate
+    /// <see cref="IMessagePublisher.PublishAsync"/> call is silently ignored — the publisher
+    /// chose the immediate path and will not promote the message to delayed delivery.
+    /// </remarks>
     public TimeSpan? DelayTime { get; set; }
 }
 

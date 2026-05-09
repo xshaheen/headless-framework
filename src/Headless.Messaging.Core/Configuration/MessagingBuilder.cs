@@ -138,4 +138,32 @@ public sealed class MessagingBuilder(IServiceCollection services)
         Services.TryAddEnumerable(ServiceDescriptor.Scoped<IConsumeFilter, T>());
         return this;
     }
+
+    /// <summary>
+    /// Registers a publish filter applied to every <see cref="IMessagePublisher.PublishAsync"/> and
+    /// <see cref="IScheduledPublisher.PublishDelayAsync"/> call.
+    /// </summary>
+    /// <typeparam name="T">
+    /// The filter type. Must implement <see cref="IPublishFilter"/>. Registered with scoped lifetime;
+    /// a new instance is created per publish operation by the pipeline's per-call DI scope.
+    /// </typeparam>
+    /// <returns>The current <see cref="MessagingBuilder"/> instance to support fluent method chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Multiple filter types execute the publishing phase in registration order; the published and
+    /// exception phases run in reverse, mirroring <see cref="AddSubscribeFilter{T}"/> and ASP.NET Core
+    /// MVC filter pipeline semantics.
+    /// </para>
+    /// <para>
+    /// Registration is idempotent under the same type argument. Filters can mutate
+    /// <see cref="PublishingContext.Options"/> via the <c>with</c> expression; the mutated value is
+    /// passed to <see cref="MessagePublishRequestFactory"/> and inherits the existing 4-case integrity policy.
+    /// </para>
+    /// </remarks>
+    public MessagingBuilder AddPublishFilter<T>()
+        where T : class, IPublishFilter
+    {
+        Services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishFilter, T>());
+        return this;
+    }
 }

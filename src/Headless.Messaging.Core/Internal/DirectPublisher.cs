@@ -12,7 +12,8 @@ namespace Headless.Messaging.Internal;
 internal sealed class DirectPublisher(
     ISerializer serializer,
     ITransport transport,
-    IMessagePublishRequestFactory publishRequestFactory
+    IMessagePublishRequestFactory publishRequestFactory,
+    IPublishExecutionPipeline publishPipeline
 ) : IDirectPublisher
 {
     private static readonly DiagnosticListener _DiagnosticListener = new(
@@ -22,6 +23,7 @@ internal sealed class DirectPublisher(
     private readonly ISerializer _serializer = serializer;
     private readonly ITransport _transport = transport;
     private readonly IMessagePublishRequestFactory _publishRequestFactory = publishRequestFactory;
+    private readonly IPublishExecutionPipeline _publishPipeline = publishPipeline;
 
     public Task PublishAsync<T>(
         T? contentObj,
@@ -29,16 +31,17 @@ internal sealed class DirectPublisher(
         CancellationToken cancellationToken = default
     )
     {
-        return _PublishCoreAsync(contentObj, options, cancellationToken);
-    }
-
-    private async Task _PublishCoreAsync<T>(T? contentObj, PublishOptions? options, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var publishRequest = _publishRequestFactory.Create(contentObj, options);
-
-        await _SendAsync(publishRequest.Message, cancellationToken).ConfigureAwait(false);
+        return _publishPipeline.ExecuteAsync(
+            contentObj,
+            options,
+            delayTime: null,
+            innerPublish: (filteredOptions, _, ct) =>
+            {
+                var publishRequest = _publishRequestFactory.Create(contentObj, filteredOptions);
+                return _SendAsync(publishRequest.Message, ct);
+            },
+            cancellationToken
+        );
     }
 
     private async Task _SendAsync(Message message, CancellationToken cancellationToken)

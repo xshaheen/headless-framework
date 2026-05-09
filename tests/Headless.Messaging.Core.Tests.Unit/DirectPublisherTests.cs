@@ -581,7 +581,8 @@ public sealed class DirectPublisherTests : TestBase
             currentTenant ?? new NullCurrentTenant()
         );
 
-        return new DirectPublisher(serializer, transport, publishRequestFactory);
+        var pipeline = new PublishExecutionPipeline(new ServiceCollection().BuildServiceProvider());
+        return new DirectPublisher(serializer, transport, publishRequestFactory, pipeline);
     }
 
     /// <summary>
