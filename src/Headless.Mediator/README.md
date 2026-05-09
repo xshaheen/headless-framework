@@ -11,8 +11,9 @@ and messaging dispatch surfaces can share the same ambient tenant invariant.
 
 - `TenantRequiredBehavior<TRequest, TResponse>` enforces `ICurrentTenant.Id`
 - `[AllowMissingTenant]` opt-out marker for host-level and public requests
+- `ValidationRequestPreProcessor<TMessage, TResponse>` runs FluentValidation validators before handlers
 - `MissingTenantContextException` reuse for existing HTTP 400 failure mapping
-- Idempotent `AddTenantRequiredBehavior()` registration
+- Idempotent setup extensions for tenant and validation pipeline registration
 
 ## Installation
 
@@ -32,6 +33,7 @@ builder.Services.AddMediator(options =>
 });
 
 builder.Services.AddTenantRequiredBehavior();
+builder.Services.AddValidationRequestPreProcessor();
 ```
 
 ```csharp
@@ -86,6 +88,29 @@ Auth -> TenantRequired -> Idempotency
 Ordering is the consumer's responsibility. The framework does not validate the
 pipeline position.
 
+### Request Validation
+
+`AddValidationRequestPreProcessor()` registers a Mediator pre-processor that runs every
+registered `IValidator<TMessage>` for the dispatched message. If any validator returns
+failures, the pre-processor logs the validation event and throws FluentValidation's
+`ValidationException`.
+
+```csharp
+public sealed record CreateOrder(string ProductId) : IRequest<CreateOrderResponse>;
+
+public sealed class CreateOrderValidator : AbstractValidator<CreateOrder>
+{
+    public CreateOrderValidator()
+    {
+        RuleFor(x => x.ProductId).NotEmpty();
+    }
+}
+```
+
+Register validators through your normal FluentValidation DI setup. The validation
+pipeline is HTTP-agnostic; `Headless.Api` maps `ValidationException` to the standard
+422 response when its exception handler is configured.
+
 ## Failure Behavior
 
 When a request is not marked with `[AllowMissingTenant]` and `ICurrentTenant.Id`
@@ -106,10 +131,13 @@ No options are exposed. `[AllowMissingTenant]` is the only opt-out surface.
 ## Dependencies
 
 - `Headless.Core`
+- `Headless.Extensions`
+- `FluentValidation`
 - `Mediator.Abstractions`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`
+- `Microsoft.Extensions.Logging.Abstractions`
 
 ## Side Effects
 
-Registers one transient open-generic `IPipelineBehavior<,>` descriptor when
-`AddTenantRequiredBehavior()` is called.
+Registers transient open-generic `IPipelineBehavior<,>` descriptors when the setup
+extensions are called.

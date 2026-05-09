@@ -33,5 +33,24 @@ public static class MediatorSetup
 
             return services;
         }
+
+        /// <summary>
+        /// Adds the FluentValidation Mediator request pre-processor.
+        /// </summary>
+        /// <remarks>
+        /// Consumers must register any <see cref="FluentValidation.IValidator{T}" />
+        /// implementations separately. Registration is idempotent.
+        /// </remarks>
+        /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
+        public IServiceCollection AddValidationRequestPreProcessor()
+        {
+            Argument.IsNotNull(services);
+
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient(typeof(IPipelineBehavior<,>), typeof(ValidationRequestPreProcessor<,>))
+            );
+
+            return services;
+        }
     }
 }
