@@ -591,6 +591,8 @@ Both registrations are idempotent — calling them twice with the same `T` does 
 
 **`PublishExceptionContext.ExceptionHandled` ⚠️:** setting `ExceptionHandled = true` on the publish-side exception context **silently swallows** the publish failure — the caller's `PublishAsync` returns normally as if the message had been sent. This is **not** symmetric with consume-side ack semantics: there is no broker to receive an "ack" on publish, so handled exceptions become invisible failures. Only flip `ExceptionHandled` when the filter has either rerouted the message to a dead-letter sink or recorded a durable trace. Otherwise let the exception propagate so the caller can retry or log.
 
+**`PublishedContext.IsTransactional`:** set to `true` only when the publish was buffered into the outbox under an ambient database transaction whose commit is the caller's responsibility (the `OutboxPublisher` non-AutoCommit branch). `DirectPublisher` and the `OutboxPublisher` AutoCommit branch leave it `false`. Filters that record durable side-effects in `OnPublishExecutedAsync` should check this flag and either skip work, enroll in the ambient transaction, or design the side-effect to be idempotent against rollback — surfacing the transactional boundary as a typed contract rather than an undocumented gotcha.
+
 ### Multi-tenancy
 
 The framework ships a built-in filter pair that propagates the originating tenant on the wire:

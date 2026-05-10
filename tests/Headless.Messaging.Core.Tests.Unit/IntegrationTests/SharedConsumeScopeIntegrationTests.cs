@@ -142,7 +142,10 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
     private sealed class ScopedExecutionFilter(ScopedExecutionRecorder recorder, ScopedExecutionDependency dependency)
         : ConsumeFilter
     {
-        public override ValueTask OnSubscribeExecutingAsync(ExecutingContext context)
+        public override ValueTask OnSubscribeExecutingAsync(
+            ExecutingContext context,
+            CancellationToken cancellationToken = default
+        )
         {
             recorder.RecordFilter(dependency.Id);
             return ValueTask.CompletedTask;
