@@ -6,8 +6,8 @@ using Headless.Checks;
 namespace Headless.Messaging.MultiTenancy;
 
 /// <summary>
-/// Restores <see cref="ICurrentTenant"/> on the consume side from the message envelope's tenant identifier
-/// (carried on <see cref="Headers.TenantId"/>) for the lifetime of the consume operation, so handler
+/// Restores <see cref="ICurrentTenant"/> on the consume side from the resolved
+/// <see cref="ConsumeContext{TMessage}.TenantId"/> for the lifetime of the consume operation, so handler
 /// code — including any work it dispatches — runs under the originating tenant.
 /// </summary>
 /// <remarks>
@@ -17,10 +17,9 @@ namespace Headless.Messaging.MultiTenancy;
 /// of this filter. Otherwise an attacker who can publish to the bus can impersonate any tenant.
 /// </para>
 /// <para>
-/// **Lenient resolution.** Whitespace, empty, or oversized header values map to "no tenant" — the filter
-/// performs no <see cref="ICurrentTenant.Change"/> call, mirroring
-/// <c>ConsumeExecutionPipeline._ResolveTenantId</c> exactly so the value observable here is identical to
-/// what <see cref="ConsumeContext{TMessage}.TenantId"/> would expose.
+/// **Canonical resolution.** Whitespace, empty, or oversized header values already map to
+/// <see langword="null"/> when the consume pipeline builds <see cref="ConsumeContext{TMessage}.TenantId"/>.
+/// This filter consumes that resolved value instead of reparsing raw headers.
 /// </para>
 /// <para>
 /// Register via <c>messaging.AddTenantPropagation()</c>.
@@ -41,12 +40,7 @@ public sealed class TenantPropagationConsumeFilter(ICurrentTenant currentTenant)
     {
         Argument.IsNotNull(context);
 
-        var headers = context.MediumMessage.Origin.Headers;
-        if (
-            headers.TryGetValue(Headers.TenantId, out var value)
-            && !string.IsNullOrWhiteSpace(value)
-            && value.Length <= PublishOptions.TenantIdMaxLength
-        )
+        if (context.TenantId is { } value)
         {
             _scope = _currentTenant.Change(value);
         }

@@ -217,7 +217,7 @@ builder.Services.AddHeadlessMessaging(options =>
 .AddTenantPropagation();
 ```
 
-This registers `TenantPropagationPublishFilter` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id` at publish time) and `TenantPropagationConsumeFilter` (calls `ICurrentTenant.Change(...)` on the inbound `Headers.TenantId` for the lifetime of the consume — including both success and exception paths). Caller-set values on `PublishOptions.TenantId` are preserved verbatim; system messages can override propagation by setting `TenantId` explicitly or by publishing with no ambient tenant.
+This registers `TenantPropagationPublishFilter` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id` at publish time) and `TenantPropagationConsumeFilter` (calls `ICurrentTenant.Change(...)` on the resolved `ConsumeContext<T>.TenantId` for the lifetime of the consume — including both success and exception paths). Caller-set values on `PublishOptions.TenantId` are preserved verbatim; system messages can override propagation by setting `TenantId` explicitly or by publishing with no ambient tenant.
 
 The extension is idempotent — calling `AddTenantPropagation()` more than once does not double-register either filter. Without a real `ICurrentTenant` registered (the framework's `NullCurrentTenant` fallback always returns `Id = null`), the publish-side filter is a silent no-op.
 

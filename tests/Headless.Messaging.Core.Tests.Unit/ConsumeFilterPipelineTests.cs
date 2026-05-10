@@ -79,6 +79,27 @@ public sealed class ConsumeFilterPipelineTests : TestBase
     }
 
     [Fact]
+    public async Task should_expose_resolved_tenant_id_on_executing_context()
+    {
+        // given
+        var recorder = new FilterCallRecorder();
+        var services = _BuildServiceCollection(recorder);
+        new MessagingBuilder(services).AddSubscribeFilter<TenantObservingFilter>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await pipeline.ExecuteAsync(
+            _BuildConsumerContext(tenantId: "acme"),
+            new SimpleMessage("hi"),
+            typeof(SimpleMessage),
+            AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Contain("tenant=acme");
+    }
+
+    [Fact]
     public async Task should_invoke_exception_phase_in_reverse_order_when_dispatcher_throws()
     {
         // given
@@ -224,13 +245,16 @@ public sealed class ConsumeFilterPipelineTests : TestBase
         return new ConsumeExecutionPipeline(provider, registry);
     }
 
-    private static ConsumerContext _BuildConsumerContext()
+    private static ConsumerContext _BuildConsumerContext(string? tenantId = null)
     {
         var descriptor = new ConsumerExecutorDescriptor
         {
             MethodInfo = typeof(ConsumeFilterPipelineTests).GetMethod(
                 nameof(_BuildConsumerContext),
-                BindingFlags.NonPublic | BindingFlags.Static
+                BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
+                binder: null,
+                types: [typeof(string)],
+                modifiers: null
             )!,
             ImplTypeInfo = typeof(ConsumeFilterPipelineTests).GetTypeInfo(),
             TopicName = "test.topic",
@@ -238,14 +262,18 @@ public sealed class ConsumeFilterPipelineTests : TestBase
             // HandlerId left default (null) so the pipeline takes the dispatcher branch.
         };
 
-        var origin = new Message(
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                [Headers.MessageId] = "msg-1",
-                [Headers.MessageName] = "test.topic",
-            },
-            new SimpleMessage("payload")
-        );
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "msg-1",
+            [Headers.MessageName] = "test.topic",
+        };
+
+        if (tenantId is not null)
+        {
+            headers[Headers.TenantId] = tenantId;
+        }
+
+        var origin = new Message(headers, new SimpleMessage("payload"));
 
         var medium = new MediumMessage
         {
@@ -308,6 +336,15 @@ internal sealed class RecordingFilterB(FilterCallRecorder recorder) : ConsumeFil
     public override ValueTask OnSubscribeExceptionAsync(ExceptionContext context)
     {
         recorder.Record("B.exception");
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class TenantObservingFilter(FilterCallRecorder recorder) : ConsumeFilter
+{
+    public override ValueTask OnSubscribeExecutingAsync(ExecutingContext context)
+    {
+        recorder.Record($"tenant={context.TenantId ?? "<null>"}");
         return ValueTask.CompletedTask;
     }
 }

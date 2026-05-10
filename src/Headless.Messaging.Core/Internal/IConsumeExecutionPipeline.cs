@@ -37,8 +37,16 @@ internal sealed class ConsumeExecutionPipeline(
         cancellationToken.ThrowIfCancellationRequested();
 
         var descriptor = context.ConsumerDescriptor;
-        var consumeHeaders = new MessageHeader(context.MediumMessage.Origin.Headers);
-        var consumeContext = _BuildConsumeContext(messageInstance, context.MediumMessage, messageType, consumeHeaders);
+        var originHeaders = context.MediumMessage.Origin.Headers;
+        var tenantId = _ResolveTenantId(originHeaders);
+        var consumeHeaders = new MessageHeader(originHeaders);
+        var consumeContext = _BuildConsumeContext(
+            messageInstance,
+            context.MediumMessage,
+            messageType,
+            consumeHeaders,
+            tenantId
+        );
 
         await using var scope = serviceProvider.CreateAsyncScope();
         var provider = scope.ServiceProvider;
@@ -51,8 +59,8 @@ internal sealed class ConsumeExecutionPipeline(
 
         try
         {
-            var executeParams = new object?[] { consumeContext, cancellationToken };
-            var etContext = new ExecutingContext(context, executeParams);
+            var executeParams = new[] { consumeContext, cancellationToken };
+            var etContext = new ExecutingContext(context, executeParams, tenantId);
             for (var i = 0; i < filters.Length; i++)
             {
                 // Increment before the call so a filter that throws during executing is counted
@@ -128,14 +136,15 @@ internal sealed class ConsumeExecutionPipeline(
         object messageInstance,
         MediumMessage mediumMessage,
         Type messageType,
-        MessageHeader headers
+        MessageHeader headers,
+        string? tenantId
     )
     {
         var factory =
-            (Func<object, MediumMessage, MessageHeader, object>)
+            (Func<object, MediumMessage, MessageHeader, string?, object>)
                 _compiledConsumeContextFactories.GetOrAdd(messageType, _CompileFactory);
 
-        return factory(messageInstance, mediumMessage, headers);
+        return factory(messageInstance, mediumMessage, headers, tenantId);
     }
 
     private static Delegate _CompileFactory(Type messageType)
@@ -144,6 +153,7 @@ internal sealed class ConsumeExecutionPipeline(
         var messageParam = Expression.Parameter(typeof(object), "message");
         var mediumParam = Expression.Parameter(typeof(MediumMessage), "medium");
         var consumeHeadersParam = Expression.Parameter(typeof(MessageHeader), "headers");
+        var tenantIdParam = Expression.Parameter(typeof(string), "tenantId");
         var originProperty = Expression.Property(mediumParam, nameof(MediumMessage.Origin));
         var addedProperty = Expression.Property(mediumParam, nameof(MediumMessage.Added));
         var headersProperty = Expression.Property(originProperty, nameof(Message.Headers));
@@ -194,10 +204,7 @@ internal sealed class ConsumeExecutionPipeline(
 
         var correlationIdBinding = Expression.Bind(correlationIdProperty, correlationIdExpression);
 
-        var tenantIdBinding = Expression.Bind(
-            tenantIdProperty,
-            Expression.Call(typeof(ConsumeExecutionPipeline), nameof(_ResolveTenantId), null, headersProperty)
-        );
+        var tenantIdBinding = Expression.Bind(tenantIdProperty, tenantIdParam);
 
         var headersBinding = Expression.Bind(headersCtxProperty, consumeHeadersParam);
 
@@ -232,11 +239,12 @@ internal sealed class ConsumeExecutionPipeline(
             topicBinding
         );
 
-        var lambda = Expression.Lambda<Func<object, MediumMessage, MessageHeader, object>>(
+        var lambda = Expression.Lambda<Func<object, MediumMessage, MessageHeader, string?, object>>(
             newExpr,
             messageParam,
             mediumParam,
-            consumeHeadersParam
+            consumeHeadersParam,
+            tenantIdParam
         );
         return lambda.CompileFast();
     }

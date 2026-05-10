@@ -240,7 +240,7 @@ builder.Services.AddHeadlessMessaging(options => { /* ... */ })
 ```
 
 - **Publish:** stamps `PublishOptions.TenantId` from the ambient `ICurrentTenant.Id` when the caller has not set it explicitly. Caller overrides win.
-- **Consume:** restores `ICurrentTenant.Change(...)` from the inbound `Headers.TenantId` for the lifetime of the consume, including the exception path. Whitespace, empty, and oversized header values map to "no tenant".
+- **Consume:** restores `ICurrentTenant.Change(...)` from the resolved `ConsumeContext<T>.TenantId` for the lifetime of the consume, including the exception path. Whitespace, empty, and oversized header values map to "no tenant".
 
 The consume filter trusts the inbound envelope. Topics exposed to external producers must layer envelope validation upstream.
 

@@ -58,9 +58,22 @@ public abstract class ConsumeFilter : IConsumeFilter
 
 public class FilterContext(ConsumerContext context) : ConsumerContext(context);
 
-public sealed class ExecutingContext(ConsumerContext context, object?[] arguments) : FilterContext(context)
+public sealed class ExecutingContext(
+    ConsumerContext context,
+    object?[] arguments,
+    string? tenantId = null
+) : FilterContext(context)
 {
     public object?[] Arguments { get; init; } = arguments;
+
+    /// <summary>
+    /// Gets the canonical tenant identifier resolved for the current consume operation.
+    /// </summary>
+    /// <remarks>
+    /// This is the same value exposed through <see cref="ConsumeContext{TMessage}"/>.<c>TenantId</c>.
+    /// Filters should prefer this over reading the raw <c>Headers.TenantId</c> header.
+    /// </remarks>
+    public string? TenantId { get; init; } = tenantId;
 }
 
 public sealed class ExecutedContext(ConsumerContext context, object? result) : FilterContext(context)

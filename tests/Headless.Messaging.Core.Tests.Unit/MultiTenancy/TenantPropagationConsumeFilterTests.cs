@@ -34,6 +34,24 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
     }
 
     [Fact]
+    public async Task should_use_resolved_typed_tenant_id_instead_of_reparsing_raw_header()
+    {
+        // given
+        var currentTenant = NSubstitute.Substitute.For<ICurrentTenant>();
+        var disposable = NSubstitute.Substitute.For<IDisposable>();
+        currentTenant.Change("typed-tenant").Returns(disposable);
+        var filter = new TenantPropagationConsumeFilter(currentTenant);
+        var ctx = _MakeExecutingContext(tenantId: "typed-tenant", rawTenantId: "raw-header");
+
+        // when
+        await filter.OnSubscribeExecutingAsync(ctx);
+
+        // then
+        currentTenant.Received(1).Change("typed-tenant");
+        currentTenant.DidNotReceive().Change("raw-header");
+    }
+
+    [Fact]
     public async Task should_dispose_tenant_scope_after_executed_phase()
     {
         // given — Covers AE1 (restoration after success)
@@ -90,7 +108,7 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
         var filter = new TenantPropagationConsumeFilter(currentTenant);
 
         // when
-        await filter.OnSubscribeExecutingAsync(_MakeExecutingContext(tenantId: "   "));
+        await filter.OnSubscribeExecutingAsync(_MakeExecutingContext(tenantId: null, rawTenantId: "   "));
 
         // then
         currentTenant.DidNotReceive().Change(NSubstitute.Arg.Any<string?>(), NSubstitute.Arg.Any<string?>());
@@ -105,7 +123,7 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
         var oversized = new string('x', PublishOptions.TenantIdMaxLength + 1);
 
         // when
-        await filter.OnSubscribeExecutingAsync(_MakeExecutingContext(tenantId: oversized));
+        await filter.OnSubscribeExecutingAsync(_MakeExecutingContext(tenantId: null, rawTenantId: oversized));
 
         // then
         currentTenant.DidNotReceive().Change(NSubstitute.Arg.Any<string?>(), NSubstitute.Arg.Any<string?>());
@@ -138,9 +156,13 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
         await Task.CompletedTask;
     }
 
-    private static ExecutingContext _MakeExecutingContext(string? tenantId)
+    private static ExecutingContext _MakeExecutingContext(string? tenantId, string? rawTenantId = null)
     {
-        return new ExecutingContext(_MakeConsumerContext(tenantId), [/*consumeContext*/null, /*ct*/CancellationToken.None]);
+        return new ExecutingContext(
+            _MakeConsumerContext(rawTenantId ?? tenantId),
+            [/*consumeContext*/null, /*ct*/CancellationToken.None],
+            tenantId
+        );
     }
 
     private static ExecutedContext _MakeExecutedContext()
@@ -180,7 +202,10 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
         {
             MethodInfo = typeof(TenantPropagationConsumeFilterTests).GetMethod(
                 nameof(_MakeConsumerContext),
-                BindingFlags.NonPublic | BindingFlags.Static
+                BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
+                binder: null,
+                types: [typeof(string)],
+                modifiers: null
             )!,
             ImplTypeInfo = typeof(TenantPropagationConsumeFilterTests).GetTypeInfo(),
             TopicName = "test.topic",
