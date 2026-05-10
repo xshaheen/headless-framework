@@ -65,7 +65,7 @@ protected override DataStorageCapabilities Capabilities => new()
 Create `tests/Headless.Messaging.<Provider>.Tests.Integration/`:
 
 ```xml
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Headless.NET.Sdk.Test">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>

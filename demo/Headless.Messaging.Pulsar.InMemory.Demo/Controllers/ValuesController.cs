@@ -10,7 +10,7 @@ public class ValuesController(IOutboxPublisher producer) : Controller
     public async Task<IActionResult> WithoutTransaction()
     {
         await producer.PublishAsync(
-            DateTime.Now,
+            DateTime.UtcNow,
             new PublishOptions { Topic = "persistent://public/default/headlesstesttopic" }
         );
 

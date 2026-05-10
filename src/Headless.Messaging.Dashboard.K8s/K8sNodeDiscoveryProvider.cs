@@ -220,7 +220,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
         {
             //look out for headless.messaging tags
             //based on value will do conditions
-            var isHeadlessMessagingTag = tag.Key.StartsWith(_TagPrefix, StringComparison.InvariantCultureIgnoreCase);
+            var isHeadlessMessagingTag = tag.Key.StartsWith(_TagPrefix, StringComparison.OrdinalIgnoreCase);
 
             if (!isHeadlessMessagingTag)
             {
@@ -299,7 +299,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
 
     private static string _GetTagScope(KeyValuePair<string, string> tag)
     {
-        var messagingTagScope = tag.Key.Replace(_TagPrefix, "", StringComparison.InvariantCultureIgnoreCase);
+        var messagingTagScope = tag.Key.Replace(_TagPrefix, "", StringComparison.OrdinalIgnoreCase);
 
         if (messagingTagScope.StartsWith('.'))
         {

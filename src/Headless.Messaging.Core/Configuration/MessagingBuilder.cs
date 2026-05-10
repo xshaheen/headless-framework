@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Reflection;
+using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -113,12 +114,15 @@ public sealed class MessagingBuilder(IServiceCollection services)
     /// <para>
     /// Multiple filter types can be registered by calling this method with different type arguments. The
     /// executing phase runs in registration order, and the executed and exception phases run in reverse,
-    /// matching ASP.NET Core MVC filter pipeline semantics.
+    /// matching ASP.NET Core MVC filter pipeline semantics. Registering multiple filters of the same
+    /// interface stacks them — they do not override one another.
     /// </para>
     /// <para>
-    /// Registration is idempotent under the same type argument — calling
-    /// <c>AddSubscribeFilter&lt;T&gt;()</c> twice with the same <typeparamref name="T"/> registers the
-    /// filter once. Calls with different type arguments register additional filters.
+    /// Filters execute in registration order during the executing phase, and in reverse registration
+    /// order during the executed and exception phases. Registering multiple filters of the same
+    /// interface stacks them — they compose into a chain rather than replacing one another. Backed
+    /// by <c>TryAddEnumerable</c>, so calls with the same <typeparamref name="T"/> are idempotent
+    /// (no double-registration), while calls with different type arguments register additional filters.
     /// </para>
     /// </remarks>
     /// <example>
@@ -140,7 +144,7 @@ public sealed class MessagingBuilder(IServiceCollection services)
     }
 
     /// <summary>
-    /// Registers a publish filter applied to every <see cref="IMessagePublisher.PublishAsync"/> and
+    /// Registers a publishing filter applied to every <see cref="IMessagePublisher.PublishAsync"/> and
     /// <see cref="IScheduledPublisher.PublishDelayAsync"/> call.
     /// </summary>
     /// <typeparam name="T">
@@ -150,14 +154,17 @@ public sealed class MessagingBuilder(IServiceCollection services)
     /// <returns>The current <see cref="MessagingBuilder"/> instance to support fluent method chaining.</returns>
     /// <remarks>
     /// <para>
-    /// Multiple filter types execute the publishing phase in registration order; the published and
-    /// exception phases run in reverse, mirroring <see cref="AddSubscribeFilter{T}"/> and ASP.NET Core
-    /// MVC filter pipeline semantics.
+    /// Filters execute in registration order during the executing phase, and in reverse registration
+    /// order during the executed and exception phases — mirroring <see cref="AddSubscribeFilter{T}"/>
+    /// and ASP.NET Core MVC filter pipeline semantics. Registering multiple filters of the same
+    /// interface stacks them — they compose into a chain rather than replacing one another.
     /// </para>
     /// <para>
-    /// Registration is idempotent under the same type argument. Filters can mutate
-    /// <see cref="PublishingContext.Options"/> via the <c>with</c> expression; the mutated value is
-    /// passed to <see cref="MessagePublishRequestFactory"/> and inherits the existing 4-case integrity policy.
+    /// Backed by <c>TryAddEnumerable</c>, so calls with the same <typeparamref name="T"/> are
+    /// idempotent (no double-registration), while calls with different type arguments register
+    /// additional filters. Filters can mutate <see cref="PublishingContext.Options"/> via the
+    /// <c>with</c> expression; the mutated value is passed to
+    /// <see cref="MessagePublishRequestFactory"/> and inherits the existing 4-case integrity policy.
     /// </para>
     /// </remarks>
     public MessagingBuilder AddPublishFilter<T>()

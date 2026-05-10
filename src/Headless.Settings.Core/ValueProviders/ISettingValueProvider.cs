@@ -24,7 +24,7 @@ public interface ISettingValueReadProvider
     );
 }
 
-/// <inheritdoc />
+/// <summary>Provides read and write access to setting values from a named source.</summary>
 public interface ISettingValueProvider : ISettingValueReadProvider
 {
     Task SetAsync(

@@ -40,7 +40,10 @@ public sealed class TenantPropagationConsumeFilter(
     private IDisposable? _scope;
 
     /// <inheritdoc/>
-    public override ValueTask OnSubscribeExecutingAsync(ExecutingContext context)
+    public override ValueTask OnSubscribeExecutingAsync(
+        ExecutingContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(context);
 
@@ -54,7 +57,10 @@ public sealed class TenantPropagationConsumeFilter(
     }
 
     /// <inheritdoc/>
-    public override ValueTask OnSubscribeExecutedAsync(ExecutedContext context)
+    public override ValueTask OnSubscribeExecutedAsync(
+        ExecutedContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         _scope?.Dispose();
         _scope = null;
@@ -62,7 +68,10 @@ public sealed class TenantPropagationConsumeFilter(
     }
 
     /// <inheritdoc/>
-    public override ValueTask OnSubscribeExceptionAsync(ExceptionContext context)
+    public override ValueTask OnSubscribeExceptionAsync(
+        ExceptionContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         // Dispose deterministically on the exception path so tenant context is restored even
         // when the consumer throws — mirrors the dispose discipline from

@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Headless.Jobs.Sample.WebApi.Migrations;
 
-/// <inheritdoc />
+/// <summary>Creates the initial jobs operational store schema.</summary>
 public partial class InitialJobsOperationalStore : Migration
 {
     /// <inheritdoc />

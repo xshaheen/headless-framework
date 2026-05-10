@@ -253,10 +253,7 @@ public sealed class CashInCallbackTransaction
     public bool IsRiskChecksError()
     {
         return Data is { TxnResponseCode: "11", Message: not null }
-            && Data.Message.Contains(
-                "transaction did not pass risk checks",
-                StringComparison.InvariantCultureIgnoreCase
-            );
+            && Data.Message.Contains("transaction did not pass risk checks", StringComparison.OrdinalIgnoreCase);
     }
 
     public CashInCardInfo? Card()

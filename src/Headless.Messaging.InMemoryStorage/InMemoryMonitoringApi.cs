@@ -84,7 +84,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
 
             if (!string.IsNullOrEmpty(query.Content))
             {
-                expression = expression.Where(x => x.Content.Contains(query.Content));
+                expression = expression.Where(x => x.Content.Contains(query.Content, StringComparison.Ordinal));
             }
 
             var offset = query.CurrentPage * query.PageSize;

@@ -67,7 +67,7 @@ internal sealed class ConsumeExecutionPipeline(
                 // Increment before the call so a filter that throws during executing is counted
                 // as "entered" and gets its exception phase invoked during stack unwind.
                 enteredCount = i + 1;
-                await filters[i].OnSubscribeExecutingAsync(etContext).ConfigureAwait(false);
+                await filters[i].OnSubscribeExecutingAsync(etContext, cancellationToken).ConfigureAwait(false);
             }
 
             if (
@@ -94,18 +94,14 @@ internal sealed class ConsumeExecutionPipeline(
             {
                 try
                 {
-                    await filters[i].OnSubscribeExecutedAsync(edContext).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Cancellation is not a swallowable failure; propagate so the host observes it.
-                    throw;
+                    await filters[i].OnSubscribeExecutedAsync(edContext, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception filterEx)
                 {
-                    // Consumer body already committed. Propagating an after-success filter failure would
-                    // surface to the transport as a consume-failure and trigger a spurious retry of an
-                    // already-handled message.
+                    // Consumer body already committed. Propagating an after-success filter failure —
+                    // including OperationCanceledException — would surface to the transport as a
+                    // consume-failure and trigger a spurious retry of an already-handled message.
+                    // Cancellation has no operational meaning once the consumer body has committed.
                     logger?.SubscribeExecutedFilterFailed(
                         filterEx,
                         filters[i].GetType().FullName ?? filters[i].GetType().Name
@@ -127,7 +123,7 @@ internal sealed class ConsumeExecutionPipeline(
             {
                 try
                 {
-                    await filters[i].OnSubscribeExceptionAsync(exContext).ConfigureAwait(false);
+                    await filters[i].OnSubscribeExceptionAsync(exContext, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception nested)
                 {
@@ -141,7 +137,10 @@ internal sealed class ConsumeExecutionPipeline(
                 }
             }
 
-            if (!exContext.ExceptionHandled)
+            // Cancellation is never swallowable: ignore ExceptionHandled when the original failure
+            // was an OperationCanceledException so the host always observes the cancel.
+            // Mirrors IPublishExecutionPipeline:123.
+            if (!exContext.ExceptionHandled || exContext.Exception is OperationCanceledException)
             {
                 exContext.Exception.ReThrow();
             }

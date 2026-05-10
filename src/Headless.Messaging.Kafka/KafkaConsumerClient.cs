@@ -57,7 +57,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
         foreach (var topicName in topicNames)
         {
-            if (topicName.Contains('*') || topicName.Contains('#'))
+            if (topicName.Contains('*', StringComparison.Ordinal) || topicName.Contains('#', StringComparison.Ordinal))
             {
                 normalizedTopics.Add(Helper.WildcardToRegex(topicName));
                 continue;

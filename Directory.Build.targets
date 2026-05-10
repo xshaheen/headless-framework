@@ -1,3 +1,0 @@
-﻿<Project>
-  <Import Sdk="Headless.Defaults" Project="Sdk.targets" Version="0.0.100" />
-</Project>

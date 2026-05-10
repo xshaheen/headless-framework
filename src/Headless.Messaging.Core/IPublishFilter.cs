@@ -27,7 +27,8 @@ public interface IPublishFilter
     /// chain and to the publish wrapper that ultimately calls <c>MessagePublishRequestFactory.Create</c>.
     /// </remarks>
     /// <param name="context">The <see cref="PublishingContext"/>.</param>
-    ValueTask OnPublishExecutingAsync(PublishingContext context);
+    /// <param name="cancellationToken">Cancellation token threaded from the outer publish call.</param>
+    ValueTask OnPublishExecutingAsync(PublishingContext context, CancellationToken cancellationToken = default);
 
     /// <summary>Called after the publish operation completes successfully.</summary>
     /// <remarks>
@@ -36,7 +37,8 @@ public interface IPublishFilter
     /// invite retries that can duplicate the message.
     /// </remarks>
     /// <param name="context">The <see cref="PublishedContext"/>.</param>
-    ValueTask OnPublishExecutedAsync(PublishedContext context);
+    /// <param name="cancellationToken">Cancellation token threaded from the outer publish call.</param>
+    ValueTask OnPublishExecutedAsync(PublishedContext context, CancellationToken cancellationToken = default);
 
     /// <summary>Called when the publish operation throws an <see cref="System.Exception"/>.</summary>
     /// <remarks>
@@ -47,26 +49,36 @@ public interface IPublishFilter
     /// without misrepresenting success. Use with care.
     /// </remarks>
     /// <param name="context">The <see cref="PublishExceptionContext"/>.</param>
-    ValueTask OnPublishExceptionAsync(PublishExceptionContext context);
+    /// <param name="cancellationToken">Cancellation token threaded from the outer publish call.</param>
+    ValueTask OnPublishExceptionAsync(PublishExceptionContext context, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Abstract base class for <see cref="IPublishFilter"/> for use when implementing a subset of the interface methods.</summary>
 public abstract class PublishFilter : IPublishFilter
 {
     /// <inheritdoc/>
-    public virtual ValueTask OnPublishExecutingAsync(PublishingContext context)
+    public virtual ValueTask OnPublishExecutingAsync(
+        PublishingContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public virtual ValueTask OnPublishExecutedAsync(PublishedContext context)
+    public virtual ValueTask OnPublishExecutedAsync(
+        PublishedContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public virtual ValueTask OnPublishExceptionAsync(PublishExceptionContext context)
+    public virtual ValueTask OnPublishExceptionAsync(
+        PublishExceptionContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         return ValueTask.CompletedTask;
     }
@@ -74,8 +86,9 @@ public abstract class PublishFilter : IPublishFilter
 
 /// <summary>
 /// Carrier for state shared across the publish filter triad. <see cref="Options"/> and
-/// <see cref="DelayTime"/> are mutable so a filter can set them in the executing phase
-/// and have subsequent filters and the publish pipeline see the updated values.
+/// <see cref="DelayTime"/> are read-only on this base — only the executing-phase context
+/// (<see cref="PublishingContext"/>) re-exposes them as mutable so filters can carry forward
+/// reassignments to subsequent filters and the publish pipeline.
 /// </summary>
 public abstract class PublishFilterContext
 {
@@ -93,8 +106,8 @@ public abstract class PublishFilterContext
 
         Content = content;
         MessageType = messageType;
-        Options = options;
-        DelayTime = delayTime;
+        OptionsCore = options;
+        DelayTimeCore = delayTime;
     }
 
     /// <summary>Gets the message payload being published. May be <see langword="null"/>.</summary>
@@ -104,67 +117,131 @@ public abstract class PublishFilterContext
     public Type MessageType { get; }
 
     /// <summary>
-    /// Gets or sets the current <see cref="PublishOptions"/> for the publish operation.
-    /// Filters may reassign this property — typically via a record <c>with</c> expression
-    /// such as <c>context.Options = (context.Options ?? new()) with { TenantId = "..." }</c>.
-    /// The final value is consumed by <c>MessagePublishRequestFactory.Create</c>.
+    /// Gets the current <see cref="PublishOptions"/> for the publish operation.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Assigning <see langword="null"/> here discards every caller-set field on the previous
-    /// <see cref="PublishOptions"/> (including <c>MessageId</c>, <c>CorrelationId</c>, <c>TenantId</c>,
-    /// <c>Topic</c>, <c>CallbackName</c>, and custom <c>Headers</c>). To mutate a single field while
-    /// preserving the others, use a record <c>with</c> expression on the existing instance:
-    /// <c>context.Options = (context.Options ?? new()) with { Field = newValue }</c>.
+    /// Mutable only on <see cref="PublishingContext"/>. Filters that need to reassign
+    /// <see cref="PublishOptions"/> — typically via a record <c>with</c> expression such as
+    /// <c>context.Options = (context.Options ?? new()) with { TenantId = "..." }</c> — must do so
+    /// during the executing phase. The final value is consumed by
+    /// <c>MessagePublishRequestFactory.Create</c>.
     /// </para>
     /// <para>
-    /// Mutations are honored only during the executing phase (<see cref="PublishingContext"/>).
-    /// Reassigning this property on <see cref="PublishedContext"/> or <see cref="PublishExceptionContext"/>
-    /// is a semantic no-op — the publish has already happened and the new value will not flow
-    /// to the transport, the outbox, or to subsequent filters.
+    /// Read-only on <see cref="PublishedContext"/> and <see cref="PublishExceptionContext"/>: the
+    /// publish has already happened and a new value would not flow to the transport, the outbox,
+    /// or to subsequent filters.
     /// </para>
     /// </remarks>
-    public PublishOptions? Options { get; set; }
+    public PublishOptions? Options => OptionsCore;
 
     /// <summary>
-    /// Gets or sets the scheduled delay for the publish operation.
+    /// Gets the scheduled delay for the publish operation.
     /// <see langword="null"/> for non-delayed publishes; non-null when published via
-    /// <see cref="IScheduledPublisher.PublishDelayAsync"/>. Filters may reassign this property
-    /// to extend, shorten, or remove the delay before the publish wrapper acts on it.
+    /// <see cref="IScheduledPublisher.PublishDelayAsync"/>.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Mutating this property only takes effect when the publisher entry point is delay-aware.
-    /// Setting <see cref="DelayTime"/> from a filter during an immediate
+    /// Mutable only on <see cref="PublishingContext"/>. Filters may reassign this property during
+    /// the executing phase to extend, shorten, or remove the delay before the publish wrapper acts
+    /// on it. Setting <see cref="DelayTime"/> from a filter during an immediate
     /// <see cref="IMessagePublisher.PublishAsync"/> call is silently ignored — the publisher
     /// chose the immediate path and will not promote the message to delayed delivery.
     /// </para>
     /// <para>
-    /// Like <see cref="Options"/>, reassignments are honored only during the executing phase
-    /// (<see cref="PublishingContext"/>). Mutations on <see cref="PublishedContext"/> or
-    /// <see cref="PublishExceptionContext"/> have no effect — the schedule decision is final.
+    /// Read-only on <see cref="PublishedContext"/> and <see cref="PublishExceptionContext"/>:
+    /// the schedule decision is final once the publish has completed.
     /// </para>
     /// </remarks>
-    public TimeSpan? DelayTime { get; set; }
+    public TimeSpan? DelayTime => DelayTimeCore;
+
+    /// <summary>
+    /// Backing storage for <see cref="Options"/>; protected so the executing-phase context can
+    /// re-expose a public setter without duplicating state.
+    /// </summary>
+    protected PublishOptions? OptionsCore { get; set; }
+
+    /// <summary>
+    /// Backing storage for <see cref="DelayTime"/>; protected so the executing-phase context can
+    /// re-expose a public setter without duplicating state.
+    /// </summary>
+    protected TimeSpan? DelayTimeCore { get; set; }
 }
 
 /// <summary>
-/// Pre-publish filter context. Filters should mutate <see cref="PublishFilterContext.Options"/>
-/// and <see cref="PublishFilterContext.DelayTime"/> here.
+/// Pre-publish filter context. Filters should mutate <see cref="Options"/> and
+/// <see cref="DelayTime"/> here.
 /// </summary>
 public sealed class PublishingContext : PublishFilterContext
 {
     /// <summary>Initializes a new instance of the <see cref="PublishingContext"/> class.</summary>
     public PublishingContext(object? content, Type messageType, PublishOptions? options, TimeSpan? delayTime)
         : base(content, messageType, options, delayTime) { }
+
+    /// <summary>
+    /// Gets or sets the current <see cref="PublishOptions"/> for the publish operation.
+    /// Filters may reassign this property — typically via a record <c>with</c> expression
+    /// such as <c>context.Options = (context.Options ?? new()) with { TenantId = "..." }</c>.
+    /// The final value is consumed by <c>MessagePublishRequestFactory.Create</c>.
+    /// </summary>
+    /// <remarks>
+    /// Assigning <see langword="null"/> here discards every caller-set field on the previous
+    /// <see cref="PublishOptions"/> (including <c>MessageId</c>, <c>CorrelationId</c>, <c>TenantId</c>,
+    /// <c>Topic</c>, <c>CallbackName</c>, and custom <c>Headers</c>). To mutate a single field while
+    /// preserving the others, use a record <c>with</c> expression on the existing instance:
+    /// <c>context.Options = (context.Options ?? new()) with { Field = newValue }</c>.
+    /// </remarks>
+    public new PublishOptions? Options
+    {
+        get => OptionsCore;
+        set => OptionsCore = value;
+    }
+
+    /// <summary>
+    /// Gets or sets the scheduled delay for the publish operation. Filters may reassign this
+    /// property to extend, shorten, or remove the delay before the publish wrapper acts on it.
+    /// </summary>
+    public new TimeSpan? DelayTime
+    {
+        get => DelayTimeCore;
+        set => DelayTimeCore = value;
+    }
 }
 
 /// <summary>Post-success filter context. Invoked once the transport or outbox storage accepted the message.</summary>
+/// <remarks>
+/// <see cref="PublishFilterContext.Options"/> and <see cref="PublishFilterContext.DelayTime"/>
+/// are read-only here. The publish has already completed; reassigning would not flow downstream.
+/// </remarks>
 public sealed class PublishedContext : PublishFilterContext
 {
     /// <summary>Initializes a new instance of the <see cref="PublishedContext"/> class.</summary>
     public PublishedContext(object? content, Type messageType, PublishOptions? options, TimeSpan? delayTime)
         : base(content, messageType, options, delayTime) { }
+
+    /// <summary>
+    /// Gets a value indicating whether the publish was committed inside an ambient outbox
+    /// transaction whose commit is the caller's responsibility (non-AutoCommit branch).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see langword="true"/> only on the <c>OutboxPublisher</c> non-AutoCommit branch — the
+    /// message has been buffered into the outbox under the caller's database transaction and
+    /// will only become visible to the dispatcher once the caller commits. A rollback discards
+    /// the message.
+    /// </para>
+    /// <para>
+    /// <see langword="false"/> on <c>DirectPublisher</c> (already on the wire) and on the
+    /// <c>OutboxPublisher</c> AutoCommit branch (already committed inside the publisher).
+    /// </para>
+    /// <para>
+    /// Filters that record durable side-effects in <see cref="IPublishFilter.OnPublishExecutedAsync"/>
+    /// can check this flag and either skip work, enroll in the ambient transaction, or design
+    /// the side-effect to be idempotent against rollback — surfacing the transactional boundary
+    /// as a typed contract rather than an undocumented gotcha.
+    /// </para>
+    /// </remarks>
+    public bool IsTransactional { get; init; }
 }
 
 /// <summary>

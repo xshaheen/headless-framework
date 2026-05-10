@@ -27,6 +27,10 @@ internal sealed class OutboxPublisher(
         CancellationToken cancellationToken = default
     )
     {
+        // Pre-decide whether this publish lands on the non-AutoCommit transactional branch so the
+        // pipeline can stamp PublishedContext.IsTransactional before the post-success filters run.
+        var isTransactional = _IsNonAutoCommitTransactional();
+
         return publishPipeline.ExecuteAsync(
             contentObj,
             options,
@@ -34,6 +38,7 @@ internal sealed class OutboxPublisher(
             // DelayTime is undefined for the immediate publish path; ignored.
             innerPublish: (filteredOptions, _, ct) =>
                 _PublishInternalAsync(publishRequestFactory.Create(contentObj, filteredOptions), ct),
+            isTransactional,
             cancellationToken
         );
     }
@@ -45,6 +50,8 @@ internal sealed class OutboxPublisher(
         CancellationToken cancellationToken = default
     )
     {
+        var isTransactional = _IsNonAutoCommitTransactional();
+
         return publishPipeline.ExecuteAsync(
             contentObj,
             options,
@@ -58,8 +65,15 @@ internal sealed class OutboxPublisher(
                     : publishRequestFactory.Create(contentObj, filteredOptions);
                 return _PublishInternalAsync(request, ct);
             },
+            isTransactional,
             cancellationToken
         );
+    }
+
+    private bool _IsNonAutoCommitTransactional()
+    {
+        var currentTransaction = transactionAccessor.Current;
+        return currentTransaction?.DbTransaction is not null && !currentTransaction.AutoCommit;
     }
 
     private async Task _PublishInternalAsync(PreparedPublishMessage publishRequest, CancellationToken cancellationToken)

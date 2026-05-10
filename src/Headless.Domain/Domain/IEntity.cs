@@ -13,7 +13,7 @@ public interface IEntity
     string GetKey() => string.Join(':', GetKeys());
 }
 
-/// <inheritdoc cref="IEntity"/>
+/// <summary>Base class for entities that compare equality by their ordered keys.</summary>
 public abstract class Entity : EqualityBase<Entity>, IEntity
 {
     public abstract IReadOnlyList<object> GetKeys();

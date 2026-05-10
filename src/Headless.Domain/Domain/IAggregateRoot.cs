@@ -10,7 +10,7 @@ namespace Headless.Domain;
 /// </summary>
 public interface IAggregateRoot : IEntity;
 
-/// <inheritdoc cref="IAggregateRoot"/>
+/// <summary>Base class for aggregate roots that may emit local and distributed messages.</summary>
 public abstract class AggregateRoot : Entity, IAggregateRoot, IDistributedMessageEmitter, ILocalMessageEmitter
 {
     private List<ILocalMessage>? _localMessages;

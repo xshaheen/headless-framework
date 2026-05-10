@@ -24,12 +24,19 @@ internal interface IPublishExecutionPipeline
     /// Publisher-specific tail invoked after the executing-phase filters complete. Receives the
     /// filter-mutated options and delay so a filter that reassigns either is honored downstream.
     /// </param>
+    /// <param name="isTransactional">
+    /// When <see langword="true"/>, the publish was committed inside an ambient outbox transaction
+    /// whose commit is the caller's responsibility — the post-success <see cref="PublishedContext"/>
+    /// surfaces this through <see cref="PublishedContext.IsTransactional"/>. Defaults to
+    /// <see langword="false"/> (direct publish or AutoCommit outbox).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task ExecuteAsync<T>(
         T? content,
         PublishOptions? options,
         TimeSpan? delayTime,
         Func<PublishOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
+        bool isTransactional = false,
         CancellationToken cancellationToken = default
     );
 }
@@ -46,6 +53,7 @@ internal sealed class PublishExecutionPipeline(
         PublishOptions? options,
         TimeSpan? delayTime,
         Func<PublishOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
+        bool isTransactional = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -67,27 +75,27 @@ internal sealed class PublishExecutionPipeline(
             {
                 // Increment before await so a filter throwing during executing still gets its exception phase.
                 enteredCount = i + 1;
-                await filters[i].OnPublishExecutingAsync(ctx).ConfigureAwait(false);
+                await filters[i].OnPublishExecutingAsync(ctx, cancellationToken).ConfigureAwait(false);
             }
 
             await innerPublish(ctx.Options, ctx.DelayTime, cancellationToken).ConfigureAwait(false);
 
-            var executedCtx = new PublishedContext(content, typeof(T), ctx.Options, ctx.DelayTime);
+            var executedCtx = new PublishedContext(content, typeof(T), ctx.Options, ctx.DelayTime)
+            {
+                IsTransactional = isTransactional,
+            };
             for (var i = filters.Length - 1; i >= 0; i--)
             {
                 try
                 {
-                    await filters[i].OnPublishExecutedAsync(executedCtx).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Cancellation is not a swallowable failure; propagate so the caller observes it.
-                    throw;
+                    await filters[i].OnPublishExecutedAsync(executedCtx, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception e)
                 {
                     // The message was already accepted by the transport/outbox. Propagating an
-                    // after-success filter failure would invite callers to retry and duplicate it.
+                    // after-success filter failure — including OperationCanceledException — would
+                    // invite callers to retry and duplicate it. Cancellation has no operational
+                    // meaning once the inner work has committed.
                     logger?.PublishExecutedFilterFailed(e, filters[i].GetType().FullName ?? filters[i].GetType().Name);
                 }
             }
@@ -104,7 +112,7 @@ internal sealed class PublishExecutionPipeline(
             {
                 try
                 {
-                    await filters[i].OnPublishExceptionAsync(exCtx).ConfigureAwait(false);
+                    await filters[i].OnPublishExceptionAsync(exCtx, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception nested)
                 {

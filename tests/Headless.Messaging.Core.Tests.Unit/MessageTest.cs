@@ -39,7 +39,8 @@ public sealed class MessageTest
         var deserializedMessage = serializer.Deserialize(json);
 
         // then
-        serializer.IsJsonType(deserializedMessage?.Value).Should().BeTrue();
+        deserializedMessage.Should().NotBeNull();
+        serializer.IsJsonType(deserializedMessage!.Value!).Should().BeTrue();
 
         var result = serializer.Deserialize(deserializedMessage.Value!, typeof(MessageValue)) as MessageValue;
         result.Should().NotBeNull();

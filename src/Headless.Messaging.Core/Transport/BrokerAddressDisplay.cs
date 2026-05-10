@@ -39,7 +39,7 @@ public static class BrokerAddressDisplay
 
         if (
             !endpoint.Contains("://", StringComparison.Ordinal)
-            && endpoint.Contains('@')
+            && endpoint.Contains('@', StringComparison.Ordinal)
             && Uri.TryCreate(_DummyScheme + "://" + endpoint, UriKind.Absolute, out var inferredUri)
         )
         {

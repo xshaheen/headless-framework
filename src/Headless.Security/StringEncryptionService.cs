@@ -6,7 +6,7 @@ using Headless.Abstractions;
 #pragma warning disable CA5401, CA5379
 namespace Headless;
 
-/// <inheritdoc />
+/// <summary>Encrypts and decrypts strings using configured symmetric encryption options.</summary>
 public sealed class StringEncryptionService(StringEncryptionOptions options) : IStringEncryptionService
 {
     private const int _Iterations = 100_000;

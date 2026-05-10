@@ -40,6 +40,9 @@ internal sealed class DirectPublisher(
                 var publishRequest = _publishRequestFactory.Create(contentObj, filteredOptions);
                 return _SendAsync(publishRequest.Message, ct);
             },
+            // DirectPublisher always commits to the wire inside the pipeline; PublishedContext.IsTransactional
+            // remains false because rollback semantics don't apply.
+            isTransactional: false,
             cancellationToken
         );
     }

@@ -138,7 +138,7 @@ public class ValuesController(
             await using var transaction = await connection.BeginTransactionAsync(outboxTransaction);
             // This is where you would do other work that is going to persist data to your database
 
-            var message = TestMessage.Create($"This is message text created at {DateTime.Now:O}.");
+            var message = TestMessage.Create($"This is message text created at {DateTime.UtcNow:O}.");
 
             await producer.PublishAsync(message, new PublishOptions { Topic = typeof(TestMessage).FullName! });
             await transaction.CommitAsync();
@@ -152,7 +152,7 @@ public sealed class PersonConsumer : IConsume<Person>
 {
     public ValueTask Consume(ConsumeContext<Person> context, CancellationToken cancellationToken)
     {
-        Console.WriteLine($@"{DateTime.Now} Subscriber invoked, Info: {context.Message}");
+        Console.WriteLine($@"{DateTime.UtcNow} Subscriber invoked, Info: {context.Message}");
         return ValueTask.CompletedTask;
     }
 }

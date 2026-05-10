@@ -42,7 +42,7 @@ public sealed class UnixTimeJsonConverterTests
     public void unix_time_converter_should_convert_date_time_offset_to_unix_timestamp()
     {
         // given
-        var dateTimeOffset = new DateTimeOffset(2021, 9, 14, 9, 25, 45, DateTimeOffset.Now.Offset);
+        var dateTimeOffset = new DateTimeOffset(2021, 9, 14, 9, 25, 45, TimeSpan.Zero);
 
         // when
         var json = JsonSerializer.Serialize(dateTimeOffset, _jsonSerializerOptions);

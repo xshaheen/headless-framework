@@ -11,7 +11,7 @@ namespace Headless.Domain;
 /// <typeparam name="TId">Type of the primary key of the entity</typeparam>
 public interface IAggregateRoot<out TId> : IEntity<TId>, IAggregateRoot;
 
-/// <inheritdoc cref="IAggregateRoot{TId}"/>
+/// <summary>Base class for aggregate roots with a single primary key.</summary>
 public abstract class AggregateRoot<TId> : AggregateRoot, IAggregateRoot<TId>
     where TId : IEquatable<TId>
 {

@@ -104,7 +104,7 @@ public sealed class IsNotNullOrDefaultTests
     public void is_not_null_or_default_with_valid_datetime_returns_value()
     {
         // given
-        DateTime? value = DateTime.Now;
+        DateTime? value = DateTime.UtcNow;
 
         // when & then
         Argument.IsNotNullOrDefault(value).Should().Be(value.Value);

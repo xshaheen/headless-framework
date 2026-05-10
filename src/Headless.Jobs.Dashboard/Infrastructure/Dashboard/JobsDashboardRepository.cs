@@ -111,7 +111,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
                     : new Dictionary<JobStatus, int>();
 
                 var results = allStatuses
-                    .Select(status => new Tuple<int, int>((int)status, statusCounts.GetValueOrDefault(status, 0)))
+                    .Select(status => Tuple.Create((int)status, statusCounts.GetValueOrDefault(status, 0)))
                     .ToArray();
 
                 return new JobGraphData { Date = date, Results = results };
@@ -165,7 +165,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
                     : new Dictionary<JobStatus, int>();
 
                 var results = allStatuses
-                    .Select(status => new Tuple<int, int>((int)status, statusCounts.GetValueOrDefault(status, 0)))
+                    .Select(status => Tuple.Create((int)status, statusCounts.GetValueOrDefault(status, 0)))
                     .ToArray();
 
                 return new JobGraphData { Date = date, Results = results };
@@ -241,7 +241,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
                     : new Dictionary<JobStatus, int>();
 
                 var results = allStatuses
-                    .Select(status => new Tuple<int, int>((int)status, statusCounts.GetValueOrDefault(status, 0)))
+                    .Select(status => Tuple.Create((int)status, statusCounts.GetValueOrDefault(status, 0)))
                     .ToArray();
 
                 return new JobGraphData { Date = date, Results = results };
@@ -431,7 +431,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
                 Date = group.Key,
                 Results = group
                     .GroupBy(x => x.Status)
-                    .Select(statusGroup => new Tuple<int, int>((int)statusGroup.Key, statusGroup.Count()))
+                    .Select(statusGroup => Tuple.Create((int)statusGroup.Key, statusGroup.Count()))
                     .ToArray(),
             })
             .ToList();

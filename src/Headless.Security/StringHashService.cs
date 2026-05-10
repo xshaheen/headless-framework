@@ -6,7 +6,7 @@ using Headless.Abstractions;
 #pragma warning disable CA5379
 namespace Headless;
 
-/// <inheritdoc />
+/// <summary>Creates salted string hashes using configured PBKDF2 options.</summary>
 public sealed class StringHashService(StringHashOptions options) : IStringHashService
 {
     /// <inheritdoc />

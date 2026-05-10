@@ -13,7 +13,7 @@ public interface ISettingValueProviderManager
     IReadOnlyList<ISettingValueReadProvider> Providers { get; }
 }
 
-/// <inheritdoc />
+/// <summary>Default manager for resolving configured setting value providers.</summary>
 public sealed class SettingValueProviderManager : ISettingValueProviderManager
 {
     private readonly IServiceProvider _serviceProvider;

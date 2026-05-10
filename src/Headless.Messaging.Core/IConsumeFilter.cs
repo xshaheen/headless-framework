@@ -24,11 +24,13 @@ public interface IConsumeFilter
 {
     /// <summary>Called before the subscriber executes.</summary>
     /// <param name="context">The <see cref="ExecutingContext" />.</param>
-    ValueTask OnSubscribeExecutingAsync(ExecutingContext context);
+    /// <param name="cancellationToken">Cancellation token threaded from the consume pipeline.</param>
+    ValueTask OnSubscribeExecutingAsync(ExecutingContext context, CancellationToken cancellationToken = default);
 
     /// <summary>Called after the subscriber executes.</summary>
     /// <param name="context">The <see cref="ExecutedContext" />.</param>
-    ValueTask OnSubscribeExecutedAsync(ExecutedContext context);
+    /// <param name="cancellationToken">Cancellation token threaded from the consume pipeline.</param>
+    ValueTask OnSubscribeExecutedAsync(ExecutedContext context, CancellationToken cancellationToken = default);
 
     /// <summary>Called after the subscriber has thrown an <see cref="System.Exception" />.</summary>
     /// <remarks>
@@ -39,26 +41,36 @@ public interface IConsumeFilter
     /// propagation, but the typical pattern is upstream filters reading the flag set by inner filters.
     /// </remarks>
     /// <param name="context">The <see cref="ExceptionContext" />.</param>
-    ValueTask OnSubscribeExceptionAsync(ExceptionContext context);
+    /// <param name="cancellationToken">Cancellation token threaded from the consume pipeline.</param>
+    ValueTask OnSubscribeExceptionAsync(ExceptionContext context, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Abstract base class for ISubscribeFilter for use when implementing a subset of the interface methods.</summary>
 public abstract class ConsumeFilter : IConsumeFilter
 {
     /// <inheritdoc/>
-    public virtual ValueTask OnSubscribeExecutingAsync(ExecutingContext context)
+    public virtual ValueTask OnSubscribeExecutingAsync(
+        ExecutingContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public virtual ValueTask OnSubscribeExecutedAsync(ExecutedContext context)
+    public virtual ValueTask OnSubscribeExecutedAsync(
+        ExecutedContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         return ValueTask.CompletedTask;
     }
 
     /// <inheritdoc/>
-    public virtual ValueTask OnSubscribeExceptionAsync(ExceptionContext context)
+    public virtual ValueTask OnSubscribeExceptionAsync(
+        ExceptionContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         return ValueTask.CompletedTask;
     }

@@ -11,7 +11,7 @@ public sealed class TestLogger(ITestOutputHelper outputHelper, string categoryNa
         EventId eventId,
         TState state,
         Exception? exception,
-        Func<TState, Exception, string> formatter
+        Func<TState, Exception?, string> formatter
     )
     {
         outputHelper.WriteLine($"[{logLevel}] {formatter.Invoke(state, exception)}");

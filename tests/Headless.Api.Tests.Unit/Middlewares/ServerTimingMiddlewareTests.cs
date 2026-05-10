@@ -118,8 +118,9 @@ public sealed class ServerTimingMiddlewareTests : TestBase
         try
         {
             // Set culture that uses comma as decimal separator
-            Thread.CurrentThread.CurrentCulture = new CultureInfo("de-DE");
-            Task next(HttpContext _) => Task.CompletedTask;
+            Thread.CurrentThread.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
+            static Task next(HttpContext _) => Task.CompletedTask;
 
             // when
             await middleware.InvokeAsync(context, next);

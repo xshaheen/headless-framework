@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Headless.Jobs.Api.Demo.Migrations;
 
-/// <inheritdoc />
+/// <summary>Aligns the jobs operational store schema with the current model.</summary>
 public partial class AlignJobsModel : Migration
 {
     /// <inheritdoc />

@@ -2,6 +2,8 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.Messaging.Internal;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.MultiTenancy;
 
@@ -14,10 +16,19 @@ namespace Headless.Messaging.MultiTenancy;
 /// The filter only stamps when:
 /// <list type="bullet">
 /// <item><description>An ambient tenant is set (<see cref="ICurrentTenant.Id"/> is non-null), and</description></item>
+/// <item><description>The ambient value is non-whitespace and within <see cref="PublishOptions.TenantIdMaxLength"/>, and</description></item>
 /// <item><description>The caller has not already set <see cref="PublishOptions.TenantId"/> explicitly.</description></item>
 /// </list>
 /// A caller-set value is preserved verbatim — system messages override propagation by setting
 /// <see cref="PublishOptions.TenantId"/> explicitly or by publishing while ambient tenant is null.
+/// </para>
+/// <para>
+/// Lenient ambient handling mirrors the consume-side <c>_ResolveTenantId</c> contract: whitespace or
+/// oversized ambient values map to "no tenant" rather than failing the publish. Strict validation
+/// in <c>MessagePublishRequestFactory._ValidateTenantId</c> still applies to caller-set
+/// <see cref="PublishOptions.TenantId"/> values; only ambient propagation is lenient.
+/// Dropped oversized values emit a structured warning so operators can detect a misbehaving
+/// ambient-tenant source.
 /// </para>
 /// <para>
 /// The filter writes only the typed <see cref="PublishOptions.TenantId"/> property, never the raw
@@ -33,18 +44,37 @@ namespace Headless.Messaging.MultiTenancy;
 /// propagation.
 /// </para>
 /// </remarks>
-public sealed class TenantPropagationPublishFilter(ICurrentTenant currentTenant) : PublishFilter
+public sealed class TenantPropagationPublishFilter(
+    ICurrentTenant currentTenant,
+    ILogger<TenantPropagationPublishFilter>? logger = null
+) : PublishFilter
 {
-    private readonly ICurrentTenant _currentTenant =
-        Argument.IsNotNull(currentTenant);
+    private readonly ICurrentTenant _currentTenant = Argument.IsNotNull(currentTenant);
 
     /// <inheritdoc/>
-    public override ValueTask OnPublishExecutingAsync(PublishingContext context)
+    public override ValueTask OnPublishExecutingAsync(
+        PublishingContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNull(context);
 
         if (context.Options?.TenantId is null && _currentTenant.Id is { } ambientTenantId)
         {
+            // Lenient ambient validation: whitespace and oversized values map to "no stamping",
+            // mirroring _ResolveTenantId on the consume side. Strict validation still applies to
+            // caller-set PublishOptions.TenantId via MessagePublishRequestFactory._ValidateTenantId.
+            if (string.IsNullOrWhiteSpace(ambientTenantId))
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            if (ambientTenantId.Length > PublishOptions.TenantIdMaxLength)
+            {
+                logger?.AmbientTenantPropagationDropped(ambientTenantId.Length);
+                return ValueTask.CompletedTask;
+            }
+
             context.Options = (context.Options ?? new PublishOptions()) with { TenantId = ambientTenantId };
         }
 
