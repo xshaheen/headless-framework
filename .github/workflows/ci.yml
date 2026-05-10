@@ -1,4 +1,4 @@
-name: Build and Pack
+name: CI
 
 on:
   push:
@@ -30,6 +30,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   # Disable the .NET logo in the console output.
   DOTNET_NOLOGO: true
@@ -43,8 +46,8 @@ env:
   CONFIGURATION: Release
   # Packages Directory
   PACKAGES_DIR: ./artifacts/packages-results
-  # SBOM metadata namespace base
-  SBOM_NAMESPACE_BASE: https://github.com/xshaheen/headless-framework
+  # Test Results Directory
+  TEST_RESULTS_DIR: ./artifacts/test-results
   # Set the NuGet packages restore cache directory.
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   # Disable the Husky pre-commit hooks.
@@ -52,14 +55,14 @@ env:
 
 jobs:
   build:
-    name: Build
+    name: Build, test, and pack
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: read
     steps:
       - name: "Checkout"
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
         with:
           lfs: false
           fetch-depth: 0
@@ -81,45 +84,47 @@ jobs:
         run: dotnet nuget update source github.com --username xshaheen --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text --configfile nuget.config
         shell: bash
 
+      - name: "Restore"
+        run: dotnet restore headless-framework.slnx
+
       - name: "Build"
-        run: dotnet build --configuration ${{ env.CONFIGURATION }}
+        run: dotnet build headless-framework.slnx --configuration ${{ env.CONFIGURATION }} --no-restore --no-incremental -v:q -nologo /clp:ErrorsOnly
+
+      - name: "Test"
+        run: dotnet test headless-framework.slnx --configuration ${{ env.CONFIGURATION }} --no-restore --no-build --logger "trx;LogFilePrefix=headless-framework" --results-directory "${TEST_RESULTS_DIR}"
+        shell: bash
 
       - name: "Pack"
         run: |
           set -euo pipefail
           for csproj in src/*/*.csproj; do
-            dotnet pack "$csproj" --configuration "${CONFIGURATION}" --no-build --include-symbols --output "${PACKAGES_DIR}"
+            dotnet pack "$csproj" --configuration "${CONFIGURATION}" --no-restore --no-build --include-symbols --output "${PACKAGES_DIR}"
           done
         shell: bash
 
-      - name: "Generate SBOM"
-        run: |
-          dotnet tool restore
-          curl -Lo "${RUNNER_TEMP}/sbom-tool" https://github.com/microsoft/sbom-tool/releases/latest/download/sbom-tool-linux-x64
-          chmod +x "${RUNNER_TEMP}/sbom-tool"
-          PACKAGE_VERSION="$(dotnet tool run minver)"
-          "${RUNNER_TEMP}/sbom-tool" generate \
-            -b "${PACKAGES_DIR}" \
-            -bc "${GITHUB_WORKSPACE}" \
-            -pn "headless-framework" \
-            -pv "${PACKAGE_VERSION}" \
-            -ps "Mahmoud Shaheen" \
-            -nsb "${SBOM_NAMESPACE_BASE}"
-        shell: bash
+      - name: "Publish Test Results"
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: test-results
+          path: ${{ env.TEST_RESULTS_DIR }}
+          if-no-files-found: ignore
 
       - name: "Publish Artifacts"
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: packages-results
           path: ${{ env.PACKAGES_DIR }}
+          if-no-files-found: error
 
   push-github-packages:
     name: "Push GitHub Packages"
     needs: build
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' || github.event_name == 'release'
 
     permissions:
+      contents: read
       packages: write
 
     environment:
@@ -132,14 +137,33 @@ jobs:
         with:
           name: packages-results
 
-      - name: ".NET NuGet Add Source"
-        run: dotnet nuget add source https://nuget.pkg.github.com/xshaheen/index.json --name github.com --username xshaheen --password ${{ secrets.NUGET_API_KEY }} --store-password-in-clear-text
-        shell: pwsh
+      - name: "Push Packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
 
-      - name: ".NET NuGet Push"
-        run: dotnet nuget push .\*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source github.com --skip-duplicate
-        shell: pwsh
+          packages=(./*.nupkg)
 
-      - name: ".NET Symbols Push"
-        run: dotnet nuget push .\*.snupkg --api-key ${{ secrets.NUGET_API_KEY }} --source github.com --skip-duplicate
-        shell: pwsh
+          if [ ${#packages[@]} -eq 0 ]; then
+            echo "No .nupkg files found in the downloaded package artifact."
+            exit 1
+          fi
+
+          for package in "${packages[@]}"; do
+            dotnet nuget push "$package" \
+              --source "https://nuget.pkg.github.com/xshaheen/index.json" \
+              --api-key "$GITHUB_TOKEN" \
+              --skip-duplicate
+          done
+
+          symbols=(./*.snupkg)
+
+          for symbol in "${symbols[@]}"; do
+            dotnet nuget push "$symbol" \
+              --source "https://nuget.pkg.github.com/xshaheen/index.json" \
+              --api-key "$GITHUB_TOKEN" \
+              --skip-duplicate
+          done
+        shell: bash

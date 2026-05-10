@@ -1,6 +1,6 @@
 ﻿# How to publish packages
 
-CI generates an SBOM for the packed artifacts at `artifacts/packages-results/_manifest/...` after `dotnet pack`. The checked-in repo no longer includes local `build.ps1`/`nuke` pack entrypoints, so the current local flow is `dotnet pack` followed by manual package pushes.
+CI relies on `Headless.NET.Sdk` to enable `GenerateSBOM=true` on GitHub Actions. The checked-in repo no longer includes local `build.ps1`/`nuke` pack entrypoints, so the current local flow is `dotnet pack` followed by manual package pushes.
 
 ```powershell
 dotnet pack --configuration Release --include-symbols --output ./artifacts/packages-results
@@ -24,11 +24,8 @@ Get-ChildItem .\ -Filter *.snupkg |
     }
 ```
 
-If you need to generate the SBOM locally too:
+If you need to generate the SBOM locally too, opt into the same SDK behavior:
 
 ```powershell
-dotnet tool restore
-$version = dotnet tool run minver
-Invoke-WebRequest -Uri "https://github.com/microsoft/sbom-tool/releases/latest/download/sbom-tool-win-x64.exe" -OutFile "sbom-tool.exe"
-.\sbom-tool.exe generate -b .\artifacts\packages-results -bc . -pn headless-framework -pv $version -ps "Mahmoud Shaheen" -nsb "https://github.com/xshaheen/headless-framework"
+dotnet pack --configuration Release --include-symbols --output ./artifacts/packages-results /p:GenerateSBOM=true
 ```
