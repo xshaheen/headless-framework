@@ -114,6 +114,26 @@ public sealed class HelperTest
         regex.IsMatch(testString).Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("orders.*.#", "orders.created.v1", true)]
+    [InlineData("orders.*.#", "orders.updated.v1.beta", true)]
+    [InlineData("*.#", "user.created.v1", true)]
+    [InlineData("*.#", "user.created", true)]
+    [InlineData("orders.*.#", "orders.created", false)]
+    [InlineData("orders.*.#", "orders", false)]
+    public void should_convert_mixed_wildcard_to_regex_correctly(string wildcard, string testString, bool expected)
+    {
+        // given — mixed * and # wildcards must each be expanded; an earlier implementation
+        // returned after handling * and left # as a literal in the resulting regex,
+        // which silently broke any pattern combining the two.
+        // when
+        var pattern = Helper.WildcardToRegex(wildcard);
+        var regex = new Regex(pattern, RegexOptions.None, TimeSpan.FromSeconds(1));
+
+        // then
+        regex.IsMatch(testString).Should().Be(expected);
+    }
+
     [Fact]
     public void should_reject_wildcard_exceeding_max_length()
     {
