@@ -78,10 +78,10 @@ public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestF
 
         services.AddLogging(x => x.AddProvider(TestHelpers.CreateXUnitLoggerFactory().Provider));
         services.AddSingleton<IClock>(Clock);
-        services.AddSingleton<ICurrentTenant>(CurrentTenant);
         services.AddSingleton<ICurrentUser>(CurrentUser);
         services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
         services.AddHeadlessDbContextServices();
+        services.AddSingleton<ICurrentTenant>(CurrentTenant);
 
         ConfigureDbContext(services);
 
