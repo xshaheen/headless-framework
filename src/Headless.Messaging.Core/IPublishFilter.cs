@@ -30,6 +30,11 @@ public interface IPublishFilter
     ValueTask OnPublishExecutingAsync(PublishingContext context);
 
     /// <summary>Called after the publish operation completes successfully.</summary>
+    /// <remarks>
+    /// Exceptions thrown from this phase are logged and suppressed. At this point the message was already
+    /// accepted by the transport or outbox, so surfacing a post-success filter failure to the caller would
+    /// invite retries that can duplicate the message.
+    /// </remarks>
     /// <param name="context">The <see cref="PublishedContext"/>.</param>
     ValueTask OnPublishExecutedAsync(PublishedContext context);
 

@@ -587,6 +587,8 @@ Both registrations are idempotent — calling them twice with the same `T` does 
 
 **Ordering:** filters mirror ASP.NET Core MVC filter ordering — `OnXExecutingAsync` runs in registration order; `OnXExecutedAsync` and `OnXExceptionAsync` run in **reverse** order. Filters that did not execute their `executing` phase (because an earlier filter threw) are also skipped on the executed/exception phases — only the filters that actually entered are unwound.
 
+`IPublishFilter.OnPublishExecutedAsync` runs after the transport or outbox accepts the message. Exceptions from this phase are logged and suppressed so callers do not retry an already-published message. Keep post-success work best-effort, or move required durable work before publishing.
+
 **`PublishExceptionContext.ExceptionHandled` ⚠️:** setting `ExceptionHandled = true` on the publish-side exception context **silently swallows** the publish failure — the caller's `PublishAsync` returns normally as if the message had been sent. This is **not** symmetric with consume-side ack semantics: there is no broker to receive an "ack" on publish, so handled exceptions become invisible failures. Only flip `ExceptionHandled` when the filter has either rerouted the message to a dead-letter sink or recorded a durable trace. Otherwise let the exception propagate so the caller can retry or log.
 
 ### Multi-tenancy

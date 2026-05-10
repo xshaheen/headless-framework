@@ -429,4 +429,16 @@ internal static partial class LoggerExtensions
         long storageId,
         string exceptionType
     );
+
+    [LoggerMessage(
+        EventId = 59,
+        EventName = "PublishExecutedFilterFailed",
+        Level = LogLevel.Warning,
+        Message = "A publish filter threw after the message was accepted. The exception is suppressed to avoid retrying an already-published message. Filter: {FilterType}"
+    )]
+    public static partial void PublishExecutedFilterFailed(
+        this ILogger logger,
+        Exception exception,
+        string filterType
+    );
 }

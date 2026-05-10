@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -71,6 +72,46 @@ public sealed class PublishExecutionPipelineTests : TestBase
             "B.published",
             "A.published"
         );
+    }
+
+    [Fact]
+    public async Task should_not_fail_publish_when_post_success_filter_throws()
+    {
+        // given
+        var recorder = new PublishCallRecorder();
+        var services = new ServiceCollection();
+        services.AddSingleton(recorder);
+        new MessagingBuilder(services)
+            .AddPublishFilter<RecordingPublishFilterA>()
+            .AddPublishFilter<PublishedThrowingFilter>()
+            .AddPublishFilter<RecordingPublishFilterB>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await pipeline.ExecuteAsync<SimplePayload>(
+            content: new SimplePayload("hi"),
+            options: null,
+            delayTime: null,
+            innerPublish: (_, _, _) =>
+            {
+                recorder.Record("inner");
+                return Task.CompletedTask;
+            },
+            cancellationToken: AbortToken
+        );
+
+        // then — inner accepted the message; post-success filter failure is logged/suppressed
+        // so callers do not retry an already-published message.
+        recorder.Calls.Should().Equal(
+            "A.publishing",
+            "PublishedThrow.publishing",
+            "B.publishing",
+            "inner",
+            "B.published",
+            "PublishedThrow.published.throw",
+            "A.published"
+        );
+        recorder.Calls.Should().NotContain("A.exception");
     }
 
     [Fact]
@@ -265,7 +306,7 @@ public sealed class PublishExecutionPipelineTests : TestBase
         Func<PublishOptions?, TimeSpan?, CancellationToken, Task> innerCapturing = (opts, _, _) =>
         {
             // The instance hash leaks via tenant id; capture it
-            if (opts?.TenantId is { } id && int.TryParse(id, out var hash))
+            if (opts?.TenantId is { } id && int.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hash))
             {
                 seen.Add(hash);
             }
@@ -388,6 +429,27 @@ internal sealed class PublishingThrowingFilter(PublishCallRecorder recorder) : P
     }
 }
 
+internal sealed class PublishedThrowingFilter(PublishCallRecorder recorder) : PublishFilter
+{
+    public override ValueTask OnPublishExecutingAsync(PublishingContext context)
+    {
+        recorder.Record("PublishedThrow.publishing");
+        return ValueTask.CompletedTask;
+    }
+
+    public override ValueTask OnPublishExecutedAsync(PublishedContext context)
+    {
+        recorder.Record("PublishedThrow.published.throw");
+        throw new InvalidOperationException("filter published boom");
+    }
+
+    public override ValueTask OnPublishExceptionAsync(PublishExceptionContext context)
+    {
+        recorder.Record("PublishedThrow.exception");
+        return ValueTask.CompletedTask;
+    }
+}
+
 internal sealed class InstanceTrackingFilter : PublishFilter
 {
     public override ValueTask OnPublishExecutingAsync(PublishingContext context)
@@ -395,7 +457,7 @@ internal sealed class InstanceTrackingFilter : PublishFilter
         // Stash this instance's hash in TenantId so the test can observe per-publish instance isolation.
         context.Options = (context.Options ?? new PublishOptions()) with
         {
-            TenantId = GetHashCode().ToString(System.Globalization.CultureInfo.InvariantCulture),
+            TenantId = GetHashCode().ToString(CultureInfo.InvariantCulture),
         };
         return ValueTask.CompletedTask;
     }

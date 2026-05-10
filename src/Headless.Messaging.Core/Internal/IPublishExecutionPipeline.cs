@@ -2,6 +2,7 @@
 
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Internal;
 
@@ -32,7 +33,10 @@ internal interface IPublishExecutionPipeline
     );
 }
 
-internal sealed class PublishExecutionPipeline(IServiceProvider serviceProvider) : IPublishExecutionPipeline
+internal sealed class PublishExecutionPipeline(
+    IServiceProvider serviceProvider,
+    ILogger<PublishExecutionPipeline>? logger = null
+) : IPublishExecutionPipeline
 {
     public async Task ExecuteAsync<T>(
         T? content,
@@ -68,7 +72,16 @@ internal sealed class PublishExecutionPipeline(IServiceProvider serviceProvider)
             var executedCtx = new PublishedContext(content, typeof(T), ctx.Options, ctx.DelayTime);
             for (var i = filters.Length - 1; i >= 0; i--)
             {
-                await filters[i].OnPublishExecutedAsync(executedCtx).ConfigureAwait(false);
+                try
+                {
+                    await filters[i].OnPublishExecutedAsync(executedCtx).ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    // The message was already accepted by the transport/outbox. Propagating an
+                    // after-success filter failure would invite callers to retry and duplicate it.
+                    logger?.PublishExecutedFilterFailed(e, filters[i].GetType().FullName ?? filters[i].GetType().Name);
+                }
             }
         }
         catch (Exception e)

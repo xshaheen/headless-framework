@@ -228,7 +228,7 @@ builder.Services.AddHeadlessMessaging(options => { /* ... */ })
     .AddPublishFilter<CorrelationPublishFilter>();
 ```
 
-Both registrations are idempotent (`TryAddEnumerable` under the hood). Setting `PublishExceptionContext.ExceptionHandled = true` silently swallows the publish failure — only do this when the filter has rerouted the message to a durable sink.
+Both registrations are idempotent (`TryAddEnumerable` under the hood). `OnPublishExecutedAsync` runs after the message is accepted; exceptions from that phase are logged and suppressed to avoid caller retries that duplicate the message. Setting `PublishExceptionContext.ExceptionHandled = true` silently swallows a pre-accept publish failure — only do this when the filter has rerouted the message to a durable sink.
 
 ### Multi-Tenancy Propagation
 
