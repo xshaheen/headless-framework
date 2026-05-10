@@ -30,7 +30,7 @@ Headless multi-tenancy is built from five pieces:
 - `ICurrentTenant` and `ICurrentTenantAccessor` live in the `Headless.Abstractions` namespace (implemented in `src/Headless.Core/Abstractions`) and hold the current tenant in an `AsyncLocal` scope.
 - `Headless.Api` resolves tenant context for HTTP requests via `UseTenantResolution()`.
 - `Headless.Mediator` enforces tenant presence at request dispatch boundaries via `AddTenantRequiredBehavior()`.
-- `Headless.Orm.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities.
+- `Headless.Orm.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities and can opt in to a save-time tenant write guard.
 - `Headless.Permissions.Core` scopes permission grant cache keys by tenant via `ScopedCache<PermissionGrantCacheItem>`.
 
 For HTTP apps, the recommended setup is:
@@ -60,6 +60,8 @@ app.UseAuthorization();
 - The default claim type is `tenant_id`. Override it with `AddHeadlessMultiTenancy(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
 - When no tenant claim is present, the middleware intentionally skips `Change(null)`. This preserves the distinction between "never set" and "explicitly null".
 - For EF Core, inherit from `HeadlessDbContext` and let the built-in model processor apply tenant filters to `IMultiTenant` entities.
+- Enable strict EF tenant writes with `services.AddHeadlessTenantWriteGuard()` when tenant-owned saves must fail without a matching tenant context.
+- Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
 - Permission cache scoping depends on `ICurrentTenant.Id`. Host-level operations with no tenant use the shared `t:` scope by design.
 - For background jobs and message consumers, set tenant explicitly with `using (currentTenant.Change(tenantId)) { ... }`.
 - Do not assume HTTP middleware covers SignalR hubs, background jobs, or messaging consumers. Those execution paths need their own tenant resolution.
@@ -175,6 +177,40 @@ The HTTP middleware preserves state `1` when there is no tenant claim. It does n
 
 With tenant resolution active, queries automatically filter on `TenantId == ICurrentTenant.Id`.
 
+### EF Tenant Write Guard
+
+The EF write guard is opt-in and disabled by default for compatibility. Enable it from the ORM package setup:
+
+```csharp
+builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
+    options.UseNpgsql(connectionString)
+);
+
+builder.Services.AddHeadlessTenantWriteGuard();
+```
+
+When enabled, `SaveChanges()` and `SaveChangesAsync()` reject unsafe `IMultiTenant` writes before persistence, audit capture, and domain-message publishing:
+
+- Added tenant-owned entities require a non-blank `ICurrentTenant.Id`. If `TenantId` is empty, the processor stamps the current tenant before saving.
+- Added tenant-owned entities with a different explicit `TenantId` fail with `CrossTenantWriteException`.
+- Modified, soft-deleted, and physically deleted tenant-owned entities must belong to the current tenant or fail with `CrossTenantWriteException`.
+- Non-tenant entities are not blocked by the guard.
+
+Missing tenant context uses the shared `Headless.Abstractions.MissingTenantContextException`, so HTTP hosts using `UseExceptionHandler()` get the existing normalized 400 mapping. Cross-tenant mutation uses `Headless.Orm.EntityFramework.MultiTenancy.CrossTenantWriteException`; default HTTP mapping for that typed failure is intentionally not provided yet.
+
+For intentional admin or host-level maintenance writes, keep the bypass narrow:
+
+```csharp
+var bypass = serviceProvider.GetRequiredService<ITenantWriteGuardBypass>();
+
+using (bypass.BeginBypass())
+{
+    await dbContext.SaveChangesAsync(cancellationToken);
+}
+```
+
+`IgnoreMultiTenancyFilter()` is only a read-side query-filter bypass. Loading a row through `IgnoreMultiTenancyFilter()` does not permit cross-tenant updates or deletes when the write guard is enabled; wrap only the intended write in `ITenantWriteGuardBypass.BeginBypass()`.
+
 ## Permissions and Caching
 
 `Headless.Permissions.Core` already scopes permission grant cache entries by tenant:
@@ -272,3 +308,4 @@ SignalR hub invocations start new execution flows after the initial upgrade requ
 - Registering middleware before `UseAuthentication()` means no authenticated principal is available yet.
 - Forgetting `using` around `currentTenant.Change()` in non-HTTP code can leak tenant context within the current async flow.
 - Assuming host-level cache scope `t:` is tenant-isolated is incorrect; it is intentionally shared.
+- Assuming `IgnoreMultiTenancyFilter()` bypasses write protection is incorrect; it only affects reads.

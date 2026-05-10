@@ -12,6 +12,7 @@ Provides a feature-rich DbContext base class with automatic auditing, soft delet
 - Automatic auditing for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities (`DateCreated`, `DateUpdated`, `DateDeleted`, `DateSuspended`, plus `CreatedById` / `UpdatedById` / `DeletedById` / `SuspendedById` for `UserId` and `AccountId` audits)
 - Soft delete (`IDeleteAudit.IsDeleted`) and suspend (`ISuspendAudit.IsSuspended`) global filters
 - Multi-tenancy filter for `IMultiTenant` entities driven by `ICurrentTenant.Id`
+- Optional tenant write guard for `IMultiTenant` save protection
 - Composable save pipeline with built-in entry processors (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`)
 - Domain event collection via `IHeadlessMessageDispatcher`; local messages are published during save, and distributed messages are transactionally enqueued
 - Transaction-aware save with audit-log second-pass commit
@@ -135,6 +136,29 @@ services.AddHeadlessMessageDispatcher(provider =>
 );
 ```
 
+### Tenant Write Guard
+
+Enable strict tenant-owned writes explicitly:
+
+```csharp
+builder.Services.AddHeadlessTenantWriteGuard();
+```
+
+When enabled, tenant-owned saves fail before persistence if no ambient tenant is available or if the entity belongs to another tenant. Missing tenant context throws `MissingTenantContextException`; cross-tenant mutations throw `CrossTenantWriteException`.
+
+Use the scoped bypass only for intentional host/admin writes:
+
+```csharp
+var bypass = serviceProvider.GetRequiredService<ITenantWriteGuardBypass>();
+
+using (bypass.BeginBypass())
+{
+    await dbContext.SaveChangesAsync(cancellationToken);
+}
+```
+
+`IgnoreMultiTenancyFilter()` is read-side only. It does not permit guarded cross-tenant updates or deletes.
+
 ### Resilient Transactions
 
 Instance methods on `HeadlessDbContext` that wrap an operation in a transaction coordinated with the execution strategy (safe for retrying providers like SQL Server `EnableRetryOnFailure`). The caller has full control — call `SaveChangesAsync` explicitly within the operation.
@@ -165,6 +189,7 @@ var result = await dbContext.ExecuteTransactionAsync<int>(async (ctx, ct) =>
 ## Side Effects
 
 - Registers `HeadlessDbContextServices`, the default save-entry processor chain, `IHeadlessSaveChangesPipeline`, and a fail-fast `IHeadlessMessageDispatcher` (`ThrowHeadlessMessageDispatcher`)
+- Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` for opt-in tenant write protection
 - Registers framework defaults via `TryAddSingleton`: `IClock` (`Clock`), `IGuidGenerator` (`SequentialAtEndGuidGenerator`), `ICurrentTenantAccessor` (`AsyncLocalCurrentTenantAccessor`), `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider` (`ActivityCorrelationIdProvider`), and `TimeProvider.System`
 - Registers `ICurrentTenant` as `CurrentTenant` by default, replacing only the framework fallback `NullCurrentTenant` while preserving consumer-provided tenant implementations
 - Replaces `ICompiledQueryCacheKeyGenerator` so tenant-scoped queries can share compiled plans safely

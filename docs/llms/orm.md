@@ -87,6 +87,7 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 - Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities (`DateCreated`, `DateUpdated`, `DateDeleted`, `DateSuspended` + `CreatedById` / `UpdatedById` / `DeletedById` / `SuspendedById` when the entity carries `UserId` or `AccountId` audits)
 - Three named global filters: `MultiTenancyFilter` (`IMultiTenant`), `NotDeletedFilter` (`IDeleteAudit`), `NotSuspendedFilter` (`ISuspendAudit`); per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()` / `IgnoreNotSuspendedFilter()`
 - Composable save pipeline driven by `HeadlessDbContextOptions` and a fixed default chain of `IHeadlessSaveEntryProcessor` instances
+- Optional tenant write guard for `IMultiTenant` save protection
 - Local + distributed domain event collection inside `SaveChanges`, with local messages published and distributed messages transactionally enqueued through `IHeadlessMessageDispatcher`
 - Resilient transaction helpers: `ExecuteTransactionAsync(...)`
 - Extensibility hooks through model processing services
@@ -149,6 +150,23 @@ Use this when multiple operations must commit or roll back as one unit.
 - EF options can be provided with `Action<DbContextOptionsBuilder>` or `Action<IServiceProvider, DbContextOptionsBuilder>`
 - Framework extension is added through `AddHeadlessExtension()` internally during registration
 
+### Tenant Write Guard
+
+The tenant write guard is disabled by default. Opt in when tenant-owned writes must be scoped to the current tenant:
+
+```csharp
+builder.Services.AddHeadlessTenantWriteGuard();
+```
+
+The guard runs in the `HeadlessDbContext` save pipeline before audit capture, domain-message publishing, and persistence. It applies only to entities that implement `IMultiTenant`:
+
+- Missing ambient tenant on tenant-owned writes throws `MissingTenantContextException`.
+- Cross-tenant add, update, soft-delete, or physical delete throws `CrossTenantWriteException`.
+- Added tenant-owned entities with no `TenantId` are stamped with `ICurrentTenant.Id`.
+- Non-tenant entities are unaffected.
+
+For intentional host/admin writes, resolve `ITenantWriteGuardBypass` and wrap only the intended operation in `BeginBypass()`. Query filter bypasses such as `IgnoreMultiTenancyFilter()` do not bypass write protection.
+
 ## Dependencies
 
 - `Headless.Domain`
@@ -159,6 +177,7 @@ Use this when multiple operations must commit or roll back as one unit.
 ## Side Effects
 
 - Registers `HeadlessDbContextServices`, `IHeadlessSaveChangesPipeline`, the default save-entry processor chain (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`), and the fail-fast `ThrowHeadlessMessageDispatcher`
+- Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` for opt-in tenant write protection
 - Registers framework defaults via `TryAddSingleton`: `IClock`, `IGuidGenerator`, `ICurrentTenant`, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`, `TimeProvider.System`
 - Replaces compiled query cache key generator so tenant-scoped queries share plans correctly
 - Forwards `DbContext` to registered `TDbContext` via scoped registration
