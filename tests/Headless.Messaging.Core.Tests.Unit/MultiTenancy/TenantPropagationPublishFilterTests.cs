@@ -132,5 +132,72 @@ public sealed class TenantPropagationPublishFilterTests : TestBase
         act.Should().Throw<ArgumentNullException>();
     }
 
+    [Fact]
+    public async Task should_skip_stamping_when_ambient_tenant_is_whitespace()
+    {
+        // given — lenient ambient handling: whitespace ICurrentTenant.Id maps to "no stamping"
+        // and matches the consume-side _ResolveTenantId contract
+        var tenant = Substitute.For<ICurrentTenant>();
+        tenant.Id.Returns("   ");
+        var filter = new TenantPropagationPublishFilter(tenant);
+        var ctx = new PublishingContext(
+            content: new Payload("hello"),
+            messageType: typeof(Payload),
+            options: null,
+            delayTime: null
+        );
+
+        // when
+        await filter.OnPublishExecutingAsync(ctx);
+
+        // then — Options stays null; whitespace ambient does not propagate
+        ctx.Options.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_skip_stamping_when_ambient_tenant_exceeds_max_length()
+    {
+        // given — lenient ambient handling: oversized ICurrentTenant.Id maps to "no stamping"
+        var tenant = Substitute.For<ICurrentTenant>();
+        var oversized = new string('x', PublishOptions.TenantIdMaxLength + 1);
+        tenant.Id.Returns(oversized);
+        var filter = new TenantPropagationPublishFilter(tenant);
+        var ctx = new PublishingContext(
+            content: new Payload("hello"),
+            messageType: typeof(Payload),
+            options: null,
+            delayTime: null
+        );
+
+        // when
+        await filter.OnPublishExecutingAsync(ctx);
+
+        // then — Options stays null; oversized ambient is silently dropped
+        ctx.Options.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_stamp_when_ambient_tenant_is_exactly_max_length()
+    {
+        // given — boundary case: ambient ID exactly TenantIdMaxLength characters must stamp
+        var tenant = Substitute.For<ICurrentTenant>();
+        var exactlyMax = new string('x', PublishOptions.TenantIdMaxLength);
+        tenant.Id.Returns(exactlyMax);
+        var filter = new TenantPropagationPublishFilter(tenant);
+        var ctx = new PublishingContext(
+            content: new Payload("hello"),
+            messageType: typeof(Payload),
+            options: null,
+            delayTime: null
+        );
+
+        // when
+        await filter.OnPublishExecutingAsync(ctx);
+
+        // then — exact-boundary value is stamped (no off-by-one rejection)
+        ctx.Options.Should().NotBeNull();
+        ctx.Options!.TenantId.Should().Be(exactlyMax);
+    }
+
     private sealed record Payload(string Value);
 }

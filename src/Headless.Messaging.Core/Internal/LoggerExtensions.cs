@@ -489,4 +489,12 @@ internal static partial class LoggerExtensions
         Message = "Restoring ICurrentTenant from envelope: switching to tenant '{TenantId}' for the consume scope."
     )]
     public static partial void TenantContextSwitched(this ILogger logger, string tenantId);
+
+    [LoggerMessage(
+        EventId = 65,
+        EventName = "AmbientTenantPropagationDropped",
+        Level = LogLevel.Warning,
+        Message = "Ambient ICurrentTenant.Id was rejected by TenantPropagationPublishFilter because its length ({Length}) exceeds PublishOptions.TenantIdMaxLength or it is whitespace. The publish proceeds without a stamped tenant; investigate the ambient tenant source if this repeats."
+    )]
+    public static partial void AmbientTenantPropagationDropped(this ILogger logger, int length);
 }

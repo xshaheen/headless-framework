@@ -229,6 +229,56 @@ public sealed class PublishFilterTests : TestBase
         a.GetHashCode().Should().Be(b.GetHashCode());
     }
 
+    [Fact]
+    public void should_be_equal_when_publish_options_have_identical_scalar_fields_and_distinct_headers_instances_with_same_content()
+    {
+        // given — pins F6: structural equality on Headers means two PublishOptions with separately
+        // allocated dictionaries containing the same key/value pairs are equal.
+        var a = new PublishOptions
+        {
+            TenantId = "acme",
+            MessageId = "msg-1",
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["x-trace"] = "abc",
+                ["x-source"] = "billing",
+            },
+        };
+        var b = new PublishOptions
+        {
+            TenantId = "acme",
+            MessageId = "msg-1",
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["x-trace"] = "abc",
+                ["x-source"] = "billing",
+            },
+        };
+
+        // then
+        a.Should().Be(b);
+        a.GetHashCode().Should().Be(b.GetHashCode());
+    }
+
+    [Fact]
+    public void should_be_not_equal_when_publish_options_have_different_headers_content()
+    {
+        // given — pins F6: structural Headers comparison detects content differences.
+        var a = new PublishOptions
+        {
+            TenantId = "acme",
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-trace"] = "abc" },
+        };
+        var b = new PublishOptions
+        {
+            TenantId = "acme",
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-trace"] = "different" },
+        };
+
+        // then
+        a.Should().NotBe(b);
+    }
+
     private static PublishingContext _CreatePublishingContext()
     {
         return new PublishingContext(
@@ -271,7 +321,10 @@ internal sealed class ExecutingOnlyPublishFilter : PublishFilter
     public bool ExecutedCalled { get; private set; }
     public bool ExceptionCalled { get; private set; }
 
-    public override ValueTask OnPublishExecutingAsync(PublishingContext context)
+    public override ValueTask OnPublishExecutingAsync(
+        PublishingContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         ExecutingCalled = true;
         return ValueTask.CompletedTask;
