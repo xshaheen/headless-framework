@@ -410,7 +410,7 @@ public class MessagingOptions : IMessagingBuilder
             throw new ArgumentException($"Topic name '{topic}' cannot start or end with a dot.", nameof(topic));
         }
 
-        if (topic.Contains(".."))
+        if (topic.Contains("..", StringComparison.Ordinal))
         {
             throw new ArgumentException($"Topic name '{topic}' cannot contain consecutive dots.", nameof(topic));
         }
