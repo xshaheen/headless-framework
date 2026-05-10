@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Headless.AuditLog;
 using Headless.Testing.Tests;
@@ -56,6 +57,36 @@ public sealed class AuditLogIntegrationTests : TestBase
 
         var isDeleted = entry.NewValues["IsDeleted"].Should().BeOfType<JsonElement>().Subject;
         isDeleted.GetBoolean().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task save_changes_false_with_automatic_audit_preserves_entity_state_and_persists_audit_once()
+    {
+        // given
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+
+        var order = new GeneratedOrder { CustomerName = "Generated" };
+        db.GeneratedOrders.Add(order);
+
+        // when
+        await db.SaveChangesAsync(acceptAllChangesOnSuccess: false, AbortToken);
+
+        // then
+        order.Id.Should().BeGreaterThan(0);
+        db.Entry(order).State.Should().Be(EntityState.Added);
+        db.ChangeTracker.Entries<AuditLogEntry>().Should().BeEmpty();
+
+        var entries = await db.Set<AuditLogEntry>().AsNoTracking().ToListAsync(AbortToken);
+        entries.Should().ContainSingle();
+
+        var entry = entries[0];
+        entry.Action.Should().Be(AuditActionNames.Created);
+        entry.EntityType.Should().Be(typeof(GeneratedOrder).FullName);
+        entry.EntityId.Should().Be(order.Id.ToString(CultureInfo.InvariantCulture));
     }
 
     [Fact]

@@ -10,12 +10,15 @@ public sealed class AuditTestDbContext(IHeadlessEntityModelProcessor entityProce
 {
     public DbSet<Order> Orders => Set<Order>();
 
+    public DbSet<GeneratedOrder> GeneratedOrders => Set<GeneratedOrder>();
+
     public override string DefaultSchema => "";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.Entity<Order>().Property(e => e.Id).ValueGeneratedNever();
+        modelBuilder.Entity<GeneratedOrder>().Property(e => e.Id).ValueGeneratedOnAdd();
         modelBuilder.ConfigureAuditLog();
 
         // SQLite doesn't support ValueGeneratedOnAdd on composite-key columns (no sequence support).
