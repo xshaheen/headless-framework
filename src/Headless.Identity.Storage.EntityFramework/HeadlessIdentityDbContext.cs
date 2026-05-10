@@ -1,12 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Orm.EntityFramework.ChangeTrackers;
 using Headless.Orm.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Logging;
 
 namespace Headless.Orm.EntityFramework;
 
@@ -29,24 +27,15 @@ public abstract class HeadlessIdentityDbContext<
     where TRoleClaim : IdentityRoleClaim<TKey>
     where TUserToken : IdentityUserToken<TKey>
 {
-    private readonly IHeadlessEntityModelProcessor _entityProcessor;
-    private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
-
-    private ILogger? AuditLogger => field ??= this.GetServiceOrDefault<ILoggerFactory>()?.CreateLogger(GetType());
+    private readonly HeadlessDbContextRuntime _runtime;
 
     public abstract string DefaultSchema { get; }
 
     protected HeadlessIdentityDbContext(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
         : base(options)
     {
-        _entityProcessor = entityProcessor;
-        _SyncNavigationTracker();
-    }
-
-    private void _SyncNavigationTracker()
-    {
-        ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
-        ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
+        _runtime = new(this, entityProcessor);
+        _runtime.SyncNavigationTracker();
     }
 
     #region Core Save Changes
@@ -56,15 +45,11 @@ public abstract class HeadlessIdentityDbContext<
         CancellationToken cancellationToken = default
     )
     {
-        return await HeadlessSaveChangesRunner
-            .ExecuteAsync(
-                this,
-                _entityProcessor,
-                _navigationModifiedTracker,
+        return await _runtime
+            .SaveChangesAsync(
                 PublishMessagesAsync,
                 PublishMessagesAsync,
                 _BaseSaveChangesAsync,
-                AuditLogger,
                 acceptAllChangesOnSuccess,
                 cancellationToken
             )
@@ -73,16 +58,7 @@ public abstract class HeadlessIdentityDbContext<
 
     protected virtual int CoreSaveChanges(bool acceptAllChangesOnSuccess = true)
     {
-        return HeadlessSaveChangesRunner.Execute(
-            this,
-            _entityProcessor,
-            _navigationModifiedTracker,
-            PublishMessages,
-            PublishMessages,
-            _BaseSaveChanges,
-            AuditLogger,
-            acceptAllChangesOnSuccess
-        );
+        return _runtime.SaveChanges(PublishMessages, PublishMessages, _BaseSaveChanges, acceptAllChangesOnSuccess);
     }
 
     #endregion
@@ -157,7 +133,7 @@ public abstract class HeadlessIdentityDbContext<
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
-        configurationBuilder.AddBuildingBlocksPrimitivesConvertersMappings();
+        HeadlessDbContextRuntime.ConfigureConventions(configurationBuilder);
     }
 
     #endregion
@@ -166,12 +142,9 @@ public abstract class HeadlessIdentityDbContext<
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
-        if (!DefaultSchema.IsNullOrWhiteSpace())
-        {
-            builder.HasDefaultSchema(DefaultSchema);
-        }
+        HeadlessDbContextRuntime.ConfigureDefaultSchema(builder, DefaultSchema);
         base.OnModelCreating(builder);
-        _entityProcessor.ProcessModelCreating(builder);
+        _runtime.ProcessModelCreating(builder);
     }
 
     #endregion
