@@ -85,7 +85,12 @@ jobs:
         run: dotnet build --configuration ${{ env.CONFIGURATION }}
 
       - name: "Pack"
-        run: dotnet pack --configuration ${{ env.CONFIGURATION }} --no-build --include-symbols --output ${{ env.PACKAGES_DIR }}
+        run: |
+          set -euo pipefail
+          for csproj in src/*/*.csproj; do
+            dotnet pack "$csproj" --configuration "${CONFIGURATION}" --no-build --include-symbols --output "${PACKAGES_DIR}"
+          done
+        shell: bash
 
       - name: "Generate SBOM"
         run: |
