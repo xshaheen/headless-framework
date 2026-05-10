@@ -61,5 +61,4 @@ public sealed class TenantWriteGuardDbContextTestFixture : IAsyncDisposable
         await ServiceProvider.DisposeAsync();
         await _connection.DisposeAsync();
     }
-
 }
