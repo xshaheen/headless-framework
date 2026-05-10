@@ -4,13 +4,20 @@ using System.ComponentModel.DataAnnotations.Schema;
 using System.Runtime.CompilerServices;
 using Headless.Abstractions;
 using Headless.Domain;
+using Headless.EntityFramework.MultiTenancy;
 using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.Extensions.Options;
 
 namespace Headless.EntityFramework.Processors;
 
-public sealed class HeadlessEntitySaveEntryProcessor(IGuidGenerator guidGenerator, ICurrentTenant currentTenant)
+public sealed class HeadlessEntitySaveEntryProcessor(
+    IGuidGenerator guidGenerator,
+    ICurrentTenant currentTenant,
+    IOptions<TenantWriteGuardOptions> tenantWriteGuardOptions,
+    ITenantWriteGuardBypass tenantWriteGuardBypass
+)
     : IHeadlessSaveEntryProcessor
 {
     private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _ShouldStampGuidIdCache = new();
@@ -34,6 +41,8 @@ public sealed class HeadlessEntitySaveEntryProcessor(IGuidGenerator guidGenerato
 
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
+        _EnsureTenantWriteAllowed(entry);
+
         switch (entry.State)
         {
             case EntityState.Added:
@@ -45,6 +54,71 @@ public sealed class HeadlessEntitySaveEntryProcessor(IGuidGenerator guidGenerato
                 _TrySetConcurrencyStamp(entry);
                 break;
         }
+    }
+
+    private void _EnsureTenantWriteAllowed(EntityEntry entry)
+    {
+        if (
+            entry.Entity is not IMultiTenant entity
+            || entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            || !tenantWriteGuardOptions.Value.IsEnabled
+            || tenantWriteGuardBypass.IsActive
+        )
+        {
+            return;
+        }
+
+        var currentTenantId = _NormalizeTenantId(currentTenant.Id);
+        var entityTenantId = _GetEffectiveTenantId(entry);
+
+        if (currentTenantId is null)
+        {
+            throw new MissingTenantContextException(
+                $"Tenant-owned {entry.State} write for entity type '{_GetEntityTypeName(entry)}' requires an ambient "
+                    + "tenant context. Use ICurrentTenant.Change(tenantId) to scope the operation, or "
+                    + "ITenantWriteGuardBypass.BeginBypass() for intentional host/admin writes."
+            );
+        }
+
+        if (entry.State == EntityState.Added && entityTenantId is null)
+        {
+            ObjectPropertiesHelper.TrySetProperty(entity, x => x.TenantId, () => currentTenantId);
+            return;
+        }
+
+        if (string.Equals(entityTenantId, currentTenantId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        throw new CrossTenantWriteException(
+            _GetEntityTypeName(entry),
+            entry.State.ToString(),
+            currentTenantAvailable: true,
+            entityTenantAvailable: entityTenantId is not null,
+            tenantMatches: false
+        );
+    }
+
+    private static string? _GetEffectiveTenantId(EntityEntry entry)
+    {
+        var property = entry.Property(nameof(IMultiTenant.TenantId));
+
+        return entry.State switch
+        {
+            EntityState.Modified or EntityState.Deleted => _NormalizeTenantId(property.OriginalValue),
+            _ => _NormalizeTenantId(property.CurrentValue),
+        };
+    }
+
+    private static string? _NormalizeTenantId(object? value)
+    {
+        return value is string tenantId && !string.IsNullOrWhiteSpace(tenantId) ? tenantId : null;
+    }
+
+    private static string _GetEntityTypeName(EntityEntry entry)
+    {
+        return entry.Metadata.ClrType.FullName ?? entry.Metadata.ClrType.Name;
     }
 
     private void _TrySetGuidId(EntityEntry entry)

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Orm.EntityFramework.MultiTenancy;
+namespace Headless.EntityFramework.MultiTenancy;
 
 /// <summary>
 /// Thrown when the EF tenant write guard detects a tenant-owned write that does not match
