@@ -10,19 +10,16 @@ public interface IGuidGenerator
     Guid Create();
 }
 
-/// <inheritdoc cref="SequentialGuid.NextSequentialAtEnd"/>
 public sealed class SequentialAtEndGuidGenerator : IGuidGenerator
 {
     public Guid Create() => SequentialGuid.NextSequentialAtEnd();
 }
 
-/// <inheritdoc cref="SequentialGuid.NextSequentialAsString"/>
 public sealed class SequentialAsStringGuidGenerator : IGuidGenerator
 {
     public Guid Create() => SequentialGuid.NextSequentialAsString();
 }
 
-/// <inheritdoc cref="SequentialGuid.NextSequentialAsBinary"/>
 public sealed class SequentialAsBinaryGuidGenerator : IGuidGenerator
 {
     public Guid Create() => SequentialGuid.NextSequentialAsBinary();

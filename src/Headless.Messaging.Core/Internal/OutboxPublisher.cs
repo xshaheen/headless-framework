@@ -13,17 +13,13 @@ internal sealed class OutboxPublisher(
     IDataStorage storage,
     IDispatcher dispatcher,
     IMessagePublishRequestFactory publishRequestFactory,
-    IOutboxTransactionAccessor transactionAccessor
+    IOutboxTransactionAccessor transactionAccessor,
+    IPublishExecutionPipeline publishPipeline
 ) : IOutboxPublisher, IScheduledPublisher
 {
     // ReSharper disable once InconsistentNaming
     private static DiagnosticListener DiagnosticListener { get; } =
         new(MessageDiagnosticListenerNames.DiagnosticListenerName);
-
-    private readonly IDataStorage _storage = storage;
-    private readonly IDispatcher _dispatcher = dispatcher;
-    private readonly IMessagePublishRequestFactory _publishRequestFactory = publishRequestFactory;
-    private readonly IOutboxTransactionAccessor _transactionAccessor = transactionAccessor;
 
     public Task PublishAsync<T>(
         T? contentObj,
@@ -31,7 +27,20 @@ internal sealed class OutboxPublisher(
         CancellationToken cancellationToken = default
     )
     {
-        return _PublishInternalAsync(_publishRequestFactory.Create(contentObj, options), cancellationToken);
+        // Pre-decide whether this publish lands on the non-AutoCommit transactional branch so the
+        // pipeline can stamp PublishedContext.IsTransactional before the post-success filters run.
+        var isTransactional = _IsNonAutoCommitTransactional();
+
+        return publishPipeline.ExecuteAsync(
+            contentObj,
+            options,
+            delayTime: null,
+            // DelayTime is undefined for the immediate publish path; ignored.
+            innerPublish: (filteredOptions, _, ct) =>
+                _PublishInternalAsync(publishRequestFactory.Create(contentObj, filteredOptions), ct),
+            isTransactional,
+            cancellationToken
+        );
     }
 
     public Task PublishDelayAsync<T>(
@@ -41,7 +50,30 @@ internal sealed class OutboxPublisher(
         CancellationToken cancellationToken = default
     )
     {
-        return _PublishInternalAsync(_publishRequestFactory.Create(contentObj, options, delayTime), cancellationToken);
+        var isTransactional = _IsNonAutoCommitTransactional();
+
+        return publishPipeline.ExecuteAsync(
+            contentObj,
+            options,
+            delayTime,
+            innerPublish: (filteredOptions, filteredDelay, ct) =>
+            {
+                // Filter mutated DelayTime to null → drop to immediate-publish path; otherwise use the
+                // filter-mutated value, falling back to the caller-supplied delay if the filter left it untouched.
+                var request = filteredDelay.HasValue
+                    ? publishRequestFactory.Create(contentObj, filteredOptions, filteredDelay.Value)
+                    : publishRequestFactory.Create(contentObj, filteredOptions);
+                return _PublishInternalAsync(request, ct);
+            },
+            isTransactional,
+            cancellationToken
+        );
+    }
+
+    private bool _IsNonAutoCommitTransactional()
+    {
+        var currentTransaction = transactionAccessor.Current;
+        return currentTransaction?.DbTransaction is not null && !currentTransaction.AutoCommit;
     }
 
     private async Task _PublishInternalAsync(PreparedPublishMessage publishRequest, CancellationToken cancellationToken)
@@ -51,10 +83,10 @@ internal sealed class OutboxPublisher(
         {
             tracingTimestamp = _TracingBefore(publishRequest.Message);
 
-            var currentTransaction = _transactionAccessor.Current;
+            var currentTransaction = transactionAccessor.Current;
             if (currentTransaction?.DbTransaction == null)
             {
-                var mediumMessage = await _storage
+                var mediumMessage = await storage
                     .StoreMessageAsync(publishRequest.Topic, publishRequest.Message)
                     .ConfigureAwait(false);
 
@@ -62,13 +94,13 @@ internal sealed class OutboxPublisher(
 
                 if (publishRequest.Message.Headers.ContainsKey(Headers.DelayTime))
                 {
-                    await _dispatcher
+                    await dispatcher
                         .EnqueueToScheduler(mediumMessage, publishRequest.PublishAt, null, cancellationToken)
                         .ConfigureAwait(false);
                 }
                 else
                 {
-                    await _dispatcher.EnqueueToPublish(mediumMessage, cancellationToken).ConfigureAwait(false);
+                    await dispatcher.EnqueueToPublish(mediumMessage, cancellationToken).ConfigureAwait(false);
                 }
             }
             else
@@ -81,7 +113,7 @@ internal sealed class OutboxPublisher(
                     );
                 }
 
-                var mediumMessage = await _storage
+                var mediumMessage = await storage
                     .StoreMessageAsync(publishRequest.Topic, publishRequest.Message, currentTransaction.DbTransaction)
                     .ConfigureAwait(false);
 

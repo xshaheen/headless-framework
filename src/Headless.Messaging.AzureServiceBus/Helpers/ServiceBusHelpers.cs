@@ -41,7 +41,7 @@ public static class ServiceBusHelpers
 
         foreach (var kvp in keyValuePairs)
         {
-            if (!kvp.StartsWith("Endpoint", StringComparison.InvariantCultureIgnoreCase))
+            if (!kvp.StartsWith("Endpoint", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }

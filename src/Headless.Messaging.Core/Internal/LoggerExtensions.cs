@@ -429,4 +429,72 @@ internal static partial class LoggerExtensions
         long storageId,
         string exceptionType
     );
+
+    [LoggerMessage(
+        EventId = 59,
+        EventName = "PublishExecutedFilterFailed",
+        Level = LogLevel.Warning,
+        Message = "A publish filter threw after the message was accepted. The exception is suppressed to avoid retrying an already-published message. Filter: {FilterType}"
+    )]
+    public static partial void PublishExecutedFilterFailed(this ILogger logger, Exception exception, string filterType);
+
+    [LoggerMessage(
+        EventId = 60,
+        EventName = "PublishExceptionFilterFailed",
+        Level = LogLevel.Warning,
+        Message = "A publish filter threw inside its OnPublishExceptionAsync handler. The original publish exception is preserved; this nested failure is suppressed so the rest of the chain still runs. Filter: {FilterType}"
+    )]
+    public static partial void PublishExceptionFilterFailed(
+        this ILogger logger,
+        Exception exception,
+        string filterType
+    );
+
+    [LoggerMessage(
+        EventId = 61,
+        EventName = "SubscribeExecutedFilterFailed",
+        Level = LogLevel.Warning,
+        Message = "A consume filter threw inside its OnSubscribeExecutedAsync handler. The exception is suppressed because the consumer body already committed; surfacing it would trigger a spurious transport retry. Filter: {FilterType}"
+    )]
+    public static partial void SubscribeExecutedFilterFailed(
+        this ILogger logger,
+        Exception exception,
+        string filterType
+    );
+
+    [LoggerMessage(
+        EventId = 62,
+        EventName = "SubscribeExceptionFilterFailed",
+        Level = LogLevel.Warning,
+        Message = "A consume filter threw inside its OnSubscribeExceptionAsync handler. The original consumer exception is preserved; this nested failure is suppressed so the rest of the chain still runs. Filter: {FilterType}"
+    )]
+    public static partial void SubscribeExceptionFilterFailed(
+        this ILogger logger,
+        Exception exception,
+        string filterType
+    );
+
+    [LoggerMessage(
+        EventId = 63,
+        EventName = "TenantIdHeaderRejected",
+        Level = LogLevel.Warning,
+        Message = "Inbound tenant header was rejected because its length ({Length}) exceeds PublishOptions.TenantIdMaxLength. The consume context will observe a null tenant; investigate the producer if this repeats."
+    )]
+    public static partial void TenantIdHeaderRejected(this ILogger logger, int length);
+
+    [LoggerMessage(
+        EventId = 64,
+        EventName = "TenantContextSwitched",
+        Level = LogLevel.Debug,
+        Message = "Restoring ICurrentTenant from envelope: switching to tenant '{TenantId}' for the consume scope."
+    )]
+    public static partial void TenantContextSwitched(this ILogger logger, string tenantId);
+
+    [LoggerMessage(
+        EventId = 65,
+        EventName = "AmbientTenantPropagationDropped",
+        Level = LogLevel.Warning,
+        Message = "Ambient ICurrentTenant.Id was rejected by TenantPropagationPublishFilter because its length ({Length}) exceeds PublishOptions.TenantIdMaxLength or it is whitespace. The publish proceeds without a stamped tenant; investigate the ambient tenant source if this repeats."
+    )]
+    public static partial void AmbientTenantPropagationDropped(this ILogger logger, int length);
 }

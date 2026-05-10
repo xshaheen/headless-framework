@@ -211,14 +211,14 @@ public sealed class ContractTypesTests : TestBase
             new()
             {
                 BlobKey = "file1.txt",
-                Created = DateTimeOffset.Now,
-                Modified = DateTimeOffset.Now,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
             },
             new()
             {
                 BlobKey = "file2.txt",
-                Created = DateTimeOffset.Now,
-                Modified = DateTimeOffset.Now,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
             },
         };
 
@@ -259,8 +259,8 @@ public sealed class ContractTypesTests : TestBase
             new()
             {
                 BlobKey = "test.txt",
-                Created = DateTimeOffset.Now,
-                Modified = DateTimeOffset.Now,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
             },
         };
 
@@ -281,8 +281,8 @@ public sealed class ContractTypesTests : TestBase
             new()
             {
                 BlobKey = "file1.txt",
-                Created = DateTimeOffset.Now,
-                Modified = DateTimeOffset.Now,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
             },
         };
 
@@ -291,8 +291,8 @@ public sealed class ContractTypesTests : TestBase
             new()
             {
                 BlobKey = "file2.txt",
-                Created = DateTimeOffset.Now,
-                Modified = DateTimeOffset.Now,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
             },
         };
 
@@ -343,8 +343,8 @@ public sealed class ContractTypesTests : TestBase
             new()
             {
                 BlobKey = "file1.txt",
-                Created = DateTimeOffset.Now,
-                Modified = DateTimeOffset.Now,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
             },
         };
 

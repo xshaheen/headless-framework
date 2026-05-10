@@ -13,10 +13,10 @@ namespace Headless.Primitives;
 public sealed class ExtraProperties : Dictionary<string, object?>
 {
     public ExtraProperties()
-        : base(StringComparer.InvariantCulture) { }
+        : base(StringComparer.Ordinal) { }
 
     public ExtraProperties(IDictionary<string, object?> dictionary)
-        : base(dictionary, StringComparer.InvariantCulture) { }
+        : base(dictionary, StringComparer.Ordinal) { }
 }
 
 [PublicAPI]

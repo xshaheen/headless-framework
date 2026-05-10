@@ -4,10 +4,7 @@ using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Transport;
 
-/// <inheritdoc />
-/// <summary>
-/// Message queue consumer client interface that defines operations for consuming messages from various message brokers
-/// </summary>
+/// <summary>Message queue consumer client interface that defines operations for consuming messages from various message brokers</summary>
 public interface IConsumerClient : IAsyncDisposable
 {
     /// <summary>

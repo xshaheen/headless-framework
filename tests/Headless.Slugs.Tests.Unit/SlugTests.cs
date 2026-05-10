@@ -242,7 +242,7 @@ public sealed class SlugTests
         // Turkish: uppercase I becomes dotless ı (U+0131) in lowercase
         var options = new SlugOptions
         {
-            Culture = new CultureInfo("tr-TR"),
+            Culture = CultureInfo.GetCultureInfo("tr-TR"),
             CasingTransformation = CasingTransformation.ToLowerCase,
         };
 
@@ -255,7 +255,7 @@ public sealed class SlugTests
         // Turkish: lowercase i becomes İ (U+0130) in uppercase
         var options = new SlugOptions
         {
-            Culture = new CultureInfo("tr-TR"),
+            Culture = CultureInfo.GetCultureInfo("tr-TR"),
             CasingTransformation = CasingTransformation.ToUpperCase,
         };
 

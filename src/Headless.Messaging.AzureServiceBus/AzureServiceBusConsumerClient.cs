@@ -452,7 +452,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         // and "\" will be converted to "/" on the REST path anyway. Gateway/REST do not
         // have to worry about the begin/end slash problem, so this is purely a client side check.
-        var tmpName = subscriptionName.Replace(@"\", pathDelimiter);
+        var tmpName = subscriptionName.Replace(@"\", pathDelimiter, StringComparison.Ordinal);
         if (tmpName.Length > ruleNameMaximumLength)
         {
             throw new ArgumentOutOfRangeException(
@@ -472,7 +472,7 @@ internal sealed class AzureServiceBusConsumerClient(
             );
         }
 
-        if (tmpName.Contains(pathDelimiter))
+        if (tmpName.Contains(pathDelimiter, StringComparison.Ordinal))
         {
             throw new ArgumentException(
                 $@"The subscribe name contains an invalid character '{pathDelimiter}'",

@@ -162,19 +162,28 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         public int ExecutedCount { get; private set; }
         public int ExceptionCount { get; private set; }
 
-        public override ValueTask OnSubscribeExecutingAsync(ExecutingContext context)
+        public override ValueTask OnSubscribeExecutingAsync(
+            ExecutingContext context,
+            CancellationToken cancellationToken = default
+        )
         {
             ExecutingCount++;
             return ValueTask.CompletedTask;
         }
 
-        public override ValueTask OnSubscribeExecutedAsync(ExecutedContext context)
+        public override ValueTask OnSubscribeExecutedAsync(
+            ExecutedContext context,
+            CancellationToken cancellationToken = default
+        )
         {
             ExecutedCount++;
             return ValueTask.CompletedTask;
         }
 
-        public override ValueTask OnSubscribeExceptionAsync(ExceptionContext context)
+        public override ValueTask OnSubscribeExceptionAsync(
+            ExceptionContext context,
+            CancellationToken cancellationToken = default
+        )
         {
             ExceptionCount++;
             return ValueTask.CompletedTask;

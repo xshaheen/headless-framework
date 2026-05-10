@@ -10,7 +10,7 @@ public class VeryFastProcessingReceiver(ILogger<VeryFastProcessingReceiver> logg
         {
             logger.LogInformation(
                 "Starting FAST processing handler {DateTime}: {MessageText}",
-                DateTime.Now,
+                DateTime.UtcNow,
                 context.Message.Text
             );
         }
@@ -21,7 +21,7 @@ public class VeryFastProcessingReceiver(ILogger<VeryFastProcessingReceiver> logg
         {
             logger.LogInformation(
                 "Ending   FAST processing handler {DateTime}: {MessageText}",
-                DateTime.Now,
+                DateTime.UtcNow,
                 context.Message.Text
             );
         }

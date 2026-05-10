@@ -246,19 +246,28 @@ public sealed class CustomConsumeFilter : ConsumeFilter
     public bool ExecutedCalled { get; private set; }
     public bool ExceptionCalled { get; private set; }
 
-    public override ValueTask OnSubscribeExecutingAsync(ExecutingContext context)
+    public override ValueTask OnSubscribeExecutingAsync(
+        ExecutingContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         ExecutingCalled = true;
         return ValueTask.CompletedTask;
     }
 
-    public override ValueTask OnSubscribeExecutedAsync(ExecutedContext context)
+    public override ValueTask OnSubscribeExecutedAsync(
+        ExecutedContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         ExecutedCalled = true;
         return ValueTask.CompletedTask;
     }
 
-    public override ValueTask OnSubscribeExceptionAsync(ExceptionContext context)
+    public override ValueTask OnSubscribeExceptionAsync(
+        ExceptionContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         ExceptionCalled = true;
         return ValueTask.CompletedTask;

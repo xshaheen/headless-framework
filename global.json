@@ -6,5 +6,13 @@
   },
   "test": {
     "runner": "Microsoft.Testing.Platform"
+  },
+  "msbuild-sdks": {
+    "Headless.NET.Sdk": "0.1.0",
+    "Headless.NET.Sdk.Web": "0.1.0",
+    "Headless.NET.Sdk.Test": "0.1.0",
+    "Headless.NET.Sdk.Razor": "0.1.0",
+    "Headless.NET.Sdk.BlazorWebAssembly": "0.1.0",
+    "Headless.NET.Sdk.WindowsDesktop": "0.1.0"
   }
 }

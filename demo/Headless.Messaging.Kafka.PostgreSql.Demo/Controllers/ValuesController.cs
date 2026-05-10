@@ -33,7 +33,7 @@ public class ValuesController(
     {
         await scheduler.PublishDelayAsync(
             TimeSpan.FromSeconds(delaySeconds),
-            DateTime.Now,
+            DateTime.UtcNow,
             new PublishOptions { Topic = "sample.kafka.postgrsql" }
         );
 
@@ -43,7 +43,7 @@ public class ValuesController(
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
     {
-        await producer.PublishAsync(DateTime.Now, new PublishOptions { Topic = "sample.kafka.postgrsql" });
+        await producer.PublishAsync(DateTime.UtcNow, new PublishOptions { Topic = "sample.kafka.postgrsql" });
 
         return Ok();
     }
@@ -61,12 +61,12 @@ public class ValuesController(
                 transaction: (IDbTransaction?)transaction.DbTransaction
             );
 
-            await producer.PublishAsync(DateTime.Now, new PublishOptions { Topic = "sample.kafka.postgrsql" });
+            await producer.PublishAsync(DateTime.UtcNow, new PublishOptions { Topic = "sample.kafka.postgrsql" });
 
             await transaction.CommitAsync();
         }
 
-        await producer.PublishAsync(DateTime.Now, new PublishOptions { Topic = "sample.kafka.postgrsql" });
+        await producer.PublishAsync(DateTime.UtcNow, new PublishOptions { Topic = "sample.kafka.postgrsql" });
 
         return Ok();
     }

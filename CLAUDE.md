@@ -57,6 +57,21 @@ This framework delegates certain input validation to consuming applications:
 
 - All versions in `Directory.Packages.props`. **Never** add `Version` attribute in `.csproj` files.
 
+## New .NET Projects
+
+When adding a new `.csproj` to the solution, set the project SDK to one of the Headless MSBuild SDKs declared in [global.json](global.json). Do not use the stock `Microsoft.NET.Sdk` family for new projects. Versions are pinned in `global.json`'s `msbuild-sdks` block, so omit the version from the project declaration, for example `<Project Sdk="Headless.NET.Sdk.Web">`.
+
+| Project type | SDK |
+| --- | --- |
+| Library, console app | `Headless.NET.Sdk` |
+| ASP.NET Core / Web API | `Headless.NET.Sdk.Web` |
+| Test project (xUnit v3, MTP) | `Headless.NET.Sdk.Test` |
+| Razor class library | `Headless.NET.Sdk.Razor` |
+| Blazor WebAssembly | `Headless.NET.Sdk.BlazorWebAssembly` |
+| WPF / Windows Forms | `Headless.NET.Sdk.WindowsDesktop` |
+
+After creating the project, attach it to [headless-framework.slnx](headless-framework.slnx). The Headless SDKs apply the project's strict baseline, including nullable references, current analyzers, banned `Newtonsoft.Json`, deterministic builds, and CI-aware warning handling. Do not disable defaults without a documented reason. Configuration switches and `Disable*` properties are documented at https://github.com/xshaheen/headless-sdk.
+
 ## Documentation
 
 - Keep public API XML docs in sync with the code.

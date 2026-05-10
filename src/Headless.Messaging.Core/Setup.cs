@@ -109,6 +109,10 @@ public static class Setup
 
         services.TryAddSingleton<IConsumerServiceSelector, ConsumerServiceSelector>();
         services.TryAddSingleton<IConsumeExecutionPipeline, ConsumeExecutionPipeline>();
+        // Singleton-with-internal-AsyncScope, mirroring IConsumeExecutionPipeline above. Both publishers
+        // it serves are Singleton too, so a Scoped pipeline would be a captive dependency. Per-publish
+        // scope is created inside ExecuteAsync so scoped IPublishFilter instances resolve fresh per call.
+        services.TryAddSingleton<IPublishExecutionPipeline, PublishExecutionPipeline>();
         services.TryAddSingleton<ISubscribeInvoker, SubscribeInvoker>();
         services.TryAddSingleton<MethodMatcherCache>();
         services.TryAddSingleton<IMessageDispatcher, CompiledMessageDispatcher>();

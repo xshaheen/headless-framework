@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Orm.EntityFramework.GlobalFilters;
 
-/// <inheritdoc />
+/// <summary>Registers Headless EF Core services through DbContext options.</summary>
 public sealed class HeadlessDbContextOptionsExtension : IDbContextOptionsExtension
 {
     public void ApplyServices(IServiceCollection services) => services.AddHeadlessDbContextServices();

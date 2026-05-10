@@ -1,12 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
-using System.Linq.Expressions;
-using System.Reflection;
-using FastExpressionCompiler;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Internal;
 
@@ -62,7 +57,7 @@ internal sealed class SubscribeInvoker(ISerializer serializer, IConsumeExecution
             else if (mediumMessage.Origin.Value is string jsonString)
             {
                 // Value is a JSON string - deserialize it
-                messageInstance = System.Text.Json.JsonSerializer.Deserialize(jsonString, messageType);
+                messageInstance = JsonSerializer.Deserialize(jsonString, messageType);
             }
             else if (messageType.IsInstanceOfType(mediumMessage.Origin.Value))
             {

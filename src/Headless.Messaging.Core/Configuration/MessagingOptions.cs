@@ -29,7 +29,7 @@ public class MessagingOptions : IMessagingBuilder
     internal ConsumerCircuitBreakerRegistry CircuitBreakerRegistry { get; } = new();
     internal Dictionary<Type, string> TopicMappings { get; } = new();
     internal IList<IMessagesOptionsExtension> Extensions { get; } = new List<IMessagesOptionsExtension>();
-    internal Headless.Messaging.MessagingConventions Conventions { get; set; } = new();
+    internal MessagingConventions Conventions { get; set; } = new();
 
     /// <summary>
     /// Gets or sets the default consumer group name for subscribers.
@@ -331,7 +331,7 @@ public class MessagingOptions : IMessagingBuilder
     }
 
     /// <inheritdoc />
-    public IMessagingBuilder UseConventions(Action<Headless.Messaging.MessagingConventions> configure)
+    public IMessagingBuilder UseConventions(Action<MessagingConventions> configure)
     {
         Argument.IsNotNull(configure);
 
@@ -410,7 +410,7 @@ public class MessagingOptions : IMessagingBuilder
             throw new ArgumentException($"Topic name '{topic}' cannot start or end with a dot.", nameof(topic));
         }
 
-        if (topic.Contains(".."))
+        if (topic.Contains("..", StringComparison.Ordinal))
         {
             throw new ArgumentException($"Topic name '{topic}' cannot contain consecutive dots.", nameof(topic));
         }

@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 using FastExpressionCompiler;
 using Headless.Messaging.Messages;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Internal;
 
@@ -22,7 +22,8 @@ internal interface IConsumeExecutionPipeline
 
 internal sealed class ConsumeExecutionPipeline(
     IServiceProvider serviceProvider,
-    IRuntimeConsumerRegistry runtimeRegistry
+    IRuntimeConsumerRegistry runtimeRegistry,
+    ILogger<ConsumeExecutionPipeline>? logger = null
 ) : IConsumeExecutionPipeline
 {
     private readonly ConcurrentDictionary<Type, Delegate> _compiledConsumeContextFactories = new();
@@ -37,21 +38,36 @@ internal sealed class ConsumeExecutionPipeline(
         cancellationToken.ThrowIfCancellationRequested();
 
         var descriptor = context.ConsumerDescriptor;
-        var consumeHeaders = new MessageHeader(context.MediumMessage.Origin.Headers);
-        var consumeContext = _BuildConsumeContext(messageInstance, context.MediumMessage, messageType, consumeHeaders);
+        var originHeaders = context.MediumMessage.Origin.Headers;
+        var tenantId = _ResolveTenantId(originHeaders, logger);
+        var consumeHeaders = new MessageHeader(originHeaders);
+        var consumeContext = _BuildConsumeContext(
+            messageInstance,
+            context.MediumMessage,
+            messageType,
+            consumeHeaders,
+            tenantId
+        );
 
         await using var scope = serviceProvider.CreateAsyncScope();
         var provider = scope.ServiceProvider;
-        var filter = provider.GetService<IConsumeFilter>();
+        // Filter chain: executing in registration order, executed/exception in reverse — mirrors ASP.NET MVC.
+        var filters = provider.GetServices<IConsumeFilter>().ToArray();
+        // Tracks how many executing-phase filters completed; only those participate in the exception phase
+        // when an early filter throws during executing — matches ASP.NET MVC stack-discipline semantics.
+        var enteredCount = 0;
         object? resultObj = null;
 
         try
         {
-            if (filter != null)
+            var executeParams = new[] { consumeContext, cancellationToken };
+            var etContext = new ExecutingContext(context, executeParams, tenantId);
+            for (var i = 0; i < filters.Length; i++)
             {
-                var executeParams = new object?[] { consumeContext, cancellationToken };
-                var etContext = new ExecutingContext(context, executeParams);
-                await filter.OnSubscribeExecutingAsync(etContext).ConfigureAwait(false);
+                // Increment before the call so a filter that throws during executing is counted
+                // as "entered" and gets its exception phase invoked during stack unwind.
+                enteredCount = i + 1;
+                await filters[i].OnSubscribeExecutingAsync(etContext, cancellationToken).ConfigureAwait(false);
             }
 
             if (
@@ -73,32 +89,65 @@ internal sealed class ConsumeExecutionPipeline(
                     .ConfigureAwait(false);
             }
 
-            if (filter != null)
+            var edContext = new ExecutedContext(context, resultObj);
+            for (var i = filters.Length - 1; i >= 0; i--)
             {
-                var edContext = new ExecutedContext(context, resultObj);
-                await filter.OnSubscribeExecutedAsync(edContext).ConfigureAwait(false);
-                resultObj = edContext.Result;
+                try
+                {
+                    await filters[i].OnSubscribeExecutedAsync(edContext, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception filterEx)
+                {
+                    // Consumer body already committed. Propagating an after-success filter failure —
+                    // including OperationCanceledException — would surface to the transport as a
+                    // consume-failure and trigger a spurious retry of an already-handled message.
+                    // Cancellation has no operational meaning once the consumer body has committed.
+                    logger?.SubscribeExecutedFilterFailed(
+                        filterEx,
+                        filters[i].GetType().FullName ?? filters[i].GetType().Name
+                    );
+                }
             }
+            resultObj = edContext.Result;
         }
         catch (Exception e)
         {
-            if (filter != null)
-            {
-                var exContext = new ExceptionContext(context, e);
-                await filter.OnSubscribeExceptionAsync(exContext).ConfigureAwait(false);
-                if (!exContext.ExceptionHandled)
-                {
-                    exContext.Exception.ReThrow();
-                }
-
-                if (exContext.Result != null)
-                {
-                    resultObj = exContext.Result;
-                }
-            }
-            else
+            if (enteredCount == 0)
             {
                 throw;
+            }
+
+            var exContext = new ExceptionContext(context, e);
+            // Only filters whose executing phase completed participate; reverse stack-unwind order.
+            for (var i = enteredCount - 1; i >= 0; i--)
+            {
+                try
+                {
+                    await filters[i].OnSubscribeExceptionAsync(exContext, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception nested)
+                {
+                    // Preserve the original consumer exception identity for the eventual ReThrow().
+                    // A throwing exception-phase filter must not silently replace the original failure
+                    // or skip the rest of the chain.
+                    logger?.SubscribeExceptionFilterFailed(
+                        nested,
+                        filters[i].GetType().FullName ?? filters[i].GetType().Name
+                    );
+                }
+            }
+
+            // Cancellation is never swallowable: ignore ExceptionHandled when the original failure
+            // was an OperationCanceledException so the host always observes the cancel.
+            // Mirrors IPublishExecutionPipeline:123.
+            if (!exContext.ExceptionHandled || exContext.Exception is OperationCanceledException)
+            {
+                exContext.Exception.ReThrow();
+            }
+
+            if (exContext.Result != null)
+            {
+                resultObj = exContext.Result;
             }
         }
 
@@ -118,14 +167,15 @@ internal sealed class ConsumeExecutionPipeline(
         object messageInstance,
         MediumMessage mediumMessage,
         Type messageType,
-        MessageHeader headers
+        MessageHeader headers,
+        string? tenantId
     )
     {
         var factory =
-            (Func<object, MediumMessage, MessageHeader, object>)
+            (Func<object, MediumMessage, MessageHeader, string?, object>)
                 _compiledConsumeContextFactories.GetOrAdd(messageType, _CompileFactory);
 
-        return factory(messageInstance, mediumMessage, headers);
+        return factory(messageInstance, mediumMessage, headers, tenantId);
     }
 
     private static Delegate _CompileFactory(Type messageType)
@@ -134,6 +184,7 @@ internal sealed class ConsumeExecutionPipeline(
         var messageParam = Expression.Parameter(typeof(object), "message");
         var mediumParam = Expression.Parameter(typeof(MediumMessage), "medium");
         var consumeHeadersParam = Expression.Parameter(typeof(MessageHeader), "headers");
+        var tenantIdParam = Expression.Parameter(typeof(string), "tenantId");
         var originProperty = Expression.Property(mediumParam, nameof(MediumMessage.Origin));
         var addedProperty = Expression.Property(mediumParam, nameof(MediumMessage.Added));
         var headersProperty = Expression.Property(originProperty, nameof(Message.Headers));
@@ -184,10 +235,7 @@ internal sealed class ConsumeExecutionPipeline(
 
         var correlationIdBinding = Expression.Bind(correlationIdProperty, correlationIdExpression);
 
-        var tenantIdBinding = Expression.Bind(
-            tenantIdProperty,
-            Expression.Call(typeof(ConsumeExecutionPipeline), nameof(_ResolveTenantId), null, headersProperty)
-        );
+        var tenantIdBinding = Expression.Bind(tenantIdProperty, tenantIdParam);
 
         var headersBinding = Expression.Bind(headersCtxProperty, consumeHeadersParam);
 
@@ -222,11 +270,12 @@ internal sealed class ConsumeExecutionPipeline(
             topicBinding
         );
 
-        var lambda = Expression.Lambda<Func<object, MediumMessage, MessageHeader, object>>(
+        var lambda = Expression.Lambda<Func<object, MediumMessage, MessageHeader, string?, object>>(
             newExpr,
             messageParam,
             mediumParam,
-            consumeHeadersParam
+            consumeHeadersParam,
+            tenantIdParam
         );
         return lambda.CompileFast();
     }
@@ -234,7 +283,9 @@ internal sealed class ConsumeExecutionPipeline(
     // Lenient consume-side tenant resolution: missing, whitespace, or oversized header values map
     // to null instead of failing the message. Mirrors the publish-side rules in
     // MessagePublishRequestFactory._ApplyTenantId / _ValidateTenantId (see #228).
-    private static string? _ResolveTenantId(IDictionary<string, string?> headers)
+    // Oversized values emit a structured warning so operators can detect a misbehaving producer
+    // (or a producer-side downgrade attack) without changing the lenient behavior contract.
+    private static string? _ResolveTenantId(IDictionary<string, string?> headers, ILogger? logger)
     {
         if (!headers.TryGetValue(Headers.TenantId, out var value) || string.IsNullOrWhiteSpace(value))
         {
@@ -243,6 +294,7 @@ internal sealed class ConsumeExecutionPipeline(
 
         if (value.Length > PublishOptions.TenantIdMaxLength)
         {
+            logger?.TenantIdHeaderRejected(value.Length);
             return null;
         }
 

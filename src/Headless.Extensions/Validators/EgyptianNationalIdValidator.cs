@@ -94,7 +94,7 @@ public static class EgyptianNationalIdValidator
 
     private static FrozenDictionary<string, string> _CreateGovernorateIdMap()
     {
-        var map = new Dictionary<string, string>(StringComparer.InvariantCulture)
+        var map = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["01"] = "القاهرة",
             ["02"] = "آلإسكندرية",

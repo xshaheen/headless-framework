@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Demo.Migrations;
 
-/// <inheritdoc />
 public partial class InitialJobsOperationalStore : Migration
 {
     /// <inheritdoc />

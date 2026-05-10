@@ -105,8 +105,8 @@ public sealed class IConsumeIntegrationTests
         // then
         candidates.Should().HaveCount(2);
 
-        var orderService = candidates.First(c => c.GroupName.Contains("order-service"));
-        var analyticsService = candidates.First(c => c.GroupName.Contains("analytics-service"));
+        var orderService = candidates.First(c => c.GroupName.Contains("order-service", StringComparison.Ordinal));
+        var analyticsService = candidates.First(c => c.GroupName.Contains("analytics-service", StringComparison.Ordinal));
 
         orderService.ImplTypeInfo.Should().Be(typeof(OrderPlacedConsumer).GetTypeInfo());
         analyticsService.ImplTypeInfo.Should().Be(typeof(OrderAnalyticsConsumer).GetTypeInfo());

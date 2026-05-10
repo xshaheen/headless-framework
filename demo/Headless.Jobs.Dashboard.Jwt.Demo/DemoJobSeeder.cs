@@ -114,7 +114,7 @@ public sealed class DemoJobSeeder(IServiceScopeFactory scopeFactory, ILogger<Dem
                 new TimeJobEntity
                 {
                     Function = function,
-                    Description = $"{function.Replace("Demo_", "")} job #{_counter}",
+                    Description = $"{function.Replace("Demo_", "", StringComparison.Ordinal)} job #{_counter}",
                     ExecutionTime = DateTime.UtcNow.Add(delay),
                 },
                 ct

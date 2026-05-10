@@ -27,7 +27,7 @@ internal class MessagingMetricsEventListener : EventListener
     {
         var warpArr = new CircularBuffer<int?>[4];
 
-        var startTime = (int)DateTimeOffset.Now.AddSeconds(-300).ToUnixTimeSeconds();
+        var startTime = (int)DateTimeOffset.UtcNow.AddSeconds(-300).ToUnixTimeSeconds();
         var endTime = startTime + 300;
 
         var timeSerials = new CircularBuffer<int?>(HistorySize);

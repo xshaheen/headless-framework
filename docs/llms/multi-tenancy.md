@@ -203,7 +203,31 @@ foreach (var tenantId in tenantIds)
 
 ### Message Consumers
 
-If your transport carries tenant information on the envelope, read the typed `ConsumeContext.TenantId` and establish scope manually:
+The `TenantId` envelope property is populated automatically from the canonical `headless-tenant-id` wire header (see `Headers.TenantId`). On the publish side, set `PublishOptions.TenantId` rather than writing the header directly. The publish pipeline enforces a strict 4-case integrity policy: raw-only writes and writes that disagree with the typed property are rejected with `InvalidOperationException`; a raw write that matches the typed property is accepted as a no-op. Consume-side values are untrusted wire data — validate them before downstream use.
+
+#### Automatic Propagation (`AddTenantPropagation`)
+
+For end-to-end propagation, opt in to the built-in filter pair:
+
+```csharp
+using Headless.Messaging.MultiTenancy;
+
+builder.Services.AddHeadlessMessaging(options =>
+{
+    // ...
+})
+.AddTenantPropagation();
+```
+
+This registers `TenantPropagationPublishFilter` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id` at publish time) and `TenantPropagationConsumeFilter` (calls `ICurrentTenant.Change(...)` on the resolved `ConsumeContext<T>.TenantId` for the lifetime of the consume — including both success and exception paths). Caller-set values on `PublishOptions.TenantId` are preserved verbatim; system messages can override propagation by setting `TenantId` explicitly or by publishing with no ambient tenant.
+
+The extension is idempotent — calling `AddTenantPropagation()` more than once does not double-register either filter. Without a real `ICurrentTenant` registered (the framework's `NullCurrentTenant` fallback always returns `Id = null`), the publish-side filter is a silent no-op.
+
+**Trust boundary.** The consume filter trusts the inbound envelope. The framework assumes the message bus is internal-only; topics exposed to external producers must layer envelope validation or signing in front of this filter. Otherwise an attacker who can publish to the bus can impersonate any tenant.
+
+#### Manual Propagation
+
+If you need finer-grained control (or you opted out of `AddTenantPropagation`), establish the scope manually inside your consumer:
 
 ```csharp
 var tenantId = context.TenantId;
@@ -213,10 +237,6 @@ using (currentTenant.Change(tenantId))
     await handler.HandleAsync(message, cancellationToken);
 }
 ```
-
-The `TenantId` envelope property is populated automatically from the canonical `headless-tenant-id` wire header (see `Headers.TenantId`). On the publish side, set `PublishOptions.TenantId` rather than writing the header directly. The publish pipeline enforces a strict 4-case integrity policy: raw-only writes and writes that disagree with the typed property are rejected with `InvalidOperationException`; a raw write that matches the typed property is accepted as a no-op. Consume-side values are untrusted wire data — validate them before downstream use.
-
-Automatic tenant propagation in consumer pipelines is intentionally out of scope.
 
 #### Strict Publish Tenancy (`TenantContextRequired`)
 

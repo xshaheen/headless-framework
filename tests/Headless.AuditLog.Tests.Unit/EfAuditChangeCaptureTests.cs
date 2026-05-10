@@ -555,7 +555,7 @@ public sealed class EfAuditChangeCaptureTests : TestBase
             // then - should capture both Customer and the owned Address
             result.Should().NotBeEmpty();
             var addressEntry = result.FirstOrDefault(e =>
-                e.EntityType != null && e.EntityType.Contains(nameof(Address))
+                e.EntityType != null && e.EntityType.Contains(nameof(Address), StringComparison.Ordinal)
             );
             addressEntry.Should().NotBeNull();
         }

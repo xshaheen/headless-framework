@@ -30,7 +30,7 @@ _ = Task.Run(
             await Task.Delay(2000, cts.Token);
 
             await sp.GetRequiredService<IOutboxPublisher>()
-                .PublishAsync(DateTime.Now, new PublishOptions { Topic = "sample.console.showtime" }, cts.Token);
+                .PublishAsync(DateTime.UtcNow, new PublishOptions { Topic = "sample.console.showtime" }, cts.Token);
         }
     },
     cts.Token

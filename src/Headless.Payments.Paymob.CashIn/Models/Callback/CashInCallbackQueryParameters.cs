@@ -201,10 +201,8 @@ public sealed class CashInCallbackQueryParameters
     public bool IsRiskChecksError()
     {
         return TxnResponseCode is "11"
-            && DataMessage?.Contains(
-                "transaction did not pass risk checks",
-                StringComparison.InvariantCultureIgnoreCase
-            ) == true;
+            && DataMessage?.Contains("transaction did not pass risk checks", StringComparison.OrdinalIgnoreCase)
+                == true;
     }
 
     public CashInCardInfo? Card()

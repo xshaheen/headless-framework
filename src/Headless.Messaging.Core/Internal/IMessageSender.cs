@@ -5,7 +5,6 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -225,7 +224,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
         {
-            var ex = new Headless.Messaging.PublisherSentFailedException(result.ToString(), result.Exception);
+            var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             var eventData = new MessageEventDataPubSend

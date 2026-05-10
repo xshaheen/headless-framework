@@ -565,6 +565,50 @@ using (currentTenant.Change(tenantId))
 
 Catch `MissingTenantContextException` directly (it inherits from `Exception`, not `InvalidOperationException`) when a cross-cutting handler needs to map it to an HTTP 4xx or suppress retries.
 
+## Filters
+
+The pipeline supports cross-cutting middleware on both sides via two interfaces:
+
+- `IConsumeFilter` — runs around every consume invocation. Override `OnSubscribeExecutingAsync` (before user code), `OnSubscribeExecutedAsync` (after success), and `OnSubscribeExceptionAsync` (when consume throws).
+- `IPublishFilter` — runs around every publish (both `IDirectPublisher` and `IOutboxPublisher`). Override `OnPublishExecutingAsync` (before send/store), `OnPublishExecutedAsync` (after success), and `OnPublishExceptionAsync` (when publish throws).
+
+**Registration:**
+
+```csharp
+builder.Services.AddHeadlessMessaging(options =>
+{
+    // ...
+})
+.AddSubscribeFilter<LoggingConsumeFilter>()
+.AddPublishFilter<LoggingPublishFilter>();
+```
+
+Both registrations are idempotent — calling them twice with the same `T` does **not** double-register (backed by `TryAddEnumerable`). Multiple distinct filters compose into a chain.
+
+**Ordering:** filters mirror ASP.NET Core MVC filter ordering — `OnXExecutingAsync` runs in registration order; `OnXExecutedAsync` and `OnXExceptionAsync` run in **reverse** order. Filters that did not execute their `executing` phase (because an earlier filter threw) are also skipped on the executed/exception phases — only the filters that actually entered are unwound.
+
+`IPublishFilter.OnPublishExecutedAsync` runs after the transport or outbox accepts the message. Exceptions from this phase are logged and suppressed so callers do not retry an already-published message. Keep post-success work best-effort, or move required durable work before publishing.
+
+**`PublishExceptionContext.ExceptionHandled` ⚠️:** setting `ExceptionHandled = true` on the publish-side exception context **silently swallows** the publish failure — the caller's `PublishAsync` returns normally as if the message had been sent. This is **not** symmetric with consume-side ack semantics: there is no broker to receive an "ack" on publish, so handled exceptions become invisible failures. Only flip `ExceptionHandled` when the filter has either rerouted the message to a dead-letter sink or recorded a durable trace. Otherwise let the exception propagate so the caller can retry or log.
+
+**`PublishedContext.IsTransactional`:** set to `true` only when the publish was buffered into the outbox under an ambient database transaction whose commit is the caller's responsibility (the `OutboxPublisher` non-AutoCommit branch). `DirectPublisher` and the `OutboxPublisher` AutoCommit branch leave it `false`. Filters that record durable side-effects in `OnPublishExecutedAsync` should check this flag and either skip work, enroll in the ambient transaction, or design the side-effect to be idempotent against rollback — surfacing the transactional boundary as a typed contract rather than an undocumented gotcha.
+
+### Multi-tenancy
+
+The framework ships a built-in filter pair that propagates the originating tenant on the wire:
+
+```csharp
+using Headless.Messaging.MultiTenancy;
+
+builder.Services.AddHeadlessMessaging(options =>
+{
+    // ...
+})
+.AddTenantPropagation();
+```
+
+This registers `TenantPropagationPublishFilter` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id`) and `TenantPropagationConsumeFilter` (calls `ICurrentTenant.Change(...)` for the lifetime of the consume). Caller-set values on `PublishOptions.TenantId` are preserved verbatim — set it explicitly to override the ambient tenant. See the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section for the trust boundary and the strict-tenancy guard.
+
 ## Message Ordering Guarantees
 
 Message ordering guarantees depend on the transport provider and configuration:

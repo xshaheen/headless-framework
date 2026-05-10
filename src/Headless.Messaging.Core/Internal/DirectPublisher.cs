@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Headless.Abstractions;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
@@ -12,7 +11,8 @@ namespace Headless.Messaging.Internal;
 internal sealed class DirectPublisher(
     ISerializer serializer,
     ITransport transport,
-    IMessagePublishRequestFactory publishRequestFactory
+    IMessagePublishRequestFactory publishRequestFactory,
+    IPublishExecutionPipeline publishPipeline
 ) : IDirectPublisher
 {
     private static readonly DiagnosticListener _DiagnosticListener = new(
@@ -22,6 +22,7 @@ internal sealed class DirectPublisher(
     private readonly ISerializer _serializer = serializer;
     private readonly ITransport _transport = transport;
     private readonly IMessagePublishRequestFactory _publishRequestFactory = publishRequestFactory;
+    private readonly IPublishExecutionPipeline _publishPipeline = publishPipeline;
 
     public Task PublishAsync<T>(
         T? contentObj,
@@ -29,16 +30,21 @@ internal sealed class DirectPublisher(
         CancellationToken cancellationToken = default
     )
     {
-        return _PublishCoreAsync(contentObj, options, cancellationToken);
-    }
-
-    private async Task _PublishCoreAsync<T>(T? contentObj, PublishOptions? options, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var publishRequest = _publishRequestFactory.Create(contentObj, options);
-
-        await _SendAsync(publishRequest.Message, cancellationToken).ConfigureAwait(false);
+        return _publishPipeline.ExecuteAsync(
+            contentObj,
+            options,
+            // DelayTime is undefined for the immediate publish path; ignored.
+            delayTime: null,
+            innerPublish: (filteredOptions, _, ct) =>
+            {
+                var publishRequest = _publishRequestFactory.Create(contentObj, filteredOptions);
+                return _SendAsync(publishRequest.Message, ct);
+            },
+            // DirectPublisher always commits to the wire inside the pipeline; PublishedContext.IsTransactional
+            // remains false because rollback semantics don't apply.
+            isTransactional: false,
+            cancellationToken
+        );
     }
 
     private async Task _SendAsync(Message message, CancellationToken cancellationToken)
@@ -64,7 +70,7 @@ internal sealed class DirectPublisher(
             if (!result.Succeeded)
             {
                 _TracingErrorSend(tracingTimestamp, transportMsg, result);
-                throw new Headless.Messaging.PublisherSentFailedException(result.ToString(), result.Exception);
+                throw new PublisherSentFailedException(result.ToString(), result.Exception);
             }
 
             _TracingAfterSend(tracingTimestamp, transportMsg);
@@ -74,7 +80,7 @@ internal sealed class DirectPublisher(
             // Cancellation is expected behavior, not an error - let it propagate without tracing
             throw;
         }
-        catch (Exception e) when (e is not Headless.Messaging.PublisherSentFailedException)
+        catch (Exception e) when (e is not PublisherSentFailedException)
         {
             try
             {
@@ -137,7 +143,7 @@ internal sealed class DirectPublisher(
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
         {
-            var ex = new Headless.Messaging.PublisherSentFailedException(result.ToString(), result.Exception);
+            var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             var eventData = new MessageEventDataPubSend

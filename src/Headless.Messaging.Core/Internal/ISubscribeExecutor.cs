@@ -9,7 +9,6 @@ using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Retry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

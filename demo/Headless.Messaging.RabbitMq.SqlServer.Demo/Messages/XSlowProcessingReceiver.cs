@@ -10,7 +10,7 @@ public class XSlowProcessingReceiver(ILogger<XSlowProcessingReceiver> logger) : 
         {
             logger.LogInformation(
                 "Starting SLOW processing handler {DateTime}: {MessageText}",
-                DateTime.Now,
+                DateTime.UtcNow,
                 context.Message.Text
             );
         }
@@ -21,7 +21,7 @@ public class XSlowProcessingReceiver(ILogger<XSlowProcessingReceiver> logger) : 
         {
             logger.LogInformation(
                 "Ending   SLOW processing handler {DateTime}: {MessageText}",
-                DateTime.Now,
+                DateTime.UtcNow,
                 context.Message.Text
             );
         }

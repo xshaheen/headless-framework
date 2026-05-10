@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore.Query;
 
 namespace Headless.Orm.EntityFramework.GlobalFilters;
 
-/// <inheritdoc />
+/// <summary>Adds the current tenant id to EF Core compiled query cache keys.</summary>
 public sealed class HeadlessCompiledQueryCacheKeyGenerator(
     ICompiledQueryCacheKeyGenerator inner,
     ICurrentDbContext currentDbContext

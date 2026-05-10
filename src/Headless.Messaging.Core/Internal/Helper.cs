@@ -65,19 +65,30 @@ public static partial class Helper
             );
         }
 
-        if (wildcard.Contains('*'))
+        var hasStar = wildcard.Contains('*', StringComparison.Ordinal);
+        var hasHash = wildcard.Contains('#', StringComparison.Ordinal);
+
+        if (!hasStar && !hasHash)
         {
-            // Possessive quantifier (atomic group) prevents backtracking entirely
-            return ("^" + Regex.Escape(wildcard) + "$").Replace(Regex.Escape("*"), "(?>[0-9a-zA-Z]+)");
+            return Regex.Escape(wildcard);
         }
 
-        if (wildcard.Contains('#'))
+        // Possessive quantifiers (atomic groups) prevent backtracking entirely.
+        // Both substitutions are applied sequentially so mixed patterns like "orders.*.#"
+        // expand both wildcards instead of leaving the second one as a literal.
+        var pattern = "^" + Regex.Escape(wildcard) + "$";
+
+        if (hasStar)
         {
-            // Possessive quantifier (atomic group) prevents backtracking entirely
-            return ("^" + Regex.Escape(wildcard) + "$").Replace(Regex.Escape("#"), "(?>[0-9a-zA-Z\\.]+)");
+            pattern = pattern.Replace(Regex.Escape("*"), "(?>[0-9a-zA-Z]+)", StringComparison.Ordinal);
         }
 
-        return Regex.Escape(wildcard);
+        if (hasHash)
+        {
+            pattern = pattern.Replace(Regex.Escape("#"), "(?>[0-9a-zA-Z\\.]+)", StringComparison.Ordinal);
+        }
+
+        return pattern;
     }
 
     public static string? GetInstanceHostname()

@@ -197,6 +197,55 @@ builder.Services.AddHeadlessMessaging(options =>
 });
 ```
 
+## Filters
+
+Both sides of the pipeline support cross-cutting middleware via `IConsumeFilter` and `IPublishFilter`. Each interface exposes an `Executing` / `Executed` / `Exception` triad. Filters compose into a chain — `Executing` runs in registration order, `Executed` and `Exception` run in reverse (mirroring ASP.NET Core MVC).
+
+```csharp
+public sealed class LoggingConsumeFilter(ILogger<LoggingConsumeFilter> logger) : ConsumeFilter
+{
+    public override ValueTask OnSubscribeExecutingAsync(ExecutingContext context)
+    {
+        logger.LogInformation("Consuming {MessageId}", context.MediumMessage.Origin.GetId());
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class CorrelationPublishFilter : PublishFilter
+{
+    public override ValueTask OnPublishExecutingAsync(PublishingContext context)
+    {
+        context.Options = (context.Options ?? new PublishOptions()) with
+        {
+            CorrelationId = context.Options?.CorrelationId ?? Guid.NewGuid().ToString(),
+        };
+        return ValueTask.CompletedTask;
+    }
+}
+
+builder.Services.AddHeadlessMessaging(options => { /* ... */ })
+    .AddSubscribeFilter<LoggingConsumeFilter>()
+    .AddPublishFilter<CorrelationPublishFilter>();
+```
+
+Both registrations are idempotent (`TryAddEnumerable` under the hood). `OnPublishExecutedAsync` runs after the message is accepted; exceptions from that phase are logged and suppressed to avoid caller retries that duplicate the message. Setting `PublishExceptionContext.ExceptionHandled = true` silently swallows a pre-accept publish failure — only do this when the filter has rerouted the message to a durable sink.
+
+### Multi-Tenancy Propagation
+
+`AddTenantPropagation()` registers a built-in filter pair that ties the wire envelope to `ICurrentTenant`:
+
+```csharp
+using Headless.Messaging.MultiTenancy;
+
+builder.Services.AddHeadlessMessaging(options => { /* ... */ })
+    .AddTenantPropagation();
+```
+
+- **Publish:** stamps `PublishOptions.TenantId` from the ambient `ICurrentTenant.Id` when the caller has not set it explicitly. Caller overrides win.
+- **Consume:** restores `ICurrentTenant.Change(...)` from the resolved `ConsumeContext<T>.TenantId` for the lifetime of the consume, including the exception path. Whitespace, empty, and oversized header values map to "no tenant".
+
+The consume filter trusts the inbound envelope. Topics exposed to external producers must layer envelope validation upstream.
+
 ## Message Ordering Guarantees
 
 Message ordering guarantees depend on the transport provider and configuration:

@@ -25,8 +25,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
 
@@ -77,8 +76,8 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
+
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         // when
@@ -94,8 +93,11 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions { TopicNamePrefix = "myapp" };
-        options.TopicMappings[typeof(TestMessage)] = "events";
+        var options = new MessagingOptions
+        {
+            TopicNamePrefix = "myapp",
+            TopicMappings = { [typeof(TestMessage)] = "events" },
+        };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
 
@@ -112,8 +114,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport { ShouldFail = true };
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
 
@@ -121,7 +122,7 @@ public sealed class DirectPublisherTests : TestBase
         var act = () => publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
 
         // then
-        await act.Should().ThrowAsync<Headless.Messaging.PublisherSentFailedException>();
+        await act.Should().ThrowAsync<PublisherSentFailedException>();
     }
 
     [Fact]
@@ -132,8 +133,7 @@ public sealed class DirectPublisherTests : TestBase
         {
             ExceptionToThrow = new InvalidOperationException("Transport unavailable"),
         };
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
 
@@ -149,8 +149,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
 
@@ -172,8 +171,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
         var publishOptions = new PublishOptions
@@ -200,8 +198,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
         var publishOptions = new PublishOptions { MessageId = new string('m', PublishOptions.MessageIdMaxLength) };
@@ -219,8 +216,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
         var publishOptions = new PublishOptions { MessageId = new string('m', PublishOptions.MessageIdMaxLength + 1) };
@@ -258,8 +254,8 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
+
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         var publishOptions = new PublishOptions
@@ -282,8 +278,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given (case a: typed-only)
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
         var publishOptions = new PublishOptions { TenantId = "acme" };
@@ -301,8 +296,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given (case c: both set, equal)
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
         var publishOptions = new PublishOptions
@@ -324,8 +318,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given (case b: raw-only — the typed property must be the source of truth)
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
         var publishOptions = new PublishOptions
@@ -348,8 +341,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given (case d: both set, disagree)
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
         var publishOptions = new PublishOptions
@@ -371,8 +363,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given (case: neither set)
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
 
@@ -389,8 +380,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given: whitespace raw header with no typed property — symmetric with consume-side leniency
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
         var publishOptions = new PublishOptions
@@ -410,9 +400,8 @@ public sealed class DirectPublisherTests : TestBase
     public async Task should_reject_whitespace_typed_tenant_id()
     {
         // given: whitespace typed value — must throw because TenantId has no auto-generated default
-        var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        await using var testTransport = new TestTransport();
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
         var publishOptions = new PublishOptions { TenantId = "   " };
@@ -430,8 +419,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
         var publishOptions = new PublishOptions { TenantId = new string('t', PublishOptions.TenantIdMaxLength + 1) };
@@ -452,8 +440,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
         var maxTenantId = new string('t', PublishOptions.TenantIdMaxLength);
@@ -472,8 +459,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
 
@@ -483,7 +469,7 @@ public sealed class DirectPublisherTests : TestBase
         // then
         testTransport.SentMessages.Should().HaveCount(1);
         testTransport.SentMessages[0].Body.Length.Should().BeGreaterThan(0);
-        var bodyString = System.Text.Encoding.UTF8.GetString(testTransport.SentMessages[0].Body.Span);
+        var bodyString = Encoding.UTF8.GetString(testTransport.SentMessages[0].Body.Span);
         bodyString.Should().Contain("test-value");
     }
 
@@ -492,14 +478,15 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
+
         var publisher = _CreateDirectPublisher(testTransport, options);
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
         // when
+        // ReSharper disable once AccessToDisposedClosure
         var act = () => publisher.PublishAsync(new TestMessage("test"), cancellationToken: cts.Token);
 
         // then
@@ -512,8 +499,7 @@ public sealed class DirectPublisherTests : TestBase
     {
         // given
         var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.TopicMappings[typeof(TestMessage)] = "test.topic";
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateDirectPublisher(testTransport, options);
 
@@ -581,7 +567,8 @@ public sealed class DirectPublisherTests : TestBase
             currentTenant ?? new NullCurrentTenant()
         );
 
-        return new DirectPublisher(serializer, transport, publishRequestFactory);
+        var pipeline = new PublishExecutionPipeline(new ServiceCollection().BuildServiceProvider());
+        return new DirectPublisher(serializer, transport, publishRequestFactory, pipeline);
     }
 
     /// <summary>

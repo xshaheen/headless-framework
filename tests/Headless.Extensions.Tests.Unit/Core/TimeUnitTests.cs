@@ -36,7 +36,7 @@ public sealed class TimeUnitTests
     public void parse_invalid_input_should_throw_argument_exception(string? value, string expectedMessage)
     {
         // when
-        Action action = () => TimeUnit.Parse(value);
+        Action action = () => TimeUnit.Parse(value!);
 
         // then
         action.Should().Throw<ArgumentException>().WithMessage(expectedMessage);
@@ -62,7 +62,7 @@ public sealed class TimeUnitTests
     )
     {
         // when
-        var success = TimeUnit.TryParse(value, out var result);
+        var success = TimeUnit.TryParse(value!, out var result);
 
         // then
         success.Should().Be(expectedSuccess);

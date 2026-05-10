@@ -285,7 +285,7 @@ public sealed partial class Url
     public static IEnumerable<string> ParsePathSegments(string path)
     {
         var segments = EncodeIllegalCharacters(path)
-            .Replace("?", "%3F")
+            .Replace("?", "%3F", StringComparison.Ordinal)
             .Replace("#", "%23", StringComparison.Ordinal)
             .Split('/');
 
@@ -974,7 +974,7 @@ public sealed partial class Url
             return s;
         }
 
-        return Uri.UnescapeDataString(interpretPlusAsSpace ? s.Replace("+", " ") : s);
+        return Uri.UnescapeDataString(interpretPlusAsSpace ? s.Replace('+', ' ') : s);
     }
 
     private const int _MaxUrlLength = 65519;
@@ -1009,7 +1009,8 @@ public sealed partial class Url
         {
             s = Uri.EscapeDataString(s);
         }
-        return encodeSpaceAsPlus ? s.Replace("%20", "+") : s;
+
+        return encodeSpaceAsPlus ? s.Replace("%20", "+", StringComparison.Ordinal) : s;
     }
 
     /// <summary>
@@ -1028,7 +1029,7 @@ public sealed partial class Url
 
         if (encodeSpaceAsPlus)
         {
-            s = s.Replace(" ", "+");
+            s = s.Replace(' ', '+');
         }
 
         // Uri.EscapeUriString mostly does what we want - encodes illegal characters only - but it has a quirk

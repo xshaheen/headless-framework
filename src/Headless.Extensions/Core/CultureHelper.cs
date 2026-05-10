@@ -14,7 +14,10 @@ public static class CultureHelper
     {
         Argument.IsNotNull(culture);
 
-        return Use(culture: new CultureInfo(culture), uiCulture: uiCulture is null ? null : new CultureInfo(uiCulture));
+        return Use(
+            culture: CultureInfo.GetCultureInfo(culture),
+            uiCulture: uiCulture is null ? null : CultureInfo.GetCultureInfo(uiCulture)
+        );
     }
 
     [MustDisposeResource]

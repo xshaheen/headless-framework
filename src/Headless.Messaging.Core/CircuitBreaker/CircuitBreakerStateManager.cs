@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Collections.Frozen;
 using Headless.Checks;
 using Headless.Messaging.Internal;
 using Microsoft.Extensions.Logging;

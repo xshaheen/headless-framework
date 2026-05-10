@@ -75,14 +75,14 @@ public sealed class BlobStorageExtensionsTests : TestBase
             new()
             {
                 BlobKey = "file1.txt",
-                Created = DateTimeOffset.Now,
-                Modified = DateTimeOffset.Now,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
             },
             new()
             {
                 BlobKey = "file2.txt",
-                Created = DateTimeOffset.Now,
-                Modified = DateTimeOffset.Now,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
             },
         };
 
@@ -91,8 +91,8 @@ public sealed class BlobStorageExtensionsTests : TestBase
             new()
             {
                 BlobKey = "file3.txt",
-                Created = DateTimeOffset.Now,
-                Modified = DateTimeOffset.Now,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
             },
         };
 
@@ -132,20 +132,20 @@ public sealed class BlobStorageExtensionsTests : TestBase
             new()
             {
                 BlobKey = "file1.txt",
-                Created = DateTimeOffset.Now,
-                Modified = DateTimeOffset.Now,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
             },
             new()
             {
                 BlobKey = "file2.txt",
-                Created = DateTimeOffset.Now,
-                Modified = DateTimeOffset.Now,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
             },
             new()
             {
                 BlobKey = "file3.txt",
-                Created = DateTimeOffset.Now,
-                Modified = DateTimeOffset.Now,
+                Created = DateTimeOffset.UtcNow,
+                Modified = DateTimeOffset.UtcNow,
             },
         };
 

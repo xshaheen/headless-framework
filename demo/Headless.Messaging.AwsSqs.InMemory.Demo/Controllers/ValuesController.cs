@@ -9,7 +9,7 @@ public class ValuesController(IOutboxPublisher producer) : Controller
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
     {
-        await producer.PublishAsync(DateTime.Now, new PublishOptions { Topic = "sample.aws.in-memory" });
+        await producer.PublishAsync(DateTime.UtcNow, new PublishOptions { Topic = "sample.aws.in-memory" });
 
         return Ok();
     }

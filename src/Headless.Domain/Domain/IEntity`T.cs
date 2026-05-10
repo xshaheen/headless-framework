@@ -12,7 +12,7 @@ public interface IEntity<out TId> : IEntity
     TId Id { get; }
 }
 
-/// <inheritdoc cref="IEntity{TId}"/>
+/// <summary>Base class for entities with a single primary key.</summary>
 public abstract class Entity<TId> : Entity, IEntity<TId>
     where TId : IEquatable<TId>
 {
