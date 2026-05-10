@@ -1,7 +1,7 @@
 ---
 title: "feat: multi-tenant write guard"
 type: feat
-status: active
+status: completed
 date: 2026-05-10
 origin: docs/brainstorms/2026-05-10-001-multi-tenant-write-guard-requirements.md
 issue: https://github.com/xshaheen/headless-framework/issues/234
