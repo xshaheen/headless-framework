@@ -18,7 +18,7 @@ public sealed class TenantPropagationPublishFilterTests : TestBase
     public async Task should_stamp_tenant_id_from_ambient_when_options_unset()
     {
         // given — Covers AE3
-        var tenant = NSubstitute.Substitute.For<ICurrentTenant>();
+        var tenant = Substitute.For<ICurrentTenant>();
         tenant.Id.Returns("acme");
         var filter = new TenantPropagationPublishFilter(tenant);
         var ctx = new PublishingContext(
@@ -40,7 +40,7 @@ public sealed class TenantPropagationPublishFilterTests : TestBase
     public async Task should_preserve_caller_set_tenant_id_when_ambient_is_also_set()
     {
         // given — Covers AE4 (caller override wins)
-        var tenant = NSubstitute.Substitute.For<ICurrentTenant>();
+        var tenant = Substitute.For<ICurrentTenant>();
         tenant.Id.Returns("acme");
         var filter = new TenantPropagationPublishFilter(tenant);
         var ctx = new PublishingContext(
@@ -61,7 +61,7 @@ public sealed class TenantPropagationPublishFilterTests : TestBase
     public async Task should_be_a_noop_when_ambient_tenant_is_null()
     {
         // given — Covers AE5 (no ambient + no explicit → no stamping)
-        var tenant = NSubstitute.Substitute.For<ICurrentTenant>();
+        var tenant = Substitute.For<ICurrentTenant>();
         tenant.Id.Returns((string?)null);
         var filter = new TenantPropagationPublishFilter(tenant);
         var ctx = new PublishingContext(
@@ -82,7 +82,7 @@ public sealed class TenantPropagationPublishFilterTests : TestBase
     public async Task should_preserve_caller_set_tenant_id_when_ambient_is_null()
     {
         // given — Covers AE7 (no ambient + explicit caller-set → preserved)
-        var tenant = NSubstitute.Substitute.For<ICurrentTenant>();
+        var tenant = Substitute.For<ICurrentTenant>();
         tenant.Id.Returns((string?)null);
         var filter = new TenantPropagationPublishFilter(tenant);
         var ctx = new PublishingContext(
@@ -103,7 +103,7 @@ public sealed class TenantPropagationPublishFilterTests : TestBase
     public async Task should_preserve_other_options_fields_when_stamping_tenant_id()
     {
         // given — verify the `with` expression preserves all other fields
-        var tenant = NSubstitute.Substitute.For<ICurrentTenant>();
+        var tenant = Substitute.For<ICurrentTenant>();
         tenant.Id.Returns("acme");
         var filter = new TenantPropagationPublishFilter(tenant);
         var ctx = new PublishingContext(

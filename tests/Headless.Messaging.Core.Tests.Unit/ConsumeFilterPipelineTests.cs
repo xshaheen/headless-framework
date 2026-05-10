@@ -66,16 +66,15 @@ public sealed class ConsumeFilterPipelineTests : TestBase
         var pipeline = _BuildPipeline(services);
 
         // when
-        await pipeline.ExecuteAsync(_BuildConsumerContext(), new SimpleMessage("hi"), typeof(SimpleMessage), AbortToken);
+        await pipeline.ExecuteAsync(
+            _BuildConsumerContext(),
+            new SimpleMessage("hi"),
+            typeof(SimpleMessage),
+            AbortToken
+        );
 
         // then
-        recorder.Calls.Should().Equal(
-            "A.executing",
-            "B.executing",
-            "dispatcher",
-            "B.executed",
-            "A.executed"
-        );
+        recorder.Calls.Should().Equal("A.executing", "B.executing", "dispatcher", "B.executed", "A.executed");
     }
 
     [Fact]
@@ -110,17 +109,16 @@ public sealed class ConsumeFilterPipelineTests : TestBase
 
         // when
         var act = async () =>
-            await pipeline.ExecuteAsync(_BuildConsumerContext(), new SimpleMessage("hi"), typeof(SimpleMessage), AbortToken);
+            await pipeline.ExecuteAsync(
+                _BuildConsumerContext(),
+                new SimpleMessage("hi"),
+                typeof(SimpleMessage),
+                AbortToken
+            );
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("dispatcher boom");
-        recorder.Calls.Should().Equal(
-            "A.executing",
-            "B.executing",
-            "dispatcher.throw",
-            "B.exception",
-            "A.exception"
-        );
+        recorder.Calls.Should().Equal("A.executing", "B.executing", "dispatcher.throw", "B.exception", "A.exception");
     }
 
     [Fact]
@@ -133,7 +131,12 @@ public sealed class ConsumeFilterPipelineTests : TestBase
         var pipeline = _BuildPipeline(services);
 
         // when
-        await pipeline.ExecuteAsync(_BuildConsumerContext(), new SimpleMessage("hi"), typeof(SimpleMessage), AbortToken);
+        await pipeline.ExecuteAsync(
+            _BuildConsumerContext(),
+            new SimpleMessage("hi"),
+            typeof(SimpleMessage),
+            AbortToken
+        );
 
         // then — both exception filters ran; outer Handling filter swallowed the exception
         recorder.Calls.Should().Contain("dispatcher.throw");
@@ -155,18 +158,20 @@ public sealed class ConsumeFilterPipelineTests : TestBase
 
         // when
         var act = async () =>
-            await pipeline.ExecuteAsync(_BuildConsumerContext(), new SimpleMessage("hi"), typeof(SimpleMessage), AbortToken);
+            await pipeline.ExecuteAsync(
+                _BuildConsumerContext(),
+                new SimpleMessage("hi"),
+                typeof(SimpleMessage),
+                AbortToken
+            );
 
         // then — A and ExecutingThrow ran executing; only those two appear in the exception phase.
         // B never entered executing, so its exception phase MUST NOT run (otherwise filters might dispose
         // state they never initialized, mirroring the ASP.NET MVC stack-unwind contract).
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("filter executing boom");
-        recorder.Calls.Should().Equal(
-            "A.executing",
-            "ExecutingThrow.executing",
-            "ExecutingThrow.exception",
-            "A.exception"
-        );
+        recorder
+            .Calls.Should()
+            .Equal("A.executing", "ExecutingThrow.executing", "ExecutingThrow.exception", "A.exception");
         recorder.Calls.Should().NotContain("B.executing");
         recorder.Calls.Should().NotContain("B.exception");
     }
@@ -183,7 +188,12 @@ public sealed class ConsumeFilterPipelineTests : TestBase
         var pipeline = _BuildPipeline(services);
 
         // when
-        await pipeline.ExecuteAsync(_BuildConsumerContext(), new SimpleMessage("hi"), typeof(SimpleMessage), AbortToken);
+        await pipeline.ExecuteAsync(
+            _BuildConsumerContext(),
+            new SimpleMessage("hi"),
+            typeof(SimpleMessage),
+            AbortToken
+        );
 
         // then — inner runs first in reverse, sets Result; outer (last in reverse) observes the mutation
         recorder.Calls.Should().Contain("Inner.executed.set-result");
@@ -221,7 +231,12 @@ public sealed class ConsumeFilterPipelineTests : TestBase
 
         // when
         var act = async () =>
-            await pipeline.ExecuteAsync(_BuildConsumerContext(), new SimpleMessage("hi"), typeof(SimpleMessage), AbortToken);
+            await pipeline.ExecuteAsync(
+                _BuildConsumerContext(),
+                new SimpleMessage("hi"),
+                typeof(SimpleMessage),
+                AbortToken
+            );
 
         // then — zero-filter case rethrows directly
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("dispatcher boom");
@@ -241,7 +256,7 @@ public sealed class ConsumeFilterPipelineTests : TestBase
     private static ConsumeExecutionPipeline _BuildPipeline(ServiceCollection services)
     {
         var provider = services.BuildServiceProvider();
-        var registry = NSubstitute.Substitute.For<IRuntimeConsumerRegistry>();
+        var registry = Substitute.For<IRuntimeConsumerRegistry>();
         return new ConsumeExecutionPipeline(provider, registry);
     }
 

@@ -2,6 +2,8 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.Messaging.Internal;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.MultiTenancy;
 
@@ -25,10 +27,12 @@ namespace Headless.Messaging.MultiTenancy;
 /// Register via <c>messaging.AddTenantPropagation()</c>.
 /// </para>
 /// </remarks>
-public sealed class TenantPropagationConsumeFilter(ICurrentTenant currentTenant) : ConsumeFilter
+public sealed class TenantPropagationConsumeFilter(
+    ICurrentTenant currentTenant,
+    ILogger<TenantPropagationConsumeFilter>? logger = null
+) : ConsumeFilter
 {
-    private readonly ICurrentTenant _currentTenant =
-        Argument.IsNotNull(currentTenant);
+    private readonly ICurrentTenant _currentTenant = Argument.IsNotNull(currentTenant);
 
     // Per-message-scope filter instance; safe to hold the disposable on a field across the
     // executing/executed/exception triad. ConsumeExecutionPipeline creates a fresh DI scope
@@ -42,6 +46,7 @@ public sealed class TenantPropagationConsumeFilter(ICurrentTenant currentTenant)
 
         if (context.TenantId is { } value)
         {
+            logger?.TenantContextSwitched(value);
             _scope = _currentTenant.Change(value);
         }
 

@@ -48,7 +48,9 @@ public sealed class PublishExecutionPipelineTests : TestBase
         var recorder = new PublishCallRecorder();
         var services = new ServiceCollection();
         services.AddSingleton(recorder);
-        new MessagingBuilder(services).AddPublishFilter<RecordingPublishFilterA>().AddPublishFilter<RecordingPublishFilterB>();
+        new MessagingBuilder(services)
+            .AddPublishFilter<RecordingPublishFilterA>()
+            .AddPublishFilter<RecordingPublishFilterB>();
         var pipeline = _BuildPipeline(services);
 
         // when
@@ -65,13 +67,7 @@ public sealed class PublishExecutionPipelineTests : TestBase
         );
 
         // then
-        recorder.Calls.Should().Equal(
-            "A.publishing",
-            "B.publishing",
-            "inner",
-            "B.published",
-            "A.published"
-        );
+        recorder.Calls.Should().Equal("A.publishing", "B.publishing", "inner", "B.published", "A.published");
     }
 
     [Fact]
@@ -102,15 +98,17 @@ public sealed class PublishExecutionPipelineTests : TestBase
 
         // then — inner accepted the message; post-success filter failure is logged/suppressed
         // so callers do not retry an already-published message.
-        recorder.Calls.Should().Equal(
-            "A.publishing",
-            "PublishedThrow.publishing",
-            "B.publishing",
-            "inner",
-            "B.published",
-            "PublishedThrow.published.throw",
-            "A.published"
-        );
+        recorder
+            .Calls.Should()
+            .Equal(
+                "A.publishing",
+                "PublishedThrow.publishing",
+                "B.publishing",
+                "inner",
+                "B.published",
+                "PublishedThrow.published.throw",
+                "A.published"
+            );
         recorder.Calls.Should().NotContain("A.exception");
     }
 
@@ -177,7 +175,9 @@ public sealed class PublishExecutionPipelineTests : TestBase
         var recorder = new PublishCallRecorder();
         var services = new ServiceCollection();
         services.AddSingleton(recorder);
-        new MessagingBuilder(services).AddPublishFilter<RecordingPublishFilterA>().AddPublishFilter<RecordingPublishFilterB>();
+        new MessagingBuilder(services)
+            .AddPublishFilter<RecordingPublishFilterA>()
+            .AddPublishFilter<RecordingPublishFilterB>();
         var pipeline = _BuildPipeline(services);
 
         // when
@@ -196,13 +196,7 @@ public sealed class PublishExecutionPipelineTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("inner boom");
-        recorder.Calls.Should().Equal(
-            "A.publishing",
-            "B.publishing",
-            "inner.throw",
-            "B.exception",
-            "A.exception"
-        );
+        recorder.Calls.Should().Equal("A.publishing", "B.publishing", "inner.throw", "B.exception", "A.exception");
     }
 
     [Fact]
@@ -262,12 +256,9 @@ public sealed class PublishExecutionPipelineTests : TestBase
 
         // then — A and ExecutingThrow ran; B's publishing AND exception phases must NOT run.
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("filter publishing boom");
-        recorder.Calls.Should().Equal(
-            "A.publishing",
-            "ExecutingThrow.publishing",
-            "ExecutingThrow.exception",
-            "A.exception"
-        );
+        recorder
+            .Calls.Should()
+            .Equal("A.publishing", "ExecutingThrow.publishing", "ExecutingThrow.exception", "A.exception");
         recorder.Calls.Should().NotContain("B.publishing");
         recorder.Calls.Should().NotContain("B.exception");
         recorder.Calls.Should().NotContain("inner");
@@ -295,6 +286,68 @@ public sealed class PublishExecutionPipelineTests : TestBase
     }
 
     [Fact]
+    public async Task should_discard_caller_options_when_filter_assigns_null_to_options_property()
+    {
+        // given — pins the documented contract: assigning null to PublishFilterContext.Options
+        // discards every caller-set field. Filters that want to mutate one field must use a
+        // record `with` expression on the existing instance instead of overwriting Options entirely.
+        var services = new ServiceCollection();
+        new MessagingBuilder(services).AddPublishFilter<NullingOptionsFilter>();
+        var pipeline = _BuildPipeline(services);
+        PublishOptions? observed = null;
+        var caller = new PublishOptions
+        {
+            MessageId = "msg-1",
+            CorrelationId = "corr-1",
+            TenantId = "acme",
+        };
+
+        // when
+        await pipeline.ExecuteAsync<SimplePayload>(
+            content: new SimplePayload("hi"),
+            options: caller,
+            delayTime: null,
+            innerPublish: (opts, _, _) =>
+            {
+                observed = opts;
+                return Task.CompletedTask;
+            },
+            cancellationToken: AbortToken
+        );
+
+        // then — caller's MessageId/CorrelationId/TenantId are gone because the filter assigned null.
+        observed.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_drop_to_immediate_publish_when_filter_nulls_delay_time()
+    {
+        // given — pins the OutboxPublisher.PublishDelayAsync filter-nulled-delay branch:
+        // when a filter sets DelayTime to null, the inner-publish receives null even though
+        // the caller supplied a non-null delay.
+        var services = new ServiceCollection();
+        new MessagingBuilder(services).AddPublishFilter<DelayNullingFilter>();
+        var pipeline = _BuildPipeline(services);
+        TimeSpan? observedDelay = TimeSpan.FromHours(1); // sentinel
+
+        // when
+        await pipeline.ExecuteAsync<SimplePayload>(
+            content: new SimplePayload("hi"),
+            options: null,
+            delayTime: TimeSpan.FromSeconds(5),
+            innerPublish: (_, delay, _) =>
+            {
+                observedDelay = delay;
+                return Task.CompletedTask;
+            },
+            cancellationToken: AbortToken
+        );
+
+        // then — filter wiped the delay; inner sees null
+        observedDelay.Should().BeNull();
+    }
+
+    [Fact]
     public async Task should_resolve_separate_filter_instances_per_publish_for_singleton_pipeline()
     {
         // given — pipeline is Singleton; filters are Scoped; per-publish scope guarantees fresh instances
@@ -306,7 +359,10 @@ public sealed class PublishExecutionPipelineTests : TestBase
         Func<PublishOptions?, TimeSpan?, CancellationToken, Task> innerCapturing = (opts, _, _) =>
         {
             // The instance hash leaks via tenant id; capture it
-            if (opts?.TenantId is { } id && int.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hash))
+            if (
+                opts?.TenantId is { } id
+                && int.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hash)
+            )
             {
                 seen.Add(hash);
             }
@@ -446,6 +502,25 @@ internal sealed class PublishedThrowingFilter(PublishCallRecorder recorder) : Pu
     public override ValueTask OnPublishExceptionAsync(PublishExceptionContext context)
     {
         recorder.Record("PublishedThrow.exception");
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class NullingOptionsFilter : PublishFilter
+{
+    public override ValueTask OnPublishExecutingAsync(PublishingContext context)
+    {
+        // Pins the documented footgun: assigning null discards every caller-set field.
+        context.Options = null;
+        return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class DelayNullingFilter : PublishFilter
+{
+    public override ValueTask OnPublishExecutingAsync(PublishingContext context)
+    {
+        context.DelayTime = null;
         return ValueTask.CompletedTask;
     }
 }

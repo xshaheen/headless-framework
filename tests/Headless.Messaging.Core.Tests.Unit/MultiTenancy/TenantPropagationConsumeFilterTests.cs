@@ -20,8 +20,8 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
     public async Task should_change_current_tenant_when_envelope_carries_a_tenant_id()
     {
         // given — Covers AE1
-        var currentTenant = NSubstitute.Substitute.For<ICurrentTenant>();
-        var disposable = NSubstitute.Substitute.For<IDisposable>();
+        var currentTenant = Substitute.For<ICurrentTenant>();
+        var disposable = Substitute.For<IDisposable>();
         currentTenant.Change("acme").Returns(disposable);
         var filter = new TenantPropagationConsumeFilter(currentTenant);
         var ctx = _MakeExecutingContext(tenantId: "acme");
@@ -37,8 +37,8 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
     public async Task should_use_resolved_typed_tenant_id_instead_of_reparsing_raw_header()
     {
         // given
-        var currentTenant = NSubstitute.Substitute.For<ICurrentTenant>();
-        var disposable = NSubstitute.Substitute.For<IDisposable>();
+        var currentTenant = Substitute.For<ICurrentTenant>();
+        var disposable = Substitute.For<IDisposable>();
         currentTenant.Change("typed-tenant").Returns(disposable);
         var filter = new TenantPropagationConsumeFilter(currentTenant);
         var ctx = _MakeExecutingContext(tenantId: "typed-tenant", rawTenantId: "raw-header");
@@ -55,8 +55,8 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
     public async Task should_dispose_tenant_scope_after_executed_phase()
     {
         // given — Covers AE1 (restoration after success)
-        var currentTenant = NSubstitute.Substitute.For<ICurrentTenant>();
-        var disposable = NSubstitute.Substitute.For<IDisposable>();
+        var currentTenant = Substitute.For<ICurrentTenant>();
+        var disposable = Substitute.For<IDisposable>();
         currentTenant.Change("acme").Returns(disposable);
         var filter = new TenantPropagationConsumeFilter(currentTenant);
 
@@ -72,8 +72,8 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
     public async Task should_dispose_tenant_scope_on_exception_path()
     {
         // given — Covers AE6 retry/exception preserves dispose discipline
-        var currentTenant = NSubstitute.Substitute.For<ICurrentTenant>();
-        var disposable = NSubstitute.Substitute.For<IDisposable>();
+        var currentTenant = Substitute.For<ICurrentTenant>();
+        var disposable = Substitute.For<IDisposable>();
         currentTenant.Change("acme").Returns(disposable);
         var filter = new TenantPropagationConsumeFilter(currentTenant);
 
@@ -89,7 +89,7 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
     public async Task should_be_a_noop_when_envelope_has_no_tenant_id()
     {
         // given — Covers AE2 (no-op for system messages)
-        var currentTenant = NSubstitute.Substitute.For<ICurrentTenant>();
+        var currentTenant = Substitute.For<ICurrentTenant>();
         var filter = new TenantPropagationConsumeFilter(currentTenant);
 
         // when
@@ -97,28 +97,28 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
         await filter.OnSubscribeExecutedAsync(_MakeExecutedContext());
 
         // then
-        currentTenant.DidNotReceive().Change(NSubstitute.Arg.Any<string?>(), NSubstitute.Arg.Any<string?>());
+        currentTenant.DidNotReceive().Change(Arg.Any<string?>(), Arg.Any<string?>());
     }
 
     [Fact]
     public async Task should_be_a_noop_when_envelope_tenant_id_is_whitespace()
     {
         // given — lenient resolution: whitespace maps to "no tenant"
-        var currentTenant = NSubstitute.Substitute.For<ICurrentTenant>();
+        var currentTenant = Substitute.For<ICurrentTenant>();
         var filter = new TenantPropagationConsumeFilter(currentTenant);
 
         // when
         await filter.OnSubscribeExecutingAsync(_MakeExecutingContext(tenantId: null, rawTenantId: "   "));
 
         // then
-        currentTenant.DidNotReceive().Change(NSubstitute.Arg.Any<string?>(), NSubstitute.Arg.Any<string?>());
+        currentTenant.DidNotReceive().Change(Arg.Any<string?>(), Arg.Any<string?>());
     }
 
     [Fact]
     public async Task should_be_a_noop_when_envelope_tenant_id_exceeds_max_length()
     {
         // given — lenient resolution: oversized values map to "no tenant"
-        var currentTenant = NSubstitute.Substitute.For<ICurrentTenant>();
+        var currentTenant = Substitute.For<ICurrentTenant>();
         var filter = new TenantPropagationConsumeFilter(currentTenant);
         var oversized = new string('x', PublishOptions.TenantIdMaxLength + 1);
 
@@ -126,14 +126,14 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
         await filter.OnSubscribeExecutingAsync(_MakeExecutingContext(tenantId: null, rawTenantId: oversized));
 
         // then
-        currentTenant.DidNotReceive().Change(NSubstitute.Arg.Any<string?>(), NSubstitute.Arg.Any<string?>());
+        currentTenant.DidNotReceive().Change(Arg.Any<string?>(), Arg.Any<string?>());
     }
 
     [Fact]
     public async Task should_not_dispose_when_no_change_was_made()
     {
         // given — null tenant → no Change → no scope to dispose
-        var currentTenant = NSubstitute.Substitute.For<ICurrentTenant>();
+        var currentTenant = Substitute.For<ICurrentTenant>();
         var filter = new TenantPropagationConsumeFilter(currentTenant);
 
         // when
@@ -142,7 +142,7 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
 
         // then — no Change call → no Disposable was returned → nothing to verify on Dispose,
         //         and no NullReferenceException from disposing a non-existent scope.
-        currentTenant.DidNotReceive().Change(NSubstitute.Arg.Any<string?>());
+        currentTenant.DidNotReceive().Change(Arg.Any<string?>());
     }
 
     [Fact]

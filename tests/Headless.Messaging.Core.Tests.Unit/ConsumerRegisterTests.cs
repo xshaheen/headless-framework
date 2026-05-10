@@ -47,25 +47,20 @@ public sealed class ConsumerRegisterTests : TestBase
 
         client.ResumeAsync(Arg.Any<CancellationToken>()).Returns<ValueTask>(_ => ValueTask.FromException(expected));
 
-        var handleType = typeof(ConsumerRegister).GetNestedType(
-            "GroupHandle",
-            System.Reflection.BindingFlags.NonPublic
-        )!;
+        var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
 
         handleType.GetProperty("Logger")!.SetValue(handle, NullLogger<ConsumerRegister>.Instance);
         handleType.GetProperty("Cts")!.SetValue(handle, new CancellationTokenSource());
         handleType.GetProperty("GroupName")!.SetValue(handle, "payments");
-        handleType
-            .GetProperty("ConsumerTasks")!
-            .SetValue(handle, new System.Collections.Concurrent.ConcurrentBag<Task>());
+        handleType.GetProperty("ConsumerTasks")!.SetValue(handle, new ConcurrentBag<Task>());
 
         var addClient = handleType.GetMethod("AddClientAsync")!;
         await ((ValueTask)addClient.Invoke(handle, [client])!);
 
         var resumeGroup = typeof(ConsumerRegister).GetMethod(
             "_ResumeGroupAsync",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance
         )!;
 
         var act = async () => await ((ValueTask)resumeGroup.Invoke(register, [handle])!);

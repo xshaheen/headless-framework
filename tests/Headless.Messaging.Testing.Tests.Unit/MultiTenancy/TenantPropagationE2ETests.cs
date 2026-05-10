@@ -221,12 +221,26 @@ public sealed class TenantPropagationE2ETests : TestBase
 
         await harness.WaitForFaulted<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
-        // then — even though consume threw, the filter pulled the tenant from the envelope and
-        //         the consumer body observed it before throwing. Use First (not Single) since the
-        //         flaky consumer may be invoked again by the retry pipeline before this assertion runs.
-        var record = capture.Records.First(r => r.OrderId == "ORD-RETRY");
-        record.EnvelopeTenant.Should().Be("acme");
-        record.AmbientTenant.Should().Be("acme");
+        // and — wait for the second (successful) attempt so we can assert that the retry
+        //       observed the same tenant context, not just the first faulted invocation.
+        await harness.WaitForConsumed<TenantOrderEvent>(
+            msg => msg.OrderId == "ORD-RETRY",
+            TimeSpan.FromSeconds(10),
+            AbortToken
+        );
+
+        // then — both attempts (faulted + successful) saw the envelope tenant. AE6 isolation
+        //         covers the retry path: tenant context is rebuilt from the envelope on each
+        //         invocation, never reused from a previous attempt's residue.
+        var retryRecords = capture.Records.Where(r => r.OrderId == "ORD-RETRY").ToArray();
+        retryRecords.Should().HaveCount(2);
+        retryRecords
+            .Should()
+            .AllSatisfy(record =>
+            {
+                record.EnvelopeTenant.Should().Be("acme");
+                record.AmbientTenant.Should().Be("acme");
+            });
 
         // and — ambient is restored (filter disposed on exception path; no leaked AsyncLocal)
         currentTenant.Id.Should().BeNull();

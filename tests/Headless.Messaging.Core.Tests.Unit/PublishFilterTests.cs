@@ -94,7 +94,10 @@ public sealed class PublishFilterTests : TestBase
         var context = new PublishingContext(content: null, typeof(FilterTestMessage), initial, delayTime: null);
 
         // when
-        context.Options = (context.Options ?? new PublishOptions()) with { TenantId = "acme" };
+        context.Options = (context.Options ?? new PublishOptions()) with
+        {
+            TenantId = "acme",
+        };
 
         // then
         context.Options.Should().NotBeNull();
@@ -112,10 +115,11 @@ public sealed class PublishFilterTests : TestBase
             typeof(FilterTestMessage),
             options: null,
             delayTime: TimeSpan.FromSeconds(5)
-        );
-
-        // when
-        context.DelayTime = TimeSpan.FromMinutes(10);
+        )
+        {
+            // when
+            DelayTime = TimeSpan.FromMinutes(10),
+        };
 
         // then
         context.DelayTime.Should().Be(TimeSpan.FromMinutes(10));
@@ -125,12 +129,7 @@ public sealed class PublishFilterTests : TestBase
     public void should_default_delay_time_to_null_for_immediate_publishes()
     {
         // when
-        var context = new PublishingContext(
-            content: null,
-            typeof(FilterTestMessage),
-            options: null,
-            delayTime: null
-        );
+        var context = new PublishingContext(content: null, typeof(FilterTestMessage), options: null, delayTime: null);
 
         // then
         context.DelayTime.Should().BeNull();
@@ -143,12 +142,7 @@ public sealed class PublishFilterTests : TestBase
         var options = new PublishOptions { TenantId = "acme" };
 
         // when
-        var context = new PublishedContext(
-            content: null,
-            typeof(FilterTestMessage),
-            options,
-            delayTime: null
-        );
+        var context = new PublishedContext(content: null, typeof(FilterTestMessage), options, delayTime: null);
 
         // then
         context.Options.Should().Be(options);
@@ -184,10 +178,11 @@ public sealed class PublishFilterTests : TestBase
             options: null,
             delayTime: null,
             new InvalidOperationException("transport failed")
-        );
-
-        // when
-        context.ExceptionHandled = true;
+        )
+        {
+            // when
+            ExceptionHandled = true,
+        };
 
         // then
         context.ExceptionHandled.Should().BeTrue();
@@ -207,13 +202,14 @@ public sealed class PublishFilterTests : TestBase
     public void should_reject_null_exception_in_publish_exception_context()
     {
         // when
-        var act = () => new PublishExceptionContext(
-            content: null,
-            typeof(FilterTestMessage),
-            options: null,
-            delayTime: null,
-            exception: null!
-        );
+        var act = () =>
+            new PublishExceptionContext(
+                content: null,
+                typeof(FilterTestMessage),
+                options: null,
+                delayTime: null,
+                exception: null!
+            );
 
         // then
         act.Should().Throw<ArgumentNullException>();

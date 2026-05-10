@@ -308,10 +308,14 @@ public sealed class MessageTests : TestBase
     public void should_use_ordinal_comparison_for_default_constructor()
     {
         // given
-        var message = new Message();
-
-        // when
-        message.Headers["Test"] = "value";
+        var message = new Message
+        {
+            Headers =
+            {
+                // when
+                ["Test"] = "value",
+            },
+        };
 
         // then
         message.Headers.ContainsKey("Test").Should().BeTrue();

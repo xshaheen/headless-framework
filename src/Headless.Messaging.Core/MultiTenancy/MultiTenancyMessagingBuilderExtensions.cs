@@ -25,6 +25,10 @@ public static class MultiTenancyMessagingBuilderExtensions
     /// Without one, the framework's fallback <see cref="Headless.Abstractions.NullCurrentTenant"/>
     /// makes <see cref="TenantPropagationPublishFilter"/> a silent no-op (ambient
     /// <see cref="Headless.Abstractions.ICurrentTenant.Id"/> is always <see langword="null"/>).
+    /// <strong>Action:</strong> register a real <c>ICurrentTenant</c> (typically via the
+    /// <c>Headless.Api</c> multi-tenancy setup, or by overriding the registration in DI) BEFORE
+    /// calling <c>AddHeadlessMessaging</c>. Otherwise this extension registers the filters but
+    /// publishes never carry a tenant header, which can be hard to diagnose at runtime.
     /// </para>
     /// <para>
     /// Trust boundary: the consume filter trusts the inbound envelope. Topics exposed to external
