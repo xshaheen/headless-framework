@@ -5,6 +5,7 @@ using Headless.Checks;
 using Headless.EntityFramework;
 using Headless.EntityFramework.GlobalFilters;
 using Headless.EntityFramework.Messaging;
+using Headless.EntityFramework.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -96,10 +97,12 @@ public static class EntityFrameworkSetup
             configureOptions?.Invoke(options);
             options.RegisterServices(services);
 
+            services.AddOptions<TenantWriteGuardOptions>();
             services.TryAddScoped<HeadlessDbContextServices>();
             services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
             services.TryAddScoped<IHeadlessAuditPersistence, HeadlessAuditPersistence>();
             services.TryAddScoped<IHeadlessMessageDispatcher, ThrowHeadlessMessageDispatcher>();
+            services.TryAddSingleton<ITenantWriteGuardBypass, TenantWriteGuardBypass>();
 
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<IClock, Clock>();
@@ -110,6 +113,18 @@ public static class EntityFrameworkSetup
             services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
             services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();
             services.ReplaceCompiledQueryCacheKeyGenerator();
+
+            return services;
+        }
+
+        public IServiceCollection AddHeadlessTenantWriteGuard(Action<TenantWriteGuardOptions>? configure = null)
+        {
+            services.AddHeadlessDbContextServices();
+            services.Configure<TenantWriteGuardOptions>(options =>
+            {
+                options.IsEnabled = true;
+                configure?.Invoke(options);
+            });
 
             return services;
         }
