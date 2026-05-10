@@ -61,10 +61,10 @@ public sealed class HeadlessDbContextTestFixture : ICollectionFixture<HeadlessDb
 
         services.AddLogging(x => x.AddProvider(TestHelpers.CreateXUnitLoggerFactory().Provider));
         services.AddSingleton<IClock>(Clock);
-        services.AddSingleton<ICurrentTenant>(CurrentTenant);
         services.AddSingleton<ICurrentUser>(CurrentUser);
         services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
         services.AddHeadlessDbContextServices();
+        services.AddSingleton<ICurrentTenant>(CurrentTenant);
 
         services.AddDbContext<TestHeadlessDbContext>(options =>
             options.UseNpgsql(SqlConnectionString).AddHeadlessExtension()
