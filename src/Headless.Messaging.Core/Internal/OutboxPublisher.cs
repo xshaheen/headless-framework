@@ -21,24 +21,19 @@ internal sealed class OutboxPublisher(
     private static DiagnosticListener DiagnosticListener { get; } =
         new(MessageDiagnosticListenerNames.DiagnosticListenerName);
 
-    private readonly IDataStorage _storage = storage;
-    private readonly IDispatcher _dispatcher = dispatcher;
-    private readonly IMessagePublishRequestFactory _publishRequestFactory = publishRequestFactory;
-    private readonly IOutboxTransactionAccessor _transactionAccessor = transactionAccessor;
-    private readonly IPublishExecutionPipeline _publishPipeline = publishPipeline;
-
     public Task PublishAsync<T>(
         T? contentObj,
         PublishOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _publishPipeline.ExecuteAsync(
+        return publishPipeline.ExecuteAsync(
             contentObj,
             options,
             delayTime: null,
+            // DelayTime is undefined for the immediate publish path; ignored.
             innerPublish: (filteredOptions, _, ct) =>
-                _PublishInternalAsync(_publishRequestFactory.Create(contentObj, filteredOptions), ct),
+                _PublishInternalAsync(publishRequestFactory.Create(contentObj, filteredOptions), ct),
             cancellationToken
         );
     }
@@ -50,7 +45,7 @@ internal sealed class OutboxPublisher(
         CancellationToken cancellationToken = default
     )
     {
-        return _publishPipeline.ExecuteAsync(
+        return publishPipeline.ExecuteAsync(
             contentObj,
             options,
             delayTime,
@@ -59,8 +54,8 @@ internal sealed class OutboxPublisher(
                 // Filter mutated DelayTime to null → drop to immediate-publish path; otherwise use the
                 // filter-mutated value, falling back to the caller-supplied delay if the filter left it untouched.
                 var request = filteredDelay.HasValue
-                    ? _publishRequestFactory.Create(contentObj, filteredOptions, filteredDelay.Value)
-                    : _publishRequestFactory.Create(contentObj, filteredOptions);
+                    ? publishRequestFactory.Create(contentObj, filteredOptions, filteredDelay.Value)
+                    : publishRequestFactory.Create(contentObj, filteredOptions);
                 return _PublishInternalAsync(request, ct);
             },
             cancellationToken
@@ -74,10 +69,10 @@ internal sealed class OutboxPublisher(
         {
             tracingTimestamp = _TracingBefore(publishRequest.Message);
 
-            var currentTransaction = _transactionAccessor.Current;
+            var currentTransaction = transactionAccessor.Current;
             if (currentTransaction?.DbTransaction == null)
             {
-                var mediumMessage = await _storage
+                var mediumMessage = await storage
                     .StoreMessageAsync(publishRequest.Topic, publishRequest.Message)
                     .ConfigureAwait(false);
 
@@ -85,13 +80,13 @@ internal sealed class OutboxPublisher(
 
                 if (publishRequest.Message.Headers.ContainsKey(Headers.DelayTime))
                 {
-                    await _dispatcher
+                    await dispatcher
                         .EnqueueToScheduler(mediumMessage, publishRequest.PublishAt, null, cancellationToken)
                         .ConfigureAwait(false);
                 }
                 else
                 {
-                    await _dispatcher.EnqueueToPublish(mediumMessage, cancellationToken).ConfigureAwait(false);
+                    await dispatcher.EnqueueToPublish(mediumMessage, cancellationToken).ConfigureAwait(false);
                 }
             }
             else
@@ -104,7 +99,7 @@ internal sealed class OutboxPublisher(
                     );
                 }
 
-                var mediumMessage = await _storage
+                var mediumMessage = await storage
                     .StoreMessageAsync(publishRequest.Topic, publishRequest.Message, currentTransaction.DbTransaction)
                     .ConfigureAwait(false);
 

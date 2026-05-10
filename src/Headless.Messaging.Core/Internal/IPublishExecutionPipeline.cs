@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.ExceptionServices;
+using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -38,6 +39,8 @@ internal sealed class PublishExecutionPipeline(
     ILogger<PublishExecutionPipeline>? logger = null
 ) : IPublishExecutionPipeline
 {
+    private readonly IServiceProvider _serviceProvider = Argument.IsNotNull(serviceProvider);
+
     public async Task ExecuteAsync<T>(
         T? content,
         PublishOptions? options,
@@ -51,7 +54,7 @@ internal sealed class PublishExecutionPipeline(
         // Pipeline is Singleton (matching IConsumeExecutionPipeline at Setup.cs:111) — both publishers
         // it serves are also Singleton, so a Scoped pipeline would be a captive dependency. Per-publish
         // scope is created here so scoped IPublishFilter instances resolve independently per call.
-        await using var scope = serviceProvider.CreateAsyncScope();
+        await using var scope = _serviceProvider.CreateAsyncScope();
         var provider = scope.ServiceProvider;
         var filters = provider.GetServices<IPublishFilter>().ToArray();
         var enteredCount = 0;
@@ -76,6 +79,11 @@ internal sealed class PublishExecutionPipeline(
                 {
                     await filters[i].OnPublishExecutedAsync(executedCtx).ConfigureAwait(false);
                 }
+                catch (OperationCanceledException)
+                {
+                    // Cancellation is not a swallowable failure; propagate so the caller observes it.
+                    throw;
+                }
                 catch (Exception e)
                 {
                     // The message was already accepted by the transport/outbox. Propagating an
@@ -94,10 +102,25 @@ internal sealed class PublishExecutionPipeline(
             var exCtx = new PublishExceptionContext(content, typeof(T), ctx.Options, ctx.DelayTime, e);
             for (var i = enteredCount - 1; i >= 0; i--)
             {
-                await filters[i].OnPublishExceptionAsync(exCtx).ConfigureAwait(false);
+                try
+                {
+                    await filters[i].OnPublishExceptionAsync(exCtx).ConfigureAwait(false);
+                }
+                catch (Exception nested)
+                {
+                    // Preserve the original exception identity for the eventual rethrow. A throwing
+                    // exception-phase filter must not silently replace the original failure or skip
+                    // the outer filters in the chain.
+                    logger?.PublishExceptionFilterFailed(
+                        nested,
+                        filters[i].GetType().FullName ?? filters[i].GetType().Name
+                    );
+                }
             }
 
-            if (!exCtx.ExceptionHandled)
+            // Cancellation is never swallowable: ignore ExceptionHandled when the original failure
+            // was an OperationCanceledException so callers always observe the cancel.
+            if (!exCtx.ExceptionHandled || exCtx.Exception is OperationCanceledException)
             {
                 ExceptionDispatchInfo.Capture(exCtx.Exception).Throw();
             }

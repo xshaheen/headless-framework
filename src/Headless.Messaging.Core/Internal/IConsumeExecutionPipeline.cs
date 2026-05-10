@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 using FastExpressionCompiler;
 using Headless.Messaging.Messages;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Internal;
 
@@ -22,7 +22,8 @@ internal interface IConsumeExecutionPipeline
 
 internal sealed class ConsumeExecutionPipeline(
     IServiceProvider serviceProvider,
-    IRuntimeConsumerRegistry runtimeRegistry
+    IRuntimeConsumerRegistry runtimeRegistry,
+    ILogger<ConsumeExecutionPipeline>? logger = null
 ) : IConsumeExecutionPipeline
 {
     private readonly ConcurrentDictionary<Type, Delegate> _compiledConsumeContextFactories = new();
@@ -38,7 +39,7 @@ internal sealed class ConsumeExecutionPipeline(
 
         var descriptor = context.ConsumerDescriptor;
         var originHeaders = context.MediumMessage.Origin.Headers;
-        var tenantId = _ResolveTenantId(originHeaders);
+        var tenantId = _ResolveTenantId(originHeaders, logger);
         var consumeHeaders = new MessageHeader(originHeaders);
         var consumeContext = _BuildConsumeContext(
             messageInstance,
@@ -91,7 +92,25 @@ internal sealed class ConsumeExecutionPipeline(
             var edContext = new ExecutedContext(context, resultObj);
             for (var i = filters.Length - 1; i >= 0; i--)
             {
-                await filters[i].OnSubscribeExecutedAsync(edContext).ConfigureAwait(false);
+                try
+                {
+                    await filters[i].OnSubscribeExecutedAsync(edContext).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Cancellation is not a swallowable failure; propagate so the host observes it.
+                    throw;
+                }
+                catch (Exception filterEx)
+                {
+                    // Consumer body already committed. Propagating an after-success filter failure would
+                    // surface to the transport as a consume-failure and trigger a spurious retry of an
+                    // already-handled message.
+                    logger?.SubscribeExecutedFilterFailed(
+                        filterEx,
+                        filters[i].GetType().FullName ?? filters[i].GetType().Name
+                    );
+                }
             }
             resultObj = edContext.Result;
         }
@@ -106,7 +125,20 @@ internal sealed class ConsumeExecutionPipeline(
             // Only filters whose executing phase completed participate; reverse stack-unwind order.
             for (var i = enteredCount - 1; i >= 0; i--)
             {
-                await filters[i].OnSubscribeExceptionAsync(exContext).ConfigureAwait(false);
+                try
+                {
+                    await filters[i].OnSubscribeExceptionAsync(exContext).ConfigureAwait(false);
+                }
+                catch (Exception nested)
+                {
+                    // Preserve the original consumer exception identity for the eventual ReThrow().
+                    // A throwing exception-phase filter must not silently replace the original failure
+                    // or skip the rest of the chain.
+                    logger?.SubscribeExceptionFilterFailed(
+                        nested,
+                        filters[i].GetType().FullName ?? filters[i].GetType().Name
+                    );
+                }
             }
 
             if (!exContext.ExceptionHandled)
@@ -252,7 +284,9 @@ internal sealed class ConsumeExecutionPipeline(
     // Lenient consume-side tenant resolution: missing, whitespace, or oversized header values map
     // to null instead of failing the message. Mirrors the publish-side rules in
     // MessagePublishRequestFactory._ApplyTenantId / _ValidateTenantId (see #228).
-    private static string? _ResolveTenantId(IDictionary<string, string?> headers)
+    // Oversized values emit a structured warning so operators can detect a misbehaving producer
+    // (or a producer-side downgrade attack) without changing the lenient behavior contract.
+    private static string? _ResolveTenantId(IDictionary<string, string?> headers, ILogger? logger)
     {
         if (!headers.TryGetValue(Headers.TenantId, out var value) || string.IsNullOrWhiteSpace(value))
         {
@@ -261,6 +295,7 @@ internal sealed class ConsumeExecutionPipeline(
 
         if (value.Length > PublishOptions.TenantIdMaxLength)
         {
+            logger?.TenantIdHeaderRejected(value.Length);
             return null;
         }
 

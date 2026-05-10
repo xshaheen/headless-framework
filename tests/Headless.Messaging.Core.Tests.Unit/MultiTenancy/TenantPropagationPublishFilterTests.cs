@@ -123,14 +123,13 @@ public sealed class TenantPropagationPublishFilterTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_argument_null_exception_when_constructed_with_null_tenant()
+    public void should_throw_argument_null_exception_when_constructed_with_null_tenant()
     {
         // when
         var act = () => new TenantPropagationPublishFilter(currentTenant: null!);
 
         // then
         act.Should().Throw<ArgumentNullException>();
-        await Task.CompletedTask;
     }
 
     private sealed record Payload(string Value);

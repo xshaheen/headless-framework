@@ -6,11 +6,19 @@ namespace Headless.Messaging;
 
 /// <summary>A filter that surrounds execution of the subscriber.</summary>
 /// <remarks>
+/// <para>
 /// When multiple filters are registered via <see cref="Configuration.MessagingBuilder.AddSubscribeFilter{T}"/>,
 /// they form a pipeline: the executing phase runs in registration order; the executed and exception phases
 /// run in reverse, matching ASP.NET Core MVC filter pipeline semantics. Filters share a single
 /// <see cref="ExecutingContext"/>, <see cref="ExecutedContext"/>, and <see cref="ExceptionContext"/>
 /// instance per phase, so a downstream filter sees mutations applied by upstream filters.
+/// </para>
+/// <para>
+/// A consume filter that needs to carry state across the executing/executed/exception triad should keep
+/// that state on its own instance fields, not on the context. The consume pipeline creates a fresh DI
+/// scope per message, so each message gets its own filter instance — instance fields are safe to use
+/// for per-message state without cross-talk between concurrent consumes.
+/// </para>
 /// </remarks>
 public interface IConsumeFilter
 {
@@ -58,11 +66,8 @@ public abstract class ConsumeFilter : IConsumeFilter
 
 public class FilterContext(ConsumerContext context) : ConsumerContext(context);
 
-public sealed class ExecutingContext(
-    ConsumerContext context,
-    object?[] arguments,
-    string? tenantId = null
-) : FilterContext(context)
+public sealed class ExecutingContext(ConsumerContext context, object?[] arguments, string? tenantId = null)
+    : FilterContext(context)
 {
     public object?[] Arguments { get; init; } = arguments;
 

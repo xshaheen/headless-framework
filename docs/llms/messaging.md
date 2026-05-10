@@ -596,6 +596,8 @@ Both registrations are idempotent — calling them twice with the same `T` does 
 The framework ships a built-in filter pair that propagates the originating tenant on the wire:
 
 ```csharp
+using Headless.Messaging.MultiTenancy;
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     // ...

@@ -146,21 +146,23 @@ public sealed class TenantPropagationConsumeFilterTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_argument_null_exception_when_constructed_with_null_tenant()
+    public void should_throw_argument_null_exception_when_constructed_with_null_tenant()
     {
         // when
         var act = () => new TenantPropagationConsumeFilter(currentTenant: null!);
 
         // then
         act.Should().Throw<ArgumentNullException>();
-        await Task.CompletedTask;
     }
 
     private static ExecutingContext _MakeExecutingContext(string? tenantId, string? rawTenantId = null)
     {
         return new ExecutingContext(
             _MakeConsumerContext(rawTenantId ?? tenantId),
-            [/*consumeContext*/null, /*ct*/CancellationToken.None],
+            [ /*consumeContext*/
+                null, /*ct*/
+                CancellationToken.None,
+            ],
             tenantId
         );
     }

@@ -7,7 +7,7 @@ namespace Headless.Messaging;
 /// <summary>A filter that surrounds a publish operation, symmetric to <see cref="IConsumeFilter"/>.</summary>
 /// <remarks>
 /// <para>
-/// Filters run inside <c>IPublishExecutionPipeline</c> for every <see cref="IMessagePublisher.PublishAsync"/>
+/// Filters run inside the publish pipeline for every <see cref="IMessagePublisher.PublishAsync"/>
 /// or <see cref="IScheduledPublisher.PublishDelayAsync"/> call. When multiple filters are registered,
 /// the executing phase runs in registration order; the executed and exception phases run in reverse,
 /// matching ASP.NET Core MVC filter pipeline semantics.
@@ -109,6 +109,21 @@ public abstract class PublishFilterContext
     /// such as <c>context.Options = (context.Options ?? new()) with { TenantId = "..." }</c>.
     /// The final value is consumed by <c>MessagePublishRequestFactory.Create</c>.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Assigning <see langword="null"/> here discards every caller-set field on the previous
+    /// <see cref="PublishOptions"/> (including <c>MessageId</c>, <c>CorrelationId</c>, <c>TenantId</c>,
+    /// <c>Topic</c>, <c>CallbackName</c>, and custom <c>Headers</c>). To mutate a single field while
+    /// preserving the others, use a record <c>with</c> expression on the existing instance:
+    /// <c>context.Options = (context.Options ?? new()) with { Field = newValue }</c>.
+    /// </para>
+    /// <para>
+    /// Mutations are honored only during the executing phase (<see cref="PublishingContext"/>).
+    /// Reassigning this property on <see cref="PublishedContext"/> or <see cref="PublishExceptionContext"/>
+    /// is a semantic no-op — the publish has already happened and the new value will not flow
+    /// to the transport, the outbox, or to subsequent filters.
+    /// </para>
+    /// </remarks>
     public PublishOptions? Options { get; set; }
 
     /// <summary>
@@ -118,10 +133,17 @@ public abstract class PublishFilterContext
     /// to extend, shorten, or remove the delay before the publish wrapper acts on it.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Mutating this property only takes effect when the publisher entry point is delay-aware.
     /// Setting <see cref="DelayTime"/> from a filter during an immediate
     /// <see cref="IMessagePublisher.PublishAsync"/> call is silently ignored — the publisher
     /// chose the immediate path and will not promote the message to delayed delivery.
+    /// </para>
+    /// <para>
+    /// Like <see cref="Options"/>, reassignments are honored only during the executing phase
+    /// (<see cref="PublishingContext"/>). Mutations on <see cref="PublishedContext"/> or
+    /// <see cref="PublishExceptionContext"/> have no effect — the schedule decision is final.
+    /// </para>
     /// </remarks>
     public TimeSpan? DelayTime { get; set; }
 }

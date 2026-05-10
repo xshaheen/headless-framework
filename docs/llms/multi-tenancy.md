@@ -210,6 +210,8 @@ The `TenantId` envelope property is populated automatically from the canonical `
 For end-to-end propagation, opt in to the built-in filter pair:
 
 ```csharp
+using Headless.Messaging.MultiTenancy;
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     // ...

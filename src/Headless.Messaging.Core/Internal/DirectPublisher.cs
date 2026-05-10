@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Headless.Abstractions;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
@@ -34,6 +33,7 @@ internal sealed class DirectPublisher(
         return _publishPipeline.ExecuteAsync(
             contentObj,
             options,
+            // DelayTime is undefined for the immediate publish path; ignored.
             delayTime: null,
             innerPublish: (filteredOptions, _, ct) =>
             {
@@ -67,7 +67,7 @@ internal sealed class DirectPublisher(
             if (!result.Succeeded)
             {
                 _TracingErrorSend(tracingTimestamp, transportMsg, result);
-                throw new Headless.Messaging.PublisherSentFailedException(result.ToString(), result.Exception);
+                throw new PublisherSentFailedException(result.ToString(), result.Exception);
             }
 
             _TracingAfterSend(tracingTimestamp, transportMsg);
@@ -77,7 +77,7 @@ internal sealed class DirectPublisher(
             // Cancellation is expected behavior, not an error - let it propagate without tracing
             throw;
         }
-        catch (Exception e) when (e is not Headless.Messaging.PublisherSentFailedException)
+        catch (Exception e) when (e is not PublisherSentFailedException)
         {
             try
             {
@@ -140,7 +140,7 @@ internal sealed class DirectPublisher(
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
         {
-            var ex = new Headless.Messaging.PublisherSentFailedException(result.ToString(), result.Exception);
+            var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
             var eventData = new MessageEventDataPubSend

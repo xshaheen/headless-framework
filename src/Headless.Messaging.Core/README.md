@@ -235,6 +235,8 @@ Both registrations are idempotent (`TryAddEnumerable` under the hood). `OnPublis
 `AddTenantPropagation()` registers a built-in filter pair that ties the wire envelope to `ICurrentTenant`:
 
 ```csharp
+using Headless.Messaging.MultiTenancy;
+
 builder.Services.AddHeadlessMessaging(options => { /* ... */ })
     .AddTenantPropagation();
 ```
