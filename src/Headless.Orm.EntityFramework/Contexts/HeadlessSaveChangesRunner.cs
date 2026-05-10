@@ -114,113 +114,48 @@ internal static class HeadlessSaveChangesRunner
 #pragma warning restore MA0045
     }
 
-    private static async Task<int> _ExecuteWithinCurrentTransactionAsync(AsyncSaveState state)
+    private static Task<int> _ExecuteWithinCurrentTransactionAsync(AsyncSaveState state)
     {
         var currentTransaction = state.Context.Database.CurrentTransaction!;
-        AuditSaveResult auditSave = default;
-
-        try
-        {
-            if (state.Report.LocalEmitters.Count > 0)
-            {
-                await state
-                    .PublishLocalAsync(state.Report.LocalEmitters, currentTransaction, state.CancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
-            var result = await state
-                .BaseSaveChangesAsync(
-                    !deferAcceptAllChanges && state.AcceptAllChangesOnSuccess,
-                    state.CancellationToken
-                )
-                .ConfigureAwait(false);
-
-            auditSave = await _ResolveAndPersistAuditAsync(
-                    state.Context,
-                    state.AuditEntries,
-                    state.BaseSaveChangesAsync,
-                    state.CancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (state.Report.DistributedEmitters.Count > 0)
-            {
-                await state
-                    .PublishDistributedAsync(
-                        state.Report.DistributedEmitters,
-                        currentTransaction,
-                        state.CancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-
-            _CompleteSuccessfulSave(
-                state.Report,
-                state.NavigationTracker,
-                state.Context,
-                auditSave,
-                state.AcceptAllChangesOnSuccess
-            );
-
-            return result;
-        }
-        catch
-        {
-            _DetachAuditEntries(state.Context, auditSave);
-            throw;
-        }
+        return _SaveWithinTransactionAsync(state, currentTransaction, commitTransaction: false);
     }
 
     private static int _ExecuteWithinCurrentTransaction(SaveState state)
     {
         var currentTransaction = state.Context.Database.CurrentTransaction!;
-        AuditSaveResult auditSave = default;
-
-        try
-        {
-            if (state.Report.LocalEmitters.Count > 0)
-            {
-                state.PublishLocal(state.Report.LocalEmitters, currentTransaction);
-            }
-
-            var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
-            var result = state.BaseSaveChanges(!deferAcceptAllChanges && state.AcceptAllChangesOnSuccess);
-            auditSave = _ResolveAndPersistAudit(state.Context, state.AuditEntries, state.BaseSaveChanges);
-
-            if (state.Report.DistributedEmitters.Count > 0)
-            {
-                state.PublishDistributed(state.Report.DistributedEmitters, currentTransaction);
-            }
-
-            _CompleteSuccessfulSave(
-                state.Report,
-                state.NavigationTracker,
-                state.Context,
-                auditSave,
-                state.AcceptAllChangesOnSuccess
-            );
-
-            return result;
-        }
-        catch
-        {
-            _DetachAuditEntries(state.Context, auditSave);
-            throw;
-        }
+        return _SaveWithinTransaction(state, currentTransaction, commitTransaction: false);
     }
 
     private static async Task<int> _ExecuteWithNewTransactionAsync(AsyncSaveState state)
     {
         _PrepareForRetry(state.Context);
+
+        await using var transaction = await state
+            .Context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, state.CancellationToken)
+            .ConfigureAwait(false);
+
+        return await _SaveWithinTransactionAsync(state, transaction, commitTransaction: true).ConfigureAwait(false);
+    }
+
+    private static int _ExecuteWithNewTransaction(SaveState state)
+    {
+#pragma warning disable MA0045 // Sync intentionally
+        _PrepareForRetry(state.Context);
+        using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
+        return _SaveWithinTransaction(state, transaction, commitTransaction: true);
+#pragma warning restore MA0045
+    }
+
+    private static async Task<int> _SaveWithinTransactionAsync(
+        AsyncSaveState state,
+        IDbContextTransaction transaction,
+        bool commitTransaction
+    )
+    {
         AuditSaveResult auditSave = default;
 
         try
         {
-            await using var transaction = await state
-                .Context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, state.CancellationToken)
-                .ConfigureAwait(false);
-
             if (state.Report.LocalEmitters.Count > 0)
             {
                 await state
@@ -251,7 +186,10 @@ internal static class HeadlessSaveChangesRunner
                     .ConfigureAwait(false);
             }
 
-            await transaction.CommitAsync(state.CancellationToken).ConfigureAwait(false);
+            if (commitTransaction)
+            {
+                await transaction.CommitAsync(state.CancellationToken).ConfigureAwait(false);
+            }
 
             _CompleteSuccessfulSave(
                 state.Report,
@@ -270,15 +208,16 @@ internal static class HeadlessSaveChangesRunner
         }
     }
 
-    private static int _ExecuteWithNewTransaction(SaveState state)
+    private static int _SaveWithinTransaction(
+        SaveState state,
+        IDbContextTransaction transaction,
+        bool commitTransaction
+    )
     {
-#pragma warning disable MA0045 // Sync intentionally
-        _PrepareForRetry(state.Context);
         AuditSaveResult auditSave = default;
 
         try
         {
-            using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
             if (state.Report.LocalEmitters.Count > 0)
             {
                 state.PublishLocal(state.Report.LocalEmitters, transaction);
@@ -293,7 +232,11 @@ internal static class HeadlessSaveChangesRunner
                 state.PublishDistributed(state.Report.DistributedEmitters, transaction);
             }
 
-            transaction.Commit();
+            if (commitTransaction)
+            {
+                transaction.Commit();
+            }
+
             _CompleteSuccessfulSave(
                 state.Report,
                 state.NavigationTracker,
@@ -309,7 +252,6 @@ internal static class HeadlessSaveChangesRunner
             _DetachAuditEntries(state.Context, auditSave);
             throw;
         }
-#pragma warning restore MA0045
     }
 
     #region Audit Helpers
