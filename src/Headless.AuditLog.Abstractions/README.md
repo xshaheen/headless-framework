@@ -14,7 +14,8 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 - `SensitiveDataStrategy` - `Redact` (replace with `"***"`), `Exclude` (omit entirely), or `Transform` (custom function)
 - `AuditLogOptions` - Master enable/disable, `AuditByDefault` mode, per-entity/property filters, configurable default exclusions, sensitive-value transformer
 - `IAuditLog` - Explicit logging of non-mutation events (reads, reveals, failures)
-- `IAuditLogStore` - Storage abstraction called by the change-tracking pipeline
+- `IAuditLogStore` - Storage abstraction called by the change-tracking pipeline. `Save`/`SaveAsync` return one `IAuditLogStoreEntry` handle per audit row added to the persistence context (empty list = nothing added, orchestrator skips the audit commit step)
+- `IAuditLogStoreEntry` - Provider-owned handle for an audit row added to the persistence context; the orchestrator calls `Detach()` on it to roll back the pending row on failure. Implementations must be idempotent
 - `IReadAuditLog` - Query abstraction for reading audit entries back without coupling callers to EF types
 - `IAuditChangeCapture` - Scans ChangeTracker entries and produces `AuditLogEntryData` records
 

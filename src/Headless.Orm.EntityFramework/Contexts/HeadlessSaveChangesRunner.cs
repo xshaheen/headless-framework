@@ -213,6 +213,7 @@ internal static class HeadlessSaveChangesRunner
         bool commitTransaction
     )
     {
+#pragma warning disable MA0045 // Sync intentionally — extracted from the sync SaveChanges path.
         HeadlessAuditSaveResult auditSave = default;
 
         try
@@ -255,6 +256,7 @@ internal static class HeadlessSaveChangesRunner
             HeadlessAuditPersistence.DetachEntries(auditSave);
             throw;
         }
+#pragma warning restore MA0045
     }
 
     private static bool _RequiresExplicitTransaction(

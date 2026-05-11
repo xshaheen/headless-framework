@@ -7,6 +7,11 @@ namespace Headless.AuditLog;
 
 internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
 {
+    // Cache the empty-result task so the empty-entries fast path allocates nothing.
+    private static readonly Task<IReadOnlyList<IAuditLogStoreEntry>> _EmptyResultTask = Task.FromResult<
+        IReadOnlyList<IAuditLogStoreEntry>
+    >([]);
+
     /// <inheritdoc />
     public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries) =>
         _AddEntries(entries, dbContext);
@@ -17,6 +22,11 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
         CancellationToken cancellationToken = default
     )
     {
+        if (entries.Count == 0)
+        {
+            return _EmptyResultTask;
+        }
+
         return Task.FromResult(_AddEntries(entries, dbContext));
     }
 
@@ -33,6 +43,11 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
         CancellationToken cancellationToken = default
     )
     {
+        if (entries.Count == 0)
+        {
+            return _EmptyResultTask;
+        }
+
         return Task.FromResult(_AddEntries(entries, savingContext as DbContext ?? dbContext));
     }
 

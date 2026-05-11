@@ -14,6 +14,12 @@ public interface IAuditLogStore
     /// Called from the synchronous <c>SaveChanges</c> path.
     /// </summary>
     /// <returns>Handles for provider entries added to the current persistence context.</returns>
+    /// <remarks>
+    /// Implementers MUST return a handle for every audit entry added to the persistence context.
+    /// Returning an empty list signals that no entries were added; the orchestrator will then skip
+    /// the audit-row commit step. Buffering implementations that defer flushing should still return
+    /// handles for entries added to the context. If no entries are added, return an empty list.
+    /// </remarks>
     IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries);
 
     /// <summary>
@@ -21,6 +27,12 @@ public interface IAuditLogStore
     /// Called from the asynchronous <c>SaveChangesAsync</c> path.
     /// </summary>
     /// <returns>Handles for provider entries added to the current persistence context.</returns>
+    /// <remarks>
+    /// Implementers MUST return a handle for every audit entry added to the persistence context.
+    /// Returning an empty list signals that no entries were added; the orchestrator will then skip
+    /// the audit-row commit step. Buffering implementations that defer flushing should still return
+    /// handles for entries added to the context. If no entries are added, return an empty list.
+    /// </remarks>
     Task<IReadOnlyList<IAuditLogStoreEntry>> SaveAsync(
         IReadOnlyList<AuditLogEntryData> entries,
         CancellationToken cancellationToken = default
@@ -37,6 +49,12 @@ public interface IAuditLogStore
     /// to keep this package free of the EF Core dependency).
     /// </param>
     /// <returns>Handles for provider entries added to the current persistence context.</returns>
+    /// <remarks>
+    /// If your implementation stores audit entries against a context different from <paramref name="savingContext"/>,
+    /// override BOTH the no-context and the savingContext overloads. The default body delegates to the
+    /// no-context primary, which may return handles for the wrong context — in which case orchestrator
+    /// rollback (Detach) becomes a silent no-op.
+    /// </remarks>
     IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext) =>
         Save(entries);
 
@@ -44,6 +62,12 @@ public interface IAuditLogStore
     /// Persists audit entries asynchronously using the specified saving context.
     /// </summary>
     /// <returns>Handles for provider entries added to the current persistence context.</returns>
+    /// <remarks>
+    /// If your implementation stores audit entries against a context different from <paramref name="savingContext"/>,
+    /// override BOTH the no-context and the savingContext overloads. The default body delegates to the
+    /// no-context primary, which may return handles for the wrong context — in which case orchestrator
+    /// rollback (Detach) becomes a silent no-op.
+    /// </remarks>
     Task<IReadOnlyList<IAuditLogStoreEntry>> SaveAsync(
         IReadOnlyList<AuditLogEntryData> entries,
         object savingContext,
@@ -67,5 +91,11 @@ public interface IAuditLogStoreEntry
     /// <summary>
     /// Removes the pending audit entry from the provider persistence context.
     /// </summary>
+    /// <remarks>
+    /// Implementations MUST be idempotent. The orchestrator may call <see cref="Detach"/> more
+    /// than once on the same handle (for example during exception unwinding AND from
+    /// <c>CompleteSuccessfulSave</c> when <c>acceptAllChangesOnSuccess</c> is <see langword="false"/>).
+    /// A no-op on an already-detached entry is the correct behavior.
+    /// </remarks>
     void Detach();
 }
