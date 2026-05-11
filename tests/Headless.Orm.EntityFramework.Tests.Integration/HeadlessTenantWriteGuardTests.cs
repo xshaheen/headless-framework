@@ -82,6 +82,23 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     }
 
     [Fact]
+    public void add_headless_tenant_write_guard_with_noop_configurator_should_keep_guard_enabled()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessTenantWriteGuard(_ => { });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
+        options.IsEnabled.Should().BeTrue();
+        provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
+    }
+
+    [Fact]
     public void add_headless_tenancy_entity_framework_should_enable_write_guard_and_record_manifest()
     {
         // given
@@ -102,6 +119,23 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
         seam.Should().NotBeNull();
         seam!.Status.Should().Be(TenantPostureStatuses.Guarded);
         seam.Capabilities.Should().BeEquivalentTo("guard-tenant-writes", "ef-owned-bypass");
+    }
+
+    [Fact]
+    public void guard_tenant_writes_with_noop_configurator_should_keep_guard_enabled()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+
+        // when
+        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites(_ => { })));
+
+        using var provider = builder.Services.BuildServiceProvider();
+
+        // then
+        var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
+        options.IsEnabled.Should().BeTrue();
+        provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
     }
 
     [Fact]

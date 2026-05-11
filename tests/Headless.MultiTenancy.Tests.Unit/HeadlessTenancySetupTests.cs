@@ -78,6 +78,36 @@ public sealed class HeadlessTenancySetupTests
     }
 
     [Fact]
+    public async Task should_throw_all_startup_diagnostics_when_multiple_validators_return_errors()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddSingleton<IHeadlessTenancyValidator>(
+            new TestValidator("HEADLESS_TEST_ONE", "First seam failed.")
+        );
+        builder.Services.AddSingleton<IHeadlessTenancyValidator>(
+            new TestValidator("HEADLESS_TEST_TWO", "Second seam failed.")
+        );
+        builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatuses.Configured));
+
+        using var provider = builder.Services.BuildServiceProvider();
+        var hostedService = provider
+            .GetServices<IHostedService>()
+            .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+
+        // when
+        Func<Task> act = () => hostedService.StartAsync(CancellationToken.None);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*HEADLESS_TEST_ONE*")
+            .WithMessage("*First seam failed*")
+            .WithMessage("*HEADLESS_TEST_TWO*")
+            .WithMessage("*Second seam failed*");
+    }
+
+    [Fact]
     public void should_not_include_tenant_values_in_manifest()
     {
         // given
@@ -94,15 +124,14 @@ public sealed class HeadlessTenancySetupTests
         seam.RuntimeMarkers.Should().BeEquivalentTo("UseHeadlessTenancy");
     }
 
-    private sealed class TestValidator : IHeadlessTenancyValidator
+    private sealed class TestValidator(
+        string code = "HEADLESS_TEST",
+        string message = "Http seam is missing runtime marker."
+    ) : IHeadlessTenancyValidator
     {
         public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
         {
-            yield return HeadlessTenancyDiagnostic.Error(
-                "Http",
-                "HEADLESS_TEST",
-                "Http seam is missing runtime marker."
-            );
+            yield return HeadlessTenancyDiagnostic.Error("Http", code, message);
         }
     }
 }
