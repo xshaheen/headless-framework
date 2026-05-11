@@ -2,7 +2,7 @@
 
 using Headless.Domain;
 
-namespace Headless.Orm.EntityFramework.Contexts;
+namespace Headless.EntityFramework.Contexts;
 
 public sealed record EmitterDistributedMessages(
     IDistributedMessageEmitter Emitter,

@@ -7,7 +7,7 @@ using Headless.Serializer.Converters;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Headless.Orm.EntityFramework.Configurations;
+namespace Headless.EntityFramework.Configurations;
 
 [PublicAPI]
 public sealed class ExtraPropertiesValueConverter()

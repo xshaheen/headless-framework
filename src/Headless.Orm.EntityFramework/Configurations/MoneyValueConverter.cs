@@ -3,7 +3,7 @@
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Money = Headless.Primitives.Money;
 
-namespace Headless.Orm.EntityFramework.Configurations;
+namespace Headless.EntityFramework.Configurations;
 
 /// <summary>ValueConverter for <see cref = "Money"/></summary>
 [PublicAPI]

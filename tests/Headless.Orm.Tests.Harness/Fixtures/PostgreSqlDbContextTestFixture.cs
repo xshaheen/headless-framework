@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Orm.EntityFramework;
+using Headless.EntityFramework;
 using Headless.Testing.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -81,6 +81,8 @@ public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestF
         services.AddSingleton<ICurrentUser>(CurrentUser);
         services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
         services.AddHeadlessDbContextServices();
+        // AddHeadlessDbContextServices now uses TryAddSingleton<ICurrentTenant>, so ordering is
+        // tolerant — registering before or after the framework defaults produces the same result.
         services.AddSingleton<ICurrentTenant>(CurrentTenant);
 
         ConfigureDbContext(services);

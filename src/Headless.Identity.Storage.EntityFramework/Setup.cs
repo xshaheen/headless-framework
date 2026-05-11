@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Orm.EntityFramework;
+namespace Headless.EntityFramework;
 
 [PublicAPI]
 public static class OrmEntityFrameworkIdentitySetup

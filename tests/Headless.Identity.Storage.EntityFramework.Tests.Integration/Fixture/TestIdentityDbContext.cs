@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Orm.EntityFramework;
-using Headless.Orm.EntityFramework.Contexts;
+using Headless.EntityFramework;
+using Headless.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;

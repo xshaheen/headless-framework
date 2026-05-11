@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Metadata;
 
-namespace Headless.Orm.EntityFramework.ChangeTrackers;
+namespace Headless.EntityFramework.ChangeTrackers;
 
 /// <summary>
 /// Tracks modified navigations in Entity Framework Core.
@@ -44,12 +44,9 @@ public sealed class HeadlessEntityFrameworkNavigationModifiedTracker
             return null;
         }
 
-        if (!_trackers.TryGetValue(entryId, out var tracker))
-        {
-            return null;
-        }
-
-        return tracker.Navigations.ElementAtOrDefault(navigationEntryIndex);
+        return !_trackers.TryGetValue(entryId, out var tracker)
+            ? null
+            : tracker.Navigations.ElementAtOrDefault(navigationEntryIndex);
     }
 
     public bool IsEntityEntryModified(EntityEntry entry)

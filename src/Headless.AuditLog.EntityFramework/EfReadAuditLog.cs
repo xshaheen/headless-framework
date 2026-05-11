@@ -4,7 +4,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Headless.AuditLog;
 
-internal sealed class EfReadAuditLog(DbContext dbContext) : IReadAuditLog
+internal sealed class EfReadAuditLog<TContext>(TContext context) : IReadAuditLog<TContext>
+    where TContext : DbContext
 {
     /// <inheritdoc />
     public async Task<IReadOnlyList<AuditLogEntryData>> QueryAsync(
@@ -19,7 +20,7 @@ internal sealed class EfReadAuditLog(DbContext dbContext) : IReadAuditLog
         CancellationToken cancellationToken = default
     )
     {
-        var query = dbContext.Set<AuditLogEntry>().AsNoTracking().AsQueryable();
+        var query = context.Set<AuditLogEntry>().AsNoTracking().AsQueryable();
 
         if (action is not null)
         {

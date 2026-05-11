@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Domain;
-using Headless.Orm.EntityFramework.Configurations;
+using Headless.EntityFramework.Configurations;
 using Headless.Primitives;
 using AccountId = Headless.Primitives.AccountId;
 using File = Headless.Primitives.File;

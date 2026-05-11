@@ -4,6 +4,7 @@ using Headless.AuditLog;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using NSubstitute;
 using Tests.Fixture;
 
 namespace Tests;
@@ -159,7 +160,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         await using var __ = sp;
         await using var scope = sp.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
-        var readAuditLog = scope.ServiceProvider.GetRequiredService<IReadAuditLog>();
+        var readAuditLog = scope.ServiceProvider.GetRequiredService<IReadAuditLog<AuditTestDbContext>>();
 
         var order = new Order
         {
@@ -198,7 +199,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         await using var __ = sp;
         await using var scope = sp.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
-        var readAuditLog = scope.ServiceProvider.GetRequiredService<IReadAuditLog>();
+        var readAuditLog = scope.ServiceProvider.GetRequiredService<IReadAuditLog<AuditTestDbContext>>();
 
         db.Orders.Add(
             new Order
@@ -328,7 +329,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         await using var __ = sp;
         await using var scope = sp.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
-        var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog>();
+        var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog<AuditTestDbContext>>();
 
         // when
         await auditLog.LogAsync(
@@ -380,6 +381,86 @@ public sealed class AuditLogIntegrationTests : TestBase
         var entry = entries[0];
         entry.NewValues.Should().ContainKey("Email");
         entry.NewValues!["Email"].Should().Be("***");
+    }
+
+    [Fact]
+    public async Task save_changes_detaches_audit_entries_when_publish_throws()
+    {
+        // Regression guard for the catch-time Detach() path in the save runtime: once audit
+        // entries have been persisted, any later failure (e.g. publish) must detach the now-tracked
+        // audit entities so the change tracker no longer reports them as Added.
+
+        // given
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync<ThrowingPublishAuditTestDbContext>(
+            configure: null,
+            configureServices: null
+        );
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<ThrowingPublishAuditTestDbContext>();
+
+        var order = new EmittingOrder { Id = Guid.NewGuid(), Name = "emits" };
+        order.Emit(new TestDistributedMessage(Guid.NewGuid().ToString("N")));
+        db.EmittingOrders.Add(order);
+
+        // when / then
+        var act = async () => await db.SaveChangesAsync(AbortToken);
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
+            ThrowingPublishAuditTestDbContext.PublishFailureMessage
+        );
+
+        db.ChangeTracker.Entries<AuditLogEntry>().Where(e => e.State == EntityState.Added).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task save_changes_succeeds_when_audit_capture_throws()
+    {
+        // Regression guard for CaptureEntries' swallow-and-warn contract: a buggy IAuditChangeCapture
+        // must not abort the entity save; the audit table simply receives no entry for that batch.
+
+        // given
+        var throwingCapture = Substitute.For<IAuditChangeCapture>();
+        throwingCapture
+            .CaptureChanges(
+                Arg.Any<IEnumerable<object>>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<string?>(),
+                Arg.Any<DateTimeOffset>()
+            )
+            .Returns(_ => throw new InvalidOperationException("Simulated capture failure."));
+
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync(
+            configure: null,
+            configureServices: services =>
+            {
+                services.Unregister<IAuditChangeCapture>();
+                services.AddSingleton(throwingCapture);
+            }
+        );
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+
+        var order = new Order
+        {
+            Id = Guid.NewGuid(),
+            CustomerName = "Frank",
+            Email = "frank@example.com",
+            Amount = 7m,
+        };
+        db.Orders.Add(order);
+
+        // when
+        var saved = await db.SaveChangesAsync(AbortToken);
+
+        // then
+        saved.Should().BeGreaterThan(0);
+        var auditCount = await db.Set<AuditLogEntry>().AsNoTracking().CountAsync(AbortToken);
+        auditCount.Should().Be(0);
     }
 
     [Fact]

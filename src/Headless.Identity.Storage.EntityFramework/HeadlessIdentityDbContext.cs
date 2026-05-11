@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Orm.EntityFramework.Contexts;
+using Headless.EntityFramework.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
-namespace Headless.Orm.EntityFramework;
+namespace Headless.EntityFramework;
 
 public abstract class HeadlessIdentityDbContext<
     TUser,
@@ -35,7 +35,6 @@ public abstract class HeadlessIdentityDbContext<
         : base(options)
     {
         _runtime = new(this, entityProcessor);
-        _runtime.SyncNavigationTracker();
     }
 
     #region Core Save Changes

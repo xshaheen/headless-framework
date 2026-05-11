@@ -3,7 +3,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
-namespace Headless.Orm.EntityFramework.ChangeTrackers;
+namespace Headless.EntityFramework.ChangeTrackers;
 
 public sealed class HeadlessEntityEntry(string id, EntityEntry entry)
 {

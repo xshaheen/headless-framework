@@ -5,7 +5,7 @@ using Headless.Serializer;
 using Headless.Serializer.Converters;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Headless.Orm.EntityFramework.Configurations;
+namespace Headless.EntityFramework.Configurations;
 
 /// <summary>
 /// Value converter that serializes/deserializes a property to/from JSON using reflection-based serialization.

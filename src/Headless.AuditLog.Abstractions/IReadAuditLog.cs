@@ -6,7 +6,16 @@ namespace Headless.AuditLog;
 /// Read abstraction for querying persisted audit log entries.
 /// Decouples consumers from the storage implementation.
 /// </summary>
-public interface IReadAuditLog
+/// <typeparam name="TContext">
+/// The persistence context type that owns the audit log table. Typed at this level so that
+/// multi-context applications resolve a distinct <see cref="IReadAuditLog{TContext}"/> per context
+/// instead of binding to whichever context happened to register first.
+/// </typeparam>
+/// <remarks>
+/// <typeparamref name="TContext"/> is the EF Core <c>DbContext</c> type that owns the audit log table.
+/// No EF constraint is applied here so this abstractions package can stay free of the EF Core dependency.
+/// </remarks>
+public interface IReadAuditLog<TContext>
 {
     /// <summary>
     /// Queries audit log entries matching the specified filters.

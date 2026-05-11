@@ -27,7 +27,7 @@ public sealed class AuditLogEntry
     /// <summary>Client IP address (if available).</summary>
     /// <remarks>
     /// Not populated by automatic change capture. Consumers must set this
-    /// via explicit <see cref="IAuditLog.LogAsync"/> calls or a custom
+    /// via explicit <see cref="IAuditLog{TContext}.LogAsync"/> calls or a custom
     /// <see cref="IAuditChangeCapture"/> implementation.
     /// </remarks>
     public string? IpAddress { get; init; }
@@ -35,7 +35,7 @@ public sealed class AuditLogEntry
     /// <summary>HTTP User-Agent string (if available).</summary>
     /// <remarks>
     /// Not populated by automatic change capture. Consumers must set this
-    /// via explicit <see cref="IAuditLog.LogAsync"/> calls or a custom
+    /// via explicit <see cref="IAuditLog{TContext}.LogAsync"/> calls or a custom
     /// <see cref="IAuditChangeCapture"/> implementation.
     /// </remarks>
     public string? UserAgent { get; init; }

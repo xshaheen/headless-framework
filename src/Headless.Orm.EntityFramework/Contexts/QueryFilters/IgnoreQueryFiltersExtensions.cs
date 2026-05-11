@@ -4,17 +4,17 @@ using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
 
-namespace Headless.Orm.EntityFramework.Contexts;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Headless.EntityFramework;
 
-public static class HeadlessQueryFilters
-{
-    public const string MultiTenancyFilter = "MultiTenantFilter";
-    public const string NotDeletedFilter = "NotDeletedFilter";
-    public const string NotSuspendedFilter = "NotSuspendedFilter";
-}
-
+[PublicAPI]
 public static class IgnoreQueryFiltersExtensions
 {
+    public const string MultiTenancyFilter = HeadlessQueryFilters.MultiTenancyFilter;
+    public const string NotDeletedFilter = HeadlessQueryFilters.NotDeletedFilter;
+    public const string NotSuspendedFilter = HeadlessQueryFilters.NotSuspendedFilter;
+
     extension<TEntity>(IQueryable<TEntity> source)
         where TEntity : class
     {
@@ -23,8 +23,8 @@ public static class IgnoreQueryFiltersExtensions
             [CallerFilePath] string callerFile = ""
         )
         {
-            _LogFilterBypassed(HeadlessQueryFilters.MultiTenancyFilter, typeof(TEntity).Name, callerMember, callerFile);
-            return source.IgnoreQueryFilters([HeadlessQueryFilters.MultiTenancyFilter]);
+            _LogFilterBypassed(MultiTenancyFilter, typeof(TEntity).Name, callerMember, callerFile);
+            return source.IgnoreQueryFilters([MultiTenancyFilter]);
         }
 
         public IQueryable<TEntity> IgnoreNotDeletedFilter(
@@ -32,8 +32,8 @@ public static class IgnoreQueryFiltersExtensions
             [CallerFilePath] string callerFile = ""
         )
         {
-            _LogFilterBypassed(HeadlessQueryFilters.NotDeletedFilter, typeof(TEntity).Name, callerMember, callerFile);
-            return source.IgnoreQueryFilters([HeadlessQueryFilters.NotDeletedFilter]);
+            _LogFilterBypassed(NotDeletedFilter, typeof(TEntity).Name, callerMember, callerFile);
+            return source.IgnoreQueryFilters([NotDeletedFilter]);
         }
 
         public IQueryable<TEntity> IgnoreNotSuspendedFilter(
@@ -41,8 +41,8 @@ public static class IgnoreQueryFiltersExtensions
             [CallerFilePath] string callerFile = ""
         )
         {
-            _LogFilterBypassed(HeadlessQueryFilters.NotSuspendedFilter, typeof(TEntity).Name, callerMember, callerFile);
-            return source.IgnoreQueryFilters([HeadlessQueryFilters.NotSuspendedFilter]);
+            _LogFilterBypassed(NotSuspendedFilter, typeof(TEntity).Name, callerMember, callerFile);
+            return source.IgnoreQueryFilters([NotSuspendedFilter]);
         }
     }
 

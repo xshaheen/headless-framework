@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Orm.EntityFramework.Contexts;
+namespace Headless.EntityFramework.Contexts;
 
 public sealed record ProcessBeforeSaveReport
 {

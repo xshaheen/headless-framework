@@ -3,7 +3,7 @@
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using AccountId = Headless.Primitives.AccountId;
 
-namespace Headless.Orm.EntityFramework.Configurations;
+namespace Headless.EntityFramework.Configurations;
 
 /// <summary>ValueConverter for <see cref = "AccountId"/></summary>
 public sealed class AccountIdValueConverter : ValueConverter<AccountId, string>

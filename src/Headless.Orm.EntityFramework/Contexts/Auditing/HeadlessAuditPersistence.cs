@@ -3,10 +3,9 @@
 using Headless.Abstractions;
 using Headless.AuditLog;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Orm.EntityFramework.Contexts;
+namespace Headless.EntityFramework.Contexts;
 
 internal static class HeadlessAuditPersistence
 {
