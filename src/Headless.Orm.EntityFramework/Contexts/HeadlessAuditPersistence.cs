@@ -172,6 +172,8 @@ internal static class HeadlessAuditPersistence
         IReadOnlyList<AuditLogEntryData> entries
     )
     {
+        // Defensive null-coalesce: contract says non-null but a buggy third-party implementer
+        // could return null, which would NRE during the auditEntries.Count guard below.
         var store = context.GetServiceOrDefault<IAuditLogStore>();
         return store?.Save(entries, context) ?? [];
     }
@@ -186,7 +188,9 @@ internal static class HeadlessAuditPersistence
 
         if (store is not null)
         {
-            return await store.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false);
+            // Defensive null-coalesce: contract says non-null but a buggy third-party implementer
+            // could return null mid-transaction.
+            return await store.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false) ?? [];
         }
 
         return [];

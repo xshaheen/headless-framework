@@ -60,6 +60,37 @@ public sealed class AuditLogIntegrationTests : TestBase
     }
 
     [Fact]
+    public async Task save_changes_with_automatic_audit_marks_entity_unchanged_after_save()
+    {
+        // Regression guard for the AcceptAllChanges branch in CompleteSuccessfulSave when audit
+        // entries are present. Existing `created_entity_round_trip` clears the change tracker
+        // immediately after saving, so it does not observe post-save EntityState.
+
+        // given
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+
+        var order = new Order
+        {
+            Id = Guid.NewGuid(),
+            CustomerName = "Hank",
+            Email = "hank@example.com",
+            Amount = 1m,
+        };
+        db.Orders.Add(order);
+
+        // when
+        await db.SaveChangesAsync(AbortToken); // default: acceptAllChangesOnSuccess = true
+
+        // then
+        db.Entry(order).State.Should().Be(EntityState.Unchanged);
+        db.ChangeTracker.Entries<AuditLogEntry>().Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task save_changes_false_with_automatic_audit_preserves_entity_state_and_persists_audit_once()
     {
         // given
