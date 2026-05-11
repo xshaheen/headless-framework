@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Couchbase;
-using Headless.Orm.Couchbase.Clusters;
-using Headless.Orm.Couchbase.Context;
+using Headless.Couchbase.Clusters;
+using Headless.Couchbase.Context;
 
-namespace Headless.Orm.Couchbase.ContextProvider;
+namespace Headless.Couchbase.ContextProvider;
 
 public interface IBucketContextProvider
 {

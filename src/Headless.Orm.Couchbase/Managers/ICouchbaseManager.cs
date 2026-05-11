@@ -8,13 +8,13 @@ using Couchbase.KeyValue;
 using Couchbase.Management.Collections;
 using Couchbase.Management.Query;
 using Headless.Checks;
-using Headless.Orm.Couchbase.Clusters;
+using Headless.Couchbase.Clusters;
 using Humanizer;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
 
-namespace Headless.Orm.Couchbase.Managers;
+namespace Headless.Couchbase.Managers;
 
 public interface ICouchbaseManager
 {

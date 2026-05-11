@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Couchbase</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Couchbase.Extensions.Compression.Snappier" />

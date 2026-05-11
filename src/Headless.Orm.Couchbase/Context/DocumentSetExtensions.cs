@@ -6,7 +6,7 @@ using Couchbase.KeyValue.RangeScan;
 using Couchbase.Linq;
 using Headless.Domain;
 
-namespace Headless.Orm.Couchbase.Context;
+namespace Headless.Couchbase.Context;
 
 public static class DocumentSetExtensions
 {
