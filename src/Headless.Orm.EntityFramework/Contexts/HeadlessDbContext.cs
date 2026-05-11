@@ -1,9 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
-namespace Headless.Orm.EntityFramework.Contexts;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Headless.EntityFramework;
 
 public abstract class HeadlessDbContext : DbContext
 {
@@ -17,7 +20,6 @@ public abstract class HeadlessDbContext : DbContext
         : base(options)
     {
         _runtime = new(this, entityProcessor);
-        _runtime.SyncNavigationTracker();
     }
 
     #region Core Save Changes

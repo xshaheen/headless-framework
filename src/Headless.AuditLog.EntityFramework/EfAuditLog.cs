@@ -7,14 +7,15 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog;
 
-internal sealed class EfAuditLog(
-    DbContext dbContext,
+internal sealed class EfAuditLog<TContext>(
+    TContext context,
     ICurrentUser currentUser,
     ICurrentTenant currentTenant,
     ICorrelationIdProvider correlationIdProvider,
     IClock clock,
     IOptions<AuditLogOptions> options
-) : IAuditLog
+) : IAuditLog<TContext>
+    where TContext : DbContext
 {
     /// <inheritdoc />
     public Task LogAsync(
@@ -32,7 +33,7 @@ internal sealed class EfAuditLog(
             return Task.CompletedTask;
         }
 
-        dbContext
+        context
             .Set<AuditLogEntry>()
             .Add(
                 new AuditLogEntry

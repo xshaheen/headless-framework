@@ -1,9 +1,22 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Primitives;
 
-namespace Headless.Orm.EntityFramework.DataGrid;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Headless.Primitives;
+
+public interface IDataGridRequest : IHasMultiOrderByRequest
+{
+    IndexPageRequest? Page { get; }
+}
+
+public abstract class DataGridRequest : IDataGridRequest
+{
+    public IndexPageRequest? Page { get; init; }
+
+    public List<OrderBy>? Orders { get; init; }
+}
 
 [PublicAPI]
 public static class DataGridExtensions

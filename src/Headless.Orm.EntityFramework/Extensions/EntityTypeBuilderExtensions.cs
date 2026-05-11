@@ -3,8 +3,8 @@
 using System.Linq.Expressions;
 using Headless.Checks;
 using Headless.Domain;
+using Headless.EntityFramework.Configurations;
 using Headless.Linq;
-using Headless.Orm.EntityFramework.Configurations;
 using Headless.Primitives;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Internal;

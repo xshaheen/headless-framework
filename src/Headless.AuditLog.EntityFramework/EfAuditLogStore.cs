@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
+using Headless.Checks;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.AuditLog;
 
-internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
+internal sealed class EfAuditLogStore : IAuditLogStore
 {
     // Cache the empty-result task so the empty-entries fast path allocates nothing.
     private static readonly Task<IReadOnlyList<IAuditLogStoreEntry>> _EmptyResultTask = Task.FromResult<
@@ -13,27 +14,9 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
     >([]);
 
     /// <inheritdoc />
-    public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries) =>
-        _AddEntries(entries, dbContext);
-
-    /// <inheritdoc />
-    public Task<IReadOnlyList<IAuditLogStoreEntry>> SaveAsync(
-        IReadOnlyList<AuditLogEntryData> entries,
-        CancellationToken cancellationToken = default
-    )
-    {
-        if (entries.Count == 0)
-        {
-            return _EmptyResultTask;
-        }
-
-        return Task.FromResult(_AddEntries(entries, dbContext));
-    }
-
-    /// <inheritdoc />
     public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext)
     {
-        return _AddEntries(entries, savingContext as DbContext ?? dbContext);
+        return _AddEntries(entries, _AsDbContext(savingContext));
     }
 
     /// <inheritdoc />
@@ -48,13 +31,13 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
             return _EmptyResultTask;
         }
 
-        return Task.FromResult(_AddEntries(entries, savingContext as DbContext ?? dbContext));
+        return Task.FromResult(_AddEntries(entries, _AsDbContext(savingContext)));
     }
 
     /// <inheritdoc />
     public void PrepareForRetry(object savingContext)
     {
-        var context = savingContext as DbContext ?? dbContext;
+        var context = _AsDbContext(savingContext);
 
         foreach (var entry in context.ChangeTracker.Entries<AuditLogEntry>().ToList())
         {
@@ -63,6 +46,14 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
                 entry.State = EntityState.Detached;
             }
         }
+    }
+
+    private static DbContext _AsDbContext(object savingContext)
+    {
+        // Enforce the runtime contract: callers must supply the EF Core context executing SaveChanges.
+        // Without this, a wrong-typed context would silently route audit entries to nowhere.
+        Argument.IsAssignableToType<DbContext>(savingContext);
+        return (DbContext)savingContext;
     }
 
     private static IReadOnlyList<IAuditLogStoreEntry> _AddEntries(

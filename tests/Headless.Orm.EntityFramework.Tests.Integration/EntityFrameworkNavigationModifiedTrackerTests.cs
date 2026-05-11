@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Domain;
-using Headless.Orm.EntityFramework.ChangeTrackers;
+using Headless.EntityFramework.ChangeTrackers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 

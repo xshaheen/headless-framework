@@ -11,7 +11,7 @@ Provides a feature-rich DbContext base class with automatic auditing, soft delet
 - `HeadlessDbContext` - Base DbContext with framework integration
 - Automatic `CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy` auditing
 - Soft delete with `IsDeleted` global filter
-- Multi-tenancy with `AccountId` filtering
+- Multi-tenancy with `TenantId` filtering
 - Domain event dispatching (local and distributed)
 - Value converters: Money, Month, AccountId, UserId, DateTime normalization
 - DataGrid extensions for pagination and ordering
@@ -26,14 +26,42 @@ dotnet add package Headless.Orm.EntityFramework
 ## Quick Start
 
 ```csharp
-public class AppDbContext(DbContextOptions<AppDbContext> options) : HeadlessDbContext(options)
+public class AppDbContext(
+    IHeadlessEntityModelProcessor entityProcessor,
+    DbContextOptions<AppDbContext> options
+) : HeadlessDbContext(entityProcessor, options)
 {
     public DbSet<Product> Products => Set<Product>();
+
+    public override string DefaultSchema => "app";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+    }
+
+    protected override Task PublishMessagesAsync(
+        List<EmitterDistributedMessages> emitters,
+        IDbContextTransaction currentTransaction,
+        CancellationToken cancellationToken
+    ) => Task.CompletedTask;
+
+    protected override void PublishMessages(
+        List<EmitterDistributedMessages> emitters,
+        IDbContextTransaction currentTransaction
+    )
+    {
+    }
+
+    protected override Task PublishMessagesAsync(
+        List<EmitterLocalMessages> emitters,
+        IDbContextTransaction currentTransaction,
+        CancellationToken cancellationToken
+    ) => Task.CompletedTask;
+
+    protected override void PublishMessages(List<EmitterLocalMessages> emitters, IDbContextTransaction currentTransaction)
+    {
     }
 }
 
@@ -60,11 +88,20 @@ modelBuilder.Entity<Order>()
 Soft delete and multi-tenancy filters are automatically applied.
 
 ```csharp
-// Disable filters for a query
+// Disable one named filter for a query
 var allProducts = await dbContext.Products
-    .IgnoreQueryFilters()
+    .IgnoreNotDeletedFilter()
     .ToListAsync();
 ```
+
+### Extending Context Processing
+
+`HeadlessEntityModelProcessor` is the default implementation behind `IHeadlessEntityModelProcessor`. Replace it in DI for full control, or derive from it and override focused hooks:
+
+- `ProcessEntityType(...)` for model-level conventions
+- `ConfigureQueryFilters<TEntity>(...)` for named global filters
+- `ProcessEntry(...)` for per-entry save changes behavior
+- `CollectMessages(...)` for local/distributed message batching
 
 ### Resilient Transactions
 

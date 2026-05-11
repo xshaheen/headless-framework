@@ -1,11 +1,12 @@
 using Headless.AuditLog;
-using Headless.Orm.EntityFramework.Contexts;
+using Headless.EntityFramework;
+using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Tests.Fixture;
 
-public sealed class AuditTestDbContext(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
+public class AuditTestDbContext(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
     : HeadlessDbContext(entityProcessor, options)
 {
     public DbSet<Order> Orders => Set<Order>();

@@ -3,7 +3,7 @@
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Month = Headless.Primitives.Month;
 
-namespace Headless.Orm.EntityFramework.Configurations;
+namespace Headless.EntityFramework.Configurations;
 
 /// <summary>ValueConverter for <see cref = "Month"/></summary>
 [PublicAPI]

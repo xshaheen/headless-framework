@@ -1,5 +1,5 @@
 using Headless.Abstractions;
-using Headless.Orm.EntityFramework;
+using Headless.EntityFramework;
 using Headless.Testing.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -64,6 +64,8 @@ public sealed class HeadlessDbContextTestFixture : ICollectionFixture<HeadlessDb
         services.AddSingleton<ICurrentUser>(CurrentUser);
         services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
         services.AddHeadlessDbContextServices();
+        // AddHeadlessDbContextServices now uses TryAddSingleton<ICurrentTenant>, so ordering is
+        // tolerant — registering before or after the framework defaults produces the same result.
         services.AddSingleton<ICurrentTenant>(CurrentTenant);
 
         services.AddDbContext<TestHeadlessDbContext>(options =>

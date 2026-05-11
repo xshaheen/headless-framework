@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
-using Headless.Orm.EntityFramework.Contexts;
+using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Query;
 
-namespace Headless.Orm.EntityFramework.GlobalFilters;
+namespace Headless.EntityFramework.GlobalFilters;
 
 /// <summary>Adds the current tenant id to EF Core compiled query cache keys.</summary>
 public sealed class HeadlessCompiledQueryCacheKeyGenerator(

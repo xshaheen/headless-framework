@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Seeders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -9,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Hosting.Seeders;
 
 [PublicAPI]
-public static class AddDbMigrationSeederExtensions
+public static class DbMigrationSeederSetup
 {
     public static void AddDbMigrationPreSeeder<TContext>(this IServiceCollection services)
         where TContext : DbContext

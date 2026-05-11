@@ -3,7 +3,7 @@
 using Headless.Abstractions;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Headless.Orm.EntityFramework.Configurations;
+namespace Headless.EntityFramework.Configurations;
 
 public sealed class NormalizeDateTimeValueConverter(IClock clock, ConverterMappingHints? mappingHints = null)
     : ValueConverter<DateTime, DateTime>(x => clock.Normalize(x), x => clock.Normalize(x), mappingHints);

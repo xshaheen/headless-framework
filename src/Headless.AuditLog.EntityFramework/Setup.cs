@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using JetBrains.Annotations;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -14,16 +15,21 @@ public static class AuditLogEntityFrameworkSetup
     {
         /// <summary>
         /// Registers EF Core implementations of <see cref="IAuditChangeCapture"/>,
-        /// <see cref="IAuditLogStore"/>, and <see cref="IAuditLog"/>.
+        /// <see cref="IAuditLogStore"/>, and per-context <see cref="IAuditLog{TContext}"/> /
+        /// <see cref="IReadAuditLog{TContext}"/>. Generic on <typeparamref name="TContext"/> so
+        /// multi-context applications wire a distinct binding per owning context instead of
+        /// silently aliasing to whichever context registered first.
         /// Requires <c>AddHeadlessAuditLog()</c> to be called first for options registration,
         /// and <c>AddHeadlessDbContext&lt;T&gt;()</c> for the <c>DbContext</c> registration.
         /// </summary>
-        public IServiceCollection AddAuditLogEntityFramework()
+        /// <typeparam name="TContext">The EF Core context that owns the audit log table.</typeparam>
+        public IServiceCollection AddAuditLogEntityFramework<TContext>()
+            where TContext : DbContext
         {
             services.TryAddScoped<IAuditChangeCapture, EfAuditChangeCapture>();
             services.TryAddScoped<IAuditLogStore, EfAuditLogStore>();
-            services.TryAddScoped<IAuditLog, EfAuditLog>();
-            services.TryAddScoped<IReadAuditLog, EfReadAuditLog>();
+            services.TryAddScoped<IAuditLog<TContext>, EfAuditLog<TContext>>();
+            services.TryAddScoped<IReadAuditLog<TContext>, EfReadAuditLog<TContext>>();
             return services;
         }
     }

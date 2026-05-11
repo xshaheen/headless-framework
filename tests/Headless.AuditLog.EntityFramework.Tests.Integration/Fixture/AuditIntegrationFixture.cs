@@ -1,6 +1,6 @@
 using Headless.Abstractions;
 using Headless.AuditLog;
-using Headless.Orm.EntityFramework;
+using Headless.EntityFramework;
 using Headless.Testing.Helpers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -20,9 +20,21 @@ public static class AuditIntegrationFixture
     public static readonly string TenantId = "tenant-abc";
     public static readonly DateTimeOffset Now = new(2024, 6, 1, 12, 0, 0, TimeSpan.Zero);
 
-    public static async Task<(ServiceProvider Sp, SqliteConnection Conn)> CreateAsync(
-        Action<AuditLogOptions>? configure = null
+    public static Task<(ServiceProvider Sp, SqliteConnection Conn)> CreateAsync(
+        Action<AuditLogOptions>? configure = null,
+        Action<IServiceCollection>? configureServices = null
+    ) => CreateAsync<AuditTestDbContext>(configure, configureServices);
+
+    /// <summary>
+    /// Builds an isolated <see cref="ServiceProvider"/> with the supplied DbContext. The optional
+    /// <paramref name="configureServices"/> hook runs AFTER the framework defaults are registered,
+    /// so tests can swap an audit collaborator (e.g. a throwing <see cref="IAuditChangeCapture"/>).
+    /// </summary>
+    public static async Task<(ServiceProvider Sp, SqliteConnection Conn)> CreateAsync<TContext>(
+        Action<AuditLogOptions>? configure,
+        Action<IServiceCollection>? configureServices
     )
+        where TContext : DbContext
     {
         var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -43,12 +55,12 @@ public static class AuditIntegrationFixture
 
         // Audit services
         services.AddHeadlessAuditLog(configure);
-        services.AddAuditLogEntityFramework();
+        services.AddAuditLogEntityFramework<TContext>();
 
         // Keep connection alive with the provider lifetime
         services.AddSingleton(connection);
 
-        services.AddDbContext<AuditTestDbContext>(opts =>
+        services.AddDbContext<TContext>(opts =>
         {
             opts.UseSqlite(connection).AddHeadlessExtension();
 
@@ -62,13 +74,13 @@ public static class AuditIntegrationFixture
             );
         });
 
-        // Forward DbContext → AuditTestDbContext so EfAuditLogStore can inject DbContext
-        services.AddScoped<DbContext>(sp => sp.GetRequiredService<AuditTestDbContext>());
+        // Run consumer-supplied overrides last so they can swap any default registration.
+        configureServices?.Invoke(services);
 
         var sp = services.BuildServiceProvider();
 
         await using var scope = sp.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<TContext>();
         await db.Database.EnsureCreatedAsync();
 
         return (sp, connection);
