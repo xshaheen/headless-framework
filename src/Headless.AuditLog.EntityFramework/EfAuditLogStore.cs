@@ -8,10 +8,11 @@ namespace Headless.AuditLog;
 internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
 {
     /// <inheritdoc />
-    public IReadOnlyList<object> Save(IReadOnlyList<AuditLogEntryData> entries) => _AddEntries(entries, dbContext);
+    public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries) =>
+        _AddEntries(entries, dbContext);
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<object>> SaveAsync(
+    public Task<IReadOnlyList<IAuditLogStoreEntry>> SaveAsync(
         IReadOnlyList<AuditLogEntryData> entries,
         CancellationToken cancellationToken = default
     )
@@ -20,13 +21,13 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<object> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext)
+    public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext)
     {
         return _AddEntries(entries, savingContext as DbContext ?? dbContext);
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<object>> SaveAsync(
+    public Task<IReadOnlyList<IAuditLogStoreEntry>> SaveAsync(
         IReadOnlyList<AuditLogEntryData> entries,
         object savingContext,
         CancellationToken cancellationToken = default
@@ -49,7 +50,10 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
         }
     }
 
-    private static IReadOnlyList<object> _AddEntries(IReadOnlyList<AuditLogEntryData> entries, DbContext context)
+    private static IReadOnlyList<IAuditLogStoreEntry> _AddEntries(
+        IReadOnlyList<AuditLogEntryData> entries,
+        DbContext context
+    )
     {
         if (entries.Count == 0)
         {
@@ -57,7 +61,7 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
         }
 
         var set = context.Set<AuditLogEntry>();
-        var auditEntities = new List<object>(entries.Count);
+        var auditEntries = new List<IAuditLogStoreEntry>(entries.Count);
 
         foreach (var entry in entries)
         {
@@ -82,15 +86,28 @@ internal sealed class EfAuditLogStore(DbContext dbContext) : IAuditLogStore
             };
 
             set.Add(auditEntity);
-            auditEntities.Add(auditEntity);
+            auditEntries.Add(new EfAuditLogStoreEntry(context, auditEntity));
         }
         // Do NOT call SaveChanges — entries commit atomically with the entity changes
-        return auditEntities;
+        return auditEntries;
     }
 
     [return: NotNullIfNotNull(nameof(value))]
     private static string? _Truncate(string? value, int maxLength)
     {
         return value is { Length: var len } && len > maxLength ? value[..maxLength] : value;
+    }
+
+    private sealed class EfAuditLogStoreEntry(DbContext context, AuditLogEntry entity) : IAuditLogStoreEntry
+    {
+        public void Detach()
+        {
+            var entry = context.Entry(entity);
+
+            if (entry.State != EntityState.Detached)
+            {
+                entry.State = EntityState.Detached;
+            }
+        }
     }
 }

@@ -73,9 +73,9 @@ internal static class HeadlessAuditPersistence
         _ResolveEntityIds(context, capturedEntries);
         var snapshots = TrackedEntrySnapshot.Capture(context);
 
-        var auditEntities = await _SaveEntriesAsync(context, capturedEntries, cancellationToken).ConfigureAwait(false);
+        var auditEntries = await _SaveEntriesAsync(context, capturedEntries, cancellationToken).ConfigureAwait(false);
 
-        if (auditEntities.Count > 0)
+        if (auditEntries.Count > 0)
         {
             _SuppressEntries(context, snapshots);
 
@@ -89,7 +89,7 @@ internal static class HeadlessAuditPersistence
             }
         }
 
-        return new(RequiresManualAcceptAllChanges: true, auditEntities);
+        return new(RequiresManualAcceptAllChanges: true, auditEntries);
     }
 
     public static HeadlessAuditSaveResult ResolveAndPersist(
@@ -106,9 +106,9 @@ internal static class HeadlessAuditPersistence
         _ResolveEntityIds(context, capturedEntries);
         var snapshots = TrackedEntrySnapshot.Capture(context);
 
-        var auditEntities = _SaveEntries(context, capturedEntries);
+        var auditEntries = _SaveEntries(context, capturedEntries);
 
-        if (auditEntities.Count > 0)
+        if (auditEntries.Count > 0)
         {
             _SuppressEntries(context, snapshots);
 
@@ -122,7 +122,7 @@ internal static class HeadlessAuditPersistence
             }
         }
 
-        return new(RequiresManualAcceptAllChanges: true, auditEntities);
+        return new(RequiresManualAcceptAllChanges: true, auditEntries);
     }
 
     public static void CompleteSuccessfulSave(
@@ -142,25 +142,20 @@ internal static class HeadlessAuditPersistence
         }
         else
         {
-            DetachEntries(context, auditSave);
+            DetachEntries(auditSave);
         }
     }
 
-    public static void DetachEntries(DbContext context, HeadlessAuditSaveResult auditSave)
+    public static void DetachEntries(HeadlessAuditSaveResult auditSave)
     {
-        if (auditSave.AuditEntities is null)
+        if (auditSave.AuditEntries is null)
         {
             return;
         }
 
-        foreach (var entity in auditSave.AuditEntities)
+        foreach (var entry in auditSave.AuditEntries)
         {
-            var entry = context.Entry(entity);
-
-            if (entry.State != EntityState.Detached)
-            {
-                entry.State = EntityState.Detached;
-            }
+            entry.Detach();
         }
     }
 
@@ -172,13 +167,16 @@ internal static class HeadlessAuditPersistence
         }
     }
 
-    private static IReadOnlyList<object> _SaveEntries(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
+    private static IReadOnlyList<IAuditLogStoreEntry> _SaveEntries(
+        DbContext context,
+        IReadOnlyList<AuditLogEntryData> entries
+    )
     {
         var store = context.GetServiceOrDefault<IAuditLogStore>();
         return store?.Save(entries, context) ?? [];
     }
 
-    private static async Task<IReadOnlyList<object>> _SaveEntriesAsync(
+    private static async Task<IReadOnlyList<IAuditLogStoreEntry>> _SaveEntriesAsync(
         DbContext context,
         IReadOnlyList<AuditLogEntryData> entries,
         CancellationToken cancellationToken
@@ -260,5 +258,5 @@ internal static class HeadlessAuditPersistence
 
 internal readonly record struct HeadlessAuditSaveResult(
     bool RequiresManualAcceptAllChanges,
-    IReadOnlyList<object>? AuditEntities
+    IReadOnlyList<IAuditLogStoreEntry>? AuditEntries
 );
