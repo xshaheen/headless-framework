@@ -13,13 +13,18 @@ public interface IAuditLogStore
     /// Persists audit entries synchronously.
     /// Called from the synchronous <c>SaveChanges</c> path.
     /// </summary>
-    void Save(IReadOnlyList<AuditLogEntryData> entries);
+    /// <returns>The provider entities added to the current persistence context.</returns>
+    IReadOnlyList<object> Save(IReadOnlyList<AuditLogEntryData> entries);
 
     /// <summary>
     /// Persists audit entries asynchronously.
     /// Called from the asynchronous <c>SaveChangesAsync</c> path.
     /// </summary>
-    Task SaveAsync(IReadOnlyList<AuditLogEntryData> entries, CancellationToken cancellationToken = default);
+    /// <returns>The provider entities added to the current persistence context.</returns>
+    Task<IReadOnlyList<object>> SaveAsync(
+        IReadOnlyList<AuditLogEntryData> entries,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Persists audit entries synchronously using the specified saving context.
@@ -31,12 +36,14 @@ public interface IAuditLogStore
     /// The context instance executing SaveChanges (typed as <see cref="object"/>
     /// to keep this package free of the EF Core dependency).
     /// </param>
-    void Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext) => Save(entries);
+    /// <returns>The provider entities added to the current persistence context.</returns>
+    IReadOnlyList<object> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext) => Save(entries);
 
     /// <summary>
     /// Persists audit entries asynchronously using the specified saving context.
     /// </summary>
-    Task SaveAsync(
+    /// <returns>The provider entities added to the current persistence context.</returns>
+    Task<IReadOnlyList<object>> SaveAsync(
         IReadOnlyList<AuditLogEntryData> entries,
         object savingContext,
         CancellationToken cancellationToken = default
