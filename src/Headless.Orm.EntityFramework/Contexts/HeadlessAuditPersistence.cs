@@ -71,11 +71,9 @@ internal static class HeadlessAuditPersistence
         }
 
         _ResolveEntityIds(context, capturedEntries);
-        var originalEntities = _CaptureTrackedEntities(context);
         var snapshots = TrackedEntrySnapshot.Capture(context);
 
-        await _SaveEntriesAsync(context, capturedEntries, cancellationToken).ConfigureAwait(false);
-        var auditEntities = _CaptureNewAddedEntities(context, originalEntities);
+        var auditEntities = await _SaveEntriesAsync(context, capturedEntries, cancellationToken).ConfigureAwait(false);
 
         if (auditEntities.Count > 0)
         {
@@ -106,11 +104,9 @@ internal static class HeadlessAuditPersistence
         }
 
         _ResolveEntityIds(context, capturedEntries);
-        var originalEntities = _CaptureTrackedEntities(context);
         var snapshots = TrackedEntrySnapshot.Capture(context);
 
-        _SaveEntries(context, capturedEntries);
-        var auditEntities = _CaptureNewAddedEntities(context, originalEntities);
+        var auditEntities = _SaveEntries(context, capturedEntries);
 
         if (auditEntities.Count > 0)
         {
@@ -176,13 +172,13 @@ internal static class HeadlessAuditPersistence
         }
     }
 
-    private static void _SaveEntries(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
+    private static IReadOnlyList<object> _SaveEntries(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
     {
         var store = context.GetServiceOrDefault<IAuditLogStore>();
-        store?.Save(entries, context);
+        return store?.Save(entries, context) ?? [];
     }
 
-    private static async Task _SaveEntriesAsync(
+    private static async Task<IReadOnlyList<object>> _SaveEntriesAsync(
         DbContext context,
         IReadOnlyList<AuditLogEntryData> entries,
         CancellationToken cancellationToken
@@ -192,29 +188,10 @@ internal static class HeadlessAuditPersistence
 
         if (store is not null)
         {
-            await store.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private static HashSet<object> _CaptureTrackedEntities(DbContext context)
-    {
-        var entities = new HashSet<object>(ReferenceEqualityComparer.Instance);
-
-        foreach (var entry in context.ChangeTracker.Entries())
-        {
-            entities.Add(entry.Entity);
+            return await store.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false);
         }
 
-        return entities;
-    }
-
-    private static IReadOnlyList<object> _CaptureNewAddedEntities(DbContext context, HashSet<object> originalEntities)
-    {
-        return context
-            .ChangeTracker.Entries()
-            .Where(entry => entry.State == EntityState.Added && !originalEntities.Contains(entry.Entity))
-            .Select(entry => entry.Entity)
-            .ToArray();
+        return [];
     }
 
     private static void _SuppressEntries(DbContext context, IReadOnlyList<TrackedEntrySnapshot> snapshots)
