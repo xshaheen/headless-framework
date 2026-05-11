@@ -27,9 +27,9 @@ dotnet add package Headless.Orm.EntityFramework
 
 ```csharp
 public class AppDbContext(
-    IHeadlessEntityModelProcessor entityProcessor,
+    HeadlessDbContextServices services,
     DbContextOptions<AppDbContext> options
-) : HeadlessDbContext(entityProcessor, options)
+) : HeadlessDbContext(services, options)
 {
     public DbSet<Product> Products => Set<Product>();
 
@@ -39,29 +39,6 @@ public class AppDbContext(
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
-    }
-
-    protected override Task PublishMessagesAsync(
-        List<EmitterDistributedMessages> emitters,
-        IDbContextTransaction currentTransaction,
-        CancellationToken cancellationToken
-    ) => Task.CompletedTask;
-
-    protected override void PublishMessages(
-        List<EmitterDistributedMessages> emitters,
-        IDbContextTransaction currentTransaction
-    )
-    {
-    }
-
-    protected override Task PublishMessagesAsync(
-        List<EmitterLocalMessages> emitters,
-        IDbContextTransaction currentTransaction,
-        CancellationToken cancellationToken
-    ) => Task.CompletedTask;
-
-    protected override void PublishMessages(List<EmitterLocalMessages> emitters, IDbContextTransaction currentTransaction)
-    {
     }
 }
 
@@ -96,12 +73,38 @@ var allProducts = await dbContext.Products
 
 ### Extending Context Processing
 
-`HeadlessEntityModelProcessor` is the default implementation behind `IHeadlessEntityModelProcessor`. Replace it in DI for full control, or derive from it and override focused hooks:
+`AddHeadlessDbContextServices()` registers ordered, composable save-time services. Add focused entry processors through `HeadlessDbContextOptions`; replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control. Keep module-specific model mapping explicit with `ModelBuilder` extensions, such as `modelBuilder.AddSettingsConfiguration()`.
 
-- `ProcessEntityType(...)` for model-level conventions
-- `ConfigureQueryFilters<TEntity>(...)` for named global filters
-- `ProcessEntry(...)` for per-entry save changes behavior
-- `CollectMessages(...)` for local/distributed message batching
+- `IHeadlessSaveEntryProcessor` for per-entry mutations before `SaveChanges`
+- `IHeadlessMessageDispatcher` for local/distributed message publishing
+- `IHeadlessSaveChangesPipeline` for transaction, audit, and message orchestration
+
+```csharp
+public sealed class AppSaveEntryProcessor : IHeadlessSaveEntryProcessor
+{
+    public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
+    {
+        // Apply app-specific save behavior here.
+    }
+}
+
+services.AddHeadlessDbContextServices(options =>
+{
+    options.AddSaveEntryProcessor<AppSaveEntryProcessor>(250);
+});
+```
+
+Message publishing defaults to a fail-fast dispatcher. If entities emit local or distributed messages, register a dispatcher to publish captured emitters through your application messaging infrastructure.
+
+```csharp
+services.AddHeadlessDbContextServices();
+services.AddHeadlessMessageDispatcher<AppHeadlessMessageDispatcher>();
+
+// Or use a factory when the dispatcher wraps existing application services.
+services.AddHeadlessMessageDispatcher(provider =>
+    new AppHeadlessMessageDispatcher(provider.GetRequiredService<AppMessageBus>())
+);
+```
 
 ### Resilient Transactions
 
@@ -132,6 +135,6 @@ var result = await dbContext.ExecuteTransactionAsync<int>(async (ctx, ct) =>
 
 ## Side Effects
 
-- Registers `IHeadlessEntityModelProcessor` as singleton
+- Registers `HeadlessDbContextServices`, save-entry processors, a save pipeline, and a fail-fast message dispatcher
 - Registers default implementations for `IClock`, `IGuidGenerator`, `ICurrentTenant`, `ICurrentUser`
 - Replaces `ICompiledQueryCacheKeyGenerator` for multi-tenancy support

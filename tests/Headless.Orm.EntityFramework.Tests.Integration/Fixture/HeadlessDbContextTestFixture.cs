@@ -64,8 +64,7 @@ public sealed class HeadlessDbContextTestFixture : ICollectionFixture<HeadlessDb
         services.AddSingleton<ICurrentUser>(CurrentUser);
         services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
         services.AddHeadlessDbContextServices();
-        // AddHeadlessDbContextServices now uses TryAddSingleton<ICurrentTenant>, so ordering is
-        // tolerant — registering before or after the framework defaults produces the same result.
+        services.AddHeadlessMessageDispatcher<RecordingHeadlessMessageDispatcher>();
         services.AddSingleton<ICurrentTenant>(CurrentTenant);
 
         services.AddDbContext<TestHeadlessDbContext>(options =>

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.ComponentModel.DataAnnotations.Schema;
+using Headless.Abstractions;
 using Headless.Domain;
 using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
@@ -8,125 +8,39 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using AccountId = Headless.Primitives.AccountId;
 using UserId = Headless.Primitives.UserId;
 
-namespace Headless.EntityFramework.Contexts;
+namespace Headless.EntityFramework.Processors;
 
-public partial class HeadlessEntityModelProcessor
+public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser currentUser)
+    : IHeadlessSaveEntryProcessor
 {
-    public virtual ProcessBeforeSaveReport ProcessEntries(DbContext db)
-    {
-        var report = new ProcessBeforeSaveReport();
-        var currentUserId = _currentUser.UserId;
-        var currentAccountId = _currentUser.AccountId;
-
-        foreach (var entry in db.ChangeTracker.Entries())
-        {
-            ProcessEntry(entry, currentUserId, currentAccountId);
-            CollectMessages(entry, report);
-        }
-
-        return report;
-    }
-
-    protected virtual void ProcessEntry(EntityEntry entry, UserId? currentUserId, AccountId? currentAccountId)
+    public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
         switch (entry.State)
         {
             case EntityState.Added:
-                _TrySetGuidId(entry);
-                _TrySetMultiTenantId(entry);
-                _TrySetCreateAudit(entry, currentUserId, currentAccountId);
-                _TrySetConcurrencyStamp(entry);
-                _TryPublishCreatedLocalMessage(entry);
-
+                _TrySetCreateAudit(entry);
                 break;
             case EntityState.Modified:
-                _TrySetUpdateAudit(entry, currentUserId, currentAccountId);
-                _TrySetDeleteAudit(entry, currentUserId, currentAccountId);
-                _TrySetSuspendAudit(entry, currentUserId, currentAccountId);
-                _TryUpdateConcurrencyStamp(entry);
-                _TryPublishUpdatedLocalMessage(entry);
-
-                break;
-            case EntityState.Deleted:
-                _TryPublishDeletedLocalMessage(entry);
-
+                _TrySetUpdateAudit(entry);
+                _TrySetDeleteAudit(entry);
+                _TrySetSuspendAudit(entry);
                 break;
         }
     }
 
-    protected virtual void CollectMessages(EntityEntry entry, ProcessBeforeSaveReport report)
+    private void _TrySetCreateAudit(EntityEntry entry)
     {
-        if (entry.Entity is IDistributedMessageEmitter distributedMessageEmitter)
-        {
-            var messages = distributedMessageEmitter.GetDistributedMessages();
-
-            if (messages.Count > 0)
-            {
-                report.DistributedEmitters.Add(new(distributedMessageEmitter, messages));
-            }
-        }
-
-        if (entry.Entity is ILocalMessageEmitter localMessageEmitter)
-        {
-            var messages = localMessageEmitter.GetLocalMessages();
-
-            if (messages.Count > 0)
-            {
-                report.LocalEmitters.Add(new(localMessageEmitter, messages));
-            }
-        }
-    }
-
-    private void _TrySetMultiTenantId(EntityEntry entry)
-    {
-        if (entry.Entity is not IMultiTenant entity || !string.IsNullOrEmpty(entity.TenantId))
+        if (entry.Entity is not ICreateAudit entity)
         {
             return;
         }
 
-        if (entry.Property(nameof(IMultiTenant.TenantId)) is { IsModified: true, CurrentValue: not (null or "") })
-        {
-            return;
-        }
-
-        ObjectPropertiesHelper.TrySetProperty(entity, x => x.TenantId, () => _currentTenant.Id);
-    }
-
-    private void _TrySetGuidId(EntityEntry entry)
-    {
-        if (entry.Entity is not IEntity<Guid> entity || entity.Id != Guid.Empty)
-        {
-            return;
-        }
-
-        var idProperty = entry.Property(nameof(IEntity<>.Id)).Metadata.PropertyInfo!;
-
-        if (
-            idProperty.GetFirstOrDefaultAttribute<DatabaseGeneratedAttribute>() is
-            { DatabaseGeneratedOption: not DatabaseGeneratedOption.None }
-        )
-        {
-            return;
-        }
-
-        ObjectPropertiesHelper.TrySetProperty(entity, x => x.Id, _guidGenerator.Create);
-    }
-
-    private void _TrySetCreateAudit(EntityEntry entry, UserId? currentUserId, AccountId? currentAccountId)
-    {
-        if (entry.Entity is ICreateAudit entity)
-        {
-            _TrySetCreateAuditDate(entity);
-            _TrySetCreateAuditId(entry, currentUserId, currentAccountId);
-        }
-    }
-
-    private void _TrySetCreateAuditDate(ICreateAudit entity)
-    {
         if (entity.DateCreated == default)
         {
-            ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateCreated, () => _clock.UtcNow);
+            ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateCreated, () => clock.UtcNow);
         }
+
+        _TrySetCreateAuditId(entry, currentUser.UserId, currentUser.AccountId);
     }
 
     private static void _TrySetCreateAuditId(EntityEntry entry, UserId? currentUserId, AccountId? currentAccountId)
@@ -171,7 +85,7 @@ public partial class HeadlessEntityModelProcessor
         }
     }
 
-    private void _TrySetUpdateAudit(EntityEntry entry, UserId? currentUserId, AccountId? currentAccountId)
+    private void _TrySetUpdateAudit(EntityEntry entry)
     {
         if (entry.Entity is not IUpdateAudit entity)
         {
@@ -179,7 +93,7 @@ public partial class HeadlessEntityModelProcessor
         }
 
         _TrySetUpdateAuditDate(entry, entity);
-        _TrySetUpdateAuditId(entry, currentUserId, currentAccountId);
+        _TrySetUpdateAuditId(entry, currentUser.UserId, currentUser.AccountId);
     }
 
     private void _TrySetUpdateAuditDate(EntityEntry entry, IUpdateAudit entity)
@@ -195,7 +109,7 @@ public partial class HeadlessEntityModelProcessor
             return;
         }
 
-        if (ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateUpdated, () => _clock.UtcNow))
+        if (ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateUpdated, () => clock.UtcNow))
         {
             propertyEntry.IsModified = true;
         }
@@ -242,19 +156,22 @@ public partial class HeadlessEntityModelProcessor
         }
     }
 
-    private bool _TrySetDeleteAudit(EntityEntry entry, UserId? currentUserId, AccountId? currentAccountId)
+    private void _TrySetDeleteAudit(EntityEntry entry)
     {
-        if (entry.Entity is not IDeleteAudit deleteAudit || !entry.Property(nameof(IDeleteAudit.IsDeleted)).IsModified)
+        if (
+            entry.Entity is not IDeleteAudit deleteAudit
+            || !entry.Property(nameof(IDeleteAudit.IsDeleted)).IsModified
+        )
         {
-            return false;
+            return;
         }
 
         if (deleteAudit.IsDeleted)
         {
             _TrySetDeleteAuditDate(entry, deleteAudit);
-            _TrySetDeleteAuditId(entry, currentUserId, currentAccountId);
+            _TrySetDeleteAuditId(entry, currentUser.UserId, currentUser.AccountId);
 
-            return true;
+            return;
         }
 
         ObjectPropertiesHelper.TrySetPropertyToNull(deleteAudit, nameof(IDeleteAudit.DateDeleted));
@@ -263,15 +180,13 @@ public partial class HeadlessEntityModelProcessor
         {
             ObjectPropertiesHelper.TrySetPropertyToNull(deleteAudit, nameof(IDeleteAudit<>.DeletedById));
         }
-
-        return true;
     }
 
     private void _TrySetDeleteAuditDate(EntityEntry entry, IDeleteAudit entity)
     {
         if (entity.DateDeleted == null || !entry.Property(nameof(IDeleteAudit.DateDeleted)).IsModified)
         {
-            ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateDeleted, () => _clock.UtcNow);
+            ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateDeleted, () => clock.UtcNow);
         }
     }
 
@@ -308,22 +223,22 @@ public partial class HeadlessEntityModelProcessor
         }
     }
 
-    private bool _TrySetSuspendAudit(EntityEntry entry, UserId? currentUserId, AccountId? currentAccountId)
+    private void _TrySetSuspendAudit(EntityEntry entry)
     {
         if (
             entry.Entity is not ISuspendAudit suspendAudit
             || !entry.Property(nameof(ISuspendAudit.IsSuspended)).IsModified
         )
         {
-            return false;
+            return;
         }
 
         if (suspendAudit.IsSuspended)
         {
             _TrySetSuspendAuditDate(entry, suspendAudit);
-            _TrySetSuspendAuditId(entry, currentUserId, currentAccountId);
+            _TrySetSuspendAuditId(entry, currentUser.UserId, currentUser.AccountId);
 
-            return true;
+            return;
         }
 
         ObjectPropertiesHelper.TrySetPropertyToNull(suspendAudit, nameof(ISuspendAudit.DateSuspended));
@@ -332,15 +247,13 @@ public partial class HeadlessEntityModelProcessor
         {
             ObjectPropertiesHelper.TrySetPropertyToNull(suspendAudit, nameof(ISuspendAudit<>.SuspendedById));
         }
-
-        return true;
     }
 
     private void _TrySetSuspendAuditDate(EntityEntry entry, ISuspendAudit entity)
     {
         if (entity.DateSuspended == null || !entry.Property(nameof(ISuspendAudit.DateSuspended)).IsModified)
         {
-            ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateSuspended, () => _clock.UtcNow);
+            ObjectPropertiesHelper.TrySetProperty(entity, x => x.DateSuspended, () => clock.UtcNow);
         }
     }
 
@@ -374,22 +287,6 @@ public partial class HeadlessEntityModelProcessor
         if (byAccount is not null && byAccount.SuspendedById is null && currentAccountId is not null)
         {
             ObjectPropertiesHelper.TrySetProperty(byAccount, x => x.SuspendedById, () => currentAccountId);
-        }
-    }
-
-    private static void _TrySetConcurrencyStamp(EntityEntry entry)
-    {
-        if (entry.Entity is IHasConcurrencyStamp { ConcurrencyStamp: null } entity)
-        {
-            ObjectPropertiesHelper.TrySetProperty(entity, x => x.ConcurrencyStamp, () => Guid.NewGuid().ToString("N"));
-        }
-    }
-
-    private static void _TryUpdateConcurrencyStamp(EntityEntry entry)
-    {
-        if (entry.Entity is IHasConcurrencyStamp entity)
-        {
-            ObjectPropertiesHelper.TrySetProperty(entity, x => x.ConcurrencyStamp, () => Guid.NewGuid().ToString("N"));
         }
     }
 

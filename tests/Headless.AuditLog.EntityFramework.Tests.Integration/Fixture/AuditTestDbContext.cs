@@ -1,13 +1,11 @@
 using Headless.AuditLog;
 using Headless.EntityFramework;
-using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Tests.Fixture;
 
-public class AuditTestDbContext(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
-    : HeadlessDbContext(entityProcessor, options)
+public class AuditTestDbContext(HeadlessDbContextServices services, DbContextOptions options)
+    : HeadlessDbContext(services, options)
 {
     public DbSet<Order> Orders => Set<Order>();
 
@@ -30,26 +28,4 @@ public class AuditTestDbContext(IHeadlessEntityModelProcessor entityProcessor, D
             b.Property(e => e.Id).ValueGeneratedOnAdd();
         });
     }
-
-    protected override Task PublishMessagesAsync(
-        List<EmitterDistributedMessages> emitters,
-        IDbContextTransaction currentTransaction,
-        CancellationToken cancellationToken
-    ) => Task.CompletedTask;
-
-    protected override void PublishMessages(
-        List<EmitterDistributedMessages> emitters,
-        IDbContextTransaction currentTransaction
-    ) { }
-
-    protected override Task PublishMessagesAsync(
-        List<EmitterLocalMessages> emitters,
-        IDbContextTransaction currentTransaction,
-        CancellationToken cancellationToken
-    ) => Task.CompletedTask;
-
-    protected override void PublishMessages(
-        List<EmitterLocalMessages> emitters,
-        IDbContextTransaction currentTransaction
-    ) { }
 }

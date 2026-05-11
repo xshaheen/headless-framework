@@ -1,4 +1,5 @@
-using Headless.EntityFramework.Contexts;
+using Headless.EntityFramework;
+using Headless.EntityFramework.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -8,13 +9,11 @@ namespace Tests.Fixture;
 /// Test DbContext whose distributed/local publish methods always throw. Combined with an
 /// <c>IDistributedMessageEmitter</c> entity this forces the runtime down the path where
 /// audit entries have already been persisted but the post-persist publish raises. The
-/// catch block in <c>HeadlessDbContextRuntime._SaveWithinTransactionAsync</c> must detach
+/// catch block in the save pipeline must detach
 /// the persisted audit entries so a retry on the same change tracker doesn't double-insert.
 /// </summary>
-public sealed class ThrowingPublishAuditTestDbContext(
-    IHeadlessEntityModelProcessor entityProcessor,
-    DbContextOptions options
-) : AuditTestDbContext(entityProcessor, options)
+public sealed class ThrowingPublishAuditTestDbContext(HeadlessDbContextServices services, DbContextOptions options)
+    : AuditTestDbContext(services, options)
 {
     public const string PublishFailureMessage = "Simulated publish failure.";
 
@@ -31,16 +30,29 @@ public sealed class ThrowingPublishAuditTestDbContext(
             // GetDistributedMessages is method-based; backing field is auto-excluded by EF.
         });
     }
+}
 
-    protected override Task PublishMessagesAsync(
-        List<EmitterDistributedMessages> emitters,
+public sealed class ThrowingHeadlessMessageDispatcher : IHeadlessMessageDispatcher
+{
+    public Task PublishLocalAsync(
+        IReadOnlyList<EmitterLocalMessages> emitters,
         IDbContextTransaction currentTransaction,
         CancellationToken cancellationToken
     ) => throw new InvalidOperationException(PublishFailureMessage);
 
-    protected override Task PublishMessagesAsync(
-        List<EmitterLocalMessages> emitters,
+    public void PublishLocal(IReadOnlyList<EmitterLocalMessages> emitters, IDbContextTransaction currentTransaction) =>
+        throw new InvalidOperationException(PublishFailureMessage);
+
+    public Task PublishDistributedAsync(
+        IReadOnlyList<EmitterDistributedMessages> emitters,
         IDbContextTransaction currentTransaction,
         CancellationToken cancellationToken
     ) => throw new InvalidOperationException(PublishFailureMessage);
+
+    public void PublishDistributed(
+        IReadOnlyList<EmitterDistributedMessages> emitters,
+        IDbContextTransaction currentTransaction
+    ) => throw new InvalidOperationException(PublishFailureMessage);
+
+    private const string PublishFailureMessage = ThrowingPublishAuditTestDbContext.PublishFailureMessage;
 }

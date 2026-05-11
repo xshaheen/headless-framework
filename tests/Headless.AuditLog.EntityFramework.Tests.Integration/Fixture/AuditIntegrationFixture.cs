@@ -64,7 +64,7 @@ public static class AuditIntegrationFixture
         {
             opts.UseSqlite(connection).AddHeadlessExtension();
 
-            // HeadlessDbContext._CaptureAuditEntries() resolves IClock, ICurrentUser, ICurrentTenant
+            // Audit capture resolves IClock, ICurrentUser, ICurrentTenant
             // via this.GetService<T>() which hits EF's INTERNAL service provider (populated by
             // IDbContextOptionsExtension.ApplyServices), not the application DI scope.
             // This extension injects the test doubles into EF's internal provider so they win

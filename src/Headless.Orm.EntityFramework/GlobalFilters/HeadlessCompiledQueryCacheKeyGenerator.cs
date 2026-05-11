@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
-using Headless.EntityFramework.Contexts;
+using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Query;
 
@@ -17,7 +17,7 @@ public sealed class HeadlessCompiledQueryCacheKeyGenerator(
     {
         var innerCacheKey = inner.GenerateCacheKey(query, async);
 
-        if (currentDbContext.Context is HeadlessDbContext db)
+        if (currentDbContext.Context is IHeadlessDbContext db)
         {
             return new HeadlessCacheKey(innerCacheKey, db.TenantId);
         }

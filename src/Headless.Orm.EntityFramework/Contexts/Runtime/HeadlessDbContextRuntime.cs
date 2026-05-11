@@ -1,361 +1,185 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
-using Headless.AuditLog;
+using System.Reflection;
+using Headless.Domain;
 using Headless.EntityFramework.ChangeTrackers;
+using Headless.EntityFramework.Configurations;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Headless.EntityFramework.Contexts;
+namespace Headless.EntityFramework;
 
-/// <summary>
-/// Shared save pipeline used by both <see cref="HeadlessDbContext"/> and
-/// <c>HeadlessIdentityDbContext</c>. Centralizes entity processing, audit capture,
-/// message publishing, transaction management, and execution strategy retry logic.
-/// </summary>
-/// <remarks>
-/// <para>
-/// <b>Transaction behavior:</b> An explicit <c>ReadCommitted</c> transaction is started
-/// whenever audit entries are captured OR message emitters are present. This ensures audit
-/// entries are committed atomically with entity changes across all context types.
-/// Prior to this consolidation, <c>HeadlessIdentityDbContext</c> persisted audit entries
-/// outside an explicit transaction — the unified behavior is intentionally stricter.
-/// </para>
-/// </remarks>
-internal sealed class HeadlessDbContextRuntime
+[PublicAPI]
+public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices services)
 {
+    private static readonly MethodInfo _ConfigureQueryFiltersMethod = typeof(HeadlessDbContextRuntime).GetMethod(
+        nameof(_ConfigureQueryFilters),
+        BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly
+    )!;
+
     private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
-    private readonly DbContext _db;
-    private readonly IHeadlessEntityModelProcessor _entityProcessor;
 
-    public string? TenantId => _entityProcessor.TenantId;
+    public string? TenantId => services.TenantId;
 
-    private ILogger? AuditLogger => field ??= _db.GetServiceOrDefault<ILoggerFactory>()?.CreateLogger(_db.GetType());
-
-    /// <summary>
-    /// Shared save pipeline used by both <see cref="HeadlessDbContext"/> and
-    /// <c>HeadlessIdentityDbContext</c>. Centralizes entity processing, audit capture,
-    /// message publishing, transaction management, and execution strategy retry logic.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Transaction behavior:</b> An explicit <c>ReadCommitted</c> transaction is started
-    /// whenever audit entries are captured OR message emitters are present. This ensures audit
-    /// entries are committed atomically with entity changes across all context types.
-    /// Prior to this consolidation, <c>HeadlessIdentityDbContext</c> persisted audit entries
-    /// outside an explicit transaction — the unified behavior is intentionally stricter.
-    /// </para>
-    /// </remarks>
-    public HeadlessDbContextRuntime(DbContext db, IHeadlessEntityModelProcessor entityProcessor)
+    public void Initialize()
     {
-        _db = db;
-        _entityProcessor = entityProcessor;
-        _SyncNavigationTracker();
+        db.ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
+        db.ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
     }
 
     public async Task<int> SaveChangesAsync(
-        Func<List<EmitterLocalMessages>, IDbContextTransaction, CancellationToken, Task> publishLocalAsync,
-        Func<List<EmitterDistributedMessages>, IDbContextTransaction, CancellationToken, Task> publishDistributedAsync,
         Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken
     )
     {
-        var report = _entityProcessor.ProcessEntries(_db);
-        var auditEntries = HeadlessAuditPersistence.CaptureEntries(_db, AuditLogger);
-
-        var state = new AsyncSaveState(
-            _db,
-            report,
-            auditEntries,
-            acceptAllChangesOnSuccess,
-            publishLocalAsync,
-            publishDistributedAsync,
-            baseSaveChangesAsync,
-            _navigationModifiedTracker,
-            cancellationToken
-        );
-
-        if (_db.Database.CurrentTransaction is not null)
-        {
-            return await _ExecuteWithinCurrentTransactionAsync(state).ConfigureAwait(false);
-        }
-
-        if (!_RequiresExplicitTransaction(auditEntries, report))
-        {
-            var result = await baseSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken).ConfigureAwait(false);
-            _CompleteSuccessfulSave(report, _navigationModifiedTracker, _db, default, acceptAllChangesOnSuccess);
-            return result;
-        }
-
-        return await _db
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(state, _ExecuteWithNewTransactionAsync)
-            .ConfigureAwait(false);
-    }
-
-    public int SaveChanges(
-        Action<List<EmitterLocalMessages>, IDbContextTransaction> publishLocal,
-        Action<List<EmitterDistributedMessages>, IDbContextTransaction> publishDistributed,
-        Func<bool, int> baseSaveChanges,
-        bool acceptAllChangesOnSuccess
-    )
-    {
-#pragma warning disable MA0045 // Sync SaveChanges intentionally wraps EF sync APIs.
-        var report = _entityProcessor.ProcessEntries(_db);
-        var auditEntries = HeadlessAuditPersistence.CaptureEntries(_db, AuditLogger);
-
-        var state = new SaveState(
-            _db,
-            report,
-            auditEntries,
-            acceptAllChangesOnSuccess,
-            publishLocal,
-            publishDistributed,
-            baseSaveChanges,
-            _navigationModifiedTracker
-        );
-
-        if (_db.Database.CurrentTransaction is not null)
-        {
-            return _ExecuteWithinCurrentTransaction(state);
-        }
-
-        if (!_RequiresExplicitTransaction(auditEntries, report))
-        {
-            var result = baseSaveChanges(acceptAllChangesOnSuccess);
-            _CompleteSuccessfulSave(report, _navigationModifiedTracker, _db, default, acceptAllChangesOnSuccess);
-            return result;
-        }
-
-        return _db.Database.CreateExecutionStrategy().Execute(state, _ExecuteWithNewTransaction);
-#pragma warning restore MA0045
-    }
-
-    public static void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
-    {
-        configurationBuilder.AddBuildingBlocksPrimitivesConvertersMappings();
-    }
-
-    public static void ConfigureDefaultSchema(ModelBuilder modelBuilder, string defaultSchema)
-    {
-        if (!defaultSchema.IsNullOrWhiteSpace())
-        {
-            modelBuilder.HasDefaultSchema(defaultSchema);
-        }
-    }
-
-    public void ProcessModelCreating(ModelBuilder modelBuilder)
-    {
-        _entityProcessor.ProcessModelCreating(modelBuilder);
-    }
-
-    private static Task<int> _ExecuteWithinCurrentTransactionAsync(AsyncSaveState state)
-    {
-        var currentTransaction = state.Context.Database.CurrentTransaction!;
-        return _SaveWithinTransactionAsync(state, currentTransaction, commitTransaction: false);
-    }
-
-    private static int _ExecuteWithinCurrentTransaction(SaveState state)
-    {
-        var currentTransaction = state.Context.Database.CurrentTransaction!;
-        return _SaveWithinTransaction(state, currentTransaction, commitTransaction: false);
-    }
-
-    private static async Task<int> _ExecuteWithNewTransactionAsync(AsyncSaveState state)
-    {
-        await using var transaction = await state
-            .Context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, state.CancellationToken)
+        var result = await services
+            .SaveChangesPipeline.SaveChangesAsync(
+                db,
+                baseSaveChangesAsync,
+                acceptAllChangesOnSuccess,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
-        return await _SaveWithinTransactionAsync(state, transaction, commitTransaction: true).ConfigureAwait(false);
+        _navigationModifiedTracker.RemoveModifiedEntityEntries();
+
+        return result;
     }
 
-    private static int _ExecuteWithNewTransaction(SaveState state)
+    public int SaveChanges(Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess)
     {
-#pragma warning disable MA0045 // Sync intentionally
-        using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
-        return _SaveWithinTransaction(state, transaction, commitTransaction: true);
-#pragma warning restore MA0045
+        var result = services.SaveChangesPipeline.SaveChanges(db, baseSaveChanges, acceptAllChangesOnSuccess);
+        _navigationModifiedTracker.RemoveModifiedEntityEntries();
+
+        return result;
     }
 
-    private static async Task<int> _SaveWithinTransactionAsync(
-        AsyncSaveState state,
-        IDbContextTransaction transaction,
-        bool commitTransaction
-    )
+    public virtual void ConfigureConventions(ModelConfigurationBuilder builder)
     {
-        // Owning retry-prep here means the new-transaction path cannot forget to detach
-        // stale audit entries left over from a prior execution-strategy attempt.
-        if (commitTransaction)
-        {
-            HeadlessAuditPersistence.PrepareForRetry(state.Context);
-        }
+        builder.AddBuildingBlocksPrimitivesConvertersMappings();
+    }
 
-        HeadlessAuditSaveResult auditSave = default;
+    public void ProcessModelCreating(ModelBuilder builder)
+    {
+        _ConfigureEntityConventions(builder);
+        _ConfigureDateTimeValueConverters(builder);
+        _ConfigureQueryFiltersForModel(builder, _GetRuntimeContext());
+    }
 
-        try
+    private IHeadlessDbContext _GetRuntimeContext()
+    {
+        return db as IHeadlessDbContext
+            ?? throw new InvalidOperationException(
+                $"{db.GetType().Name} must inherit from a Headless DbContext base type."
+            );
+    }
+
+    private static void _ConfigureEntityConventions(ModelBuilder modelBuilder)
+    {
+        foreach (var type in modelBuilder.Model.GetEntityTypes())
         {
-            if (state.Report.LocalEmitters.Count > 0)
+            if (!type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
             {
-                await state
-                    .PublishLocalAsync(state.Report.LocalEmitters, transaction, state.CancellationToken)
-                    .ConfigureAwait(false);
+                modelBuilder.Entity(type.ClrType).ConfigureHeadlessConvention();
             }
+        }
+    }
 
-            var deferAcceptAllChanges = HeadlessAuditPersistence.HasEntries(state.AuditEntries);
-            var result = await state
-                .BaseSaveChangesAsync(
-                    !deferAcceptAllChanges && state.AcceptAllChangesOnSuccess,
-                    state.CancellationToken
+    private void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder)
+    {
+        foreach (var type in modelBuilder.Model.GetEntityTypes())
+        {
+            if (type.BaseType is null && !type.IsOwned())
+            {
+                _ConfigureDateTimeValueConverters(modelBuilder, type);
+            }
+        }
+    }
+
+    private void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder, IMutableEntityType type)
+    {
+        var dateTimeType = typeof(DateTime);
+        var nullableDateTimeType = typeof(DateTime?);
+
+        var properties = type.GetProperties()
+            .Where(property =>
+                property.PropertyInfo is { CanWrite: true }
+                && (
+                    property.PropertyInfo.PropertyType == dateTimeType
+                    || property.PropertyInfo.PropertyType == nullableDateTimeType
                 )
-                .ConfigureAwait(false);
+            )
+            .ToList();
 
-            auditSave = await HeadlessAuditPersistence
-                .ResolveAndPersistAsync(
-                    state.Context,
-                    state.AuditEntries,
-                    state.BaseSaveChangesAsync,
-                    state.CancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (state.Report.DistributedEmitters.Count > 0)
-            {
-                await state
-                    .PublishDistributedAsync(state.Report.DistributedEmitters, transaction, state.CancellationToken)
-                    .ConfigureAwait(false);
-            }
-
-            if (commitTransaction)
-            {
-                await transaction.CommitAsync(state.CancellationToken).ConfigureAwait(false);
-            }
-
-            _CompleteSuccessfulSave(
-                state.Report,
-                state.NavigationTracker,
-                state.Context,
-                auditSave,
-                state.AcceptAllChangesOnSuccess
-            );
-
-            return result;
-        }
-        catch
+        if (properties.Count == 0)
         {
-            HeadlessAuditPersistence.DetachEntries(auditSave);
-            throw;
+            return;
+        }
+
+        var dateTimeConverter = new NormalizeDateTimeValueConverter(services.Clock);
+        var nullableDateTimeConverter = new NullableNormalizeDateTimeValueConverter(services.Clock);
+
+        foreach (var property in properties)
+        {
+            ValueConverter converter = property.ClrType == dateTimeType ? dateTimeConverter : nullableDateTimeConverter;
+            modelBuilder.Entity(type.ClrType).Property(property.Name).HasConversion(converter);
         }
     }
 
-    private static int _SaveWithinTransaction(
-        SaveState state,
-        IDbContextTransaction transaction,
-        bool commitTransaction
-    )
+    private static void _ConfigureQueryFiltersForModel(ModelBuilder modelBuilder, IHeadlessDbContext runtimeContext)
     {
-#pragma warning disable MA0045 // Sync intentionally — extracted from the sync SaveChanges path.
-        // Owning retry-prep here means the new-transaction path cannot forget to detach
-        // stale audit entries left over from a prior execution-strategy attempt.
-        if (commitTransaction)
+        foreach (var type in modelBuilder.Model.GetEntityTypes())
         {
-            HeadlessAuditPersistence.PrepareForRetry(state.Context);
-        }
-
-        HeadlessAuditSaveResult auditSave = default;
-
-        try
-        {
-            if (state.Report.LocalEmitters.Count > 0)
+            if (type.BaseType is null && !type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
             {
-                state.PublishLocal(state.Report.LocalEmitters, transaction);
+                _ConfigureQueryFiltersMethod
+                    .MakeGenericMethod(type.ClrType)
+                    .Invoke(null, [modelBuilder, runtimeContext]);
             }
-
-            var deferAcceptAllChanges = HeadlessAuditPersistence.HasEntries(state.AuditEntries);
-            var result = state.BaseSaveChanges(!deferAcceptAllChanges && state.AcceptAllChangesOnSuccess);
-            auditSave = HeadlessAuditPersistence.ResolveAndPersist(
-                state.Context,
-                state.AuditEntries,
-                state.BaseSaveChanges
-            );
-
-            if (state.Report.DistributedEmitters.Count > 0)
-            {
-                state.PublishDistributed(state.Report.DistributedEmitters, transaction);
-            }
-
-            if (commitTransaction)
-            {
-                transaction.Commit();
-            }
-
-            _CompleteSuccessfulSave(
-                state.Report,
-                state.NavigationTracker,
-                state.Context,
-                auditSave,
-                state.AcceptAllChangesOnSuccess
-            );
-
-            return result;
         }
-        catch
-        {
-            HeadlessAuditPersistence.DetachEntries(auditSave);
-            throw;
-        }
-#pragma warning restore MA0045
     }
 
-    private static bool _RequiresExplicitTransaction(
-        IReadOnlyList<AuditLogEntryData>? auditEntries,
-        ProcessBeforeSaveReport report
-    ) =>
-        HeadlessAuditPersistence.HasEntries(auditEntries)
-        || report.DistributedEmitters.Count > 0
-        || report.LocalEmitters.Count > 0;
-
-    private static void _CompleteSuccessfulSave(
-        ProcessBeforeSaveReport report,
-        HeadlessEntityFrameworkNavigationModifiedTracker navigationTracker,
-        DbContext context,
-        HeadlessAuditSaveResult auditSave,
-        bool acceptAllChangesOnSuccess
-    )
+    private static void _ConfigureQueryFilters<TEntity>(ModelBuilder modelBuilder, IHeadlessDbContext runtimeContext)
+        where TEntity : class
     {
-        HeadlessAuditPersistence.CompleteSuccessfulSave(context, auditSave, acceptAllChangesOnSuccess);
-        navigationTracker.RemoveModifiedEntityEntries();
-        report.ClearEmitterMessages();
+        var entityType = typeof(TEntity);
+        var entityBuilder = modelBuilder.Entity<TEntity>();
+
+        if (entityType.IsAssignableTo<IMultiTenant>())
+        {
+            var tenantIdName = _GetColumnName(entityBuilder.Metadata, nameof(IMultiTenant.TenantId));
+
+            entityBuilder.HasQueryFilter(
+                HeadlessQueryFilters.MultiTenancyFilter,
+                x => EF.Property<string?>(x, tenantIdName) == runtimeContext.TenantId
+            );
+        }
+
+        if (entityType.IsAssignableTo<IDeleteAudit>())
+        {
+            var isDeletedName = _GetColumnName(entityBuilder.Metadata, nameof(IDeleteAudit.IsDeleted));
+
+            entityBuilder.HasQueryFilter(
+                HeadlessQueryFilters.NotDeletedFilter,
+                x => !EF.Property<bool>(x, isDeletedName)
+            );
+        }
+
+        if (entityType.IsAssignableTo<ISuspendAudit>())
+        {
+            var isSuspendedName = _GetColumnName(entityBuilder.Metadata, nameof(ISuspendAudit.IsSuspended));
+
+            entityBuilder.HasQueryFilter(
+                HeadlessQueryFilters.NotSuspendedFilter,
+                x => !EF.Property<bool>(x, isSuspendedName)
+            );
+        }
     }
 
-    private void _SyncNavigationTracker()
+    private static string _GetColumnName(IMutableEntityType type, string name)
     {
-        _db.ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
-        _db.ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
+        return type.FindProperty(name)?.GetColumnName() ?? name;
     }
-
-    private readonly record struct AsyncSaveState(
-        DbContext Context,
-        ProcessBeforeSaveReport Report,
-        IReadOnlyList<AuditLogEntryData>? AuditEntries,
-        bool AcceptAllChangesOnSuccess,
-        Func<List<EmitterLocalMessages>, IDbContextTransaction, CancellationToken, Task> PublishLocalAsync,
-        Func<List<EmitterDistributedMessages>, IDbContextTransaction, CancellationToken, Task> PublishDistributedAsync,
-        Func<bool, CancellationToken, Task<int>> BaseSaveChangesAsync,
-        HeadlessEntityFrameworkNavigationModifiedTracker NavigationTracker,
-        CancellationToken CancellationToken
-    );
-
-    private readonly record struct SaveState(
-        DbContext Context,
-        ProcessBeforeSaveReport Report,
-        IReadOnlyList<AuditLogEntryData>? AuditEntries,
-        bool AcceptAllChangesOnSuccess,
-        Action<List<EmitterLocalMessages>, IDbContextTransaction> PublishLocal,
-        Action<List<EmitterDistributedMessages>, IDbContextTransaction> PublishDistributed,
-        Func<bool, int> BaseSaveChanges,
-        HeadlessEntityFrameworkNavigationModifiedTracker NavigationTracker
-    );
 }

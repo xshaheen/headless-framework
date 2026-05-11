@@ -5,12 +5,12 @@ using Headless.AuditLog;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.EntityFramework.Contexts;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Headless.EntityFramework;
 
 internal static class HeadlessAuditPersistence
 {
-    public static bool HasEntries(IReadOnlyList<AuditLogEntryData>? entries) => entries is { Count: > 0 };
-
     /// <summary>
     /// Captures audit entries from the change tracker before SaveChanges.
     /// Returns <see langword="null"/> when audit capture is not registered or fails.
@@ -64,15 +64,15 @@ internal static class HeadlessAuditPersistence
         CancellationToken cancellationToken
     )
     {
-        if (entries is not { Count: > 0 } capturedEntries)
+        if (entries is not { Count: > 0 })
         {
             return default;
         }
 
-        _ResolveEntityIds(context, capturedEntries);
+        _ResolveEntityIds(context, entries);
         var snapshots = TrackedEntrySnapshot.Capture(context);
 
-        var auditEntries = await _SaveEntriesAsync(context, capturedEntries, cancellationToken).ConfigureAwait(false);
+        var auditEntries = await _SaveEntriesAsync(context, entries, cancellationToken).ConfigureAwait(false);
 
         if (auditEntries.Count > 0)
         {
@@ -97,15 +97,17 @@ internal static class HeadlessAuditPersistence
         Func<bool, int> baseSaveChanges
     )
     {
-        if (entries is not { Count: > 0 } capturedEntries)
+        if (entries is not { Count: > 0 })
         {
             return default;
         }
 
-        _ResolveEntityIds(context, capturedEntries);
+        _ResolveEntityIds(context, entries);
         var snapshots = TrackedEntrySnapshot.Capture(context);
 
-        var auditEntries = _SaveEntries(context, capturedEntries);
+#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
+        var auditEntries = _SaveEntries(context, entries);
+#pragma warning restore MA0045
 
         if (auditEntries.Count > 0)
         {
@@ -139,10 +141,8 @@ internal static class HeadlessAuditPersistence
         {
             context.ChangeTracker.AcceptAllChanges();
         }
-        else
-        {
-            DetachEntries(auditSave);
-        }
+
+        DetachEntries(auditSave);
     }
 
     public static void DetachEntries(HeadlessAuditSaveResult auditSave)
@@ -174,7 +174,10 @@ internal static class HeadlessAuditPersistence
         // Defensive null-coalesce: contract says non-null but a buggy third-party implementer
         // could return null, which would NRE during the auditEntries.Count guard below.
         var store = context.GetServiceOrDefault<IAuditLogStore>();
+
+#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
         return store?.Save(entries, context) ?? [];
+#pragma warning restore MA0045
     }
 
     private static async Task<IReadOnlyList<IAuditLogStoreEntry>> _SaveEntriesAsync(
@@ -187,8 +190,8 @@ internal static class HeadlessAuditPersistence
 
         if (store is not null)
         {
-            // Defensive null-coalesce: contract says non-null but a buggy third-party implementer
-            // could return null mid-transaction.
+            // Defensive null-coalesce: contract says non-null but a buggy third-party implementer could return null mid-transaction.
+            // ReSharper disable once NullCoalescingConditionIsAlwaysNotNullAccordingToAPIContract
             return await store.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false) ?? [];
         }
 
@@ -258,8 +261,3 @@ internal static class HeadlessAuditPersistence
 
     private sealed record PropertySnapshot(string Name, object? OriginalValue, bool IsModified);
 }
-
-internal readonly record struct HeadlessAuditSaveResult(
-    bool RequiresManualAcceptAllChanges,
-    IReadOnlyList<IAuditLogStoreEntry>? AuditEntries
-);

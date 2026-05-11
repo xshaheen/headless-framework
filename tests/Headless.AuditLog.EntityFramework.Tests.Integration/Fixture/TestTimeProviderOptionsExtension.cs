@@ -11,8 +11,8 @@ namespace Tests.Fixture;
 /// When <c>HeadlessDbContext.this.GetService&lt;T&gt;()</c> is called, it resolves from EF's
 /// internal service provider (populated by <c>ApplyServices</c> on each
 /// <c>IDbContextOptionsExtension</c>), NOT from the application DI scope. This extension injects
-/// the test doubles so that <c>IClock</c>, <c>ICurrentUser</c>, <c>ICurrentTenant</c> etc. in
-/// <c>HeadlessDbContext._CaptureAuditEntries</c> resolve to our controlled implementations.
+/// the test doubles so that <c>IClock</c>, <c>ICurrentUser</c>, <c>ICurrentTenant</c> etc.
+/// resolve to our controlled implementations.
 /// </summary>
 internal sealed class TestHeadlessServicesOptionsExtension(
     TestClock clock,

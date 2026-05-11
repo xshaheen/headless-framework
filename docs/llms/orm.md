@@ -146,7 +146,7 @@ Use this when multiple operations must commit or roll back as one unit.
 
 ## Side Effects
 
-- Registers framework persistence services (`IHeadlessEntityModelProcessor`, clock/guid/current user-current tenant defaults)
+- Registers framework persistence services (runtime services, ordered model conventions, save-entry processors, clock/guid/current user-current tenant defaults)
 - Replaces compiled query cache key generator to include framework behavior
 - Forwards `DbContext` to registered `TDbContext` via scoped registration
 
