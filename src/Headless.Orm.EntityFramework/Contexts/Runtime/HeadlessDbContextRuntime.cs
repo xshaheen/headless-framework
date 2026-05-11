@@ -18,6 +18,9 @@ public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices se
         BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly
     )!;
 
+    private static readonly Type _DateTimeType = typeof(DateTime);
+    private static readonly Type _NullableDateTimeType = typeof(DateTime?);
+
     private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
 
     public string? TenantId => services.TenantId;
@@ -100,15 +103,12 @@ public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices se
 
     private void _ConfigureDateTimeValueConverters(ModelBuilder modelBuilder, IMutableEntityType type)
     {
-        var dateTimeType = typeof(DateTime);
-        var nullableDateTimeType = typeof(DateTime?);
-
         var properties = type.GetProperties()
             .Where(property =>
                 property.PropertyInfo is { CanWrite: true }
                 && (
-                    property.PropertyInfo.PropertyType == dateTimeType
-                    || property.PropertyInfo.PropertyType == nullableDateTimeType
+                    property.PropertyInfo.PropertyType == _DateTimeType
+                    || property.PropertyInfo.PropertyType == _NullableDateTimeType
                 )
             )
             .ToList();
@@ -123,7 +123,8 @@ public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices se
 
         foreach (var property in properties)
         {
-            ValueConverter converter = property.ClrType == dateTimeType ? dateTimeConverter : nullableDateTimeConverter;
+            ValueConverter converter =
+                property.ClrType == _DateTimeType ? dateTimeConverter : nullableDateTimeConverter;
             modelBuilder.Entity(type.ClrType).Property(property.Name).HasConversion(converter);
         }
     }

@@ -3,47 +3,51 @@
 using Headless.Abstractions;
 using Headless.AuditLog;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
 
-internal static class HeadlessAuditPersistence
+internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider, ILogger? logger)
 {
+    private readonly IAuditChangeCapture? _auditCapture = serviceProvider.GetService<IAuditChangeCapture>();
+    private readonly IAuditLogStore? _auditStore = serviceProvider.GetService<IAuditLogStore>();
+    private readonly ICurrentUser? _currentUser = serviceProvider.GetService<ICurrentUser>();
+    private readonly ICurrentTenant? _currentTenant = serviceProvider.GetService<ICurrentTenant>();
+    private readonly ICorrelationIdProvider? _correlationIdProvider =
+        serviceProvider.GetService<ICorrelationIdProvider>();
+    private readonly IClock? _clock = serviceProvider.GetService<IClock>();
+    private readonly ILogger? _logger = logger;
+
     /// <summary>
     /// Captures audit entries from the change tracker before SaveChanges.
     /// Returns <see langword="null"/> when audit capture is not registered or fails.
     /// </summary>
-    public static IReadOnlyList<AuditLogEntryData>? CaptureEntries(DbContext context, ILogger? logger)
+    public IReadOnlyList<AuditLogEntryData>? CaptureEntries(DbContext context)
     {
-        var auditCapture = context.GetServiceOrDefault<IAuditChangeCapture>();
-
-        if (auditCapture is null)
+        if (_auditCapture is null)
         {
             return null;
         }
 
-        var currentUser = context.GetServiceOrDefault<ICurrentUser>();
-        var currentTenant = context.GetServiceOrDefault<ICurrentTenant>();
-        var correlationIdProvider = context.GetServiceOrDefault<ICorrelationIdProvider>();
-        var clock = context.GetServiceOrDefault<IClock>();
-        var timestamp = clock?.UtcNow ?? DateTimeOffset.UtcNow;
+        var timestamp = _clock?.UtcNow ?? DateTimeOffset.UtcNow;
 
         try
         {
-            return auditCapture.CaptureChanges(
+            return _auditCapture.CaptureChanges(
                 context.ChangeTracker.Entries(),
-                currentUser?.UserId?.ToString(),
-                currentUser?.AccountId?.ToString(),
-                currentTenant?.Id,
-                correlationIdProvider?.CorrelationId,
+                _currentUser?.UserId?.ToString(),
+                _currentUser?.AccountId?.ToString(),
+                _currentTenant?.Id,
+                _correlationIdProvider?.CorrelationId,
                 timestamp
             );
         }
         catch (Exception ex)
         {
-            logger?.LogWarning(ex, "Audit change capture failed. Continuing with entity save.");
+            _logger?.LogWarning(ex, "Audit change capture failed. Continuing with entity save.");
             return null;
         }
     }
@@ -51,13 +55,12 @@ internal static class HeadlessAuditPersistence
     /// <summary>
     /// Detaches stale audit entries from a prior failed attempt before an execution strategy retry.
     /// </summary>
-    public static void PrepareForRetry(DbContext context)
+    public void PrepareForRetry(DbContext context)
     {
-        var store = context.GetServiceOrDefault<IAuditLogStore>();
-        store?.PrepareForRetry(context);
+        _auditStore?.PrepareForRetry(context);
     }
 
-    public static async Task<HeadlessAuditSaveResult> ResolveAndPersistAsync(
+    public async Task<HeadlessAuditSaveResult> ResolveAndPersistAsync(
         DbContext context,
         IReadOnlyList<AuditLogEntryData>? entries,
         Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
@@ -69,7 +72,7 @@ internal static class HeadlessAuditPersistence
             return default;
         }
 
-        _ResolveEntityIds(context, entries);
+        _ResolveEntityIds(entries);
         var snapshots = TrackedEntrySnapshot.Capture(context);
 
         var auditEntries = await _SaveEntriesAsync(context, entries, cancellationToken).ConfigureAwait(false);
@@ -91,7 +94,7 @@ internal static class HeadlessAuditPersistence
         return new(RequiresManualAcceptAllChanges: true, auditEntries);
     }
 
-    public static HeadlessAuditSaveResult ResolveAndPersist(
+    public HeadlessAuditSaveResult ResolveAndPersist(
         DbContext context,
         IReadOnlyList<AuditLogEntryData>? entries,
         Func<bool, int> baseSaveChanges
@@ -102,7 +105,7 @@ internal static class HeadlessAuditPersistence
             return default;
         }
 
-        _ResolveEntityIds(context, entries);
+        _ResolveEntityIds(entries);
         var snapshots = TrackedEntrySnapshot.Capture(context);
 
 #pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
@@ -158,44 +161,37 @@ internal static class HeadlessAuditPersistence
         }
     }
 
-    private static void _ResolveEntityIds(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
+    private void _ResolveEntityIds(IReadOnlyList<AuditLogEntryData> entries)
     {
-        if (context.GetServiceOrDefault<IAuditChangeCapture>() is IAuditEntityIdResolver resolver)
+        if (_auditCapture is IAuditEntityIdResolver resolver)
         {
             resolver.ResolveEntityIds(entries);
         }
     }
 
-    private static IReadOnlyList<IAuditLogStoreEntry> _SaveEntries(
-        DbContext context,
-        IReadOnlyList<AuditLogEntryData> entries
-    )
+    private IReadOnlyList<IAuditLogStoreEntry> _SaveEntries(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
     {
+#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
         // Defensive null-coalesce: contract says non-null but a buggy third-party implementer
         // could return null, which would NRE during the auditEntries.Count guard below.
-        var store = context.GetServiceOrDefault<IAuditLogStore>();
-
-#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
-        return store?.Save(entries, context) ?? [];
+        return _auditStore?.Save(entries, context) ?? [];
 #pragma warning restore MA0045
     }
 
-    private static async Task<IReadOnlyList<IAuditLogStoreEntry>> _SaveEntriesAsync(
+    private async Task<IReadOnlyList<IAuditLogStoreEntry>> _SaveEntriesAsync(
         DbContext context,
         IReadOnlyList<AuditLogEntryData> entries,
         CancellationToken cancellationToken
     )
     {
-        var store = context.GetServiceOrDefault<IAuditLogStore>();
-
-        if (store is not null)
+        if (_auditStore is null)
         {
-            // Defensive null-coalesce: contract says non-null but a buggy third-party implementer could return null mid-transaction.
-            // ReSharper disable once NullCoalescingConditionIsAlwaysNotNullAccordingToAPIContract
-            return await store.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false) ?? [];
+            return [];
         }
 
-        return [];
+        // Defensive null-coalesce: contract says non-null but a buggy third-party implementer could return null mid-transaction.
+        // ReSharper disable once NullCoalescingConditionIsAlwaysNotNullAccordingToAPIContract
+        return await _auditStore.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false) ?? [];
     }
 
     private static void _SuppressEntries(DbContext context, IReadOnlyList<TrackedEntrySnapshot> snapshots)
@@ -223,21 +219,26 @@ internal static class HeadlessAuditPersistence
     {
         public static IReadOnlyList<TrackedEntrySnapshot> Capture(DbContext context)
         {
-            return context
-                .ChangeTracker.Entries()
-                .Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
-                .Select(entry => new TrackedEntrySnapshot(
-                    entry.Entity,
-                    entry.State,
-                    entry
-                        .Properties.Select(static property => new PropertySnapshot(
-                            property.Metadata.Name,
-                            property.OriginalValue,
-                            property.IsModified
-                        ))
-                        .ToArray()
-                ))
-                .ToArray();
+            List<TrackedEntrySnapshot>? snapshots = null;
+
+            foreach (var entry in context.ChangeTracker.Entries())
+            {
+                if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
+                {
+                    continue;
+                }
+
+                var properties = new List<PropertySnapshot>();
+
+                foreach (var property in entry.Properties)
+                {
+                    properties.Add(new(property.Metadata.Name, property.OriginalValue, property.IsModified));
+                }
+
+                (snapshots ??= []).Add(new(entry.Entity, entry.State, properties));
+            }
+
+            return snapshots ?? (IReadOnlyList<TrackedEntrySnapshot>)[];
         }
 
         public void Restore(DbContext context)
