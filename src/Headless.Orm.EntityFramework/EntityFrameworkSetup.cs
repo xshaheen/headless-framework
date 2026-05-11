@@ -58,7 +58,9 @@ public static class EntityFrameworkSetup
             services.TryAddSingleton<IClock, Clock>();
             services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
             services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
-            services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
+            // Default to the real ambient-tenant resolver so EF writes get stamped out of the box.
+            // TryAdd lets consumers (or other packages with stronger tenant resolution) win when registered first.
+            services.TryAddSingleton<ICurrentTenant, CurrentTenant>();
             services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
             services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();
             services.ReplaceCompiledQueryCacheKeyGenerator();
