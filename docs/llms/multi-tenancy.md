@@ -167,7 +167,7 @@ The HTTP middleware preserves state `1` when there is no tenant claim. It does n
 
 ## EF Core Integration
 
-`Headless.Orm.EntityFramework` applies tenant-aware global filters for `IMultiTenant` entities through `HeadlessEntityModelProcessor`. To participate:
+`Headless.Orm.EntityFramework` applies tenant-aware global filters for `IMultiTenant` entities through its model conventions. To participate:
 
 - Inherit from `HeadlessDbContext`
 - Call `base.OnModelCreating(modelBuilder)`

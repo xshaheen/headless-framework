@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Headless.AuditLog;
+using Headless.EntityFramework;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -380,7 +381,8 @@ public sealed class AuditLogIntegrationTests : TestBase
 
         var entry = entries[0];
         entry.NewValues.Should().ContainKey("Email");
-        entry.NewValues!["Email"].Should().Be("***");
+        var email = entry.NewValues!["Email"].Should().BeOfType<JsonElement>().Subject;
+        email.GetString().Should().Be("***");
     }
 
     [Fact]
@@ -393,7 +395,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         // given
         var (sp, conn) = await AuditIntegrationFixture.CreateAsync<ThrowingPublishAuditTestDbContext>(
             configure: null,
-            configureServices: null
+            configureServices: services => services.AddHeadlessMessageDispatcher<ThrowingHeadlessMessageDispatcher>()
         );
         await using var _ = conn;
         await using var __ = sp;

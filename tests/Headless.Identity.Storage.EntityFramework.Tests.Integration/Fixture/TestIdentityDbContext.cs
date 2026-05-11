@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.EntityFramework;
-using Headless.EntityFramework.Contexts;
+using Headless.EntityFramework.Messaging;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Tests.Entities;
 using Tests.Fixtures;
 
@@ -13,7 +12,11 @@ namespace Tests.Fixture;
 /// <summary>
 /// Test HeadlessIdentityDbContext implementation that captures emitted messages for verification.
 /// </summary>
-public sealed class TestIdentityDbContext(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
+public sealed class TestIdentityDbContext(
+    HeadlessDbContextServices services,
+    RecordingHeadlessMessageDispatcher messageDispatcher,
+    DbContextOptions options
+)
     : HeadlessIdentityDbContext<
         TestUser,
         TestRole,
@@ -23,54 +26,18 @@ public sealed class TestIdentityDbContext(IHeadlessEntityModelProcessor entityPr
         IdentityUserLogin<string>,
         IdentityRoleClaim<string>,
         IdentityUserToken<string>
-    >(entityProcessor, options),
+    >(services, options),
         IHarnessDbContext
 {
     public DbSet<HarnessTestEntity> TestEntities { get; set; } = null!;
 
     public DbSet<HarnessBasicEntity> BasicEntities { get; set; } = null!;
 
-    public List<EmitterDistributedMessages> EmittedDistributedMessages { get; } = [];
+    public List<EmitterDistributedMessages> EmittedDistributedMessages => messageDispatcher.EmittedDistributedMessages;
 
-    public List<EmitterLocalMessages> EmittedLocalMessages { get; } = [];
+    public List<EmitterLocalMessages> EmittedLocalMessages => messageDispatcher.EmittedLocalMessages;
 
     public override string DefaultSchema => "";
-
-    protected override Task PublishMessagesAsync(
-        List<EmitterDistributedMessages> emitters,
-        IDbContextTransaction currentTransaction,
-        CancellationToken cancellationToken
-    )
-    {
-        EmittedDistributedMessages.AddRange(emitters);
-        return Task.CompletedTask;
-    }
-
-    protected override void PublishMessages(
-        List<EmitterDistributedMessages> emitters,
-        IDbContextTransaction currentTransaction
-    )
-    {
-        EmittedDistributedMessages.AddRange(emitters);
-    }
-
-    protected override Task PublishMessagesAsync(
-        List<EmitterLocalMessages> emitters,
-        IDbContextTransaction currentTransaction,
-        CancellationToken cancellationToken
-    )
-    {
-        EmittedLocalMessages.AddRange(emitters);
-        return Task.CompletedTask;
-    }
-
-    protected override void PublishMessages(
-        List<EmitterLocalMessages> emitters,
-        IDbContextTransaction currentTransaction
-    )
-    {
-        EmittedLocalMessages.AddRange(emitters);
-    }
 
     /// <summary>
     /// Clears all captured messages. Useful for test cleanup between operations.

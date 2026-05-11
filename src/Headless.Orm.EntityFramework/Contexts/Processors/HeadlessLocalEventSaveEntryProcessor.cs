@@ -3,17 +3,34 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using Headless.Domain;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 
-namespace Headless.EntityFramework.Contexts;
+namespace Headless.EntityFramework.Processors;
 
-public partial class HeadlessEntityModelProcessor
+public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryProcessor
 {
     private static readonly ConcurrentDictionary<Type, Func<object, ILocalMessage>> _CreatedFactories = new();
     private static readonly ConcurrentDictionary<Type, Func<object, ILocalMessage>> _UpdatedFactories = new();
     private static readonly ConcurrentDictionary<Type, Func<object, ILocalMessage>> _DeletedFactories = new();
     private static readonly ConcurrentDictionary<Type, Func<object, ILocalMessage>> _ChangedFactories = new();
+
+    public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
+    {
+        switch (entry.State)
+        {
+            case EntityState.Added:
+                _TryPublishCreatedLocalMessage(entry);
+                break;
+            case EntityState.Modified:
+                _TryPublishUpdatedLocalMessage(entry);
+                break;
+            case EntityState.Deleted:
+                _TryPublishDeletedLocalMessage(entry);
+                break;
+        }
+    }
 
     private static void _TryPublishCreatedLocalMessage(EntityEntry entry)
     {
@@ -97,8 +114,7 @@ public partial class HeadlessEntityModelProcessor
 
     private static bool _IsDomainModified(PropertyEntry property)
     {
-        return property.IsModified
-            && property.Metadata.ValueGenerated is ValueGenerated.Never or ValueGenerated.OnAdd
+        return property is { IsModified: true, Metadata.ValueGenerated: ValueGenerated.Never or ValueGenerated.OnAdd }
             && !property.Metadata.IsForeignKey();
     }
 }

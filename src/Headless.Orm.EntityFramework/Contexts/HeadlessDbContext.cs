@@ -1,135 +1,70 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
 
-public abstract class HeadlessDbContext : DbContext
+public interface IHeadlessDbContext
 {
-    public abstract string DefaultSchema { get; }
+    string? DefaultSchema { get; }
 
+    string? TenantId { get; }
+}
+
+public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
+{
     private readonly HeadlessDbContextRuntime _runtime;
 
-    internal string? TenantId => _runtime.TenantId;
-
-    protected HeadlessDbContext(IHeadlessEntityModelProcessor entityProcessor, DbContextOptions options)
+    protected HeadlessDbContext(HeadlessDbContextServices services, DbContextOptions options)
         : base(options)
     {
-        _runtime = new(this, entityProcessor);
+        _runtime = new(this, services);
+        _runtime.Initialize();
     }
 
-    #region Core Save Changes
+    public abstract string? DefaultSchema { get; }
 
-    protected virtual async Task<int> CoreSaveChangesAsync(
-        bool acceptAllChangesOnSuccess = true,
-        CancellationToken cancellationToken = default
-    )
-    {
-        return await _runtime
-            .SaveChangesAsync(
-                PublishMessagesAsync,
-                PublishMessagesAsync,
-                _BaseSaveChangesAsync,
-                acceptAllChangesOnSuccess,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-    }
-
-    protected virtual int CoreSaveChanges(bool acceptAllChangesOnSuccess = true)
-    {
-        return _runtime.SaveChanges(PublishMessages, PublishMessages, _BaseSaveChanges, acceptAllChangesOnSuccess);
-    }
-
-    #endregion
-
-    #region Overrides Save Changes
+    public string? TenantId => _runtime.TenantId;
 
     public override int SaveChanges()
     {
-        return CoreSaveChanges();
+        return _runtime.SaveChanges(base.SaveChanges, acceptAllChangesOnSuccess: true);
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        return CoreSaveChanges(acceptAllChangesOnSuccess);
+        return _runtime.SaveChanges(base.SaveChanges, acceptAllChangesOnSuccess);
     }
 
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = new())
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        return CoreSaveChangesAsync(cancellationToken: cancellationToken);
+        return _runtime.SaveChangesAsync(base.SaveChangesAsync, acceptAllChangesOnSuccess: true, cancellationToken);
     }
 
     public override Task<int> SaveChangesAsync(
         bool acceptAllChangesOnSuccess,
-        CancellationToken cancellationToken = new()
+        CancellationToken cancellationToken = default
     )
     {
-        return CoreSaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        return _runtime.SaveChangesAsync(base.SaveChangesAsync, acceptAllChangesOnSuccess, cancellationToken);
     }
-
-    private Task<int> _BaseSaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken)
-    {
-        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
-    }
-
-    private int _BaseSaveChanges(bool acceptAllChangesOnSuccess)
-    {
-#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
-        return base.SaveChanges(acceptAllChangesOnSuccess);
-#pragma warning restore MA0045
-    }
-
-    #endregion
-
-    #region Publish Messages
-
-    protected abstract Task PublishMessagesAsync(
-        List<EmitterDistributedMessages> emitters,
-        IDbContextTransaction currentTransaction,
-        CancellationToken cancellationToken
-    );
-
-    protected abstract void PublishMessages(
-        List<EmitterDistributedMessages> emitters,
-        IDbContextTransaction currentTransaction
-    );
-
-    protected abstract Task PublishMessagesAsync(
-        List<EmitterLocalMessages> emitters,
-        IDbContextTransaction currentTransaction,
-        CancellationToken cancellationToken
-    );
-
-    protected abstract void PublishMessages(
-        List<EmitterLocalMessages> emitters,
-        IDbContextTransaction currentTransaction
-    );
-
-    #endregion
-
-    #region Configure Conventions
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
-        HeadlessDbContextRuntime.ConfigureConventions(configurationBuilder);
+        _runtime.ConfigureConventions(configurationBuilder);
     }
-
-    #endregion
-
-    #region Model Creating
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        HeadlessDbContextRuntime.ConfigureDefaultSchema(modelBuilder, DefaultSchema);
+        if (!string.IsNullOrWhiteSpace(DefaultSchema))
+        {
+            modelBuilder.HasDefaultSchema(DefaultSchema);
+        }
+
         base.OnModelCreating(modelBuilder);
         _runtime.ProcessModelCreating(modelBuilder);
     }
-
-    #endregion
 }
