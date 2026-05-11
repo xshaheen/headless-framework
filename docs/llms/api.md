@@ -1,6 +1,6 @@
 ---
 domain: API & Web
-packages: Api, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc
+packages: Api, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc, MultiTenancy
 ---
 
 # API & Web
@@ -91,6 +91,7 @@ Additional packages:
 
 - Use `AddHeadlessInfrastructure()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, or problem details.
 - Use `UseHeadlessDefaults()` for the default middleware order (`UseStatusCodePages()` before `UseExceptionHandler()`), then add auth/tenant middleware, then map endpoints.
+- For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`.
 - Use `MapHeadlessDefaultEndpoints()` to expose `/health` and `/alive`. `AddHeadlessInfrastructure()` registers a `self` health check tagged `live`.
 - Keep `TrustForwardedHeadersFromAnyProxy` disabled unless the service is reachable only through trusted proxy infrastructure.
 - Call `ApiSetup.ConfigureGlobalSettings()` before `AddHeadlessInfrastructure()` to set regex timeout, FluentValidation, and JWT defaults.
@@ -267,6 +268,7 @@ Tenancy response shape:
 
 - `Headless.Api.Abstractions`
 - `Headless.Core`
+- `Headless.MultiTenancy`
 - `Headless.Security.Abstractions`
 - `Headless.Security`
 - `Headless.Caching.Abstractions`

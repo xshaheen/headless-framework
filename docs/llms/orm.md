@@ -1,6 +1,6 @@
 ---
 domain: ORM
-packages: Orm.EntityFramework, Orm.Couchbase
+packages: Orm.EntityFramework, Orm.Couchbase, MultiTenancy
 ---
 
 # ORM
@@ -61,6 +61,7 @@ Validation notes:
 - Treat this domain as exactly two packages. Do not reference non-existing ORM packages.
 - For relational stores, inherit from `HeadlessDbContext` and register with `AddHeadlessDbContext<TDbContext>(...)`.
 - `HeadlessDbContext` requires two ctor parameters: `(HeadlessDbContextServices services, DbContextOptions options)`, and subclasses must override `public abstract string? DefaultSchema { get; }` (empty string means "use the provider default").
+- Enable tenant-owned write protection through `builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()))` when the host uses root tenancy.
 - Always call `base.OnModelCreating(modelBuilder)` in `HeadlessDbContext` subclasses.
 - Use `ExecuteTransactionAsync(...)` (from `DbContextTransactionExtensions`) for multi-step EF operations that must be atomic under retry execution strategies.
 - Customize the save pipeline through `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` on `HeadlessDbContextOptions`; replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control.
@@ -155,7 +156,8 @@ Use this when multiple operations must commit or roll back as one unit.
 The tenant write guard is disabled by default. Opt in when tenant-owned writes must be scoped to the current tenant:
 
 ```csharp
-builder.Services.AddHeadlessTenantWriteGuard();
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .EntityFramework(ef => ef.GuardTenantWrites()));
 ```
 
 The guard runs in the `HeadlessDbContext` save pipeline before audit capture, domain-message publishing, and persistence. It applies only to entities that implement `IMultiTenant`:
@@ -167,11 +169,14 @@ The guard runs in the `HeadlessDbContext` save pipeline before audit capture, do
 
 For intentional host/admin writes, resolve `ITenantWriteGuardBypass` and wrap only the intended operation in `BeginBypass()`. Query filter bypasses such as `IgnoreMultiTenancyFilter()` do not bypass write protection.
 
+For package-level wiring without the root tenancy surface, `builder.Services.AddHeadlessTenantWriteGuard()` remains available.
+
 ## Dependencies
 
 - `Headless.Domain`
 - `Headless.Core`
 - `Headless.Hosting`
+- `Headless.MultiTenancy`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects

@@ -21,12 +21,14 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FastExpressionCompiler" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="Internal\LegacyAttributes.cs" />

@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api.Abstractions\Headless.Api.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
     <ProjectReference Include="..\Headless.Security\Headless.Security.csproj" />
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />

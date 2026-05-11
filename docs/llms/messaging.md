@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.AwsSqs, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.InMemoryQueue, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing
+packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.AwsSqs, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.InMemoryQueue, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
 ---
 
 # Messaging
@@ -256,7 +256,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 - **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
-- **Strict publish tenancy is opt-in**: Set `options.TenantContextRequired = true` to require every publish to resolve a tenant from `PublishOptions.TenantId` or the ambient `ICurrentTenant`. When neither is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
+- **Strict publish tenancy is opt-in**: Prefer `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))` when the host uses root tenancy. The lower-level equivalent is `options.TenantContextRequired = true` plus `AddTenantPropagation()`. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 
 ---
 
@@ -531,9 +531,6 @@ builder.Services.AddHeadlessMessaging(options =>
     options.SucceedMessageExpiredAfter = 24 * 3600;
     options.ConsumerThreadCount = 1;
     options.DefaultGroupName = "myapp";
-
-    // Reject publishes without a resolved tenant (off by default)
-    options.TenantContextRequired = true;
 });
 ```
 
@@ -546,6 +543,25 @@ builder.Services.AddHeadlessMessaging(options =>
 3. If neither resolves, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`.
 
 The U2 raw-header checks (`ReservedTenantHeader`, `TenantIdMismatch`) still run first, so flipping `TenantContextRequired` cannot bypass them.
+
+Root tenancy setup:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Messaging(messaging => messaging
+        .PropagateTenant()
+        .RequireTenantOnPublish()));
+```
+
+Messaging-only setup:
+
+```csharp
+builder.Services.AddHeadlessMessaging(options =>
+{
+    options.TenantContextRequired = true;
+})
+.AddTenantPropagation();
+```
 
 **Remediation for background workers / `IHostedService` callers (no ambient HTTP scope):**
 
@@ -596,6 +612,13 @@ Both registrations are idempotent — calling them twice with the same `T` does 
 ### Multi-tenancy
 
 The framework ships a built-in filter pair that propagates the originating tenant on the wire:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Messaging(messaging => messaging.PropagateTenant()));
+```
+
+The lower-level messaging-only API remains available:
 
 ```csharp
 using Headless.Messaging.MultiTenancy;
@@ -740,6 +763,7 @@ The circuit breaker operates per-process only. There is no cross-instance coordi
 - `Headless.Messaging.Abstractions`
 - `Headless.Extensions`
 - `Headless.Checks`
+- `Headless.MultiTenancy`
 - Transport package (RabbitMQ, Kafka, etc.)
 - Storage package (PostgreSql, SqlServer, etc.)
 

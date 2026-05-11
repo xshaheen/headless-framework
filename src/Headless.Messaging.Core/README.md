@@ -232,7 +232,18 @@ Both registrations are idempotent (`TryAddEnumerable` under the hood). `OnPublis
 
 ### Multi-Tenancy Propagation
 
-`AddTenantPropagation()` registers a built-in filter pair that ties the wire envelope to `ICurrentTenant`:
+When a host uses the root tenancy surface, configure messaging tenant posture there:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Messaging(messaging => messaging
+        .PropagateTenant()
+        .RequireTenantOnPublish()));
+```
+
+`PropagateTenant()` registers a built-in filter pair that ties the wire envelope to `ICurrentTenant`. `RequireTenantOnPublish()` flips strict publish tenancy so every publish must resolve a tenant from `PublishOptions.TenantId` or the ambient tenant.
+
+For messaging-only setup, the lower-level builder extension remains available:
 
 ```csharp
 using Headless.Messaging.MultiTenancy;
@@ -367,6 +378,7 @@ The circuit breaker operates **per-process only**. There is no cross-instance co
 - `Headless.Messaging.Abstractions`
 - `Headless.Extensions`
 - `Headless.Checks`
+- `Headless.MultiTenancy`
 - Transport package (RabbitMQ, Kafka, etc.)
 - Storage package (PostgreSql, SqlServer, etc.)
 

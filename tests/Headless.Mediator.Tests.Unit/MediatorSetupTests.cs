@@ -2,8 +2,10 @@
 
 using Headless.Abstractions;
 using Headless.Mediator;
+using Headless.MultiTenancy;
 using Mediator;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
@@ -35,6 +37,25 @@ public sealed class MediatorSetupTests
 
         // then
         services.Where(_IsTenantRequiredBehaviorDescriptor).Should().ContainSingle();
+    }
+
+    [Fact]
+    public void should_register_tenant_required_behavior_from_headless_tenancy_root()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+
+        // when
+        builder.AddHeadlessTenancy(tenancy => tenancy.Mediator(mediator => mediator.RequireTenant()));
+
+        // then
+        builder.Services.Where(_IsTenantRequiredBehaviorDescriptor).Should().ContainSingle();
+
+        var manifest = builder.Services.GetOrAddTenantPostureManifest();
+        var seam = manifest.GetSeam("Mediator");
+        seam.Should().NotBeNull();
+        seam!.Status.Should().Be(TenantPostureStatuses.Enforcing);
+        seam.Capabilities.Should().BeEquivalentTo("require-tenant");
     }
 
     [Fact]

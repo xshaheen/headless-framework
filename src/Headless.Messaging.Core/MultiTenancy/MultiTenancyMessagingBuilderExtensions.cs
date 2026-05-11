@@ -3,9 +3,11 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
+using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.MultiTenancy;
 
@@ -14,6 +16,23 @@ namespace Headless.Messaging.MultiTenancy;
 /// </summary>
 public static class MultiTenancyMessagingBuilderExtensions
 {
+    /// <summary>Configures messaging tenant posture through the root Headless tenancy builder.</summary>
+    /// <param name="builder">The root tenancy builder.</param>
+    /// <param name="configure">The messaging tenancy configuration callback.</param>
+    /// <returns>The same root tenancy builder.</returns>
+    public static HeadlessTenancyBuilder Messaging(
+        this HeadlessTenancyBuilder builder,
+        Action<HeadlessMessagingTenancyBuilder> configure
+    )
+    {
+        Argument.IsNotNull(builder);
+        Argument.IsNotNull(configure);
+
+        configure(new HeadlessMessagingTenancyBuilder(builder));
+
+        return builder;
+    }
+
     /// <summary>
     /// Registers <see cref="TenantPropagationPublishFilter"/> on the publish side and
     /// <see cref="TenantPropagationConsumeFilter"/> on the consume side so messages carry their
@@ -46,16 +65,58 @@ public static class MultiTenancyMessagingBuilderExtensions
     {
         Argument.IsNotNull(builder);
 
-        builder.AddSubscribeFilter<TenantPropagationConsumeFilter>();
-        builder.AddPublishFilter<TenantPropagationPublishFilter>();
+        builder.Services.AddTenantPropagationServices();
+
+        return builder;
+    }
+
+    internal static IServiceCollection AddTenantPropagationServices(this IServiceCollection services)
+    {
+        Argument.IsNotNull(services);
+
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IConsumeFilter, TenantPropagationConsumeFilter>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishFilter, TenantPropagationPublishFilter>());
 
         // Fail fast at startup when only the framework's fallback NullCurrentTenant is registered;
         // see the AddTenantPropagation remarks for the diagnostic contract.
-        builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, TenantPropagationStartupValidator>()
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, TenantPropagationStartupValidator>());
+
+        return services;
+    }
+}
+
+/// <summary>Records tenant posture for Headless messaging.</summary>
+public sealed class HeadlessMessagingTenancyBuilder
+{
+    private readonly HeadlessTenancyBuilder _builder;
+
+    internal HeadlessMessagingTenancyBuilder(HeadlessTenancyBuilder builder)
+    {
+        _builder = Argument.IsNotNull(builder);
+    }
+
+    /// <summary>Registers publish and consume filters that propagate tenant context through messages.</summary>
+    /// <returns>The same messaging tenancy builder.</returns>
+    public HeadlessMessagingTenancyBuilder PropagateTenant()
+    {
+        _builder.Services.AddTenantPropagationServices();
+        _builder.RecordSeam("Messaging", TenantPostureStatuses.Propagating, "propagate-tenant");
+
+        return this;
+    }
+
+    /// <summary>Requires publish calls to resolve a tenant from publish options or ambient tenant context.</summary>
+    /// <returns>The same messaging tenancy builder.</returns>
+    public HeadlessMessagingTenancyBuilder RequireTenantOnPublish()
+    {
+        _builder.Services.PostConfigure<MessagingOptions>(options => options.TenantContextRequired = true);
+        _builder.RecordSeam(
+            "Messaging",
+            TenantPostureStatuses.Enforcing,
+            "require-tenant-on-publish"
         );
 
-        return builder;
+        return this;
     }
 }
 

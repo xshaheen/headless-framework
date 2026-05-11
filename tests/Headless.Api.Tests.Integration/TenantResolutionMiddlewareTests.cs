@@ -7,6 +7,7 @@ using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.Middlewares;
 using Headless.Constants;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -94,7 +95,75 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         tenant.IsAvailable.Should().BeTrue();
     }
 
-    private async Task<WebApplication> _CreateAppAsync(Action<MultiTenancyOptions>? configure = null)
+    [Fact]
+    public async Task should_resolve_tenant_claim_through_use_headless_tenancy_when_http_tenancy_configured()
+    {
+        await using var app = await _CreateAppAsync(setup: TenancySetup.RootHttp);
+        using var client = _CreateClient(app);
+
+        var tenant = await _GetTenantAsync(client, user: "alice", tenantId: "TENANT-1");
+
+        tenant.Id.Should().Be("TENANT-1");
+        tenant.IsAvailable.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_not_run_authentication_from_use_headless_tenancy()
+    {
+        await using var app = await _CreateAppAsync(
+            setup: TenancySetup.RootHttp,
+            addInfrastructure: false,
+            registerAuthentication: false,
+            useAuthentication: false,
+            useAuthorization: false
+        );
+        using var client = _CreateClient(app);
+
+        var tenant = await _GetTenantAsync(client, user: "alice", tenantId: "TENANT-1");
+
+        tenant.Id.Should().BeNull();
+        tenant.IsAvailable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_noop_use_headless_tenancy_when_http_tenancy_is_not_configured()
+    {
+        await using var app = await _CreateAppAsync(setup: TenancySetup.RootNoHttp);
+        using var client = _CreateClient(app);
+
+        var tenant = await _GetTenantAsync(client, user: "alice", tenantId: "TENANT-1");
+
+        tenant.Id.Should().BeNull();
+        tenant.IsAvailable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_throw_startup_diagnostic_when_http_tenancy_is_configured_without_use_headless_tenancy()
+    {
+        await using var app = await _CreateAppAsync(
+            setup: TenancySetup.RootHttp,
+            applyTenantMiddleware: false,
+            start: false
+        );
+
+        Func<Task> act = () => app.StartAsync(AbortToken);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*HEADLESS_TENANCY_HTTP_MIDDLEWARE_MISSING*")
+            .WithMessage("*UseHeadlessTenancy*");
+    }
+
+    private async Task<WebApplication> _CreateAppAsync(
+        Action<MultiTenancyOptions>? configure = null,
+        TenancySetup setup = TenancySetup.Direct,
+        bool addInfrastructure = true,
+        bool registerAuthentication = true,
+        bool useAuthentication = true,
+        bool useAuthorization = true,
+        bool applyTenantMiddleware = true,
+        bool start = true
+    )
     {
         var builder = WebApplication.CreateBuilder(
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
@@ -102,28 +171,63 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
-        builder.AddHeadlessInfrastructure();
+        if (addInfrastructure)
+        {
+            builder.AddHeadlessInfrastructure();
+        }
 
-        if (configure is not null)
+        if (setup == TenancySetup.RootHttp)
+        {
+            builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims(configure)));
+        }
+        else if (setup == TenancySetup.RootNoHttp)
+        {
+            builder.AddHeadlessTenancy(_ => { });
+        }
+        else if (configure is not null)
         {
             builder.AddHeadlessMultiTenancy(configure);
         }
 
-        builder
-            .Services.AddAuthentication(options =>
-            {
-                options.DefaultAuthenticateScheme = _Scheme;
-                options.DefaultChallengeScheme = _Scheme;
-            })
-            .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(_Scheme, _ => { });
+        if (registerAuthentication)
+        {
+            builder
+                .Services.AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = _Scheme;
+                    options.DefaultChallengeScheme = _Scheme;
+                })
+                .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>(_Scheme, _ => { });
+        }
 
-        builder.Services.AddAuthorization();
+        if (useAuthorization)
+        {
+            builder.Services.AddAuthorization();
+        }
 
         var app = builder.Build();
 
-        app.UseAuthentication();
-        app.UseTenantResolution();
-        app.UseAuthorization();
+        if (useAuthentication)
+        {
+            app.UseAuthentication();
+        }
+
+        if (applyTenantMiddleware)
+        {
+            if (setup is TenancySetup.RootHttp or TenancySetup.RootNoHttp)
+            {
+                app.UseHeadlessTenancy();
+            }
+            else
+            {
+                app.UseTenantResolution();
+            }
+        }
+
+        if (useAuthorization)
+        {
+            app.UseAuthorization();
+        }
 
         app.MapGet(
             "/tenant",
@@ -131,7 +235,10 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
                 Results.Json(new TenantResponse(currentTenant.Id, currentTenant.IsAvailable))
         );
 
-        await app.StartAsync(AbortToken);
+        if (start)
+        {
+            await app.StartAsync(AbortToken);
+        }
 
         return app;
     }
@@ -188,6 +295,13 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
     }
 
     private sealed record TenantResponse(string? Id, bool IsAvailable);
+
+    private enum TenancySetup
+    {
+        Direct,
+        RootHttp,
+        RootNoHttp,
+    }
 
     private sealed class TestAuthenticationHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,

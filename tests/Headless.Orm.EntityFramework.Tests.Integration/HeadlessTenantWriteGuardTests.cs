@@ -1,9 +1,11 @@
 using Headless.EntityFramework;
 using Headless.EntityFramework.MultiTenancy;
 using Headless.Abstractions;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Tests.Fixture;
 
@@ -77,6 +79,29 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
         var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
         options.IsEnabled.Should().BeTrue();
         provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void add_headless_tenancy_entity_framework_should_enable_write_guard_and_record_manifest()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+
+        // when
+        builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
+
+        using var provider = builder.Services.BuildServiceProvider();
+
+        // then
+        var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
+        options.IsEnabled.Should().BeTrue();
+        provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
+
+        var manifest = builder.Services.GetOrAddTenantPostureManifest();
+        var seam = manifest.GetSeam("EntityFramework");
+        seam.Should().NotBeNull();
+        seam!.Status.Should().Be(TenantPostureStatuses.Guarded);
+        seam.Capabilities.Should().BeEquivalentTo("guard-tenant-writes", "ef-owned-bypass");
     }
 
     [Fact]
@@ -187,6 +212,56 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
         db.EmittedDistributedMessages.Should().BeEmpty();
         var persisted = await db.Tests.IgnoreMultiTenancyFilter().CountAsync(AbortToken);
         persisted.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task guard_enabled_should_reject_tenant_owned_update_without_current_tenant_before_side_effects()
+    {
+        // given
+        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "missing-tenant-update");
+
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var entity = await db.Tests.IgnoreMultiTenancyFilter().SingleAsync(x => x.Id == entityId, AbortToken);
+        entity.Name = "updated-without-tenant";
+
+        // when
+        var act = async () => await db.SaveChangesAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<MissingTenantContextException>();
+        db.EmittedLocalMessages.Should().BeEmpty();
+        db.EmittedDistributedMessages.Should().BeEmpty();
+
+        var persistedName = await _GetTenantEntityNameAsync(fixture, entityId);
+        persistedName.Should().Be("missing-tenant-update");
+    }
+
+    [Fact]
+    public async Task guard_enabled_should_reject_tenant_owned_physical_delete_without_current_tenant_before_side_effects()
+    {
+        // given
+        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "missing-tenant-delete");
+
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var entity = await db.Tests.IgnoreMultiTenancyFilter().SingleAsync(x => x.Id == entityId, AbortToken);
+        db.Tests.Remove(entity);
+
+        // when
+        var act = async () => await db.SaveChangesAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<MissingTenantContextException>();
+        db.EmittedLocalMessages.Should().BeEmpty();
+        db.EmittedDistributedMessages.Should().BeEmpty();
+
+        var persisted = await _TenantEntityExistsAsync(fixture, entityId);
+        persisted.Should().BeTrue();
     }
 
     [Fact]

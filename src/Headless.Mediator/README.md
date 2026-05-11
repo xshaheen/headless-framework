@@ -33,7 +33,9 @@ builder.Services.AddMediator(options =>
     options.ServiceLifetime = ServiceLifetime.Scoped;
 });
 
-builder.Services.AddTenantRequiredBehavior();
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Mediator(mediator => mediator.RequireTenant()));
+
 builder.Services.AddValidationRequestPreProcessor();
 builder.Services.AddMediatorLoggingBehaviors();
 ```
@@ -67,9 +69,10 @@ the package contract.
 
 ### Register Tenant Context Separately
 
-This package does not register `ICurrentTenant`. Use `Headless.Api` multi-tenancy
-setup for HTTP applications or register your own `ICurrentTenant` implementation
-for workers and console hosts.
+This package does not resolve tenants by itself. Use `Headless.Api` HTTP tenancy
+setup for web applications or register your own `ICurrentTenant` implementation
+for workers and console hosts. For package-level wiring without the root surface,
+`builder.Services.AddTenantRequiredBehavior()` remains available.
 
 ```csharp
 using (currentTenant.Change(tenantId))
@@ -142,6 +145,7 @@ No options are exposed. `[AllowMissingTenant]` is the only opt-out surface.
 
 - `Headless.Core`
 - `Headless.Extensions`
+- `Headless.MultiTenancy`
 - `FluentValidation`
 - `Mediator.Abstractions`
 - `Microsoft.Extensions.DependencyInjection.Abstractions`

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.MultiTenancy;
 using Mediator;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -13,6 +14,23 @@ namespace Headless.Mediator;
 [PublicAPI]
 public static class MediatorSetup
 {
+    /// <summary>Configures Mediator tenant posture through the root Headless tenancy builder.</summary>
+    /// <param name="builder">The root tenancy builder.</param>
+    /// <param name="configure">The Mediator tenancy configuration callback.</param>
+    /// <returns>The same root tenancy builder.</returns>
+    public static HeadlessTenancyBuilder Mediator(
+        this HeadlessTenancyBuilder builder,
+        Action<HeadlessMediatorTenancyBuilder> configure
+    )
+    {
+        Argument.IsNotNull(builder);
+        Argument.IsNotNull(configure);
+
+        configure(new HeadlessMediatorTenancyBuilder(builder));
+
+        return builder;
+    }
+
     extension(IServiceCollection services)
     {
         /// <summary>
@@ -77,5 +95,26 @@ public static class MediatorSetup
 
             return services;
         }
+    }
+}
+
+/// <summary>Records tenant posture for Mediator request handling.</summary>
+public sealed class HeadlessMediatorTenancyBuilder
+{
+    private readonly HeadlessTenancyBuilder _builder;
+
+    internal HeadlessMediatorTenancyBuilder(HeadlessTenancyBuilder builder)
+    {
+        _builder = Argument.IsNotNull(builder);
+    }
+
+    /// <summary>Adds the tenant-required Mediator pipeline behavior.</summary>
+    /// <returns>The same Mediator tenancy builder.</returns>
+    public HeadlessMediatorTenancyBuilder RequireTenant()
+    {
+        _builder.Services.AddTenantRequiredBehavior();
+        _builder.RecordSeam("Mediator", TenantPostureStatuses.Enforcing, "require-tenant");
+
+        return this;
     }
 }

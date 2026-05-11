@@ -1,6 +1,6 @@
 ---
 domain: Multi-Tenancy
-packages: Api, Core, Mediator, Orm.EntityFramework, Permissions.Core
+packages: MultiTenancy, Api, Core, Mediator, Messaging.Core, Orm.EntityFramework, Permissions.Core
 ---
 
 # Multi-Tenancy
@@ -25,42 +25,50 @@ packages: Api, Core, Mediator, Orm.EntityFramework, Permissions.Core
 
 ## Quick Orientation
 
-Headless multi-tenancy is built from five pieces:
+Headless multi-tenancy is built from these pieces:
 
+- `Headless.MultiTenancy` provides the root `AddHeadlessTenancy(...)` composition surface and a shared, non-PII tenant posture manifest.
 - `ICurrentTenant` and `ICurrentTenantAccessor` live in the `Headless.Abstractions` namespace (implemented in `src/Headless.Core/Abstractions`) and hold the current tenant in an `AsyncLocal` scope.
-- `Headless.Api` resolves tenant context for HTTP requests via `UseTenantResolution()`.
-- `Headless.Mediator` enforces tenant presence at request dispatch boundaries via `AddTenantRequiredBehavior()`.
+- `Headless.Api` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` when HTTP tenancy is configured.
+- `Headless.Mediator` enforces tenant presence at request dispatch boundaries via `.Mediator(mediator => mediator.RequireTenant())` or the lower-level `AddTenantRequiredBehavior()`.
+- `Headless.Messaging.Core` propagates tenant context across message publish/consume and can require tenant context on publish.
 - `Headless.Orm.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities and can opt in to a save-time tenant write guard.
 - `Headless.Permissions.Core` scopes permission grant cache keys by tenant via `ScopedCache<PermissionGrantCacheItem>`.
 
-For HTTP apps, the recommended setup is:
+For tenant-aware hosts, the recommended setup is:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddHeadlessInfrastructure();
-builder.AddHeadlessMultiTenancy();
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Http(http => http.ResolveFromClaims())
+    .Mediator(mediator => mediator.RequireTenant())
+    .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+    .EntityFramework(ef => ef.GuardTenantWrites()));
 
 var app = builder.Build();
 
+app.UseHeadlessDefaults();
 app.UseAuthentication();
-app.UseTenantResolution();
+app.UseHeadlessTenancy();
 app.UseAuthorization();
 ```
 
-`UseTenantResolution()` must run after `UseAuthentication()` and before `UseAuthorization()`.
+`UseHeadlessTenancy()` must run after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`. Headless tenancy APIs do not call either middleware internally.
 
-`AddHeadlessInfrastructure()` also requires `Headless:StringEncryption` and `Headless:StringHash` to be configured.
+`AddHeadlessInfrastructure()` registers base API infrastructure only. It does not enable tenant posture. It also requires `Headless:StringEncryption` and `Headless:StringHash` to be configured.
 
 ## Agent Instructions
 
 - Use `ICurrentTenant` for tenant-aware application logic; do not pass tenant ID around manually once the execution context is established.
-- In HTTP apps, call `AddHeadlessMultiTenancy()` on the builder and `UseTenantResolution()` in the middleware pipeline.
-- For Mediator request boundaries, call `services.AddTenantRequiredBehavior()` and mark only intentional host-level requests with `[AllowMissingTenant]`.
-- The default claim type is `tenant_id`. Override it with `AddHeadlessMultiTenancy(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
+- In tenant-aware hosts, prefer `builder.AddHeadlessTenancy(...)` so HTTP, Mediator, Messaging, and EF posture is visible in one block.
+- In HTTP apps, use `.Http(http => http.ResolveFromClaims())` and `app.UseHeadlessTenancy()` in the middleware pipeline.
+- For Mediator request boundaries, use `.Mediator(mediator => mediator.RequireTenant())` or the lower-level `services.AddTenantRequiredBehavior()`, and mark only intentional host-level requests with `[AllowMissingTenant]`.
+- The default claim type is `tenant_id`. Override it with `ResolveFromClaims(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
 - When no tenant claim is present, the middleware intentionally skips `Change(null)`. This preserves the distinction between "never set" and "explicitly null".
 - For EF Core, inherit from `HeadlessDbContext` and let the built-in model processor apply tenant filters to `IMultiTenant` entities.
-- Enable strict EF tenant writes with `services.AddHeadlessTenantWriteGuard()` when tenant-owned saves must fail without a matching tenant context.
+- Enable strict EF tenant writes with `.EntityFramework(ef => ef.GuardTenantWrites())` or the lower-level `services.AddHeadlessTenantWriteGuard()` when tenant-owned saves must fail without a matching tenant context.
 - Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
 - Permission cache scoping depends on `ICurrentTenant.Id`. Host-level operations with no tenant use the shared `t:` scope by design.
 - For background jobs and message consumers, set tenant explicitly with `using (currentTenant.Change(tenantId)) { ... }`.
@@ -68,13 +76,29 @@ app.UseAuthorization();
 
 ## HTTP Setup
 
-`AddHeadlessInfrastructure()` and `AddHeadlessDbContextServices()` now register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. `AddHeadlessMultiTenancy()` is the opt-in helper that:
+`AddHeadlessInfrastructure()` and `AddHeadlessDbContextServices()` register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. The primary HTTP setup path is:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Http(http => http.ResolveFromClaims(options =>
+    {
+        options.ClaimType = UserClaimTypes.TenantId; // default
+    })));
+
+app.UseAuthentication();
+app.UseHeadlessTenancy();
+app.UseAuthorization();
+```
+
+`.Http(http => http.ResolveFromClaims(...))` delegates to the API package and:
 
 - Ensures `ICurrentTenant` resolves to `CurrentTenant`
 - Registers `ICurrentTenantAccessor` if needed
 - Configures `MultiTenancyOptions` for the HTTP middleware
 
-`UseTenantResolution()` reads the authenticated principal and:
+`UseHeadlessTenancy()` reads the shared tenant posture manifest and applies HTTP tenant resolution only when HTTP tenancy was configured. It marks the middleware slot as applied so startup validation can fail fast when HTTP tenancy was configured but the middleware was omitted.
+
+`UseTenantResolution()` remains as a lower-level compatibility API. It reads the authenticated principal and:
 
 - Uses `tenant_id` by default
 - Uses `MultiTenancyOptions.ClaimType` when configured
@@ -127,14 +151,15 @@ The same shape is reachable without going through the handler via `IProblemDetai
 
 `Headless.Mediator` provides tenant enforcement at the Mediator request boundary:
 
-- Register with `services.AddTenantRequiredBehavior()`.
+- Register through `.Mediator(mediator => mediator.RequireTenant())` on the root tenancy surface.
 - Register a real `ICurrentTenant` separately; the package does not own tenant resolution.
 - Requests require `ICurrentTenant.Id` to be non-blank by default.
 - Mark intentional host-level, public, system, or console-bootstrap requests with `[AllowMissingTenant]`.
 - Do not add runtime opt-out flags or handler-level policy checks; the marker attribute is the enrollment surface.
 
 ```csharp
-builder.Services.AddTenantRequiredBehavior();
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Mediator(mediator => mediator.RequireTenant()));
 
 public sealed record CreateInvoice(Guid CustomerId) : IRequest<CreateInvoiceResponse>;
 
@@ -153,6 +178,12 @@ Auth -> TenantRequired -> Idempotency
 ```
 
 Ordering is consumer-owned and not framework-enforced. Register the tenant guard after the identity/auth behavior that establishes tenant context and before idempotency, caching, or side-effect behaviors that could persist host-scoped state.
+
+For package-level wiring without the root tenancy surface, the lower-level registration remains available:
+
+```csharp
+builder.Services.AddTenantRequiredBehavior();
+```
 
 ## Tenant Semantics
 
@@ -179,13 +210,20 @@ With tenant resolution active, queries automatically filter on `TenantId == ICur
 
 ### EF Tenant Write Guard
 
-The EF write guard is opt-in and disabled by default for compatibility. Enable it from the ORM package setup:
+The EF write guard is opt-in and disabled by default for compatibility. Enable it from the root tenancy surface:
 
 ```csharp
 builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString)
 );
 
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .EntityFramework(ef => ef.GuardTenantWrites()));
+```
+
+For package-level wiring without the root tenancy surface, the lower-level registration remains available:
+
+```csharp
 builder.Services.AddHeadlessTenantWriteGuard();
 ```
 
@@ -241,23 +279,22 @@ foreach (var tenantId in tenantIds)
 
 The `TenantId` envelope property is populated automatically from the canonical `headless-tenant-id` wire header (see `Headers.TenantId`). On the publish side, set `PublishOptions.TenantId` rather than writing the header directly. The publish pipeline enforces a strict 4-case integrity policy: raw-only writes and writes that disagree with the typed property are rejected with `InvalidOperationException`; a raw write that matches the typed property is accepted as a no-op. Consume-side values are untrusted wire data — validate them before downstream use.
 
-#### Automatic Propagation (`AddTenantPropagation`)
+#### Automatic Propagation
 
 For end-to-end propagation, opt in to the built-in filter pair:
 
 ```csharp
 using Headless.Messaging.MultiTenancy;
 
-builder.Services.AddHeadlessMessaging(options =>
-{
-    // ...
-})
-.AddTenantPropagation();
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish()));
+
+builder.Services.AddHeadlessMessaging(options => { /* ... */ });
 ```
 
 This registers `TenantPropagationPublishFilter` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id` at publish time) and `TenantPropagationConsumeFilter` (calls `ICurrentTenant.Change(...)` on the resolved `ConsumeContext<T>.TenantId` for the lifetime of the consume — including both success and exception paths). Caller-set values on `PublishOptions.TenantId` are preserved verbatim; system messages can override propagation by setting `TenantId` explicitly or by publishing with no ambient tenant.
 
-The extension is idempotent — calling `AddTenantPropagation()` more than once does not double-register either filter. Without a real `ICurrentTenant` registered (the framework's `NullCurrentTenant` fallback always returns `Id = null`), the publish-side filter is a silent no-op.
+The lower-level `AddTenantPropagation()` builder extension remains available for advanced messaging-only setup. Both paths are idempotent and fail fast at startup when propagation is enabled with only the framework's `NullCurrentTenant` fallback registered.
 
 **Trust boundary.** The consume filter trusts the inbound envelope. The framework assumes the message bus is internal-only; topics exposed to external producers must layer envelope validation or signing in front of this filter. Otherwise an attacker who can publish to the bus can impersonate any tenant.
 
@@ -276,9 +313,9 @@ using (currentTenant.Change(tenantId))
 
 #### Strict Publish Tenancy (`TenantContextRequired`)
 
-Set `MessagingOptions.TenantContextRequired = true` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.Abstractions.MissingTenantContextException`. This is the messaging sibling of the EF write guard (#234) and the Mediator behavior (#236).
+Use `.RequireTenantOnPublish()` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.Abstractions.MissingTenantContextException`. This is the messaging sibling of the EF write guard (#234) and the Mediator behavior (#236).
 
-Defaults to `false` to preserve today's behavior. The U2 raw-header integrity rules above (`ReservedTenantHeader`, `TenantIdMismatch`) always apply and run before the strict-tenancy fallback, so injection attempts cannot bypass the guard by enabling the flag.
+The lower-level equivalent is `MessagingOptions.TenantContextRequired = true`. Defaults to `false` to preserve today's behavior. The U2 raw-header integrity rules above (`ReservedTenantHeader`, `TenantIdMismatch`) always apply and run before the strict-tenancy fallback, so injection attempts cannot bypass the guard by enabling the flag.
 
 To remediate a `MissingTenantContextException` from a background worker or `IHostedService`:
 
@@ -304,8 +341,8 @@ SignalR hub invocations start new execution flows after the initial upgrade requ
 
 ## Failure Modes to Watch
 
-- Missing `UseTenantResolution()` means HTTP requests stay at host scope even when the JWT contains a tenant claim.
-- Registering middleware before `UseAuthentication()` means no authenticated principal is available yet.
+- Missing `UseHeadlessTenancy()` means HTTP requests stay at host scope even when the JWT contains a tenant claim; startup validation fails when HTTP tenancy was configured through `AddHeadlessTenancy(...)`.
+- Registering `UseHeadlessTenancy()` before `UseAuthentication()` means no authenticated principal is available yet.
 - Forgetting `using` around `currentTenant.Change()` in non-HTTP code can leak tenant context within the current async flow.
 - Assuming host-level cache scope `t:` is tenant-isolated is incorrect; it is intentionally shared.
 - Assuming `IgnoreMultiTenancyFilter()` bypasses write protection is incorrect; it only affects reads.

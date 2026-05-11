@@ -14,6 +14,7 @@
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Identity.Storage.EntityFramework" />

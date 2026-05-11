@@ -141,10 +141,13 @@ services.AddHeadlessMessageDispatcher(provider =>
 Enable strict tenant-owned writes explicitly:
 
 ```csharp
-builder.Services.AddHeadlessTenantWriteGuard();
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .EntityFramework(ef => ef.GuardTenantWrites()));
 ```
 
 When enabled, tenant-owned saves fail before persistence if no ambient tenant is available or if the entity belongs to another tenant. Missing tenant context throws `MissingTenantContextException`; cross-tenant mutations throw `CrossTenantWriteException`.
+
+For package-level wiring without the root tenancy surface, `builder.Services.AddHeadlessTenantWriteGuard()` remains available.
 
 Use the scoped bypass only for intentional host/admin writes:
 
@@ -184,6 +187,7 @@ var result = await dbContext.ExecuteTransactionAsync<int>(async (ctx, ct) =>
 
 - `Headless.Domain`
 - `Headless.Core`
+- `Headless.MultiTenancy`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects

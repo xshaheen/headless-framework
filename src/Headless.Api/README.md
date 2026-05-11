@@ -11,7 +11,7 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 - One-call service registration via `AddHeadlessInfrastructure()`
 - One-call middleware defaults via `UseHeadlessDefaults()`
 - Operational endpoints via `MapHeadlessDefaultEndpoints()` (`/health`, `/alive`)
-- Multi-tenancy primitives via `AddHeadlessMultiTenancy()` and `UseTenantResolution()`
+- HTTP tenant resolution through the root `AddHeadlessTenancy(...).Http(...)` surface and `UseHeadlessTenancy()`
 - Unified exception-to-ProblemDetails mapping via `HeadlessApiExceptionHandler` (auto-registered by `AddHeadlessProblemDetails()`): covers tenancy, conflict, validation, not-found, EF concurrency, timeout, not-implemented, and cancellation for any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware (typically MVC actions and Minimal-API endpoints)
 - Response compression (Brotli, Gzip) with optimized settings
 - Problem details standardization
@@ -40,7 +40,8 @@ ApiSetup.ConfigureGlobalSettings();
 
 // Register all framework API services
 builder.AddHeadlessInfrastructure();
-builder.AddHeadlessMultiTenancy();
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Http(http => http.ResolveFromClaims()));
 
 var app = builder.Build();
 
@@ -53,7 +54,7 @@ app.UseHeadlessDefaults(options =>
     options.TrustForwardedHeadersFromAnyProxy = false;
 });
 app.UseAuthentication();
-app.UseTenantResolution();
+app.UseHeadlessTenancy();
 app.UseAuthorization();
 app.MapHeadlessDefaultEndpoints();
 
@@ -72,20 +73,23 @@ When the hash callback is omitted, `AddHeadlessInfrastructure(...)` still binds 
 
 ## Multi-Tenancy
 
-`AddHeadlessInfrastructure()` registers `CurrentTenant` by default, replacing only the framework `NullCurrentTenant` fallback while preserving consumer-provided tenant implementations. `Headless.Orm.EntityFramework` uses the same default for `AddHeadlessDbContextServices()`. For claim-based HTTP tenant resolution, opt in with:
+`AddHeadlessInfrastructure()` registers base API infrastructure. Tenant posture is configured separately through the root tenancy surface:
 
 ```csharp
-builder.AddHeadlessMultiTenancy(options =>
-{
-    options.ClaimType = UserClaimTypes.TenantId; // default
-});
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Http(http => http.ResolveFromClaims(options =>
+    {
+        options.ClaimType = UserClaimTypes.TenantId; // default
+    })));
 
 app.UseAuthentication();
-app.UseTenantResolution();
+app.UseHeadlessTenancy();
 app.UseAuthorization();
 ```
 
-Place `UseTenantResolution()` after authentication and before authorization.
+Place `UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`. Headless does not call authentication or authorization internally.
+
+`AddHeadlessMultiTenancy()` and `UseTenantResolution()` remain available as lower-level compatibility APIs for advanced HTTP-only setup.
 
 ## API Defaults
 
@@ -202,6 +206,7 @@ The same tenancy shape is reachable for direct callers via `IProblemDetailsCreat
 
 - `Headless.Api.Abstractions`
 - `Headless.Core`
+- `Headless.MultiTenancy`
 - `Headless.Security.Abstractions`
 - `Headless.Security`
 - `Headless.Caching.Abstractions`
