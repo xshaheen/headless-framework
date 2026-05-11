@@ -2,9 +2,9 @@
 
 using System.Reflection;
 using Couchbase.Linq;
-using Headless.Orm.Couchbase.Context;
+using Headless.Couchbase.Context;
 
-namespace Headless.Orm.Couchbase.Managers;
+namespace Headless.Couchbase.Managers;
 
 public interface ICouchbaseAssemblyCollectionsReader
 {

@@ -4,7 +4,7 @@ using Couchbase.KeyValue;
 using Couchbase.Transactions.Config;
 using Microsoft.Extensions.Hosting;
 
-namespace Headless.Orm.Couchbase.Clusters;
+namespace Headless.Couchbase.Clusters;
 
 public interface ICouchbaseTransactionConfigProvider
 {

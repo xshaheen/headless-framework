@@ -7,7 +7,7 @@ using Couchbase.Transactions;
 using Couchbase.Transactions.Config;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Orm.Couchbase.Context;
+namespace Headless.Couchbase.Context;
 
 public class CouchbaseBucketContext(IBucket bucket, Transactions transactions, ILogger<CouchbaseBucketContext> logger)
     : BucketContext(bucket)

@@ -6,7 +6,7 @@ using Couchbase.Management.Eventing;
 using Couchbase.Query;
 using Humanizer;
 
-namespace Headless.Orm.Couchbase.Clusters;
+namespace Headless.Couchbase.Clusters;
 
 public static class CouchbaseEventingFunctionsSeeder
 {

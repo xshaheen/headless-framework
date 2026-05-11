@@ -5,10 +5,10 @@ using System.Reflection;
 using Couchbase;
 using Couchbase.Linq;
 using Couchbase.Transactions;
-using Headless.Orm.Couchbase.Context;
+using Headless.Couchbase.Context;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Orm.Couchbase.ContextProvider;
+namespace Headless.Couchbase.ContextProvider;
 
 /// <summary>
 /// The goal of this class to initialize any CouchbaseBucketContext properties that are

@@ -7,7 +7,7 @@ using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 
-namespace Headless.Orm.Couchbase.Clusters;
+namespace Headless.Couchbase.Clusters;
 
 using GetClusterResult = (ICluster Cluster, Transactions ClusterTransactions);
 

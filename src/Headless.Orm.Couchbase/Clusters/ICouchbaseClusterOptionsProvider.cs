@@ -2,7 +2,7 @@
 
 using Couchbase;
 
-namespace Headless.Orm.Couchbase.Clusters;
+namespace Headless.Couchbase.Clusters;
 
 public interface ICouchbaseClusterOptionsProvider
 {
