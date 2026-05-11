@@ -109,7 +109,9 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
 
         var services = new ServiceCollection();
         services.AddSingleton(connection);
-        services.AddScoped<ProcessorOrderRecorder>();
+        // Recorder lifetime must match the processor lifetimes (singleton) so test queries observe
+        // the same instance the processors write to.
+        services.AddSingleton<ProcessorOrderRecorder>();
         services.AddHeadlessDbContextServices(options =>
         {
             options.AddSaveEntryProcessor<EarlyRecordingSaveEntryProcessor>(ServiceLifetime.Singleton);

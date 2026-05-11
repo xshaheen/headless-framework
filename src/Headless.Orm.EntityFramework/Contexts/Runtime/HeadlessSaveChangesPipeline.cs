@@ -6,6 +6,7 @@ using Headless.EntityFramework.Messaging;
 using Headless.EntityFramework.Processors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.EntityFramework;
@@ -22,15 +23,23 @@ public interface IHeadlessSaveChangesPipeline
     int SaveChanges(DbContext context, Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess);
 }
 
-internal sealed class HeadlessSaveChangesPipeline(
-    IServiceProvider serviceProvider,
-    HeadlessDbContextOptions options,
-    IHeadlessMessageDispatcher messageDispatcher
-) : IHeadlessSaveChangesPipeline
+internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
 {
-    private readonly IReadOnlyList<IHeadlessSaveEntryProcessor> _entryProcessors = options.ResolveSaveEntryProcessors(
-        serviceProvider
-    );
+    private readonly IHeadlessMessageDispatcher _messageDispatcher;
+    private readonly IReadOnlyList<IHeadlessSaveEntryProcessor> _entryProcessors;
+    private readonly HeadlessAuditPersistence _auditPersistence;
+
+    public HeadlessSaveChangesPipeline(
+        IServiceProvider serviceProvider,
+        HeadlessDbContextOptions options,
+        IHeadlessMessageDispatcher messageDispatcher
+    )
+    {
+        _messageDispatcher = messageDispatcher;
+        _entryProcessors = options.ResolveSaveEntryProcessors(serviceProvider);
+        var logger = serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<HeadlessSaveChangesPipeline>();
+        _auditPersistence = new HeadlessAuditPersistence(serviceProvider, logger);
+    }
 
     public async Task<int> SaveChangesAsync(
         DbContext context,
@@ -40,7 +49,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     )
     {
         var saveContext = _ProcessEntries(context);
-        var auditEntries = HeadlessAuditPersistence.CaptureEntries(context, _GetAuditLogger(context));
+        var auditEntries = _auditPersistence.CaptureEntries(context);
 
         var state = new AsyncSaveState(
             context,
@@ -74,7 +83,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     {
 #pragma warning disable MA0045 // Sync SaveChanges intentionally wraps EF sync APIs.
         var saveContext = _ProcessEntries(context);
-        var auditEntries = HeadlessAuditPersistence.CaptureEntries(context, _GetAuditLogger(context));
+        var auditEntries = _auditPersistence.CaptureEntries(context);
 
         var state = new SaveState(context, saveContext, auditEntries, acceptAllChangesOnSuccess, baseSaveChanges);
 
@@ -147,7 +156,7 @@ internal sealed class HeadlessSaveChangesPipeline(
     {
         if (commitTransaction)
         {
-            HeadlessAuditPersistence.PrepareForRetry(state.Context);
+            _auditPersistence.PrepareForRetry(state.Context);
         }
 
         HeadlessAuditSaveResult auditSave = default;
@@ -156,7 +165,7 @@ internal sealed class HeadlessSaveChangesPipeline(
         {
             if (state.SaveContext.LocalEmitters.Count > 0)
             {
-                await messageDispatcher
+                await _messageDispatcher
                     .PublishLocalAsync(state.SaveContext.LocalEmitters, transaction, state.CancellationToken)
                     .ConfigureAwait(false);
             }
@@ -169,7 +178,7 @@ internal sealed class HeadlessSaveChangesPipeline(
                 )
                 .ConfigureAwait(false);
 
-            auditSave = await HeadlessAuditPersistence
+            auditSave = await _auditPersistence
                 .ResolveAndPersistAsync(
                     state.Context,
                     state.AuditEntries,
@@ -180,7 +189,7 @@ internal sealed class HeadlessSaveChangesPipeline(
 
             if (state.SaveContext.DistributedEmitters.Count > 0)
             {
-                await messageDispatcher
+                await _messageDispatcher
                     .PublishDistributedAsync(
                         state.SaveContext.DistributedEmitters,
                         transaction,
@@ -210,7 +219,7 @@ internal sealed class HeadlessSaveChangesPipeline(
 #pragma warning disable MA0045 // Sync intentionally.
         if (commitTransaction)
         {
-            HeadlessAuditPersistence.PrepareForRetry(state.Context);
+            _auditPersistence.PrepareForRetry(state.Context);
         }
 
         HeadlessAuditSaveResult auditSave = default;
@@ -219,20 +228,16 @@ internal sealed class HeadlessSaveChangesPipeline(
         {
             if (state.SaveContext.LocalEmitters.Count > 0)
             {
-                messageDispatcher.PublishLocal(state.SaveContext.LocalEmitters, transaction);
+                _messageDispatcher.PublishLocal(state.SaveContext.LocalEmitters, transaction);
             }
 
             var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
             var result = state.BaseSaveChanges(!deferAcceptAllChanges && state.AcceptAllChangesOnSuccess);
-            auditSave = HeadlessAuditPersistence.ResolveAndPersist(
-                state.Context,
-                state.AuditEntries,
-                state.BaseSaveChanges
-            );
+            auditSave = _auditPersistence.ResolveAndPersist(state.Context, state.AuditEntries, state.BaseSaveChanges);
 
             if (state.SaveContext.DistributedEmitters.Count > 0)
             {
-                messageDispatcher.PublishDistributed(state.SaveContext.DistributedEmitters, transaction);
+                _messageDispatcher.PublishDistributed(state.SaveContext.DistributedEmitters, transaction);
             }
 
             if (commitTransaction)
@@ -274,11 +279,6 @@ internal sealed class HeadlessSaveChangesPipeline(
     {
         HeadlessAuditPersistence.CompleteSuccessfulSave(context, auditSave, acceptAllChangesOnSuccess);
         saveContext.ClearEmitterMessages();
-    }
-
-    private static ILogger? _GetAuditLogger(DbContext context)
-    {
-        return context.GetServiceOrDefault<ILoggerFactory>()?.CreateLogger(context.GetType());
     }
 
     private readonly record struct AsyncSaveState(

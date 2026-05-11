@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Abstractions;
 using Headless.Domain;
 using Headless.Reflection;
@@ -13,6 +14,11 @@ namespace Headless.EntityFramework.Processors;
 public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser currentUser)
     : IHeadlessSaveEntryProcessor
 {
+    private static readonly ConcurrentDictionary<
+        (Type EntityType, Type Interface),
+        bool
+    > _ImplementsGenericInterfaceCache = new();
+
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
         switch (entry.State)
@@ -63,11 +69,10 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
             return;
         }
 
-        var createdBy = entry.Navigations.FirstOrDefault(p =>
-            string.Equals(p.Metadata.Name, nameof(ICreateAudit<,>.CreatedBy), StringComparison.Ordinal)
-        );
-
-        if (createdBy?.CurrentValue is not null)
+        if (
+            entry.Metadata.FindNavigation(nameof(ICreateAudit<,>.CreatedBy)) is { } createdByNavigation
+            && entry.Navigation(createdByNavigation.Name).CurrentValue is not null
+        )
         {
             return;
         }
@@ -158,10 +163,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
     private void _TrySetDeleteAudit(EntityEntry entry)
     {
-        if (
-            entry.Entity is not IDeleteAudit deleteAudit
-            || !entry.Property(nameof(IDeleteAudit.IsDeleted)).IsModified
-        )
+        if (entry.Entity is not IDeleteAudit deleteAudit || !entry.Property(nameof(IDeleteAudit.IsDeleted)).IsModified)
         {
             return;
         }
@@ -292,7 +294,11 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
     private static bool _ImplementsGenericInterface(Type type, Type genericInterfaceDefinition)
     {
-        return type.GetInterfaces()
-            .Any(x => x.IsGenericType && x.GetGenericTypeDefinition() == genericInterfaceDefinition);
+        return _ImplementsGenericInterfaceCache.GetOrAdd(
+            (type, genericInterfaceDefinition),
+            static key =>
+                key.EntityType.GetInterfaces()
+                    .Exists(x => x.IsGenericType && x.GetGenericTypeDefinition() == key.Interface)
+        );
     }
 }

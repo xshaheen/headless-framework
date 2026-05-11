@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations.Schema;
 using Headless.Abstractions;
 using Headless.Domain;
@@ -12,6 +13,8 @@ namespace Headless.EntityFramework.Processors;
 public sealed class HeadlessEntitySaveEntryProcessor(IGuidGenerator guidGenerator, ICurrentTenant currentTenant)
     : IHeadlessSaveEntryProcessor
 {
+    private static readonly ConcurrentDictionary<Type, bool> _ShouldStampGuidIdCache = new();
+
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
         switch (entry.State)
@@ -34,17 +37,31 @@ public sealed class HeadlessEntitySaveEntryProcessor(IGuidGenerator guidGenerato
             return;
         }
 
-        var idProperty = entry.Property(nameof(IEntity<>.Id)).Metadata.PropertyInfo!;
-
-        if (
-            idProperty.GetFirstOrDefaultAttribute<DatabaseGeneratedAttribute>() is
-            { DatabaseGeneratedOption: not DatabaseGeneratedOption.None }
-        )
+        if (!_ShouldStampGuidId(entity.GetType()))
         {
             return;
         }
 
         ObjectPropertiesHelper.TrySetProperty(entity, x => x.Id, guidGenerator.Create);
+    }
+
+    private static bool _ShouldStampGuidId(Type entityType)
+    {
+        return _ShouldStampGuidIdCache.GetOrAdd(
+            entityType,
+            static type =>
+            {
+                var idProperty = type.GetProperty(nameof(IEntity<>.Id));
+
+                if (idProperty is null)
+                {
+                    return false;
+                }
+
+                return idProperty.GetFirstOrDefaultAttribute<DatabaseGeneratedAttribute>()
+                    is not { DatabaseGeneratedOption: not DatabaseGeneratedOption.None };
+            }
+        );
     }
 
     private void _TrySetMultiTenantId(EntityEntry entry)
