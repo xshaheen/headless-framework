@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Orm.EntityFramework.ChangeTrackers;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -40,7 +38,7 @@ internal static class HeadlessSaveChangesRunner
     )
     {
         var report = entityProcessor.ProcessEntries(context);
-        var auditEntries = _CaptureAuditEntries(context, auditLogger);
+        var auditEntries = HeadlessAuditPersistence.CaptureEntries(context, auditLogger);
 
         var state = new AsyncSaveState(
             context,
@@ -85,7 +83,7 @@ internal static class HeadlessSaveChangesRunner
     {
 #pragma warning disable MA0045 // Sync SaveChanges intentionally wraps EF sync APIs.
         var report = entityProcessor.ProcessEntries(context);
-        var auditEntries = _CaptureAuditEntries(context, auditLogger);
+        var auditEntries = HeadlessAuditPersistence.CaptureEntries(context, auditLogger);
 
         var state = new SaveState(
             context,
@@ -128,7 +126,7 @@ internal static class HeadlessSaveChangesRunner
 
     private static async Task<int> _ExecuteWithNewTransactionAsync(AsyncSaveState state)
     {
-        _PrepareForRetry(state.Context);
+        HeadlessAuditPersistence.PrepareForRetry(state.Context);
 
         await using var transaction = await state
             .Context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, state.CancellationToken)
@@ -140,7 +138,7 @@ internal static class HeadlessSaveChangesRunner
     private static int _ExecuteWithNewTransaction(SaveState state)
     {
 #pragma warning disable MA0045 // Sync intentionally
-        _PrepareForRetry(state.Context);
+        HeadlessAuditPersistence.PrepareForRetry(state.Context);
         using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
         return _SaveWithinTransaction(state, transaction, commitTransaction: true);
 #pragma warning restore MA0045
@@ -152,7 +150,7 @@ internal static class HeadlessSaveChangesRunner
         bool commitTransaction
     )
     {
-        AuditSaveResult auditSave = default;
+        HeadlessAuditSaveResult auditSave = default;
 
         try
         {
@@ -163,7 +161,7 @@ internal static class HeadlessSaveChangesRunner
                     .ConfigureAwait(false);
             }
 
-            var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
+            var deferAcceptAllChanges = HeadlessAuditPersistence.HasEntries(state.AuditEntries);
             var result = await state
                 .BaseSaveChangesAsync(
                     !deferAcceptAllChanges && state.AcceptAllChangesOnSuccess,
@@ -171,7 +169,8 @@ internal static class HeadlessSaveChangesRunner
                 )
                 .ConfigureAwait(false);
 
-            auditSave = await _ResolveAndPersistAuditAsync(
+            auditSave = await HeadlessAuditPersistence
+                .ResolveAndPersistAsync(
                     state.Context,
                     state.AuditEntries,
                     state.BaseSaveChangesAsync,
@@ -203,7 +202,7 @@ internal static class HeadlessSaveChangesRunner
         }
         catch
         {
-            _DetachAuditEntries(state.Context, auditSave);
+            HeadlessAuditPersistence.DetachEntries(state.Context, auditSave);
             throw;
         }
     }
@@ -214,7 +213,7 @@ internal static class HeadlessSaveChangesRunner
         bool commitTransaction
     )
     {
-        AuditSaveResult auditSave = default;
+        HeadlessAuditSaveResult auditSave = default;
 
         try
         {
@@ -223,9 +222,13 @@ internal static class HeadlessSaveChangesRunner
                 state.PublishLocal(state.Report.LocalEmitters, transaction);
             }
 
-            var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
+            var deferAcceptAllChanges = HeadlessAuditPersistence.HasEntries(state.AuditEntries);
             var result = state.BaseSaveChanges(!deferAcceptAllChanges && state.AcceptAllChangesOnSuccess);
-            auditSave = _ResolveAndPersistAudit(state.Context, state.AuditEntries, state.BaseSaveChanges);
+            auditSave = HeadlessAuditPersistence.ResolveAndPersist(
+                state.Context,
+                state.AuditEntries,
+                state.BaseSaveChanges
+            );
 
             if (state.Report.DistributedEmitters.Count > 0)
             {
@@ -249,256 +252,30 @@ internal static class HeadlessSaveChangesRunner
         }
         catch
         {
-            _DetachAuditEntries(state.Context, auditSave);
+            HeadlessAuditPersistence.DetachEntries(state.Context, auditSave);
             throw;
         }
     }
 
-    #region Audit Helpers
-
-    /// <summary>
-    /// Captures audit entries from the change tracker before SaveChanges.
-    /// Returns <see langword="null"/> when audit capture is not registered or fails.
-    /// </summary>
-    private static IReadOnlyList<AuditLogEntryData>? _CaptureAuditEntries(DbContext context, ILogger? logger)
-    {
-        var auditCapture = context.GetServiceOrDefault<IAuditChangeCapture>();
-
-        if (auditCapture is null)
-        {
-            return null;
-        }
-
-        var currentUser = context.GetServiceOrDefault<ICurrentUser>();
-        var currentTenant = context.GetServiceOrDefault<ICurrentTenant>();
-        var correlationIdProvider = context.GetServiceOrDefault<ICorrelationIdProvider>();
-        var clock = context.GetServiceOrDefault<IClock>();
-        var timestamp = clock?.UtcNow ?? DateTimeOffset.UtcNow;
-
-        try
-        {
-            return auditCapture.CaptureChanges(
-                context.ChangeTracker.Entries(),
-                currentUser?.UserId?.ToString(),
-                currentUser?.AccountId?.ToString(),
-                currentTenant?.Id,
-                correlationIdProvider?.CorrelationId,
-                timestamp
-            );
-        }
-        catch (Exception ex)
-        {
-            logger?.LogWarning(ex, "Audit change capture failed. Continuing with entity save.");
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Detaches stale audit entries from a prior failed attempt before an execution strategy retry.
-    /// </summary>
-    private static void _PrepareForRetry(DbContext context)
-    {
-        var store = context.GetServiceOrDefault<IAuditLogStore>();
-        store?.PrepareForRetry(context);
-    }
-
-    private static async Task<AuditSaveResult> _ResolveAndPersistAuditAsync(
-        DbContext context,
-        IReadOnlyList<AuditLogEntryData>? entries,
-        Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
-        CancellationToken cancellationToken
-    )
-    {
-        if (entries is not { Count: > 0 })
-        {
-            return default;
-        }
-
-        _ResolveEntityIds(context, entries);
-        var originalEntities = _CaptureTrackedEntities(context);
-        var snapshots = TrackedEntrySnapshot.Capture(context);
-
-        await _SaveAuditEntriesAsync(context, entries, cancellationToken).ConfigureAwait(false);
-        var auditEntities = _CaptureNewAddedEntities(context, originalEntities);
-
-        if (auditEntities.Count > 0)
-        {
-            _SuppressEntries(context, snapshots);
-
-            try
-            {
-                await baseSaveChangesAsync(false, cancellationToken).ConfigureAwait(false);
-            }
-            finally
-            {
-                _RestoreEntries(context, snapshots);
-            }
-        }
-
-        return new(RequiresManualAcceptAllChanges: true, auditEntities);
-    }
-
-    private static AuditSaveResult _ResolveAndPersistAudit(
-        DbContext context,
-        IReadOnlyList<AuditLogEntryData>? entries,
-        Func<bool, int> baseSaveChanges
-    )
-    {
-        if (entries is not { Count: > 0 })
-        {
-            return default;
-        }
-
-        _ResolveEntityIds(context, entries);
-        var originalEntities = _CaptureTrackedEntities(context);
-        var snapshots = TrackedEntrySnapshot.Capture(context);
-
-        _SaveAuditEntries(context, entries);
-        var auditEntities = _CaptureNewAddedEntities(context, originalEntities);
-
-        if (auditEntities.Count > 0)
-        {
-            _SuppressEntries(context, snapshots);
-
-            try
-            {
-                baseSaveChanges(false);
-            }
-            finally
-            {
-                _RestoreEntries(context, snapshots);
-            }
-        }
-
-        return new(RequiresManualAcceptAllChanges: true, auditEntities);
-    }
-
-    /// <summary>
-    /// Resolves deferred entity IDs on captured audit entries after entity SaveChanges
-    /// has assigned store-generated keys.
-    /// </summary>
-    private static void _ResolveEntityIds(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
-    {
-        if (context.GetServiceOrDefault<IAuditChangeCapture>() is IAuditEntityIdResolver resolver)
-        {
-            resolver.ResolveEntityIds(entries);
-        }
-    }
-
-    /// <summary>
-    /// Adds audit entries to the saving context for synchronous persist.
-    /// </summary>
-    private static void _SaveAuditEntries(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
-    {
-        var store = context.GetServiceOrDefault<IAuditLogStore>();
-        store?.Save(entries, context);
-    }
-
-    /// <summary>
-    /// Adds audit entries to the saving context for asynchronous persist.
-    /// </summary>
-    private static async Task _SaveAuditEntriesAsync(
-        DbContext context,
-        IReadOnlyList<AuditLogEntryData> entries,
-        CancellationToken cancellationToken
-    )
-    {
-        var store = context.GetServiceOrDefault<IAuditLogStore>();
-
-        if (store is not null)
-        {
-            await store.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    #endregion
-
     private static bool _RequiresExplicitTransaction(
         IReadOnlyList<AuditLogEntryData>? auditEntries,
         ProcessBeforeSaveReport report
-    ) => auditEntries is { Count: > 0 } || report.DistributedEmitters.Count > 0 || report.LocalEmitters.Count > 0;
-
-    private static bool _HasAuditEntries(IReadOnlyList<AuditLogEntryData>? auditEntries) =>
-        auditEntries is { Count: > 0 };
+    ) =>
+        HeadlessAuditPersistence.HasEntries(auditEntries)
+        || report.DistributedEmitters.Count > 0
+        || report.LocalEmitters.Count > 0;
 
     private static void _CompleteSuccessfulSave(
         ProcessBeforeSaveReport report,
         HeadlessEntityFrameworkNavigationModifiedTracker navigationTracker,
         DbContext context,
-        AuditSaveResult auditSave,
+        HeadlessAuditSaveResult auditSave,
         bool acceptAllChangesOnSuccess
     )
     {
-        if (auditSave.RequiresManualAcceptAllChanges)
-        {
-            if (acceptAllChangesOnSuccess)
-            {
-                context.ChangeTracker.AcceptAllChanges();
-            }
-            else
-            {
-                _DetachAuditEntries(context, auditSave);
-            }
-        }
-
+        HeadlessAuditPersistence.CompleteSuccessfulSave(context, auditSave, acceptAllChangesOnSuccess);
         navigationTracker.RemoveModifiedEntityEntries();
         report.ClearEmitterMessages();
-    }
-
-    private static HashSet<object> _CaptureTrackedEntities(DbContext context)
-    {
-        var entities = new HashSet<object>(ReferenceEqualityComparer.Instance);
-
-        foreach (var entry in context.ChangeTracker.Entries())
-        {
-            entities.Add(entry.Entity);
-        }
-
-        return entities;
-    }
-
-    private static IReadOnlyList<object> _CaptureNewAddedEntities(DbContext context, HashSet<object> originalEntities)
-    {
-        return context
-            .ChangeTracker.Entries()
-            .Where(entry => entry.State == EntityState.Added && !originalEntities.Contains(entry.Entity))
-            .Select(entry => entry.Entity)
-            .ToArray();
-    }
-
-    private static void _SuppressEntries(DbContext context, IReadOnlyList<TrackedEntrySnapshot> snapshots)
-    {
-        foreach (var snapshot in snapshots)
-        {
-            var entry = context.Entry(snapshot.Entity);
-            entry.State = snapshot.State == EntityState.Deleted ? EntityState.Detached : EntityState.Unchanged;
-        }
-    }
-
-    private static void _RestoreEntries(DbContext context, IReadOnlyList<TrackedEntrySnapshot> snapshots)
-    {
-        foreach (var snapshot in snapshots)
-        {
-            snapshot.Restore(context);
-        }
-    }
-
-    private static void _DetachAuditEntries(DbContext context, AuditSaveResult auditSave)
-    {
-        if (auditSave.AuditEntities is null)
-        {
-            return;
-        }
-
-        foreach (var entity in auditSave.AuditEntities)
-        {
-            var entry = context.Entry(entity);
-
-            if (entry.State != EntityState.Detached)
-            {
-                entry.State = EntityState.Detached;
-            }
-        }
     }
 
     private readonly record struct AsyncSaveState(
@@ -523,55 +300,4 @@ internal static class HeadlessSaveChangesRunner
         Func<bool, int> BaseSaveChanges,
         HeadlessEntityFrameworkNavigationModifiedTracker NavigationTracker
     );
-
-    private readonly record struct AuditSaveResult(
-        bool RequiresManualAcceptAllChanges,
-        IReadOnlyList<object> AuditEntities
-    );
-
-    private sealed record TrackedEntrySnapshot(
-        object Entity,
-        EntityState State,
-        IReadOnlyList<PropertySnapshot> Properties
-    )
-    {
-        public static IReadOnlyList<TrackedEntrySnapshot> Capture(DbContext context)
-        {
-            return context
-                .ChangeTracker.Entries()
-                .Where(entry => entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
-                .Select(entry => new TrackedEntrySnapshot(
-                    entry.Entity,
-                    entry.State,
-                    entry
-                        .Properties.Select(static property => new PropertySnapshot(
-                            property.Metadata.Name,
-                            property.OriginalValue,
-                            property.IsModified
-                        ))
-                        .ToArray()
-                ))
-                .ToArray();
-        }
-
-        public void Restore(DbContext context)
-        {
-            var entry = context.Entry(Entity);
-            entry.State = EntityState.Unchanged;
-
-            foreach (var property in Properties)
-            {
-                var propertyEntry = entry.Property(property.Name);
-                propertyEntry.OriginalValue = property.OriginalValue;
-                propertyEntry.IsModified = property.IsModified;
-            }
-
-            if (State != EntityState.Modified)
-            {
-                entry.State = State;
-            }
-        }
-    }
-
-    private sealed record PropertySnapshot(string Name, object? OriginalValue, bool IsModified);
 }
