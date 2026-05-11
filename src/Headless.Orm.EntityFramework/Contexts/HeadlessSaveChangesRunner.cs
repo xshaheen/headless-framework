@@ -202,7 +202,7 @@ internal static class HeadlessSaveChangesRunner
         }
         catch
         {
-            HeadlessAuditPersistence.DetachEntries(state.Context, auditSave);
+            HeadlessAuditPersistence.DetachEntries(auditSave);
             throw;
         }
     }
@@ -252,7 +252,7 @@ internal static class HeadlessSaveChangesRunner
         }
         catch
         {
-            HeadlessAuditPersistence.DetachEntries(state.Context, auditSave);
+            HeadlessAuditPersistence.DetachEntries(auditSave);
             throw;
         }
     }

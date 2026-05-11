@@ -103,9 +103,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         db.GeneratedOrders.Add(order);
 
         // when
-#pragma warning disable CA1849 // Call async methods when in an async method
         db.SaveChanges(acceptAllChangesOnSuccess: false);
-#pragma warning restore CA1849 // Call async methods when in an async method
 
         // then
         order.Id.Should().BePositive();

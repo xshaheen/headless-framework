@@ -13,15 +13,15 @@ public interface IAuditLogStore
     /// Persists audit entries synchronously.
     /// Called from the synchronous <c>SaveChanges</c> path.
     /// </summary>
-    /// <returns>The provider entities added to the current persistence context.</returns>
-    IReadOnlyList<object> Save(IReadOnlyList<AuditLogEntryData> entries);
+    /// <returns>Handles for provider entries added to the current persistence context.</returns>
+    IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries);
 
     /// <summary>
     /// Persists audit entries asynchronously.
     /// Called from the asynchronous <c>SaveChangesAsync</c> path.
     /// </summary>
-    /// <returns>The provider entities added to the current persistence context.</returns>
-    Task<IReadOnlyList<object>> SaveAsync(
+    /// <returns>Handles for provider entries added to the current persistence context.</returns>
+    Task<IReadOnlyList<IAuditLogStoreEntry>> SaveAsync(
         IReadOnlyList<AuditLogEntryData> entries,
         CancellationToken cancellationToken = default
     );
@@ -36,14 +36,15 @@ public interface IAuditLogStore
     /// The context instance executing SaveChanges (typed as <see cref="object"/>
     /// to keep this package free of the EF Core dependency).
     /// </param>
-    /// <returns>The provider entities added to the current persistence context.</returns>
-    IReadOnlyList<object> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext) => Save(entries);
+    /// <returns>Handles for provider entries added to the current persistence context.</returns>
+    IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext) =>
+        Save(entries);
 
     /// <summary>
     /// Persists audit entries asynchronously using the specified saving context.
     /// </summary>
-    /// <returns>The provider entities added to the current persistence context.</returns>
-    Task<IReadOnlyList<object>> SaveAsync(
+    /// <returns>Handles for provider entries added to the current persistence context.</returns>
+    Task<IReadOnlyList<IAuditLogStoreEntry>> SaveAsync(
         IReadOnlyList<AuditLogEntryData> entries,
         object savingContext,
         CancellationToken cancellationToken = default
@@ -56,4 +57,15 @@ public interface IAuditLogStore
     /// </summary>
     /// <param name="savingContext">The context instance executing SaveChanges.</param>
     void PrepareForRetry(object savingContext) { }
+}
+
+/// <summary>
+/// Provider-owned handle for an audit entry added to a persistence context.
+/// </summary>
+public interface IAuditLogStoreEntry
+{
+    /// <summary>
+    /// Removes the pending audit entry from the provider persistence context.
+    /// </summary>
+    void Detach();
 }
