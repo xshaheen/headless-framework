@@ -1192,7 +1192,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
 
     private void _AddChildIndex(Guid parentId, Guid childId)
     {
-        var children = _ChildrenIndex.GetOrAdd(parentId, _ => new ConcurrentDictionary<Guid, byte>());
+        var children = _ChildrenIndex.GetOrAdd(parentId, static _ => new ConcurrentDictionary<Guid, byte>());
         children.TryAdd(childId, 0);
     }
 

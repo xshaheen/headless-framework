@@ -16,6 +16,6 @@ internal sealed class JobFunctionConcurrencyGate : IJobFunctionConcurrencyGate
             return null;
         }
 
-        return _semaphores.GetOrAdd(functionName, _ => new SemaphoreSlim(maxConcurrency, maxConcurrency));
+        return _semaphores.GetOrAdd(functionName, static (_, max) => new SemaphoreSlim(max, max), maxConcurrency);
     }
 }

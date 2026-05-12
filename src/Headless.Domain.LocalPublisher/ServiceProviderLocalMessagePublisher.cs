@@ -73,7 +73,7 @@ public sealed class ServiceProviderLocalMessagePublisher(IServiceProvider servic
     {
         return _handlerOrderCache.GetOrAdd(
             handlerType,
-            type =>
+            static type =>
             {
                 var attribute = type.GetCustomAttribute<LocalEventHandlerOrderAttribute>();
                 return attribute?.Order ?? 0;
