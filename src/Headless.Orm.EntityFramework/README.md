@@ -9,10 +9,12 @@ Provides a feature-rich DbContext base class with automatic auditing, soft delet
 ## Key Features
 
 - `HeadlessDbContext` - Base DbContext with framework integration
-- Automatic `CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy` auditing
-- Soft delete with `IsDeleted` global filter
-- Multi-tenancy with `TenantId` filtering
-- Domain event dispatching (local and distributed)
+- Automatic auditing for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities (`DateCreated`, `DateUpdated`, `DateDeleted`, `DateSuspended`, plus `CreatedById` / `UpdatedById` / `DeletedById` / `SuspendedById` for `UserId` and `AccountId` audits)
+- Soft delete (`IDeleteAudit.IsDeleted`) and suspend (`ISuspendAudit.IsSuspended`) global filters
+- Multi-tenancy filter for `IMultiTenant` entities driven by `ICurrentTenant.Id`
+- Composable save pipeline with built-in entry processors (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`)
+- Domain event collection and dispatch (local + distributed) via `IHeadlessMessageDispatcher`
+- Transaction-aware save with audit-log second-pass commit
 - Value converters: Money, Month, AccountId, UserId, DateTime normalization
 - DataGrid extensions for pagination and ordering
 - EF migration pre-seeder
@@ -62,12 +64,27 @@ modelBuilder.Entity<Order>()
 
 ### Global Filters
 
-Soft delete and multi-tenancy filters are automatically applied.
+Three named filters are applied automatically when entities implement the corresponding interfaces:
+
+| Interface | Filter name (`HeadlessQueryFilters.*`) | Bypass extension |
+| --- | --- | --- |
+| `IMultiTenant` | `MultiTenancyFilter` | `IgnoreMultiTenancyFilter()` |
+| `IDeleteAudit` | `NotDeletedFilter` | `IgnoreNotDeletedFilter()` |
+| `ISuspendAudit` | `NotSuspendedFilter` | `IgnoreNotSuspendedFilter()` |
+
+Bypasses are scoped to a single `IQueryable<T>` chain and emit a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with the caller member + file for auditability.
 
 ```csharp
 // Disable one named filter for a query
 var allProducts = await dbContext.Products
     .IgnoreNotDeletedFilter()
+    .ToListAsync();
+
+// Combine multiple bypasses
+var everything = await dbContext.Products
+    .IgnoreMultiTenancyFilter()
+    .IgnoreNotDeletedFilter()
+    .IgnoreNotSuspendedFilter()
     .ToListAsync();
 ```
 
@@ -78,6 +95,13 @@ var allProducts = await dbContext.Products
 - `IHeadlessSaveEntryProcessor` for per-entry mutations before `SaveChanges`
 - `IHeadlessMessageDispatcher` for local/distributed message publishing
 - `IHeadlessSaveChangesPipeline` for transaction, audit, and message orchestration
+
+The default processor chain runs in registration order against every tracked entity, then again for any processors you add:
+
+1. `HeadlessEntitySaveEntryProcessor` — stamps `Guid` IDs, tenant IDs, concurrency stamps
+2. `HeadlessAuditSaveEntryProcessor` — stamps create/update/delete/suspend audit fields
+3. `HeadlessLocalEventSaveEntryProcessor` — publishes `EntityCreated/Updated/Deleted/Changed` lifecycle messages on `ILocalMessageEmitter` entities
+4. `HeadlessMessageCollectorSaveEntryProcessor` — collects pending local + distributed messages onto the save context
 
 ```csharp
 public sealed class AppSaveEntryProcessor : IHeadlessSaveEntryProcessor
@@ -90,11 +114,15 @@ public sealed class AppSaveEntryProcessor : IHeadlessSaveEntryProcessor
 
 services.AddHeadlessDbContextServices(options =>
 {
-    options.AddSaveEntryProcessor<AppSaveEntryProcessor>(250);
+    // Lifetime controls DI registration and per-save resolution; processor runs after the
+    // built-in chain because registrations append to the tail.
+    options.AddSaveEntryProcessor<AppSaveEntryProcessor>(ServiceLifetime.Scoped);
 });
 ```
 
-Message publishing defaults to a fail-fast dispatcher. If entities emit local or distributed messages, register a dispatcher to publish captured emitters through your application messaging infrastructure.
+Re-registering the same processor type removes the prior entry and re-appends it, so the latest call always wins on position. Use `options.RemoveSaveEntryProcessor<TProcessor>()` to opt out of one of the built-in processors entirely.
+
+Message publishing defaults to a fail-fast dispatcher (`ThrowHeadlessMessageDispatcher`). If entities emit local or distributed messages, register a dispatcher to publish captured emitters through your application messaging infrastructure.
 
 ```csharp
 services.AddHeadlessDbContextServices();
@@ -135,6 +163,6 @@ var result = await dbContext.ExecuteTransactionAsync<int>(async (ctx, ct) =>
 
 ## Side Effects
 
-- Registers `HeadlessDbContextServices`, save-entry processors, a save pipeline, and a fail-fast message dispatcher
-- Registers default implementations for `IClock`, `IGuidGenerator`, `ICurrentTenant`, `ICurrentUser`
-- Replaces `ICompiledQueryCacheKeyGenerator` for multi-tenancy support
+- Registers `HeadlessDbContextServices`, the default save-entry processor chain, `IHeadlessSaveChangesPipeline`, and a fail-fast `IHeadlessMessageDispatcher` (`ThrowHeadlessMessageDispatcher`)
+- Registers framework defaults via `TryAddSingleton`: `IClock` (`Clock`), `IGuidGenerator` (`SequentialAtEndGuidGenerator`), `ICurrentTenant` (`CurrentTenant`), `ICurrentTenantAccessor` (`AsyncLocalCurrentTenantAccessor`), `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider` (`ActivityCorrelationIdProvider`), and `TimeProvider.System`
+- Replaces `ICompiledQueryCacheKeyGenerator` so tenant-scoped queries can share compiled plans safely
