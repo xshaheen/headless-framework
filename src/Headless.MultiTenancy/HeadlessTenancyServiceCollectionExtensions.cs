@@ -26,7 +26,7 @@ public static class HeadlessTenancyServiceCollectionExtensions
     /// <summary>Gets or adds the singleton tenant posture manifest.</summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The singleton manifest instance registered in the service collection.</returns>
-    public static TenantPostureManifest GetOrAddTenantPostureManifest(this IServiceCollection services)
+    internal static TenantPostureManifest GetOrAddTenantPostureManifest(this IServiceCollection services)
     {
         Argument.IsNotNull(services);
 

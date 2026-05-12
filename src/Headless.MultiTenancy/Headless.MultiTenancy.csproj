@@ -9,4 +9,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Mediator.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.MultiTenancy.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Orm.EntityFramework.Tests.Integration" />
+  </ItemGroup>
 </Project>
