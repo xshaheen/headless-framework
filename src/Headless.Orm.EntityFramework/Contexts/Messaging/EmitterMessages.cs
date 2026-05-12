@@ -4,36 +4,56 @@ using Headless.Domain;
 
 namespace Headless.EntityFramework.Messaging;
 
+/// <summary>
+/// Pairs a <see cref="ILocalMessageEmitter"/> with the snapshot of local messages collected from it
+/// during the current <c>SaveChanges</c>.
+/// </summary>
+/// <remarks>
+/// The constructor parameter is captured by value and then deduplicated by <see cref="ILocalMessage.UniqueId"/>.
+/// Subsequent mutations to the source list on the emitter never leak into the dispatched snapshot.
+/// </remarks>
 public sealed record EmitterLocalMessages(ILocalMessageEmitter Emitter, IReadOnlyList<ILocalMessage> Messages)
 {
-    // Snapshot the caller's list so subsequent mutation on the emitter doesn't leak into the pipeline.
-    public IReadOnlyList<ILocalMessage> Messages { get; } = _Snapshot(Messages);
-
-    private static IReadOnlyList<ILocalMessage> _Snapshot(IReadOnlyList<ILocalMessage> messages)
-    {
-        return messages.Count switch
-        {
-            0 => [],
-            1 => [messages[0]],
-            _ => messages.DistinctBy(x => x.UniqueId).ToArray(),
-        };
-    }
+    /// <summary>
+    /// Returns a deduplicated snapshot of the constructor argument keyed by
+    /// <see cref="ILocalMessage.UniqueId"/>. Deconstruct returns this snapshot, not the input.
+    /// </summary>
+    public IReadOnlyList<ILocalMessage> Messages { get; } =
+        EmitterMessagesSnapshot.Snapshot(Messages, static m => m.UniqueId);
 }
 
+/// <summary>
+/// Pairs a <see cref="IDistributedMessageEmitter"/> with the snapshot of distributed messages collected
+/// from it during the current <c>SaveChanges</c>.
+/// </summary>
+/// <remarks>
+/// The constructor parameter is captured by value and then deduplicated by <see cref="IDistributedMessage.UniqueId"/>.
+/// Subsequent mutations to the source list on the emitter never leak into the dispatched snapshot.
+/// </remarks>
 public sealed record EmitterDistributedMessages(
     IDistributedMessageEmitter Emitter,
     IReadOnlyList<IDistributedMessage> Messages
 )
 {
-    public IReadOnlyList<IDistributedMessage> Messages { get; } = _Snapshot(Messages);
+    /// <summary>
+    /// Returns a deduplicated snapshot of the constructor argument keyed by
+    /// <see cref="IDistributedMessage.UniqueId"/>. Deconstruct returns this snapshot, not the input.
+    /// </summary>
+    public IReadOnlyList<IDistributedMessage> Messages { get; } =
+        EmitterMessagesSnapshot.Snapshot(Messages, static m => m.UniqueId);
+}
 
-    private static IReadOnlyList<IDistributedMessage> _Snapshot(IReadOnlyList<IDistributedMessage> messages)
+internal static class EmitterMessagesSnapshot
+{
+    // Snapshots the caller's list so subsequent mutation on the emitter doesn't leak into the pipeline,
+    // and deduplicates by the supplied UniqueId accessor.
+    public static IReadOnlyList<T> Snapshot<T>(IReadOnlyList<T> messages, Func<T, string> uniqueId)
     {
         return messages.Count switch
         {
             0 => [],
             1 => [messages[0]],
-            _ => messages.DistinctBy(x => x.UniqueId).ToArray(),
+            _ => messages.DistinctBy(uniqueId, StringComparer.Ordinal).ToArray(),
         };
     }
 }

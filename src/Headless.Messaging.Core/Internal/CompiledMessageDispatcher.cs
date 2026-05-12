@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 using FastExpressionCompiler;
 using Headless.Checks;
 using Headless.Messaging.Messages;
@@ -26,7 +26,7 @@ namespace Headless.Messaging.Internal;
 /// <strong>Implementation Notes:</strong>
 /// <list type="bullet">
 /// <item><description>The dispatcher should cache compiled expressions for performance</description></item>
-/// <item><description>Thread-safe compilation using atomic operations (e.g., <c>ConcurrentDictionary.GetOrAdd</c>)</description></item>
+/// <item><description>Thread-safe compilation using atomic operations on <see cref="ConditionalWeakTable{TKey, TValue}"/></description></item>
 /// <item><description>Use typed delegates to prevent boxing allocations</description></item>
 /// <item><description>Ensure async scope disposal (<c>await using</c>) to prevent resource leaks</description></item>
 /// </list>
@@ -125,7 +125,17 @@ public interface IMessageDispatcher
 internal sealed class CompiledMessageDispatcher : IMessageDispatcher
 {
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ConcurrentDictionary<Type, Delegate> _compiledInvokers = new();
+    private readonly ConditionalWeakTable<Type, Delegate> _compiledInvokers = [];
+
+    // Per-TMessage CreateValueCallback caching: the static field in the nested generic class
+    // is initialized exactly once per closed instantiation, so each TMessage pays a single
+    // delegate allocation regardless of how many dispatch sites or instances exist.
+    private static class CompileInvokerCallback<TMessage>
+        where TMessage : class
+    {
+        public static readonly ConditionalWeakTable<Type, Delegate>.CreateValueCallback Instance =
+            _CompileInvoker<TMessage>;
+    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CompiledMessageDispatcher"/> class.
@@ -196,7 +206,7 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
         // Get or compile the invoker for this message type
         var invoker =
             (Func<IConsume<TMessage>, ConsumeContext<TMessage>, CancellationToken, ValueTask>)
-                _compiledInvokers.GetOrAdd(typeof(TMessage), _CompileInvoker<TMessage>);
+                _compiledInvokers.GetValue(typeof(TMessage), CompileInvokerCallback<TMessage>.Instance);
 
         var consumer = _ResolveConsumer<TMessage>(serviceProvider, consumerType);
 
@@ -253,7 +263,7 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
     /// Compiles an expression tree into a typed delegate for invoking IConsume{TMessage}.Consume.
     /// </summary>
     /// <typeparam name="TMessage">The message type.</typeparam>
-    /// <param name="_">Unused type parameter (required by ConcurrentDictionary.GetOrAdd signature).</param>
+    /// <param name="_">Unused type parameter (required by <see cref="ConditionalWeakTable{TKey, TValue}.CreateValueCallback"/> signature).</param>
     /// <returns>A compiled delegate that invokes the Consume method.</returns>
     /// <remarks>
     /// <para>

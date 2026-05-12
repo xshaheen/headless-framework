@@ -90,7 +90,30 @@ public sealed class HeadlessEntityFrameworkNavigationModifiedTracker
         return navigationEntryProperty?.IsModified is true;
     }
 
-    public void RemoveModifiedEntityEntries() => _trackers.RemoveAll(x => x.Value.IsModified);
+    public void RemoveModifiedEntityEntries()
+    {
+        // Collect keys to remove only when at least one entry needs removal. The common case
+        // (nothing modified) walks the dictionary once and allocates nothing.
+        List<string>? toRemove = null;
+
+        foreach (var kvp in _trackers)
+        {
+            if (kvp.Value.IsModified)
+            {
+                (toRemove ??= []).Add(kvp.Key);
+            }
+        }
+
+        if (toRemove is null)
+        {
+            return;
+        }
+
+        foreach (var key in toRemove)
+        {
+            _trackers.Remove(key);
+        }
+    }
 
     public void Clear() => _trackers.Clear();
 

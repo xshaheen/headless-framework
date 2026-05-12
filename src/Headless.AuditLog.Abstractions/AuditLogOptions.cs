@@ -65,6 +65,23 @@ public sealed class AuditLogOptions
             "DeletedById",
             "SuspendedById",
         };
+
+    /// <summary>
+    /// Strategy applied when audit capture (<c>IAuditChangeCapture.CaptureChanges</c>) throws.
+    /// Default: <see cref="CaptureErrorStrategy.Continue"/> — log an error and continue the entity save without audit entries for that batch.
+    /// Set to <see cref="CaptureErrorStrategy.Throw"/> to abort the save when audit capture fails.
+    /// </summary>
+    public CaptureErrorStrategy CaptureErrorStrategy { get; set; } = CaptureErrorStrategy.Continue;
+}
+
+/// <summary>Strategy applied when audit capture throws.</summary>
+public enum CaptureErrorStrategy
+{
+    /// <summary>Log the failure as an error and continue the entity save without audit entries for that batch.</summary>
+    Continue = 0,
+
+    /// <summary>Log the failure and rethrow so the entity save is aborted.</summary>
+    Throw = 1,
 }
 
 /// <summary>Validates <see cref="AuditLogOptions"/>.</summary>

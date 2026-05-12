@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using FastExpressionCompiler;
 using Headless.Messaging.Messages;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,7 +26,10 @@ internal sealed class ConsumeExecutionPipeline(
     ILogger<ConsumeExecutionPipeline>? logger = null
 ) : IConsumeExecutionPipeline
 {
-    private readonly ConcurrentDictionary<Type, Delegate> _compiledConsumeContextFactories = new();
+    private readonly ConditionalWeakTable<Type, Delegate> _compiledConsumeContextFactories = new();
+
+    private static readonly ConditionalWeakTable<Type, Delegate>.CreateValueCallback _CompileFactoryCallback =
+        _CompileFactory;
 
     public async Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,
@@ -173,7 +176,7 @@ internal sealed class ConsumeExecutionPipeline(
     {
         var factory =
             (Func<object, MediumMessage, MessageHeader, string?, object>)
-                _compiledConsumeContextFactories.GetOrAdd(messageType, _CompileFactory);
+                _compiledConsumeContextFactories.GetValue(messageType, _CompileFactoryCallback);
 
         return factory(messageInstance, mediumMessage, headers, tenantId);
     }

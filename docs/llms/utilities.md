@@ -454,6 +454,11 @@ await app.Services.RunSeedersAsync();
 ```csharp
 services.AddOrReplaceScoped<IService, NewImpl>();
 services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequired<IDep>()));
+
+// Replaces a known TFallback registration only; preserves consumer-provided non-fallback
+// registrations. Use when multiple packages each register a safe default and a higher-level
+// package wants to swap only those defaults.
+services.AddOrReplaceFallbackSingleton<IService, NullFallback, DefaultImpl>();
 ```
 
 ## Configuration

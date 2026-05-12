@@ -3,29 +3,45 @@
 using Headless.Abstractions;
 using Headless.AuditLog;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
 
-internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider, ILogger? logger)
+internal sealed class HeadlessAuditPersistence : IHeadlessAuditPersistence
 {
-    private readonly IAuditChangeCapture? _auditCapture = serviceProvider.GetService<IAuditChangeCapture>();
-    private readonly IAuditLogStore? _auditStore = serviceProvider.GetService<IAuditLogStore>();
-    private readonly ICurrentUser? _currentUser = serviceProvider.GetService<ICurrentUser>();
-    private readonly ICurrentTenant? _currentTenant = serviceProvider.GetService<ICurrentTenant>();
-    private readonly ICorrelationIdProvider? _correlationIdProvider =
-        serviceProvider.GetService<ICorrelationIdProvider>();
-    private readonly IClock? _clock = serviceProvider.GetService<IClock>();
-    private readonly ILogger? _logger = logger;
+    private readonly IAuditChangeCapture? _auditCapture;
+    private readonly IAuditLogStore? _auditStore;
+    private readonly ICurrentUser? _currentUser;
+    private readonly ICurrentTenant? _currentTenant;
+    private readonly ICorrelationIdProvider? _correlationIdProvider;
+    private readonly IClock? _clock;
+    private readonly IOptions<AuditLogOptions>? _auditOptions;
+    private readonly ILogger<HeadlessAuditPersistence>? _logger;
+
+    public HeadlessAuditPersistence(IServiceProvider serviceProvider, ILogger<HeadlessAuditPersistence>? logger = null)
+    {
+        _auditCapture = serviceProvider.GetService<IAuditChangeCapture>();
+        _auditStore = serviceProvider.GetService<IAuditLogStore>();
+        _currentUser = serviceProvider.GetService<ICurrentUser>();
+        _currentTenant = serviceProvider.GetService<ICurrentTenant>();
+        _correlationIdProvider = serviceProvider.GetService<ICorrelationIdProvider>();
+        _clock = serviceProvider.GetService<IClock>();
+        _auditOptions = serviceProvider.GetService<IOptions<AuditLogOptions>>();
+        _logger = logger;
+    }
 
     /// <summary>
-    /// Captures audit entries from the change tracker before SaveChanges.
-    /// Returns <see langword="null"/> when audit capture is not registered or fails.
+    /// Captures audit entries from a pre-materialized change-tracker snapshot.
+    /// Returns <see langword="null"/> when audit capture is not registered or fails (with
+    /// <see cref="CaptureErrorStrategy.Continue"/>). Rethrows when configured for
+    /// <see cref="CaptureErrorStrategy.Throw"/>.
     /// </summary>
-    public IReadOnlyList<AuditLogEntryData>? CaptureEntries(DbContext context)
+    public IReadOnlyList<AuditLogEntryData>? CaptureEntries(IReadOnlyList<EntityEntry> entries)
     {
         if (_auditCapture is null)
         {
@@ -37,7 +53,7 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
         try
         {
             return _auditCapture.CaptureChanges(
-                context.ChangeTracker.Entries(),
+                entries,
                 _currentUser?.UserId?.ToString(),
                 _currentUser?.AccountId?.ToString(),
                 _currentTenant?.Id,
@@ -47,7 +63,17 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Audit change capture failed. Continuing with entity save.");
+            // Elevated to Error: capture failure means an audit-tracked entity change is going to be
+            // persisted without its audit row. Operators must see this in logs.
+            _logger?.LogError(ex, "Audit change capture failed.");
+
+            var strategy = _auditOptions?.Value.CaptureErrorStrategy ?? CaptureErrorStrategy.Continue;
+
+            if (strategy == CaptureErrorStrategy.Throw)
+            {
+                throw;
+            }
+
             return null;
         }
     }
@@ -139,7 +165,7 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
         return new(RequiresManualAcceptAllChanges: true, auditEntries);
     }
 
-    public static void CompleteSuccessfulSave(
+    public void CompleteSuccessfulSave(
         DbContext context,
         HeadlessAuditSaveResult auditSave,
         bool acceptAllChangesOnSuccess
@@ -158,7 +184,7 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
         ReleaseEntries(auditSave);
     }
 
-    public static void DiscardEntries(HeadlessAuditSaveResult auditSave)
+    public void DiscardEntries(HeadlessAuditSaveResult auditSave)
     {
         if (auditSave.AuditEntries is null)
         {
@@ -171,7 +197,7 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
         }
     }
 
-    public static void ReleaseEntries(HeadlessAuditSaveResult auditSave)
+    public void ReleaseEntries(HeadlessAuditSaveResult auditSave)
     {
         if (auditSave.AuditEntries is null)
         {
@@ -194,11 +220,23 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
 
     private IReadOnlyList<IAuditLogStoreEntry> _SaveEntries(DbContext context, IReadOnlyList<AuditLogEntryData> entries)
     {
+        if (_auditStore is null)
+        {
+            return [];
+        }
+
 #pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
-        // Defensive null-coalesce: contract says non-null but a buggy third-party implementer
-        // could return null, which would NRE during the auditEntries.Count guard below.
-        return _auditStore?.Save(entries, context) ?? [];
+        var result = _auditStore.Save(entries, context);
 #pragma warning restore MA0045
+
+        if (result is null)
+        {
+            throw new InvalidOperationException(
+                "IAuditLogStore.Save returned null; implementation must return an empty list when no entries are saved, never null."
+            );
+        }
+
+        return result;
     }
 
     private async Task<IReadOnlyList<IAuditLogStoreEntry>> _SaveEntriesAsync(
@@ -212,9 +250,17 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
             return [];
         }
 
-        // Defensive null-coalesce: contract says non-null but a buggy third-party implementer could return null mid-transaction.
         // ReSharper disable once NullCoalescingConditionIsAlwaysNotNullAccordingToAPIContract
-        return await _auditStore.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false) ?? [];
+        var result = await _auditStore.SaveAsync(entries, context, cancellationToken).ConfigureAwait(false);
+
+        if (result is null)
+        {
+            throw new InvalidOperationException(
+                "IAuditLogStore.SaveAsync returned null; implementation must return an empty list when no entries are saved, never null."
+            );
+        }
+
+        return result;
     }
 
     private static void _SuppressEntries(DbContext context, IReadOnlyList<TrackedEntrySnapshot> snapshots)

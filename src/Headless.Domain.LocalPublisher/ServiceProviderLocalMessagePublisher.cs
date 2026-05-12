@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.DependencyInjection;
 using Nito.AsyncEx.Synchronous;
 
@@ -9,7 +9,14 @@ namespace Headless.Domain;
 
 public sealed class ServiceProviderLocalMessagePublisher(IServiceProvider services) : ILocalMessagePublisher
 {
-    private readonly ConcurrentDictionary<Type, int> _handlerOrderCache = new();
+    private readonly ConditionalWeakTable<Type, StrongBox<int>> _handlerOrderCache = new();
+
+    private static readonly ConditionalWeakTable<Type, StrongBox<int>>.CreateValueCallback _ComputeHandlerOrder =
+        static type =>
+        {
+            var attribute = type.GetCustomAttribute<LocalEventHandlerOrderAttribute>();
+            return new StrongBox<int>(attribute?.Order ?? 0);
+        };
 
     public void Publish<T>(T message)
         where T : class, ILocalMessage
@@ -71,14 +78,7 @@ public sealed class ServiceProviderLocalMessagePublisher(IServiceProvider servic
 
     private int _GetHandlerOrder(Type handlerType)
     {
-        return _handlerOrderCache.GetOrAdd(
-            handlerType,
-            static type =>
-            {
-                var attribute = type.GetCustomAttribute<LocalEventHandlerOrderAttribute>();
-                return attribute?.Order ?? 0;
-            }
-        );
+        return _handlerOrderCache.GetValue(handlerType, _ComputeHandlerOrder).Value;
     }
 
     private static void _ThrowOriginalExceptions(Type eventType, List<Exception> exceptions)

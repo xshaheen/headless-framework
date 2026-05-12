@@ -13,7 +13,7 @@ internal sealed class EfAuditLogStore : IAuditLogStore
         IReadOnlyList<IAuditLogStoreEntry>
     >([]);
 
-    private readonly Dictionary<DbContext, List<AuditLogEntry>> _entriesByContext = new(
+    private readonly Dictionary<DbContext, HashSet<AuditLogEntry>> _entriesByContext = new(
         ReferenceEqualityComparer.Instance
     );
 
@@ -48,9 +48,10 @@ internal sealed class EfAuditLogStore : IAuditLogStore
             return;
         }
 
-        for (var i = entries.Count - 1; i >= 0; i--)
+        // Snapshot before mutating: HashSet enumeration must not be modified during iteration.
+        foreach (var auditEntity in entries.ToArray())
         {
-            var entry = context.Entry(entries[i]);
+            var entry = context.Entry(auditEntity);
 
             if (entry.State == EntityState.Added)
             {
@@ -59,7 +60,7 @@ internal sealed class EfAuditLogStore : IAuditLogStore
 
             if (entry.State != EntityState.Added)
             {
-                entries.RemoveAt(i);
+                entries.Remove(auditEntity);
             }
         }
 
@@ -86,42 +87,76 @@ internal sealed class EfAuditLogStore : IAuditLogStore
 
         var set = context.Set<AuditLogEntry>();
         var auditEntries = new List<IAuditLogStoreEntry>(entries.Count);
+        // Track in-flight additions so we can roll back partial work if Add or tracking throws.
+        List<AuditLogEntry>? addedThisCall = null;
 
-        foreach (var entry in entries)
+        try
         {
-            var auditEntity = new AuditLogEntry
+            foreach (var entry in entries)
             {
-                CreatedAt = entry.CreatedAt.UtcDateTime,
-                UserId = _Truncate(entry.UserId, 128),
-                AccountId = _Truncate(entry.AccountId, 128),
-                TenantId = _Truncate(entry.TenantId, 128),
-                IpAddress = _Truncate(entry.IpAddress, 45),
-                UserAgent = _Truncate(entry.UserAgent, 512),
-                CorrelationId = _Truncate(entry.CorrelationId, 128),
-                Action = _Truncate(entry.Action, 256),
-                ChangeType = entry.ChangeType,
-                EntityType = _Truncate(entry.EntityType, 512),
-                EntityId = _Truncate(entry.EntityId, 256),
-                OldValues = entry.OldValues,
-                NewValues = entry.NewValues,
-                ChangedFields = entry.ChangedFields,
-                Success = entry.Success,
-                ErrorCode = _Truncate(entry.ErrorCode, 256),
-            };
+                var auditEntity = new AuditLogEntry
+                {
+                    CreatedAt = entry.CreatedAt.UtcDateTime,
+                    UserId = _Truncate(entry.UserId, 128),
+                    AccountId = _Truncate(entry.AccountId, 128),
+                    TenantId = _Truncate(entry.TenantId, 128),
+                    IpAddress = _Truncate(entry.IpAddress, 45),
+                    UserAgent = _Truncate(entry.UserAgent, 512),
+                    CorrelationId = _Truncate(entry.CorrelationId, 128),
+                    Action = _Truncate(entry.Action, 256),
+                    ChangeType = entry.ChangeType,
+                    EntityType = _Truncate(entry.EntityType, 512),
+                    EntityId = _Truncate(entry.EntityId, 256),
+                    OldValues = entry.OldValues,
+                    NewValues = entry.NewValues,
+                    ChangedFields = entry.ChangedFields,
+                    Success = entry.Success,
+                    ErrorCode = _Truncate(entry.ErrorCode, 256),
+                };
 
-            set.Add(auditEntity);
-            _TrackEntry(context, auditEntity);
-            auditEntries.Add(new EfAuditLogStoreEntry(this, context, auditEntity));
+                set.Add(auditEntity);
+                (addedThisCall ??= []).Add(auditEntity);
+                _TrackEntry(context, auditEntity);
+                auditEntries.Add(new EfAuditLogStoreEntry(this, context, auditEntity));
+            }
+            // Do NOT call SaveChanges — entries commit atomically with the entity changes
+            return auditEntries;
         }
-        // Do NOT call SaveChanges — entries commit atomically with the entity changes
-        return auditEntries;
+        catch
+        {
+            // Detach partial additions and remove them from the tracking set so the change tracker
+            // does not surface half-applied audit rows on retry or surface-level inspection.
+            if (addedThisCall is not null)
+            {
+                _entriesByContext.TryGetValue(context, out var trackedEntries);
+
+                foreach (var added in addedThisCall)
+                {
+                    var entry = context.Entry(added);
+
+                    if (entry.State != EntityState.Detached)
+                    {
+                        entry.State = EntityState.Detached;
+                    }
+
+                    trackedEntries?.Remove(added);
+                }
+
+                if (trackedEntries is { Count: 0 })
+                {
+                    _entriesByContext.Remove(context);
+                }
+            }
+
+            throw;
+        }
     }
 
     private void _TrackEntry(DbContext context, AuditLogEntry entry)
     {
         if (!_entriesByContext.TryGetValue(context, out var entries))
         {
-            entries = [];
+            entries = new HashSet<AuditLogEntry>(ReferenceEqualityComparer.Instance);
             _entriesByContext.Add(context, entries);
         }
 

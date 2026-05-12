@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.EntityFramework.GlobalFilters;
 
-public static class CacheKeyGeneratorSetup
+internal static class CacheKeyGeneratorSetup
 {
     internal static void ReplaceCompiledQueryCacheKeyGenerator(this IServiceCollection services)
     {

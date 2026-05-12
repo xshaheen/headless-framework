@@ -26,6 +26,11 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
     >.CreateValueCallback _CreatePropertyInner = static _ => new ConcurrentDictionary<string, AuditPropertyMetadata>(
         StringComparer.Ordinal
     );
+
+    // Static cache because the result is a pure function of (Type, AuditByDefault).
+    // Survives across scoped capture instances and across requests.
+    private static readonly ConcurrentDictionary<(Type Type, bool AuditByDefault), bool> _IsAuditableCache = new();
+
     private readonly ConcurrentDictionary<Type, bool> _entityFilterCache = new();
     private readonly ConcurrentDictionary<(Type Type, string PropertyName), bool> _propertyFilterCache = new();
     private readonly List<(AuditLogEntryData Data, EntityEntry EntityEntry)> _deferredEntityIds = [];
@@ -143,22 +148,32 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
 
     private bool _IsAuditable(Type clrType, AuditLogOptions opts)
     {
-        if (opts.AuditByDefault)
+        // The attribute/interface gate is a pure function of (Type, AuditByDefault) — cache it
+        // process-wide. The opts-instance-bound filter is cached separately on the instance.
+        if (!_IsAuditableByAttributes(clrType, opts.AuditByDefault))
         {
-            if (clrType.GetCustomAttribute<AuditIgnoreAttribute>() is not null)
-            {
-                return false;
-            }
-        }
-        else
-        {
-            if (!typeof(IAuditTracked).IsAssignableFrom(clrType))
-            {
-                return false;
-            }
+            return false;
         }
 
         return !_ShouldExcludeEntity(clrType, opts);
+    }
+
+    private static bool _IsAuditableByAttributes(Type clrType, bool auditByDefault)
+    {
+        return _IsAuditableCache.GetOrAdd(
+            (clrType, auditByDefault),
+            static key =>
+            {
+                var (type, byDefault) = key;
+
+                if (byDefault)
+                {
+                    return type.GetCustomAttribute<AuditIgnoreAttribute>() is null;
+                }
+
+                return typeof(IAuditTracked).IsAssignableFrom(type);
+            }
+        );
     }
 
     private bool _ShouldExcludeEntity(Type clrType, AuditLogOptions opts)

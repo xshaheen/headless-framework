@@ -98,12 +98,14 @@ public static class EntityFrameworkSetup
 
             services.TryAddScoped<HeadlessDbContextServices>();
             services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
+            services.TryAddScoped<IHeadlessAuditPersistence, HeadlessAuditPersistence>();
             services.TryAddScoped<IHeadlessMessageDispatcher, ThrowHeadlessMessageDispatcher>();
 
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<IClock, Clock>();
             services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
             services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+            // Removes NullCurrentTenant fallback; preserves consumer-supplied ICurrentTenant.
             services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
             services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
             services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();

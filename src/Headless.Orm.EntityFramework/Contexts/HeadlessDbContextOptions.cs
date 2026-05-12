@@ -50,6 +50,12 @@ public sealed class HeadlessDbContextOptions
     /// If <typeparamref name="TProcessor"/> is already registered, the prior entry is removed first. Normal
     /// processors are inserted before the terminal lifecycle and message collector processors. Terminal
     /// processors keep their relative framework order.
+    /// <para>
+    /// A custom registration list (rather than DI's <c>TryAddEnumerable</c>) is intentional: it guarantees
+    /// terminal-stage ordering of audit/entity processors before the local-event and message-collector
+    /// processors, and provides idempotent re-registration by type (a second registration of the same
+    /// <typeparamref name="TProcessor"/> replaces the prior entry rather than producing a duplicate).
+    /// </para>
     /// </remarks>
     public HeadlessDbContextOptions AddSaveEntryProcessor<TProcessor>(ServiceLifetime lifetime)
         where TProcessor : class, IHeadlessSaveEntryProcessor
