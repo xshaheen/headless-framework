@@ -18,12 +18,36 @@ namespace System;
 [PublicAPI]
 public static class EnumExtensions
 {
-    private static readonly ConditionalWeakTable<Type, ConcurrentDictionary<int, object>> _LocaleCache = new();
+    private static readonly ConditionalWeakTable<Type, ConcurrentDictionary<ulong, object>> _LocaleCache = new();
 
     private static readonly ConditionalWeakTable<
         Type,
-        ConcurrentDictionary<int, object>
-    >.CreateValueCallback _CreateLocaleInner = static _ => new ConcurrentDictionary<int, object>();
+        ConcurrentDictionary<ulong, object>
+    >.CreateValueCallback _CreateLocaleInner = static _ => new ConcurrentDictionary<ulong, object>();
+
+    /// <summary>
+    /// Reads the raw underlying bits of an enum value into a <see cref="ulong"/>, zero-extending
+    /// smaller underlying types. Safe for every CLR enum underlying type (<see cref="byte"/>,
+    /// <see cref="sbyte"/>, <see cref="short"/>, <see cref="ushort"/>, <see cref="int"/>,
+    /// <see cref="uint"/>, <see cref="long"/>, <see cref="ulong"/>) and avoids the
+    /// <see cref="OverflowException"/> that <see cref="Convert.ToInt32(object?)"/> would throw
+    /// on large 64-bit-backed enums.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong _GetEnumRawValue<TEnum>(TEnum value)
+        where TEnum : struct, Enum
+    {
+        return Unsafe.SizeOf<TEnum>() switch
+        {
+            1 => Unsafe.As<TEnum, byte>(ref value),
+            2 => Unsafe.As<TEnum, ushort>(ref value),
+            4 => Unsafe.As<TEnum, uint>(ref value),
+            8 => Unsafe.As<TEnum, ulong>(ref value),
+            _ => throw new InvalidOperationException(
+                $"Unsupported enum underlying size: {Unsafe.SizeOf<TEnum>()} bytes."
+            ),
+        };
+    }
 
     [RequiresUnreferencedCode("Uses Type.GetMember which is not compatible with trimming.")]
     [SystemPure, JetBrainsPure, MustUseReturnValue]
@@ -95,12 +119,12 @@ public static class EnumExtensions
             Argument.IsNotNull(enumValue);
 
             var enumType = enumValue.GetType();
-            var intValue = Convert.ToInt32(enumValue, CultureInfo.InvariantCulture);
+            var rawValue = _GetEnumRawValue(enumValue);
             var inner = _LocaleCache.GetValue(enumType, _CreateLocaleInner);
 
             return (AllLocaleValue<T>)
                 inner.GetOrAdd(
-                    intValue,
+                    rawValue,
                     static (_, value) =>
                     {
                         var defaultValue = new EnumLocale<T>
