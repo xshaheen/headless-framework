@@ -431,11 +431,11 @@ public sealed class AuditLogIntegrationTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_detaches_audit_entries_when_publish_throws()
+    public async Task save_changes_discards_audit_entries_when_publish_throws()
     {
-        // Regression guard for the catch-time Detach() path in the save runtime: once audit
-        // entries have been persisted, any later failure (e.g. publish) must detach the now-tracked
-        // audit entities so the change tracker no longer reports them as Added.
+        // Regression guard for the catch-time discard path in the save runtime: once audit
+        // entries have been persisted, any later failure (e.g. enqueue) must discard tracking for
+        // the audit entities so the change tracker no longer reports them as Added.
 
         // given
         var (sp, conn) = await AuditIntegrationFixture.CreateAsync<ThrowingPublishAuditTestDbContext>(
@@ -461,7 +461,7 @@ public sealed class AuditLogIntegrationTests : TestBase
     }
 
     [Fact]
-    public async Task save_changes_detaches_audit_entries_when_audit_commit_throws()
+    public async Task save_changes_discards_audit_entries_when_audit_commit_throws()
     {
         // Regression guard for failure inside HeadlessAuditPersistence before it returns handles
         // to the outer save pipeline catch block.

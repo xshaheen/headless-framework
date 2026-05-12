@@ -279,7 +279,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
             LocalEmitters.AddRange(emitters);
         }
 
-        public Task PublishDistributedAsync(
+        public Task EnqueueDistributedAsync(
             IReadOnlyList<EmitterDistributedMessages> emitters,
             IDbContextTransaction currentTransaction,
             CancellationToken cancellationToken
@@ -289,7 +289,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
             return Task.CompletedTask;
         }
 
-        public void PublishDistributed(
+        public void EnqueueDistributed(
             IReadOnlyList<EmitterDistributedMessages> emitters,
             IDbContextTransaction currentTransaction
         )

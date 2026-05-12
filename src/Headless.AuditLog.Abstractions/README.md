@@ -15,7 +15,7 @@ Provides a provider-agnostic audit log API for capturing field-level entity chan
 - `AuditLogOptions` - Master enable/disable, `AuditByDefault` mode, per-entity/property filters, configurable default exclusions, sensitive-value transformer
 - `IAuditLog<TContext>` - Explicit logging of non-mutation events (reads, reveals, failures); the `TContext` type-arg binds the logger to a specific persistence context so multi-context applications resolve a distinct logger per owning context
 - `IAuditLogStore` - Storage abstraction called by the change-tracking pipeline. `Save`/`SaveAsync` now take the saving context (the `DbContext` running `SaveChanges`) on every call and return one `IAuditLogStoreEntry` handle per audit row added to that context (empty list = nothing added, orchestrator skips the audit commit step)
-- `IAuditLogStoreEntry` - Provider-owned handle for an audit row added to the persistence context; the orchestrator calls `Detach()` on it to roll back the pending row on failure. Implementations must be idempotent
+- `IAuditLogStoreEntry` - Provider-owned handle for an audit row added to the persistence context; the orchestrator calls `DiscardPendingChanges()` on failure and `ReleaseAfterCommit()` after success. Implementations must be idempotent, and `ReleaseAfterCommit()` must not undo committed audit rows
 - `IReadAuditLog<TContext>` - Query abstraction for reading audit entries back without coupling callers to EF types; the `TContext` type-arg binds the reader to a specific persistence context, mirroring `IAuditLog<TContext>`
 - `IAuditChangeCapture` - Scans ChangeTracker entries and produces `AuditLogEntryData` records
 

@@ -64,7 +64,7 @@ Validation notes:
 - Always call `base.OnModelCreating(modelBuilder)` in `HeadlessDbContext` subclasses.
 - Use `ExecuteTransactionAsync(...)` (from `DbContextTransactionExtensions`) for multi-step EF operations that must be atomic under retry execution strategies.
 - Customize the save pipeline through `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` on `HeadlessDbContextOptions`; replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control.
-- Entities that emit local or distributed messages require a registered `IHeadlessMessageDispatcher` (default is `ThrowHeadlessMessageDispatcher`, which fails the save).
+- Entities that emit local or distributed messages require a registered `IHeadlessMessageDispatcher` (default is `ThrowHeadlessMessageDispatcher`, which fails the save). Distributed messages are enqueued before the EF transaction commits, so implementations must be transaction-bound or idempotent.
 - Do not mix framework concurrency stamping with ASP.NET Identity `ConcurrencyStamp` ownership on identity entities.
 - For Couchbase, use `CouchbaseBucketContext` + `IBucketContextProvider` and keep cluster/bucket names explicit.
 - `DocumentSetExtensions` are constrained to `IEntity` models and provide high-level KV operations.
@@ -87,7 +87,7 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 - Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities (`DateCreated`, `DateUpdated`, `DateDeleted`, `DateSuspended` + `CreatedById` / `UpdatedById` / `DeletedById` / `SuspendedById` when the entity carries `UserId` or `AccountId` audits)
 - Three named global filters: `MultiTenancyFilter` (`IMultiTenant`), `NotDeletedFilter` (`IDeleteAudit`), `NotSuspendedFilter` (`ISuspendAudit`); per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()` / `IgnoreNotSuspendedFilter()`
 - Composable save pipeline driven by `HeadlessDbContextOptions` and a fixed default chain of `IHeadlessSaveEntryProcessor` instances
-- Local + distributed domain event collection inside `SaveChanges`, dispatched through `IHeadlessMessageDispatcher`
+- Local + distributed domain event collection inside `SaveChanges`, with local messages published and distributed messages transactionally enqueued through `IHeadlessMessageDispatcher`
 - Resilient transaction helpers: `ExecuteTransactionAsync(...)`
 - Extensibility hooks through model processing services
 

@@ -27,7 +27,7 @@ public sealed class RecordingHeadlessMessageDispatcher : IHeadlessMessageDispatc
         EmittedLocalMessages.AddRange(emitters);
     }
 
-    public Task PublishDistributedAsync(
+    public Task EnqueueDistributedAsync(
         IReadOnlyList<EmitterDistributedMessages> emitters,
         IDbContextTransaction currentTransaction,
         CancellationToken cancellationToken
@@ -37,7 +37,7 @@ public sealed class RecordingHeadlessMessageDispatcher : IHeadlessMessageDispatc
         return Task.CompletedTask;
     }
 
-    public void PublishDistributed(
+    public void EnqueueDistributed(
         IReadOnlyList<EmitterDistributedMessages> emitters,
         IDbContextTransaction currentTransaction
     )

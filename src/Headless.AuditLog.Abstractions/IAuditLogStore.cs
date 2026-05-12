@@ -65,13 +65,20 @@ public interface IAuditLogStore
 public interface IAuditLogStoreEntry
 {
     /// <summary>
-    /// Removes the pending audit entry from the provider persistence context.
+    /// Removes the uncommitted audit entry from the provider persistence context after a failed save attempt.
     /// </summary>
     /// <remarks>
-    /// Implementations MUST be idempotent. The orchestrator may call <see cref="Detach"/> more
-    /// than once on the same handle (for example during exception unwinding AND from
-    /// <c>CompleteSuccessfulSave</c> when <c>acceptAllChangesOnSuccess</c> is <see langword="false"/>).
-    /// A no-op on an already-detached entry is the correct behavior.
+    /// Implementations MUST be idempotent. This operation is rollback cleanup and may discard only
+    /// provider-local, uncommitted state for this handle.
     /// </remarks>
-    void Detach();
+    void DiscardPendingChanges();
+
+    /// <summary>
+    /// Releases provider-local tracking after the audit entry has committed successfully.
+    /// </summary>
+    /// <remarks>
+    /// Implementations MUST be idempotent and MUST NOT delete, undo, or otherwise mutate committed
+    /// audit rows. This operation is only for detaching or releasing local provider tracking.
+    /// </remarks>
+    void ReleaseAfterCommit();
 }

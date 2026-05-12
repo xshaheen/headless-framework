@@ -5,8 +5,8 @@ namespace Tests.Fixture;
 
 /// <summary>
 /// Audit-tracked entity that ALSO emits a distributed message. Required to exercise the
-/// post-persist failure path: the runtime only invokes the distributed-publish callback
-/// when at least one emitter is present, and the catch-time <c>Detach()</c> only fires
+/// post-persist failure path: the runtime only invokes the distributed enqueue callback
+/// when at least one emitter is present, and the catch-time discard only fires
 /// after audit persistence has populated <c>auditSave.AuditEntries</c>.
 /// </summary>
 public sealed class EmittingOrder : IAuditTracked, IDistributedMessageEmitter

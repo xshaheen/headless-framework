@@ -13,7 +13,7 @@ Provides a feature-rich DbContext base class with automatic auditing, soft delet
 - Soft delete (`IDeleteAudit.IsDeleted`) and suspend (`ISuspendAudit.IsSuspended`) global filters
 - Multi-tenancy filter for `IMultiTenant` entities driven by `ICurrentTenant.Id`
 - Composable save pipeline with built-in entry processors (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`)
-- Domain event collection and dispatch (local + distributed) via `IHeadlessMessageDispatcher`
+- Domain event collection via `IHeadlessMessageDispatcher`; local messages are published during save, and distributed messages are transactionally enqueued
 - Transaction-aware save with audit-log second-pass commit
 - Value converters: Money, Month, AccountId, UserId, DateTime normalization
 - DataGrid extensions for pagination and ordering
@@ -93,7 +93,7 @@ var everything = await dbContext.Products
 `AddHeadlessDbContextServices()` registers ordered, composable save-time services. Add focused entry processors through `HeadlessDbContextOptions`; replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control. Keep module-specific model mapping explicit with `ModelBuilder` extensions, such as `modelBuilder.AddSettingsConfiguration()`.
 
 - `IHeadlessSaveEntryProcessor` for per-entry mutations before `SaveChanges`
-- `IHeadlessMessageDispatcher` for local/distributed message publishing
+- `IHeadlessMessageDispatcher` for local message publishing and distributed message enqueueing
 - `IHeadlessSaveChangesPipeline` for transaction, audit, and message orchestration
 
 The default processor chain runs in registration order against every tracked entity:
@@ -123,7 +123,7 @@ services.AddHeadlessDbContextServices(options =>
 
 Re-registering the same processor type removes the prior entry and re-inserts it at its effective priority. Normal processors run before terminal collectors; terminal processors keep their framework order. Use `options.RemoveSaveEntryProcessor<TProcessor>()` to opt out of one of the built-in processors entirely.
 
-Message publishing defaults to a fail-fast dispatcher (`ThrowHeadlessMessageDispatcher`). If entities emit local or distributed messages, register a dispatcher to publish captured emitters through your application messaging infrastructure.
+Message dispatch defaults to a fail-fast dispatcher (`ThrowHeadlessMessageDispatcher`). If entities emit local or distributed messages, register a dispatcher that publishes local messages and transactionally enqueues distributed messages. Distributed messages are collected before the EF transaction commits, so dispatchers must not publish them directly to an external broker from this callback unless the enqueue is idempotent and commit-aware.
 
 ```csharp
 services.AddHeadlessDbContextServices();
