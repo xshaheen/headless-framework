@@ -23,7 +23,7 @@ public static class AuditLogEntityFrameworkSetup
         /// and <c>AddHeadlessDbContext&lt;T&gt;()</c> for the <c>DbContext</c> registration.
         /// </summary>
         /// <typeparam name="TContext">The EF Core context that owns the audit log table.</typeparam>
-        public IServiceCollection AddAuditLogEntityFramework<TContext>()
+        public IServiceCollection AddHeadlessAuditLogEntity<TContext>()
             where TContext : DbContext
         {
             services.TryAddScoped<IAuditChangeCapture, EfAuditChangeCapture>();

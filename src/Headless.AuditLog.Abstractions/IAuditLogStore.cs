@@ -53,7 +53,7 @@ public interface IAuditLogStore
     /// <summary>
     /// Cleans up audit entries from a prior failed attempt before an execution strategy retry.
     /// The default implementation is a no-op; providers that add entries to a shared context
-    /// (e.g., EF Core) should detach stale entries to prevent duplicates.
+    /// (e.g., EF Core) should detach only stale entries they own to prevent duplicates.
     /// </summary>
     /// <param name="savingContext">The context instance executing SaveChanges.</param>
     void PrepareForRetry(object savingContext) { }

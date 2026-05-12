@@ -13,6 +13,10 @@ internal sealed class EfAuditLogStore : IAuditLogStore
         IReadOnlyList<IAuditLogStoreEntry>
     >([]);
 
+    private readonly Dictionary<DbContext, List<AuditLogEntry>> _entriesByContext = new(
+        ReferenceEqualityComparer.Instance
+    );
+
     /// <inheritdoc />
     public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext)
     {
@@ -39,12 +43,29 @@ internal sealed class EfAuditLogStore : IAuditLogStore
     {
         var context = _AsDbContext(savingContext);
 
-        foreach (var entry in context.ChangeTracker.Entries<AuditLogEntry>().ToList())
+        if (!_entriesByContext.TryGetValue(context, out var entries))
         {
+            return;
+        }
+
+        for (var i = entries.Count - 1; i >= 0; i--)
+        {
+            var entry = context.Entry(entries[i]);
+
             if (entry.State == EntityState.Added)
             {
                 entry.State = EntityState.Detached;
             }
+
+            if (entry.State != EntityState.Added)
+            {
+                entries.RemoveAt(i);
+            }
+        }
+
+        if (entries.Count == 0)
+        {
+            _entriesByContext.Remove(context);
         }
     }
 
@@ -56,10 +77,7 @@ internal sealed class EfAuditLogStore : IAuditLogStore
         return (DbContext)savingContext;
     }
 
-    private static IReadOnlyList<IAuditLogStoreEntry> _AddEntries(
-        IReadOnlyList<AuditLogEntryData> entries,
-        DbContext context
-    )
+    private IReadOnlyList<IAuditLogStoreEntry> _AddEntries(IReadOnlyList<AuditLogEntryData> entries, DbContext context)
     {
         if (entries.Count == 0)
         {
@@ -92,10 +110,37 @@ internal sealed class EfAuditLogStore : IAuditLogStore
             };
 
             set.Add(auditEntity);
-            auditEntries.Add(new EfAuditLogStoreEntry(context, auditEntity));
+            _TrackEntry(context, auditEntity);
+            auditEntries.Add(new EfAuditLogStoreEntry(this, context, auditEntity));
         }
         // Do NOT call SaveChanges — entries commit atomically with the entity changes
         return auditEntries;
+    }
+
+    private void _TrackEntry(DbContext context, AuditLogEntry entry)
+    {
+        if (!_entriesByContext.TryGetValue(context, out var entries))
+        {
+            entries = [];
+            _entriesByContext.Add(context, entries);
+        }
+
+        entries.Add(entry);
+    }
+
+    private void _ReleaseEntry(DbContext context, AuditLogEntry entry)
+    {
+        if (!_entriesByContext.TryGetValue(context, out var entries))
+        {
+            return;
+        }
+
+        entries.Remove(entry);
+
+        if (entries.Count == 0)
+        {
+            _entriesByContext.Remove(context);
+        }
     }
 
     [return: NotNullIfNotNull(nameof(value))]
@@ -104,7 +149,8 @@ internal sealed class EfAuditLogStore : IAuditLogStore
         return value is { Length: var len } && len > maxLength ? value[..maxLength] : value;
     }
 
-    private sealed class EfAuditLogStoreEntry(DbContext context, AuditLogEntry entity) : IAuditLogStoreEntry
+    private sealed class EfAuditLogStoreEntry(EfAuditLogStore owner, DbContext context, AuditLogEntry entity)
+        : IAuditLogStoreEntry
     {
         public void Detach()
         {
@@ -114,6 +160,8 @@ internal sealed class EfAuditLogStore : IAuditLogStore
             {
                 entry.State = EntityState.Detached;
             }
+
+            owner._ReleaseEntry(context, entity);
         }
     }
 }
