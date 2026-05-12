@@ -85,6 +85,11 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
             {
                 await baseSaveChangesAsync(false, cancellationToken).ConfigureAwait(false);
             }
+            catch
+            {
+                DetachEntries(new(RequiresManualAcceptAllChanges: true, auditEntries));
+                throw;
+            }
             finally
             {
                 _RestoreEntries(context, snapshots);
@@ -119,6 +124,11 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
             try
             {
                 baseSaveChanges(false);
+            }
+            catch
+            {
+                DetachEntries(new(RequiresManualAcceptAllChanges: true, auditEntries));
+                throw;
             }
             finally
             {

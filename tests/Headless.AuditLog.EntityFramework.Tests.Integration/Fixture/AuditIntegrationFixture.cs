@@ -22,8 +22,9 @@ public static class AuditIntegrationFixture
 
     public static Task<(ServiceProvider Sp, SqliteConnection Conn)> CreateAsync(
         Action<AuditLogOptions>? configure = null,
-        Action<IServiceCollection>? configureServices = null
-    ) => CreateAsync<AuditTestDbContext>(configure, configureServices);
+        Action<IServiceCollection>? configureServices = null,
+        Action<DbContextOptionsBuilder>? configureDbContext = null
+    ) => CreateAsync<AuditTestDbContext>(configure, configureServices, configureDbContext);
 
     /// <summary>
     /// Builds an isolated <see cref="ServiceProvider"/> with the supplied DbContext. The optional
@@ -32,7 +33,8 @@ public static class AuditIntegrationFixture
     /// </summary>
     public static async Task<(ServiceProvider Sp, SqliteConnection Conn)> CreateAsync<TContext>(
         Action<AuditLogOptions>? configure,
-        Action<IServiceCollection>? configureServices
+        Action<IServiceCollection>? configureServices,
+        Action<DbContextOptionsBuilder>? configureDbContext = null
     )
         where TContext : DbContext
     {
@@ -63,6 +65,7 @@ public static class AuditIntegrationFixture
         services.AddDbContext<TContext>(opts =>
         {
             opts.UseSqlite(connection).AddHeadlessExtension();
+            configureDbContext?.Invoke(opts);
 
             // Audit capture resolves IClock, ICurrentUser, ICurrentTenant
             // via this.GetService<T>() which hits EF's INTERNAL service provider (populated by

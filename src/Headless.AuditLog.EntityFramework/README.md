@@ -10,8 +10,8 @@ Wires the audit log pipeline into EF Core's ChangeTracker so that entity mutatio
 
 - `EfAuditChangeCapture` - Scans ChangeTracker before save; produces `AuditLogEntryData` per changed entity
 - `EfAuditLogStore` - Adds `AuditLogEntry` rows to the same DbContext so they commit in the same transaction
-- `EfAuditLog` - Implements `IAuditLog` for explicit event logging (reads, PII reveals, failures)
-- `EfReadAuditLog` - Implements `IReadAuditLog` for filtered read-back without leaking EF entities
+- `EfAuditLog<TContext>` - Implements `IAuditLog<TContext>` for explicit event logging (reads, PII reveals, failures)
+- `EfReadAuditLog<TContext>` - Implements `IReadAuditLog<TContext>` for filtered read-back without leaking EF entities
 - `AuditLogEntry` - Single-table entity with JSON columns for `OldValues`, `NewValues`, and `ChangedFields`
 - `ConfigureAuditLog()` - ModelBuilder extension; supports custom table name, schema, and JSON column type
 - Soft-delete detection: automatically emits `entity.soft_deleted` / `entity.restored` actions when `IsDeleted` transitions
@@ -35,7 +35,7 @@ services.AddHeadlessAuditLog(o =>
     o.SensitiveDataStrategy = SensitiveDataStrategy.Redact;
 });
 
-services.AddAuditLogEntityFramework();
+services.AddAuditLogEntityFramework<AppDbContext>();
 ```
 
 `AddAuditLogEntityFramework` requires `AddHeadlessAuditLog` (from `Headless.AuditLog.Abstractions`) to be called first for options registration, and `AddHeadlessDbContext<T>` for the DbContext registration.
@@ -153,5 +153,5 @@ Composite-key `EntityId` values are now serialized as JSON arrays instead of com
 
 - Registers `IAuditChangeCapture` as scoped (`EfAuditChangeCapture`)
 - Registers `IAuditLogStore` as scoped (`EfAuditLogStore`)
-- Registers `IAuditLog` as scoped (`EfAuditLog`)
-- Registers `IReadAuditLog` as scoped (`EfReadAuditLog`)
+- Registers `IAuditLog<TContext>` as scoped (`EfAuditLog<TContext>`)
+- Registers `IReadAuditLog<TContext>` as scoped (`EfReadAuditLog<TContext>`)

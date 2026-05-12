@@ -11,9 +11,7 @@ public sealed class HeadlessMessageCollectorSaveEntryProcessor : IHeadlessSaveEn
 {
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
-        // Only mutating states can carry meaningful outbox payloads; Unchanged/Detached entries are skipped
-        // to avoid per-entry interface checks across an entire tracked scope.
-        if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
+        if (entry.State == EntityState.Detached)
         {
             return;
         }
