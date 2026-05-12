@@ -79,12 +79,12 @@ public static class MultiTenancySetup
             );
         }
 
-        if (!manifest.IsConfigured(HeadlessHttpTenancy.Seam))
+        if (!manifest.IsConfigured(HeadlessHttpTenancyBuilder.Seam))
         {
             return application;
         }
 
-        manifest.MarkRuntimeApplied(HeadlessHttpTenancy.Seam, HeadlessHttpTenancy.UseHeadlessTenancyMarker);
+        manifest.MarkRuntimeApplied(HeadlessHttpTenancyBuilder.Seam, HeadlessHttpTenancyBuilder.UseHeadlessTenancyMarker);
 
         return application.UseTenantResolution();
     }
@@ -93,6 +93,10 @@ public static class MultiTenancySetup
 /// <summary>Records that Headless HTTP tenancy should resolve tenants from authenticated user claims.</summary>
 public sealed class HeadlessHttpTenancyBuilder
 {
+    public const string Seam = "Http";
+    public const string ResolveFromClaimsCapability = "resolve-from-claims";
+    public const string UseHeadlessTenancyMarker = "UseHeadlessTenancy";
+
     private readonly HeadlessTenancyBuilder _builder;
 
     internal HeadlessHttpTenancyBuilder(HeadlessTenancyBuilder builder)
@@ -106,24 +110,15 @@ public sealed class HeadlessHttpTenancyBuilder
     public HeadlessHttpTenancyBuilder ResolveFromClaims(Action<MultiTenancyOptions>? configure = null)
     {
         _builder.ApplicationBuilder.AddHeadlessMultiTenancy(configure);
+
         _builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHeadlessTenancyValidator, HeadlessHttpTenancyValidator>()
         );
-        _builder.RecordSeam(
-            HeadlessHttpTenancy.Seam,
-            TenantPostureStatuses.Configured,
-            HeadlessHttpTenancy.ResolveFromClaimsCapability
-        );
+
+        _builder.RecordSeam(Seam, TenantPostureStatuses.Configured, ResolveFromClaimsCapability);
 
         return this;
     }
-}
-
-internal static class HeadlessHttpTenancy
-{
-    public const string Seam = "Http";
-    public const string ResolveFromClaimsCapability = "resolve-from-claims";
-    public const string UseHeadlessTenancyMarker = "UseHeadlessTenancy";
 }
 
 internal sealed class HeadlessHttpTenancyValidator : IHeadlessTenancyValidator
@@ -133,15 +128,15 @@ internal sealed class HeadlessHttpTenancyValidator : IHeadlessTenancyValidator
         Argument.IsNotNull(context);
 
         if (
-            context.Manifest.IsConfigured(HeadlessHttpTenancy.Seam)
+            context.Manifest.IsConfigured(HeadlessHttpTenancyBuilder.Seam)
             && !context.Manifest.HasRuntimeMarker(
-                HeadlessHttpTenancy.Seam,
-                HeadlessHttpTenancy.UseHeadlessTenancyMarker
+                HeadlessHttpTenancyBuilder.Seam,
+                HeadlessHttpTenancyBuilder.UseHeadlessTenancyMarker
             )
         )
         {
             yield return HeadlessTenancyDiagnostic.Error(
-                HeadlessHttpTenancy.Seam,
+                HeadlessHttpTenancyBuilder.Seam,
                 "HEADLESS_TENANCY_HTTP_MIDDLEWARE_MISSING",
                 "HTTP tenant resolution is configured, but UseHeadlessTenancy() was not applied."
             );

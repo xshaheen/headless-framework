@@ -5,6 +5,27 @@ using Headless.MultiTenancy;
 
 namespace Headless.Mediator;
 
+[PublicAPI]
+public static class MultiTenancySetup
+{
+    /// <summary>Configures Mediator tenant posture through the root Headless tenancy builder.</summary>
+    /// <param name="builder">The root tenancy builder.</param>
+    /// <param name="configure">The Mediator tenancy configuration callback.</param>
+    /// <returns>The same root tenancy builder.</returns>
+    public static HeadlessTenancyBuilder Mediator(
+        this HeadlessTenancyBuilder builder,
+        Action<HeadlessMediatorTenancyBuilder> configure
+    )
+    {
+        Argument.IsNotNull(builder);
+        Argument.IsNotNull(configure);
+
+        configure(new HeadlessMediatorTenancyBuilder(builder));
+
+        return builder;
+    }
+}
+
 /// <summary>Records tenant posture for Mediator request handling.</summary>
 public sealed class HeadlessMediatorTenancyBuilder
 {
