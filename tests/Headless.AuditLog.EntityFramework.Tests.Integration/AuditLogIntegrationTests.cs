@@ -355,6 +355,50 @@ public sealed class AuditLogIntegrationTests : TestBase
     }
 
     [Fact]
+    public async Task save_changes_preserves_explicit_audit_entries_when_automatic_audit_is_present()
+    {
+        // given
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync();
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+        var auditLog = scope.ServiceProvider.GetRequiredService<IAuditLog<AuditTestDbContext>>();
+        var order = new Order
+        {
+            Id = Guid.NewGuid(),
+            CustomerName = "Heidi",
+            Email = "heidi@example.com",
+            Amount = 42m,
+        };
+
+        await auditLog.LogAsync(
+            "pii.revealed",
+            entityType: "User",
+            entityId: "user-999",
+            cancellationToken: AbortToken
+        );
+        db.Orders.Add(order);
+
+        // when
+        await db.SaveChangesAsync(AbortToken);
+        db.ChangeTracker.Clear();
+
+        // then
+        var entries = await db.Set<AuditLogEntry>().AsNoTracking().ToListAsync(AbortToken);
+
+        entries.Should().HaveCount(2);
+
+        entries
+            .Should()
+            .ContainSingle(e => e.Action == "pii.revealed" && e.EntityType == "User" && e.EntityId == "user-999");
+
+        entries
+            .Should()
+            .ContainSingle(e => e.Action == AuditActionNames.Created && e.EntityType == typeof(Order).FullName);
+    }
+
+    [Fact]
     public async Task sensitive_property_redacted_in_stored_entry()
     {
         // given
