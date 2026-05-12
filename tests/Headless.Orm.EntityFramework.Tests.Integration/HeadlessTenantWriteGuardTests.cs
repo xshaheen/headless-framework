@@ -1,5 +1,4 @@
 using Headless.EntityFramework;
-using Headless.EntityFramework.MultiTenancy;
 using Headless.Abstractions;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;

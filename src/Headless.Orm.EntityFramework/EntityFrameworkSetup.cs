@@ -2,11 +2,8 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.EntityFramework;
 using Headless.EntityFramework.GlobalFilters;
 using Headless.EntityFramework.Messaging;
-using Headless.EntityFramework.MultiTenancy;
-using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -16,23 +13,6 @@ namespace Headless.EntityFramework;
 [PublicAPI]
 public static class EntityFrameworkSetup
 {
-    /// <summary>Configures Entity Framework tenant posture through the root Headless tenancy builder.</summary>
-    /// <param name="builder">The root tenancy builder.</param>
-    /// <param name="configure">The Entity Framework tenancy configuration callback.</param>
-    /// <returns>The same root tenancy builder.</returns>
-    public static HeadlessTenancyBuilder EntityFramework(
-        this HeadlessTenancyBuilder builder,
-        Action<HeadlessEntityFrameworkTenancyBuilder> configure
-    )
-    {
-        Argument.IsNotNull(builder);
-        Argument.IsNotNull(configure);
-
-        configure(new HeadlessEntityFrameworkTenancyBuilder(builder));
-
-        return builder;
-    }
-
     extension(IServiceCollection services)
     {
         public IServiceCollection AddHeadlessDbContext<TDbContext>(
@@ -201,27 +181,5 @@ public static class EntityFrameworkSetup
         services.Replace(ServiceDescriptor.Singleton(options));
 
         return options;
-    }
-}
-
-/// <summary>Records tenant posture for Headless Entity Framework services.</summary>
-public sealed class HeadlessEntityFrameworkTenancyBuilder
-{
-    private readonly HeadlessTenancyBuilder _builder;
-
-    internal HeadlessEntityFrameworkTenancyBuilder(HeadlessTenancyBuilder builder)
-    {
-        _builder = Argument.IsNotNull(builder);
-    }
-
-    /// <summary>Enables the EF tenant write guard.</summary>
-    /// <param name="configure">Optional write guard options.</param>
-    /// <returns>The same Entity Framework tenancy builder.</returns>
-    public HeadlessEntityFrameworkTenancyBuilder GuardTenantWrites(Action<TenantWriteGuardOptions>? configure = null)
-    {
-        _builder.Services.AddHeadlessTenantWriteGuard(configure);
-        _builder.RecordSeam("EntityFramework", TenantPostureStatuses.Guarded, "guard-tenant-writes", "ef-owned-bypass");
-
-        return this;
     }
 }
