@@ -18,7 +18,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Headless.Api;
 
-public static class ApiServiceSetup
+public static class SetupApiServices
 {
     extension(IServiceCollection services)
     {

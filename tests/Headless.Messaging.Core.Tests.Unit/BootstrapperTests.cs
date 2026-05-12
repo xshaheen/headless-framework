@@ -117,7 +117,7 @@ public sealed class BootstrapperTests : TestBase
 
         if (beforeMessaging is not null)
         {
-            services.AddSingleton<IProcessingServer>(beforeMessaging);
+            services.AddSingleton(beforeMessaging);
         }
 
         services.AddHeadlessMessaging(options =>

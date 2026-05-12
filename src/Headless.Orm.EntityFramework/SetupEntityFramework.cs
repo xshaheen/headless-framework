@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.EntityFramework;
 
 [PublicAPI]
-public static class EntityFrameworkSetup
+public static class SetupEntityFramework
 {
     extension(IServiceCollection services)
     {

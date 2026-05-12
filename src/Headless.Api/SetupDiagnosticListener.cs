@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Api;
 
 [PublicAPI]
-public static class DiagnosticListenerSetup
+public static class SetupDiagnosticListener
 {
     extension(WebApplication app)
     {

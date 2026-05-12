@@ -6,7 +6,7 @@ using Headless.MultiTenancy;
 namespace Headless.EntityFramework;
 
 [PublicAPI]
-public static class MultiTenancySetup
+public static class SetupMultiTenancy
 {
     /// <summary>Configures Entity Framework tenant posture through the root Headless tenancy builder.</summary>
     /// <param name="builder">The root tenancy builder.</param>

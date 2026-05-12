@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Api.Middlewares;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Api.Middlewares;
+namespace Headless.Api;
 
-public static class AddMiddlewareExtensions
+public static class SetupMiddlewares
 {
     /// <summary>Adds the idempotency middleware.</summary>
     public static IServiceCollection AddIdempotencyMiddleware(

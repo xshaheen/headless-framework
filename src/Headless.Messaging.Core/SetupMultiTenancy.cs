@@ -3,17 +3,15 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.MultiTenancy;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-namespace Headless.Messaging.MultiTenancy;
+namespace Headless.Messaging;
 
-/// <summary>
-/// <see cref="MessagingBuilder"/> extensions for opt-in multi-tenancy propagation.
-/// </summary>
-public static class MultiTenancyMessagingBuilderExtensions
+public static class SetupMultiTenancy
 {
     /// <summary>Configures messaging tenant posture through the root Headless tenancy builder.</summary>
     /// <param name="builder">The root tenancy builder.</param>
@@ -81,6 +79,41 @@ public static class MultiTenancyMessagingBuilderExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, TenantPropagationStartupValidator>());
 
         return services;
+    }
+}
+
+/// <summary>Records tenant posture for Headless messaging.</summary>
+public sealed class HeadlessMessagingTenancyBuilder
+{
+    public const string Seam = "Messaging";
+    public const string PropagateTenantCapability = "propagate-tenant";
+    public const string RequireTenantOnPublishCapability = "require-tenant-on-publish";
+
+    private readonly HeadlessTenancyBuilder _builder;
+
+    internal HeadlessMessagingTenancyBuilder(HeadlessTenancyBuilder builder)
+    {
+        _builder = Argument.IsNotNull(builder);
+    }
+
+    /// <summary>Registers publish and consume filters that propagate tenant context through messages.</summary>
+    /// <returns>The same messaging tenancy builder.</returns>
+    public HeadlessMessagingTenancyBuilder PropagateTenant()
+    {
+        _builder.Services.AddTenantPropagationServices();
+        _builder.RecordSeam(Seam, TenantPostureStatuses.Propagating, PropagateTenantCapability);
+
+        return this;
+    }
+
+    /// <summary>Requires publish calls to resolve a tenant from publish options or ambient tenant context.</summary>
+    /// <returns>The same messaging tenancy builder.</returns>
+    public HeadlessMessagingTenancyBuilder RequireTenantOnPublish()
+    {
+        _builder.Services.PostConfigure<MessagingOptions>(options => options.TenantContextRequired = true);
+        _builder.RecordSeam(Seam, TenantPostureStatuses.Enforcing, RequireTenantOnPublishCapability);
+
+        return this;
     }
 }
 

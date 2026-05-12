@@ -33,7 +33,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     {
         // given
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
-        var context = _CreateContext<ValidatorFilterTestRequest>(
+        var context = _CreateContext(
             new ValidatorFilterTestRequest("Name", "test@example.com")
         );
         var expectedResult = new object();
@@ -209,7 +209,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         // given
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
         var validator = new ValidatorFilterTestRequestValidator();
-        var context = _CreateContext<ValidatorFilterTestRequest>(null, [validator]);
+        var context = _CreateContext(null, [validator]);
         var next = _CreateNext();
 
         // when

@@ -13,11 +13,11 @@ using Microsoft.Extensions.Options;
 namespace Tests.MultiTenancy;
 
 /// <summary>
-/// Tests covering <see cref="MultiTenancyMessagingBuilderExtensions.AddTenantPropagation"/>
+/// Tests covering <see cref="SetupMultiTenancy.AddTenantPropagation"/>
 /// — startup-time validation that fails fast when only the framework's fallback
 /// <see cref="NullCurrentTenant"/> is registered.
 /// </summary>
-public sealed class MultiTenancyMessagingBuilderExtensionsTests : TestBase
+public sealed class SetupMultiTenancyTests : TestBase
 {
     [Fact]
     public void should_register_tenant_propagation_filters_from_headless_tenancy_root()
@@ -61,7 +61,7 @@ public sealed class MultiTenancyMessagingBuilderExtensionsTests : TestBase
         // given
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddLogging();
-        builder.Services.AddSingleton<ICurrentTenant>(Substitute.For<ICurrentTenant>());
+        builder.Services.AddSingleton(Substitute.For<ICurrentTenant>());
 
         // when
         builder.AddHeadlessTenancy(tenancy =>
@@ -169,7 +169,7 @@ public sealed class MultiTenancyMessagingBuilderExtensionsTests : TestBase
         // given — a real (non-null) ICurrentTenant is registered before AddTenantPropagation runs.
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<ICurrentTenant>(Substitute.For<ICurrentTenant>());
+        services.AddSingleton(Substitute.For<ICurrentTenant>());
         var builder = new MessagingBuilder(services);
         builder.AddTenantPropagation();
 

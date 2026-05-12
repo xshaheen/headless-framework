@@ -89,7 +89,7 @@ public sealed class GetOrAddAsyncTests : TestBase
         }
 
         // when - start two concurrent requests
-        var task1 = cache.GetOrAddAsync<string>("same-key", slowFactory, _DefaultExpiration, AbortToken);
+        var task1 = cache.GetOrAddAsync("same-key", slowFactory, _DefaultExpiration, AbortToken);
         await factoryStarted.Task;
 
         var task2Started = new TaskCompletionSource();
@@ -97,7 +97,7 @@ public sealed class GetOrAddAsyncTests : TestBase
             async () =>
             {
                 task2Started.SetResult();
-                return await cache.GetOrAddAsync<string>("same-key", slowFactory, _DefaultExpiration, AbortToken);
+                return await cache.GetOrAddAsync("same-key", slowFactory, _DefaultExpiration, AbortToken);
             },
             AbortToken
         );

@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.EntityFramework;
 
-public static class OptionsExtensionSetup
+public static class SetupOptionsExtension
 {
     public static DbContextOptionsBuilder AddHeadlessExtension(this DbContextOptionsBuilder optionsBuilder)
     {

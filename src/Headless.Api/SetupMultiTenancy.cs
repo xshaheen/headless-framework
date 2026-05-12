@@ -14,7 +14,7 @@ using Microsoft.Extensions.Hosting;
 namespace Headless.Api;
 
 [PublicAPI]
-public static class MultiTenancySetup
+public static class SetupMultiTenancy
 {
     /// <summary>
     /// Enables the framework multi-tenancy primitives and configures how HTTP tenant resolution should read tenant claims.

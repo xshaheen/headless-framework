@@ -12,6 +12,7 @@ using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
+#pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -152,9 +153,7 @@ public static class Setup
         services.TryAddSingleton(options.CircuitBreakerRegistry);
         services.TryAddSingleton<CircuitBreakerMetrics>();
         services.TryAddSingleton<ICircuitBreakerStateManager, CircuitBreakerStateManager>();
-        services.TryAddSingleton<ICircuitBreakerMonitor>(sp =>
-            (ICircuitBreakerMonitor)sp.GetRequiredService<ICircuitBreakerStateManager>()
-        );
+        services.TryAddSingleton<ICircuitBreakerMonitor>(sp => sp.GetRequiredService<ICircuitBreakerStateManager>());
 
         foreach (var serviceExtension in options.Extensions)
         {

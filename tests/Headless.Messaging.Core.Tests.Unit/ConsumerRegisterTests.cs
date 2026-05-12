@@ -45,7 +45,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var client = Substitute.For<IConsumerClient>();
         var expected = new InvalidOperationException("resume failed");
 
-        client.ResumeAsync(Arg.Any<CancellationToken>()).Returns<ValueTask>(_ => ValueTask.FromException(expected));
+        client.ResumeAsync(Arg.Any<CancellationToken>()).Returns(_ => ValueTask.FromException(expected));
 
         var handleType = typeof(ConsumerRegister).GetNestedType("GroupHandle", BindingFlags.NonPublic)!;
         var handle = Activator.CreateInstance(handleType, nonPublic: true)!;
