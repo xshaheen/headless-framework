@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using FluentValidation;
 using FluentValidation.Internal;
 using FluentValidation.Validators;
 using Headless.Api.SchemaProcessors.FluentValidation;
 using Headless.Api.SchemaProcessors.FluentValidation.Models;
+using Headless.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -24,7 +25,15 @@ public sealed class FluentValidationSchemaProcessor(
     IEnumerable<FluentValidationRule>? rules = null
 ) : ISchemaProcessor
 {
-    private static readonly ConcurrentDictionary<Type, MethodInfo?> _MethodCache = new();
+    private static readonly ConditionalWeakTable<Type, CachedResult<MethodInfo>> _MethodCache = new();
+
+    private static readonly ConditionalWeakTable<
+        Type,
+        CachedResult<MethodInfo>
+    >.CreateValueCallback _GetValidatorMethodFactory =
+#pragma warning disable REFL017, REFL003 // Justification: Already of type ChildValidatorAdaptor<,>
+    static t => new CachedResult<MethodInfo>(t.GetMethod(nameof(ChildValidatorAdaptor<,>.GetValidator)));
+#pragma warning restore REFL017, REFL003
 
     private readonly ILogger _logger = _CreateLogger(serviceProvider);
     private readonly IReadOnlyList<FluentValidationRule> _rules = _CreateRules(rules);
@@ -219,12 +228,7 @@ public sealed class FluentValidationSchemaProcessor(
 
             var adapterType = adapter.GetType();
 
-#pragma warning disable REFL017, REFL003 // Justification: Already of type ChildValidatorAdaptor<,>
-            var adapterMethod = _MethodCache.GetOrAdd(
-                adapterType,
-                t => t.GetMethod(nameof(ChildValidatorAdaptor<,>.GetValidator))
-            );
-#pragma warning restore REFL017, REFL003
+            var adapterMethod = _MethodCache.GetValue(adapterType, _GetValidatorMethodFactory).Value;
 
             if (adapterMethod is null)
             {

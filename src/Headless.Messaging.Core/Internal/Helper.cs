@@ -1,16 +1,19 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Net;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 
 namespace Headless.Messaging.Internal;
 
 public static partial class Helper
 {
-    private static readonly ConcurrentDictionary<Type, TypeConverter> _ConverterCache = new();
+    private static readonly ConditionalWeakTable<Type, TypeConverter> _ConverterCache = new();
+
+    private static readonly ConditionalWeakTable<Type, TypeConverter>.CreateValueCallback _ConverterFactory =
+        TypeDescriptor.GetConverter;
 
     public static bool IsController(TypeInfo typeInfo)
     {
@@ -196,7 +199,7 @@ public static partial class Helper
             return true;
         }
 
-        var converter = _ConverterCache.GetOrAdd(destinationType, TypeDescriptor.GetConverter);
+        var converter = _ConverterCache.GetValue(destinationType, _ConverterFactory);
         return converter.CanConvertFrom(typeof(string));
     }
 

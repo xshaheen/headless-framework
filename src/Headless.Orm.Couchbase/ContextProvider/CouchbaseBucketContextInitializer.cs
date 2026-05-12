@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Couchbase;
 using Couchbase.Linq;
 using Couchbase.Transactions;
@@ -39,11 +39,17 @@ public static class CouchbaseBucketContextInitializer
         typeof(IDocumentSet<>).Assembly.GetType("Couchbase.Linq.DocumentSet`1")
         ?? throw new InvalidOperationException("Could not find DocumentSet type.");
 
-    private static readonly ConcurrentDictionary<Type, Action<CouchbaseBucketContext, string?>> _InitializeCache = [];
+    private static readonly ConditionalWeakTable<Type, Action<CouchbaseBucketContext, string?>> _InitializeCache =
+        new();
+
+    private static readonly ConditionalWeakTable<
+        Type,
+        Action<CouchbaseBucketContext, string?>
+    >.CreateValueCallback _InitializeFactory = _CreateInitializeAction;
 
     private static Action<CouchbaseBucketContext, string?> _GetInitializeContextAction<TContext>()
     {
-        return _InitializeCache.GetOrAdd(typeof(TContext), static type => _CreateInitializeAction(type));
+        return _InitializeCache.GetValue(typeof(TContext), _InitializeFactory);
     }
 
     private static Action<CouchbaseBucketContext, string?> _CreateInitializeAction(Type childContextType)

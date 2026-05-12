@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using FluentValidation;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
@@ -48,10 +48,25 @@ internal sealed partial class HeadlessApiExceptionHandler(
         "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
 
     // Cached per concrete exception type to avoid re-walking the inheritance chain on every hit.
-    // The handler is registered as a singleton, so the cache lifetime tracks the host process — and
-    // the unbounded-growth concern is bounded by the (small) number of distinct exception types
-    // that will ever flow through the handler.
-    private static readonly ConcurrentDictionary<Type, bool> _DbUpdateConcurrencyTypeCache = new();
+    // ConditionalWeakTable lets entries (and their owning AssemblyLoadContext) unload when the
+    // exception type is no longer referenced elsewhere.
+    private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _DbUpdateConcurrencyTypeCache = new();
+
+    private static readonly ConditionalWeakTable<
+        Type,
+        StrongBox<bool>
+    >.CreateValueCallback _DbUpdateConcurrencyFactory = static type =>
+    {
+        for (var t = type; t is not null && t != typeof(Exception); t = t.BaseType)
+        {
+            if (string.Equals(t.FullName, _DbUpdateConcurrencyExceptionFullName, StringComparison.Ordinal))
+            {
+                return new StrongBox<bool>(value: true);
+            }
+        }
+
+        return new StrongBox<bool>(value: false);
+    };
 
     public async ValueTask<bool> TryHandleAsync(
         HttpContext httpContext,
@@ -235,20 +250,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
     private static bool _IsDbUpdateConcurrencyException(Exception ex)
     {
-        return _DbUpdateConcurrencyTypeCache.GetOrAdd(
-            ex.GetType(),
-            static type =>
-            {
-                for (var t = type; t is not null && t != typeof(Exception); t = t.BaseType)
-                {
-                    if (string.Equals(t.FullName, _DbUpdateConcurrencyExceptionFullName, StringComparison.Ordinal))
-                    {
-                        return true;
-                    }
-                }
-                return false;
-            }
-        );
+        return _DbUpdateConcurrencyTypeCache.GetValue(ex.GetType(), _DbUpdateConcurrencyFactory).Value;
     }
 
     private static bool _IsCancellationException(Exception? ex)

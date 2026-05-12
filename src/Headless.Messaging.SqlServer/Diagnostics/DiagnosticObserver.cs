@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Headless.Messaging.Internal;
 using Microsoft.Data.SqlClient;
 
@@ -11,7 +12,15 @@ namespace Headless.Messaging.SqlServer.Diagnostics;
 internal sealed class DiagnosticObserver(ConcurrentDictionary<Guid, SqlServerOutboxTransaction> bufferTrans)
     : IObserver<KeyValuePair<string, object?>>
 {
-    private static readonly ConcurrentDictionary<(Type, string), PropertyInfo?> _PropertyCache = new();
+    private static readonly ConditionalWeakTable<Type, ConcurrentDictionary<string, PropertyInfo?>> _PropertyCache =
+        new();
+
+    private static readonly ConditionalWeakTable<
+        Type,
+        ConcurrentDictionary<string, PropertyInfo?>
+    >.CreateValueCallback _CreatePropertyInner = static _ => new ConcurrentDictionary<string, PropertyInfo?>(
+        StringComparer.Ordinal
+    );
 
     public const string SqlAfterCommitTransactionMicrosoft = "Microsoft.Data.SqlClient.WriteTransactionCommitAfter";
     public const string SqlErrorCommitTransactionMicrosoft = "Microsoft.Data.SqlClient.WriteTransactionCommitError";
@@ -91,10 +100,8 @@ internal sealed class DiagnosticObserver(ConcurrentDictionary<Guid, SqlServerOut
         }
 
         var type = @this.GetType();
-        var prop = _PropertyCache.GetOrAdd(
-            (type, propertyName),
-            key => key.Item1.GetTypeInfo().GetDeclaredProperty(key.Item2)
-        );
+        var inner = _PropertyCache.GetValue(type, _CreatePropertyInner);
+        var prop = inner.GetOrAdd(propertyName, static (name, t) => t.GetTypeInfo().GetDeclaredProperty(name), type);
 
         return prop?.GetValue(@this);
     }
