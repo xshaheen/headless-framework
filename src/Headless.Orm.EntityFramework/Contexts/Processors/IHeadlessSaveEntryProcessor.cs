@@ -12,8 +12,8 @@ namespace Headless.EntityFramework.Processors;
 /// </summary>
 /// <remarks>
 /// Processors execute in registration order, once per tracked entity per <c>SaveChanges</c> call. Stamp
-/// audit fields, generate IDs, or enqueue messages on <paramref name="context"/> — do not call
-/// <c>context.DbContext.SaveChanges</c> from within a processor.
+/// audit fields, generate IDs, or enqueue messages on the <see cref="HeadlessSaveEntryContext"/> — do
+/// not call <c>context.DbContext.SaveChanges</c> from within a processor.
 /// </remarks>
 public interface IHeadlessSaveEntryProcessor
 {

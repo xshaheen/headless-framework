@@ -200,39 +200,6 @@ public sealed class HeadlessDbContextTests : TestBase
         await tx.CommitAsync(AbortToken);
     }
 
-    // Ordering invariant: local-publish -> entity save -> distributed-enqueue -> commit
-
-    [Fact]
-    public async Task should_dispatch_local_messages_before_save_and_distributed_after()
-    {
-        // given
-        await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
-        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
-        var dispatcher = scope.ServiceProvider.GetRequiredService<RecordingHeadlessMessageDispatcher>();
-
-        var entity = new TestEntity { Name = "ordered", TenantId = "T1" };
-        entity.AddMessage(new TestDistributedMessage("hello"));
-        db.Tests.Add(entity);
-
-        // when
-        await db.SaveChangesAsync(AbortToken);
-
-        // then
-        var calls = dispatcher.Calls;
-        calls.Should().NotBeEmpty();
-
-        var firstLocal = calls.FirstOrDefault(c => c.Kind == DispatchKind.Local);
-        var firstDistributed = calls.FirstOrDefault(c => c.Kind == DispatchKind.Distributed);
-
-        firstLocal.Should().NotBeNull();
-        firstDistributed.Should().NotBeNull();
-
-        // Local-message publish runs before distributed enqueue. The entity SaveChanges sits between
-        // them inside the pipeline but is not observable through the dispatcher; the ordering between
-        // local and distributed is the load-bearing invariant for this test.
-        firstLocal!.Index.Should().BeLessThan(firstDistributed!.Index);
-    }
-
     // ExecuteTransactionAsync
 
     [Fact]

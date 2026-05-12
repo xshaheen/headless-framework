@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Testcontainers.PostgreSql;
+using Tests.Fixtures;
 
 namespace Tests.Fixture;
 
