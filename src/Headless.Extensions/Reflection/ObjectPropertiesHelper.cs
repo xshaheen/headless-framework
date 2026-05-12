@@ -92,14 +92,15 @@ public static class ObjectPropertiesHelper
     )
     {
         var inner = _Cache.GetValue(objType, _CreateInner);
-        var key = new PropertyCacheKey(propertyName, ignoreAttrs);
+        var normalizedAttrs = ignoreAttrs is { Length: 0 } ? null : ignoreAttrs;
+        var key = new PropertyCacheKey(propertyName, normalizedAttrs);
 
         if (inner.TryGetValue(key, out var existing))
         {
             return existing.Value;
         }
 
-        var result = new CachedResult<PropertyInfo>(_GetWritablePropertyInfo(objType, propertyName, ignoreAttrs));
+        var result = new CachedResult<PropertyInfo>(_GetWritablePropertyInfo(objType, propertyName, normalizedAttrs));
 
         return inner.GetOrAdd(key, result).Value;
     }
