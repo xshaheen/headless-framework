@@ -29,7 +29,7 @@ public sealed class HeadlessTenancyBuilder
     /// <param name="status">The configured posture status for the seam.</param>
     /// <param name="capabilities">Optional capability labels exposed by the seam.</param>
     /// <returns>The same root builder.</returns>
-    public HeadlessTenancyBuilder RecordSeam(string seam, string status, params string[] capabilities)
+    public HeadlessTenancyBuilder RecordSeam(string seam, TenantPostureStatus status, params string[] capabilities)
     {
         Manifest.RecordSeam(seam, status, capabilities);
         return this;

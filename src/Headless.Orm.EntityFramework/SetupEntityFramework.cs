@@ -118,7 +118,10 @@ public static class SetupEntityFramework
         public IServiceCollection AddHeadlessTenantWriteGuard(Action<TenantWriteGuardOptions>? configure = null)
         {
             services.AddHeadlessDbContextServices();
-            services.Configure<TenantWriteGuardOptions>(options =>
+            // PostConfigure (not Configure): the seam's IsEnabled = true must run AFTER any consumer
+            // Configure<TenantWriteGuardOptions>(...) the host wires up so a later host-side
+            // Configure that disables the guard does not override the seam's explicit opt-in.
+            services.PostConfigure<TenantWriteGuardOptions>(options =>
             {
                 options.IsEnabled = true;
                 configure?.Invoke(options);
@@ -182,4 +185,14 @@ public static class SetupEntityFramework
 
         return options;
     }
+}
+
+/// <summary>Options for the opt-in EF tenant write guard.</summary>
+public sealed class TenantWriteGuardOptions
+{
+    /// <summary>
+    /// Gets or sets a value indicating whether tenant-owned writes require an ambient tenant
+    /// unless a scoped bypass is active.
+    /// </summary>
+    public bool IsEnabled { get; set; }
 }

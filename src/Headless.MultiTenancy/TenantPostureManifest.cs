@@ -26,10 +26,9 @@ public sealed class TenantPostureManifest
     /// <param name="seam">The seam name.</param>
     /// <param name="status">The seam posture status.</param>
     /// <param name="capabilities">Optional non-PII capability labels.</param>
-    public void RecordSeam(string seam, string status, params string[] capabilities)
+    public void RecordSeam(string seam, TenantPostureStatus status, params string[] capabilities)
     {
         seam = Argument.IsNotNullOrWhiteSpace(seam);
-        status = Argument.IsNotNullOrWhiteSpace(status);
         Argument.IsNotNull(capabilities);
 
         lock (_gate)
@@ -67,7 +66,7 @@ public sealed class TenantPostureManifest
                 return;
             }
 
-            _seams[seam] = new TenantSeamPosture(seam, TenantPostureStatuses.Configured, [], [marker]);
+            _seams[seam] = new TenantSeamPosture(seam, TenantPostureStatus.Configured, [], [marker]);
         }
     }
 
@@ -119,23 +118,23 @@ public sealed class TenantPostureManifest
 /// <param name="RuntimeMarkers">Non-PII runtime markers reported by the seam.</param>
 public sealed record TenantSeamPosture(
     string Seam,
-    string Status,
+    TenantPostureStatus Status,
     IReadOnlyCollection<string> Capabilities,
     IReadOnlyCollection<string> RuntimeMarkers
 );
 
 /// <summary>Common tenant posture status labels.</summary>
-public static class TenantPostureStatuses
+public enum TenantPostureStatus
 {
     /// <summary>The seam has been configured.</summary>
-    public const string Configured = "configured";
+    Configured,
 
     /// <summary>The seam enforces tenant context.</summary>
-    public const string Enforcing = "enforcing";
+    Enforcing,
 
     /// <summary>The seam propagates tenant context.</summary>
-    public const string Propagating = "propagating";
+    Propagating,
 
     /// <summary>The seam guards tenant-owned writes.</summary>
-    public const string Guarded = "guarded";
+    Guarded,
 }

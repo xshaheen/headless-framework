@@ -2,6 +2,7 @@
 
 using System.ComponentModel;
 using Headless.Abstractions;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -21,7 +22,8 @@ namespace Headless.EntityFramework;
 public sealed class HeadlessDbContextServices(
     ICurrentTenant currentTenant,
     IClock clock,
-    IHeadlessSaveChangesPipeline saveChangesPipeline
+    IHeadlessSaveChangesPipeline saveChangesPipeline,
+    IOptions<TenantWriteGuardOptions> tenantWriteGuardOptions
 )
 {
     internal string? TenantId => currentTenant.Id;
@@ -29,4 +31,6 @@ public sealed class HeadlessDbContextServices(
     internal IClock Clock { get; } = clock;
 
     internal IHeadlessSaveChangesPipeline SaveChangesPipeline { get; } = saveChangesPipeline;
+
+    internal bool IsTenantWriteGuardEnabled => tenantWriteGuardOptions.Value.IsEnabled;
 }

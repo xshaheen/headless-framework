@@ -54,7 +54,7 @@ public sealed class MediatorSetupTests
         var manifest = builder.Services.GetOrAddTenantPostureManifest();
         var seam = manifest.GetSeam("Mediator");
         seam.Should().NotBeNull();
-        seam!.Status.Should().Be(TenantPostureStatuses.Enforcing);
+        seam!.Status.Should().Be(TenantPostureStatus.Enforcing);
         seam.Capabilities.Should().BeEquivalentTo("require-tenant");
     }
 
@@ -235,6 +235,75 @@ public sealed class MediatorSetupTests
             .ContainSingle(behavior =>
                 behavior.GetType() == typeof(CriticalRequestLoggingBehavior<TestRequest, TestResponse>)
             );
+    }
+
+    [Fact]
+    public async Task should_throw_missing_tenant_context_when_dispatched_without_tenant()
+    {
+        // given
+        var behavior = new TenantRequiredBehavior<TestRequest, TestResponse>(new NullCurrentTenant());
+
+        // when
+        var act = async () =>
+            await behavior.Handle(
+                new TestRequest(),
+                (_, _) => ValueTask.FromResult(new TestResponse()),
+                CancellationToken.None
+            );
+
+        // then
+        await act.Should().ThrowAsync<MissingTenantContextException>();
+    }
+
+    [Fact]
+    public async Task should_invoke_handler_when_dispatched_with_tenant()
+    {
+        // given
+        var currentTenant = new TestStaticCurrentTenant("tenant-a");
+        var behavior = new TenantRequiredBehavior<TestRequest, TestResponse>(currentTenant);
+        var handlerCalled = false;
+
+        // when
+        var response = await behavior.Handle(
+            new TestRequest(),
+            (_, _) =>
+            {
+                handlerCalled = true;
+                return ValueTask.FromResult(new TestResponse());
+            },
+            CancellationToken.None
+        );
+
+        // then
+        response.Should().NotBeNull();
+        handlerCalled.Should().BeTrue();
+    }
+
+    private sealed class TestStaticCurrentTenant(string? id) : ICurrentTenant
+    {
+        public string? Id { get; set; } = id;
+
+        public string? Name { get; set; }
+
+        public bool IsAvailable => Id is not null;
+
+        public IDisposable Change(string? id, string? name = null)
+        {
+            var previousId = Id;
+            var previousName = Name;
+            Id = id;
+            Name = name;
+            return new DisposableAction(() =>
+            {
+                Id = previousId;
+                Name = previousName;
+            });
+        }
+
+        private sealed class DisposableAction(Action action) : IDisposable
+        {
+            public void Dispose() => action();
+        }
     }
 
     private static bool _IsTenantRequiredBehaviorDescriptor(ServiceDescriptor descriptor)

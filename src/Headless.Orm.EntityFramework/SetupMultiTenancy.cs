@@ -29,8 +29,11 @@ public static class SetupMultiTenancy
 /// <summary>Records tenant posture for Headless Entity Framework services.</summary>
 public sealed class HeadlessEntityFrameworkTenancyBuilder
 {
+    /// <summary>The seam name reported in the tenant posture manifest.</summary>
     public const string Seam = "EntityFramework";
-    public static readonly string[] ResolveFromClaimsCapability = ["guard-tenant-writes", "ef-owned-bypass"];
+
+    /// <summary>Capability labels reported by <see cref="GuardTenantWrites"/>.</summary>
+    public static readonly string[] GuardTenantWritesCapabilities = ["guard-tenant-writes", "ef-owned-bypass"];
 
     private readonly HeadlessTenancyBuilder _builder;
 
@@ -45,18 +48,8 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
     public HeadlessEntityFrameworkTenancyBuilder GuardTenantWrites(Action<TenantWriteGuardOptions>? configure = null)
     {
         _builder.Services.AddHeadlessTenantWriteGuard(configure);
-        _builder.RecordSeam(Seam, TenantPostureStatuses.Guarded, ResolveFromClaimsCapability);
+        _builder.RecordSeam(Seam, TenantPostureStatus.Guarded, GuardTenantWritesCapabilities);
 
         return this;
     }
-}
-
-/// <summary>Options for the opt-in EF tenant write guard.</summary>
-public sealed class TenantWriteGuardOptions
-{
-    /// <summary>
-    /// Gets or sets a value indicating whether tenant-owned writes require an ambient tenant
-    /// unless a scoped bypass is active.
-    /// </summary>
-    public bool IsEnabled { get; set; }
 }

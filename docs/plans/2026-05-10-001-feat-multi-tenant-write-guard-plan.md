@@ -54,6 +54,16 @@ The origin requirements define the product scope: tenant-owned EF writes should 
 - Do not add database migrations or schema changes.
 - Do not include live entity value snapshots in diagnostics.
 
+### Known Bypass Surfaces (Out of Scope)
+
+The Headless `SaveChanges` pipeline operates on EF's `ChangeTracker`. The following paths emit SQL directly and therefore bypass the write guard because they never populate the change tracker:
+
+- `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)`
+- Raw SQL via `DbContext.Database.ExecuteSql(...)`, `ExecuteSqlInterpolated(...)`, `ExecuteSqlRaw(...)`, and async variants
+- Stored procedure / trigger invocations performed outside EF
+
+Consumers using these paths against `IMultiTenant` entities must either include an explicit `WHERE TenantId = @currentTenantId` predicate or wrap the call in `ITenantWriteGuardBypass.BeginBypass()` for intentional, audited maintenance. A SaveChangesInterceptor that injects the tenant predicate into bulk-API SQL is a tracked design candidate (see the security follow-up issue) and would also be a natural home for an audit log of bypass usage.
+
 ### Deferred to Follow-Up Work
 
 - Default-on strict tenant writes: separate compatibility decision after consumers have an opt-in path.
@@ -108,7 +118,7 @@ The origin requirements define the product scope: tenant-owned EF writes should 
 - **Should this use HTTP `MultiTenancyOptions`?** No. HTTP tenant resolution and EF write enforcement are separate concerns.
 - **How do admin/null-tenant writes stay possible?** Through a scoped bypass, confirmed by the user during brainstorm.
 - **Does this need external EF interceptor research?** No for the primary path. The framework owns the save pipeline and already has the right seam.
-- **Where should the cross-tenant write exception live?** In `Headless.Orm.EntityFramework`, because the failure is specific to the EF write guard and does not yet have a cross-layer HTTP mapping contract.
+- **Where should the cross-tenant write exception live?** Originally planned for `Headless.Orm.EntityFramework`. Final decision: `ITenantWriteGuardBypass`, `TenantWriteGuardBypass`, and `CrossTenantWriteException` live in `Headless.Core` under the `Headless.Abstractions` namespace. Keeping the exception in Core lets `HeadlessApiExceptionHandler` (in `Headless.Api`) catch it and map to HTTP 409 with the `g:cross-tenant-write` error descriptor without forcing an `Api → EF` project reference. The EF package consumes the abstractions; HTTP hosts consume the mapping; neither layer needs a hard dependency on the other.
 
 ### Deferred to Implementation
 
@@ -159,11 +169,10 @@ HeadlessDbContext.SaveChanges*
 **Dependencies:** None
 
 **Files:**
-- Create: `src/Headless.Orm.EntityFramework/MultiTenancy/TenantWriteGuardOptions.cs`
-- Create: `src/Headless.Orm.EntityFramework/MultiTenancy/ITenantWriteGuardBypass.cs`
-- Create: `src/Headless.Orm.EntityFramework/MultiTenancy/TenantWriteGuardBypass.cs`
-- Modify: `src/Headless.Orm.EntityFramework/Setup.cs`
-- Modify: `src/Headless.Orm.EntityFramework/Headless.Orm.EntityFramework.csproj` if the options validator requires a direct dependency
+- Create: `src/Headless.Orm.EntityFramework/SetupMultiTenancy.cs` (later co-located with `SetupEntityFramework.cs`) for `TenantWriteGuardOptions`.
+- Create (final placement): `src/Headless.Core/Abstractions/ITenantWriteGuardBypass.cs`, `src/Headless.Core/Abstractions/TenantWriteGuardBypass.cs`, and `src/Headless.Core/Abstractions/CrossTenantWriteException.cs` under the `Headless.Abstractions` namespace. The bypass and exception live in Core (not in `Headless.Orm.EntityFramework`) so `HeadlessApiExceptionHandler` (in `Headless.Api`) can catch the exception and map it to HTTP 409 without forcing an `Api → EF` project reference.
+- Modify: `src/Headless.Orm.EntityFramework/SetupEntityFramework.cs` to register the bypass and options.
+- Modify: `src/Headless.Orm.EntityFramework/Headless.Orm.EntityFramework.csproj` if the options validator requires a direct dependency.
 - Test: `tests/Headless.Orm.EntityFramework.Tests.Integration/HeadlessTenantWriteGuardTests.cs`
 
 **Approach:**
@@ -201,7 +210,7 @@ HeadlessDbContext.SaveChanges*
 **Dependencies:** None
 
 **Files:**
-- Create: `src/Headless.Orm.EntityFramework/MultiTenancy/CrossTenantWriteException.cs`
+- Create (final placement): `src/Headless.Core/Abstractions/CrossTenantWriteException.cs` under the `Headless.Abstractions` namespace, not in `Headless.Orm.EntityFramework`. Placing the typed failure in Core enables `HeadlessApiExceptionHandler` (in `Headless.Api`) to map it to HTTP 409 with the `g:cross-tenant-write` error descriptor without forcing an `Api → EF` project reference.
 - Test: `tests/Headless.Orm.EntityFramework.Tests.Integration/HeadlessTenantWriteGuardTests.cs`
 
 **Approach:**

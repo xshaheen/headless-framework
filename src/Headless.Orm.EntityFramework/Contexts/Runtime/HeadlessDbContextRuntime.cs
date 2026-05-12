@@ -4,7 +4,9 @@ using System.Reflection;
 using Headless.Domain;
 using Headless.EntityFramework.ChangeTrackers;
 using Headless.EntityFramework.Configurations;
+using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
@@ -39,34 +41,79 @@ public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices se
     {
         db.ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
         db.ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
+        // Stamp tenant ID at Add() time (rather than at SaveChanges time) so that an ambient
+        // tenant change between Add and SaveChanges is detected as a CrossTenantWriteException
+        // by the save-entry processor's validation step, rather than being silently absorbed by
+        // a fallback stamp using the SaveChanges-time tenant.
+        db.ChangeTracker.Tracked += _StampTenantOnAdded;
     }
 
+    private void _StampTenantOnAdded(object? sender, EntityTrackedEventArgs e)
+    {
+        if (!services.IsTenantWriteGuardEnabled)
+        {
+            return;
+        }
+
+        if (e.Entry.State != EntityState.Added || e.Entry.Entity is not IMultiTenant entity)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(entity.TenantId))
+        {
+            return;
+        }
+
+        var tenantId = services.TenantId;
+
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            return;
+        }
+
+        ObjectPropertiesHelper.TrySetProperty(entity, x => x.TenantId, () => tenantId);
+    }
+
+    // Retry classification: CrossTenantWriteException is non-transient. Callers wrapping
+    // SaveChanges in retry policies (Polly, EF execution strategies that swallow EF-specific
+    // exceptions) MUST exclude CrossTenantWriteException; retrying either fails identically or,
+    // worse, persists the unsafe write if the ambient tenant context drifts between attempts.
     public async Task<int> SaveChangesAsync(
         Func<bool, CancellationToken, Task<int>> baseSaveChangesAsync,
         bool acceptAllChangesOnSuccess,
         CancellationToken cancellationToken
     )
     {
-        var result = await services
-            .SaveChangesPipeline.SaveChangesAsync(
-                db,
-                baseSaveChangesAsync,
-                acceptAllChangesOnSuccess,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        _navigationModifiedTracker.RemoveModifiedEntityEntries();
-
-        return result;
+        try
+        {
+            return await services
+                .SaveChangesPipeline.SaveChangesAsync(
+                    db,
+                    baseSaveChangesAsync,
+                    acceptAllChangesOnSuccess,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        finally
+        {
+            // Run cleanup on both success and failure paths so a thrown CrossTenantWriteException
+            // (or any other pipeline failure) does not leak stale modified-entry tracking state.
+            _navigationModifiedTracker.RemoveModifiedEntityEntries();
+        }
     }
 
     public int SaveChanges(Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess)
     {
-        var result = services.SaveChangesPipeline.SaveChanges(db, baseSaveChanges, acceptAllChangesOnSuccess);
-        _navigationModifiedTracker.RemoveModifiedEntityEntries();
-
-        return result;
+        try
+        {
+            return services.SaveChangesPipeline.SaveChanges(db, baseSaveChanges, acceptAllChangesOnSuccess);
+        }
+        finally
+        {
+            _navigationModifiedTracker.RemoveModifiedEntityEntries();
+        }
     }
 
     public virtual void ConfigureConventions(ModelConfigurationBuilder builder)

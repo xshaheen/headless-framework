@@ -116,7 +116,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
         var manifest = builder.Services.GetOrAddTenantPostureManifest();
         var seam = manifest.GetSeam("EntityFramework");
         seam.Should().NotBeNull();
-        seam!.Status.Should().Be(TenantPostureStatuses.Guarded);
+        seam!.Status.Should().Be(TenantPostureStatus.Guarded);
         seam.Capabilities.Should().BeEquivalentTo("guard-tenant-writes", "ef-owned-bypass");
     }
 
@@ -381,7 +381,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     }
 
     [Fact]
-    public async Task guard_enabled_should_allow_matching_tenant_update_and_physical_delete()
+    public async Task guard_enabled_should_allow_matching_tenant_create()
     {
         // given
         await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
@@ -389,22 +389,118 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
+        // when
         var entity = new TestEntity { Name = "initial" };
         db.Tests.Add(entity);
         await db.SaveChangesAsync(AbortToken);
-        db.ChangeTracker.Clear();
+
+        // then
+        var persisted = await db.Tests.IgnoreMultiTenancyFilter().SingleAsync(AbortToken);
+        persisted.Name.Should().Be("initial");
+        persisted.TenantId.Should().Be("tenant-a");
+    }
+
+    [Fact]
+    public async Task guard_enabled_should_allow_matching_tenant_update()
+    {
+        // given
+        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "initial");
+
+        using var tenant = fixture.CurrentTenant.Change("tenant-a");
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         // when
-        var saved = await db.Tests.IgnoreMultiTenancyFilter().SingleAsync(AbortToken);
+        var saved = await db.Tests.SingleAsync(x => x.Id == entityId, AbortToken);
         saved.Name = "updated";
         await db.SaveChangesAsync(AbortToken);
 
+        // then
+        var persistedName = await _GetTenantEntityNameAsync(fixture, entityId);
+        persistedName.Should().Be("updated");
+    }
+
+    [Fact]
+    public async Task guard_enabled_should_allow_matching_tenant_physical_delete()
+    {
+        // given
+        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "to-delete");
+
+        using var tenant = fixture.CurrentTenant.Change("tenant-a");
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        // when
+        var saved = await db.Tests.SingleAsync(x => x.Id == entityId, AbortToken);
         db.Tests.Remove(saved);
         await db.SaveChangesAsync(AbortToken);
 
         // then
-        var remaining = await db.Tests.IgnoreMultiTenancyFilter().CountAsync(AbortToken);
-        remaining.Should().Be(0);
+        var exists = await _TenantEntityExistsAsync(fixture, entityId);
+        exists.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task guard_enabled_should_reject_remove_after_tenant_id_rewrite_on_tracked_entity()
+    {
+        // given — load entity owned by tenant-a, rewrite CurrentValue, then Remove
+        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "owned-by-a");
+
+        using var tenant = fixture.CurrentTenant.Change("tenant-a");
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var entity = await db.Tests.SingleAsync(x => x.Id == entityId, AbortToken);
+        // Rewrite current value to look like a different-tenant row, then attempt delete.
+        db.Entry(entity).Property(nameof(TestEntity.TenantId)).CurrentValue = "tenant-b";
+        db.Tests.Remove(entity);
+
+        // when
+        var act = async () => await db.SaveChangesAsync(AbortToken);
+
+        // then — Delete must apply OriginalValue matching (parity with Modified state)
+        await act.Should().ThrowAsync<CrossTenantWriteException>();
+        var persisted = await _TenantEntityExistsAsync(fixture, entityId);
+        persisted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task guard_enabled_should_reject_delete_when_entity_tenant_id_is_null()
+    {
+        // given — bypass to create a row with null TenantId, then attempt a guarded delete
+        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        var bypass = fixture.ServiceProvider.GetRequiredService<ITenantWriteGuardBypass>();
+        Guid entityId;
+
+        using (bypass.BeginBypass())
+        {
+            await using var seedScope = fixture.ServiceProvider.CreateAsyncScope();
+            await using var seedDb = seedScope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+            var seed = new TestEntity { Name = "null-tenant-row" };
+            seedDb.Tests.Add(seed);
+            await seedDb.SaveChangesAsync(AbortToken);
+            entityId = seed.Id;
+        }
+
+        using var tenant = fixture.CurrentTenant.Change("tenant-a");
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var entity = await db.Tests.IgnoreMultiTenancyFilter().SingleAsync(x => x.Id == entityId, AbortToken);
+        db.Tests.Remove(entity);
+
+        // when
+        var act = async () => await db.SaveChangesAsync(AbortToken);
+
+        // then
+        var exception = await act.Should().ThrowAsync<CrossTenantWriteException>();
+        exception.Which.WriteState.Should().Be(nameof(EntityState.Deleted));
+        exception.Which.EntityTenantAvailable.Should().BeFalse();
+        var persisted = await _TenantEntityExistsAsync(fixture, entityId);
+        persisted.Should().BeTrue();
     }
 
     [Fact]

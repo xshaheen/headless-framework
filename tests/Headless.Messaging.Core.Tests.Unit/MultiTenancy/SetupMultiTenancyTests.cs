@@ -51,7 +51,7 @@ public sealed class SetupMultiTenancyTests : TestBase
         var manifest = builder.Services.GetOrAddTenantPostureManifest();
         var seam = manifest.GetSeam("Messaging");
         seam.Should().NotBeNull();
-        seam!.Status.Should().Be(TenantPostureStatuses.Propagating);
+        seam!.Status.Should().Be(TenantPostureStatus.Propagating);
         seam.Capabilities.Should().BeEquivalentTo("propagate-tenant");
     }
 
@@ -78,7 +78,7 @@ public sealed class SetupMultiTenancyTests : TestBase
         var manifest = builder.Services.GetOrAddTenantPostureManifest();
         var seam = manifest.GetSeam("Messaging");
         seam.Should().NotBeNull();
-        seam!.Status.Should().Be(TenantPostureStatuses.Enforcing);
+        seam!.Status.Should().Be(TenantPostureStatus.Enforcing);
         seam.Capabilities.Should().BeEquivalentTo("propagate-tenant", "require-tenant-on-publish");
     }
 

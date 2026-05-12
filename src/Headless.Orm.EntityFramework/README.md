@@ -163,6 +163,21 @@ using (bypass.BeginBypass())
 
 `IgnoreMultiTenancyFilter()` is read-side only. It does not permit guarded cross-tenant updates or deletes.
 
+#### Limitations
+
+The tenant write guard runs inside the Headless `SaveChanges` pipeline. It operates on EF's `ChangeTracker`, which means it only sees writes that flow through `Add`, `Update`, `Remove`, or property mutation on tracked entities. The following paths emit SQL directly and bypass the guard because they never populate the change tracker:
+
+- `IQueryable<T>.ExecuteUpdate(...)`
+- `IQueryable<T>.ExecuteDelete(...)`
+- Raw SQL via `DbContext.Database.ExecuteSql(...)`, `ExecuteSqlInterpolated(...)`, `ExecuteSqlRaw(...)` (and async variants)
+- Stored procedure or trigger invocations performed outside EF
+
+Consumer mitigations:
+
+1. Avoid these APIs on tenant-owned (`IMultiTenant`) entities, or include an explicit `WHERE TenantId = @currentTenantId` predicate in every call.
+2. Wrap intentional admin or maintenance bulk operations in `ITenantWriteGuardBypass.BeginBypass()` and ensure they execute under an authenticated, audited host context.
+3. Recommended follow-up: maintain an audit log of bypass usage and bulk-API invocations on tenant-owned tables so cross-tenant blast radius is detectable post-hoc. A SaveChangesInterceptor that injects the tenant predicate into bulk-API SQL is a tracked design candidate — see the security issue referenced in the project tracker.
+
 ### Resilient Transactions
 
 Instance methods on `HeadlessDbContext` that wrap an operation in a transaction coordinated with the execution strategy (safe for retrying providers like SQL Server `EnableRetryOnFailure`). The caller has full control — call `SaveChangesAsync` explicitly within the operation.

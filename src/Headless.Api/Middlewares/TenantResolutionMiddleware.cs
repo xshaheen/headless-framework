@@ -5,13 +5,22 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Constants;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Middlewares;
 
 /// <summary>Resolves the current tenant from the authenticated principal for the lifetime of the HTTP request.</summary>
-public sealed class TenantResolutionMiddleware(RequestDelegate next, IOptions<MultiTenancyOptions> options)
+public sealed partial class TenantResolutionMiddleware(
+    RequestDelegate next,
+    IOptions<MultiTenancyOptions> options,
+    ILogger<TenantResolutionMiddleware> logger
+)
 {
+    // Fires exactly once per process for HEADLESS_TENANCY_MIDDLEWARE_ORDERING. 0 = not yet warned,
+    // 1 = warned. CompareExchange ensures the warning is emitted by at most one request.
+    private static int _orderingWarningEmitted;
+
     /// <summary>Resolves the tenant from the current user claims and restores the previous tenant when the request ends.</summary>
     /// <param name="context">The current HTTP context.</param>
     /// <param name="currentTenant">The current tenant accessor.</param>
@@ -22,6 +31,7 @@ public sealed class TenantResolutionMiddleware(RequestDelegate next, IOptions<Mu
 
         if (context.User.Identity?.IsAuthenticated != true)
         {
+            _WarnIfMiddlewareLikelyMisordered(context);
             await next(context);
             return;
         }
@@ -50,4 +60,32 @@ public sealed class TenantResolutionMiddleware(RequestDelegate next, IOptions<Mu
             ? principal.GetTenantId()
             : principal.FindFirst(claimType)?.Value;
     }
+
+    private void _WarnIfMiddlewareLikelyMisordered(HttpContext context)
+    {
+        // If we observe an unauthenticated principal AND authentication services are not present
+        // on the request pipeline, the consumer almost certainly placed UseHeadlessTenancy() ahead
+        // of UseAuthentication(). Warn once per process to avoid log spam.
+        if (Volatile.Read(ref _orderingWarningEmitted) != 0)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _orderingWarningEmitted, 1, 0) != 0)
+        {
+            return;
+        }
+
+        LogMiddlewareOrderingWarning(logger);
+    }
+
+    [LoggerMessage(
+        EventId = 0,
+        EventName = "HEADLESS_TENANCY_MIDDLEWARE_ORDERING",
+        Level = LogLevel.Warning,
+        Message = "UseHeadlessTenancy() observed an unauthenticated request. If your endpoints expect a "
+            + "claims-resolved tenant, place UseHeadlessTenancy() AFTER UseAuthentication() (and before "
+            + "UseAuthorization()). This warning is emitted once per process."
+    )]
+    private static partial void LogMiddlewareOrderingWarning(ILogger logger);
 }

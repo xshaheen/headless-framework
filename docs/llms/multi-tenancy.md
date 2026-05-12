@@ -234,7 +234,11 @@ When enabled, `SaveChanges()` and `SaveChangesAsync()` reject unsafe `IMultiTena
 - Modified, soft-deleted, and physically deleted tenant-owned entities must belong to the current tenant or fail with `CrossTenantWriteException`.
 - Non-tenant entities are not blocked by the guard.
 
-Missing tenant context uses the shared `Headless.Abstractions.MissingTenantContextException`, so HTTP hosts using `UseExceptionHandler()` get the existing normalized 400 mapping. Cross-tenant mutation uses `Headless.Orm.EntityFramework.MultiTenancy.CrossTenantWriteException`; default HTTP mapping for that typed failure is intentionally not provided yet.
+Missing tenant context uses the shared `Headless.Abstractions.MissingTenantContextException`, so HTTP hosts using `UseExceptionHandler()` get the existing normalized 400 mapping. Cross-tenant mutation uses `Headless.Abstractions.CrossTenantWriteException` (located in `Headless.Core` to keep the failure shared across packages without forcing an Api → EF project reference).
+
+`HeadlessApiExceptionHandler` (registered by `AddHeadlessApi()`) maps `CrossTenantWriteException` to HTTP 409 Conflict with the `g:cross-tenant-write` error descriptor and emits a structured warning log (event name `CrossTenantWriteException`). No exception data is leaked into the response body — only the descriptor code and title.
+
+`CrossTenantWriteException` is non-transient and must NOT be retried. Catch-all retry policies (for example `Policy.Handle<Exception>()`) should exclude it explicitly; retrying a cross-tenant write either fails identically or — if the ambient tenant context changes between attempts — persists the unsafe write.
 
 For intentional admin or host-level maintenance writes, keep the bypass narrow:
 

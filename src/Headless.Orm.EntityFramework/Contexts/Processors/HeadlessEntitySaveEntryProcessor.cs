@@ -104,7 +104,10 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             return false;
         }
 
-        if (entry.State != EntityState.Modified)
+        // For Modified and Deleted states, also verify the OriginalValue (the loaded-from-database
+        // tenant) matches the current tenant. This blocks Attach + rewrite + Remove patterns where
+        // the attacker controls CurrentValue but OriginalValue reflects another tenant's row.
+        if (entry.State is not (EntityState.Modified or EntityState.Deleted))
         {
             return true;
         }

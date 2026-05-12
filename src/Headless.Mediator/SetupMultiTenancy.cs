@@ -6,7 +6,7 @@ using Headless.MultiTenancy;
 namespace Headless.Mediator;
 
 [PublicAPI]
-public static class MultiTenancySetup
+public static class SetupMultiTenancy
 {
     /// <summary>Configures Mediator tenant posture through the root Headless tenancy builder.</summary>
     /// <param name="builder">The root tenancy builder.</param>
@@ -41,7 +41,7 @@ public sealed class HeadlessMediatorTenancyBuilder
     public HeadlessMediatorTenancyBuilder RequireTenant()
     {
         _builder.Services.AddTenantRequiredBehavior();
-        _builder.RecordSeam("Mediator", TenantPostureStatuses.Enforcing, "require-tenant");
+        _builder.RecordSeam("Mediator", TenantPostureStatus.Enforcing, "require-tenant");
 
         return this;
     }

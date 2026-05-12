@@ -39,6 +39,17 @@ public sealed record HeadlessTenancyDiagnostic(
             HeadlessTenancyDiagnosticSeverity.Error
         );
     }
+
+    /// <summary>Creates a non-blocking warning diagnostic.</summary>
+    public static HeadlessTenancyDiagnostic Warning(string seam, string code, string message)
+    {
+        return new(
+            Argument.IsNotNullOrWhiteSpace(seam),
+            Argument.IsNotNullOrWhiteSpace(code),
+            Argument.IsNotNullOrWhiteSpace(message),
+            HeadlessTenancyDiagnosticSeverity.Warning
+        );
+    }
 }
 
 /// <summary>Validation context passed to tenant posture validators.</summary>

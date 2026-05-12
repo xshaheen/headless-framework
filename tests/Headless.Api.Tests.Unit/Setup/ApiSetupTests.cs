@@ -258,6 +258,27 @@ public sealed class ApiSetupTests
         serviceProvider.GetRequiredService<ICurrentTenant>().Should().BeSameAs(customTenant);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void add_headless_multi_tenancy_should_reject_blank_claim_type(string blankClaimType)
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+
+        // when
+        builder.AddHeadlessMultiTenancy(options => options.ClaimType = blankClaimType);
+
+        // then — ValidateOnStart wiring throws when the host is built and options are evaluated
+        var act = () =>
+        {
+            using var provider = builder.Services.BuildServiceProvider();
+            return provider.GetRequiredService<IOptions<MultiTenancyOptions>>().Value;
+        };
+
+        act.Should().Throw<OptionsValidationException>();
+    }
+
     private sealed class ApiCustomCurrentTenant : ICurrentTenant
     {
         public bool IsAvailable => true;
