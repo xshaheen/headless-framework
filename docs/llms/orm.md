@@ -44,7 +44,7 @@ Use these packages when you want ORM-level persistence primitives. For raw SQL c
 
 ## Package Validation Snapshot
 
-Validated against current source tree on `29-03-2026` (UTC).
+Validated against current source tree on `12-05-2026` (UTC).
 
 | Package                        | Source package path                                                    | Status  |
 | ------------------------------ | ---------------------------------------------------------------------- | ------- |
@@ -54,14 +54,17 @@ Validated against current source tree on `29-03-2026` (UTC).
 Validation notes:
 
 - Domain frontmatter includes only existing ORM packages.
-- API guidance below maps to currently present symbols in source (for example: `HeadlessDbContext`, `AddHeadlessDbContext<TDbContext>`, `ExecuteTransactionAsync`, `CouchbaseBucketContext`, `DocumentSetExtensions`, `IBucketContextProvider`).
+- API guidance below maps to currently present symbols in source (for example: `HeadlessDbContext`, `HeadlessDbContextServices`, `HeadlessDbContextOptions`, `IHeadlessSaveEntryProcessor`, `IHeadlessSaveChangesPipeline`, `IHeadlessMessageDispatcher`, `AddHeadlessDbContext<TDbContext>`, `ExecuteTransactionAsync`, `CouchbaseBucketContext`, `DocumentSetExtensions`, `IBucketContextProvider`).
 
 ## Agent Instructions
 
 - Treat this domain as exactly two packages. Do not reference non-existing ORM packages.
 - For relational stores, inherit from `HeadlessDbContext` and register with `AddHeadlessDbContext<TDbContext>(...)`.
+- `HeadlessDbContext` requires two ctor parameters: `(HeadlessDbContextServices services, DbContextOptions options)`, and subclasses must override `public abstract string? DefaultSchema { get; }` (empty string means "use the provider default").
 - Always call `base.OnModelCreating(modelBuilder)` in `HeadlessDbContext` subclasses.
-- Use `ExecuteTransactionAsync(...)` for multi-step EF operations that must be atomic under retry execution strategies.
+- Use `ExecuteTransactionAsync(...)` (from `DbContextTransactionExtensions`) for multi-step EF operations that must be atomic under retry execution strategies.
+- Customize the save pipeline through `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` on `HeadlessDbContextOptions`; replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control.
+- Entities that emit local or distributed messages require a registered `IHeadlessMessageDispatcher` (default is `ThrowHeadlessMessageDispatcher`, which fails the save).
 - Do not mix framework concurrency stamping with ASP.NET Identity `ConcurrencyStamp` ownership on identity entities.
 - For Couchbase, use `CouchbaseBucketContext` + `IBucketContextProvider` and keep cluster/bucket names explicit.
 - `DocumentSetExtensions` are constrained to `IEntity` models and provide high-level KV operations.
@@ -79,11 +82,12 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 
 ## Key Features
 
-- `HeadlessDbContext` base context
+- `HeadlessDbContext` base context (requires `HeadlessDbContextServices` ctor parameter and `DefaultSchema` override)
 - DI registration via `AddHeadlessDbContext<TDbContext>(...)`
-- Automatic audit fields (`CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy`)
-- Soft-delete and tenant-aware query behavior
-- Domain event collection and dispatch in save pipeline
+- Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities (`DateCreated`, `DateUpdated`, `DateDeleted`, `DateSuspended` + `CreatedById` / `UpdatedById` / `DeletedById` / `SuspendedById` when the entity carries `UserId` or `AccountId` audits)
+- Three named global filters: `MultiTenancyFilter` (`IMultiTenant`), `NotDeletedFilter` (`IDeleteAudit`), `NotSuspendedFilter` (`ISuspendAudit`); per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()` / `IgnoreNotSuspendedFilter()`
+- Composable save pipeline driven by `HeadlessDbContextOptions` and a fixed default chain of `IHeadlessSaveEntryProcessor` instances
+- Local + distributed domain event collection inside `SaveChanges`, dispatched through `IHeadlessMessageDispatcher`
 - Resilient transaction helpers: `ExecuteTransactionAsync(...)`
 - Extensibility hooks through model processing services
 
@@ -96,10 +100,14 @@ dotnet add package Headless.Orm.EntityFramework
 ## Quick Start
 
 ```csharp
-public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
-    : HeadlessDbContext(options)
+public sealed class AppDbContext(
+    HeadlessDbContextServices services,
+    DbContextOptions<AppDbContext> options
+) : HeadlessDbContext(services, options)
 {
     public DbSet<Product> Products => Set<Product>();
+
+    public override string? DefaultSchema => "app"; // "" means use the provider default
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -111,6 +119,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options)
 builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString)
 );
+
+// Add a real message dispatcher if any entity emits local or distributed messages,
+// otherwise SaveChanges will throw via ThrowHeadlessMessageDispatcher.
+builder.Services.AddHeadlessMessageDispatcher<AppHeadlessMessageDispatcher>();
 ```
 
 ## Transaction Pattern
@@ -146,16 +158,19 @@ Use this when multiple operations must commit or roll back as one unit.
 
 ## Side Effects
 
-- Registers framework persistence services (runtime services, ordered model conventions, save-entry processors, clock/guid/current user-current tenant defaults)
-- Replaces compiled query cache key generator to include framework behavior
+- Registers `HeadlessDbContextServices`, `IHeadlessSaveChangesPipeline`, the default save-entry processor chain (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`), and the fail-fast `ThrowHeadlessMessageDispatcher`
+- Registers framework defaults via `TryAddSingleton`: `IClock`, `IGuidGenerator`, `ICurrentTenant`, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`, `TimeProvider.System`
+- Replaces compiled query cache key generator so tenant-scoped queries share plans correctly
 - Forwards `DbContext` to registered `TDbContext` via scoped registration
 
 ## Validation Checklist
 
 - `src/Headless.Orm.EntityFramework/Headless.Orm.EntityFramework.csproj` exists
-- Public setup API found: `AddHeadlessDbContext<TDbContext>(...)`
-- Base context found: `HeadlessDbContext`
+- Public setup API found: `AddHeadlessDbContext<TDbContext>(...)`, `AddHeadlessDbContextServices(...)`, `AddHeadlessMessageDispatcher<TDispatcher>(...)`
+- Base context found: `HeadlessDbContext` with abstract `DefaultSchema`
+- Extension points: `IHeadlessSaveEntryProcessor`, `IHeadlessSaveChangesPipeline`, `IHeadlessMessageDispatcher`, `HeadlessDbContextOptions.AddSaveEntryProcessor<TProcessor>(ServiceLifetime)`
 - Transaction extensions found: `ExecuteTransactionAsync(...)`
+- Filter API found: `HeadlessQueryFilters.MultiTenancyFilter`, `NotDeletedFilter`, `NotSuspendedFilter` with matching `Ignore*Filter()` extensions
 
 ---
 
