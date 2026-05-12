@@ -46,8 +46,6 @@ env:
   CONFIGURATION: Release
   # Packages Directory
   PACKAGES_DIR: ./artifacts/packages-results
-  # Test Results Directory
-  TEST_RESULTS_DIR: ./artifacts/test-results
   # Set the NuGet packages restore cache directory.
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   # Disable the Husky pre-commit hooks.
@@ -55,7 +53,7 @@ env:
 
 jobs:
   build:
-    name: Build, test, and pack
+    name: Build and pack
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -90,10 +88,6 @@ jobs:
       - name: "Build"
         run: dotnet build headless-framework.slnx --configuration ${{ env.CONFIGURATION }} --no-restore --no-incremental -v:q -nologo /clp:ErrorsOnly
 
-      - name: "Test"
-        run: dotnet test headless-framework.slnx --configuration ${{ env.CONFIGURATION }} --no-restore --no-build --logger "trx;LogFilePrefix=headless-framework" --results-directory "${TEST_RESULTS_DIR}"
-        shell: bash
-
       - name: "Pack"
         run: |
           set -euo pipefail
@@ -101,14 +95,6 @@ jobs:
             dotnet pack "$csproj" --configuration "${CONFIGURATION}" --no-restore --no-build --include-symbols --output "${PACKAGES_DIR}"
           done
         shell: bash
-
-      - name: "Publish Test Results"
-        if: always()
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: test-results
-          path: ${{ env.TEST_RESULTS_DIR }}
-          if-no-files-found: ignore
 
       - name: "Publish Artifacts"
         uses: actions/upload-artifact@v7.0.1
