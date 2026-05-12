@@ -23,7 +23,7 @@ internal static partial class CronScheduleCache
     {
         var key = _Normalize(expression);
 
-        return _Cache.GetOrAdd(key, exp => CrontabSchedule.TryParse(exp, _Opts)!);
+        return _Cache.GetOrAdd(key, static exp => CrontabSchedule.TryParse(exp, _Opts)!);
     }
 
     public static DateTime? GetNextOccurrenceOrDefault(string expression, DateTime dateTime)

@@ -32,7 +32,7 @@ internal sealed class MessageObservationStore
     {
         var queue = _GetQueue(type);
         queue.Enqueue(message);
-        _typeIndex.GetOrAdd((message.MessageType, type), _ => new()).Enqueue(message);
+        _typeIndex.GetOrAdd((message.MessageType, type), static _ => new()).Enqueue(message);
 
         // Snapshot candidates under lock, evaluate predicates outside to avoid
         // holding the lock during potentially expensive user predicates.
