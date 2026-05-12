@@ -4,15 +4,25 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace Headless.Reflection;
 
 [PublicAPI]
 public static class ObjectPropertiesHelper
 {
-    private static readonly ConcurrentDictionary<string, PropertyInfo?> _CachedObjectProperties = new(
-        StringComparer.Ordinal
-    );
+    private static readonly ConditionalWeakTable<
+        Type,
+        ConcurrentDictionary<PropertyCacheKey, CachedResult<PropertyInfo>>
+    > _Cache = new();
+
+    private static readonly ConditionalWeakTable<
+        Type,
+        ConcurrentDictionary<PropertyCacheKey, CachedResult<PropertyInfo>>
+    >.CreateValueCallback _CreateInner = static _ => new ConcurrentDictionary<
+        PropertyCacheKey,
+        CachedResult<PropertyInfo>
+    >();
 
     [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]
     public static bool TrySetProperty<TObject, TValue>(
@@ -35,19 +45,14 @@ public static class ObjectPropertiesHelper
     )
         where TObject : notnull
     {
-        var objType = obj.GetType();
-        var cacheKey = _GetCacheKey(objType, propertySelector.ToString(), ignoreAttributeTypes);
+        var propertyName = _GetPropertyName(propertySelector);
 
-        var property = _CachedObjectProperties.GetOrAdd(
-            cacheKey,
-            valueFactory: static (_, args) =>
-            {
-                var (objType, propertySelector, ignoreAttributeTypes) = args;
-                var propertyName = _GetPropertyName(propertySelector);
-                return _GetWritablePropertyInfo(objType, propertyName, ignoreAttributeTypes);
-            },
-            factoryArgument: (objType, propertySelector, ignoreAttributeTypes)
-        );
+        if (propertyName is null)
+        {
+            return false;
+        }
+
+        var property = _GetCachedProperty(obj.GetType(), propertyName, ignoreAttributeTypes);
 
         if (property is null)
         {
@@ -67,18 +72,7 @@ public static class ObjectPropertiesHelper
     )
         where TObject : notnull
     {
-        var objType = obj.GetType();
-        var cacheKey = _GetCacheKey(objType, "x => x." + propertyName, ignoreAttributeTypes);
-
-        var property = _CachedObjectProperties.GetOrAdd(
-            cacheKey,
-            static (_, args) =>
-            {
-                var (objType, propertyName, ignoreAttributeTypes) = args;
-                return _GetWritablePropertyInfo(objType, propertyName, ignoreAttributeTypes);
-            },
-            factoryArgument: (objType, propertyName, ignoreAttributeTypes)
-        );
+        var property = _GetCachedProperty(obj.GetType(), propertyName, ignoreAttributeTypes);
 
         if (property?.PropertyType.IsNullableType() is true)
         {
@@ -91,17 +85,32 @@ public static class ObjectPropertiesHelper
     }
 
     [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]
+    private static PropertyInfo? _GetCachedProperty(
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type objType,
+        string propertyName,
+        Type[]? ignoreAttrs
+    )
+    {
+        var inner = _Cache.GetValue(objType, _CreateInner);
+        var key = new PropertyCacheKey(propertyName, ignoreAttrs);
+
+        if (inner.TryGetValue(key, out var existing))
+        {
+            return existing.Value;
+        }
+
+        var result = new CachedResult<PropertyInfo>(_GetWritablePropertyInfo(objType, propertyName, ignoreAttrs));
+
+        return inner.GetOrAdd(key, result).Value;
+    }
+
+    [RequiresUnreferencedCode("Uses Type.GetProperties which is not compatible with trimming.")]
     private static PropertyInfo? _GetWritablePropertyInfo(
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type objType,
-        string? propertyName,
+        string propertyName,
         Type[]? ignoreAttr
     )
     {
-        if (propertyName is null)
-        {
-            return null;
-        }
-
         var propertyInfo = objType
             .GetProperties()
             .FirstOrDefault(x => string.Equals(x.Name, propertyName, StringComparison.Ordinal));
@@ -138,10 +147,55 @@ public static class ObjectPropertiesHelper
         return memberExpression?.Member.Name;
     }
 
-    private static string _GetCacheKey(Type objType, string propertySelector, Type[]? attr)
+    private readonly record struct PropertyCacheKey(string PropertyName, Type[]? IgnoreAttrs)
     {
-        var attrKey = attr is null ? "" : "-" + string.Join('-', attr.Select(x => x.FullName));
+        public bool Equals(PropertyCacheKey other)
+        {
+            if (!string.Equals(PropertyName, other.PropertyName, StringComparison.Ordinal))
+            {
+                return false;
+            }
 
-        return $"{objType.FullName}-{propertySelector}{attrKey}";
+            if (ReferenceEquals(IgnoreAttrs, other.IgnoreAttrs))
+            {
+                return true;
+            }
+
+            if (IgnoreAttrs is null || other.IgnoreAttrs is null)
+            {
+                return false;
+            }
+
+            if (IgnoreAttrs.Length != other.IgnoreAttrs.Length)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < IgnoreAttrs.Length; i++)
+            {
+                if (IgnoreAttrs[i] != other.IgnoreAttrs[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        public override int GetHashCode()
+        {
+            var hash = new HashCode();
+            hash.Add(PropertyName, StringComparer.Ordinal);
+
+            if (IgnoreAttrs is not null)
+            {
+                foreach (var t in IgnoreAttrs)
+                {
+                    hash.Add(t);
+                }
+            }
+
+            return hash.ToHashCode();
+        }
     }
 }
