@@ -16,8 +16,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
     IGuidGenerator guidGenerator,
     IOptions<TenantWriteGuardOptions> tenantWriteGuardOptions,
     ITenantWriteGuardBypass tenantWriteGuardBypass
-)
-    : IHeadlessSaveEntryProcessor
+) : IHeadlessSaveEntryProcessor
 {
     private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _ShouldStampGuidIdCache = new();
 

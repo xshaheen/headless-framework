@@ -62,11 +62,8 @@ internal sealed partial class HeadlessApiExceptionHandler(
     >.CreateValueCallback _DbUpdateConcurrencyFactory = static type =>
         _MatchesExceptionFullName(type, _DbUpdateConcurrencyExceptionFullName);
 
-    private static readonly ConditionalWeakTable<
-        Type,
-        StrongBox<bool>
-    >.CreateValueCallback _CrossTenantWriteFactory = static type =>
-        _MatchesExceptionFullName(type, _CrossTenantWriteExceptionFullName);
+    private static readonly ConditionalWeakTable<Type, StrongBox<bool>>.CreateValueCallback _CrossTenantWriteFactory =
+        static type => _MatchesExceptionFullName(type, _CrossTenantWriteExceptionFullName);
 
     private static StrongBox<bool> _MatchesExceptionFullName(Type type, string fullName)
     {
@@ -139,9 +136,9 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
                 case not null when _IsCrossTenantWriteException(exception):
                     _LogCrossTenantWriteException(logger, exception);
-                    problemDetails = problemDetailsCreator.Conflict(
-                        [HeadlessProblemDetailsConstants.Errors.CrossTenantWrite]
-                    );
+                    problemDetails = problemDetailsCreator.Conflict([
+                        HeadlessProblemDetailsConstants.Errors.CrossTenantWrite,
+                    ]);
                     statusCode = StatusCodes.Status409Conflict;
                     break;
 

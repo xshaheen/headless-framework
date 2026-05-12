@@ -217,17 +217,10 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
     /// <summary>Enables the EF tenant write guard.</summary>
     /// <param name="configure">Optional write guard options.</param>
     /// <returns>The same Entity Framework tenancy builder.</returns>
-    public HeadlessEntityFrameworkTenancyBuilder GuardTenantWrites(
-        Action<TenantWriteGuardOptions>? configure = null
-    )
+    public HeadlessEntityFrameworkTenancyBuilder GuardTenantWrites(Action<TenantWriteGuardOptions>? configure = null)
     {
         _builder.Services.AddHeadlessTenantWriteGuard(configure);
-        _builder.RecordSeam(
-            "EntityFramework",
-            TenantPostureStatuses.Guarded,
-            "guard-tenant-writes",
-            "ef-owned-bypass"
-        );
+        _builder.RecordSeam("EntityFramework", TenantPostureStatuses.Guarded, "guard-tenant-writes", "ef-owned-bypass");
 
         return this;
     }
