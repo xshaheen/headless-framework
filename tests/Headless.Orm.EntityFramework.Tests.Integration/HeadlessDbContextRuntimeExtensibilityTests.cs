@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.EntityFramework.Messaging;
@@ -14,6 +15,37 @@ namespace Tests;
 
 public sealed class HeadlessDbContextRuntimeExtensibilityTests
 {
+    [Fact]
+    public void add_headless_db_context_services_should_replace_null_current_tenant_fallback()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton<ICurrentTenant, NullCurrentTenant>();
+
+        // when
+        services.AddHeadlessDbContextServices();
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<ICurrentTenant>().Should().BeOfType<CurrentTenant>();
+    }
+
+    [Fact]
+    public void add_headless_db_context_services_should_preserve_custom_current_tenant()
+    {
+        // given
+        var customTenant = new RuntimeCustomCurrentTenant();
+        var services = new ServiceCollection();
+        services.AddSingleton<ICurrentTenant>(customTenant);
+
+        // when
+        services.AddHeadlessDbContextServices();
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<ICurrentTenant>().Should().BeSameAs(customTenant);
+    }
+
     [Fact]
     public async Task save_changes_should_run_custom_entry_processors_by_order()
     {
@@ -133,8 +165,43 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         dispatcher.DistributedEmitters[0].Messages.Should().ContainSingle(x => x.UniqueId == "distributed-later");
     }
 
+    [Fact]
+    public async Task save_changes_should_publish_messages_queued_by_custom_entry_processors()
+    {
+        // given
+        var (provider, connection) = await _CreateProviderAsync(
+            services => services.AddHeadlessMessageDispatcher<RuntimeRecordingMessageDispatcher>(),
+            options => options.AddSaveEntryProcessor<RuntimeQueuedMessageSaveEntryProcessor>(ServiceLifetime.Singleton)
+        );
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<RuntimeRecordingMessageDispatcher>();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeEntity { Name = "processor-emits" };
+
+        db.Entities.Add(entity);
+
+        // when
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then
+        dispatcher
+            .LocalEmitters.Should()
+            .ContainSingle(x =>
+                ReferenceEquals(x.Emitter, entity) && x.Messages.Any(message => message.UniqueId == "custom-local")
+            );
+        dispatcher
+            .DistributedEmitters.Should()
+            .ContainSingle(x =>
+                ReferenceEquals(x.Emitter, entity)
+                && x.Messages.Any(message => message.UniqueId == "custom-distributed")
+            );
+    }
+
     private static async Task<(ServiceProvider Provider, SqliteConnection Connection)> _CreateProviderAsync(
-        Action<IServiceCollection>? configureServices = null
+        Action<IServiceCollection>? configureServices = null,
+        Action<HeadlessDbContextOptions>? configureHeadlessOptions = null
     )
     {
         var connection = new SqliteConnection("Data Source=:memory:");
@@ -149,6 +216,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         {
             options.AddSaveEntryProcessor<EarlyRecordingSaveEntryProcessor>(ServiceLifetime.Singleton);
             options.AddSaveEntryProcessor<LateRecordingSaveEntryProcessor>(ServiceLifetime.Singleton);
+            configureHeadlessOptions?.Invoke(options);
         });
         configureServices?.Invoke(services);
         services.AddDbContext<RuntimeTestDbContext>(options => options.UseSqlite(connection).AddHeadlessExtension());
@@ -233,6 +301,36 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
     private sealed record RuntimeLocalMessage(string UniqueId) : ILocalMessage;
 
     private sealed record RuntimeDistributedMessage(string UniqueId) : IDistributedMessage;
+
+    private sealed class RuntimeQueuedMessageSaveEntryProcessor : IHeadlessSaveEntryProcessor
+    {
+        public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
+        {
+            if (entry is not { Entity: RuntimeEntity entity, State: EntityState.Added })
+            {
+                return;
+            }
+
+            entity.AddMessage(new RuntimeLocalMessage("custom-local"));
+            entity.AddMessage(new RuntimeDistributedMessage("custom-distributed"));
+        }
+    }
+
+    private sealed class RuntimeCustomCurrentTenant : ICurrentTenant
+    {
+        public bool IsAvailable => true;
+
+        public string? Id => "custom";
+
+        public string? Name => "Custom";
+
+        public IDisposable Change(string? id, string? name = null) => new RuntimeCurrentTenantScope();
+    }
+
+    private sealed class RuntimeCurrentTenantScope : IDisposable
+    {
+        public void Dispose() { }
+    }
 
     private sealed class RuntimeTestDbContext(HeadlessDbContextServices services, DbContextOptions options)
         : HeadlessDbContext(services, options)

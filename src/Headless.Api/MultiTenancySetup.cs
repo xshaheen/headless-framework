@@ -31,7 +31,7 @@ public static class MultiTenancySetup
         }
 
         builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
-        builder.Services.AddOrReplaceSingleton<ICurrentTenant, CurrentTenant>();
+        builder.Services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
 
         return builder;
     }

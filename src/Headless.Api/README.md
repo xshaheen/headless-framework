@@ -72,7 +72,7 @@ When the hash callback is omitted, `AddHeadlessInfrastructure(...)` still binds 
 
 ## Multi-Tenancy
 
-`AddHeadlessInfrastructure()` registers `CurrentTenant` by default, and `Headless.Orm.EntityFramework` now uses the same default for `AddHeadlessDbContextServices()`. For claim-based HTTP tenant resolution, opt in with:
+`AddHeadlessInfrastructure()` registers `CurrentTenant` by default, replacing only the framework `NullCurrentTenant` fallback while preserving consumer-provided tenant implementations. `Headless.Orm.EntityFramework` uses the same default for `AddHeadlessDbContextServices()`. For claim-based HTTP tenant resolution, opt in with:
 
 ```csharp
 builder.AddHeadlessMultiTenancy(options =>

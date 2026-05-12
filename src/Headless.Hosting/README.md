@@ -8,7 +8,7 @@ Provides essential DI extensions, configuration helpers, options validation, and
 
 ## Key Features
 
-- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`
+- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `AddOrReplaceFallbackSingleton`, `Unregister<T>`
 - Options validation with FluentValidation
 - Configuration binding extensions
 - Environment detection extensions
@@ -73,6 +73,7 @@ await app.Services.RunSeedersAsync();
 ```csharp
 services.AddOrReplaceScoped<IService, NewImpl>();
 services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequired<IDep>()));
+services.AddOrReplaceFallbackSingleton<IService, NullService, DefaultService>();
 ```
 
 ## Configuration
