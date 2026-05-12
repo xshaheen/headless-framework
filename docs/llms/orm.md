@@ -171,6 +171,18 @@ For intentional host/admin writes, resolve `ITenantWriteGuardBypass` and wrap on
 
 For package-level wiring without the root tenancy surface, `builder.Services.AddHeadlessTenantWriteGuard()` remains available.
 
+#### Defense Layers and Known Gaps
+
+`IMultiTenant` writes are protected by two complementary layers, plus paths that remain out of scope:
+
+1. **Global query filter (`MultiTenancyFilter`)** — always on for `IMultiTenant` entities, wired by `HeadlessDbContextRuntime._ConfigureQueryFilters`. Scopes reads, `IQueryable<T>.ExecuteUpdate(...)`, and `IQueryable<T>.ExecuteDelete(...)` to `ICurrentTenant.Id`. Opt-out is `IgnoreMultiTenancyFilter()` (audit-logged via `HeadlessQueryFilters._LogFilterBypassed`).
+2. **`SaveChanges` write guard** — opt-in via `.EntityFramework(ef => ef.GuardTenantWrites())`. Operates on EF's `ChangeTracker` and rejects unsafe `Add` / `Update` / `Remove` / tracked-property writes with `CrossTenantWriteException` before persistence.
+
+Known gaps:
+
+- **Attach-then-modify.** Attacker-controlled `Attach` populates `OriginalValue` from caller state, so the in-memory guard's `OriginalValue == currentTenantId` check can pass for a row owned by another tenant. A SQL-level concurrency-style `WHERE TenantId = @currentTenantId` predicate on the SaveChanges-generated UPDATE/DELETE is the planned follow-up — tracked in the security follow-up issue on the project tracker.
+- **Raw SQL** (`DbContext.Database.ExecuteSql(...)`, `ExecuteSqlInterpolated(...)`, `ExecuteSqlRaw(...)`, stored procedures, triggers) is out of scope for both layers. Consumers must include their own `WHERE TenantId = @currentTenantId` predicate or wrap the call in `ITenantWriteGuardBypass.BeginBypass()` under an audited host context.
+
 ## Dependencies
 
 - `Headless.Domain`

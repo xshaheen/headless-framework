@@ -206,7 +206,7 @@ The HTTP middleware preserves state `1` when there is no tenant claim. It does n
 - Call `base.OnModelCreating(modelBuilder)`
 - Ensure your entity implements `IMultiTenant`
 
-With tenant resolution active, queries automatically filter on `TenantId == ICurrentTenant.Id`.
+With tenant resolution active, queries automatically filter on `TenantId == ICurrentTenant.Id`. The filter is registered as the named `MultiTenancyFilter` by `HeadlessDbContextRuntime._ConfigureQueryFilters`. Because `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same `IQueryable<T>`, bulk update and bulk delete inherit the tenant predicate and are scoped to the current tenant by default. Per-query opt-out is `IgnoreMultiTenancyFilter()`, which audit-logs the bypass via `HeadlessQueryFilters._LogFilterBypassed`.
 
 ### EF Tenant Write Guard
 
@@ -252,6 +252,18 @@ using (bypass.BeginBypass())
 ```
 
 `IgnoreMultiTenancyFilter()` is only a read-side query-filter bypass. Loading a row through `IgnoreMultiTenancyFilter()` does not permit cross-tenant updates or deletes when the write guard is enabled; wrap only the intended write in `ITenantWriteGuardBypass.BeginBypass()`.
+
+### Defense Layers and Known Gaps
+
+`IMultiTenant` writes are protected by two complementary layers, plus paths that remain out of scope:
+
+1. **Global query filter (`MultiTenancyFilter`)** — always on for `IMultiTenant` entities. Scopes reads, `IQueryable<T>.ExecuteUpdate(...)`, and `IQueryable<T>.ExecuteDelete(...)` to the current tenant. Opt-out is `IgnoreMultiTenancyFilter()` (audit-logged).
+2. **`SaveChanges` write guard** — opt-in via `.EntityFramework(ef => ef.GuardTenantWrites())`. Operates on EF's `ChangeTracker`. Catches `Add` / `Update` / `Remove` / tracked-property-mutation paths and rejects unsafe writes with `CrossTenantWriteException` before persistence.
+
+Known gaps:
+
+- **Attach-then-modify.** An attacker-controlled `Attach` populates `OriginalValue` from caller-supplied state, so the in-memory guard's `OriginalValue == currentTenantId` check passes for a row that actually belongs to another tenant. The global query filter does not cover this path because the attacker never queries the row. A SQL-level concurrency-style `WHERE TenantId = @currentTenantId` predicate on the SaveChanges-generated UPDATE/DELETE is the planned follow-up, tracked in the security follow-up issue on the project tracker.
+- **Raw SQL** (`DbContext.Database.ExecuteSql(...)`, `ExecuteSqlInterpolated(...)`, `ExecuteSqlRaw(...)`, stored procedures, triggers) is out of scope for both layers. Consumers calling raw SQL against `IMultiTenant` tables must include their own `WHERE TenantId = @currentTenantId` predicate or wrap the call in `ITenantWriteGuardBypass.BeginBypass()` under an authenticated, audited host context.
 
 ## Permissions and Caching
 

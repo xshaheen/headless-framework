@@ -54,15 +54,16 @@ The origin requirements define the product scope: tenant-owned EF writes should 
 - Do not add database migrations or schema changes.
 - Do not include live entity value snapshots in diagnostics.
 
-### Known Bypass Surfaces (Out of Scope)
+### Defense Layers and Known Gaps
 
-The Headless `SaveChanges` pipeline operates on EF's `ChangeTracker`. The following paths emit SQL directly and therefore bypass the write guard because they never populate the change tracker:
+`IMultiTenant` reads, `IQueryable<T>.ExecuteUpdate(...)`, and `IQueryable<T>.ExecuteDelete(...)` are already covered by the framework's named `MultiTenancyFilter`, wired by `HeadlessDbContextRuntime._ConfigureQueryFilters`. The filter is part of every `IQueryable<T>` against an `IMultiTenant` set, so bulk operations that consume that `IQueryable<T>` inherit the tenant predicate by default. The per-query opt-out is `IgnoreMultiTenancyFilter()`, which audit-logs the bypass.
 
-- `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)`
-- Raw SQL via `DbContext.Database.ExecuteSql(...)`, `ExecuteSqlInterpolated(...)`, `ExecuteSqlRaw(...)`, and async variants
-- Stored procedure / trigger invocations performed outside EF
+The opt-in `SaveChanges` write guard added by this plan is the second defense layer. It operates on EF's `ChangeTracker` and catches `Add` / `Update` / `Remove` / tracked-property-mutation paths before persistence.
 
-Consumers using these paths against `IMultiTenant` entities must either include an explicit `WHERE TenantId = @currentTenantId` predicate or wrap the call in `ITenantWriteGuardBypass.BeginBypass()` for intentional, audited maintenance. A SaveChangesInterceptor that injects the tenant predicate into bulk-API SQL is a tracked design candidate (see the security follow-up issue) and would also be a natural home for an audit log of bypass usage.
+Two paths remain explicitly out of scope for this change:
+
+- **Attach-then-modify.** An attacker-controlled `Attach` populates `OriginalValue` from caller-supplied state, so the in-memory guard's `OriginalValue == currentTenantId` check passes for a row that actually belongs to another tenant. The global query filter does not cover this path because the attacker never queries the row. A SQL-level concurrency-style `WHERE TenantId = @currentTenantId` predicate on the SaveChanges-generated UPDATE/DELETE is the planned follow-up — tracked in the security follow-up issue.
+- **Raw SQL** (`DbContext.Database.ExecuteSql(...)`, `ExecuteSqlInterpolated(...)`, `ExecuteSqlRaw(...)`, stored procedures, triggers). Consumers calling raw SQL against `IMultiTenant` tables must include their own `WHERE TenantId = @currentTenantId` predicate or wrap the call in `ITenantWriteGuardBypass.BeginBypass()` for intentional, audited maintenance.
 
 ### Deferred to Follow-Up Work
 

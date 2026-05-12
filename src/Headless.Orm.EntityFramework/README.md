@@ -163,20 +163,18 @@ using (bypass.BeginBypass())
 
 `IgnoreMultiTenancyFilter()` is read-side only. It does not permit guarded cross-tenant updates or deletes.
 
-#### Limitations
+#### Defense Layers
 
-The tenant write guard runs inside the Headless `SaveChanges` pipeline. It operates on EF's `ChangeTracker`, which means it only sees writes that flow through `Add`, `Update`, `Remove`, or property mutation on tracked entities. The following paths emit SQL directly and bypass the guard because they never populate the change tracker:
+Tenant-owned (`IMultiTenant`) writes are protected by two complementary layers:
 
-- `IQueryable<T>.ExecuteUpdate(...)`
-- `IQueryable<T>.ExecuteDelete(...)`
-- Raw SQL via `DbContext.Database.ExecuteSql(...)`, `ExecuteSqlInterpolated(...)`, `ExecuteSqlRaw(...)` (and async variants)
-- Stored procedure or trigger invocations performed outside EF
+1. **Global query filter** (always on for `IMultiTenant` entities) — wired by `HeadlessDbContextRuntime._ConfigureQueryFilters` as the named `MultiTenancyFilter`. It compares each entity's `TenantId` column to `ICurrentTenant.Id` and is part of every `IQueryable<T>` against an `IMultiTenant` set. Because `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same `IQueryable<T>`, the filter scopes those bulk operations to the current tenant by default. Per-query opt-out is `IgnoreMultiTenancyFilter()`, which audit-logs the bypass via `HeadlessQueryFilters._LogFilterBypassed`.
+2. **`SaveChanges` write guard** (opt-in via `.EntityFramework(ef => ef.GuardTenantWrites())`) — operates on EF's `ChangeTracker`. Catches `Add`, `Update`, `Remove`, and property mutations on tracked tenant-owned entities and rejects unsafe writes before persistence, audit capture, and domain-message publishing.
 
-Consumer mitigations:
+#### Known Gaps
 
-1. Avoid these APIs on tenant-owned (`IMultiTenant`) entities, or include an explicit `WHERE TenantId = @currentTenantId` predicate in every call.
-2. Wrap intentional admin or maintenance bulk operations in `ITenantWriteGuardBypass.BeginBypass()` and ensure they execute under an authenticated, audited host context.
-3. Recommended follow-up: maintain an audit log of bypass usage and bulk-API invocations on tenant-owned tables so cross-tenant blast radius is detectable post-hoc. A SaveChangesInterceptor that injects the tenant predicate into bulk-API SQL is a tracked design candidate — see the security issue referenced in the project tracker.
+- **Attach-then-modify.** An attacker-controlled `Attach` populates `OriginalValue` from caller-supplied state, so the in-memory guard's `OriginalValue == currentTenantId` check passes for a row that actually belongs to another tenant. The global query filter does not cover this path because the attacker never queries the row. A SQL-level concurrency-style `WHERE TenantId = @currentTenantId` predicate on the SaveChanges-generated UPDATE/DELETE is the planned follow-up — tracked in the security follow-up issue on the project tracker.
+- **Raw SQL** (`DbContext.Database.ExecuteSql(...)`, `ExecuteSqlInterpolated(...)`, `ExecuteSqlRaw(...)`, stored procedures, triggers) is out of scope for both layers. Consumers calling raw SQL against tenant-owned tables must include their own `WHERE TenantId = @currentTenantId` predicate or wrap the call in `ITenantWriteGuardBypass.BeginBypass()` under an authenticated, audited host context.
+- **`IgnoreMultiTenancyFilter()`** turns off the query filter for a specific `IQueryable<T>`. Use it only for intentional admin / audit paths. When the same call site also writes, wrap the write in `ITenantWriteGuardBypass.BeginBypass()` — the two bypasses are independent, and `IgnoreMultiTenancyFilter()` alone does not relax write protection.
 
 ### Resilient Transactions
 
