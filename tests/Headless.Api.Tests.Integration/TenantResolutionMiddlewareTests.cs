@@ -138,6 +138,27 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
     }
 
     [Fact]
+    public void should_throw_when_use_headless_tenancy_is_called_without_root_tenancy()
+    {
+        // given
+        var builder = WebApplication.CreateBuilder(
+            new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
+        );
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.AddHeadlessInfrastructure();
+        using var app = builder.Build();
+
+        // when
+        var act = () => app.UseHeadlessTenancy();
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*UseHeadlessTenancy()*")
+            .WithMessage("*AddHeadlessTenancy*");
+    }
+
+    [Fact]
     public async Task should_throw_startup_diagnostic_when_http_tenancy_is_configured_without_use_headless_tenancy()
     {
         await using var app = await _CreateAppAsync(

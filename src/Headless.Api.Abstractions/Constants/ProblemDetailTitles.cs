@@ -32,6 +32,13 @@ public static class HeadlessProblemDetailsConstants
                 description: Details.TenantContextRequired,
                 severity: ValidationSeverity.Error
             );
+
+        public static ErrorDescriptor CrossTenantWrite { get; } =
+            new(
+                code: "g:cross-tenant-write",
+                description: Details.CrossTenantWrite,
+                severity: ValidationSeverity.Error
+            );
     }
 
     public static class Titles
@@ -71,5 +78,7 @@ public static class HeadlessProblemDetailsConstants
         public const string NotImplemented = "This functionality is not implemented.";
 
         public const string TenantContextRequired = "An operation required an ambient tenant context but none was set.";
+        public const string CrossTenantWrite =
+            "Tenant-owned write does not match the current tenant context.";
     }
 }

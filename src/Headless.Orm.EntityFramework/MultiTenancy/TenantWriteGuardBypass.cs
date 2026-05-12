@@ -1,21 +1,70 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Core;
-
 namespace Headless.EntityFramework.MultiTenancy;
 
 /// <summary>AsyncLocal-backed tenant write guard bypass.</summary>
 public sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
 {
-    private readonly AsyncLocal<bool> _isActive = new();
+    private readonly AsyncLocal<BypassState?> _state = new();
 
-    public bool IsActive => _isActive.Value;
+    public bool IsActive => _state.Value?.IsActive == true;
 
     public IDisposable BeginBypass()
     {
-        var wasActive = _isActive.Value;
-        _isActive.Value = true;
+        var state = _state.Value;
 
-        return DisposableFactory.Create(() => _isActive.Value = wasActive);
+        if (state?.IsActive != true)
+        {
+            state = new BypassState();
+            _state.Value = state;
+        }
+
+        state.AddRef();
+
+        return new BypassScope(this, state);
+    }
+
+    private void _EndBypass(BypassState state)
+    {
+        state.Release();
+
+        if (!state.IsActive && ReferenceEquals(_state.Value, state))
+        {
+            _state.Value = null;
+        }
+    }
+
+    private sealed class BypassState
+    {
+        private int _isDisposed;
+        private int _refCount;
+
+        public bool IsActive => Volatile.Read(ref _isDisposed) == 0 && Volatile.Read(ref _refCount) > 0;
+
+        public void AddRef()
+        {
+            Interlocked.Increment(ref _refCount);
+        }
+
+        public void Release()
+        {
+            if (Interlocked.Decrement(ref _refCount) <= 0)
+            {
+                Volatile.Write(ref _isDisposed, 1);
+            }
+        }
+    }
+
+    private sealed class BypassScope(TenantWriteGuardBypass owner, BypassState state) : IDisposable
+    {
+        private int _isDisposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _isDisposed, 1) == 0)
+            {
+                owner._EndBypass(state);
+            }
+        }
     }
 }

@@ -47,26 +47,39 @@ internal sealed partial class HeadlessApiExceptionHandler(
     private const string _DbUpdateConcurrencyExceptionFullName =
         "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
 
+    private const string _CrossTenantWriteExceptionFullName =
+        "Headless.EntityFramework.MultiTenancy.CrossTenantWriteException";
+
     // Cached per concrete exception type to avoid re-walking the inheritance chain on every hit.
     // ConditionalWeakTable lets entries (and their owning AssemblyLoadContext) unload when the
     // exception type is no longer referenced elsewhere.
     private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _DbUpdateConcurrencyTypeCache = new();
+    private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _CrossTenantWriteTypeCache = new();
 
     private static readonly ConditionalWeakTable<
         Type,
         StrongBox<bool>
     >.CreateValueCallback _DbUpdateConcurrencyFactory = static type =>
+        _MatchesExceptionFullName(type, _DbUpdateConcurrencyExceptionFullName);
+
+    private static readonly ConditionalWeakTable<
+        Type,
+        StrongBox<bool>
+    >.CreateValueCallback _CrossTenantWriteFactory = static type =>
+        _MatchesExceptionFullName(type, _CrossTenantWriteExceptionFullName);
+
+    private static StrongBox<bool> _MatchesExceptionFullName(Type type, string fullName)
     {
         for (var t = type; t is not null && t != typeof(Exception); t = t.BaseType)
         {
-            if (string.Equals(t.FullName, _DbUpdateConcurrencyExceptionFullName, StringComparison.Ordinal))
+            if (string.Equals(t.FullName, fullName, StringComparison.Ordinal))
             {
                 return new StrongBox<bool>(value: true);
             }
         }
 
         return new StrongBox<bool>(value: false);
-    };
+    }
 
     public async ValueTask<bool> TryHandleAsync(
         HttpContext httpContext,
@@ -122,6 +135,14 @@ internal sealed partial class HeadlessApiExceptionHandler(
                 case EntityNotFoundException:
                     problemDetails = problemDetailsCreator.EntityNotFound();
                     statusCode = StatusCodes.Status404NotFound;
+                    break;
+
+                case not null when _IsCrossTenantWriteException(exception):
+                    _LogCrossTenantWriteException(logger, exception);
+                    problemDetails = problemDetailsCreator.Conflict(
+                        [HeadlessProblemDetailsConstants.Errors.CrossTenantWrite]
+                    );
+                    statusCode = StatusCodes.Status409Conflict;
                     break;
 
                 // EF Core's DbUpdateConcurrencyException matched by full type name (walking the
@@ -253,6 +274,11 @@ internal sealed partial class HeadlessApiExceptionHandler(
         return _DbUpdateConcurrencyTypeCache.GetValue(ex.GetType(), _DbUpdateConcurrencyFactory).Value;
     }
 
+    private static bool _IsCrossTenantWriteException(Exception ex)
+    {
+        return _CrossTenantWriteTypeCache.GetValue(ex.GetType(), _CrossTenantWriteFactory).Value;
+    }
+
     private static bool _IsCancellationException(Exception? ex)
     {
         // Iterative walk capped at depth so a pathological/cyclic InnerException chain cannot blow
@@ -307,6 +333,15 @@ internal sealed partial class HeadlessApiExceptionHandler(
         SkipEnabledCheck = true
     )]
     private static partial void _LogDbConcurrencyException(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 5010,
+        EventName = "CrossTenantWriteException",
+        Level = LogLevel.Warning,
+        Message = "Cross-tenant write exception occurred",
+        SkipEnabledCheck = true
+    )]
+    private static partial void _LogCrossTenantWriteException(ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 5004,

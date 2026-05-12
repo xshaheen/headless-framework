@@ -110,6 +110,39 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
     }
 
     [Fact]
+    public async Task should_map_cross_tenant_write_exception_to_normalized_409()
+    {
+        // given
+        const string sentinel = "LEAKED-CROSS-TENANT-WRITE";
+        await using var app = await _CreateAppAsync(
+            handlerSetup: _ => { },
+            endpoint: () => throw new Headless.EntityFramework.MultiTenancy.CrossTenantWriteException(sentinel)
+        );
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/throw", AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        json.Should().NotContain(sentinel);
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.GetProperty("status").GetInt32().Should().Be(409);
+        root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.Conflict);
+        root.GetProperty("errors")
+            .EnumerateArray()
+            .Should()
+            .Contain(error =>
+                error.GetProperty("code").GetString() == HeadlessProblemDetailsConstants.Errors.CrossTenantWrite.Code
+            );
+    }
+
+    [Fact]
     public async Task should_map_validation_exception_to_normalized_422()
     {
         // given

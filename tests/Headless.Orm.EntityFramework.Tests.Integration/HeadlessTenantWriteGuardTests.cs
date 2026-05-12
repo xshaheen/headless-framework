@@ -206,6 +206,38 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     }
 
     [Fact]
+    public async Task tenant_write_guard_bypass_should_not_leak_into_async_work_spawned_inside_scope()
+    {
+        // given
+        var bypass = new TenantWriteGuardBypass();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<bool> captured;
+
+        // when
+        using (bypass.BeginBypass())
+        {
+            captured = Task.Run(async () =>
+            {
+                started.SetResult();
+                await release.Task;
+
+                return bypass.IsActive;
+            });
+
+            await started.Task;
+            bypass.IsActive.Should().BeTrue();
+        }
+
+        release.SetResult();
+
+        // then
+        var leaked = await captured;
+        leaked.Should().BeFalse();
+        bypass.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task guard_disabled_should_preserve_current_create_without_current_tenant_behavior()
     {
         // given
@@ -402,6 +434,56 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     }
 
     [Fact]
+    public async Task guard_enabled_should_reject_tenant_id_reassignment_on_tracked_update()
+    {
+        // given
+        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "owned-by-a");
+
+        using var tenant = fixture.CurrentTenant.Change("tenant-a");
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var entity = await db.Tests.SingleAsync(x => x.Id == entityId, AbortToken);
+        db.Entry(entity).Property(nameof(TestEntity.TenantId)).CurrentValue = "tenant-b";
+
+        // when
+        var act = async () => await db.SaveChangesAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<CrossTenantWriteException>();
+        db.EmittedLocalMessages.Should().BeEmpty();
+
+        var persistedTenant = await _GetTenantEntityTenantIdAsync(fixture, entityId);
+        persistedTenant.Should().Be("tenant-a");
+    }
+
+    [Fact]
+    public async Task guard_enabled_should_reject_clearing_tenant_id_on_tracked_update()
+    {
+        // given
+        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "owned-by-a");
+
+        using var tenant = fixture.CurrentTenant.Change("tenant-a");
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var entity = await db.Tests.SingleAsync(x => x.Id == entityId, AbortToken);
+        db.Entry(entity).Property(nameof(TestEntity.TenantId)).CurrentValue = null;
+
+        // when
+        var act = async () => await db.SaveChangesAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<CrossTenantWriteException>();
+        db.EmittedLocalMessages.Should().BeEmpty();
+
+        var persistedTenant = await _GetTenantEntityTenantIdAsync(fixture, entityId);
+        persistedTenant.Should().Be("tenant-a");
+    }
+
+    [Fact]
     public async Task guard_enabled_should_reject_cross_tenant_physical_delete_loaded_through_ignored_filter()
     {
         // given
@@ -544,6 +626,18 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
             .Tests.IgnoreMultiTenancyFilter()
             .Where(x => x.Id == entityId)
             .Select(x => x.Name)
+            .SingleAsync(AbortToken);
+    }
+
+    private async Task<string?> _GetTenantEntityTenantIdAsync(TenantWriteGuardDbContextTestFixture fixture, Guid entityId)
+    {
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        return await db
+            .Tests.IgnoreMultiTenancyFilter()
+            .Where(x => x.Id == entityId)
+            .Select(x => x.TenantId)
             .SingleAsync(AbortToken);
     }
 

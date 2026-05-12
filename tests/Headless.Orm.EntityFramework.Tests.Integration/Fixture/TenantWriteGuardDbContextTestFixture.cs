@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using Tests.Fixtures;
 
 namespace Tests.Fixture;
 
@@ -34,6 +35,7 @@ public sealed class TenantWriteGuardDbContextTestFixture : IAsyncDisposable
         }
 
         services.AddOrReplaceSingleton<ICurrentTenant>(_ => CurrentTenant);
+        services.AddHeadlessMessageDispatcher<RecordingHeadlessMessageDispatcher>();
 
         services.AddDbContext<TestHeadlessDbContext>(options => options.UseSqlite(_connection).AddHeadlessExtension());
 

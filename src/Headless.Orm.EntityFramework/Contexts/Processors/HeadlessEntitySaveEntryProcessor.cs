@@ -69,7 +69,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         }
 
         var currentTenantId = _NormalizeTenantId(currentTenant.Id);
-        var entityTenantId = _GetEffectiveTenantId(entry);
+        var entityTenantId = _NormalizeTenantId(entry.Property(nameof(IMultiTenant.TenantId)).CurrentValue);
 
         if (currentTenantId is null)
         {
@@ -86,7 +86,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             return;
         }
 
-        if (string.Equals(entityTenantId, currentTenantId, StringComparison.Ordinal))
+        if (_TenantWriteMatches(entry, currentTenantId, entityTenantId))
         {
             return;
         }
@@ -100,15 +100,20 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         );
     }
 
-    private static string? _GetEffectiveTenantId(EntityEntry entry)
+    private static bool _TenantWriteMatches(EntityEntry entry, string currentTenantId, string? entityTenantId)
     {
-        var property = entry.Property(nameof(IMultiTenant.TenantId));
-
-        return entry.State switch
+        if (!string.Equals(entityTenantId, currentTenantId, StringComparison.Ordinal))
         {
-            EntityState.Modified or EntityState.Deleted => _NormalizeTenantId(property.OriginalValue),
-            _ => _NormalizeTenantId(property.CurrentValue),
-        };
+            return false;
+        }
+
+        if (entry.State != EntityState.Modified)
+        {
+            return true;
+        }
+
+        var originalTenantId = _NormalizeTenantId(entry.Property(nameof(IMultiTenant.TenantId)).OriginalValue);
+        return string.Equals(originalTenantId, currentTenantId, StringComparison.Ordinal);
     }
 
     private static string? _NormalizeTenantId(object? value)
