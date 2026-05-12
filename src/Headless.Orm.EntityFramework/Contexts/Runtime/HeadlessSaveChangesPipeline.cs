@@ -5,12 +5,22 @@ using Headless.AuditLog;
 using Headless.EntityFramework.Messaging;
 using Headless.EntityFramework.Processors;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Headless.EntityFramework;
 
+/// <summary>
+/// Coordinates the per-<c>SaveChanges</c> work of a <see cref="HeadlessDbContext"/>: runs the ordered
+/// chain of <see cref="IHeadlessSaveEntryProcessor"/> stages, captures audit entries, dispatches local
+/// messages within the active transaction, persists the entity batch, and enqueues distributed messages
+/// post-success before committing.
+/// </summary>
+/// <remarks>
+/// Implementations own the transaction boundary. When an explicit transaction is already on the context
+/// the pipeline reuses it; otherwise it opens a transaction wrapped by the execution strategy so audit and
+/// message-emitter work commit atomically with the entity batch.
+/// </remarks>
 public interface IHeadlessSaveChangesPipeline
 {
     Task<int> SaveChangesAsync(
@@ -23,22 +33,44 @@ public interface IHeadlessSaveChangesPipeline
     int SaveChanges(DbContext context, Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess);
 }
 
+/// <summary>
+/// Default <see cref="IHeadlessSaveChangesPipeline"/> implementation.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Terminal-stage ordering: <see cref="HeadlessLocalEventSaveEntryProcessor"/> and
+/// <see cref="HeadlessMessageCollectorSaveEntryProcessor"/> run last so consumer processors can mutate
+/// entities before message-collection sees the final state.
+/// </para>
+/// <para>
+/// Cancellation: <c>transaction.CommitAsync</c> has no implicit timeout beyond the supplied
+/// <see cref="CancellationToken"/>. Callers should pass a deadline-bounded token when needed.
+/// </para>
+/// <para>
+/// Design note: <see cref="Microsoft.EntityFrameworkCore.Diagnostics.ISaveChangesInterceptor"/> was
+/// considered for this pipeline but rejected. The interceptor model cannot defer
+/// <c>AcceptAllChanges</c> (the second <c>SaveChanges(false)</c> call needs deferred accept, controlled
+/// by the caller via <c>acceptAllChangesOnSuccess: false</c>), and cannot compose ordered
+/// <see cref="IHeadlessSaveEntryProcessor"/> stages with guaranteed terminal-stage placement. The
+/// pipeline owns the explicit transaction boundary that interceptors don't expose cleanly.
+/// </para>
+/// </remarks>
 internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
 {
     private readonly IHeadlessMessageDispatcher _messageDispatcher;
     private readonly IReadOnlyList<IHeadlessSaveEntryProcessor> _entryProcessors;
-    private readonly HeadlessAuditPersistence _auditPersistence;
+    private readonly IHeadlessAuditPersistence _auditPersistence;
 
     public HeadlessSaveChangesPipeline(
         IServiceProvider serviceProvider,
         HeadlessDbContextOptions options,
-        IHeadlessMessageDispatcher messageDispatcher
+        IHeadlessMessageDispatcher messageDispatcher,
+        IHeadlessAuditPersistence auditPersistence
     )
     {
         _messageDispatcher = messageDispatcher;
         _entryProcessors = options.ResolveSaveEntryProcessors(serviceProvider);
-        var logger = serviceProvider.GetService<ILoggerFactory>()?.CreateLogger<HeadlessSaveChangesPipeline>();
-        _auditPersistence = new HeadlessAuditPersistence(serviceProvider, logger);
+        _auditPersistence = auditPersistence;
     }
 
     public async Task<int> SaveChangesAsync(
@@ -48,8 +80,11 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
         CancellationToken cancellationToken
     )
     {
-        var saveContext = _ProcessEntries(context);
-        var auditEntries = _auditPersistence.CaptureEntries(context);
+        // Materialize once — the framework processors don't add new ChangeTracker entries during
+        // _ProcessEntries, so a single snapshot is correct for the audit capture too.
+        var trackedEntries = _SnapshotEntries(context);
+        var saveContext = _ProcessEntries(context, trackedEntries);
+        var auditEntries = _auditPersistence.CaptureEntries(trackedEntries);
 
         var state = new AsyncSaveState(
             context,
@@ -82,8 +117,9 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
     public int SaveChanges(DbContext context, Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess)
     {
 #pragma warning disable MA0045 // Sync SaveChanges intentionally wraps EF sync APIs.
-        var saveContext = _ProcessEntries(context);
-        var auditEntries = _auditPersistence.CaptureEntries(context);
+        var trackedEntries = _SnapshotEntries(context);
+        var saveContext = _ProcessEntries(context, trackedEntries);
+        var auditEntries = _auditPersistence.CaptureEntries(trackedEntries);
 
         var state = new SaveState(context, saveContext, auditEntries, acceptAllChangesOnSuccess, baseSaveChanges);
 
@@ -104,11 +140,18 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
 #pragma warning restore MA0045
     }
 
-    private HeadlessSaveEntryContext _ProcessEntries(DbContext context)
+    private static IReadOnlyList<EntityEntry> _SnapshotEntries(DbContext context)
+    {
+        // Single allocation, single ChangeTracker traversal — feeds both _ProcessEntries and the
+        // initial audit capture.
+        return context.ChangeTracker.Entries().ToArray();
+    }
+
+    private HeadlessSaveEntryContext _ProcessEntries(DbContext context, IReadOnlyList<EntityEntry> entries)
     {
         var saveContext = new HeadlessSaveEntryContext(context);
 
-        foreach (var entry in context.ChangeTracker.Entries())
+        foreach (var entry in entries)
         {
             foreach (var processor in _entryProcessors)
             {
@@ -121,12 +164,14 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
 
     private Task<int> _ExecuteWithinCurrentTransactionAsync(AsyncSaveState state)
     {
+        // CurrentTransaction was just verified non-null above; null-forgiving here documents that.
         var currentTransaction = state.Context.Database.CurrentTransaction!;
         return _SaveWithinTransactionAsync(state, currentTransaction, commitTransaction: false);
     }
 
     private int _ExecuteWithinCurrentTransaction(SaveState state)
     {
+        // CurrentTransaction was just verified non-null above; null-forgiving here documents that.
         var currentTransaction = state.Context.Database.CurrentTransaction!;
         return _SaveWithinTransaction(state, currentTransaction, commitTransaction: false);
     }
@@ -209,7 +254,7 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
         }
         catch
         {
-            HeadlessAuditPersistence.DiscardEntries(auditSave);
+            _auditPersistence.DiscardEntries(auditSave);
             throw;
         }
     }
@@ -251,7 +296,7 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
         }
         catch
         {
-            HeadlessAuditPersistence.DiscardEntries(auditSave);
+            _auditPersistence.DiscardEntries(auditSave);
             throw;
         }
 #pragma warning restore MA0045
@@ -270,14 +315,14 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
         return auditEntries is { Count: > 0 };
     }
 
-    private static void _CompleteSuccessfulSave(
+    private void _CompleteSuccessfulSave(
         DbContext context,
         HeadlessSaveEntryContext saveContext,
         HeadlessAuditSaveResult auditSave,
         bool acceptAllChangesOnSuccess
     )
     {
-        HeadlessAuditPersistence.CompleteSuccessfulSave(context, auditSave, acceptAllChangesOnSuccess);
+        _auditPersistence.CompleteSuccessfulSave(context, auditSave, acceptAllChangesOnSuccess);
         saveContext.ClearEmitterMessages();
     }
 

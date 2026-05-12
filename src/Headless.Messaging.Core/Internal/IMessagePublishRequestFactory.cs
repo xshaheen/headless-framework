@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
@@ -33,7 +33,7 @@ internal sealed class MessagePublishRequestFactory(
         Headers.DelayTime,
     };
 
-    private readonly ConcurrentDictionary<Type, string> _topicNameCache = new();
+    private readonly ConditionalWeakTable<Type, string> _topicNameCache = new();
     private readonly MessagingOptions _options = optionsAccessor.Value;
     private readonly ILongIdGenerator _idGenerator = idGenerator;
     private readonly TimeProvider _timeProvider = timeProvider;
@@ -245,14 +245,14 @@ internal sealed class MessagePublishRequestFactory(
         if (_options.TopicMappings.TryGetValue(messageType, out var topicName))
         {
             topicName = _options.ApplyTopicNamePrefix(topicName);
-            _topicNameCache.TryAdd(messageType, topicName);
+            _topicNameCache.AddOrUpdate(messageType, topicName);
             return topicName;
         }
 
         if (_options.Conventions?.GetTopicName(messageType) is { } conventionTopic)
         {
             conventionTopic = _options.ApplyTopicNamePrefix(conventionTopic);
-            _topicNameCache.TryAdd(messageType, conventionTopic);
+            _topicNameCache.AddOrUpdate(messageType, conventionTopic);
             return conventionTopic;
         }
 

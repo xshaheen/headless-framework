@@ -262,6 +262,23 @@ public static class DependencyInjectionExtensions
         return replaced;
     }
 
+    /// <summary>
+    /// Replaces the existing registration for <typeparamref name="TService"/> with one backed by
+    /// <paramref name="factory"/>, preserving the original lifetime.
+    /// </summary>
+    /// <typeparam name="TService">The service type to replace.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="factory">Factory that creates the new implementation.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when no prior registration exists for <typeparamref name="TService"/>.
+    /// </exception>
+    /// <remarks>
+    /// Unlike <see cref="AddOrReplaceSingleton{TService,TImplementation}(IServiceCollection)"/>,
+    /// <see cref="AddOrReplaceScoped{TService,TImplementation}(IServiceCollection)"/>, and
+    /// <see cref="AddOrReplaceTransient{TService,TImplementation}(IServiceCollection)"/>, this method
+    /// throws instead of adding when no prior registration exists. Use it to enforce that the consumer
+    /// already configured the service.
+    /// </remarks>
     public static void Replace<TService>(this IServiceCollection services, Func<IServiceProvider, TService> factory)
         where TService : class
     {

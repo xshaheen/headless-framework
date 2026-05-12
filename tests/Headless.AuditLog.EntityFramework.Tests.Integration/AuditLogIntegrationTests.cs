@@ -495,6 +495,39 @@ public sealed class AuditLogIntegrationTests : TestBase
     }
 
     [Fact]
+    public async Task sync_save_changes_discards_audit_entries_when_audit_commit_throws()
+    {
+        // Sync mirror of save_changes_discards_audit_entries_when_audit_commit_throws.
+
+        // given
+        var interceptor = new ThrowOnceOnAuditSaveInterceptor();
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync(
+            configure: null,
+            configureDbContext: builder => builder.AddInterceptors(interceptor)
+        );
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+
+        db.Orders.Add(
+            new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Grace",
+                Email = "grace@example.com",
+                Amount = 11m,
+            }
+        );
+
+        // when / then
+        var act = () => db.SaveChanges();
+        act.Should().Throw<InvalidOperationException>().WithMessage("Simulated audit save failure.");
+
+        db.ChangeTracker.Entries<AuditLogEntry>().Where(e => e.State == EntityState.Added).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task save_changes_succeeds_when_audit_capture_throws()
     {
         // Regression guard for CaptureEntries' swallow-and-warn contract: a buggy IAuditChangeCapture

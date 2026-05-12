@@ -31,6 +31,7 @@ public static class MultiTenancySetup
         }
 
         builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+        // Removes NullCurrentTenant fallback; preserves consumer-supplied ICurrentTenant.
         builder.Services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
 
         return builder;

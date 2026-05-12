@@ -10,6 +10,16 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Headless.EntityFramework;
 
+/// <summary>
+/// Per-<see cref="DbContext"/> runtime that wires the navigation-change tracker, runs framework
+/// conventions in <c>OnModelCreating</c>, and forwards <c>SaveChanges</c> calls to the
+/// <see cref="IHeadlessSaveChangesPipeline"/> resolved on <paramref name="services"/>.
+/// </summary>
+/// <remarks>
+/// One instance per active <see cref="DbContext"/>. <see cref="Initialize"/> must be called once after
+/// the DbContext is constructed so the navigation-change tracker can attach to
+/// <see cref="DbContext.ChangeTracker"/>.
+/// </remarks>
 [PublicAPI]
 public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices services)
 {
