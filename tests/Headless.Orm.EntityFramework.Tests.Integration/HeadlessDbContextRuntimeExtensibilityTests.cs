@@ -100,6 +100,39 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         dispatcher.DistributedEmitters.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task save_changes_should_publish_messages_queued_on_unchanged_tracked_emitters()
+    {
+        // given
+        var (provider, connection) = await _CreateProviderAsync(services =>
+            services.AddHeadlessMessageDispatcher<RuntimeRecordingMessageDispatcher>()
+        );
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var dispatcher = scope.ServiceProvider.GetRequiredService<RuntimeRecordingMessageDispatcher>();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeEntity { Name = "emits-later" };
+
+        db.Entities.Add(entity);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        db.Entry(entity).State.Should().Be(EntityState.Unchanged);
+        dispatcher.LocalEmitters.Clear();
+        dispatcher.DistributedEmitters.Clear();
+
+        entity.AddMessage(new RuntimeLocalMessage("local-later"));
+        entity.AddMessage(new RuntimeDistributedMessage("distributed-later"));
+
+        // when
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then
+        dispatcher.LocalEmitters.Should().ContainSingle();
+        dispatcher.LocalEmitters[0].Messages.Should().ContainSingle(x => x.UniqueId == "local-later");
+        dispatcher.DistributedEmitters.Should().ContainSingle();
+        dispatcher.DistributedEmitters[0].Messages.Should().ContainSingle(x => x.UniqueId == "distributed-later");
+    }
+
     private static async Task<(ServiceProvider Provider, SqliteConnection Connection)> _CreateProviderAsync(
         Action<IServiceCollection>? configureServices = null
     )
@@ -196,6 +229,10 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
             DistributedEmitters.AddRange(emitters);
         }
     }
+
+    private sealed record RuntimeLocalMessage(string UniqueId) : ILocalMessage;
+
+    private sealed record RuntimeDistributedMessage(string UniqueId) : IDistributedMessage;
 
     private sealed class RuntimeTestDbContext(HeadlessDbContextServices services, DbContextOptions options)
         : HeadlessDbContext(services, options)

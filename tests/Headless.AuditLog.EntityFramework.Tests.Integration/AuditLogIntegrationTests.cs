@@ -4,6 +4,7 @@ using Headless.AuditLog;
 using Headless.EntityFramework;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using Tests.Fixture;
@@ -416,6 +417,40 @@ public sealed class AuditLogIntegrationTests : TestBase
     }
 
     [Fact]
+    public async Task save_changes_detaches_audit_entries_when_audit_commit_throws()
+    {
+        // Regression guard for failure inside HeadlessAuditPersistence before it returns handles
+        // to the outer save pipeline catch block.
+
+        // given
+        var interceptor = new ThrowOnceOnAuditSaveInterceptor();
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync(
+            configure: null,
+            configureDbContext: builder => builder.AddInterceptors(interceptor)
+        );
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+
+        db.Orders.Add(
+            new Order
+            {
+                Id = Guid.NewGuid(),
+                CustomerName = "Grace",
+                Email = "grace@example.com",
+                Amount = 11m,
+            }
+        );
+
+        // when / then
+        var act = async () => await db.SaveChangesAsync(AbortToken);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Simulated audit save failure.");
+
+        db.ChangeTracker.Entries<AuditLogEntry>().Where(e => e.State == EntityState.Added).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task save_changes_succeeds_when_audit_capture_throws()
     {
         // Regression guard for CaptureEntries' swallow-and-warn contract: a buggy IAuditChangeCapture
@@ -490,5 +525,49 @@ public sealed class AuditLogIntegrationTests : TestBase
         // then
         var count = await db.Set<AuditLogEntry>().CountAsync(AbortToken);
         count.Should().Be(0);
+    }
+
+    private sealed class ThrowOnceOnAuditSaveInterceptor : SaveChangesInterceptor
+    {
+        private bool _hasThrown;
+
+        public override InterceptionResult<int> SavingChanges(
+            DbContextEventData eventData,
+            InterceptionResult<int> result
+        )
+        {
+            ThrowIfAuditSave(eventData.Context);
+            return base.SavingChanges(eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            ThrowIfAuditSave(eventData.Context);
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
+
+        private void ThrowIfAuditSave(DbContext? context)
+        {
+            if (_hasThrown || context is null)
+            {
+                return;
+            }
+
+            var hasPendingAuditRow = context
+                .ChangeTracker.Entries<AuditLogEntry>()
+                .Any(entry => entry.State == EntityState.Added);
+
+            if (!hasPendingAuditRow)
+            {
+                return;
+            }
+
+            _hasThrown = true;
+            throw new InvalidOperationException("Simulated audit save failure.");
+        }
     }
 }
