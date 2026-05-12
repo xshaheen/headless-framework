@@ -1,6 +1,7 @@
 using Headless.EntityFramework;
 using Headless.EntityFramework.Messaging;
 using Microsoft.EntityFrameworkCore;
+using Tests.Fixtures;
 
 namespace Tests.Fixture;
 

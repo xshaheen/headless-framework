@@ -14,5 +14,6 @@
     <ProjectReference Include="..\..\src\Headless.Orm.EntityFramework\Headless.Orm.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Sql.Sqlite\Headless.Sql.Sqlite.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.Orm.Tests.Harness\Headless.Orm.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

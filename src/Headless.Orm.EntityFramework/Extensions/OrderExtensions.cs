@@ -31,8 +31,8 @@ public static class OrderExtensions
             for (var index = 1; index < orders.Length; ++index)
             {
                 query = orders[index].Ascending
-                    ? source.ThenBy(orders[index].Property)
-                    : source.ThenByDescending(orders[index].Property);
+                    ? query.ThenBy(orders[index].Property)
+                    : query.ThenByDescending(orders[index].Property);
             }
 
             return query;
