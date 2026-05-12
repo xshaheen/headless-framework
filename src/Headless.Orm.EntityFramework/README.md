@@ -141,8 +141,9 @@ services.AddHeadlessMessageDispatcher(provider =>
 Enable strict tenant-owned writes explicitly:
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .EntityFramework(ef => ef.GuardTenantWrites()));
+builder.AddHeadlessTenancy(
+    tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites())
+);
 ```
 
 When enabled, tenant-owned saves fail before persistence if no ambient tenant is available or if the entity belongs to another tenant. Missing tenant context throws `MissingTenantContextException`; cross-tenant mutations throw `CrossTenantWriteException`.

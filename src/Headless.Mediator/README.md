@@ -33,8 +33,9 @@ builder.Services.AddMediator(options =>
     options.ServiceLifetime = ServiceLifetime.Scoped;
 });
 
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Mediator(mediator => mediator.RequireTenant()));
+builder.AddHeadlessTenancy(
+    tenancy => tenancy.Mediator(mediator => mediator.RequireTenant())
+);
 
 builder.Services.AddValidationRequestPreProcessor();
 builder.Services.AddMediatorLoggingBehaviors();

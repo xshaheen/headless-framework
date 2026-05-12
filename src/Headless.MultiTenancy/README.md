@@ -31,6 +31,7 @@ Most applications receive this package transitively through the seam packages th
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddHeadlessInfrastructure();
+
 builder.AddHeadlessTenancy(tenancy => tenancy
     .Http(http => http.ResolveFromClaims())
     .Mediator(mediator => mediator.RequireTenant())
