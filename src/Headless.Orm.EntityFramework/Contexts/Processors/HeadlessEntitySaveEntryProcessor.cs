@@ -14,7 +14,6 @@ namespace Headless.EntityFramework.Processors;
 
 public sealed class HeadlessEntitySaveEntryProcessor(
     IGuidGenerator guidGenerator,
-    ICurrentTenant currentTenant,
     IOptions<TenantWriteGuardOptions> tenantWriteGuardOptions,
     ITenantWriteGuardBypass tenantWriteGuardBypass
 )
@@ -41,13 +40,13 @@ public sealed class HeadlessEntitySaveEntryProcessor(
 
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
-        _EnsureTenantWriteAllowed(entry);
+        _EnsureTenantWriteAllowed(entry, context.TenantId);
 
         switch (entry.State)
         {
             case EntityState.Added:
                 _TrySetGuidId(entry);
-                _TrySetMultiTenantId(entry);
+                _TrySetMultiTenantId(entry, context.TenantId);
                 _TrySetConcurrencyStamp(entry);
                 break;
             case EntityState.Modified:
@@ -56,7 +55,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         }
     }
 
-    private void _EnsureTenantWriteAllowed(EntityEntry entry)
+    private void _EnsureTenantWriteAllowed(EntityEntry entry, string? tenantId)
     {
         if (
             entry.Entity is not IMultiTenant entity
@@ -68,7 +67,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             return;
         }
 
-        var currentTenantId = _NormalizeTenantId(currentTenant.Id);
+        var currentTenantId = _NormalizeTenantId(tenantId);
         var entityTenantId = _NormalizeTenantId(entry.Property(nameof(IMultiTenant.TenantId)).CurrentValue);
 
         if (currentTenantId is null)
@@ -146,7 +145,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         return _ShouldStampGuidIdCache.GetValue(entityType, _ShouldStampGuidIdFactory).Value;
     }
 
-    private void _TrySetMultiTenantId(EntityEntry entry)
+    private static void _TrySetMultiTenantId(EntityEntry entry, string? tenantId)
     {
         if (entry.Entity is not IMultiTenant entity || !string.IsNullOrEmpty(entity.TenantId))
         {
@@ -158,7 +157,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             return;
         }
 
-        ObjectPropertiesHelper.TrySetProperty(entity, x => x.TenantId, () => currentTenant.Id);
+        ObjectPropertiesHelper.TrySetProperty(entity, x => x.TenantId, () => tenantId);
     }
 
     private static void _TrySetConcurrencyStamp(EntityEntry entry)

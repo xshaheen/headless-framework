@@ -149,7 +149,8 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
 
     private HeadlessSaveEntryContext _ProcessEntries(DbContext context, IReadOnlyList<EntityEntry> entries)
     {
-        var saveContext = new HeadlessSaveEntryContext(context);
+        var tenantId = context is IHeadlessDbContext headlessContext ? headlessContext.TenantId : null;
+        var saveContext = new HeadlessSaveEntryContext(context, tenantId);
 
         foreach (var entry in entries)
         {

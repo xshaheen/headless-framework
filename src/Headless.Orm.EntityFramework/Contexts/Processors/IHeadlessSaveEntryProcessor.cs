@@ -24,10 +24,13 @@ public interface IHeadlessSaveEntryProcessor
 /// Per-<c>SaveChanges</c> scratchpad threaded through the processor chain. Holds the active
 /// <see cref="DbContext"/> and the message-emitter snapshots collected this round.
 /// </summary>
-public sealed class HeadlessSaveEntryContext(DbContext dbContext)
+public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenantId = null)
 {
     /// <summary>Active EF Core context for this save.</summary>
     public DbContext DbContext { get; } = dbContext;
+
+    /// <summary>Ambient tenant identifier captured for this save round.</summary>
+    public string? TenantId { get; } = tenantId;
 
     /// <summary>
     /// Local message emitters collected during processing.

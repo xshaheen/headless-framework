@@ -68,6 +68,30 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
     }
 
     [Fact]
+    public async Task save_changes_should_expose_current_tenant_on_entry_processor_context()
+    {
+        // given
+        var (provider, connection) = await _CreateProviderAsync(
+            services => services.AddSingleton<ICurrentTenant>(new RuntimeCustomCurrentTenant()),
+            options => options.AddSaveEntryProcessor<TenantRecordingSaveEntryProcessor>(ServiceLifetime.Singleton)
+        );
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var recorder = scope.ServiceProvider.GetRequiredService<ProcessorOrderRecorder>();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeBasicEntity { Name = "tenant-context" };
+
+        db.BasicEntities.Add(entity);
+
+        // when
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then
+        recorder.Entries.Should().Contain("tenant:custom");
+    }
+
+    [Fact]
     public async Task save_changes_should_use_default_processors_when_entity_does_not_emit_messages()
     {
         // given
@@ -254,6 +278,17 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
             if (entry is { Entity: RuntimeBasicEntity, State: EntityState.Added })
             {
                 recorder.Entries.Add("late");
+            }
+        }
+    }
+
+    private sealed class TenantRecordingSaveEntryProcessor(ProcessorOrderRecorder recorder) : IHeadlessSaveEntryProcessor
+    {
+        public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
+        {
+            if (entry is { Entity: RuntimeBasicEntity, State: EntityState.Added })
+            {
+                recorder.Entries.Add($"tenant:{context.TenantId}");
             }
         }
     }
