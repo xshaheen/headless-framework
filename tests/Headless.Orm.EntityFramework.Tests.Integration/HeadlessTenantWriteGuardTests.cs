@@ -240,7 +240,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_disabled_should_preserve_current_create_without_current_tenant_behavior()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: false);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: false);
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
@@ -261,7 +261,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_reject_tenant_owned_add_without_current_tenant_before_side_effects()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
@@ -283,7 +283,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_reject_tenant_owned_update_without_current_tenant_before_side_effects()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "missing-tenant-update");
 
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
@@ -308,7 +308,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_reject_tenant_owned_physical_delete_without_current_tenant_before_side_effects()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "missing-tenant-delete");
 
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
@@ -333,7 +333,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_stamp_added_tenant_owned_entity_under_current_tenant()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         using var tenant = fixture.CurrentTenant.Change("tenant-a");
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
@@ -358,7 +358,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_reject_tenant_owned_add_with_different_tenant()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         using var tenant = fixture.CurrentTenant.Change("tenant-a");
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
@@ -384,7 +384,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_allow_matching_tenant_create()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         using var tenant = fixture.CurrentTenant.Change("tenant-a");
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
@@ -404,7 +404,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_allow_matching_tenant_update()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "initial");
 
         using var tenant = fixture.CurrentTenant.Change("tenant-a");
@@ -425,7 +425,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_allow_matching_tenant_physical_delete()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "to-delete");
 
         using var tenant = fixture.CurrentTenant.Change("tenant-a");
@@ -446,7 +446,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_reject_remove_after_tenant_id_rewrite_on_tracked_entity()
     {
         // given — load entity owned by tenant-a, rewrite CurrentValue, then Remove
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "owned-by-a");
 
         using var tenant = fixture.CurrentTenant.Change("tenant-a");
@@ -471,7 +471,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_reject_delete_when_entity_tenant_id_is_null()
     {
         // given — bypass to create a row with null TenantId, then attempt a guarded delete
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         var bypass = fixture.ServiceProvider.GetRequiredService<ITenantWriteGuardBypass>();
         Guid entityId;
 
@@ -507,7 +507,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_reject_cross_tenant_update_loaded_through_ignored_filter()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         var entityId = await _SeedTenantEntityAsync(fixture, "tenant-b", "owned-by-b");
 
         fixture.CurrentTenant.Id = "tenant-a";
@@ -532,7 +532,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_reject_tenant_id_reassignment_on_tracked_update()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "owned-by-a");
 
         using var tenant = fixture.CurrentTenant.Change("tenant-a");
@@ -557,7 +557,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_reject_clearing_tenant_id_on_tracked_update()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         var entityId = await _SeedTenantEntityAsync(fixture, "tenant-a", "owned-by-a");
 
         using var tenant = fixture.CurrentTenant.Change("tenant-a");
@@ -582,7 +582,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_reject_cross_tenant_physical_delete_loaded_through_ignored_filter()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         var entityId = await _SeedTenantEntityAsync(fixture, "tenant-b", "delete-owned-by-b");
 
         fixture.CurrentTenant.Id = "tenant-a";
@@ -607,7 +607,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_reject_cross_tenant_soft_delete_as_modified_write()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         var entityId = await _SeedTenantEntityAsync(fixture, "tenant-b", "soft-delete-owned-by-b");
 
         fixture.CurrentTenant.Id = "tenant-a";
@@ -633,7 +633,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_allow_non_tenant_entity_add_update_and_delete_without_current_tenant()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
@@ -658,7 +658,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task guard_enabled_should_allow_scoped_bypass_and_restore_strict_behavior_after_dispose()
     {
         // given
-        await using var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled: true);
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
         var bypass = scope.ServiceProvider.GetRequiredService<ITenantWriteGuardBypass>();

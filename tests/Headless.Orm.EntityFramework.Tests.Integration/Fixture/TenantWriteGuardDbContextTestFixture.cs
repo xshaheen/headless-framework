@@ -1,22 +1,59 @@
 using Headless.Abstractions;
 using Headless.EntityFramework;
 using Headless.Testing.Helpers;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using Testcontainers.PostgreSql;
 using Tests.Fixtures;
 
 namespace Tests.Fixture;
 
 public sealed class TenantWriteGuardDbContextTestFixture : IAsyncDisposable
 {
-    private readonly SqliteConnection _connection = new("Data Source=:memory:");
+    private readonly PostgreSqlContainer _postgreSqlContainer;
 
-    public TenantWriteGuardDbContextTestFixture(bool guardEnabled)
+    private TenantWriteGuardDbContextTestFixture(bool guardEnabled)
     {
-        _connection.Open();
+        GuardEnabled = guardEnabled;
+        _postgreSqlContainer = _CreatePostgreSqlContainer();
+    }
+
+    public static string UserId { get; } = Guid.NewGuid().ToString();
+
+    public static DateTimeOffset Now { get; } = DateTimeOffset.UtcNow;
+
+    public bool GuardEnabled { get; }
+
+    public string SqlConnectionString => _postgreSqlContainer.GetConnectionString();
+
+    public ServiceProvider ServiceProvider { get; private set; } = null!;
+
+    public TestClock Clock { get; } = new() { TimeProvider = new FakeTimeProvider(Now) };
+
+    public TestCurrentTenant CurrentTenant { get; } = new();
+
+    public TestCurrentUser CurrentUser { get; } = new() { UserId = UserId };
+
+    public static async Task<TenantWriteGuardDbContextTestFixture> CreateAsync(bool guardEnabled)
+    {
+        var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled);
+        await fixture._InitializeAsync();
+
+        return fixture;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await ServiceProvider.DisposeAsync();
+        await _postgreSqlContainer.StopAsync();
+        await _postgreSqlContainer.DisposeAsync();
+    }
+
+    private async Task _InitializeAsync()
+    {
+        await _postgreSqlContainer.StartAsync();
 
         var services = new ServiceCollection();
 
@@ -25,7 +62,7 @@ public sealed class TenantWriteGuardDbContextTestFixture : IAsyncDisposable
         services.AddSingleton<ICurrentUser>(CurrentUser);
         services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
 
-        if (guardEnabled)
+        if (GuardEnabled)
         {
             services.AddHeadlessTenantWriteGuard();
         }
@@ -37,30 +74,22 @@ public sealed class TenantWriteGuardDbContextTestFixture : IAsyncDisposable
         services.AddOrReplaceSingleton<ICurrentTenant>(_ => CurrentTenant);
         services.AddHeadlessMessageDispatcher<RecordingHeadlessMessageDispatcher>();
 
-        services.AddDbContext<TestHeadlessDbContext>(options => options.UseSqlite(_connection).AddHeadlessExtension());
+        services.AddDbContext<TestHeadlessDbContext>(options =>
+            options.UseNpgsql(SqlConnectionString).AddHeadlessExtension()
+        );
 
         ServiceProvider = services.BuildServiceProvider();
 
-        using var scope = ServiceProvider.CreateScope();
-        using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
-        db.Database.EnsureCreated();
+        await ServiceProvider.EnsureDbRecreatedAsync<TestHeadlessDbContext>();
     }
 
-    public static string UserId { get; } = Guid.NewGuid().ToString();
-
-    public static DateTimeOffset Now { get; } = DateTimeOffset.UtcNow;
-
-    public ServiceProvider ServiceProvider { get; }
-
-    public TestClock Clock { get; } = new() { TimeProvider = new FakeTimeProvider(Now) };
-
-    public TestCurrentTenant CurrentTenant { get; } = new();
-
-    public TestCurrentUser CurrentUser { get; } = new() { UserId = UserId };
-
-    public async ValueTask DisposeAsync()
+    private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
-        await ServiceProvider.DisposeAsync();
-        await _connection.DisposeAsync();
+        return new PostgreSqlBuilder("postgres:18.1-alpine3.23")
+            .WithLabel("type", "tenant-write-guard")
+            .WithDatabase("headless_test")
+            .WithUsername("postgres")
+            .WithPassword("postgres")
+            .Build();
     }
 }
