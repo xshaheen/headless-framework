@@ -158,7 +158,9 @@ public sealed class MultiTenancyMessagingBuilderExtensionsTests : TestBase
         var act = async () => await validator.StartAsync(AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*NullCurrentTenant*AddCurrentTenant*");
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*NullCurrentTenant*AddHeadlessInfrastructure*AddHeadlessMultiTenancy*");
     }
 
     [Fact]

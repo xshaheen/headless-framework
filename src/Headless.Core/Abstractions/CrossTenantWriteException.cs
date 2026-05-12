@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.EntityFramework.MultiTenancy;
+namespace Headless.Abstractions;
 
 /// <summary>
-/// Thrown when the EF tenant write guard detects a tenant-owned write that does not match
-/// the current tenant context.
+/// Thrown when a tenant write guard detects a tenant-owned write that does not match the current
+/// tenant context.
 /// </summary>
 public sealed class CrossTenantWriteException : Exception
 {
@@ -39,7 +39,7 @@ public sealed class CrossTenantWriteException : Exception
     /// <summary>Gets the stable failure category for structured diagnostics.</summary>
     public string FailureCategory { get; } = "CrossTenantWrite";
 
-    /// <summary>Gets the EF write state that failed the guard.</summary>
+    /// <summary>Gets the write state that failed the guard.</summary>
     public string WriteState { get; }
 
     /// <summary>Gets a value indicating whether the current operation had an ambient tenant.</summary>

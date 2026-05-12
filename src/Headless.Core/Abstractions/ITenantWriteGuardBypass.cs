@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.EntityFramework.MultiTenancy;
+namespace Headless.Abstractions;
 
 /// <summary>Tracks an operation-local bypass for intentional host or admin tenant-owned writes.</summary>
 public interface ITenantWriteGuardBypass

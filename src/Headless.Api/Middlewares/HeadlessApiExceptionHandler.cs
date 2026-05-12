@@ -47,23 +47,16 @@ internal sealed partial class HeadlessApiExceptionHandler(
     private const string _DbUpdateConcurrencyExceptionFullName =
         "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
 
-    private const string _CrossTenantWriteExceptionFullName =
-        "Headless.EntityFramework.MultiTenancy.CrossTenantWriteException";
-
     // Cached per concrete exception type to avoid re-walking the inheritance chain on every hit.
     // ConditionalWeakTable lets entries (and their owning AssemblyLoadContext) unload when the
     // exception type is no longer referenced elsewhere.
     private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _DbUpdateConcurrencyTypeCache = new();
-    private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _CrossTenantWriteTypeCache = new();
 
     private static readonly ConditionalWeakTable<
         Type,
         StrongBox<bool>
     >.CreateValueCallback _DbUpdateConcurrencyFactory = static type =>
         _MatchesExceptionFullName(type, _DbUpdateConcurrencyExceptionFullName);
-
-    private static readonly ConditionalWeakTable<Type, StrongBox<bool>>.CreateValueCallback _CrossTenantWriteFactory =
-        static type => _MatchesExceptionFullName(type, _CrossTenantWriteExceptionFullName);
 
     private static StrongBox<bool> _MatchesExceptionFullName(Type type, string fullName)
     {
@@ -134,7 +127,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     statusCode = StatusCodes.Status404NotFound;
                     break;
 
-                case not null when _IsCrossTenantWriteException(exception):
+                case CrossTenantWriteException:
                     _LogCrossTenantWriteException(logger, exception);
                     problemDetails = problemDetailsCreator.Conflict([
                         HeadlessProblemDetailsConstants.Errors.CrossTenantWrite,
@@ -269,11 +262,6 @@ internal sealed partial class HeadlessApiExceptionHandler(
     private static bool _IsDbUpdateConcurrencyException(Exception ex)
     {
         return _DbUpdateConcurrencyTypeCache.GetValue(ex.GetType(), _DbUpdateConcurrencyFactory).Value;
-    }
-
-    private static bool _IsCrossTenantWriteException(Exception ex)
-    {
-        return _CrossTenantWriteTypeCache.GetValue(ex.GetType(), _CrossTenantWriteFactory).Value;
     }
 
     private static bool _IsCancellationException(Exception? ex)

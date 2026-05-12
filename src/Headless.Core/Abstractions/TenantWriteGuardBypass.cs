@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.EntityFramework.MultiTenancy;
+namespace Headless.Abstractions;
 
 /// <summary>AsyncLocal-backed tenant write guard bypass.</summary>
 public sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass

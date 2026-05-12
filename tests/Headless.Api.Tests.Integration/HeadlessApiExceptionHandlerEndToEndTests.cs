@@ -116,7 +116,14 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         const string sentinel = "LEAKED-CROSS-TENANT-WRITE";
         await using var app = await _CreateAppAsync(
             handlerSetup: _ => { },
-            endpoint: () => throw new Headless.EntityFramework.MultiTenancy.CrossTenantWriteException(sentinel)
+            endpoint: () =>
+                throw new CrossTenantWriteException(
+                    entityType: sentinel,
+                    writeState: "Modified",
+                    currentTenantAvailable: true,
+                    entityTenantAvailable: true,
+                    tenantMatches: false
+                )
         );
         using var client = _CreateClient(app);
 
