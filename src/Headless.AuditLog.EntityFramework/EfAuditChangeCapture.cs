@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -14,7 +15,17 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
     : IAuditChangeCapture,
         IAuditEntityIdResolver
 {
-    private static readonly ConcurrentDictionary<PropertyInfo, AuditPropertyMetadata> _PropertyCache = new();
+    private static readonly ConditionalWeakTable<
+        Type,
+        ConcurrentDictionary<string, AuditPropertyMetadata>
+    > _PropertyCache = new();
+
+    private static readonly ConditionalWeakTable<
+        Type,
+        ConcurrentDictionary<string, AuditPropertyMetadata>
+    >.CreateValueCallback _CreatePropertyInner = static _ => new ConcurrentDictionary<string, AuditPropertyMetadata>(
+        StringComparer.Ordinal
+    );
     private readonly ConcurrentDictionary<Type, bool> _entityFilterCache = new();
     private readonly ConcurrentDictionary<(Type Type, string PropertyName), bool> _propertyFilterCache = new();
     private readonly List<(AuditLogEntryData Data, EntityEntry EntityEntry)> _deferredEntityIds = [];
@@ -516,21 +527,27 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         return JsonSerializer.Serialize(values.Select(static value => value?.ToString()).ToArray());
     }
 
-    private static AuditPropertyMetadata _GetPropertyMetadata(PropertyInfo propInfo) =>
-        _PropertyCache.GetOrAdd(
-            propInfo,
-            static pi =>
+    private static AuditPropertyMetadata _GetPropertyMetadata(PropertyInfo propInfo)
+    {
+        var ownerType = propInfo.DeclaringType ?? propInfo.ReflectedType ?? typeof(object);
+        var inner = _PropertyCache.GetValue(ownerType, _CreatePropertyInner);
+
+        return inner.GetOrAdd(
+            propInfo.Name,
+            static (_, pi) =>
             {
                 var ignore = pi.GetCustomAttribute<AuditIgnoreAttribute>();
                 var sensitive = pi.GetCustomAttribute<AuditSensitiveAttribute>();
 
-                return new(
+                return new AuditPropertyMetadata(
                     IsIgnored: ignore is not null,
                     IsSensitive: sensitive is not null,
                     SensitiveStrategy: sensitive?.Strategy
                 );
-            }
+            },
+            propInfo
         );
+    }
 
     private sealed record AuditPropertyMetadata(
         bool IsIgnored,

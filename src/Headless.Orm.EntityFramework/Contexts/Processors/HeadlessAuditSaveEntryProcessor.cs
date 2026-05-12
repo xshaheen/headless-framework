@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using Headless.Abstractions;
 using Headless.Domain;
 using Headless.Reflection;
@@ -14,10 +15,15 @@ namespace Headless.EntityFramework.Processors;
 public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser currentUser)
     : IHeadlessSaveEntryProcessor
 {
-    private static readonly ConcurrentDictionary<
-        (Type EntityType, Type Interface),
-        bool
+    private static readonly ConditionalWeakTable<
+        Type,
+        ConcurrentDictionary<Type, bool>
     > _ImplementsGenericInterfaceCache = new();
+
+    private static readonly ConditionalWeakTable<
+        Type,
+        ConcurrentDictionary<Type, bool>
+    >.CreateValueCallback _CreateImplementsInner = static _ => new ConcurrentDictionary<Type, bool>();
 
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
@@ -294,11 +300,13 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
     private static bool _ImplementsGenericInterface(Type type, Type genericInterfaceDefinition)
     {
-        return _ImplementsGenericInterfaceCache.GetOrAdd(
-            (type, genericInterfaceDefinition),
-            static key =>
-                key.EntityType.GetInterfaces()
-                    .Exists(x => x.IsGenericType && x.GetGenericTypeDefinition() == key.Interface)
+        var inner = _ImplementsGenericInterfaceCache.GetValue(type, _CreateImplementsInner);
+
+        return inner.GetOrAdd(
+            genericInterfaceDefinition,
+            static (interfaceDef, entityType) =>
+                entityType.GetInterfaces().Exists(x => x.IsGenericType && x.GetGenericTypeDefinition() == interfaceDef),
+            type
         );
     }
 }

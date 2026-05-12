@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 using Headless.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -11,10 +11,30 @@ namespace Headless.EntityFramework.Processors;
 
 public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryProcessor
 {
-    private static readonly ConcurrentDictionary<Type, Func<object, ILocalMessage>> _CreatedFactories = new();
-    private static readonly ConcurrentDictionary<Type, Func<object, ILocalMessage>> _UpdatedFactories = new();
-    private static readonly ConcurrentDictionary<Type, Func<object, ILocalMessage>> _DeletedFactories = new();
-    private static readonly ConcurrentDictionary<Type, Func<object, ILocalMessage>> _ChangedFactories = new();
+    private static readonly ConditionalWeakTable<Type, Func<object, ILocalMessage>> _CreatedFactories = new();
+    private static readonly ConditionalWeakTable<Type, Func<object, ILocalMessage>> _UpdatedFactories = new();
+    private static readonly ConditionalWeakTable<Type, Func<object, ILocalMessage>> _DeletedFactories = new();
+    private static readonly ConditionalWeakTable<Type, Func<object, ILocalMessage>> _ChangedFactories = new();
+
+    private static readonly ConditionalWeakTable<
+        Type,
+        Func<object, ILocalMessage>
+    >.CreateValueCallback _CreatedFactory = static type => _CompileEventFactory(typeof(EntityCreatedEventData<>), type);
+
+    private static readonly ConditionalWeakTable<
+        Type,
+        Func<object, ILocalMessage>
+    >.CreateValueCallback _UpdatedFactory = static type => _CompileEventFactory(typeof(EntityUpdatedEventData<>), type);
+
+    private static readonly ConditionalWeakTable<
+        Type,
+        Func<object, ILocalMessage>
+    >.CreateValueCallback _DeletedFactory = static type => _CompileEventFactory(typeof(EntityDeletedEventData<>), type);
+
+    private static readonly ConditionalWeakTable<
+        Type,
+        Func<object, ILocalMessage>
+    >.CreateValueCallback _ChangedFactory = static type => _CompileEventFactory(typeof(EntityChangedEventData<>), type);
 
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
@@ -61,37 +81,25 @@ public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryPro
 
     private static void _PublishEntityCreated(ILocalMessageEmitter entity)
     {
-        var factory = _CreatedFactories.GetOrAdd(
-            entity.GetType(),
-            static type => _CompileEventFactory(typeof(EntityCreatedEventData<>), type)
-        );
+        var factory = _CreatedFactories.GetValue(entity.GetType(), _CreatedFactory);
         entity.AddMessage(factory(entity));
     }
 
     private static void _PublishEntityUpdated(ILocalMessageEmitter entity)
     {
-        var factory = _UpdatedFactories.GetOrAdd(
-            entity.GetType(),
-            static type => _CompileEventFactory(typeof(EntityUpdatedEventData<>), type)
-        );
+        var factory = _UpdatedFactories.GetValue(entity.GetType(), _UpdatedFactory);
         entity.AddMessage(factory(entity));
     }
 
     private static void _PublishEntityDeleted(ILocalMessageEmitter entity)
     {
-        var factory = _DeletedFactories.GetOrAdd(
-            entity.GetType(),
-            static type => _CompileEventFactory(typeof(EntityDeletedEventData<>), type)
-        );
+        var factory = _DeletedFactories.GetValue(entity.GetType(), _DeletedFactory);
         entity.AddMessage(factory(entity));
     }
 
     private static void _PublishEntityChanged(ILocalMessageEmitter entity)
     {
-        var factory = _ChangedFactories.GetOrAdd(
-            entity.GetType(),
-            static type => _CompileEventFactory(typeof(EntityChangedEventData<>), type)
-        );
+        var factory = _ChangedFactories.GetValue(entity.GetType(), _ChangedFactory);
         entity.AddMessage(factory(entity));
     }
 

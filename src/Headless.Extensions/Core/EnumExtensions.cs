@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Headless.Primitives;
 using Headless.Reflection;
@@ -17,9 +18,12 @@ namespace System;
 [PublicAPI]
 public static class EnumExtensions
 {
-    private sealed record CacheKey(Type EnumType, int Value);
+    private static readonly ConditionalWeakTable<Type, ConcurrentDictionary<int, object>> _LocaleCache = new();
 
-    private static readonly ConcurrentDictionary<CacheKey, object> _LocaleCache = new();
+    private static readonly ConditionalWeakTable<
+        Type,
+        ConcurrentDictionary<int, object>
+    >.CreateValueCallback _CreateLocaleInner = static _ => new ConcurrentDictionary<int, object>();
 
     [RequiresUnreferencedCode("Uses Type.GetMember which is not compatible with trimming.")]
     [SystemPure, JetBrainsPure, MustUseReturnValue]
@@ -90,10 +94,14 @@ public static class EnumExtensions
         {
             Argument.IsNotNull(enumValue);
 
+            var enumType = enumValue.GetType();
+            var intValue = Convert.ToInt32(enumValue, CultureInfo.InvariantCulture);
+            var inner = _LocaleCache.GetValue(enumType, _CreateLocaleInner);
+
             return (AllLocaleValue<T>)
-                _LocaleCache.GetOrAdd(
-                    key: new(enumValue.GetType(), Value: Convert.ToInt32(enumValue, CultureInfo.InvariantCulture)),
-                    valueFactory: static (_, value) =>
+                inner.GetOrAdd(
+                    intValue,
+                    static (_, value) =>
                     {
                         var defaultValue = new EnumLocale<T>
                         {
@@ -119,7 +127,7 @@ public static class EnumExtensions
 
                         return new AllLocaleValue<T>(defaultValue, locales);
                     },
-                    factoryArgument: enumValue
+                    enumValue
                 );
         }
 

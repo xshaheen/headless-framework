@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Runtime.CompilerServices;
 using Headless.Abstractions;
 using Headless.Domain;
 using Headless.Reflection;
@@ -13,7 +13,24 @@ namespace Headless.EntityFramework.Processors;
 public sealed class HeadlessEntitySaveEntryProcessor(IGuidGenerator guidGenerator, ICurrentTenant currentTenant)
     : IHeadlessSaveEntryProcessor
 {
-    private static readonly ConcurrentDictionary<Type, bool> _ShouldStampGuidIdCache = new();
+    private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _ShouldStampGuidIdCache = new();
+
+    private static readonly ConditionalWeakTable<Type, StrongBox<bool>>.CreateValueCallback _ShouldStampGuidIdFactory =
+        static type =>
+        {
+            var idProperty = type.GetProperty(nameof(IEntity<>.Id));
+
+            if (idProperty is null)
+            {
+                return new StrongBox<bool>(value: false);
+            }
+
+            var stamp =
+                idProperty.GetFirstOrDefaultAttribute<DatabaseGeneratedAttribute>()
+                is not { DatabaseGeneratedOption: not DatabaseGeneratedOption.None };
+
+            return new StrongBox<bool>(stamp);
+        };
 
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
@@ -47,21 +64,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(IGuidGenerator guidGenerato
 
     private static bool _ShouldStampGuidId(Type entityType)
     {
-        return _ShouldStampGuidIdCache.GetOrAdd(
-            entityType,
-            static type =>
-            {
-                var idProperty = type.GetProperty(nameof(IEntity<>.Id));
-
-                if (idProperty is null)
-                {
-                    return false;
-                }
-
-                return idProperty.GetFirstOrDefaultAttribute<DatabaseGeneratedAttribute>()
-                    is not { DatabaseGeneratedOption: not DatabaseGeneratedOption.None };
-            }
-        );
+        return _ShouldStampGuidIdCache.GetValue(entityType, _ShouldStampGuidIdFactory).Value;
     }
 
     private void _TrySetMultiTenantId(EntityEntry entry)
