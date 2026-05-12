@@ -96,12 +96,14 @@ var everything = await dbContext.Products
 - `IHeadlessMessageDispatcher` for local/distributed message publishing
 - `IHeadlessSaveChangesPipeline` for transaction, audit, and message orchestration
 
-The default processor chain runs in registration order against every tracked entity, then again for any processors you add:
+The default processor chain runs in registration order against every tracked entity:
 
 1. `HeadlessEntitySaveEntryProcessor` — stamps `Guid` IDs, tenant IDs, concurrency stamps
 2. `HeadlessAuditSaveEntryProcessor` — stamps create/update/delete/suspend audit fields
 3. `HeadlessLocalEventSaveEntryProcessor` — publishes `EntityCreated/Updated/Deleted/Changed` lifecycle messages on `ILocalMessageEmitter` entities
 4. `HeadlessMessageCollectorSaveEntryProcessor` — collects pending local + distributed messages onto the save context
+
+Custom processors are inserted after the entity/audit defaults and before the terminal lifecycle/message collectors, so app-specific mutations or queued messages are visible to the framework collectors.
 
 ```csharp
 public sealed class AppSaveEntryProcessor : IHeadlessSaveEntryProcessor
@@ -114,13 +116,12 @@ public sealed class AppSaveEntryProcessor : IHeadlessSaveEntryProcessor
 
 services.AddHeadlessDbContextServices(options =>
 {
-    // Lifetime controls DI registration and per-save resolution; processor runs after the
-    // built-in chain because registrations append to the tail.
+    // Lifetime controls DI registration and per-save resolution.
     options.AddSaveEntryProcessor<AppSaveEntryProcessor>(ServiceLifetime.Scoped);
 });
 ```
 
-Re-registering the same processor type removes the prior entry and re-appends it, so the latest call always wins on position. Use `options.RemoveSaveEntryProcessor<TProcessor>()` to opt out of one of the built-in processors entirely.
+Re-registering the same processor type removes the prior entry and re-inserts it at its effective priority. Normal processors run before terminal collectors; terminal processors keep their framework order. Use `options.RemoveSaveEntryProcessor<TProcessor>()` to opt out of one of the built-in processors entirely.
 
 Message publishing defaults to a fail-fast dispatcher (`ThrowHeadlessMessageDispatcher`). If entities emit local or distributed messages, register a dispatcher to publish captured emitters through your application messaging infrastructure.
 
@@ -164,5 +165,6 @@ var result = await dbContext.ExecuteTransactionAsync<int>(async (ctx, ct) =>
 ## Side Effects
 
 - Registers `HeadlessDbContextServices`, the default save-entry processor chain, `IHeadlessSaveChangesPipeline`, and a fail-fast `IHeadlessMessageDispatcher` (`ThrowHeadlessMessageDispatcher`)
-- Registers framework defaults via `TryAddSingleton`: `IClock` (`Clock`), `IGuidGenerator` (`SequentialAtEndGuidGenerator`), `ICurrentTenant` (`CurrentTenant`), `ICurrentTenantAccessor` (`AsyncLocalCurrentTenantAccessor`), `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider` (`ActivityCorrelationIdProvider`), and `TimeProvider.System`
+- Registers framework defaults via `TryAddSingleton`: `IClock` (`Clock`), `IGuidGenerator` (`SequentialAtEndGuidGenerator`), `ICurrentTenantAccessor` (`AsyncLocalCurrentTenantAccessor`), `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider` (`ActivityCorrelationIdProvider`), and `TimeProvider.System`
+- Registers `ICurrentTenant` as `CurrentTenant` by default, replacing only the framework fallback `NullCurrentTenant` while preserving consumer-provided tenant implementations
 - Replaces `ICompiledQueryCacheKeyGenerator` so tenant-scoped queries can share compiled plans safely

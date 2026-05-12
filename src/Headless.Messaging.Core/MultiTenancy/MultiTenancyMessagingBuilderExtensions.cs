@@ -29,9 +29,10 @@ public static class MultiTenancyMessagingBuilderExtensions
     /// at startup when only the fallback <see cref="NullCurrentTenant"/> is registered:
     /// a hosted-service validation runs once on application start and throws
     /// <see cref="InvalidOperationException"/> with a diagnostic message naming the missing service
-    /// and pointing to <c>AddCurrentTenant()</c>. Register a real <c>ICurrentTenant</c> (typically
-    /// via the <c>Headless.Api</c> multi-tenancy setup, or by overriding the registration in DI)
-    /// BEFORE calling <c>AddHeadlessMessaging</c>.
+    /// and pointing to the framework APIs that register a real tenant resolver. Register a real
+    /// <c>ICurrentTenant</c> (typically via <c>AddHeadlessInfrastructure()</c>,
+    /// <c>AddHeadlessMultiTenancy()</c>, <c>AddHeadlessDbContextServices()</c>, or by overriding the
+    /// registration in DI) BEFORE calling <c>AddHeadlessMessaging</c>.
     /// </para>
     /// <para>
     /// Trust boundary: the consume filter trusts the inbound envelope. Topics exposed to external
@@ -75,8 +76,9 @@ internal sealed class TenantPropagationStartupValidator(ICurrentTenant currentTe
             throw new InvalidOperationException(
                 $"AddTenantPropagation() was called but the only ICurrentTenant registration is "
                     + $"{nameof(NullCurrentTenant)} — propagation would be a silent no-op. "
-                    + "Register a real ICurrentTenant implementation (typically via AddCurrentTenant() "
-                    + "from the Headless.Api multi-tenancy setup, or by overriding the registration in DI) "
+                    + "Register a real ICurrentTenant implementation (typically via "
+                    + "AddHeadlessInfrastructure(), AddHeadlessMultiTenancy(), "
+                    + "AddHeadlessDbContextServices(), or by overriding the registration in DI) "
                     + "BEFORE calling AddHeadlessMessaging."
             );
         }

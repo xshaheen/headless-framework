@@ -35,6 +35,41 @@ public sealed class ApiSetupTests
     }
 
     [Fact]
+    public void add_headless_api_should_replace_null_current_tenant_fallback()
+    {
+        // given
+        var builder = WebApplication.CreateBuilder();
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
+        builder.Services.AddSingleton<ICurrentTenant, NullCurrentTenant>();
+
+        // when
+        builder.AddHeadlessInfrastructure();
+
+        using var serviceProvider = builder.Services.BuildServiceProvider();
+
+        // then
+        serviceProvider.GetRequiredService<ICurrentTenant>().Should().BeOfType<CurrentTenant>();
+    }
+
+    [Fact]
+    public void add_headless_api_should_preserve_custom_current_tenant()
+    {
+        // given
+        var builder = WebApplication.CreateBuilder();
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
+        var customTenant = new ApiCustomCurrentTenant();
+        builder.Services.AddSingleton<ICurrentTenant>(customTenant);
+
+        // when
+        builder.AddHeadlessInfrastructure();
+
+        using var serviceProvider = builder.Services.BuildServiceProvider();
+
+        // then
+        serviceProvider.GetRequiredService<ICurrentTenant>().Should().BeSameAs(customTenant);
+    }
+
+    [Fact]
     public async Task add_headless_api_should_register_service_defaults()
     {
         // given
@@ -188,7 +223,7 @@ public sealed class ApiSetupTests
     }
 
     [Fact]
-    public void add_headless_multi_tenancy_should_replace_current_tenant_and_store_custom_claim_type()
+    public void add_headless_multi_tenancy_should_replace_null_current_tenant_and_store_custom_claim_type()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -204,6 +239,39 @@ public sealed class ApiSetupTests
         // then
         currentTenant.Should().BeOfType<CurrentTenant>();
         options.ClaimType.Should().Be("custom_tenant_id");
+    }
+
+    [Fact]
+    public void add_headless_multi_tenancy_should_preserve_custom_current_tenant()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        var customTenant = new ApiCustomCurrentTenant();
+        builder.Services.AddSingleton<ICurrentTenant>(customTenant);
+
+        // when
+        builder.AddHeadlessMultiTenancy();
+
+        using var serviceProvider = builder.Services.BuildServiceProvider();
+
+        // then
+        serviceProvider.GetRequiredService<ICurrentTenant>().Should().BeSameAs(customTenant);
+    }
+
+    private sealed class ApiCustomCurrentTenant : ICurrentTenant
+    {
+        public bool IsAvailable => true;
+
+        public string? Id => "custom";
+
+        public string? Name => "Custom";
+
+        public IDisposable Change(string? id, string? name = null) => new ApiCurrentTenantScope();
+    }
+
+    private sealed class ApiCurrentTenantScope : IDisposable
+    {
+        public void Dispose() { }
     }
 
     private sealed class SecurityTestValues

@@ -443,6 +443,87 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
+    public void add_or_replace_fallback_singleton_should_replace_fallback_service()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton<IMyService, FallbackService>();
+
+        // when
+        var result = services.AddOrReplaceFallbackSingleton<IMyService, FallbackService, ReplacementService>();
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        result.Should().BeTrue();
+        provider.GetRequiredService<IMyService>().Should().BeOfType<ReplacementService>();
+    }
+
+    [Fact]
+    public void add_or_replace_fallback_singleton_should_replace_fallback_instance()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton<IMyService>(new FallbackService());
+
+        // when
+        var result = services.AddOrReplaceFallbackSingleton<IMyService, FallbackService, ReplacementService>();
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        result.Should().BeTrue();
+        provider.GetRequiredService<IMyService>().Should().BeOfType<ReplacementService>();
+    }
+
+    [Fact]
+    public void add_or_replace_fallback_singleton_should_preserve_custom_service()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton<IMyService, MyService>();
+
+        // when
+        var result = services.AddOrReplaceFallbackSingleton<IMyService, FallbackService, ReplacementService>();
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        result.Should().BeFalse();
+        provider.GetRequiredService<IMyService>().Should().BeOfType<MyService>();
+    }
+
+    [Fact]
+    public void add_or_replace_fallback_singleton_should_remove_fallback_and_preserve_custom_service()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton<IMyService, MyService>();
+        services.AddSingleton<IMyService, FallbackService>();
+
+        // when
+        var result = services.AddOrReplaceFallbackSingleton<IMyService, FallbackService, ReplacementService>();
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        result.Should().BeTrue();
+        provider.GetRequiredService<IMyService>().Should().BeOfType<MyService>();
+        provider.GetServices<IMyService>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public void add_or_replace_fallback_singleton_should_add_default_when_service_is_missing()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var result = services.AddOrReplaceFallbackSingleton<IMyService, FallbackService, ReplacementService>();
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        result.Should().BeFalse();
+        provider.GetRequiredService<IMyService>().Should().BeOfType<ReplacementService>();
+    }
+
+    [Fact]
     public void replace_should_replace_service_with_new_factory()
     {
         // given
@@ -660,6 +741,11 @@ public sealed class MyService : IMyService
 public sealed class ReplacementService : IMyService
 {
     public string Greet() => "replacement";
+}
+
+public sealed class FallbackService : IMyService
+{
+    public string Greet() => "fallback";
 }
 
 // Helpers for AddInitializerHostedService<T> tests

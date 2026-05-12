@@ -217,6 +217,51 @@ public static class DependencyInjectionExtensions
         return result;
     }
 
+    /// <summary>
+    /// Removes fallback singleton registrations for <typeparamref name="TService"/> and adds
+    /// <typeparamref name="TImplementation"/> only when no non-fallback registration remains.
+    /// </summary>
+    /// <typeparam name="TService">The service type.</typeparam>
+    /// <typeparam name="TFallback">The fallback implementation type to remove.</typeparam>
+    /// <typeparam name="TImplementation">The default implementation type to add when needed.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns>True if one or more fallback registrations were removed; otherwise false.</returns>
+    /// <remarks>
+    /// This is useful when one package registers a safe fallback and another package can provide a
+    /// stronger default without overwriting consumer-provided implementations.
+    /// </remarks>
+    public static bool AddOrReplaceFallbackSingleton<TService, TFallback, TImplementation>(
+        this IServiceCollection services
+    )
+        where TService : class
+        where TFallback : class, TService
+        where TImplementation : class, TService
+    {
+        Argument.IsNotNull(services);
+
+        var replaced = false;
+
+        for (var i = services.Count - 1; i >= 0; i--)
+        {
+            var descriptor = services[i];
+
+            if (descriptor.IsKeyedService || descriptor.ServiceType != typeof(TService))
+            {
+                continue;
+            }
+
+            if (descriptor.ImplementationType == typeof(TFallback) || descriptor.ImplementationInstance is TFallback)
+            {
+                services.RemoveAt(i);
+                replaced = true;
+            }
+        }
+
+        services.TryAddSingleton<TService, TImplementation>();
+
+        return replaced;
+    }
+
     public static void Replace<TService>(this IServiceCollection services, Func<IServiceProvider, TService> factory)
         where TService : class
     {

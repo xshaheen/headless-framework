@@ -21,7 +21,7 @@ public sealed class MultiTenancyMessagingBuilderExtensionsTests : TestBase
     {
         // given — only the framework's fallback NullCurrentTenant is registered.
         // AddTenantPropagation registers its hosted-service validator; StartAsync should
-        // throw a diagnostic InvalidOperationException pointing to AddCurrentTenant().
+        // throw a diagnostic InvalidOperationException pointing to tenant setup APIs.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<ICurrentTenant, NullCurrentTenant>();
@@ -36,7 +36,9 @@ public sealed class MultiTenancyMessagingBuilderExtensionsTests : TestBase
         var act = async () => await validator.StartAsync(AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*NullCurrentTenant*AddCurrentTenant*");
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*NullCurrentTenant*AddHeadlessInfrastructure*AddHeadlessMultiTenancy*");
     }
 
     [Fact]
