@@ -6,11 +6,11 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace Tests.Fixture;
 
 /// <summary>
-/// Test DbContext whose distributed/local publish methods always throw. Combined with an
+/// Test DbContext whose distributed enqueue/local publish methods always throw. Combined with an
 /// <c>IDistributedMessageEmitter</c> entity this forces the runtime down the path where
-/// audit entries have already been persisted but the post-persist publish raises. The
-/// catch block in the save pipeline must detach
-/// the persisted audit entries so a retry on the same change tracker doesn't double-insert.
+/// audit entries have already been persisted but the post-persist enqueue raises. The
+/// catch block in the save pipeline must discard tracking for the persisted audit entries
+/// so a retry on the same change tracker doesn't double-insert.
 /// </summary>
 public sealed class ThrowingPublishAuditTestDbContext(HeadlessDbContextServices services, DbContextOptions options)
     : AuditTestDbContext(services, options)
@@ -43,13 +43,13 @@ public sealed class ThrowingHeadlessMessageDispatcher : IHeadlessMessageDispatch
     public void PublishLocal(IReadOnlyList<EmitterLocalMessages> emitters, IDbContextTransaction currentTransaction) =>
         throw new InvalidOperationException(PublishFailureMessage);
 
-    public Task PublishDistributedAsync(
+    public Task EnqueueDistributedAsync(
         IReadOnlyList<EmitterDistributedMessages> emitters,
         IDbContextTransaction currentTransaction,
         CancellationToken cancellationToken
     ) => throw new InvalidOperationException(PublishFailureMessage);
 
-    public void PublishDistributed(
+    public void EnqueueDistributed(
         IReadOnlyList<EmitterDistributedMessages> emitters,
         IDbContextTransaction currentTransaction
     ) => throw new InvalidOperationException(PublishFailureMessage);

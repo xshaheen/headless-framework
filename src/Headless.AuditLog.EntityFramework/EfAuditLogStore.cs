@@ -152,7 +152,17 @@ internal sealed class EfAuditLogStore : IAuditLogStore
     private sealed class EfAuditLogStoreEntry(EfAuditLogStore owner, DbContext context, AuditLogEntry entity)
         : IAuditLogStoreEntry
     {
-        public void Detach()
+        public void DiscardPendingChanges()
+        {
+            _DetachFromContext();
+        }
+
+        public void ReleaseAfterCommit()
+        {
+            _DetachFromContext();
+        }
+
+        private void _DetachFromContext()
         {
             var entry = context.Entry(entity);
 

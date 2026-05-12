@@ -53,7 +53,7 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
     }
 
     /// <summary>
-    /// Detaches stale audit entries from a prior failed attempt before an execution strategy retry.
+    /// Cleans up stale audit entries from a prior failed attempt before an execution strategy retry.
     /// </summary>
     public void PrepareForRetry(DbContext context)
     {
@@ -87,7 +87,7 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
             }
             catch
             {
-                DetachEntries(new(RequiresManualAcceptAllChanges: true, auditEntries));
+                DiscardEntries(new(RequiresManualAcceptAllChanges: true, auditEntries));
                 throw;
             }
             finally
@@ -127,7 +127,7 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
             }
             catch
             {
-                DetachEntries(new(RequiresManualAcceptAllChanges: true, auditEntries));
+                DiscardEntries(new(RequiresManualAcceptAllChanges: true, auditEntries));
                 throw;
             }
             finally
@@ -155,10 +155,10 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
             context.ChangeTracker.AcceptAllChanges();
         }
 
-        DetachEntries(auditSave);
+        ReleaseEntries(auditSave);
     }
 
-    public static void DetachEntries(HeadlessAuditSaveResult auditSave)
+    public static void DiscardEntries(HeadlessAuditSaveResult auditSave)
     {
         if (auditSave.AuditEntries is null)
         {
@@ -167,7 +167,20 @@ internal sealed class HeadlessAuditPersistence(IServiceProvider serviceProvider,
 
         foreach (var entry in auditSave.AuditEntries)
         {
-            entry.Detach();
+            entry.DiscardPendingChanges();
+        }
+    }
+
+    public static void ReleaseEntries(HeadlessAuditSaveResult auditSave)
+    {
+        if (auditSave.AuditEntries is null)
+        {
+            return;
+        }
+
+        foreach (var entry in auditSave.AuditEntries)
+        {
+            entry.ReleaseAfterCommit();
         }
     }
 

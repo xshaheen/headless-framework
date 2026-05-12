@@ -190,7 +190,7 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
             if (state.SaveContext.DistributedEmitters.Count > 0)
             {
                 await _messageDispatcher
-                    .PublishDistributedAsync(
+                    .EnqueueDistributedAsync(
                         state.SaveContext.DistributedEmitters,
                         transaction,
                         state.CancellationToken
@@ -209,7 +209,7 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
         }
         catch
         {
-            HeadlessAuditPersistence.DetachEntries(auditSave);
+            HeadlessAuditPersistence.DiscardEntries(auditSave);
             throw;
         }
     }
@@ -237,7 +237,7 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
 
             if (state.SaveContext.DistributedEmitters.Count > 0)
             {
-                _messageDispatcher.PublishDistributed(state.SaveContext.DistributedEmitters, transaction);
+                _messageDispatcher.EnqueueDistributed(state.SaveContext.DistributedEmitters, transaction);
             }
 
             if (commitTransaction)
@@ -251,7 +251,7 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
         }
         catch
         {
-            HeadlessAuditPersistence.DetachEntries(auditSave);
+            HeadlessAuditPersistence.DiscardEntries(auditSave);
             throw;
         }
 #pragma warning restore MA0045
