@@ -6,18 +6,22 @@ using System.Reflection;
 
 namespace Headless.Constants;
 
+/// <summary>
+/// Factory for Headless framework diagnostic primitives. Each package should call
+/// <see cref="CreateActivitySource"/> and <see cref="CreateMeter"/> to obtain its own
+/// instance, enabling consumers to subscribe selectively per subsystem.
+/// </summary>
+[PublicAPI]
 public static class HeadlessDiagnostics
 {
-    public static ActivitySource ActivitySource { get; }
+    /// <summary>Shared name prefix applied to every Headless ActivitySource and Meter.</summary>
+    public const string Prefix = "Headless.";
 
-    public static Meter Meter { get; }
+    private static readonly string _Version = typeof(HeadlessDiagnostics).Assembly.GetAssemblyVersion() ?? "1.0.0";
 
-    static HeadlessDiagnostics()
-    {
-        var product = typeof(HeadlessDiagnostics).Assembly.GetAssemblyProduct() ?? "Headless Framework";
-        var version = typeof(HeadlessDiagnostics).Assembly.GetAssemblyVersion() ?? "1.0.0";
+    /// <summary>Creates an <see cref="ActivitySource"/> named <c>Headless.{name}</c>.</summary>
+    public static ActivitySource CreateActivitySource(string name) => new(Prefix + name, _Version);
 
-        ActivitySource = new(product, version);
-        Meter = new(version, version);
-    }
+    /// <summary>Creates a <see cref="Meter"/> named <c>Headless.{name}</c>.</summary>
+    public static Meter CreateMeter(string name) => new(Prefix + name, _Version);
 }

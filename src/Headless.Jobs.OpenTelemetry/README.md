@@ -32,7 +32,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing =>
     {
-        tracing.AddSource("Jobs") // Add Jobs ActivitySource
+        tracing.AddSource("Headless.Jobs") // Add Jobs ActivitySource
                .AddConsoleExporter()
                .AddJaegerExporter();
     });

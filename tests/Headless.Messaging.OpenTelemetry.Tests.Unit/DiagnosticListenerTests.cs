@@ -12,7 +12,7 @@ public sealed class DiagnosticListenerTests : TestBase
     public void should_have_correct_source_name()
     {
         // then
-        DiagnosticListener.SourceName.Should().Be("Headless.Messaging.OpenTelemetry");
+        DiagnosticListener.SourceName.Should().Be("Headless.Messaging");
     }
 
     [Fact]

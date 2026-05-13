@@ -122,13 +122,13 @@ internal class JobsExecutionTaskHandler(
     {
         // Start OpenTelemetry activity for the entire job execution
         using var jobActivity = tickerQInstrumentation.StartJobActivity(
-            $"Headless.Jobs.job.execute.{context.Type.ToString().ToLowerInvariant()}",
+            $"job.execute.{context.Type.ToString().ToLowerInvariant()}",
             context
         );
 
         // Add additional tags to the activity
-        jobActivity?.SetTag("Headless.Jobs.job.is_due", isDue);
-        jobActivity?.SetTag("Headless.Jobs.job.is_child", isChild);
+        jobActivity?.SetTag("headless.job.is_due", isDue);
+        jobActivity?.SetTag("headless.job.is_child", isChild);
 
         // Log job enqueued/started (using the available method)
         tickerQInstrumentation.LogJobEnqueued(
@@ -194,7 +194,7 @@ internal class JobsExecutionTaskHandler(
             jobFunctionContext.RetryCount = attempt;
 
             // Update activity with current attempt information
-            jobActivity?.SetTag("Headless.Jobs.job.current_attempt", attempt + 1);
+            jobActivity?.SetTag("headless.job.current_attempt", attempt + 1);
 
             try
             {
@@ -223,8 +223,8 @@ internal class JobsExecutionTaskHandler(
                     .SetProperty(x => x.ExceptionDetails, _SerializeException(ex));
 
                 // Add cancellation tags to activity
-                jobActivity?.SetTag("Headless.Jobs.job.final_status", context.Status.ToString());
-                jobActivity?.SetTag("Headless.Jobs.job.cancellation_reason", "Task was cancelled");
+                jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
+                jobActivity?.SetTag("headless.job.cancellation.reason", "Task was cancelled");
 
                 // Log job cancelled
                 tickerQInstrumentation.LogJobCancelled(context.JobId, context.FunctionName, "Task was cancelled");
@@ -251,16 +251,16 @@ internal class JobsExecutionTaskHandler(
                 if (ex.InnerException != null)
                 {
                     context.SetProperty(x => x.ExceptionDetails, ex.InnerException.Message);
-                    jobActivity?.SetTag("Headless.Jobs.job.skip_reason", ex.InnerException.Message);
+                    jobActivity?.SetTag("headless.job.skip.reason", ex.InnerException.Message);
                 }
                 else
                 {
                     context.SetProperty(x => x.ExceptionDetails, ex.Message);
-                    jobActivity?.SetTag("Headless.Jobs.job.skip_reason", ex.Message);
+                    jobActivity?.SetTag("headless.job.skip.reason", ex.Message);
                 }
 
                 // Add skip tags to activity
-                jobActivity?.SetTag("Headless.Jobs.job.final_status", context.Status.ToString());
+                jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
 
                 // Log job skipped
                 tickerQInstrumentation.LogJobSkipped(context.JobId, context.FunctionName, ex.Message);
@@ -289,8 +289,8 @@ internal class JobsExecutionTaskHandler(
             context.SetProperty(x => x.Status, isDue ? JobStatus.DueDone : JobStatus.Done);
 
             // Add success tags to activity
-            jobActivity?.SetTag("Headless.Jobs.job.final_status", context.Status.ToString());
-            jobActivity?.SetTag("Headless.Jobs.job.final_retry_count", context.RetryCount);
+            jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
+            jobActivity?.SetTag("headless.job.final_retry.count", context.RetryCount);
 
             // Log job completed successfully
             tickerQInstrumentation.LogJobCompleted(
@@ -309,9 +309,9 @@ internal class JobsExecutionTaskHandler(
                 .SetProperty(x => x.ExceptionDetails, _SerializeException(lastException));
 
             // Add failure tags to activity
-            jobActivity?.SetTag("Headless.Jobs.job.final_status", context.Status.ToString());
-            jobActivity?.SetTag("Headless.Jobs.job.final_retry_count", context.RetryCount);
-            jobActivity?.SetTag("Headless.Jobs.job.error_type", lastException.GetType().Name);
+            jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
+            jobActivity?.SetTag("headless.job.final_retry.count", context.RetryCount);
+            jobActivity?.SetTag("exception.type", lastException.GetType().Name);
 
             // Log job failed
             tickerQInstrumentation.LogJobFailed(context.JobId, context.FunctionName, lastException, context.RetryCount);

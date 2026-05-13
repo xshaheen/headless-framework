@@ -95,7 +95,7 @@ public sealed class SetupTests : TestBase
         MeterProviderBuilder builder = null!;
 
         // when
-        var act = () => builder.AddMessagingInstrumentation();
+        var act = builder.AddMessagingInstrumentation;
 
         // then
         act.Should().Throw<ArgumentNullException>().WithParameterName("builder");
@@ -114,6 +114,7 @@ public sealed class SetupTests : TestBase
 
         // when - directly create activity through the ActivitySource
         using var activitySource = new ActivitySource(DiagnosticListener.SourceName);
+        // ReSharper disable once ExplicitCallerInfoArgument
         using var activity = activitySource.StartActivity("test-activity");
         activity?.Stop();
         tracerProvider.ForceFlush();

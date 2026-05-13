@@ -2,7 +2,7 @@
 
 using Headless.Messaging.Messages;
 
-namespace Headless.Messaging;
+namespace Headless.Messaging.Transactions;
 
 /// <summary>
 /// Buffers stored outbox messages until the ambient transaction is committed.

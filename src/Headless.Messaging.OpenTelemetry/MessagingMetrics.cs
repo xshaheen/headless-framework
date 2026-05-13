@@ -10,8 +10,7 @@ namespace Headless.Messaging.OpenTelemetry;
 /// </summary>
 internal sealed partial class MessagingMetrics : IDisposable
 {
-    public const string MeterName = "Headless.Messaging";
-    private const string _Version = "1.0.0";
+    public const string MeterName = MessagingDiagnostics.SourceName;
 
     private readonly Meter _meter;
     private readonly PublishMessageCounter _messagesPublished;
@@ -28,8 +27,7 @@ internal sealed partial class MessagingMetrics : IDisposable
 
     public MessagingMetrics()
     {
-        _meter = new Meter(MeterName, _Version);
-
+        _meter = MessagingDiagnostics.CreateMeter();
         _messagesPublished = Instruments.CreatePublishMessageCounter(_meter);
         _messagesConsumed = Instruments.CreateConsumeMessageCounter(_meter);
         _subscriberInvocations = Instruments.CreateSubscriberInvocationCounter(_meter);

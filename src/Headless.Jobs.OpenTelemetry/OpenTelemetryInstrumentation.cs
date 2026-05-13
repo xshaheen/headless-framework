@@ -11,29 +11,27 @@ internal sealed class OpenTelemetryInstrumentation(
     SchedulerOptionsBuilder optionsBuilder
 ) : JobsBaseLoggerInstrumentation(logger, optionsBuilder.NodeIdentifier), IJobsInstrumentation
 {
-    private static readonly ActivitySource _ActivitySource = new("Jobs", "1.0.0");
-
     public override Activity? StartJobActivity(string activityName, InternalFunctionContext context)
     {
-        var activity = _ActivitySource.StartActivity(activityName);
+        var activity = JobsDiagnostics.Start(activityName);
 
         if (activity != null)
         {
-            activity.SetTag("Headless.Jobs.job.id", context.JobId.ToString());
-            activity.SetTag("Headless.Jobs.job.type", context.Type.ToString());
-            activity.SetTag("Headless.Jobs.job.function", context.FunctionName);
-            activity.SetTag("Headless.Jobs.job.priority", context.CachedPriority.ToString());
-            activity.SetTag("Headless.Jobs.job.machine", InstanceIdentifier);
-            activity.SetTag("Headless.Jobs.job.retries", context.Retries);
+            activity.SetTag("headless.job.id", context.JobId.ToString());
+            activity.SetTag("headless.job.type", context.Type.ToString());
+            activity.SetTag("headless.job.function", context.FunctionName);
+            activity.SetTag("headless.job.priority", context.CachedPriority.ToString());
+            activity.SetTag("headless.job.machine", InstanceIdentifier);
+            activity.SetTag("headless.job.retry.count", context.Retries);
 
             if (context.ParentId.HasValue)
             {
-                activity.SetTag("Headless.Jobs.job.parent_id", context.ParentId.Value.ToString());
+                activity.SetTag("headless.job.parent.id", context.ParentId.Value.ToString());
             }
 
-            if (context.Type == JobType.TimeJob && context.ParentId.HasValue)
+            if (context is { Type: JobType.TimeJob, ParentId: not null })
             {
-                activity.SetTag("Headless.Jobs.job.run_condition", context.RunCondition.ToString());
+                activity.SetTag("headless.job.run_condition", context.RunCondition.ToString());
             }
         }
 
@@ -42,10 +40,10 @@ internal sealed class OpenTelemetryInstrumentation(
 
     public override void LogJobEnqueued(string jobType, string functionName, Guid jobId, string? enqueuedFrom = null)
     {
-        using var activity = _ActivitySource.StartActivity("Headless.Jobs.job.enqueued");
-        activity?.SetTag("Headless.Jobs.job.id", jobId.ToString());
-        activity?.SetTag("Headless.Jobs.job.type", jobType);
-        activity?.SetTag("Headless.Jobs.job.function", functionName);
+        using var activity = JobsDiagnostics.Start("job.enqueue");
+        activity?.SetTag("headless.job.id", jobId.ToString());
+        activity?.SetTag("headless.job.type", jobType);
+        activity?.SetTag("headless.job.function", functionName);
 
         // Get detailed caller information for OpenTelemetry
         var callerInfo = enqueuedFrom;
@@ -54,18 +52,18 @@ internal sealed class OpenTelemetryInstrumentation(
             callerInfo = logger.IsEnabled(LogLevel.Information) ? CallerInfoHelper.GetCallerInfo(6) : null;
         }
 
-        activity?.SetTag("Headless.Jobs.job.enqueued_from", callerInfo);
+        activity?.SetTag("headless.job.enqueued_from", callerInfo);
 
         base.LogJobEnqueued(jobType, functionName, jobId, callerInfo);
     }
 
     public override void LogJobCompleted(Guid jobId, string functionName, long executionTimeMs, bool success)
     {
-        using var activity = _ActivitySource.StartActivity("Headless.Jobs.job.completed");
-        activity?.SetTag("Headless.Jobs.job.id", jobId.ToString());
-        activity?.SetTag("Headless.Jobs.job.function", functionName);
-        activity?.SetTag("Headless.Jobs.job.execution_time_ms", executionTimeMs);
-        activity?.SetTag("Headless.Jobs.job.success", success);
+        using var activity = JobsDiagnostics.Start("job.complete");
+        activity?.SetTag("headless.job.id", jobId.ToString());
+        activity?.SetTag("headless.job.function", functionName);
+        activity?.SetTag("headless.job.duration_ms", executionTimeMs);
+        activity?.SetTag("headless.job.success", success);
 
         // Set activity status based on success
         if (activity != null)
@@ -78,12 +76,12 @@ internal sealed class OpenTelemetryInstrumentation(
 
     public override void LogJobFailed(Guid jobId, string functionName, Exception exception, int retryCount)
     {
-        using var activity = _ActivitySource.StartActivity("Headless.Jobs.job.failed");
-        activity?.SetTag("Headless.Jobs.job.id", jobId.ToString());
-        activity?.SetTag("Headless.Jobs.job.function", functionName);
-        activity?.SetTag("Headless.Jobs.job.retry_count", retryCount);
-        activity?.SetTag("Headless.Jobs.job.error_type", exception.GetType().Name);
-        activity?.SetTag("Headless.Jobs.job.error_message", exception.Message);
+        using var activity = JobsDiagnostics.Start("job.fail");
+        activity?.SetTag("headless.job.id", jobId.ToString());
+        activity?.SetTag("headless.job.function", functionName);
+        activity?.SetTag("headless.job.retry.count", retryCount);
+        activity?.SetTag("exception.type", exception.GetType().Name);
+        activity?.SetTag("exception.message", exception.Message);
 
         if (activity != null)
         {
@@ -91,7 +89,7 @@ internal sealed class OpenTelemetryInstrumentation(
             // Record exception information in tags instead of RecordException (not available in all .NET versions)
             if (exception.StackTrace != null)
             {
-                activity.SetTag("Headless.Jobs.job.error_stack_trace", exception.StackTrace);
+                activity.SetTag("exception.stacktrace", exception.StackTrace);
             }
         }
 
@@ -100,10 +98,10 @@ internal sealed class OpenTelemetryInstrumentation(
 
     public override void LogJobCancelled(Guid jobId, string functionName, string reason)
     {
-        using var activity = _ActivitySource.StartActivity("Headless.Jobs.job.cancelled");
-        activity?.SetTag("Headless.Jobs.job.id", jobId.ToString());
-        activity?.SetTag("Headless.Jobs.job.function", functionName);
-        activity?.SetTag("Headless.Jobs.job.cancellation_reason", reason);
+        using var activity = JobsDiagnostics.Start("job.cancel");
+        activity?.SetTag("headless.job.id", jobId.ToString());
+        activity?.SetTag("headless.job.function", functionName);
+        activity?.SetTag("headless.job.cancellation.reason", reason);
 
         activity?.SetStatus(ActivityStatusCode.Error, reason);
 
@@ -112,28 +110,28 @@ internal sealed class OpenTelemetryInstrumentation(
 
     public override void LogJobSkipped(Guid jobId, string functionName, string reason)
     {
-        using var activity = _ActivitySource.StartActivity("Headless.Jobs.job.skipped");
-        activity?.SetTag("Headless.Jobs.job.id", jobId.ToString());
-        activity?.SetTag("Headless.Jobs.job.function", functionName);
-        activity?.SetTag("Headless.Jobs.job.skip_reason", reason);
+        using var activity = JobsDiagnostics.Start("job.skip");
+        activity?.SetTag("headless.job.id", jobId.ToString());
+        activity?.SetTag("headless.job.function", functionName);
+        activity?.SetTag("headless.job.skip.reason", reason);
 
         base.LogJobSkipped(jobId, functionName, reason);
     }
 
     public override void LogSeedingDataStarted(string seedingDataType)
     {
-        using var activity = _ActivitySource.StartActivity("Headless.Jobs.seeding.started");
-        activity?.SetTag("Headless.Jobs.seeding.type", seedingDataType);
-        activity?.SetTag("Headless.Jobs.seeding.environment", InstanceIdentifier);
+        using var activity = JobsDiagnostics.Start("seeding.start");
+        activity?.SetTag("headless.seeding.type", seedingDataType);
+        activity?.SetTag("headless.seeding.environment", InstanceIdentifier);
 
         base.LogSeedingDataStarted(seedingDataType);
     }
 
     public override void LogSeedingDataCompleted(string seedingDataType)
     {
-        using var activity = _ActivitySource.StartActivity("Headless.Jobs.seeding.completed");
-        activity?.SetTag("Headless.Jobs.seeding.type", seedingDataType);
-        activity?.SetTag("Headless.Jobs.seeding.environment", InstanceIdentifier);
+        using var activity = JobsDiagnostics.Start("seeding.complete");
+        activity?.SetTag("headless.seeding.type", seedingDataType);
+        activity?.SetTag("headless.seeding.environment", InstanceIdentifier);
 
         base.LogSeedingDataCompleted(seedingDataType);
     }
@@ -146,10 +144,11 @@ internal sealed class OpenTelemetryInstrumentation(
         Exception exception
     )
     {
-        using var activity = _ActivitySource.StartActivity("Headless.Jobs.job_request_serialization.failed");
-        activity?.SetTag("Headless.Jobs.job.id", jobId.ToString());
-        activity?.SetTag("Headless.Jobs.job.function", functionName);
-        activity?.SetTag("Headless.Jobs.job.cancellation_reason", exception.Message);
+        using var activity = JobsDiagnostics.Start("job.deserialize.fail");
+        activity?.SetTag("headless.job.id", jobId.ToString());
+        activity?.SetTag("headless.job.function", functionName);
+        activity?.SetTag("exception.type", exception.GetType().Name);
+        activity?.SetTag("exception.message", exception.Message);
         base.LogRequestDeserializationFailure(requestType, functionName, jobId, type, exception);
     }
 }

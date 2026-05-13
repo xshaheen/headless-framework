@@ -7,22 +7,11 @@ using OpenTelemetry.Context.Propagation;
 
 namespace Headless.Messaging.OpenTelemetry;
 
-internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
+internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<KeyValuePair<string, object?>>
 {
-    public const string SourceName = "Headless.Messaging.OpenTelemetry";
+    public const string SourceName = MessagingDiagnostics.SourceName;
 
-    private const string _OperateNamePrefix = "Headless.Messaging/";
-    private const string _ProducerOperateNameSuffix = "/Publisher";
-    private const string _ConsumerOperateNameSuffix = "/Subscriber";
-    private static readonly ActivitySource _ActivitySource = new(SourceName, "1.0.0");
     private static readonly TextMapPropagator _Propagator = Propagators.DefaultTextMapPropagator;
-
-    private readonly MessagingMetrics? _metrics;
-
-    public DiagnosticListener(MessagingMetrics? metrics = null)
-    {
-        _metrics = metrics;
-    }
 
     public void OnCompleted() { }
 
@@ -56,17 +45,13 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     {
                         parentContext = Activity.Current?.Context ?? default;
                     }
-                    var activity = _ActivitySource.StartActivity(
-                        "Event Persistence: " + eventData.Operation,
-                        ActivityKind.Internal,
-                        parentContext
-                    );
+                    var activity = MessagingDiagnostics.Start("message.persist", ActivityKind.Internal, parentContext);
                     if (activity != null)
                     {
                         activity.SetTag("messaging.destination.name", eventData.Operation);
                         activity.AddEvent(
                             new ActivityEvent(
-                                "Message persistence start...",
+                                "message.persist.start",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
                             )
                         );
@@ -91,22 +76,18 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
 
                     Activity.Current?.AddEvent(
                         new ActivityEvent(
-                            "Message persistence succeeded!",
+                            "message.persist.success",
                             DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
                             new ActivityTagsCollection
                             {
-                                new("messaging.persistence.duration", eventData.ElapsedTimeMs),
+                                new("headless.messaging.persistence.duration_ms", eventData.ElapsedTimeMs),
                             }
                         )
                     );
 
                     if (eventData.ElapsedTimeMs.HasValue)
                     {
-                        _metrics?.RecordPersistence(
-                            eventData.Operation,
-                            eventData.ElapsedTimeMs.Value,
-                            isPublish: true
-                        );
+                        metrics?.RecordPersistence(eventData.Operation, eventData.ElapsedTimeMs.Value, isPublish: true);
                     }
 
                     Activity.Current?.Stop();
@@ -141,8 +122,8 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         }
                     );
 
-                    var activity = _ActivitySource.StartActivity(
-                        _OperateNamePrefix + eventData.Operation + _ProducerOperateNameSuffix,
+                    var activity = MessagingDiagnostics.Start(
+                        "message.publish",
                         ActivityKind.Producer,
                         parentContext.ActivityContext
                     );
@@ -157,7 +138,7 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         );
                         activity.SetTag("messaging.destination.name", eventData.Operation);
 
-                        _metrics?.RecordMessageSize(eventData.TransportMessage.Body.Length, eventData.Operation);
+                        metrics?.RecordMessageSize(eventData.TransportMessage.Body.Length, eventData.Operation);
                         if (eventData.BrokerAddress.Endpoint is { } endpoint)
                         {
                             var parts = endpoint.Split(':');
@@ -172,7 +153,7 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         }
                         activity.AddEvent(
                             new ActivityEvent(
-                                "Message publishing start...",
+                                "message.publish.start",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
                             )
                         );
@@ -195,13 +176,16 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     {
                         activity.AddEvent(
                             new ActivityEvent(
-                                "Message publishing succeeded!",
+                                "message.publish.success",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                                new ActivityTagsCollection { new("messaging.send.duration", eventData.ElapsedTimeMs) }
+                                new ActivityTagsCollection
+                                {
+                                    new("headless.messaging.send.duration_ms", eventData.ElapsedTimeMs),
+                                }
                             )
                         );
 
-                        _metrics?.RecordPublish(
+                        metrics?.RecordPublish(
                             eventData.Operation,
                             eventData.BrokerAddress.Name,
                             eventData.ElapsedTimeMs
@@ -220,7 +204,7 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
                         activity.AddException(exception);
 
-                        _metrics?.RecordPublishError(
+                        metrics?.RecordPublishError(
                             eventData.Operation,
                             eventData.BrokerAddress.Name,
                             exception.GetType().Name
@@ -248,8 +232,8 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     );
 
                     Baggage.Current = parentContext.Baggage;
-                    var activity = _ActivitySource.StartActivity(
-                        _OperateNamePrefix + eventData.Operation + _ConsumerOperateNameSuffix,
+                    var activity = MessagingDiagnostics.Start(
+                        "message.consume",
                         ActivityKind.Consumer,
                         parentContext.ActivityContext
                     );
@@ -277,7 +261,7 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         }
                         activity.AddEvent(
                             new ActivityEvent(
-                                "Message persistence start...",
+                                "message.consume.start",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
                             )
                         );
@@ -291,16 +275,16 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     {
                         activity.AddEvent(
                             new ActivityEvent(
-                                "Message persistence succeeded!",
+                                "message.consume.success",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
                                 new ActivityTagsCollection
                                 {
-                                    new("messaging.receive.duration", eventData.ElapsedTimeMs),
+                                    new("headless.messaging.receive.duration_ms", eventData.ElapsedTimeMs),
                                 }
                             )
                         );
 
-                        _metrics?.RecordConsume(
+                        metrics?.RecordConsume(
                             eventData.Operation,
                             eventData.BrokerAddress.Name,
                             eventData.TransportMessage.GetGroup(),
@@ -309,7 +293,7 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
 
                         if (eventData.ElapsedTimeMs.HasValue)
                         {
-                            _metrics?.RecordPersistence(
+                            metrics?.RecordPersistence(
                                 eventData.Operation,
                                 eventData.ElapsedTimeMs.Value,
                                 isPublish: false
@@ -329,7 +313,7 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
                         activity.AddException(exception);
 
-                        _metrics?.RecordConsumeError(
+                        metrics?.RecordConsumeError(
                             eventData.Operation,
                             eventData.BrokerAddress.Name,
                             exception.GetType().Name,
@@ -364,19 +348,15 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         Baggage.Current = propagatedContext.Baggage;
                     }
 
-                    var activity = _ActivitySource.StartActivity(
-                        "Subscriber Invoke: " + eventData.MethodInfo!.Name,
-                        ActivityKind.Internal,
-                        context
-                    );
+                    var activity = MessagingDiagnostics.Start("subscriber.invoke", ActivityKind.Internal, context);
 
                     if (activity != null)
                     {
-                        activity.SetTag("code.function.name", eventData.MethodInfo.Name);
+                        activity.SetTag("code.function.name", eventData.MethodInfo!.Name);
 
                         activity.AddEvent(
                             new ActivityEvent(
-                                "Begin invoke the subscriber:" + eventData.MethodInfo.Name,
+                                "subscriber.invoke.start",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
                             )
                         );
@@ -390,13 +370,16 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                     {
                         activity.AddEvent(
                             new ActivityEvent(
-                                "Subscriber invoke succeeded!",
+                                "subscriber.invoke.success",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                                new ActivityTagsCollection { new("messaging.invoke.duration", eventData.ElapsedTimeMs) }
+                                new ActivityTagsCollection
+                                {
+                                    new("headless.messaging.invoke.duration_ms", eventData.ElapsedTimeMs),
+                                }
                             )
                         );
 
-                        _metrics?.RecordSubscriberInvocation(
+                        metrics?.RecordSubscriberInvocation(
                             eventData.MethodInfo!.Name,
                             eventData.Operation,
                             eventData.ElapsedTimeMs
@@ -415,7 +398,7 @@ internal class DiagnosticListener : IObserver<KeyValuePair<string, object?>>
                         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
                         activity.AddException(exception);
 
-                        _metrics?.RecordSubscriberError(
+                        metrics?.RecordSubscriberError(
                             eventData.MethodInfo!.Name,
                             eventData.Operation,
                             exception.GetType().Name

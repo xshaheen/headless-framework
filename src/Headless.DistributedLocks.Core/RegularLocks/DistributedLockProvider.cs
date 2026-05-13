@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.Core;
 using Headless.Messaging;
 using Microsoft.Extensions.Logging;
@@ -438,15 +437,15 @@ public sealed class DistributedLockProvider(
 
     private static Activity? _StartLockActivity(string resource)
     {
-        var activity = HeadlessDiagnostics.ActivitySource.StartActivity(nameof(TryAcquireAsync));
+        var activity = DistributedLocksDiagnostics.Start("lock.acquire");
 
         if (activity is null)
         {
             return null;
         }
 
-        activity.AddTag("resource", resource);
-        activity.DisplayName = string.Concat("Lock: ", resource);
+        activity.AddTag("headless.lock.resource", resource);
+        activity.DisplayName = $"Lock: {resource}";
 
         return activity;
     }

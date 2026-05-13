@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.Metrics;
-using Headless.Constants;
 using Microsoft.Extensions.Diagnostics.Metrics;
 
 #pragma warning disable IDE0130
@@ -11,11 +10,11 @@ namespace Headless.DistributedLocks;
 internal static partial class DistributedLockMetrics
 {
     internal static readonly LockFailedCounter LockFailed = Instruments.CreateLockFailedCounter(
-        HeadlessDiagnostics.Meter
+        DistributedLocksDiagnostics.Meter
     );
 
     internal static readonly LockWaitTimeHistogram LockWaitTime = Instruments.CreateLockWaitTimeHistogram(
-        HeadlessDiagnostics.Meter
+        DistributedLocksDiagnostics.Meter
     );
 
     private static partial class Instruments
