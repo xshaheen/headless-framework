@@ -310,13 +310,13 @@ builder.Services.AddHeadlessMessaging(options => { /* ... */ });
 
 This registers `TenantPropagationPublishFilter` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id` at publish time) and `TenantPropagationConsumeFilter` (calls `ICurrentTenant.Change(...)` on the resolved `ConsumeContext<T>.TenantId` for the lifetime of the consume — including both success and exception paths). Caller-set values on `PublishOptions.TenantId` are preserved verbatim; system messages can override propagation by setting `TenantId` explicitly or by publishing with no ambient tenant.
 
-The lower-level `AddTenantPropagation()` builder extension remains available for advanced messaging-only setup. Both paths are idempotent and fail fast at startup when propagation is enabled with only the framework's `NullCurrentTenant` fallback registered.
+Tenant propagation is composed exclusively through the root tenancy seam — the previous `MessagingBuilder.AddTenantPropagation()` extension has been removed. The seam registration is idempotent and fails fast at startup when propagation is enabled with only the framework's `NullCurrentTenant` fallback registered.
 
 **Trust boundary.** The consume filter trusts the inbound envelope. The framework assumes the message bus is internal-only; topics exposed to external producers must layer envelope validation or signing in front of this filter. Otherwise an attacker who can publish to the bus can impersonate any tenant.
 
 #### Manual Propagation
 
-If you need finer-grained control (or you opted out of `AddTenantPropagation`), establish the scope manually inside your consumer:
+If you need finer-grained control (or you opted out of `PropagateTenant()`), establish the scope manually inside your consumer:
 
 ```csharp
 var tenantId = context.TenantId;
@@ -354,6 +354,10 @@ Register a real `ICurrentTenant` (the default `AddHeadlessInfrastructure()` / `A
 ### SignalR
 
 SignalR hub invocations start new execution flows after the initial upgrade request. HTTP middleware does not preserve tenant context for later hub method calls. Use a hub-specific solution such as an `IHubFilter`.
+
+## Testing host wiring
+
+Integration tests that build the host (for example `WebApplicationFactory`) will execute the tenancy startup validator at host start. Tests that exercise HTTP tenancy must include `UseHeadlessTenancy()` in their pipeline so `HeadlessHttpTenancyValidator` sees the runtime marker — otherwise startup fails with `HEADLESS_TENANCY_HTTP_MIDDLEWARE_MISSING`. Tests that need to skip validation entirely should not call `AddHeadlessTenancy(...)` at all, or should compose only the seams they exercise. The startup validator runs as an `IHostedLifecycleService.StartingAsync` step so it executes before any other hosted service's `StartAsync`.
 
 ## Failure Modes to Watch
 

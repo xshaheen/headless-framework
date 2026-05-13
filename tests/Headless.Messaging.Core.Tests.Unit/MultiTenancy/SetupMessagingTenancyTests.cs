@@ -13,11 +13,11 @@ using Microsoft.Extensions.Options;
 namespace Tests.MultiTenancy;
 
 /// <summary>
-/// Tests covering <see cref="SetupMultiTenancy.AddTenantPropagation"/>
-/// — startup-time validation that fails fast when only the framework's fallback
-/// <see cref="NullCurrentTenant"/> is registered.
+/// Tests covering <see cref="SetupMessagingTenancy"/> messaging tenancy registration through the root
+/// <c>AddHeadlessTenancy</c> surface — startup-time validation that fails fast when only the
+/// framework's fallback <see cref="NullCurrentTenant"/> is registered.
 /// </summary>
-public sealed class SetupMultiTenancyTests : TestBase
+public sealed class SetupMessagingTenancyTests : TestBase
 {
     [Fact]
     public void should_register_tenant_propagation_filters_from_headless_tenancy_root()
@@ -97,14 +97,14 @@ public sealed class SetupMultiTenancyTests : TestBase
     }
 
     [Fact]
-    public void should_not_duplicate_tenant_propagation_filters_when_root_and_builder_are_both_used()
+    public void should_not_duplicate_tenant_propagation_filters_when_root_called_twice()
     {
         // given
         var rootBuilder = Host.CreateApplicationBuilder();
 
-        // when
+        // when — repeated root configuration must not double-register either filter type.
         rootBuilder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
-        new MessagingBuilder(rootBuilder.Services).AddTenantPropagation();
+        rootBuilder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
 
         // then
         rootBuilder
@@ -131,40 +131,15 @@ public sealed class SetupMultiTenancyTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_when_AddTenantPropagation_called_without_real_ICurrentTenant_implementation()
-    {
-        // given — only the framework's fallback NullCurrentTenant is registered.
-        // AddTenantPropagation registers its hosted-service validator; StartAsync should
-        // throw a diagnostic InvalidOperationException pointing to tenant setup APIs.
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton<ICurrentTenant, NullCurrentTenant>();
-        var builder = new MessagingBuilder(services);
-        builder.AddTenantPropagation();
-
-        await using var provider = services.BuildServiceProvider();
-        var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        var validator = hostedServices.Single(s => s.GetType().Name == "TenantPropagationStartupValidator");
-
-        // when
-        var act = async () => await validator.StartAsync(AbortToken);
-
-        // then
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*NullCurrentTenant*AddHeadlessInfrastructure*AddHeadlessMultiTenancy*");
-    }
-
-    [Fact]
     public async Task should_throw_when_root_tenant_propagation_configured_without_real_ICurrentTenant_implementation()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddLogging();
-        builder.Services.AddSingleton<ICurrentTenant, NullCurrentTenant>();
         builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
 
         await using var provider = builder.Services.BuildServiceProvider();
+        provider.GetRequiredService<ICurrentTenant>().Should().BeOfType<NullCurrentTenant>();
         var hostedServices = provider.GetServices<IHostedService>().ToArray();
         var validator = hostedServices.Single(s => s.GetType().Name == "TenantPropagationStartupValidator");
 
@@ -178,16 +153,16 @@ public sealed class SetupMultiTenancyTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_throw_when_real_ICurrentTenant_is_registered()
+    public async Task should_not_throw_when_real_ICurrentTenant_is_registered_through_root_tenancy()
     {
-        // given — a real (non-null) ICurrentTenant is registered before AddTenantPropagation runs.
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton(Substitute.For<ICurrentTenant>());
-        var builder = new MessagingBuilder(services);
-        builder.AddTenantPropagation();
+        // given — a real (non-null) ICurrentTenant is registered before tenancy root configures
+        // messaging propagation. The startup validator should observe the real implementation.
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddLogging();
+        builder.Services.AddSingleton(Substitute.For<ICurrentTenant>());
+        builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
 
-        await using var provider = services.BuildServiceProvider();
+        await using var provider = builder.Services.BuildServiceProvider();
         var hostedServices = provider.GetServices<IHostedService>().ToArray();
         var validator = hostedServices.Single(s => s.GetType().Name == "TenantPropagationStartupValidator");
 

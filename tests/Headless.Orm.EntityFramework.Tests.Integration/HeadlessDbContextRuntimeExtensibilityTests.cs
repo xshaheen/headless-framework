@@ -16,6 +16,34 @@ namespace Tests;
 public sealed class HeadlessDbContextRuntimeExtensibilityTests
 {
     [Fact]
+    public void headless_db_context_runtime_initialize_should_be_idempotent()
+    {
+        // given — a DbContext-backed runtime that has already been initialized through the DbContext
+        // constructor. Calling Initialize() again must be a no-op (no double-subscription of the
+        // ChangeTracker handlers, no observable state change).
+        var services = new ServiceCollection();
+        services.AddHeadlessDbContextServices();
+        services.AddDbContext<RuntimeTestDbContext>(o =>
+        {
+            o.UseSqlite(new SqliteConnection("Filename=:memory:"));
+            o.AddHeadlessExtension();
+        });
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        using var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+
+        // when — second Initialize() must not throw.
+        var runtimeServices = scope.ServiceProvider.GetRequiredService<HeadlessDbContextServices>();
+        var runtime = new HeadlessDbContextRuntime(db, runtimeServices);
+        runtime.Initialize();
+
+        // then
+        var act = () => runtime.Initialize();
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void add_headless_db_context_services_should_replace_null_current_tenant_fallback()
     {
         // given
@@ -282,7 +310,8 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         }
     }
 
-    private sealed class TenantRecordingSaveEntryProcessor(ProcessorOrderRecorder recorder) : IHeadlessSaveEntryProcessor
+    private sealed class TenantRecordingSaveEntryProcessor(ProcessorOrderRecorder recorder)
+        : IHeadlessSaveEntryProcessor
     {
         public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
         {

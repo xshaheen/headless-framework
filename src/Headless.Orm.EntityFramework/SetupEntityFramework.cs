@@ -5,8 +5,10 @@ using Headless.Checks;
 using Headless.EntityFramework.GlobalFilters;
 using Headless.EntityFramework.Messaging;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Headless.EntityFramework;
 
@@ -117,14 +119,57 @@ public static class SetupEntityFramework
 
         public IServiceCollection AddHeadlessTenantWriteGuard(Action<TenantWriteGuardOptions>? configure = null)
         {
+            return services._AddHeadlessTenantWriteGuardCore(optionsBuilder =>
+            {
+                if (configure is not null)
+                {
+                    optionsBuilder.Configure(configure);
+                }
+            });
+        }
+
+        public IServiceCollection AddHeadlessTenantWriteGuard(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            return services._AddHeadlessTenantWriteGuardCore(optionsBuilder => optionsBuilder.Bind(configuration));
+        }
+
+        public IServiceCollection AddHeadlessTenantWriteGuard(
+            Action<TenantWriteGuardOptions, IServiceProvider> configure
+        )
+        {
+            Argument.IsNotNull(configure);
+
+            return services._AddHeadlessTenantWriteGuardCore(optionsBuilder => optionsBuilder.Configure(configure));
+        }
+
+        private IServiceCollection _AddHeadlessTenantWriteGuardCore(
+            Action<OptionsBuilder<TenantWriteGuardOptions>> configure
+        )
+        {
             services.AddHeadlessDbContextServices();
+
+            // Sentinel — guard PostConfigure registration so repeated AddHeadlessTenantWriteGuard()
+            // calls do not enqueue the IsEnabled = true PostConfigure callback multiple times. The
+            // optioned configure?.Invoke(...) is still applied on every call so callers may layer
+            // overrides through repeated calls if they wish.
+            var alreadyRegistered = services.Any(d => d.ServiceType == typeof(HeadlessTenantWriteGuardSentinel));
+            configure(services.AddOptions<TenantWriteGuardOptions>());
+
+            if (alreadyRegistered)
+            {
+                return services;
+            }
+
+            services.AddSingleton<HeadlessTenantWriteGuardSentinel>();
+
             // PostConfigure (not Configure): the seam's IsEnabled = true must run AFTER any consumer
             // Configure<TenantWriteGuardOptions>(...) the host wires up so a later host-side
             // Configure that disables the guard does not override the seam's explicit opt-in.
             services.PostConfigure<TenantWriteGuardOptions>(options =>
             {
                 options.IsEnabled = true;
-                configure?.Invoke(options);
             });
 
             return services;
@@ -188,6 +233,7 @@ public static class SetupEntityFramework
 }
 
 /// <summary>Options for the opt-in EF tenant write guard.</summary>
+[PublicAPI]
 public sealed class TenantWriteGuardOptions
 {
     /// <summary>
@@ -196,3 +242,6 @@ public sealed class TenantWriteGuardOptions
     /// </summary>
     public bool IsEnabled { get; set; }
 }
+
+/// <summary>Sentinel marker for one-shot tenant-write-guard PostConfigure registration.</summary>
+internal sealed class HeadlessTenantWriteGuardSentinel;

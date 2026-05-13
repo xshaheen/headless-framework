@@ -4,6 +4,7 @@ using System.Security.Claims;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Constants;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -28,6 +29,8 @@ public sealed partial class TenantResolutionMiddleware(
     {
         Argument.IsNotNull(context);
         Argument.IsNotNull(currentTenant);
+
+        context.Features.Set(HeadlessTenancyResolutionApplied.Instance);
 
         if (context.User.Identity?.IsAuthenticated != true)
         {
@@ -63,9 +66,13 @@ public sealed partial class TenantResolutionMiddleware(
 
     private void _WarnIfMiddlewareLikelyMisordered(HttpContext context)
     {
-        // If we observe an unauthenticated principal AND authentication services are not present
-        // on the request pipeline, the consumer almost certainly placed UseHeadlessTenancy() ahead
-        // of UseAuthentication(). Warn once per process to avoid log spam.
+        // If AuthenticationMiddleware has not run yet, the consumer almost certainly placed
+        // UseHeadlessTenancy() ahead of UseAuthentication(). Warn once per process to avoid log spam.
+        if (context.Features.Get<IAuthenticationFeature>() is not null)
+        {
+            return;
+        }
+
         if (Volatile.Read(ref _orderingWarningEmitted) != 0)
         {
             return;
@@ -88,4 +95,17 @@ public sealed partial class TenantResolutionMiddleware(
             + "UseAuthorization()). This warning is emitted once per process."
     )]
     private static partial void LogMiddlewareOrderingWarning(ILogger logger);
+}
+
+/// <summary>
+/// Marker feature set on the current HTTP request when <see cref="TenantResolutionMiddleware"/> has
+/// executed for it. Consumed by <c>HeadlessApiExceptionHandler</c> to surface a runtime warning when
+/// a <see cref="MissingTenantContextException"/> is raised on a request that never passed through
+/// <c>UseHeadlessTenancy()</c>.
+/// </summary>
+internal sealed class HeadlessTenancyResolutionApplied
+{
+    public static HeadlessTenancyResolutionApplied Instance { get; } = new();
+
+    private HeadlessTenancyResolutionApplied() { }
 }

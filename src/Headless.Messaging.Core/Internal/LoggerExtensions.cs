@@ -482,6 +482,11 @@ internal static partial class LoggerExtensions
     )]
     public static partial void TenantIdHeaderRejected(this ILogger logger, int length);
 
+    /// <remarks>
+    /// This is the only HEADLESS_TENANCY_* event that surfaces the raw tenant identifier. Operators
+    /// should gate Debug-level messaging logs accordingly when tenant identifiers contain PII (e.g.,
+    /// customer email or organization slugs).
+    /// </remarks>
     [LoggerMessage(
         EventId = 64,
         EventName = "TenantContextSwitched",

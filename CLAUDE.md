@@ -118,4 +118,4 @@ After creating the project, attach it to [headless-framework.slnx](headless-fram
 
 ## LLM Documentation
 
-- Always keep docs/llms synchronized with the code. If behavior changes in a way an AI coding agent should know, update the relevant LLM docs
+- ALWAYS keep docs/llms synchronized with the code. If behavior changes in a way an AI coding agent should know, update the relevant LLM docs

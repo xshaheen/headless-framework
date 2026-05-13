@@ -254,6 +254,21 @@ public static class DependencyInjectionExtensions
             {
                 services.RemoveAt(i);
                 replaced = true;
+                continue;
+            }
+
+            // Best-effort recognition of factory-backed fallback registrations. The compiler captures
+            // the lambda's declared return type as the factory's Method.ReturnType — when that matches
+            // TFallback exactly we treat the descriptor as a fallback. We intentionally do NOT invoke
+            // the factory here: at AddOrReplaceFallbackSingleton time the ServiceProvider has not been
+            // built yet, and even if it had been, invoking arbitrary factories could surface side
+            // effects. Consumers who hide the fallback behind a factory whose declared return type is
+            // TService (not TFallback) keep their registration — matches the documented contract that
+            // factory-backed consumer overrides are preserved.
+            if (descriptor.ImplementationFactory is { Method: { } method } && method.ReturnType == typeof(TFallback))
+            {
+                services.RemoveAt(i);
+                replaced = true;
             }
         }
 

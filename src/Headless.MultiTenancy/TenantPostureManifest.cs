@@ -5,6 +5,7 @@ using Headless.Checks;
 namespace Headless.MultiTenancy;
 
 /// <summary>Shared, non-PII manifest describing tenant posture configured by Headless package seams.</summary>
+[PublicAPI]
 public sealed class TenantPostureManifest
 {
     private readonly Lock _gate = new();
@@ -26,6 +27,14 @@ public sealed class TenantPostureManifest
     /// <param name="seam">The seam name.</param>
     /// <param name="status">The seam posture status.</param>
     /// <param name="capabilities">Optional non-PII capability labels.</param>
+    /// <remarks>
+    /// When an existing seam record exists, the resulting status is the strongest of the existing and
+    /// incoming statuses per the precedence
+    /// <c>Enforcing &gt; Guarded &gt; Propagating &gt; Configured</c>. This guarantees that a later
+    /// <see cref="RecordSeam"/> call cannot weaken a posture already established by an earlier
+    /// contribution — for example, a propagation-only contribution after a require-tenant enforcer
+    /// must not downgrade the seam.
+    /// </remarks>
     public void RecordSeam(string seam, TenantPostureStatus status, params string[] capabilities)
     {
         seam = Argument.IsNotNullOrWhiteSpace(seam);
@@ -39,7 +48,7 @@ public sealed class TenantPostureManifest
             {
                 _seams[seam] = existing with
                 {
-                    Status = status,
+                    Status = _MaxStatus(existing.Status, status),
                     Capabilities = _Merge(existing.Capabilities, normalizedCapabilities),
                 };
 
@@ -48,6 +57,23 @@ public sealed class TenantPostureManifest
 
             _seams[seam] = new TenantSeamPosture(seam, status, normalizedCapabilities, []);
         }
+    }
+
+    private static TenantPostureStatus _MaxStatus(TenantPostureStatus left, TenantPostureStatus right)
+    {
+        return _Rank(left) >= _Rank(right) ? left : right;
+    }
+
+    private static int _Rank(TenantPostureStatus status)
+    {
+        return status switch
+        {
+            TenantPostureStatus.Enforcing => 3,
+            TenantPostureStatus.Guarded => 2,
+            TenantPostureStatus.Propagating => 1,
+            TenantPostureStatus.Configured => 0,
+            _ => 0,
+        };
     }
 
     /// <summary>Marks a runtime step, such as a middleware call, as applied for the seam.</summary>
@@ -99,10 +125,7 @@ public sealed class TenantPostureManifest
 
     private static string[] _Normalize(IEnumerable<string> values)
     {
-        return values
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+        return values.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray();
     }
 
     private static string[] _Merge(IEnumerable<string> first, IEnumerable<string> second)
@@ -116,6 +139,7 @@ public sealed class TenantPostureManifest
 /// <param name="Status">The seam posture status.</param>
 /// <param name="Capabilities">Non-PII capability labels reported by the seam.</param>
 /// <param name="RuntimeMarkers">Non-PII runtime markers reported by the seam.</param>
+[PublicAPI]
 public sealed record TenantSeamPosture(
     string Seam,
     TenantPostureStatus Status,
@@ -124,6 +148,7 @@ public sealed record TenantSeamPosture(
 );
 
 /// <summary>Common tenant posture status labels.</summary>
+[PublicAPI]
 public enum TenantPostureStatus
 {
     /// <summary>The seam has been configured.</summary>

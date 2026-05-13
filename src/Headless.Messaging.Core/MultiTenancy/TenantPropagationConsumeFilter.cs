@@ -24,7 +24,7 @@ namespace Headless.Messaging.MultiTenancy;
 /// This filter consumes that resolved value instead of reparsing raw headers.
 /// </para>
 /// <para>
-/// Register via <c>messaging.AddTenantPropagation()</c>.
+/// Register via <c>builder.AddHeadlessTenancy(t =&gt; t.Messaging(m =&gt; m.PropagateTenant()))</c>.
 /// </para>
 /// </remarks>
 public sealed class TenantPropagationConsumeFilter(
@@ -50,6 +50,12 @@ public sealed class TenantPropagationConsumeFilter(
         if (context.TenantId is { } value)
         {
             logger?.TenantContextSwitched(value);
+            // Dispose any prior scope before reassigning. ConsumeExecutionPipeline creates a fresh
+            // filter instance per message scope, so this is defensive — but if a pipeline ever
+            // reuses the filter and OnSubscribeExecutingAsync runs twice without an intervening
+            // OnSubscribeExecutedAsync/OnSubscribeExceptionAsync (e.g., a transport bug), failing to
+            // dispose the previous scope would leak the tenant context for the rest of the flow.
+            _scope?.Dispose();
             _scope = _currentTenant.Change(value);
         }
 

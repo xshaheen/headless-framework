@@ -12,4 +12,8 @@
     <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Orm.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.Orm.EntityFramework.Tests.Integration" />
+  </ItemGroup>
 </Project>

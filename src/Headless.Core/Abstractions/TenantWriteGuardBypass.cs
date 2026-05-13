@@ -3,7 +3,7 @@
 namespace Headless.Abstractions;
 
 /// <summary>AsyncLocal-backed tenant write guard bypass.</summary>
-public sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
+internal sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
 {
     private readonly AsyncLocal<BypassState?> _state = new();
 
@@ -48,7 +48,18 @@ public sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass
 
         public void Release()
         {
-            if (Interlocked.Decrement(ref _refCount) <= 0)
+            var newCount = Interlocked.Decrement(ref _refCount);
+
+            if (newCount < 0)
+            {
+                // Defensive clamp: a misuse (Release without AddRef, or duplicate dispose) must not
+                // leave the counter negative, which would allow a future AddRef to land at 0 and
+                // be observed as inactive.
+                Interlocked.Exchange(ref _refCount, 0);
+                return;
+            }
+
+            if (newCount == 0)
             {
                 Volatile.Write(ref _isDisposed, 1);
             }

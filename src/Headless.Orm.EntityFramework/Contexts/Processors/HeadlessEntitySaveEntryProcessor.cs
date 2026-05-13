@@ -79,8 +79,18 @@ public sealed class HeadlessEntitySaveEntryProcessor(
 
         if (entry.State == EntityState.Added && entityTenantId is null)
         {
-            ObjectPropertiesHelper.TrySetProperty(entity, x => x.TenantId, () => currentTenantId);
-            return;
+            // The guard contract requires callers to stamp TenantId at construction (or via the
+            // _TrySetMultiTenantId post-processor below). A null TenantId on an Added IMultiTenant
+            // entry under guard would otherwise rely on the ambient ICurrentTenant being copied at
+            // SaveChanges time, which silently couples write correctness to whatever tenant the
+            // current scope happens to observe — a race vector documented as a known gap. Reject
+            // the write so the failure is loud at the call site.
+            throw new MissingTenantContextException(
+                $"Tenant-owned Added write for entity type '{_GetEntityTypeName(entry)}' has a null TenantId. "
+                    + "Stamp the TenantId at construction (or use ITenantWriteGuardBypass.BeginBypass() for "
+                    + "intentional host/admin writes); the guard no longer back-stamps the ambient tenant on "
+                    + "Added entries."
+            );
         }
 
         if (_TenantWriteMatches(entry, currentTenantId, entityTenantId))

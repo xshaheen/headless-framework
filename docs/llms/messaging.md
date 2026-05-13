@@ -256,7 +256,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 - **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
-- **Strict publish tenancy is opt-in**: Prefer `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))` when the host uses root tenancy. The lower-level equivalent is `options.TenantContextRequired = true` plus `AddTenantPropagation()`. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
+- **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 
 ---
 
@@ -553,14 +553,18 @@ builder.AddHeadlessTenancy(tenancy => tenancy
         .RequireTenantOnPublish()));
 ```
 
-Messaging-only setup:
+Messaging-only setup must still go through the root tenancy seam — `AddTenantPropagation()` has been removed. Combine `AddHeadlessMessaging` with the root tenancy registration:
 
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.TenantContextRequired = true;
-})
-.AddTenantPropagation();
+});
+
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Messaging(messaging => messaging
+        .PropagateTenant()
+        .RequireTenantOnPublish()));
 ```
 
 **Remediation for background workers / `IHostedService` callers (no ambient HTTP scope):**
@@ -618,19 +622,7 @@ builder.AddHeadlessTenancy(tenancy => tenancy
     .Messaging(messaging => messaging.PropagateTenant()));
 ```
 
-The lower-level messaging-only API remains available:
-
-```csharp
-using Headless.Messaging.MultiTenancy;
-
-builder.Services.AddHeadlessMessaging(options =>
-{
-    // ...
-})
-.AddTenantPropagation();
-```
-
-This registers `TenantPropagationPublishFilter` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id`) and `TenantPropagationConsumeFilter` (calls `ICurrentTenant.Change(...)` for the lifetime of the consume). Caller-set values on `PublishOptions.TenantId` are preserved verbatim — set it explicitly to override the ambient tenant. See the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section for the trust boundary and the strict-tenancy guard.
+The root tenancy seam registers `TenantPropagationPublishFilter` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id`) and `TenantPropagationConsumeFilter` (calls `ICurrentTenant.Change(...)` for the lifetime of the consume). Caller-set values on `PublishOptions.TenantId` are preserved verbatim — set it explicitly to override the ambient tenant. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed. See the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section for the trust boundary and the strict-tenancy guard.
 
 ## Message Ordering Guarantees
 

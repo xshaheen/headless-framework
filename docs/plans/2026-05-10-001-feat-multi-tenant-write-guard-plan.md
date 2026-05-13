@@ -170,7 +170,7 @@ HeadlessDbContext.SaveChanges*
 **Dependencies:** None
 
 **Files:**
-- Create: `src/Headless.Orm.EntityFramework/SetupMultiTenancy.cs` (later co-located with `SetupEntityFramework.cs`) for `TenantWriteGuardOptions`.
+- Create: `src/Headless.Orm.EntityFramework/SetupEntityFrameworkTenancy.cs` (later co-located with `SetupEntityFramework.cs`) for `TenantWriteGuardOptions`.
 - Create (final placement): `src/Headless.Core/Abstractions/ITenantWriteGuardBypass.cs`, `src/Headless.Core/Abstractions/TenantWriteGuardBypass.cs`, and `src/Headless.Core/Abstractions/CrossTenantWriteException.cs` under the `Headless.Abstractions` namespace. The bypass and exception live in Core (not in `Headless.Orm.EntityFramework`) so `HeadlessApiExceptionHandler` (in `Headless.Api`) can catch the exception and map it to HTTP 409 without forcing an `Api → EF` project reference.
 - Modify: `src/Headless.Orm.EntityFramework/SetupEntityFramework.cs` to register the bypass and options.
 - Modify: `src/Headless.Orm.EntityFramework/Headless.Orm.EntityFramework.csproj` if the options validator requires a direct dependency.

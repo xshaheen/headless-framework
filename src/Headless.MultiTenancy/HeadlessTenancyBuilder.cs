@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 namespace Headless.MultiTenancy;
 
 /// <summary>Root builder used by Headless packages to contribute tenant posture from their own package boundaries.</summary>
+[PublicAPI]
 public sealed class HeadlessTenancyBuilder
 {
     internal HeadlessTenancyBuilder(IHostApplicationBuilder applicationBuilder, TenantPostureManifest manifest)

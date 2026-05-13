@@ -3,6 +3,7 @@
 namespace Headless.Abstractions;
 
 /// <summary>Tracks an operation-local bypass for intentional host or admin tenant-owned writes.</summary>
+[PublicAPI]
 public interface ITenantWriteGuardBypass
 {
     /// <summary>Gets a value indicating whether the current async operation is bypassing the tenant write guard.</summary>

@@ -1,12 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using System.Runtime.ExceptionServices;
 using Headless.AuditLog;
 using Headless.EntityFramework.Messaging;
 using Headless.EntityFramework.Processors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.EntityFramework;
 
@@ -55,23 +58,34 @@ public interface IHeadlessSaveChangesPipeline
 /// pipeline owns the explicit transaction boundary that interceptors don't expose cleanly.
 /// </para>
 /// </remarks>
-internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
+internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
 {
     private readonly IHeadlessMessageDispatcher _messageDispatcher;
     private readonly IReadOnlyList<IHeadlessSaveEntryProcessor> _entryProcessors;
     private readonly IHeadlessAuditPersistence _auditPersistence;
+    private readonly ILogger<HeadlessSaveChangesPipeline> _logger;
 
     public HeadlessSaveChangesPipeline(
         IServiceProvider serviceProvider,
         HeadlessDbContextOptions options,
         IHeadlessMessageDispatcher messageDispatcher,
-        IHeadlessAuditPersistence auditPersistence
+        IHeadlessAuditPersistence auditPersistence,
+        ILogger<HeadlessSaveChangesPipeline>? logger = null
     )
     {
         _messageDispatcher = messageDispatcher;
         _entryProcessors = options.ResolveSaveEntryProcessors(serviceProvider);
         _auditPersistence = auditPersistence;
+        _logger = logger ?? NullLogger<HeadlessSaveChangesPipeline>.Instance;
     }
+
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "HeadlessAuditDiscardFailedDuringExceptionPath",
+        Level = LogLevel.Error,
+        Message = "Audit discard failed during exception path; rethrowing the original SaveChanges exception."
+    )]
+    private static partial void LogAuditDiscardFailed(ILogger logger, Exception exception);
 
     public async Task<int> SaveChangesAsync(
         DbContext context,
@@ -253,10 +267,21 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
 
             return result;
         }
-        catch
+        catch (Exception caught)
         {
-            _auditPersistence.DiscardEntries(auditSave);
-            throw;
+            try
+            {
+                _auditPersistence.DiscardEntries(auditSave);
+            }
+#pragma warning disable CA1031 // Last-resort: a discard failure must not mask the original SaveChanges exception.
+            catch (Exception discardFailure)
+#pragma warning restore CA1031
+            {
+                LogAuditDiscardFailed(_logger, discardFailure);
+            }
+
+            ExceptionDispatchInfo.Capture(caught).Throw();
+            throw; // unreachable; satisfies analyzers
         }
     }
 
@@ -295,10 +320,21 @@ internal sealed class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
 
             return result;
         }
-        catch
+        catch (Exception caught)
         {
-            _auditPersistence.DiscardEntries(auditSave);
-            throw;
+            try
+            {
+                _auditPersistence.DiscardEntries(auditSave);
+            }
+#pragma warning disable CA1031 // Last-resort: a discard failure must not mask the original SaveChanges exception.
+            catch (Exception discardFailure)
+#pragma warning restore CA1031
+            {
+                LogAuditDiscardFailed(_logger, discardFailure);
+            }
+
+            ExceptionDispatchInfo.Capture(caught).Throw();
+            throw; // unreachable; satisfies analyzers
         }
 #pragma warning restore MA0045
     }

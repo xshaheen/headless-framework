@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Net.Http.Json;
+using System.Reflection;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Headless.Abstractions;
@@ -175,6 +177,43 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
             .WithMessage("*UseHeadlessTenancy*");
     }
 
+    [Fact]
+    public async Task should_not_emit_ordering_warning_for_correctly_ordered_anonymous_request()
+    {
+        _ResetOrderingWarning();
+        var loggerProvider = new CapturingLoggerProvider();
+        await using var app = await _CreateAppAsync(loggerProvider: loggerProvider);
+        using var client = _CreateClient(app);
+
+        await _GetTenantAsync(client);
+
+        loggerProvider
+            .Entries.Should()
+            .NotContain(entry => entry.EventId.Name == "HEADLESS_TENANCY_MIDDLEWARE_ORDERING");
+    }
+
+    [Fact]
+    public async Task should_emit_ordering_warning_when_tenant_resolution_runs_before_authentication()
+    {
+        _ResetOrderingWarning();
+        var loggerProvider = new CapturingLoggerProvider();
+        await using var app = await _CreateAppAsync(
+            applyTenantMiddlewareBeforeAuthentication: true,
+            loggerProvider: loggerProvider
+        );
+        using var client = _CreateClient(app);
+
+        var tenant = await _GetTenantAsync(client, user: "alice", tenantId: "TENANT-1");
+
+        tenant.Id.Should().BeNull();
+        tenant.IsAvailable.Should().BeFalse();
+        loggerProvider
+            .Entries.Should()
+            .ContainSingle(entry =>
+                entry.EventId.Name == "HEADLESS_TENANCY_MIDDLEWARE_ORDERING" && entry.Level == LogLevel.Warning
+            );
+    }
+
     private async Task<WebApplication> _CreateAppAsync(
         Action<MultiTenancyOptions>? configure = null,
         TenancySetup setup = TenancySetup.Direct,
@@ -183,6 +222,8 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         bool useAuthentication = true,
         bool useAuthorization = true,
         bool applyTenantMiddleware = true,
+        bool applyTenantMiddlewareBeforeAuthentication = false,
+        ILoggerProvider? loggerProvider = null,
         bool start = true
     )
     {
@@ -191,6 +232,12 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
+
+        if (loggerProvider is not null)
+        {
+            builder.Logging.ClearProviders();
+            builder.Logging.AddProvider(loggerProvider);
+        }
 
         if (addInfrastructure)
         {
@@ -228,21 +275,19 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
 
         var app = builder.Build();
 
+        if (applyTenantMiddleware && applyTenantMiddlewareBeforeAuthentication)
+        {
+            _UseTenantMiddleware(app, setup);
+        }
+
         if (useAuthentication)
         {
             app.UseAuthentication();
         }
 
-        if (applyTenantMiddleware)
+        if (applyTenantMiddleware && !applyTenantMiddlewareBeforeAuthentication)
         {
-            if (setup is TenancySetup.RootHttp or TenancySetup.RootNoHttp)
-            {
-                app.UseHeadlessTenancy();
-            }
-            else
-            {
-                app.UseTenantResolution();
-            }
+            _UseTenantMiddleware(app, setup);
         }
 
         if (useAuthorization)
@@ -305,6 +350,28 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
         return (await response.Content.ReadFromJsonAsync<TenantResponse>(cancellationToken: AbortToken))!;
     }
 
+    private static void _UseTenantMiddleware(WebApplication app, TenancySetup setup)
+    {
+        if (setup is TenancySetup.RootHttp or TenancySetup.RootNoHttp)
+        {
+            app.UseHeadlessTenancy();
+        }
+        else
+        {
+            app.UseTenantResolution();
+        }
+    }
+
+    private static void _ResetOrderingWarning()
+    {
+        var field = typeof(TenantResolutionMiddleware).GetField(
+            "_orderingWarningEmitted",
+            BindingFlags.NonPublic | BindingFlags.Static
+        );
+        field.Should().NotBeNull();
+        field!.SetValue(null, 0);
+    }
+
     private static void _AddDefaultHeadlessSecurityConfiguration(IConfigurationBuilder configuration)
     {
         configuration.AddInMemoryCollection([
@@ -316,6 +383,47 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
     }
 
     private sealed record TenantResponse(string? Id, bool IsAvailable);
+
+    private sealed record LogEntry(string Category, LogLevel Level, EventId EventId, string Message);
+
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<LogEntry> _entries = new();
+
+        public IReadOnlyCollection<LogEntry> Entries => _entries.ToArray();
+
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new CapturingLogger(categoryName, _entries);
+        }
+
+        public void Dispose() { }
+    }
+
+    private sealed class CapturingLogger(string categoryName, ConcurrentQueue<LogEntry> entries) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            entries.Enqueue(new LogEntry(categoryName, logLevel, eventId, formatter(state, exception)));
+        }
+    }
 
     private enum TenancySetup
     {

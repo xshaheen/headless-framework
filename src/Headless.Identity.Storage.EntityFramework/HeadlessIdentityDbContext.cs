@@ -62,6 +62,24 @@ public abstract class HeadlessIdentityDbContext<
         return _runtime.SaveChangesAsync(base.SaveChangesAsync, acceptAllChangesOnSuccess, cancellationToken);
     }
 
+    public override void Dispose()
+    {
+        var disposeTask = _runtime.DisposeAsync();
+        if (!disposeTask.IsCompletedSuccessfully)
+        {
+            disposeTask.AsTask().GetAwaiter().GetResult();
+        }
+        base.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        await _runtime.DisposeAsync().ConfigureAwait(false);
+        await base.DisposeAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
+    }
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);

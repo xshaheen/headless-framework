@@ -104,7 +104,17 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     _LogRequestCanceled(logger);
                     return true;
 
-                case MissingTenantContextException:
+                case MissingTenantContextException missingTenant:
+                    _LogMissingTenantContext(
+                        logger,
+                        missingTenant,
+                        missingTenant.GetType().Name,
+                        httpContext.Request.Path
+                    );
+                    if (httpContext.Features.Get<HeadlessTenancyResolutionApplied>() is null)
+                    {
+                        _LogTenantResolutionMiddlewareMissing(logger, httpContext.Request.Path);
+                    }
                     problemDetails = problemDetailsCreator.BadRequest(
                         detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
                         error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
@@ -264,14 +274,14 @@ internal sealed partial class HeadlessApiExceptionHandler(
         return _DbUpdateConcurrencyTypeCache.GetValue(ex.GetType(), _DbUpdateConcurrencyFactory).Value;
     }
 
-    private static bool _IsCancellationException(Exception? ex)
+    private static bool _IsCancellationException(Exception? ex, int maxDepth = 20)
     {
         // Iterative walk capped at depth so a pathological/cyclic InnerException chain cannot blow
-        // the stack. AggregateException's children are visited recursively — bounded in practice by
-        // .NET's own task graph (small).
-        const int maxDepth = 20;
+        // the stack. AggregateException's children are visited recursively with the remaining depth
+        // budget so a pathological nested-AggregateException tree cannot exceed the same total cap.
+        var depth = 0;
 
-        for (var depth = 0; ex is not null && depth < maxDepth; depth++)
+        while (ex is not null && depth < maxDepth)
         {
             if (ex is OperationCanceledException)
             {
@@ -280,9 +290,16 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
             if (ex is AggregateException aggregate)
             {
+                var remaining = maxDepth - depth - 1;
+
+                if (remaining <= 0)
+                {
+                    return false;
+                }
+
                 foreach (var inner in aggregate.InnerExceptions)
                 {
-                    if (_IsCancellationException(inner))
+                    if (_IsCancellationException(inner, remaining))
                     {
                         return true;
                     }
@@ -291,6 +308,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
             }
 
             ex = ex.InnerException;
+            depth++;
         }
 
         return false;
@@ -321,12 +339,35 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
     [LoggerMessage(
         EventId = 5010,
-        EventName = "CrossTenantWriteException",
+        EventName = CrossTenantWriteException.FailureCategoryName,
         Level = LogLevel.Warning,
         Message = "Cross-tenant write exception occurred",
         SkipEnabledCheck = true
     )]
     private static partial void _LogCrossTenantWriteException(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 5011,
+        EventName = "MissingTenantContext",
+        Level = LogLevel.Warning,
+        Message = "Missing tenant context for request: {ExceptionType} at {RequestPath}"
+    )]
+    private static partial void _LogMissingTenantContext(
+        ILogger logger,
+        Exception exception,
+        string exceptionType,
+        string requestPath
+    );
+
+    [LoggerMessage(
+        EventId = 5012,
+        EventName = "TenantResolutionMiddlewareMissing",
+        Level = LogLevel.Warning,
+        Message = "MissingTenantContextException was raised for {RequestPath} but TenantResolutionMiddleware "
+            + "did not run for this request. Verify that UseHeadlessTenancy() is registered in the request "
+            + "pipeline (after UseAuthentication() and before UseAuthorization())."
+    )]
+    private static partial void _LogTenantResolutionMiddlewareMissing(ILogger logger, string requestPath);
 
     [LoggerMessage(
         EventId = 5004,

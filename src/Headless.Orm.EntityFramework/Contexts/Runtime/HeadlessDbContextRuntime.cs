@@ -23,7 +23,7 @@ namespace Headless.EntityFramework;
 /// <see cref="DbContext.ChangeTracker"/>.
 /// </remarks>
 [PublicAPI]
-public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices services)
+public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices services) : IAsyncDisposable
 {
     private static readonly MethodInfo _ConfigureQueryFiltersMethod = typeof(HeadlessDbContextRuntime).GetMethod(
         nameof(_ConfigureQueryFilters),
@@ -34,21 +34,50 @@ public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices se
     private static readonly Type _NullableDateTimeType = typeof(DateTime?);
 
     private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
+    private bool _initialized;
+    private bool _stampTenantHandlerAttached;
 
     public string? TenantId => services.TenantId;
 
     public void Initialize()
     {
+        if (_initialized)
+        {
+            return;
+        }
+
         db.ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
         db.ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
-        // Stamp tenant ID at Add() time (rather than at SaveChanges time) so that an ambient
-        // tenant change between Add and SaveChanges is detected as a CrossTenantWriteException
-        // by the save-entry processor's validation step, rather than being silently absorbed by
-        // a fallback stamp using the SaveChanges-time tenant.
+        _initialized = true;
+
         if (services.IsTenantWriteGuardEnabled)
         {
             db.ChangeTracker.Tracked += _StampTenantOnAdded;
+            _stampTenantHandlerAttached = true;
         }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        GC.SuppressFinalize(this);
+
+        if (!_initialized)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        db.ChangeTracker.Tracked -= _navigationModifiedTracker.ChangeTrackerTracked;
+        db.ChangeTracker.StateChanged -= _navigationModifiedTracker.ChangeTrackerStateChanged;
+
+        if (_stampTenantHandlerAttached)
+        {
+            db.ChangeTracker.Tracked -= _StampTenantOnAdded;
+            _stampTenantHandlerAttached = false;
+        }
+
+        _initialized = false;
+
+        return ValueTask.CompletedTask;
     }
 
     private void _StampTenantOnAdded(object? sender, EntityTrackedEventArgs e)

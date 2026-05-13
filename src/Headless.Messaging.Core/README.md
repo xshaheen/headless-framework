@@ -243,14 +243,7 @@ builder.AddHeadlessTenancy(tenancy => tenancy
 
 `PropagateTenant()` registers a built-in filter pair that ties the wire envelope to `ICurrentTenant`. `RequireTenantOnPublish()` flips strict publish tenancy so every publish must resolve a tenant from `PublishOptions.TenantId` or the ambient tenant.
 
-For messaging-only setup, the lower-level builder extension remains available:
-
-```csharp
-using Headless.Messaging.MultiTenancy;
-
-builder.Services.AddHeadlessMessaging(options => { /* ... */ })
-    .AddTenantPropagation();
-```
+`AddHeadlessTenancy(...).Messaging(m => m.PropagateTenant())` is the single composition point for tenant propagation. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed in favor of the root tenancy seam.
 
 - **Publish:** stamps `PublishOptions.TenantId` from the ambient `ICurrentTenant.Id` when the caller has not set it explicitly. Caller overrides win.
 - **Consume:** restores `ICurrentTenant.Change(...)` from the resolved `ConsumeContext<T>.TenantId` for the lifetime of the consume, including the exception path. Whitespace, empty, and oversized header values map to "no tenant".
@@ -258,6 +251,10 @@ builder.Services.AddHeadlessMessaging(options => { /* ... */ })
 Tenant propagation requires a real `ICurrentTenant`. `AddHeadlessMessaging()` registers only the safe `NullCurrentTenant` fallback; `Headless.Api` and `Headless.Orm.EntityFramework` setup replace that fallback while preserving consumer-provided tenant implementations.
 
 The consume filter trusts the inbound envelope. Topics exposed to external producers must layer envelope validation upstream.
+
+### Diagnostics / PII
+
+The `HEADLESS_TENANCY_*` event family is non-PII by design with one exception: `TenantContextSwitched` (EventId 64, Debug level) surfaces the raw tenant identifier as it restores `ICurrentTenant` on the consume side. Operators should gate Debug-level messaging logs accordingly when tenant identifiers contain PII (for example customer email or organization slugs).
 
 ## Message Ordering Guarantees
 

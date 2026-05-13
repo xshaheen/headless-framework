@@ -5,6 +5,7 @@ using Headless.Checks;
 namespace Headless.MultiTenancy;
 
 /// <summary>Severity for a tenant posture diagnostic.</summary>
+[PublicAPI]
 public enum HeadlessTenancyDiagnosticSeverity
 {
     /// <summary>Informational diagnostic.</summary>
@@ -22,6 +23,7 @@ public enum HeadlessTenancyDiagnosticSeverity
 /// <param name="Code">A stable diagnostic code.</param>
 /// <param name="Message">A non-PII diagnostic message.</param>
 /// <param name="Severity">The diagnostic severity.</param>
+[PublicAPI]
 public sealed record HeadlessTenancyDiagnostic(
     string Seam,
     string Code,
@@ -50,14 +52,27 @@ public sealed record HeadlessTenancyDiagnostic(
             HeadlessTenancyDiagnosticSeverity.Warning
         );
     }
+
+    /// <summary>Creates an informational diagnostic.</summary>
+    public static HeadlessTenancyDiagnostic Information(string seam, string code, string message)
+    {
+        return new(
+            Argument.IsNotNullOrWhiteSpace(seam),
+            Argument.IsNotNullOrWhiteSpace(code),
+            Argument.IsNotNullOrWhiteSpace(message),
+            HeadlessTenancyDiagnosticSeverity.Information
+        );
+    }
 }
 
 /// <summary>Validation context passed to tenant posture validators.</summary>
 /// <param name="Services">The application service provider.</param>
 /// <param name="Manifest">The shared tenant posture manifest.</param>
+[PublicAPI]
 public sealed record HeadlessTenancyValidationContext(IServiceProvider Services, TenantPostureManifest Manifest);
 
 /// <summary>Validates tenant posture at host startup.</summary>
+[PublicAPI]
 public interface IHeadlessTenancyValidator
 {
     /// <summary>Validates tenant posture and returns non-PII diagnostics.</summary>

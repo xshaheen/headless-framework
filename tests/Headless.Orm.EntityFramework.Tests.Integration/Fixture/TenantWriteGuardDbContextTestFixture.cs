@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Abstractions;
 using Headless.EntityFramework;
 using Headless.Testing.Helpers;
@@ -39,16 +41,32 @@ public sealed class TenantWriteGuardDbContextTestFixture : IAsyncDisposable
     public static async Task<TenantWriteGuardDbContextTestFixture> CreateAsync(bool guardEnabled)
     {
         var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled);
-        await fixture._InitializeAsync();
+
+        try
+        {
+            await fixture._InitializeAsync();
+        }
+        catch
+        {
+            await fixture.DisposeAsync();
+            throw;
+        }
 
         return fixture;
     }
 
     public async ValueTask DisposeAsync()
     {
-        await ServiceProvider.DisposeAsync();
-        await _postgreSqlContainer.StopAsync();
-        await _postgreSqlContainer.DisposeAsync();
+        if (ServiceProvider is not null)
+        {
+            await ServiceProvider.DisposeAsync();
+        }
+
+        if (_postgreSqlContainer is not null)
+        {
+            await _postgreSqlContainer.StopAsync();
+            await _postgreSqlContainer.DisposeAsync();
+        }
     }
 
     private async Task _InitializeAsync()

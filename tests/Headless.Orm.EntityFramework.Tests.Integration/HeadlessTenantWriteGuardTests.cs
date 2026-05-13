@@ -1,8 +1,11 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Abstractions;
 using Headless.EntityFramework;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -12,6 +15,17 @@ namespace Tests;
 
 public sealed class HeadlessTenantWriteGuardTests : TestBase
 {
+    [Fact]
+    public void guard_tenant_writes_capabilities_should_expose_documented_capability_labels()
+    {
+        // given/when — the static capabilities property must contain the two labels recorded by the
+        // EF seam so downstream posture assertions stay stable across refactors of the seam wiring.
+        var capabilities = HeadlessEntityFrameworkTenancyBuilder.GuardTenantWritesCapabilities;
+
+        // then
+        capabilities.Should().BeEquivalentTo("guard-tenant-writes", "ef-owned-bypass");
+    }
+
     [Fact]
     public void cross_tenant_write_exception_should_expose_safe_structural_diagnostics()
     {
@@ -98,6 +112,52 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     }
 
     [Fact]
+    public void add_headless_tenant_write_guard_should_bind_configuration_and_keep_guard_enabled()
+    {
+        // given
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection([new KeyValuePair<string, string?>("IsEnabled", "false")])
+            .Build();
+
+        // when
+        services.AddHeadlessTenantWriteGuard(configuration);
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
+        options.IsEnabled.Should().BeTrue();
+        provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void add_headless_tenant_write_guard_should_support_service_provider_aware_configuration()
+    {
+        // given
+        var marker = new TenantWriteGuardOptionsMarker(Guid.NewGuid());
+        Guid? resolvedMarkerId = null;
+        var services = new ServiceCollection();
+        services.AddSingleton(marker);
+
+        // when
+        services.AddHeadlessTenantWriteGuard(
+            (_, provider) =>
+            {
+                resolvedMarkerId = provider.GetRequiredService<TenantWriteGuardOptionsMarker>().Id;
+            }
+        );
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<TenantWriteGuardOptions>>().Value;
+
+        // then
+        options.IsEnabled.Should().BeTrue();
+        resolvedMarkerId.Should().Be(marker.Id);
+        provider.GetRequiredService<ITenantWriteGuardBypass>().IsActive.Should().BeFalse();
+    }
+
+    [Fact]
     public void add_headless_tenancy_entity_framework_should_enable_write_guard_and_record_manifest()
     {
         // given
@@ -141,7 +201,8 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public void tenant_write_guard_bypass_should_restore_after_dispose()
     {
         // given
-        var bypass = new TenantWriteGuardBypass();
+        using var provider = _BuildBypassProvider();
+        var bypass = provider.GetRequiredService<ITenantWriteGuardBypass>();
 
         // when
         using (bypass.BeginBypass())
@@ -157,7 +218,8 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public void tenant_write_guard_bypass_should_restore_nested_scopes_in_lifo_order()
     {
         // given
-        var bypass = new TenantWriteGuardBypass();
+        using var provider = _BuildBypassProvider();
+        var bypass = provider.GetRequiredService<ITenantWriteGuardBypass>();
 
         // when
         using (bypass.BeginBypass())
@@ -180,7 +242,8 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task tenant_write_guard_bypass_should_not_leak_into_unrelated_async_flow()
     {
         // given
-        var bypass = new TenantWriteGuardBypass();
+        using var provider = _BuildBypassProvider();
+        var bypass = provider.GetRequiredService<ITenantWriteGuardBypass>();
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var unrelated = Task.Run(async () =>
@@ -208,7 +271,8 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public async Task tenant_write_guard_bypass_should_not_leak_into_async_work_spawned_inside_scope()
     {
         // given
-        var bypass = new TenantWriteGuardBypass();
+        using var provider = _BuildBypassProvider();
+        var bypass = provider.GetRequiredService<ITenantWriteGuardBypass>();
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Task<bool> captured;
@@ -234,6 +298,14 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
         var leaked = await captured;
         leaked.Should().BeFalse();
         bypass.IsActive.Should().BeFalse();
+    }
+
+    private static ServiceProvider _BuildBypassProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddHeadlessTenantWriteGuard();
+
+        return services.BuildServiceProvider();
     }
 
     [Fact]
@@ -401,6 +473,28 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     }
 
     [Fact]
+    public async Task guard_enabled_should_allow_matching_tenant_create_with_sync_save_changes()
+    {
+        // given
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
+        using var tenant = fixture.CurrentTenant.Change("tenant-a");
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var entity = new TestEntity { Name = "sync-initial" };
+        db.Tests.Add(entity);
+
+        // when
+        db.SaveChanges();
+
+        // then
+        entity.TenantId.Should().Be("tenant-a");
+        var persisted = await db.Tests.IgnoreMultiTenancyFilter().SingleAsync(AbortToken);
+        persisted.Name.Should().Be("sync-initial");
+        persisted.TenantId.Should().Be("tenant-a");
+    }
+
+    [Fact]
     public async Task guard_enabled_should_allow_matching_tenant_update()
     {
         // given
@@ -526,6 +620,31 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
 
         var persistedName = await _GetTenantEntityNameAsync(fixture, entityId);
         persistedName.Should().Be("owned-by-b");
+    }
+
+    [Fact]
+    public async Task guard_enabled_should_reject_cross_tenant_update_loaded_through_ignored_filter_with_sync_save_changes()
+    {
+        // given
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
+        var entityId = await _SeedTenantEntityAsync(fixture, "tenant-b", "sync-owned-by-b");
+
+        fixture.CurrentTenant.Id = "tenant-a";
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var entity = await db.Tests.IgnoreMultiTenancyFilter().SingleAsync(x => x.Id == entityId, AbortToken);
+        entity.Name = "sync-changed-by-a";
+
+        // when
+        var act = () => db.SaveChanges();
+
+        // then
+        act.Should().Throw<CrossTenantWriteException>();
+        db.EmittedLocalMessages.Should().BeEmpty();
+
+        var persistedName = await _GetTenantEntityNameAsync(fixture, entityId);
+        persistedName.Should().Be("sync-owned-by-b");
     }
 
     [Fact]
@@ -833,4 +952,6 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
 
         return await db.Tests.IgnoreMultiTenancyFilter().AnyAsync(x => x.Id == entityId, AbortToken);
     }
+
+    private sealed record TenantWriteGuardOptionsMarker(Guid Id);
 }

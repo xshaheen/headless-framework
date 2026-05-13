@@ -14,7 +14,7 @@ using Microsoft.Extensions.Hosting;
 namespace Headless.Api;
 
 [PublicAPI]
-public static class SetupMultiTenancy
+public static class SetupApiTenancy
 {
     /// <summary>
     /// Enables the framework multi-tenancy primitives and configures how HTTP tenant resolution should read tenant claims.
@@ -22,11 +22,13 @@ public static class SetupMultiTenancy
     /// <param name="builder">The host application builder.</param>
     /// <param name="configure">Optional tenant resolution configuration.</param>
     /// <returns>The same host application builder.</returns>
-    public static IHostApplicationBuilder AddHeadlessMultiTenancy(
+    internal static IHostApplicationBuilder AddHeadlessMultiTenancy(
         this IHostApplicationBuilder builder,
         Action<MultiTenancyOptions>? configure = null
     )
     {
+        Argument.IsNotNull(builder);
+
         var optionsBuilder = builder.Services.AddOptions<MultiTenancyOptions, MultiTenancyOptionsValidator>();
 
         if (configure is not null)
@@ -106,6 +108,7 @@ public static class SetupMultiTenancy
 }
 
 /// <summary>Records that Headless HTTP tenancy should resolve tenants from authenticated user claims.</summary>
+[PublicAPI]
 public sealed class HeadlessHttpTenancyBuilder
 {
     /// <summary>The seam name reported in the tenant posture manifest.</summary>
@@ -168,6 +171,7 @@ internal sealed class HeadlessHttpTenancyValidator : IHeadlessTenancyValidator
 }
 
 /// <summary>Options for HTTP tenant resolution.</summary>
+[PublicAPI]
 public sealed class MultiTenancyOptions
 {
     /// <summary>Claim type to read tenant ID from. Defaults to <c>tenant_id</c>.</summary>

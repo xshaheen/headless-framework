@@ -6,7 +6,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
-public sealed class HeadlessTenancySetupTests
+public sealed class SetupHeadlessTenancyTests
 {
     [Fact]
     public void should_register_manifest_and_startup_validator_once()
@@ -63,12 +63,12 @@ public sealed class HeadlessTenancySetupTests
         builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
 
         using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = provider
+        var hostedService = (IHostedLifecycleService)provider
             .GetServices<IHostedService>()
             .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
 
-        // when
-        Func<Task> act = () => hostedService.StartAsync(CancellationToken.None);
+        // when — validation runs in StartingAsync so it fires before any other hosted service's StartAsync.
+        Func<Task> act = () => hostedService.StartingAsync(CancellationToken.None);
 
         // then
         await act.Should()
@@ -91,12 +91,12 @@ public sealed class HeadlessTenancySetupTests
         builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
 
         using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = provider
+        var hostedService = (IHostedLifecycleService)provider
             .GetServices<IHostedService>()
             .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
 
         // when
-        Func<Task> act = () => hostedService.StartAsync(CancellationToken.None);
+        Func<Task> act = () => hostedService.StartingAsync(CancellationToken.None);
 
         // then
         await act.Should()
@@ -138,6 +138,39 @@ public sealed class HeadlessTenancySetupTests
             value.Should().NotContain("tenant-a", because: "manifest must not record tenant IDs");
             value.Should().NotContain("tenant-b", because: "manifest must not record tenant IDs");
         });
+    }
+
+    [Fact]
+    public void should_keep_higher_priority_status_when_record_seam_called_in_reverse_order()
+    {
+        // given — record Enforcing first, then Propagating; precedence must keep Enforcing.
+        var manifest = new TenantPostureManifest();
+
+        // when
+        manifest.RecordSeam("Messaging", TenantPostureStatus.Enforcing, "require-tenant-on-publish");
+        manifest.RecordSeam("Messaging", TenantPostureStatus.Propagating, "propagate-tenant");
+
+        // then
+        var seam = manifest.GetSeam("Messaging");
+        seam.Should().NotBeNull();
+        seam!.Status.Should().Be(TenantPostureStatus.Enforcing);
+        seam.Capabilities.Should().BeEquivalentTo("require-tenant-on-publish", "propagate-tenant");
+    }
+
+    [Fact]
+    public void should_upgrade_status_when_record_seam_called_with_higher_priority_status()
+    {
+        // given — record Configured first, then Guarded; precedence must keep Guarded.
+        var manifest = new TenantPostureManifest();
+
+        // when
+        manifest.RecordSeam("EntityFramework", TenantPostureStatus.Configured, "ef-baseline");
+        manifest.RecordSeam("EntityFramework", TenantPostureStatus.Guarded, "guard-tenant-writes");
+
+        // then
+        var seam = manifest.GetSeam("EntityFramework");
+        seam.Should().NotBeNull();
+        seam!.Status.Should().Be(TenantPostureStatus.Guarded);
     }
 
     [Fact]

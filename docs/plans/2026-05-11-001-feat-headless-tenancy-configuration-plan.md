@@ -134,7 +134,7 @@ Avoid references from `Headless.MultiTenancy` to any seam package.
 
 Core types to introduce, with exact names adjustable during implementation:
 
-- `HeadlessTenancySetup`
+- `SetupHeadlessTenancy`
 - `HeadlessTenancyBuilder`
 - `TenantPostureManifest`
 - `TenantSeamPosture`

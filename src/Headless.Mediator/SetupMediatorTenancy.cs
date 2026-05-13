@@ -6,7 +6,7 @@ using Headless.MultiTenancy;
 namespace Headless.Mediator;
 
 [PublicAPI]
-public static class SetupMultiTenancy
+public static class SetupMediatorTenancy
 {
     /// <summary>Configures Mediator tenant posture through the root Headless tenancy builder.</summary>
     /// <param name="builder">The root tenancy builder.</param>
@@ -27,6 +27,7 @@ public static class SetupMultiTenancy
 }
 
 /// <summary>Records tenant posture for Mediator request handling.</summary>
+[PublicAPI]
 public sealed class HeadlessMediatorTenancyBuilder
 {
     private readonly HeadlessTenancyBuilder _builder;

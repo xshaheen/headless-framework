@@ -106,14 +106,13 @@ public sealed class TenantPropagationE2ETests : TestBase
             services.AddTransient<TenantCapturingConsumer>();
             services.AddSingleton<FlakyTenantConsumer>();
 
-            services
-                .AddHeadlessMessaging(options =>
-                {
-                    options.UseInMemoryMessageQueue();
-                    options.UseInMemoryStorage();
-                    configureMessaging(options);
-                })
-                .AddTenantPropagation();
+            services.AddHeadlessMessaging(options =>
+            {
+                options.UseInMemoryMessageQueue();
+                options.UseInMemoryStorage();
+                configureMessaging(options);
+            });
+            services.AddTenantPropagationServices();
         });
     }
 

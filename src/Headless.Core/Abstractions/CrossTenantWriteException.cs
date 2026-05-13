@@ -13,8 +13,12 @@ namespace Headless.Abstractions;
 /// either fail identically or, worse, persist the unsafe write if the ambient tenant context
 /// changes between attempts.
 /// </remarks>
+[PublicAPI]
 public sealed class CrossTenantWriteException : Exception
 {
+    /// <summary>Stable failure category name used in structured diagnostics and logs.</summary>
+    public const string FailureCategoryName = "CrossTenantWrite";
+
     /// <summary>Initializes a new instance of the <see cref="CrossTenantWriteException"/> class.</summary>
     /// <param name="entityType">The CLR entity type name that failed the guard.</param>
     /// <param name="writeState">The EF <c>EntityState</c> string (for example <c>Added</c>, <c>Modified</c>, <c>Deleted</c>) that failed the guard.</param>
@@ -50,7 +54,7 @@ public sealed class CrossTenantWriteException : Exception
     public string EntityType { get; }
 
     /// <summary>Gets the stable failure category for structured diagnostics.</summary>
-    public string FailureCategory { get; } = "CrossTenantWrite";
+    public string FailureCategory { get; } = FailureCategoryName;
 
     /// <summary>Gets the write state that failed the guard.</summary>
     public string WriteState { get; }

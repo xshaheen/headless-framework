@@ -51,6 +51,30 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         return _runtime.SaveChangesAsync(base.SaveChangesAsync, acceptAllChangesOnSuccess, cancellationToken);
     }
 
+    public override void Dispose()
+    {
+        // Synchronously dispose the runtime alongside the base context. DisposeAsync's body is
+        // synchronous (ValueTask.CompletedTask), so the sync path can call DisposeAsync().AsTask()
+        // safely without blocking. We keep the dispose contract symmetrical with DisposeAsync.
+        var disposeTask = _runtime.DisposeAsync();
+        if (!disposeTask.IsCompletedSuccessfully)
+        {
+            disposeTask.AsTask().GetAwaiter().GetResult();
+        }
+        base.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        // Detach the per-DbContext runtime's ChangeTracker handlers BEFORE we let the base context
+        // tear down its services. Avoids EF's "still tracking" assertions and prevents handler leaks
+        // when the same DbContext type is resolved repeatedly under the same service provider.
+        await _runtime.DisposeAsync().ConfigureAwait(false);
+        await base.DisposeAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
+    }
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);
