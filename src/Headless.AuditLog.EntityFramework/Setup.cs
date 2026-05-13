@@ -9,7 +9,7 @@ namespace Headless.AuditLog;
 
 /// <summary>Extension methods for registering the EF Core audit log implementation.</summary>
 [PublicAPI]
-public static class AuditLogEntityFrameworkSetup
+public static class SetupAuditLogEntityFramework
 {
     extension(IServiceCollection services)
     {

@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Features;
 
 [PublicAPI]
-public static class EntityFrameworkSetup
+public static class SetupEntityFramework
 {
     extension(IServiceCollection services)
     {

@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Caching;
 
 [PublicAPI]
-public static class RedisCacheSetup
+public static class SetupRedisCache
 {
     extension(IServiceCollection services)
     {
