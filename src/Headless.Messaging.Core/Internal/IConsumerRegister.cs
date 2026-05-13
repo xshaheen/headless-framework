@@ -95,7 +95,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 }
                 catch (ObjectDisposedException)
                 {
-                    // If we failed to acquire the gate above, it means DisposeAsync has already run and we should not attempt to release.
+                    // If we failed to acquire the gate above, it means DisposeAsync has already run, and we should not attempt to release.
                 }
             }
         }
@@ -107,6 +107,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 await PulseAsync().ConfigureAwait(false);
             }
 #pragma warning disable ERP022 // Best-effort cleanup — state reset below prevents stale handles from being accessible.
+            // ReSharper disable once EmptyGeneralCatchClause
             catch { }
 #pragma warning restore ERP022
 
@@ -172,6 +173,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 await DisposeAsync();
             }
 #pragma warning disable ERP022 // Best-effort teardown — nothing useful to do with the exception
+            // ReSharper disable once EmptyGeneralCatchClause
             catch { }
 #pragma warning restore ERP022
         });
@@ -237,6 +239,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 await Task.WhenAll(allTasks).WaitAsync(TimeSpan.FromSeconds(2));
             }
 #pragma warning disable ERP022, RCS1075 // Intentional: timeout or cancellation — proceed with cleanup
+            // ReSharper disable once EmptyGeneralCatchClause
             catch (Exception) { }
 #pragma warning restore ERP022, RCS1075
         }
@@ -438,6 +441,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 await PulseAsync().ConfigureAwait(false);
             }
 #pragma warning disable ERP022 // Best-effort cleanup — state reset below prevents stale handles from being accessible.
+            // ReSharper disable once EmptyGeneralCatchClause
             catch { }
 #pragma warning restore ERP022
 
@@ -555,8 +559,8 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
-                    var safeMessageId = LogSanitizer.Sanitize(transportMessage.GetId()) ?? "(null)";
-                    var safeMessageName = LogSanitizer.Sanitize(transportMessage.GetName()) ?? "(null)";
+                    var safeMessageId = LogSanitizer.Sanitize(transportMessage.GetId());
+                    var safeMessageName = LogSanitizer.Sanitize(transportMessage.GetName());
                     _logger.MessageReceived(safeMessageId, safeMessageName);
                 }
 
@@ -659,7 +663,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                     }
                     catch (Exception e)
                     {
-                        _logger.ExecutedThresholdCallbackFailed(e, LogSanitizer.Sanitize(e.Message) ?? "");
+                        _logger.ExecutedThresholdCallbackFailed(e, LogSanitizer.Sanitize(e.Message));
                     }
 
                     _TracingAfter(tracingTimestamp, transportMessage, _serverAddress);

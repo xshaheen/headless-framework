@@ -105,10 +105,7 @@ internal sealed class OpenTelemetryInstrumentation(
         activity?.SetTag("Headless.Jobs.job.function", functionName);
         activity?.SetTag("Headless.Jobs.job.cancellation_reason", reason);
 
-        if (activity != null)
-        {
-            activity.SetStatus(ActivityStatusCode.Error, reason);
-        }
+        activity?.SetStatus(ActivityStatusCode.Error, reason);
 
         base.LogJobCancelled(jobId, functionName, reason);
     }

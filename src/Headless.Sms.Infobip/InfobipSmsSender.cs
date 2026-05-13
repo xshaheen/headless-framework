@@ -64,14 +64,10 @@ public sealed class InfobipSmsSender(
 
         try
         {
-            var smsResponse = await smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken).ConfigureAwait(false);
+            _ = await smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken).ConfigureAwait(false);
             logger.LogSmsSentSuccessfully(request.Destinations.Count);
 
             return SendSingleSmsResponse.Succeeded();
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
         }
         catch (ApiException e)
         {

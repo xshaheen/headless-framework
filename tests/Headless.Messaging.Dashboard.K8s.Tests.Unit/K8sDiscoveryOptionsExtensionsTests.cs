@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.K8s;
 using Headless.Testing.Tests;
@@ -59,7 +60,7 @@ public sealed class K8SDiscoveryOptionsExtensionsTests : TestBase
         // then - verify extension was registered via internal property
         var extensionsProp = typeof(MessagingOptions).GetProperty(
             "Extensions",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         var extensions = extensionsProp?.GetValue(messagingOptions) as IList<IMessagesOptionsExtension>;
 

@@ -179,7 +179,7 @@ public sealed class PostgreSqlMonitoringApi(
                                 ExpiresAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(index - 1),
-                                StatusName = reader.GetString(index++),
+                                StatusName = reader.GetString(index),
                             }
                         );
                     }

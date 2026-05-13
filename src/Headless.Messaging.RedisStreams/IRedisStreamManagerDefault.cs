@@ -52,6 +52,8 @@ internal class RedisStreamManager(
 
             token.WaitHandle.WaitOne(pollDelay);
         }
+
+        // ReSharper disable once IteratorNeverReturns
     }
 
     public async IAsyncEnumerable<IEnumerable<RedisStream>> PollStreamsPendingMessagesAsync(

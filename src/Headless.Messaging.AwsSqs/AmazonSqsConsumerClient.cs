@@ -172,6 +172,8 @@ internal sealed class AmazonSqsConsumerClient(
                 _logger.SqsRejectFailed(ex, groupId);
             }
         }
+
+        // ReSharper disable once FunctionNeverReturns
     }
 
     private void _ObserveBackgroundHandler(Task task)

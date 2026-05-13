@@ -9,6 +9,7 @@ using Headless.Testing.Tests;
 
 namespace Tests.MultiTenancy;
 
+// ReSharper disable  NotDisposedResource
 /// <summary>
 /// Unit tests for <see cref="TenantPropagationConsumeFilter"/>.
 /// Covers origin AE1 (consume-side restoration), AE2 (no-op for tenant-less messages),

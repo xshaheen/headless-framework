@@ -146,7 +146,7 @@ internal sealed class SubscribeExecutor(
         {
             logger.ConsumerExecuteFailed(
                 ex,
-                LogSanitizer.Sanitize(message.Origin.GetName()) ?? "",
+                LogSanitizer.Sanitize(message.Origin.GetName()),
                 message.StorageId,
                 message.Origin.GetExecutionInstanceId()
             );
@@ -229,7 +229,7 @@ internal sealed class SubscribeExecutor(
             }
             catch (Exception callbackEx)
             {
-                logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message) ?? "");
+                logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message));
             }
 
             return RetryDecision.Stop;
@@ -258,7 +258,7 @@ internal sealed class SubscribeExecutor(
             }
             catch (Exception callbackEx)
             {
-                logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message) ?? "");
+                logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message));
             }
 
             return RetryDecision.Stop;
@@ -310,7 +310,7 @@ internal sealed class SubscribeExecutor(
             // so they propagate to _SetFailedState and are reported to the circuit breaker.
             if (oce is TaskCanceledException && !oce.CancellationToken.IsCancellationRequested)
             {
-                var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(oce.Message) ?? "", oce);
+                var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(oce.Message), oce);
                 _TracingError(tracingTimestamp, message.Origin, descriptor.MethodInfo, e);
                 e.ReThrow();
             }
@@ -319,7 +319,7 @@ internal sealed class SubscribeExecutor(
         }
         catch (Exception ex)
         {
-            var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(ex.Message) ?? "", ex);
+            var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(ex.Message), ex);
 
             _TracingError(tracingTimestamp, message.Origin, descriptor.MethodInfo, e);
 

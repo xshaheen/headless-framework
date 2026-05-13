@@ -8,24 +8,18 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class AzureServiceBusConsumerClientTests
 {
-    private readonly ILogger _logger;
-    private readonly IOptions<AzureServiceBusOptions> _options;
-    private readonly IServiceProvider _serviceProvider;
-
-    public AzureServiceBusConsumerClientTests()
-    {
-        _logger = Substitute.For<ILogger>();
-        _options = Options.Create(
-            new AzureServiceBusOptions
-            {
-                ConnectionString =
-                    "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
-            }
-        );
-        _serviceProvider = new ServiceCollection().BuildServiceProvider();
-    }
+    private readonly ILogger _logger = Substitute.For<ILogger>();
+    private readonly IOptions<AzureServiceBusOptions> _options = Options.Create(
+        new AzureServiceBusOptions
+        {
+            ConnectionString =
+                "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
+        }
+    );
+    private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
     [Fact]
     public void should_throw_when_options_value_is_null()
@@ -281,7 +275,7 @@ public sealed class AzureServiceBusConsumerClientTests
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
         var startedField = typeof(AzureServiceBusConsumerClient).GetField(
             "_hasStartedProcessing",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
 
         await client.PauseAsync();

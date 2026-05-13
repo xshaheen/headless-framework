@@ -236,6 +236,6 @@ public sealed record OrderPlacedEvent(Guid OrderId);
 
 public sealed record Order(Guid Id);
 
-public sealed record XmlParser();
+public sealed record XmlParser;
 
 public sealed record Order123Event(Guid OrderId);

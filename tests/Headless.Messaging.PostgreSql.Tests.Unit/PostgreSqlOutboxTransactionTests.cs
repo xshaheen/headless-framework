@@ -21,10 +21,8 @@ public sealed class PostgreSqlOutboxTransactionTests : TestBase
         // given
         var dispatcher = new RecordingDispatcher();
         var accessor = new RecordingOutboxTransactionAccessor();
-        using var transaction = new PostgreSqlOutboxTransaction(dispatcher, accessor)
-        {
-            DbTransaction = new RecordingDbTransaction(),
-        };
+        using var transaction = new PostgreSqlOutboxTransaction(dispatcher, accessor);
+        transaction.DbTransaction = new RecordingDbTransaction();
         ((IOutboxMessageBuffer)transaction).AddToSent(_CreateMessage(1));
 
         // when
@@ -42,10 +40,8 @@ public sealed class PostgreSqlOutboxTransactionTests : TestBase
         // given
         var dispatcher = new RecordingDispatcher();
         var accessor = new RecordingOutboxTransactionAccessor();
-        await using var transaction = new PostgreSqlOutboxTransaction(dispatcher, accessor)
-        {
-            DbTransaction = new RecordingDbContextTransaction(),
-        };
+        await using var transaction = new PostgreSqlOutboxTransaction(dispatcher, accessor);
+        transaction.DbTransaction = new RecordingDbContextTransaction();
         ((IOutboxMessageBuffer)transaction).AddToSent(_CreateMessage(2));
 
         // when
@@ -62,10 +58,8 @@ public sealed class PostgreSqlOutboxTransactionTests : TestBase
         // given
         var dispatcher = new RecordingDispatcher();
         var accessor = new RecordingOutboxTransactionAccessor();
-        using var transaction = new PostgreSqlOutboxTransaction(dispatcher, accessor)
-        {
-            DbTransaction = new RecordingDbTransaction(),
-        };
+        using var transaction = new PostgreSqlOutboxTransaction(dispatcher, accessor);
+        transaction.DbTransaction = new RecordingDbTransaction();
         ((IOutboxMessageBuffer)transaction).AddToSent(_CreateMessage(3));
 
         // when

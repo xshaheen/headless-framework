@@ -211,6 +211,7 @@ public sealed class TypeSafePublishApiTests
         transaction.BufferedMessages.Should().ContainSingle();
     }
 
+    [UsedImplicitly]
     private sealed class OrderCreatedHandler : IConsume<OrderCreated>
     {
         public ValueTask Consume(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)

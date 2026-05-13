@@ -905,7 +905,7 @@ internal sealed class CircuitBreakerStateManager(
         var groupName = state.GroupName;
 
         var groupLock = state.SyncLock;
-        Func<ValueTask>? resumeCallback = null;
+        Func<ValueTask>? resumeCallback;
         TaskCompletionSource? resumeTcs = null;
 
         lock (groupLock)
@@ -1002,7 +1002,7 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         var groupLock = state.SyncLock;
-        Func<ValueTask>? pauseCallback = null;
+        Func<ValueTask>? pauseCallback;
         (
             CircuitBreakerState PreviousState,
             TimeSpan OpenDuration,

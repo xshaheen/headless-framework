@@ -127,8 +127,6 @@ public static class TimeUnit
             {
                 return new TimeSpan(0, 0, seconds);
             }
-
-            return null;
         }
 
         return null;

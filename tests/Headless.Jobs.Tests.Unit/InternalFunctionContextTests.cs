@@ -72,7 +72,7 @@ public sealed class InternalFunctionContextTests
         // Simulate a null ParametersToUpdate set to verify the null-coalescing assignment.
         var parametersProperty = typeof(InternalFunctionContext).GetProperty(
             "ParametersToUpdate",
-            BindingFlags.Instance | BindingFlags.NonPublic
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
 
         parametersProperty.Should().NotBeNull();

@@ -20,7 +20,6 @@ public interface IConnectionFactory
 public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 {
     private readonly Lock _lock = new();
-    private readonly ILogger<ConnectionFactory> _logger;
     private PulsarClient? _client;
     private readonly MessagingPulsarOptions _options;
     private readonly Func<string, Task<IProducer<byte[]>>>? _producerFactoryOverride;
@@ -32,14 +31,13 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
         Func<string, Task<IProducer<byte[]>>>? producerFactoryOverride = null
     )
     {
-        _logger = logger;
         _options = options.Value;
         _producerFactoryOverride = producerFactoryOverride;
         _topicProducers = new ConcurrentDictionary<string, Task<IProducer<byte[]>>>(StringComparer.Ordinal);
 
-        if (_logger.IsEnabled(LogLevel.Debug))
+        if (logger.IsEnabled(LogLevel.Debug))
         {
-            _logger.LogDebug(
+            logger.LogDebug(
                 "Messaging Pulsar configuration: ServiceUrl={ServiceUrl}, EnableClientLog={EnableClientLog}, HasTlsOptions={HasTlsOptions}",
                 BrokerAddressDisplay.Format(_options.ServiceUrl),
                 _options.EnableClientLog,

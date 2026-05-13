@@ -123,7 +123,7 @@ public sealed class MessagingConventions
 
         var baseName = TopicNaming switch
         {
-            TopicNamingConvention.KebabCase => ToKebabCase(messageType.Name),
+            TopicNamingConvention.KebabCase => _ToKebabCase(messageType.Name),
             TopicNamingConvention.TypeName => messageType.Name,
             _ => messageType.Name,
         };
@@ -199,17 +199,6 @@ public sealed class MessagingConventions
                 continue;
             }
 
-            if (c is '.' or '-' or '_')
-            {
-                if (!previousWasSeparator)
-                {
-                    builder.Append('.');
-                    previousWasSeparator = true;
-                }
-
-                continue;
-            }
-
             if (!previousWasSeparator)
             {
                 builder.Append('.');
@@ -221,7 +210,7 @@ public sealed class MessagingConventions
         return string.IsNullOrWhiteSpace(normalized) ? "default" : normalized;
     }
 
-    private static string ToKebabCase(string value)
+    private static string _ToKebabCase(string value)
     {
         if (string.IsNullOrEmpty(value))
         {

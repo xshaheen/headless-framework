@@ -51,11 +51,13 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(TimeSpan.FromSeconds(1));
 
         // when/then - permanent exceptions should not be retried
+#pragma warning disable MA0015
         strategy.GetNextDelay(0, new SubscriberNotFoundException("Not found")).Should().BeNull();
         strategy.GetNextDelay(0, new ArgumentNullException("value")).Should().BeNull();
         strategy.GetNextDelay(0, new ArgumentException("Invalid arg", "value")).Should().BeNull();
         strategy.GetNextDelay(0, new InvalidOperationException("Invalid op")).Should().BeNull();
         strategy.GetNextDelay(0, new NotSupportedException("Not supported")).Should().BeNull();
+#pragma warning restore MA0015
     }
 
     [Fact]

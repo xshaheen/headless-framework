@@ -43,6 +43,7 @@ public sealed class JsonConstantsTests
 
         public string? Color { get; init; }
 
+        // ReSharper disable once CollectionNeverQueried.Local
         public List<string> Tags { get; } = [];
     }
 
