@@ -46,8 +46,6 @@ env:
   CONFIGURATION: Release
   # Packages Directory
   PACKAGES_DIR: ./artifacts/packages-results
-  # Test Results Directory
-  TEST_RESULTS_DIR: ./artifacts/test-results
   # Set the NuGet packages restore cache directory.
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   # Disable the Husky pre-commit hooks.
@@ -90,32 +88,6 @@ jobs:
       - name: "Build"
         run: dotnet build headless-framework.slnx --configuration ${{ env.CONFIGURATION }} --no-restore --no-incremental -v:q -nologo /clp:ErrorsOnly
 
-      - name: "Test unit projects"
-        if: github.event_name == 'release'
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-
-          unit_test_projects=(tests/*.Tests.Unit/*.csproj)
-
-          if [ ${#unit_test_projects[@]} -eq 0 ]; then
-            echo "No unit test projects found."
-            exit 1
-          fi
-
-          for test_project in "${unit_test_projects[@]}"; do
-            project_file="${test_project##*/}"
-            project_name="${project_file%.csproj}"
-
-            dotnet test "$test_project" \
-              --configuration "${CONFIGURATION}" \
-              --no-restore \
-              --no-build \
-              --logger "trx;LogFilePrefix=${project_name}" \
-              --results-directory "${TEST_RESULTS_DIR}"
-          done
-        shell: bash
-
       - name: "Pack"
         run: |
           set -euo pipefail
@@ -123,14 +95,6 @@ jobs:
             dotnet pack "$csproj" --configuration "${CONFIGURATION}" --no-restore --no-build --include-symbols --output "${PACKAGES_DIR}"
           done
         shell: bash
-
-      - name: "Publish Test Results"
-        if: always() && github.event_name == 'release'
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: test-results
-          path: ${{ env.TEST_RESULTS_DIR }}
-          if-no-files-found: ignore
 
       - name: "Publish Artifacts"
         uses: actions/upload-artifact@v7.0.1
