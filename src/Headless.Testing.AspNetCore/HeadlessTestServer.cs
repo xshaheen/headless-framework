@@ -23,12 +23,14 @@ namespace Headless.Testing.AspNetCore;
 /// (for xUnit fixture support) and <see cref="IAsyncDisposable"/> (for <c>await using</c> patterns).
 /// Dispose is idempotent — safe to call from both xUnit lifecycle and consumer code.
 /// </remarks>
-public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposable
+public sealed class HeadlessTestServer<TProgram>(
+    Action<IServiceCollection>? configureTestServices = null,
+    Action<IWebHostBuilder>? configureWebHost = null,
+    TimeSpan? initializerTimeout = null
+) : IAsyncLifetime
     where TProgram : class
 {
-    private readonly Action<IServiceCollection>? _configureTestServices;
-    private readonly Action<IWebHostBuilder>? _configureWebHost;
-    private readonly TimeSpan _initializerTimeout;
+    private readonly TimeSpan _initializerTimeout = initializerTimeout ?? TimeSpan.FromSeconds(60);
     private readonly List<(Func<IServiceProvider, Task> Check, TimeSpan Timeout)> _readinessChecks = [];
     private Action<DatabaseResetOptions>? _configureDatabaseReset;
     private readonly SemaphoreSlim _initGate = new(1, 1);
@@ -40,17 +42,6 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
     private volatile bool _disposed;
 
     internal Func<DatabaseReset, DbConnection, Task> ResetAction { get; set; } = (r, c) => r.ResetAsync(c);
-
-    public HeadlessTestServer(
-        Action<IServiceCollection>? configureTestServices = null,
-        Action<IWebHostBuilder>? configureWebHost = null,
-        TimeSpan? initializerTimeout = null
-    )
-    {
-        _configureTestServices = configureTestServices;
-        _configureWebHost = configureWebHost;
-        _initializerTimeout = initializerTimeout ?? TimeSpan.FromSeconds(60);
-    }
 
     /// <summary>The fake time provider registered in the test host.</summary>
     public FakeTimeProvider TimeProvider { get; private set; } = null!;
@@ -266,7 +257,7 @@ public sealed class HeadlessTestServer<TProgram> : IAsyncLifetime, IAsyncDisposa
             }
 
 #pragma warning disable CA2000 // Ownership transferred to _factory on success; finally disposes on failure
-            factory = new ServerFactory(_configureTestServices, _configureWebHost);
+            factory = new ServerFactory(configureTestServices, configureWebHost);
 #pragma warning restore CA2000
 
             // Force host startup — triggers ConfigureTestServices

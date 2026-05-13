@@ -17,17 +17,16 @@ namespace Tests;
 public sealed class RedisTransportTests : TestBase
 {
     private readonly IRedisStreamManager _mockStreamManager;
-    private readonly IOptions<MessagingRedisOptions> _options;
     private readonly RedisTransport _sut;
 
     public RedisTransportTests()
     {
         _mockStreamManager = Substitute.For<IRedisStreamManager>();
-        _options = Options.Create(
+        var options = Options.Create(
             new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
         var logger = LoggerFactory.CreateLogger<RedisTransport>();
-        _sut = new RedisTransport(_mockStreamManager, _options, logger);
+        _sut = new RedisTransport(_mockStreamManager, options, logger);
     }
 
     protected override async ValueTask DisposeAsyncCore()
@@ -64,6 +63,7 @@ public sealed class RedisTransportTests : TestBase
         );
 
         // when
+        // ReSharper disable once AccessToDisposedClosure
         var act = async () => await _sut.SendAsync(message, cts.Token);
 
         // then

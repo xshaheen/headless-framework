@@ -320,7 +320,7 @@ public sealed class AzureBlobStorage(
 
     #region Download
 
-    public async ValueTask<Blobs.BlobDownloadResult?> OpenReadStreamAsync(
+    public async ValueTask<BlobDownloadResult?> OpenReadStreamAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -358,7 +358,7 @@ public sealed class AzureBlobStorage(
         }
     }
 
-    public async ValueTask<Blobs.BlobInfo?> GetBlobInfoAsync(
+    public async ValueTask<BlobInfo?> GetBlobInfoAsync(
         string[] container,
         string blobName,
         CancellationToken cancellationToken = default
@@ -387,7 +387,7 @@ public sealed class AzureBlobStorage(
             return null;
         }
 
-        return new Blobs.BlobInfo
+        return new BlobInfo
         {
             BlobKey = Url.Combine([.. container.Skip(1).Append(blobName)]),
             Size = blobProperties.Value.ContentLength,
@@ -400,7 +400,7 @@ public sealed class AzureBlobStorage(
 
     #region List
 
-    public async IAsyncEnumerable<Blobs.BlobInfo> GetBlobsAsync(
+    public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
         string[] container,
         string? blobSearchPattern = null,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default
@@ -432,7 +432,7 @@ public sealed class AzureBlobStorage(
                 continue;
             }
 
-            yield return new Blobs.BlobInfo
+            yield return new BlobInfo
             {
                 BlobKey = blobItem.Name,
                 Size = blobItem.Properties.ContentLength.Value,
@@ -476,7 +476,7 @@ public sealed class AzureBlobStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var blobs = new List<Blobs.BlobInfo>();
+        var blobs = new List<BlobInfo>();
 
         // Start with the extra blob from the previous page if present.
         if (previous?.ExtraBlob is not null)
@@ -522,7 +522,7 @@ public sealed class AzureBlobStorage(
                         }
 
                         blobs.Add(
-                            new Blobs.BlobInfo
+                            new BlobInfo
                             {
                                 BlobKey = blobItem.Name,
                                 Size = blobItem.Properties.ContentLength.Value,
@@ -566,7 +566,7 @@ public sealed class AzureBlobStorage(
         }
 
         var hasMore = blobs.Count > pageSize;
-        Blobs.BlobInfo? extraBlob = null;
+        BlobInfo? extraBlob = null;
 
         if (hasMore)
         {

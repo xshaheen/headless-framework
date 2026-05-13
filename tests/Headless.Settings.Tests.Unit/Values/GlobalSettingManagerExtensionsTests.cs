@@ -209,7 +209,7 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
         const string settingName = "TestSetting";
 
         // when
-        await _settingManager.SetGlobalAsync(settingName, (string?)null, cancellationToken: AbortToken);
+        await _settingManager.SetGlobalAsync(settingName, null, cancellationToken: AbortToken);
 
         // then
         await _settingManager

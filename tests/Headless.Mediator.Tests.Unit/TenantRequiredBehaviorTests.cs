@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Abstractions;
 using Headless.Mediator;
+using Headless.Mediator.Behaviors;
 using Mediator;
 
 namespace Tests;
@@ -116,7 +118,7 @@ public sealed class TenantRequiredBehaviorTests
         // given
         var field = typeof(TenantRequiredBehavior<AllowMissingTestRequest, TestResponse>).GetField(
             "_AllowMissingTenant",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static
+            BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly
         );
 
         // when

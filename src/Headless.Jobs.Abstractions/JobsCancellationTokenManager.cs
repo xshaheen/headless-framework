@@ -281,8 +281,7 @@ public sealed class ConcurrentHashSet<T> : IDisposable
 
     public void Dispose()
     {
-        _Dispose(true);
-        GC.SuppressFinalize(this);
+        _Dispose(disposing: true);
     }
 
     private void _Dispose(bool disposing)

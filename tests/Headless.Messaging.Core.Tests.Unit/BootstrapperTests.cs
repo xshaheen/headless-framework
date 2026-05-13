@@ -132,7 +132,7 @@ public sealed class BootstrapperTests : TestBase
 
         if (afterMessaging is not null)
         {
-            services.AddSingleton<IProcessingServer>(afterMessaging);
+            services.AddSingleton(afterMessaging);
         }
 
         return services.BuildServiceProvider();

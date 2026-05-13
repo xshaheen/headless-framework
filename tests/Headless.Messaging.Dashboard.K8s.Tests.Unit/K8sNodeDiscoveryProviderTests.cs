@@ -362,9 +362,13 @@ public sealed class K8SNodeDiscoveryProviderTests : TestBase
     )
     {
         provider ??= _provider;
+
         var method = typeof(K8sNodeDiscoveryProvider).GetMethod(
             "_FilterNodesByTags",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(IDictionary<string, string>)],
+            null
         );
 
         var result = method!.Invoke(provider, [tags]);
@@ -381,7 +385,10 @@ public sealed class K8SNodeDiscoveryProviderTests : TestBase
     {
         var method = typeof(K8sNodeDiscoveryProvider).GetMethod(
             "_GetPortByNameOrIndex",
-            BindingFlags.NonPublic | BindingFlags.Static
+            BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(V1Service), typeof(string), typeof(int)],
+            null
         );
 
         return (int)method!.Invoke(null, [service, filterPortName, filterPortIndex])!;
@@ -391,7 +398,10 @@ public sealed class K8SNodeDiscoveryProviderTests : TestBase
     {
         var method = typeof(K8sNodeDiscoveryProvider).GetMethod(
             "_GetTagScope",
-            BindingFlags.NonPublic | BindingFlags.Static
+            BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(KeyValuePair<string, string>)],
+            null
         );
 
         return (string)method!.Invoke(null, [tag])!;

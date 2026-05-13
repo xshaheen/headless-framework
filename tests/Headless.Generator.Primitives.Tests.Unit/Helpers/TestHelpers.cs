@@ -19,9 +19,9 @@ internal static class TestHelpers
                 .Where(x => !x.IsDynamic && !string.IsNullOrWhiteSpace(x.Location))
                 .Select(x => (MetadataReference)MetadataReference.CreateFromFile(x.Location))
                 .Concat([
-                    (MetadataReference)MetadataReference.CreateFromFile(typeof(PrimitiveGenerator).Assembly.Location),
-                    (MetadataReference)MetadataReference.CreateFromFile(typeof(IPrimitive<>).Assembly.Location),
-                    (MetadataReference)MetadataReference.CreateFromFile(typeof(DisplayAttribute).Assembly.Location),
+                    MetadataReference.CreateFromFile(typeof(PrimitiveGenerator).Assembly.Location),
+                    MetadataReference.CreateFromFile(typeof(IPrimitive<>).Assembly.Location),
+                    MetadataReference.CreateFromFile(typeof(DisplayAttribute).Assembly.Location),
                 ]),
         ]
     );

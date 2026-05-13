@@ -6,7 +6,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Tests;
+namespace Tests.CircuitBreaker;
 
 public sealed class CircuitBreakerStateManagerTests : TestBase
 {

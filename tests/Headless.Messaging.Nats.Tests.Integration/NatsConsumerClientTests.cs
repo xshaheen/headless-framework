@@ -256,6 +256,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture)
         var messageCount = 0;
         client.OnMessageCallback = (_, _) =>
         {
+            // ReSharper disable once AccessToModifiedClosure
             Interlocked.Increment(ref messageCount);
             messageReceived.TrySetResult();
             return Task.CompletedTask;

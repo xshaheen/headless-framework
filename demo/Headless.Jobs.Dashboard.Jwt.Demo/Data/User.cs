@@ -1,4 +1,4 @@
-namespace Headless.Jobs.Dashboard.Jwt.Demo;
+namespace Headless.Jobs.Dashboard.Jwt.Demo.Data;
 
 public sealed class User
 {

@@ -133,6 +133,7 @@ public sealed class GeoCoordinateTests
         var coord = new GeoCoordinate { Latitude = 40.7128, Longitude = -74.0060 };
 
         // then
+        // ReSharper disable once SuspiciousTypeConversion.Global
         coord.Equals("not a coordinate").Should().BeFalse();
     }
 

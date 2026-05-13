@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Mediator;
+using Headless.Mediator.Behaviors;
 using Mediator;
 using Microsoft.Extensions.Logging.Abstractions;
 

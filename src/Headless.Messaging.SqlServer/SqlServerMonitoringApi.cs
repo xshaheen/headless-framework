@@ -175,7 +175,7 @@ internal sealed class SqlServerMonitoringApi(
                                 ExpiresAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(index - 1),
-                                StatusName = reader.GetString(index++),
+                                StatusName = reader.GetString(index),
                             }
                         );
                     }

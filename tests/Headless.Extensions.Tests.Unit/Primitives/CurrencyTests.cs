@@ -205,7 +205,7 @@ public sealed class CurrencyTests
         var currency = new Currency(100m, "USD");
 
         // then
-        currency.CompareTo((Currency?)null).Should().BeGreaterThan(0);
+        currency.CompareTo(null).Should().BeGreaterThan(0);
     }
 
     [Fact]

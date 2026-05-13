@@ -185,7 +185,7 @@ internal sealed class NatsConsumerClient(
     )
     {
         var retryDelay = TimeSpan.FromSeconds(1);
-        var nextOpts = timeout > TimeSpan.Zero ? new NatsJSNextOpts { Expires = timeout } : (NatsJSNextOpts?)null;
+        var nextOpts = timeout > TimeSpan.Zero ? new NatsJSNextOpts { Expires = timeout } : null;
         var readyReported = false;
 
         while (!cancellationToken.IsCancellationRequested)
@@ -639,7 +639,7 @@ internal sealed class NatsConsumerClient(
 
     private sealed class ReceiveTokenLease(
         NatsConsumerClient owner,
-        NatsConsumerClient.ReceiveTokenState receiveTokenState,
+        ReceiveTokenState receiveTokenState,
         CancellationToken cancellationToken
     ) : IDisposable
     {

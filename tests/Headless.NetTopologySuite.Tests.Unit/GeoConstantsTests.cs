@@ -103,19 +103,16 @@ public sealed class GeoConstantsTests
     }
 
     [Fact]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Reliability",
-        "CA1869:Cache and reuse 'JsonSerializerOptions' instances"
-    )]
+    [SuppressMessage("Reliability", "CA1869:Cache and reuse 'JsonSerializerOptions' instances")]
     public void CreateGeoJsonConverter_should_not_write_bbox()
     {
         // given
         var converter = GeoConstants.CreateGeoJsonConverter();
-        var options = new System.Text.Json.JsonSerializerOptions { Converters = { converter } };
+        var options = new JsonSerializerOptions { Converters = { converter } };
 
         // when - Create a simple point and serialize it
         var point = GeoConstants.GeometryFactory.CreatePoint(new Coordinate(10, 20));
-        var json = System.Text.Json.JsonSerializer.Serialize(point, options);
+        var json = JsonSerializer.Serialize(point, options);
 
         // then - JSON should not contain bbox
         json.Should().NotContain("bbox");

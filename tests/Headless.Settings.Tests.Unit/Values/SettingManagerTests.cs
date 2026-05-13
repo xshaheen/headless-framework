@@ -18,7 +18,6 @@ public sealed class SettingManagerTests : TestBase
     private readonly ISettingValueStore _valueStore;
     private readonly ISettingValueProviderManager _valueProviderManager;
     private readonly ISettingEncryptionService _encryptionService;
-    private readonly ISettingsErrorsDescriptor _errorsDescriptor;
     private readonly SettingManager _sut;
 
     public SettingManagerTests()
@@ -27,14 +26,14 @@ public sealed class SettingManagerTests : TestBase
         _valueStore = Substitute.For<ISettingValueStore>();
         _valueProviderManager = Substitute.For<ISettingValueProviderManager>();
         _encryptionService = Substitute.For<ISettingEncryptionService>();
-        _errorsDescriptor = new DefaultSettingsErrorsDescriptor();
+        ISettingsErrorsDescriptor errorsDescriptor = new DefaultSettingsErrorsDescriptor();
 
         _sut = new SettingManager(
             _definitionManager,
             _valueStore,
             _valueProviderManager,
             _encryptionService,
-            _errorsDescriptor
+            errorsDescriptor
         );
     }
 

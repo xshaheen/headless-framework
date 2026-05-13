@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Mediator;
+using Headless.Mediator.Behaviors;
 using Headless.MultiTenancy;
 using Mediator;
 using Microsoft.Extensions.DependencyInjection;
@@ -219,22 +220,14 @@ public sealed class MediatorSetupTests
         services.AddMediatorLoggingBehaviors();
 
         using var serviceProvider = services.BuildServiceProvider();
-        var behaviors = serviceProvider.GetServices<IPipelineBehavior<TestRequest, TestResponse>>();
+        var behaviors = serviceProvider.GetServices<IPipelineBehavior<TestRequest, TestResponse>>().ToList();
 
         // then
+        behaviors.Should().ContainSingle(behavior => behavior is RequestLoggingBehavior<TestRequest, TestResponse>);
+        behaviors.Should().ContainSingle(behavior => behavior is ResponseLoggingBehavior<TestRequest, TestResponse>);
         behaviors
             .Should()
-            .ContainSingle(behavior => behavior.GetType() == typeof(RequestLoggingBehavior<TestRequest, TestResponse>));
-        behaviors
-            .Should()
-            .ContainSingle(behavior =>
-                behavior.GetType() == typeof(ResponseLoggingBehavior<TestRequest, TestResponse>)
-            );
-        behaviors
-            .Should()
-            .ContainSingle(behavior =>
-                behavior.GetType() == typeof(CriticalRequestLoggingBehavior<TestRequest, TestResponse>)
-            );
+            .ContainSingle(behavior => behavior is CriticalRequestLoggingBehavior<TestRequest, TestResponse>);
     }
 
     [Fact]

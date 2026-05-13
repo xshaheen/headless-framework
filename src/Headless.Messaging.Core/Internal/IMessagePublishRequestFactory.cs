@@ -141,11 +141,15 @@ internal sealed class MessagePublishRequestFactory(
         if (typed is null && rawSet)
         {
             var safeRawForReservedMessage = LogSanitizer.Sanitize(raw, PublishOptions.TenantIdMaxLength);
+
             var ex = new InvalidOperationException(
                 $"Header '{Headers.TenantId}' is reserved. "
                     + $"Use {nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)} to set the tenant identifier."
-            );
-            ex.Data["Headers.TenantId.Raw"] = safeRawForReservedMessage;
+            )
+            {
+                Data = { ["Headers.TenantId.Raw"] = safeRawForReservedMessage },
+            };
+
             throw ex;
         }
 
@@ -185,12 +189,19 @@ internal sealed class MessagePublishRequestFactory(
             // R4 delegates charset validation to consumers, so a malicious caller could otherwise
             // smuggle CR/LF/control chars into Exception.Message and downstream log sinks.
             var safeRaw = LogSanitizer.Sanitize(raw, PublishOptions.TenantIdMaxLength);
+
             var ex = new InvalidOperationException(
                 $"PublishOptions.TenantId='{typed}' disagrees with header '{Headers.TenantId}'='{safeRaw}'. "
                     + "Set the typed property only."
-            );
-            ex.Data[$"{nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)}"] = typed;
-            ex.Data["Headers.TenantId.Raw"] = safeRaw;
+            )
+            {
+                Data =
+                {
+                    [$"{nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)}"] = typed,
+                    ["Headers.TenantId.Raw"] = safeRaw,
+                },
+            };
+
             throw ex;
         }
 
@@ -199,7 +210,8 @@ internal sealed class MessagePublishRequestFactory(
 
     private static void _ValidateTenantId(string tenantId)
     {
-        Argument.IsNotNullOrWhiteSpace(tenantId, paramName: nameof(tenantId));
+        Argument.IsNotNullOrWhiteSpace(tenantId);
+
         Argument.IsLessThanOrEqualTo(
             tenantId.Length,
             PublishOptions.TenantIdMaxLength,

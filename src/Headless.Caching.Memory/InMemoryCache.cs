@@ -33,7 +33,6 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     private readonly long _maintenanceIntervalTicks;
     private readonly int _maxEvictionsPerCompaction;
     private readonly int _evictionSampleSize;
-    private readonly long _hotAccessWindowTicks;
     private long _currentMemorySize;
     private long _lastMaintenanceTicks;
     private int _maintenanceRunning;
@@ -57,7 +56,6 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         _maintenanceIntervalTicks = options.MaintenanceInterval.Ticks;
         _maxEvictionsPerCompaction = options.MaxEvictionsPerCompaction;
         _evictionSampleSize = options.EvictionSampleSize;
-        _hotAccessWindowTicks = options.HotAccessWindow.Ticks;
 
         Ensure.True(
             !(_maxMemorySize.HasValue || _maxEntrySize.HasValue) || _sizeCalculator is not null,

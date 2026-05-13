@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Tests;
+namespace Tests.Processor;
 
 public sealed class MessageNeedToRetryProcessorTests : TestBase
 {

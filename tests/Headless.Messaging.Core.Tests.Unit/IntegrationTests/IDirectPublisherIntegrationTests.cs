@@ -363,7 +363,8 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         DirectTestConsumer.ReceivedMessages.Should().HaveCount(messageCount);
         for (var i = 0; i < messageCount; i++)
         {
-            DirectTestConsumer.ReceivedMessages.Should().Contain(m => m.Value == $"message-{i}");
+            var expectedValue = $"message-{i}";
+            DirectTestConsumer.ReceivedMessages.Should().Contain(m => m.Value == expectedValue);
         }
     }
 }
@@ -376,26 +377,29 @@ public sealed record DirectTestMessage(string Value);
 /// </summary>
 public sealed class DirectTestConsumer : IConsume<DirectTestMessage>
 {
-    private static readonly ConcurrentQueue<DirectTestMessage> _receivedMessages = new();
-    private static readonly Lock _lock = new();
+    private static readonly ConcurrentQueue<DirectTestMessage> _ReceivedMessages = new();
+    private static readonly Lock _Lock = new();
     private static TaskCompletionSource<bool> _messageReceivedTcs = new();
     private static int _expectedCount = 1;
     private static int _currentCount;
 
-    public static IReadOnlyCollection<DirectTestMessage> ReceivedMessages => [.. _receivedMessages];
+    public static IReadOnlyCollection<DirectTestMessage> ReceivedMessages => [.. _ReceivedMessages];
 
     public static void Reset()
     {
-        while (_receivedMessages.TryDequeue(out _)) { }
+        while (_ReceivedMessages.TryDequeue(out _)) { }
 
         _messageReceivedTcs = new TaskCompletionSource<bool>();
         _expectedCount = 1;
-        _currentCount = 0;
+        lock (_Lock)
+        {
+            _currentCount = 0;
+        }
     }
 
     public ValueTask Consume(ConsumeContext<DirectTestMessage> context, CancellationToken cancellationToken)
     {
-        _receivedMessages.Enqueue(context.Message);
+        _ReceivedMessages.Enqueue(context.Message);
         var count = Interlocked.Increment(ref _currentCount);
         if (count >= _expectedCount)
         {
@@ -427,7 +431,7 @@ public sealed class DirectTestConsumer : IConsume<DirectTestMessage>
         CancellationToken cancellationToken = default
     )
     {
-        lock (_lock)
+        lock (_Lock)
         {
             _expectedCount = count;
             if (_currentCount >= count)
@@ -455,24 +459,24 @@ public sealed class DirectTestConsumer : IConsume<DirectTestMessage>
 
 public sealed class DirectAnalyticsConsumer : IConsume<DirectTestMessage>
 {
-    private static readonly ConcurrentQueue<DirectTestMessage> _receivedMessages = new();
-    private static readonly Lock _lock = new();
+    private static readonly ConcurrentQueue<DirectTestMessage> _ReceivedMessages = new();
+    private static readonly Lock _Lock = new();
     private static TaskCompletionSource<bool> _messageReceivedTcs = new();
 
-    public static IReadOnlyCollection<DirectTestMessage> ReceivedMessages => [.. _receivedMessages];
+    public static IReadOnlyCollection<DirectTestMessage> ReceivedMessages => [.. _ReceivedMessages];
 
     public static void Reset()
     {
-        while (_receivedMessages.TryDequeue(out _)) { }
+        while (_ReceivedMessages.TryDequeue(out _)) { }
 
         _messageReceivedTcs = new TaskCompletionSource<bool>();
     }
 
     public ValueTask Consume(ConsumeContext<DirectTestMessage> context, CancellationToken cancellationToken)
     {
-        lock (_lock)
+        lock (_Lock)
         {
-            _receivedMessages.Enqueue(context.Message);
+            _ReceivedMessages.Enqueue(context.Message);
             _messageReceivedTcs.TrySetResult(true);
         }
 
@@ -501,21 +505,21 @@ public sealed class DirectAnalyticsConsumer : IConsume<DirectTestMessage>
 /// </summary>
 public sealed class DirectTestConsumerWithHeaders : IConsume<DirectTestMessage>
 {
-    private static readonly ConcurrentQueue<ConsumeContext<DirectTestMessage>> _receivedContexts = new();
+    private static readonly ConcurrentQueue<ConsumeContext<DirectTestMessage>> _ReceivedContexts = new();
     private static TaskCompletionSource<bool> _contextReceivedTcs = new();
 
-    public static IReadOnlyCollection<ConsumeContext<DirectTestMessage>> ReceivedContexts => [.. _receivedContexts];
+    public static IReadOnlyCollection<ConsumeContext<DirectTestMessage>> ReceivedContexts => [.. _ReceivedContexts];
 
     public static void Reset()
     {
-        while (_receivedContexts.TryDequeue(out _)) { }
+        while (_ReceivedContexts.TryDequeue(out _)) { }
 
         _contextReceivedTcs = new TaskCompletionSource<bool>();
     }
 
     public ValueTask Consume(ConsumeContext<DirectTestMessage> context, CancellationToken cancellationToken)
     {
-        _receivedContexts.Enqueue(context);
+        _ReceivedContexts.Enqueue(context);
         _contextReceivedTcs.TrySetResult(true);
         return ValueTask.CompletedTask;
     }

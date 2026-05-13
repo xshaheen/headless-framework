@@ -47,7 +47,7 @@ public sealed class MessageSenderTests : TestBase
         services.AddSingleton(serializer);
         services.AddSingleton(transport);
         services.AddSingleton(TimeProvider.System);
-        services.AddSingleton<IOptions<MessagingOptions>>(Options.Create(options));
+        services.AddSingleton(Options.Create(options));
 
         var provider = services.BuildServiceProvider();
         return new MessageSender(provider.GetRequiredService<ILogger<MessageSender>>(), provider);

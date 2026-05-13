@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTestBase(fixture)
 {
     [Fact]
@@ -95,15 +96,12 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        var cache = CreateCache();
+        using var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
-        var values = Enumerable.Range(1, 100).ToList();
-        Faker.Random.Shuffle(values);
+        var values = Faker.Random.Shuffle(Enumerable.Range(1, 100));
 
         // when - concurrent set if higher with random order
-        var tasks = values.Select(v =>
-            cache.SetIfHigherAsync(key, (long)v, TimeSpan.FromMinutes(5), AbortToken).AsTask()
-        );
+        var tasks = values.Select(v => cache.SetIfHigherAsync(key, v, TimeSpan.FromMinutes(5), AbortToken).AsTask());
         await Task.WhenAll(tasks);
 
         // then - should have the highest value
@@ -116,15 +114,12 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        var cache = CreateCache();
+        using var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
-        var values = Enumerable.Range(1, 100).ToList();
-        Faker.Random.Shuffle(values);
+        var values = Faker.Random.Shuffle(Enumerable.Range(1, 100));
 
         // when - concurrent set if lower with random order
-        var tasks = values.Select(v =>
-            cache.SetIfLowerAsync(key, (long)v, TimeSpan.FromMinutes(5), AbortToken).AsTask()
-        );
+        var tasks = values.Select(v => cache.SetIfLowerAsync(key, v, TimeSpan.FromMinutes(5), AbortToken).AsTask());
         await Task.WhenAll(tasks);
 
         // then - should have the lowest value

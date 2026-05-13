@@ -194,11 +194,9 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         // when
         var initializer = new PostgreSqlStorageInitializer(
-            NSubstitute.Substitute.For<Microsoft.Extensions.Logging.ILogger<PostgreSqlStorageInitializer>>(),
-            Microsoft.Extensions.Options.Options.Create(
-                new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }
-            ),
-            Microsoft.Extensions.Options.Options.Create(new MessagingOptions { Version = "v1" })
+            Substitute.For<Microsoft.Extensions.Logging.ILogger<PostgreSqlStorageInitializer>>(),
+            Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }),
+            Options.Create(new MessagingOptions { Version = "v1" })
         );
         var tableName = initializer.GetPublishedTableName();
         var deleted = await _storage.DeleteExpiresAsync(tableName, DateTime.UtcNow, cancellationToken: AbortToken);
@@ -222,11 +220,9 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         // when
         var initializer = new PostgreSqlStorageInitializer(
-            NSubstitute.Substitute.For<Microsoft.Extensions.Logging.ILogger<PostgreSqlStorageInitializer>>(),
-            Microsoft.Extensions.Options.Options.Create(
-                new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }
-            ),
-            Microsoft.Extensions.Options.Options.Create(new MessagingOptions { Version = "v1" })
+            Substitute.For<Microsoft.Extensions.Logging.ILogger<PostgreSqlStorageInitializer>>(),
+            Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }),
+            Options.Create(new MessagingOptions { Version = "v1" })
         );
         var tableName = initializer.GetPublishedTableName();
         var deleted = await _storage.DeleteExpiresAsync(tableName, DateTime.UtcNow, cancellationToken: AbortToken);
@@ -359,7 +355,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task should_get_monitoring_api()
+    public void should_get_monitoring_api()
     {
         // when
         var monitoringApi = _storage.GetMonitoringApi();

@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Tests;
+namespace Tests.CircuitBreaker;
 
 /// <summary>
 /// Verifies that <see cref="SubscribeExecutor"/> reports failures and successes
@@ -20,8 +20,8 @@ namespace Tests;
 /// </summary>
 public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 {
-    private const string TopicName = "cb.test.topic";
-    private const string GroupName = "cb.test.group";
+    private const string _TopicName = "cb.test.topic";
+    private const string _GroupName = "cb.test.group";
 
     // -------------------------------------------------------------------------
     // Helpers
@@ -32,8 +32,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
-            [Headers.MessageName] = TopicName,
-            [Headers.Group] = GroupName,
+            [Headers.MessageName] = _TopicName,
+            [Headers.Group] = _GroupName,
         };
 
         return new MediumMessage
@@ -60,8 +60,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             ServiceTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
-            TopicName = TopicName,
-            GroupName = GroupName,
+            TopicName = _TopicName,
+            GroupName = _GroupName,
             Parameters = consumeMethod
                 .GetParameters()
                 .Select(p => new ParameterDescriptor
@@ -83,7 +83,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(x =>
         {
-            x.Subscribe<CbTestConsumer>().Topic(TopicName);
+            x.Subscribe<CbTestConsumer>().Topic(_TopicName);
             x.UseInMemoryMessageQueue();
             x.UseInMemoryStorage();
         });
@@ -136,7 +136,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
 
         // then
-        await cbMock.Received(1).ReportFailureAsync(GroupName, original);
+        await cbMock.Received(1).ReportFailureAsync(_GroupName, original);
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
 
         // then
-        await cbMock.Received(1).ReportSuccessAsync(GroupName);
+        await cbMock.Received(1).ReportSuccessAsync(_GroupName);
     }
 
     [Fact]
@@ -176,7 +176,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
 
         // then — must receive HttpRequestException, not SubscriberExecutionFailedException
-        await cbMock.Received(1).ReportFailureAsync(GroupName, Arg.Is<Exception>(e => e is HttpRequestException));
+        await cbMock.Received(1).ReportFailureAsync(_GroupName, Arg.Is<Exception>(e => e is HttpRequestException));
     }
 
     [Fact]
@@ -216,7 +216,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 
         // then — both DB persistence and circuit breaker reporting happen
         await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Succeeded);
-        await cbMock.Received(1).ReportSuccessAsync(GroupName);
+        await cbMock.Received(1).ReportSuccessAsync(_GroupName);
     }
 }
 

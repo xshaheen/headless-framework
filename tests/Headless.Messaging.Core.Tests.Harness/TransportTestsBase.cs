@@ -225,7 +225,7 @@ public abstract class TransportTestsBase : TestBase
         // given
         await using var transport = GetTransport();
         const string specialContent = "{\"text\": \"Hello \\\"World\\\" with émojis 🎉 and unicode: 日本語\"}";
-        var message = CreateMessage(body: System.Text.Encoding.UTF8.GetBytes(specialContent));
+        var message = CreateMessage(body: Encoding.UTF8.GetBytes(specialContent));
 
         // when
         var result = await transport.SendAsync(message);

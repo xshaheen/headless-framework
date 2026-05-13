@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
+// ReSharper disable NotDisposedResource
 public sealed class BlobStorageDataProtectionXmlRepositoryTests
 {
     #region Constructor Tests
@@ -28,7 +29,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         var sut = new BlobStorageDataProtectionXmlRepository(storage, loggerFactory: null);
 
         // Should not throw when called without logger factory
-        var act = () => sut.GetAllElements();
+        var act = sut.GetAllElements;
         act.Should().NotThrow();
     }
 
@@ -209,7 +210,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         // Malformed XML should cause XmlException but not crash the whole operation
         // The current implementation will throw - this test documents expected behavior
-        var act = () => sut.GetAllElements();
+        var act = sut.GetAllElements;
 
         // If it throws, that's the current behavior (DoS risk if attacker uploads bad XML)
         // If it doesn't throw and returns 2 elements, that's resilient behavior
@@ -229,7 +230,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
-        var act = () => sut.GetAllElements();
+        var act = sut.GetAllElements;
 
         // Empty file causes XmlException - documents current behavior
         act.Should().Throw<System.Xml.XmlException>();
@@ -397,7 +398,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         sut.StoreElement(element, "test-key");
 
         capturedBytes.Should().NotBeNull();
-        var xmlString = System.Text.Encoding.UTF8.GetString(capturedBytes!);
+        var xmlString = Encoding.UTF8.GetString(capturedBytes!);
         // DisableFormatting means no extra whitespace/newlines between elements
         xmlString.Should().NotContain("\n  ");
         xmlString.Should().Contain("<key id=\"test\"><child>value</child></key>");
@@ -460,7 +461,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         sut.StoreElement(element, maliciousFriendlyName);
 
         // Repository appends .xml to friendlyName and passes to storage
-        // Storage abstraction is responsible for path validation
+        // abstraction is responsible for path validation
         await storage
             .Received(1)
             .UploadAsync(
@@ -489,7 +490,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
         var sut = new BlobStorageDataProtectionXmlRepository(storage);
 
-        var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(() => sut.GetAllElements())).ToList();
+        var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(sut.GetAllElements)).ToList();
 
         var results = await Task.WhenAll(tasks);
 
@@ -519,10 +520,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
             .Select(i =>
                 Task.Run(() =>
                 {
-                    var element = new XElement(
-                        "key",
-                        new XAttribute("id", i.ToString(System.Globalization.CultureInfo.InvariantCulture))
-                    );
+                    var element = new XElement("key", new XAttribute("id", i.ToString(CultureInfo.InvariantCulture)));
                     sut.StoreElement(element, $"key-{i}");
                 })
             )
@@ -531,7 +529,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
         await Task.WhenAll(tasks);
 
         // If we reach here without exception, the test passes
-        await storage.ReceivedWithAnyArgs(10).UploadAsync(default!, default!, default!, default, default);
+        await storage.ReceivedWithAnyArgs(10).UploadAsync(null!, null!, null!, null, CancellationToken.None);
     }
 
     #endregion
@@ -565,7 +563,7 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
 
     private static ValueTask<BlobDownloadResult?> _CreateDownloadResult(string xmlContent)
     {
-        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(xmlContent));
+        var stream = new MemoryStream(Encoding.UTF8.GetBytes(xmlContent));
         return ValueTask.FromResult<BlobDownloadResult?>(new BlobDownloadResult(stream, "test.xml"));
     }
 

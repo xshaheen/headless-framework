@@ -20,12 +20,12 @@ public class AzureServiceBusOptions
     /// <summary>
     /// Azure Service Bus Namespace connection string. Must not contain topic information.
     /// </summary>
-    public string ConnectionString { get; set; } = default!;
+    public string ConnectionString { get; set; } = null!;
 
     /// <summary>
     /// Namespace of service bus , Needs to be set when using with TokenCredential Property
     /// </summary>
-    public string Namespace { get; set; } = default!;
+    public string Namespace { get; set; } = null!;
 
     /// <summary>
     /// When set to <c>true</c> (default), topics, subscriptions, and rules are automatically created

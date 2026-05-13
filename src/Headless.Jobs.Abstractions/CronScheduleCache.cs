@@ -19,7 +19,7 @@ internal static partial class CronScheduleCache
         return _ReplaceRegex().Replace(expr.Trim(), " ");
     }
 
-    public static CrontabSchedule? Get(string expression)
+    public static CrontabSchedule Get(string expression)
     {
         var key = _Normalize(expression);
 

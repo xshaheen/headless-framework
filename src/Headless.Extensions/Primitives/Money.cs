@@ -13,7 +13,7 @@ public readonly partial struct Money : IPrimitive<decimal>
 
     public Money GetRounded()
     {
-        var rounded = Math.Round((decimal)_valueOrThrow, 2, MidpointRounding.ToPositiveInfinity);
+        var rounded = Math.Round(_valueOrThrow, 2, MidpointRounding.ToPositiveInfinity);
 
         return new(rounded);
     }

@@ -166,8 +166,7 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
     )
         where TMessage : class
     {
-        await _DispatchCoreAsync<TMessage>(serviceProvider, consumerType: null, context, cancellationToken)
-            .ConfigureAwait(false);
+        await _DispatchCoreAsync(serviceProvider, consumerType: null, context, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -183,12 +182,7 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
         Argument.IsNotNull(descriptor);
         Argument.IsNotNull(context);
 
-        await _DispatchCoreAsync<TMessage>(
-                serviceProvider,
-                descriptor.ImplTypeInfo.AsType(),
-                context,
-                cancellationToken
-            )
+        await _DispatchCoreAsync(serviceProvider, descriptor.ImplTypeInfo.AsType(), context, cancellationToken)
             .ConfigureAwait(false);
     }
 

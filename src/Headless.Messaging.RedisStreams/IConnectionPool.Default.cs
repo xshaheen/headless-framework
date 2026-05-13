@@ -59,7 +59,7 @@ internal class RedisConnectionPool : IRedisConnectionPool, IDisposable
                 return (await lazy).Connection;
             }
 
-            if (lazy.CreatedConnection!.ConnectionCapacity == default)
+            if (lazy.CreatedConnection!.ConnectionCapacity == 0)
             {
                 return lazy.CreatedConnection.Connection;
             }

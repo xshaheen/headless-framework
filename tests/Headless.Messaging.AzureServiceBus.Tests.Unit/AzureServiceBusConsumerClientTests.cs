@@ -247,7 +247,7 @@ public sealed class AzureServiceBusConsumerClientTests
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
         var gateField = typeof(AzureServiceBusConsumerClient).GetField(
             "_pauseGate",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var gate = gateField.GetValue(client)!;
         var isPausedProp = gate.GetType().GetProperty("IsPaused", BindingFlags.Public | BindingFlags.Instance)!;

@@ -27,7 +27,10 @@ public sealed class ConsumerRegisterTests : TestBase
 
         await hostCts.CancelAsync();
 
-        var field = typeof(ConsumerRegister).GetField("_stoppingCts", BindingFlags.NonPublic | BindingFlags.Instance);
+        var field = typeof(ConsumerRegister).GetField(
+            "_stoppingCts",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
         var linkedCts = (CancellationTokenSource)field!.GetValue(register)!;
 
         linkedCts.IsCancellationRequested.Should().BeTrue();
@@ -58,7 +61,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         var resumeGroup = typeof(ConsumerRegister).GetMethod(
             "_ResumeGroupAsync",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
 
         var act = async () => await ((ValueTask)resumeGroup.Invoke(register, [handle])!);
@@ -82,7 +85,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var fakeCache = new MethodMatcherCache(selectorSub);
         var entriesField = typeof(MethodMatcherCache).GetField(
             "_entries",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var fakeEntries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
             StringComparer.Ordinal
@@ -102,7 +105,7 @@ public sealed class ConsumerRegisterTests : TestBase
         entriesField.SetValue(fakeCache, fakeEntries);
 
         typeof(ConsumerRegister)
-            .GetField("_selector", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetField("_selector", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
             .SetValue(register, fakeCache);
 
         // Swap _consumerClientFactory with one that throws a non-BrokerConnectionException
@@ -113,7 +116,10 @@ public sealed class ConsumerRegisterTests : TestBase
             .Returns<Task<IConsumerClient>>(_ => throw new InvalidOperationException("boom"));
 
         typeof(ConsumerRegister)
-            .GetField("_consumerClientFactory", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetField(
+                "_consumerClientFactory",
+                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
             .SetValue(register, factorySub);
 
         // Act — ReStartAsync should propagate the exception from ExecuteAsync.
@@ -124,7 +130,7 @@ public sealed class ConsumerRegisterTests : TestBase
         // Assert — the CTS created inside ReStartAsync must have been disposed.
         var ctsField = typeof(ConsumerRegister).GetField(
             "_stoppingCts",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var cts = (CancellationTokenSource)ctsField.GetValue(register)!;
         var tokenAccess = () => cts.Token;
@@ -153,7 +159,7 @@ public sealed class ConsumerRegisterTests : TestBase
         // Inject mock CB into the field (StartAsync resolves ICircuitBreakerStateManager via GetService)
         var cbField = typeof(ConsumerRegister).GetField(
             "_circuitBreakerStateManager",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         cbField.SetValue(register, mockCb);
 
@@ -162,7 +168,7 @@ public sealed class ConsumerRegisterTests : TestBase
         var fakeCache = new MethodMatcherCache(selectorSub);
         var entriesField = typeof(MethodMatcherCache).GetField(
             "_entries",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var fakeEntries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
             StringComparer.Ordinal
@@ -181,7 +187,7 @@ public sealed class ConsumerRegisterTests : TestBase
         fakeEntries.TryAdd(groupName, [fakeDescriptor]);
         entriesField.SetValue(fakeCache, fakeEntries);
         typeof(ConsumerRegister)
-            .GetField("_selector", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetField("_selector", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
             .SetValue(register, fakeCache);
 
         // Swap factory: first call returns a metadata client; per-thread calls return a
@@ -205,7 +211,10 @@ public sealed class ConsumerRegisterTests : TestBase
                 return Task.FromResult<IConsumerClient>(readyClient);
             });
         typeof(ConsumerRegister)
-            .GetField("_consumerClientFactory", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetField(
+                "_consumerClientFactory",
+                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
             .SetValue(register, factorySub);
 
         // when — call ExecuteAsync directly (the internal path ReStartAsync uses after PulseAsync)
@@ -224,7 +233,7 @@ public sealed class ConsumerRegisterTests : TestBase
         // then — the handle for the group has IsPaused = true because IsOpen returned true
         var groupHandlesField = typeof(ConsumerRegister).GetField(
             "_groupHandles",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var handles = groupHandlesField.GetValue(register)!;
         // Use dynamic to avoid compile-time knowledge of GroupHandle's private nested type
@@ -249,13 +258,16 @@ public sealed class ConsumerRegisterTests : TestBase
 
         // Set state to Starting (1) to simulate mid-startup.
         typeof(ConsumerRegister)
-            .GetField("_state", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetField("_state", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
             .SetValue(register, 1);
 
         await register.OnTopologyChangedAsync();
 
         var pendingRefresh = typeof(ConsumerRegister)
-            .GetField("_pendingTopologyRefresh", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetField(
+                "_pendingTopologyRefresh",
+                BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+            )!
             .GetValue(register);
 
         pendingRefresh.Should().Be(1);

@@ -22,7 +22,7 @@ public sealed class TestLogger(ITestOutputHelper outputHelper, string categoryNa
         return true;
     }
 
-    public IDisposable? BeginScope<TState>(TState state)
+    public IDisposable BeginScope<TState>(TState state)
         where TState : notnull
     {
         return new DisposableAction(state);

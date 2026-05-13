@@ -6,7 +6,7 @@ internal sealed class SqsReceivedMessage
 {
     public string? Message { get; set; }
 
-    public Dictionary<string, SqsReceivedMessageAttributes> MessageAttributes { get; set; } = default!;
+    public Dictionary<string, SqsReceivedMessageAttributes> MessageAttributes { get; set; } = null!;
 }
 
 internal sealed class SqsReceivedMessageAttributes

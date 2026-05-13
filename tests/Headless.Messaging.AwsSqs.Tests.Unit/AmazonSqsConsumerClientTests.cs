@@ -527,12 +527,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         // given
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
         const int concurrencyLimit = 2;
-        await using var client = new AmazonSqsConsumerClient(
-            "test-group",
-            (byte)concurrencyLimit,
-            _CreateOptions(),
-            logger
-        );
+        await using var client = new AmazonSqsConsumerClient("test-group", concurrencyLimit, _CreateOptions(), logger);
 
         var semaphore = _GetSemaphore(client);
         var activeTasks = 0;

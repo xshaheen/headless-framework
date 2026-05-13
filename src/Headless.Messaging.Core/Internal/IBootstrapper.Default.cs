@@ -341,6 +341,7 @@ internal sealed class Bootstrapper(
             {
                 await pendingBootstrap.ConfigureAwait(false);
             }
+            // ReSharper disable once EmptyGeneralCatchClause
             catch { }
 #pragma warning restore ERP022
         }

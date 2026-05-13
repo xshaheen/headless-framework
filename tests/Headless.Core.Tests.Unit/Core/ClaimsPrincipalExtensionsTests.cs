@@ -14,7 +14,7 @@ public sealed class ClaimsPrincipalExtensionsTests : TestBase
     {
         // given
         UserId userId = "user-123";
-        var claims = new[] { new Claim(UserClaimTypes.UserId, (string)userId) };
+        var claims = new[] { new Claim(UserClaimTypes.UserId, userId) };
         var identity = new ClaimsIdentity(claims);
         var principal = new ClaimsPrincipal(identity);
 
@@ -61,8 +61,8 @@ public sealed class ClaimsPrincipalExtensionsTests : TestBase
         UserId secondUserId = "user-second";
         var claims = new[]
         {
-            new Claim(UserClaimTypes.UserId, (string)firstUserId),
-            new Claim(UserClaimTypes.UserId, (string)secondUserId),
+            new Claim(UserClaimTypes.UserId, firstUserId),
+            new Claim(UserClaimTypes.UserId, secondUserId),
         };
         var identity = new ClaimsIdentity(claims);
         var principal = new ClaimsPrincipal(identity);

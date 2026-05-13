@@ -143,7 +143,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         if (additionalProcessor is not null)
         {
-            services.AddSingleton<IProcessingServer>(additionalProcessor);
+            services.AddSingleton(additionalProcessor);
         }
 
         return services.BuildServiceProvider();

@@ -25,7 +25,7 @@ internal sealed class TestHeadlessServicesOptionsExtension(
         // Override the defaults registered by AddHeadlessDbContextServices()
         // (which are added by HeadlessDbContextOptionsExtension.ApplyServices).
         // Register as concrete type AND as interface so EF's provider resolves correctly.
-        services.AddSingleton<TimeProvider>(clock.TimeProvider);
+        services.AddSingleton(clock.TimeProvider);
         services.AddSingleton<IClock>(clock);
         services.AddSingleton<ICurrentUser>(currentUser);
         services.AddSingleton<ICurrentTenant>(currentTenant);

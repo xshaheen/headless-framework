@@ -46,11 +46,9 @@ public sealed class RetryProcessorOptions
 
 internal sealed class RetryProcessorOptionsValidator : AbstractValidator<RetryProcessorOptions>
 {
-    private readonly TimeSpan _failedRetryInterval;
-
     public RetryProcessorOptionsValidator(IOptions<MessagingOptions> messagingOptions)
     {
-        _failedRetryInterval = TimeSpan.FromSeconds(messagingOptions.Value.FailedRetryInterval);
+        var failedRetryInterval = TimeSpan.FromSeconds(messagingOptions.Value.FailedRetryInterval);
 
         When(
             x => x.AdaptivePolling,
@@ -59,9 +57,9 @@ internal sealed class RetryProcessorOptionsValidator : AbstractValidator<RetryPr
                 RuleFor(x => x.MaxPollingInterval)
                     .GreaterThan(TimeSpan.Zero)
                     .LessThanOrEqualTo(TimeSpan.FromHours(24))
-                    .GreaterThanOrEqualTo(_failedRetryInterval)
+                    .GreaterThanOrEqualTo(failedRetryInterval)
                     .WithMessage(
-                        $"MaxPollingInterval must be greater than or equal to the failed retry interval ({_failedRetryInterval})."
+                        $"MaxPollingInterval must be greater than or equal to the failed retry interval ({failedRetryInterval})."
                     );
                 RuleFor(x => x.CircuitOpenRateThreshold).ExclusiveBetween(0, 1);
             }

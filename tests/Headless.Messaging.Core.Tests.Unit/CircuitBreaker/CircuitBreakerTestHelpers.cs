@@ -2,7 +2,7 @@
 
 using System.Diagnostics.Metrics;
 
-namespace Tests;
+namespace Tests.CircuitBreaker;
 
 internal static class CircuitBreakerTestHelpers
 {

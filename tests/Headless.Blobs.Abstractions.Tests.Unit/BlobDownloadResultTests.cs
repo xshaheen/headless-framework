@@ -84,7 +84,7 @@ public sealed class BlobDownloadResultTests : TestBase
         result.Dispose();
 
         // Assert - verify stream is disposed by trying to read
-        var act = () => stream.ReadByte();
+        var act = stream.ReadByte;
         act.Should().Throw<ObjectDisposedException>();
     }
 
@@ -99,7 +99,7 @@ public sealed class BlobDownloadResultTests : TestBase
         await result.DisposeAsync();
 
         // Assert - verify stream is disposed by trying to read
-        var act = () => stream.ReadByte();
+        var act = stream.ReadByte;
         act.Should().Throw<ObjectDisposedException>();
     }
 
@@ -112,7 +112,7 @@ public sealed class BlobDownloadResultTests : TestBase
     {
         // Arrange
         var stream = new MemoryStream([1, 2, 3]);
-        Stream? capturedStream = null;
+        Stream? capturedStream;
 
         // Act
         using (var result = new BlobDownloadResult(stream, "test.txt"))
@@ -131,7 +131,7 @@ public sealed class BlobDownloadResultTests : TestBase
     {
         // Arrange
         var stream = new MemoryStream([1, 2, 3]);
-        Stream? capturedStream = null;
+        Stream? capturedStream;
 
         // Act
         await using (var result = new BlobDownloadResult(stream, "test.txt"))

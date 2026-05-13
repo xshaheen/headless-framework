@@ -12,14 +12,13 @@ namespace Tests.Providers;
 public sealed class UserPermissionGrantProviderTests : TestBase
 {
     private readonly IPermissionGrantStore _grantStore;
-    private readonly ICurrentTenant _currentTenant;
     private readonly UserPermissionGrantProvider _sut;
 
     public UserPermissionGrantProviderTests()
     {
         _grantStore = Substitute.For<IPermissionGrantStore>();
-        _currentTenant = Substitute.For<ICurrentTenant>();
-        _sut = new UserPermissionGrantProvider(_grantStore, _currentTenant);
+        var currentTenant = Substitute.For<ICurrentTenant>();
+        _sut = new UserPermissionGrantProvider(_grantStore, currentTenant);
     }
 
     [Fact]

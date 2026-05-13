@@ -319,11 +319,13 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         var context = _CreateContext(new ValidatorFilterTestRequest("Name", "test@example.com"), [validator]);
         var expectedResult = new object();
         var nextCalled = false;
-        EndpointFilterDelegate trackingNext = _ =>
+
+        ValueTask<object?> trackingNext(EndpointFilterInvocationContext _)
         {
             nextCalled = true;
+
             return ValueTask.FromResult<object?>(expectedResult);
-        };
+        }
 
         // when
         var result = await filter.InvokeAsync(context, trackingNext);
@@ -360,8 +362,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
         services.AddLogging();
         var sp = services.BuildServiceProvider();
 
-        var httpContext = new DefaultHttpContext { RequestServices = sp };
-        httpContext.Response.Body = new MemoryStream();
+        var httpContext = new DefaultHttpContext { RequestServices = sp, Response = { Body = new MemoryStream() } };
 
         await httpResult!.ExecuteAsync(httpContext);
 
@@ -386,7 +387,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
 
     private static EndpointFilterInvocationContext _CreateContext<TRequest>(
         TRequest? request,
-        IEnumerable<IValidator<TRequest>>? validators = null,
+        IReadOnlyList<IValidator<TRequest>>? validators = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -400,7 +401,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
                 services.AddSingleton(v);
             }
 
-            services.AddSingleton<IEnumerable<IValidator<TRequest>>>(validators);
+            services.AddSingleton(validators);
         }
 
         httpContext.RequestServices = services.BuildServiceProvider();

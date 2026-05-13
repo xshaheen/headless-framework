@@ -43,7 +43,7 @@ public sealed class SequentialGuidTests
 
             // SQL Server orders by bytes 10-15, 8-9, 6-7, 4-5, 0-3 (Data4, then Data3, etc.)
             // The sequential counter is placed in bytes 8-15
-            var firstKey = new byte[]
+            var firstKey = new[]
             {
                 firstBytes[10],
                 firstBytes[11],
@@ -54,7 +54,7 @@ public sealed class SequentialGuidTests
                 firstBytes[8],
                 firstBytes[9],
             };
-            var secondKey = new byte[]
+            var secondKey = new[]
             {
                 secondBytes[10],
                 secondBytes[11],
@@ -151,7 +151,7 @@ public sealed class SequentialGuidTests
             var secondBytes = guids[i + 1].ToByteArray();
 
             // Timestamp is in bytes 0-5 (6 bytes, big-endian)
-            var firstTimestamp = new byte[]
+            var firstTimestamp = new[]
             {
                 firstBytes[0],
                 firstBytes[1],
@@ -160,7 +160,7 @@ public sealed class SequentialGuidTests
                 firstBytes[4],
                 firstBytes[5],
             };
-            var secondTimestamp = new byte[]
+            var secondTimestamp = new[]
             {
                 secondBytes[0],
                 secondBytes[1],

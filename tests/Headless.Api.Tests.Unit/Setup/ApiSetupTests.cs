@@ -79,7 +79,7 @@ public sealed class ApiSetupTests
         // when
         builder.AddHeadlessInfrastructure();
 
-        using var serviceProvider = builder.Services.BuildServiceProvider();
+        await using var serviceProvider = builder.Services.BuildServiceProvider();
         var kestrelOptions = serviceProvider.GetRequiredService<IOptions<KestrelServerOptions>>().Value;
         var healthCheckService = serviceProvider.GetRequiredService<HealthCheckService>();
         var statusCodesRewriter = serviceProvider.GetRequiredService<StatusCodesRewriterMiddleware>();
@@ -283,9 +283,9 @@ public sealed class ApiSetupTests
     {
         public bool IsAvailable => true;
 
-        public string? Id => "custom";
+        public string Id => "custom";
 
-        public string? Name => "Custom";
+        public string Name => "Custom";
 
         public IDisposable Change(string? id, string? name = null) => new ApiCurrentTenantScope();
     }

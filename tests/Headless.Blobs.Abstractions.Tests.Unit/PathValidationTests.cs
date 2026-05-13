@@ -388,7 +388,7 @@ public sealed class PathValidationTests : TestBase
     public void should_throw_for_bell_when_path_contains_bell_character()
     {
         // Arrange
-        const string path = "file\x07.txt";
+        const string path = "file\a.txt";
 
         // Act
         var act = () => PathValidation.ThrowIfControlCharacters(path);

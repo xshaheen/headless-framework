@@ -46,7 +46,7 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
             return string.Empty;
         }
 
-        var sb = new System.Text.StringBuilder();
+        var sb = new StringBuilder();
         AppendTo(sb, encodeSpaceAsPlus);
         return sb.ToString();
     }
@@ -56,7 +56,7 @@ public sealed class QueryParamCollection : IReadOnlyNameValueList<object?>
     /// </summary>
     /// <param name="sb">The StringBuilder to append to.</param>
     /// <param name="encodeSpaceAsPlus">If true, encode spaces as + instead of %20.</param>
-    public void AppendTo(System.Text.StringBuilder sb, bool encodeSpaceAsPlus)
+    public void AppendTo(StringBuilder sb, bool encodeSpaceAsPlus)
     {
         var first = true;
         foreach (var p in _values)

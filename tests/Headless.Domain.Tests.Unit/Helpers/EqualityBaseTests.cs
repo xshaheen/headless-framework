@@ -31,16 +31,6 @@ public sealed class EqualityBaseTests
         }
     }
 
-    private sealed class AnotherEqualityItem : EqualityBase<AnotherEqualityItem>
-    {
-        public Guid Id { get; init; }
-
-        protected override IEnumerable<object?> EqualityComponents()
-        {
-            yield return Id;
-        }
-    }
-
     [Fact]
     public void should_compare_based_on_yielded_items_only()
     {

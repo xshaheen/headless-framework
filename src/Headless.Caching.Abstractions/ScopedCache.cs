@@ -49,7 +49,7 @@ public sealed class ScopedCache<T> : ICache<T>
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        return _cache.GetOrAddAsync<T>(_ScopeKey(key), factory, expiration, cancellationToken);
+        return _cache.GetOrAddAsync(_ScopeKey(key), factory, expiration, cancellationToken);
     }
 
     #region Update

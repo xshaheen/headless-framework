@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
@@ -8,33 +9,20 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Managers;
 
-internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
+internal class JobsManager<TTimeJob, TCronJob>(
+    IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
+    IJobsHostScheduler tickerQHostScheduler,
+    TimeProvider timeProvider,
+    IJobsNotificationHubSender notificationHubSender,
+    JobsExecutionContext executionContext,
+    IJobsDispatcher dispatcher
+) : ICronJobManager<TCronJob>, ITimeJobManager<TTimeJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    private readonly IJobPersistenceProvider<TTimeJob, TCronJob> _persistenceProvider;
-    private readonly IJobsHostScheduler _tickerQHostScheduler;
-    private readonly TimeProvider _timeProvider;
-    private readonly IJobsNotificationHubSender _notificationHubSender;
-    private readonly IJobsDispatcher _dispatcher;
-    private readonly JobsExecutionContext _executionContext;
-
-    public JobsManager(
-        IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
-        IJobsHostScheduler tickerQHostScheduler,
-        TimeProvider timeProvider,
-        IJobsNotificationHubSender notificationHubSender,
-        JobsExecutionContext executionContext,
-        IJobsDispatcher dispatcher
-    )
-    {
-        _persistenceProvider = persistenceProvider;
-        _tickerQHostScheduler = tickerQHostScheduler ?? throw new ArgumentNullException(nameof(tickerQHostScheduler));
-        _timeProvider = timeProvider;
-        _notificationHubSender = notificationHubSender;
-        _executionContext = executionContext ?? throw new ArgumentNullException(nameof(executionContext));
-        _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
-    }
+    private readonly IJobsHostScheduler _tickerQHostScheduler = Argument.IsNotNull(tickerQHostScheduler);
+    private readonly IJobsDispatcher _dispatcher = Argument.IsNotNull(dispatcher);
+    private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
 
     Task<JobResult<TCronJob>> ICronJobManager<TCronJob>.AddAsync(
         TCronJob entity,
@@ -99,34 +87,34 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
             entity.Id = Guid.NewGuid();
         }
 
-        if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity?.Function))
+        if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
         {
             return new JobResult<TTimeJob>(
-                new JobValidatorException($"Cannot find JobFunction with name {entity?.Function}")
+                new JobValidatorException($"Cannot find JobFunction with name {entity.Function}")
             );
         }
 
         entity.ExecutionTime =
             entity.ExecutionTime == null
-                ? _timeProvider.GetUtcNow().UtcDateTime
+                ? timeProvider.GetUtcNow().UtcDateTime
                 : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
 
-        entity.CreatedAt = _timeProvider.GetUtcNow().UtcDateTime;
-        entity.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+        entity.CreatedAt = timeProvider.GetUtcNow().UtcDateTime;
+        entity.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
         try
         {
-            var now = _timeProvider.GetUtcNow().UtcDateTime;
+            var now = timeProvider.GetUtcNow().UtcDateTime;
             var executionTime = entity.ExecutionTime!.Value;
 
             // Persist first
-            await _persistenceProvider.AddTimeJobs([entity], cancellationToken: cancellationToken);
+            await persistenceProvider.AddTimeJobs([entity], cancellationToken: cancellationToken);
 
             // Only try to dispatch immediately if dispatcher is enabled (background services running)
             if (_dispatcher.IsEnabled && executionTime <= now.AddSeconds(1))
             {
                 // Acquire and mark InProgress in one provider call
-                var acquired = await _persistenceProvider
+                var acquired = await persistenceProvider
                     .AcquireImmediateTimeJobsAsync([entity.Id], cancellationToken)
                     .ConfigureAwait(false);
 
@@ -142,7 +130,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
                 _tickerQHostScheduler.RestartIfNeeded(executionTime);
             }
 
-            await _notificationHubSender.AddTimeJobNotifyAsync(entity.Id).ConfigureAwait(false);
+            await notificationHubSender.AddTimeJobNotifyAsync(entity.Id).ConfigureAwait(false);
 
             return new JobResult<TTimeJob>(entity);
         }
@@ -159,31 +147,31 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
             entity.Id = Guid.NewGuid();
         }
 
-        if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity?.Function))
+        if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
         {
             return new JobResult<TCronJob>(
-                new JobValidatorException($"Cannot find JobFunction with name {entity?.Function}")
+                new JobValidatorException($"Cannot find JobFunction with name {entity.Function}")
             );
         }
 
         if (
-            CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, _timeProvider.GetUtcNow().UtcDateTime)
+            CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, timeProvider.GetUtcNow().UtcDateTime)
             is not { } nextOccurrence
         )
         {
             return new JobResult<TCronJob>(new JobValidatorException($"Cannot parse expression {entity.Expression}"));
         }
 
-        entity.CreatedAt = _timeProvider.GetUtcNow().UtcDateTime;
-        entity.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+        entity.CreatedAt = timeProvider.GetUtcNow().UtcDateTime;
+        entity.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
         try
         {
-            await _persistenceProvider.InsertCronJobs([entity], cancellationToken: cancellationToken);
+            await persistenceProvider.InsertCronJobs([entity], cancellationToken: cancellationToken);
 
             _tickerQHostScheduler.RestartIfNeeded(nextOccurrence);
 
-            await _notificationHubSender.AddCronJobNotifyAsync(entity);
+            await notificationHubSender.AddCronJobNotifyAsync(entity);
 
             return new JobResult<TCronJob>(entity);
         }
@@ -205,12 +193,12 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
             return new JobResult<TTimeJob>(new JobValidatorException($"Job ExecutionTime must not be null!"));
         }
 
-        timeJob.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+        timeJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
         timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
         try
         {
-            var affectedRows = await _persistenceProvider
+            var affectedRows = await persistenceProvider
                 .UpdateTimeJobs([timeJob], cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
@@ -238,10 +226,10 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
     {
         if (cronJob is null)
         {
-            return new JobResult<TCronJob>(new ArgumentNullException(nameof(cronJob), "Cron job must not be null!"));
+            return new JobResult<TCronJob>(new ArgumentNullException(nameof(cronJob), @"Cron job must not be null!"));
         }
 
-        if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronJob?.Function))
+        if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronJob.Function))
         {
             return new JobResult<TCronJob>(
                 new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}")
@@ -249,7 +237,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
         }
 
         if (
-            CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, _timeProvider.GetUtcNow().UtcDateTime)
+            CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, timeProvider.GetUtcNow().UtcDateTime)
             is not { } nextOccurrence
         )
         {
@@ -258,9 +246,9 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
 
         try
         {
-            cronJob.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+            cronJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
-            var affectedRows = await _persistenceProvider.UpdateCronJobs(
+            var affectedRows = await persistenceProvider.UpdateCronJobs(
                 [cronJob],
                 cancellationToken: cancellationToken
             );
@@ -269,7 +257,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
             {
                 internalFunction.ResetUpdateProps().SetProperty(x => x.ExecutionTime, nextOccurrence);
 
-                await _persistenceProvider
+                await persistenceProvider
                     .UpdateCronJobOccurrence(internalFunction, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
 
@@ -288,7 +276,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
 
     private async Task<JobResult<TCronJob>> _DeleteCronJobAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var affectedRows = await _persistenceProvider.RemoveCronJobs([id], cancellationToken: cancellationToken);
+        var affectedRows = await persistenceProvider.RemoveCronJobs([id], cancellationToken: cancellationToken);
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => x.ParentId == id))
         {
@@ -300,7 +288,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
 
     private async Task<JobResult<TTimeJob>> _DeleteTimeJobAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var affectedRows = await _persistenceProvider.RemoveTimeJobs([id], cancellationToken: cancellationToken);
+        var affectedRows = await persistenceProvider.RemoveTimeJobs([id], cancellationToken: cancellationToken);
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => x.JobId == id))
         {
@@ -376,7 +364,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
 
         var jobFunctionsHashSet = new HashSet<string>(JobFunctionProvider.JobFunctions.Keys, StringComparer.Ordinal);
         var immediateTickers = new List<Guid>();
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
         DateTime earliestForNonImmediate = default;
         foreach (var entity in entities)
         {
@@ -388,7 +376,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
             if (!jobFunctionsHashSet.Contains(entity.Function))
             {
                 return new JobResult<List<TTimeJob>>(
-                    new JobValidatorException($"Cannot find JobFunction with name {entity?.Function}")
+                    new JobValidatorException($"Cannot find JobFunction with name {entity.Function}")
                 );
             }
 
@@ -411,14 +399,14 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
 
         try
         {
-            await _persistenceProvider.AddTimeJobs(entities.ToArray(), cancellationToken: cancellationToken);
+            await persistenceProvider.AddTimeJobs(entities.ToArray(), cancellationToken: cancellationToken);
 
-            await _notificationHubSender.AddTimeJobsBatchNotifyAsync().ConfigureAwait(false);
+            await notificationHubSender.AddTimeJobsBatchNotifyAsync().ConfigureAwait(false);
 
             // Only try to dispatch immediately if dispatcher is enabled (background services running)
             if (_dispatcher.IsEnabled && immediateTickers.Count > 0)
             {
-                var acquired = await _persistenceProvider
+                var acquired = await persistenceProvider
                     .AcquireImmediateTimeJobsAsync(immediateTickers.ToArray(), cancellationToken)
                     .ConfigureAwait(false);
 
@@ -459,14 +447,14 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
                 entity.Id = Guid.NewGuid();
             }
 
-            if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity?.Function))
+            if (JobFunctionProvider.JobFunctions.All(x => x.Key != entity.Function))
             {
-                errors.Add(new JobValidatorException($"Cannot find JobFunction with name {entity?.Function}"));
+                errors.Add(new JobValidatorException($"Cannot find JobFunction with name {entity.Function}"));
                 continue;
             }
 
             if (
-                CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, _timeProvider.GetUtcNow().UtcDateTime)
+                CronScheduleCache.GetNextOccurrenceOrDefault(entity.Expression, timeProvider.GetUtcNow().UtcDateTime)
                 is not { } nextOccurrence
             )
             {
@@ -474,8 +462,8 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
                 continue;
             }
 
-            entity.CreatedAt = _timeProvider.GetUtcNow().UtcDateTime;
-            entity.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+            entity.CreatedAt = timeProvider.GetUtcNow().UtcDateTime;
+            entity.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
             validEntities.Add(entity);
             nextOccurrences.Add(nextOccurrence);
@@ -488,7 +476,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
 
         try
         {
-            await _persistenceProvider.InsertCronJobs(validEntities.ToArray(), cancellationToken: cancellationToken);
+            await persistenceProvider.InsertCronJobs(validEntities.ToArray(), cancellationToken: cancellationToken);
 
             if (validEntities.Count != 0)
             {
@@ -499,7 +487,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
                 // Send notifications for all
                 foreach (var entity in validEntities)
                 {
-                    await _notificationHubSender.AddCronJobNotifyAsync(entity);
+                    await notificationHubSender.AddCronJobNotifyAsync(entity);
                 }
             }
 
@@ -534,7 +522,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
                 continue;
             }
 
-            timeJob.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+            timeJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
             timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
 
             if (_executionContext.Functions.Any(x => x.JobId == timeJob.Id))
@@ -552,7 +540,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
 
         try
         {
-            var affectedRows = await _persistenceProvider
+            var affectedRows = await persistenceProvider
                 .UpdateTimeJobs(validTickers.ToArray(), cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
@@ -589,18 +577,18 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
         {
             if (cronJob is null)
             {
-                errors.Add(new ArgumentNullException(nameof(cronJobs), "Cron job must not be null!"));
+                errors.Add(new ArgumentNullException(nameof(cronJobs), @"Cron job must not be null!"));
                 continue;
             }
 
-            if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronJob?.Function))
+            if (JobFunctionProvider.JobFunctions.All(x => x.Key != cronJob.Function))
             {
                 errors.Add(new JobValidatorException($"Cannot find JobFunction with name {cronJob.Function}"));
                 continue;
             }
 
             if (
-                CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, _timeProvider.GetUtcNow().UtcDateTime)
+                CronScheduleCache.GetNextOccurrenceOrDefault(cronJob.Expression, timeProvider.GetUtcNow().UtcDateTime)
                 is not { } nextOccurrence
             )
             {
@@ -608,7 +596,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
                 continue;
             }
 
-            cronJob.UpdatedAt = _timeProvider.GetUtcNow().UtcDateTime;
+            cronJob.UpdatedAt = timeProvider.GetUtcNow().UtcDateTime;
 
             if (_executionContext.Functions.FirstOrDefault(x => x.ParentId == cronJob.Id) is { } internalFunction)
             {
@@ -628,7 +616,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
 
         try
         {
-            var affectedRows = await _persistenceProvider.UpdateCronJobs(
+            var affectedRows = await persistenceProvider.UpdateCronJobs(
                 validTickers.ToArray(),
                 cancellationToken: cancellationToken
             );
@@ -636,7 +624,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
             // Update internal functions for those that need it
             foreach (var internalFunction in internalFunctionsToUpdate)
             {
-                await _persistenceProvider
+                await persistenceProvider
                     .UpdateCronJobOccurrence(internalFunction, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -664,7 +652,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
         CancellationToken cancellationToken = default
     )
     {
-        var affectedRows = await _persistenceProvider.RemoveTimeJobs(
+        var affectedRows = await persistenceProvider.RemoveTimeJobs(
             ids.ToArray(),
             cancellationToken: cancellationToken
         );
@@ -682,7 +670,7 @@ internal class JobsManager<TTimeJob, TCronJob> : ICronJobManager<TCronJob>, ITim
         CancellationToken cancellationToken = default
     )
     {
-        var affectedRows = await _persistenceProvider.RemoveCronJobs(
+        var affectedRows = await persistenceProvider.RemoveCronJobs(
             ids.ToArray(),
             cancellationToken: cancellationToken
         );

@@ -242,7 +242,7 @@ public sealed class RabbitMqConsumerClientTests : TestBase
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns<Task>(_ => throw new InvalidOperationException("exchange declare failed"));
+            .Returns(_ => throw new InvalidOperationException("exchange declare failed"));
 
         await using var client = new RabbitMqConsumerClient("test-group", 1, _pool, _options, _serviceProvider);
 

@@ -26,11 +26,7 @@ public sealed class HybridCacheTests : TestBase
 
         var publisher = Substitute.For<IDirectPublisher>();
         publisher
-            .PublishAsync<CacheInvalidationMessage>(
-                Arg.Any<CacheInvalidationMessage>(),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         var cache = new HybridCache(l1, l2, publisher, options);
@@ -281,7 +277,7 @@ public sealed class HybridCacheTests : TestBase
 
         await publisher
             .Received(1)
-            .PublishAsync<CacheInvalidationMessage>(
+            .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
                 Arg.Is<PublishOptions?>(options => options == null),
                 Arg.Any<CancellationToken>()
@@ -304,7 +300,7 @@ public sealed class HybridCacheTests : TestBase
         removed.Should().BeFalse();
         await publisher
             .DidNotReceive()
-            .PublishAsync<CacheInvalidationMessage>(
+            .PublishAsync(
                 Arg.Any<CacheInvalidationMessage>(),
                 Arg.Any<PublishOptions?>(),
                 Arg.Any<CancellationToken>()
@@ -336,7 +332,7 @@ public sealed class HybridCacheTests : TestBase
 
         await publisher
             .Received(1)
-            .PublishAsync<CacheInvalidationMessage>(
+            .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Prefix == prefix),
                 Arg.Is<PublishOptions?>(options => options == null),
                 Arg.Any<CancellationToken>()
@@ -368,7 +364,7 @@ public sealed class HybridCacheTests : TestBase
 
         await publisher
             .Received(1)
-            .PublishAsync<CacheInvalidationMessage>(
+            .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.FlushAll == true),
                 Arg.Is<PublishOptions?>(options => options == null),
                 Arg.Any<CancellationToken>()
@@ -524,11 +520,7 @@ public sealed class HybridCacheTests : TestBase
 
         var publisher = Substitute.For<IDirectPublisher>();
         publisher
-            .PublishAsync<CacheInvalidationMessage>(
-                Arg.Any<CacheInvalidationMessage>(),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
         var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions());
@@ -722,11 +714,7 @@ public sealed class HybridCacheTests : TestBase
 
         var publisher = Substitute.For<IDirectPublisher>();
         publisher
-            .PublishAsync<CacheInvalidationMessage>(
-                Arg.Any<CacheInvalidationMessage>(),
-                Arg.Any<PublishOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("Publish failed"));
 
         var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions());
@@ -775,7 +763,7 @@ public sealed class HybridCacheTests : TestBase
 
         await publisher
             .Received(1)
-            .PublishAsync<CacheInvalidationMessage>(
+            .PublishAsync(
                 Arg.Is<CacheInvalidationMessage>(m => m.Key == key),
                 Arg.Is<PublishOptions?>(options => options == null),
                 Arg.Any<CancellationToken>()

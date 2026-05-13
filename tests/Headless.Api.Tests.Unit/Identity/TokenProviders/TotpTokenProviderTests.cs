@@ -9,16 +9,14 @@ namespace Tests.Identity.TokenProviders;
 
 public sealed class TotpTokenProviderTests : TestBase
 {
-    private readonly TotpRfc6238Generator _generator;
-    private readonly IOptions<TotpTokenProviderOptions> _options;
     private readonly UserManager<TestUser> _userManager;
     private readonly TotpTokenProvider<TestUser> _sut;
 
     public TotpTokenProviderTests()
     {
         var timeProvider = TimeProvider.System;
-        _generator = new TotpRfc6238Generator(timeProvider);
-        _options = Options.Create(new TotpTokenProviderOptions());
+        var generator = new TotpRfc6238Generator(timeProvider);
+        var options = Options.Create(new TotpTokenProviderOptions());
         _userManager = Substitute.For<UserManager<TestUser>>(
             Substitute.For<IUserStore<TestUser>>(),
             null,
@@ -30,7 +28,7 @@ public sealed class TotpTokenProviderTests : TestBase
             null,
             null
         );
-        _sut = new TotpTokenProvider<TestUser>(_generator, _options);
+        _sut = new TotpTokenProvider<TestUser>(generator, options);
     }
 
     [Fact]

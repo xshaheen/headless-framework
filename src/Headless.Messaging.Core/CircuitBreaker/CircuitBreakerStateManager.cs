@@ -371,8 +371,8 @@ internal sealed class CircuitBreakerStateManager(
 
         var safeGroupName = LogSanitizer.Sanitize(groupName);
         var groupLock = state.SyncLock;
-        Timer? oldTimer = null;
-        (TimeSpan OpenDuration, int Generation) timerInfo = default;
+        Timer? oldTimer;
+        (TimeSpan OpenDuration, int Generation) timerInfo;
 
         lock (groupLock)
         {
@@ -512,8 +512,8 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         var groupLock = state.SyncLock;
-        Func<ValueTask>? resumeCallback = null;
-        Timer? timerToDispose = null;
+        Func<ValueTask>? resumeCallback;
+        Timer? timerToDispose;
         CircuitBreakerState previousState;
 
         lock (groupLock)
@@ -565,9 +565,9 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         var groupLock = state.SyncLock;
-        Func<ValueTask>? pauseCallback = null;
-        Timer? timerToDispose = null;
-        (TimeSpan OpenDuration, int Generation) timerInfo = default;
+        Func<ValueTask>? pauseCallback;
+        Timer? timerToDispose;
+        (TimeSpan OpenDuration, int Generation) timerInfo;
         CircuitBreakerState previousState;
         int escalationLevel;
 
@@ -746,7 +746,7 @@ internal sealed class CircuitBreakerStateManager(
     /// to prevent unbounded growth, not enforce an exact limit.
     /// </para>
     /// </summary>
-    private const int MaxTrackedGroups = 1000;
+    private const int _MaxTrackedGroups = 1000;
 
     private GroupCircuitState _GetOrAddState(string groupName)
     {
@@ -765,11 +765,11 @@ internal sealed class CircuitBreakerStateManager(
         }
 
         // Slow path: group not yet tracked
-        if (_groups.Count >= MaxTrackedGroups)
+        if (_groups.Count >= _MaxTrackedGroups)
         {
             if (Interlocked.CompareExchange(ref _capWarningLogged, 1, 0) == 0)
             {
-                logger.CircuitBreakerGroupCountCapReached(MaxTrackedGroups);
+                logger.CircuitBreakerGroupCountCapReached(_MaxTrackedGroups);
             }
 
             return _NoOpState;

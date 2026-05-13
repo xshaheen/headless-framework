@@ -114,7 +114,7 @@ public sealed class SetupTests : TestBase
 
         // when - directly create activity through the ActivitySource
         using var activitySource = new ActivitySource(DiagnosticListener.SourceName);
-        using var activity = activitySource.StartActivity("test-activity", ActivityKind.Internal);
+        using var activity = activitySource.StartActivity("test-activity");
         activity?.Stop();
         tracerProvider.ForceFlush();
 

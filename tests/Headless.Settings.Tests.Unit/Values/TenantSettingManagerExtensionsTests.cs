@@ -444,12 +444,7 @@ public sealed class TenantSettingManagerExtensionsTests : TestBase
         var expectedJson = JsonSerializer.Serialize(testObj, JsonConstants.DefaultInternalJsonOptions);
 
         // when
-        await _settingManager.SetForTenantOrGlobalAsync<TestSettings>(
-            null,
-            settingName,
-            testObj,
-            cancellationToken: AbortToken
-        );
+        await _settingManager.SetForTenantOrGlobalAsync(null, settingName, testObj, cancellationToken: AbortToken);
 
         // then
         await _settingManager

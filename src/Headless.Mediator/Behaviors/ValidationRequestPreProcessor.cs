@@ -6,7 +6,7 @@ using Headless.Checks;
 using Mediator;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Mediator;
+namespace Headless.Mediator.Behaviors;
 
 /// <summary>
 /// Runs all FluentValidation validators for a Mediator message before the handler executes.

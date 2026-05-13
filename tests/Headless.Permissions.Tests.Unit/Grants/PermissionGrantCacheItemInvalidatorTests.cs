@@ -9,6 +9,7 @@ using Headless.Testing.Tests;
 
 namespace Tests.Grants;
 
+// ReSharper disable NotDisposedResource
 public sealed class PermissionGrantCacheItemInvalidatorTests : TestBase
 {
     private readonly ICache<PermissionGrantCacheItem> _cache = Substitute.For<ICache<PermissionGrantCacheItem>>();

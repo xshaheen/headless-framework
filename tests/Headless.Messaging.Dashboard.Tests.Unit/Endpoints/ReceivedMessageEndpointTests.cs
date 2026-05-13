@@ -179,7 +179,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         // when
         var response = await client.PostAsync(
             "/api/received/delete",
-            new StringContent("null", System.Text.Encoding.UTF8, "application/json")
+            new StringContent("null", Encoding.UTF8, "application/json")
         );
 
         // then

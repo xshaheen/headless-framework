@@ -15,6 +15,7 @@ public sealed class IsNotNullOrWhiteSpace
 
         // when
         Action nullAction = () => Argument.IsNotNullOrWhiteSpace(nullArgument);
+        // ReSharper disable once AccessToModifiedClosure
         Action nullActionWithCustomMessage = () => Argument.IsNotNullOrWhiteSpace(nullArgument, customMessage);
 
         // then

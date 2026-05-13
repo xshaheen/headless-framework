@@ -320,7 +320,7 @@ public sealed class GetOrAddAsyncTests : TestBase
         // given
         using var cache = _CreateCache();
         using var cts = new CancellationTokenSource();
-        CancellationToken receivedToken = default;
+        CancellationToken receivedToken = CancellationToken.None;
 
         // when
         await cache.GetOrAddAsync<string>(
