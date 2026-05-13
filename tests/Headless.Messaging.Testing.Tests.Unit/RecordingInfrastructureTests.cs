@@ -9,7 +9,6 @@ using Headless.Messaging.Testing;
 using Headless.Messaging.Testing.Internal;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
-using NSubstitute;
 
 namespace Tests;
 
@@ -459,9 +458,9 @@ public sealed class RecordingInfrastructureTests : TestBase
         public ValueTask<TransportMessage> SerializeToTransportMessageAsync(Message message) =>
             throw new NotSupportedException();
 
-        public Message? Deserialize(string json) => throw new NotSupportedException();
+        public Message Deserialize(string json) => throw new NotSupportedException();
 
-        public object? Deserialize(object value, Type valueType) => throw new NotSupportedException();
+        public object Deserialize(object value, Type valueType) => throw new NotSupportedException();
 
         public bool IsJsonType(object jsonObject) => throw new NotSupportedException();
     }

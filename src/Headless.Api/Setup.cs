@@ -6,7 +6,6 @@ using Headless.Abstractions;
 using Headless.Api.Abstractions;
 using Headless.Api.Identity.Normalizer;
 using Headless.Api.Identity.Schemes;
-using Headless.Api.Middlewares;
 using Headless.Api.Security.Claims;
 using Headless.Api.Security.Jwt;
 using Headless.Checks;

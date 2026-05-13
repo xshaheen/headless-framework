@@ -9,7 +9,6 @@ using Headless.Settings.Repositories;
 using Headless.Settings.Values;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 
 namespace Tests.Values;
 

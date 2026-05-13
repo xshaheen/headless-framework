@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 using System.Net;
-using System.Text.Json;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;

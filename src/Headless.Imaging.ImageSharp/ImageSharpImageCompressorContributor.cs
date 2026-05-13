@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 using Headless.Constants;
-using Headless.Imaging;
 using Headless.Imaging.ImageSharp.Internals;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

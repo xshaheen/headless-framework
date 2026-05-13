@@ -4,20 +4,18 @@ using Headless.Abstractions;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Models;
 using Headless.Testing.Tests;
-using NSubstitute;
 
 namespace Tests.Serialization;
 
 public sealed class PermissionDefinitionSerializerTests : TestBase
 {
-    private readonly IGuidGenerator _guidGenerator;
     private readonly PermissionDefinitionSerializer _sut;
 
     public PermissionDefinitionSerializerTests()
     {
-        _guidGenerator = Substitute.For<IGuidGenerator>();
-        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
-        _sut = new PermissionDefinitionSerializer(_guidGenerator);
+        var guidGenerator = Substitute.For<IGuidGenerator>();
+        guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        _sut = new PermissionDefinitionSerializer(guidGenerator);
     }
 
     #region Test 112: should_serialize_permission_to_record

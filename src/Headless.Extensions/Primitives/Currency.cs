@@ -2,7 +2,6 @@
 
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text.Unicode;

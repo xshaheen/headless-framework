@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using System.Text.Encodings.Web;
 using Headless.Constants;
 using Microsoft.AspNetCore.Authentication;

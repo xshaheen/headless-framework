@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;

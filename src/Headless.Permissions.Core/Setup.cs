@@ -3,7 +3,6 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Domain;
-using Headless.Hosting.Initialization;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.GrantProviders;

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Imaging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Imaging;

@@ -7,8 +7,6 @@ using Headless.Messaging.MultiTenancy;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging;
@@ -40,11 +38,18 @@ public static class SetupMessagingTenancy
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IConsumeFilter, TenantPropagationConsumeFilter>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishFilter, TenantPropagationPublishFilter>());
 
-        services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
+        // Standardized ICurrentTenant primitives — see Headless.Messaging.Core/Setup.cs for the
+        // rationale. CurrentTenant.Id returns null when no AsyncLocal value is set so the publish
+        // strict-tenancy guard still fails fast under TenantContextRequired = true.
+        services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+        services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
 
-        // Fail fast at startup when only the framework's fallback NullCurrentTenant is registered;
-        // see TenantPropagationStartupValidator for the diagnostic contract.
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, TenantPropagationStartupValidator>());
+        // Routes through the unified IHeadlessTenancyValidator collection aggregated by
+        // HeadlessTenancyStartupValidator (IHostedLifecycleService) — runs in StartingAsync before any
+        // IHostedService.StartAsync so a misconfigured tenancy posture fails fast.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHeadlessTenancyValidator, TenantPropagationStartupValidator>()
+        );
 
         return services;
     }
@@ -97,7 +102,7 @@ public sealed class HeadlessMessagingTenancyBuilder
             ServiceDescriptor.Singleton<IHeadlessTenancyValidator, MessagingTenantRequiredCrossSeamValidator>()
         );
         _builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, MessagingTenantRequiredStartupValidator>()
+            ServiceDescriptor.Singleton<IHeadlessTenancyValidator, MessagingTenantRequiredStartupValidator>()
         );
         _builder.RecordSeam(Seam, TenantPostureStatus.Enforcing, RequireTenantOnPublishCapability);
 
@@ -137,10 +142,7 @@ internal sealed class MessagingTenantRequiredCrossSeamValidator : IHeadlessTenan
             !string.Equals(seam.Seam, HeadlessMessagingTenancyBuilder.Seam, StringComparison.Ordinal)
         );
 
-        var currentTenant = context.Services.GetService<ICurrentTenant>();
-        var realCurrentTenant = currentTenant is not null and not NullCurrentTenant;
-
-        if (otherSeamsContributeTenant || realCurrentTenant)
+        if (otherSeamsContributeTenant || _TenantSourceMissing.HasConsumerOverride(context.Services))
         {
             yield break;
         }
@@ -156,70 +158,83 @@ internal sealed class MessagingTenantRequiredCrossSeamValidator : IHeadlessTenan
     }
 }
 
-/// <summary>
-/// Hosted service that validates a real <see cref="ICurrentTenant"/> implementation is registered
-/// when messaging tenant propagation was configured. Throws <see cref="InvalidOperationException"/>
-/// during <c>StartAsync</c> if the framework's fallback <see cref="NullCurrentTenant"/> is the
-/// only registration — silent no-op propagation is hard to diagnose at runtime.
-/// </summary>
-internal sealed partial class TenantPropagationStartupValidator(
-    ICurrentTenant currentTenant,
-    ILogger<TenantPropagationStartupValidator> logger
-) : IHostedService
+/// <summary>Shared "no tenant source" predicate used by the messaging tenancy validators.</summary>
+internal static class _TenantSourceMissing
 {
-    private const string _DiagnosticCode = "HEADLESS_TENANCY_MESSAGING_PROPAGATION_NULL_CURRENT_TENANT";
-
-    private readonly ICurrentTenant _currentTenant = Argument.IsNotNull(currentTenant);
-
-    public Task StartAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Returns <see langword="true"/> when the host registered a custom <see cref="ICurrentTenant"/> implementation
+    /// beyond the framework defaults (<c>CurrentTenant</c> or <c>NullCurrentTenant</c>). Used by tenancy validators
+    /// to recognize consumer-supplied tenant sources that bypass the seam manifest.
+    /// </summary>
+    public static bool HasConsumerOverride(IServiceProvider services)
     {
-        if (_currentTenant is NullCurrentTenant)
-        {
-            LogPropagationNullCurrentTenant(logger, _DiagnosticCode, HeadlessMessagingTenancyBuilder.Seam);
-
-            throw new InvalidOperationException(
-                "Headless messaging tenant propagation was configured but the only ICurrentTenant "
-                    + $"registration is {nameof(NullCurrentTenant)} — propagation would be a silent no-op. "
-                    + "Register a real ICurrentTenant implementation (typically via "
-                    + "AddHeadlessInfrastructure(), AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims())), "
-                    + "AddHeadlessDbContextServices(), or by overriding the registration in DI) "
-                    + "BEFORE calling AddHeadlessMessaging."
-            );
-        }
-
-        return Task.CompletedTask;
+        var currentTenant = services.GetService<ICurrentTenant>();
+        return currentTenant is not null and not CurrentTenant and not NullCurrentTenant;
     }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    [LoggerMessage(
-        EventId = 1,
-        EventName = "HeadlessTenancyPropagationNullCurrentTenant",
-        Level = LogLevel.Error,
-        Message = "Headless messaging tenant propagation validation failed ({Code}) on seam {Seam}: ICurrentTenant resolves to NullCurrentTenant."
-    )]
-    // ReSharper disable once InconsistentNaming
-    private static partial void LogPropagationNullCurrentTenant(ILogger logger, string code, string seam);
 }
 
 /// <summary>
-/// Hosted service that fails fast when the messaging seam recorded <c>require-tenant-on-publish</c>
-/// posture but <see cref="MessagingOptions.TenantContextRequired"/> ends up <see langword="false"/>
-/// at runtime (typically because a later <c>Configure&lt;MessagingOptions&gt;</c> call clobbered the
-/// <c>PostConfigure</c> contribution). Surfaces the mismatch at startup so operators are not surprised
-/// by silent loss of the strict-publish guard.
+/// Emits a startup error when messaging tenant propagation was configured but no other Headless
+/// tenancy seam (HTTP claim resolution, EntityFramework, Mediator) is recorded in the posture
+/// manifest AND no consumer-supplied <see cref="ICurrentTenant"/> override is registered.
+/// Propagation under those conditions would be a silent no-op, and silent no-op propagation is hard
+/// to diagnose at runtime.
 /// </summary>
-internal sealed partial class MessagingTenantRequiredStartupValidator(
-    IOptions<MessagingOptions> options,
-    TenantPostureManifest manifest,
-    ILogger<MessagingTenantRequiredStartupValidator> logger
-) : IHostedService
+internal sealed class TenantPropagationStartupValidator : IHeadlessTenancyValidator
 {
-    private const string _DiagnosticCode = "HEADLESS_TENANCY_MESSAGING_REQUIRE_TENANT_DISABLED";
-
-    public Task StartAsync(CancellationToken cancellationToken)
+    public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
     {
-        var messagingSeam = manifest.GetSeam(HeadlessMessagingTenancyBuilder.Seam);
+        Argument.IsNotNull(context);
+
+        var messagingSeam = context.Manifest.GetSeam(HeadlessMessagingTenancyBuilder.Seam);
+
+        if (
+            messagingSeam?.Capabilities.Contains(
+                HeadlessMessagingTenancyBuilder.PropagateTenantCapability,
+                StringComparer.Ordinal
+            ) != true
+        )
+        {
+            yield break;
+        }
+
+        var otherSeamsContributeTenant = context.Manifest.Seams.Any(seam =>
+            !string.Equals(seam.Seam, HeadlessMessagingTenancyBuilder.Seam, StringComparison.Ordinal)
+        );
+
+        if (otherSeamsContributeTenant || _TenantSourceMissing.HasConsumerOverride(context.Services))
+        {
+            yield break;
+        }
+
+        yield return HeadlessTenancyDiagnostic.Error(
+            HeadlessMessagingTenancyBuilder.Seam,
+            "HEADLESS_TENANCY_MESSAGING_PROPAGATION_NULL_CURRENT_TENANT",
+            "Headless messaging tenant propagation was configured but no other Headless tenancy seam "
+                + "(HTTP claim resolution, EntityFramework, Mediator) is recorded and no consumer-supplied "
+                + "ICurrentTenant override was registered — propagation would be a silent no-op. Register a "
+                + "real tenant source via AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims())), "
+                + "AddHeadlessDbContextServices(), or a custom ICurrentTenant implementation BEFORE calling "
+                + "AddHeadlessMessaging."
+        );
+    }
+}
+
+/// <summary>
+/// Emits a startup error when the messaging seam recorded <c>require-tenant-on-publish</c> posture
+/// but <see cref="MessagingOptions.TenantContextRequired"/> resolves to <see langword="false"/>
+/// (typically because a later <c>Configure&lt;MessagingOptions&gt;</c> call clobbered the
+/// <c>PostConfigure</c> contribution). Surfaces the mismatch at startup so operators are not
+/// surprised by silent loss of the strict-publish guard.
+/// </summary>
+internal sealed class MessagingTenantRequiredStartupValidator(IOptions<MessagingOptions> options)
+    : IHeadlessTenancyValidator
+{
+    public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
+    {
+        Argument.IsNotNull(context);
+
+        var messagingSeam = context.Manifest.GetSeam(HeadlessMessagingTenancyBuilder.Seam);
 
         var recordedRequireTenant =
             messagingSeam?.Capabilities.Contains(
@@ -227,29 +242,18 @@ internal sealed partial class MessagingTenantRequiredStartupValidator(
                 StringComparer.Ordinal
             ) == true;
 
-        if (recordedRequireTenant && !options.Value.TenantContextRequired)
+        if (!recordedRequireTenant || options.Value.TenantContextRequired)
         {
-            LogRequireTenantDisabled(logger, _DiagnosticCode, HeadlessMessagingTenancyBuilder.Seam);
-
-            throw new InvalidOperationException(
-                "Headless messaging seam recorded require-tenant-on-publish but MessagingOptions.TenantContextRequired "
-                    + "resolved to false at startup. A later Configure<MessagingOptions>(...) call clobbered the "
-                    + "PostConfigure contribution applied by RequireTenantOnPublish(). Move the override before "
-                    + "AddHeadlessTenancy(...) or remove it."
-            );
+            yield break;
         }
 
-        return Task.CompletedTask;
+        yield return HeadlessTenancyDiagnostic.Error(
+            HeadlessMessagingTenancyBuilder.Seam,
+            "HEADLESS_TENANCY_MESSAGING_REQUIRE_TENANT_DISABLED",
+            "Headless messaging seam recorded require-tenant-on-publish but MessagingOptions.TenantContextRequired "
+                + "resolved to false at startup. A later Configure<MessagingOptions>(...) call clobbered the "
+                + "PostConfigure contribution applied by RequireTenantOnPublish(). Move the override before "
+                + "AddHeadlessTenancy(...) or remove it."
+        );
     }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    [LoggerMessage(
-        EventId = 2,
-        EventName = "HeadlessTenancyRequireTenantDisabled",
-        Level = LogLevel.Error,
-        Message = "Headless messaging require-tenant-on-publish validation failed ({Code}) on seam {Seam}: MessagingOptions.TenantContextRequired resolved to false."
-    )]
-    // ReSharper disable once InconsistentNaming
-    private static partial void LogRequireTenantDisabled(ILogger logger, string code, string seam);
 }

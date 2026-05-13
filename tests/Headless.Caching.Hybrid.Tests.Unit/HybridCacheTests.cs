@@ -4,7 +4,6 @@ using Headless.Caching;
 using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
-using NSubstitute;
 
 namespace Tests;
 

@@ -5,7 +5,6 @@ using Headless.Domain;
 using Headless.Settings.Entities;
 using Headless.Settings.Values;
 using Headless.Testing.Tests;
-using NSubstitute;
 
 namespace Tests.Values;
 

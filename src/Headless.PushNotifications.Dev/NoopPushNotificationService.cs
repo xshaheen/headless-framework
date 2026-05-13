@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.PushNotifications;
 using Headless.PushNotifications.Abstractions;
 
 namespace Headless.PushNotifications.Dev;

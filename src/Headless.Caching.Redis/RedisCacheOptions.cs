@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Caching;
 using StackExchange.Redis;
 
 namespace Headless.Caching;

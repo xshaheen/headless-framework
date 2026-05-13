@@ -4,8 +4,6 @@ using Headless.Checks;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.EntityFramework;
@@ -64,7 +62,7 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
     {
         _builder.Services.AddHeadlessTenantWriteGuard(configure);
         _builder.Services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IHostedService, EntityFrameworkTenantWriteGuardStartupValidator>()
+            ServiceDescriptor.Singleton<IHeadlessTenancyValidator, EntityFrameworkTenantWriteGuardStartupValidator>()
         );
         _builder.RecordSeam(Seam, TenantPostureStatus.Guarded, _GuardTenantWritesCapabilityLabels);
 
@@ -73,51 +71,40 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
 }
 
 /// <summary>
-/// Hosted service that fails fast when the EF seam recorded the <c>guard-tenant-writes</c> capability
-/// but <see cref="TenantWriteGuardOptions.IsEnabled"/> resolved to <see langword="false"/> at startup
-/// (typically because a later <c>Configure&lt;TenantWriteGuardOptions&gt;</c> call clobbered the
-/// <c>PostConfigure</c> contribution). Surfaces the mismatch at startup so operators are not surprised
-/// by silent loss of the guard.
+/// Emits a startup error when the EF seam recorded the <c>guard-tenant-writes</c> capability but
+/// <see cref="TenantWriteGuardOptions.IsEnabled"/> resolves to <see langword="false"/> (typically
+/// because a later <c>Configure&lt;TenantWriteGuardOptions&gt;</c> call clobbered the
+/// <c>PostConfigure</c> contribution). Surfaces the mismatch at startup so operators are not
+/// surprised by silent loss of the guard.
 /// </summary>
-internal sealed partial class EntityFrameworkTenantWriteGuardStartupValidator(
-    IOptions<TenantWriteGuardOptions> options,
-    TenantPostureManifest manifest,
-    ILogger<EntityFrameworkTenantWriteGuardStartupValidator> logger
-) : IHostedService
+internal sealed class EntityFrameworkTenantWriteGuardStartupValidator(IOptions<TenantWriteGuardOptions> options)
+    : IHeadlessTenancyValidator
 {
-    private const string DiagnosticCode = "HEADLESS_TENANCY_EF_WRITE_GUARD_DISABLED";
-    private const string Seam = HeadlessEntityFrameworkTenancyBuilder.Seam;
+    private const string _Seam = HeadlessEntityFrameworkTenancyBuilder.Seam;
 
-    public Task StartAsync(CancellationToken cancellationToken)
+    public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
     {
-        var efSeam = manifest.GetSeam(Seam);
+        Argument.IsNotNull(context);
+
+        var efSeam = context.Manifest.GetSeam(_Seam);
         var recordedGuard =
             efSeam?.Capabilities.Contains(
                 HeadlessEntityFrameworkTenancyBuilder.GuardTenantWritesLabel,
                 StringComparer.Ordinal
             ) == true;
 
-        if (recordedGuard && !options.Value.IsEnabled)
+        if (!recordedGuard || options.Value.IsEnabled)
         {
-            LogGuardDisabled(logger, DiagnosticCode, Seam);
-            throw new InvalidOperationException(
-                "Headless EntityFramework seam recorded guard-tenant-writes but TenantWriteGuardOptions.IsEnabled "
-                    + "resolved to false at startup. A later Configure<TenantWriteGuardOptions>(...) call clobbered "
-                    + "the PostConfigure contribution applied by GuardTenantWrites(). Move the override before "
-                    + "AddHeadlessTenancy(...) or remove it."
-            );
+            yield break;
         }
 
-        return Task.CompletedTask;
+        yield return HeadlessTenancyDiagnostic.Error(
+            _Seam,
+            "HEADLESS_TENANCY_EF_WRITE_GUARD_DISABLED",
+            "Headless EntityFramework seam recorded guard-tenant-writes but TenantWriteGuardOptions.IsEnabled "
+                + "resolved to false at startup. A later Configure<TenantWriteGuardOptions>(...) call clobbered "
+                + "the PostConfigure contribution applied by GuardTenantWrites(). Move the override before "
+                + "AddHeadlessTenancy(...) or remove it."
+        );
     }
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    [LoggerMessage(
-        EventId = 1,
-        EventName = "HeadlessTenancyEntityFrameworkWriteGuardDisabled",
-        Level = LogLevel.Error,
-        Message = "Headless EntityFramework write-guard validation failed ({Code}) on seam {Seam}: TenantWriteGuardOptions.IsEnabled resolved to false."
-    )]
-    private static partial void LogGuardDisabled(ILogger logger, string code, string seam);
 }

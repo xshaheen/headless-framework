@@ -6,7 +6,6 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Util;
 using Headless.Abstractions;
-using Headless.Blobs;
 using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.IO;

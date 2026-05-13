@@ -2,7 +2,6 @@
 
 using Headless.Permissions.Grants;
 using Headless.Testing.Tests;
-using NSubstitute;
 
 namespace Tests.Grants;
 

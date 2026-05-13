@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using Headless.Payments.Paymob.CashIn.Internals;
 using Headless.Payments.Paymob.CashIn.Models.Orders;
 

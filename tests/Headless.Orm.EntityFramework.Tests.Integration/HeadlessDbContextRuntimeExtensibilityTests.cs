@@ -384,9 +384,9 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
     {
         public bool IsAvailable => true;
 
-        public string? Id => "custom";
+        public string Id => "custom";
 
-        public string? Name => "Custom";
+        public string Name => "Custom";
 
         public IDisposable Change(string? id, string? name = null) => new RuntimeCurrentTenantScope();
     }

@@ -3,7 +3,6 @@
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
-using NATS.Client.Core;
 using NATS.Client.JetStream.Models;
 
 namespace Tests;

@@ -11,7 +11,6 @@ using Headless.Permissions.Repositories;
 using Headless.Permissions.Resources;
 using Headless.Primitives;
 using Headless.Testing.Tests;
-using NSubstitute;
 
 namespace Tests.Grants;
 

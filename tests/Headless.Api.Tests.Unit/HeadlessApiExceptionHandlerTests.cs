@@ -2,7 +2,6 @@
 
 using FluentValidation.Results;
 using Headless.Abstractions;
-using Headless.Api;
 using Headless.Api.Abstractions;
 using Headless.Constants;
 using Headless.Exceptions;

@@ -3,7 +3,6 @@
 using Headless;
 using Headless.Abstractions;
 using Headless.Settings;
-using Headless.Settings.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;

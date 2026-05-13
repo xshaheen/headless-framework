@@ -334,7 +334,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     {
         if (occurrenceIds == null || occurrenceIds.Length == 0)
         {
-            return Array.Empty<CronJobOccurrenceEntity<TCronJob>>();
+            return [];
         }
 
         await using var dbContext = await DbContextFactory
@@ -363,7 +363,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         if (affected == 0)
         {
-            return Array.Empty<CronJobOccurrenceEntity<TCronJob>>();
+            return [];
         }
 
         // Return acquired occurrences with CronJob populated

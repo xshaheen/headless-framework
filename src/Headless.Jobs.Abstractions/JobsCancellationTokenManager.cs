@@ -204,7 +204,7 @@ public class JobsCancellationTokenDetails
 /// </summary>
 public sealed class ConcurrentHashSet<T> : IDisposable
 {
-    private readonly HashSet<T> _set = new();
+    private readonly HashSet<T> _set = [];
     private readonly ReaderWriterLockSlim _lock = new();
     private bool _disposed;
 

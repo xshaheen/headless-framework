@@ -1,4 +1,3 @@
-using System.Text.Json;
 using MessagePack;
 using MessagePackSerializer = Headless.Serializer.MessagePackSerializer;
 

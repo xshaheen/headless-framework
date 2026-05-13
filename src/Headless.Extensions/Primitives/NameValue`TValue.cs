@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
-
 namespace Headless.Primitives;
 
 /// <summary>Can be used to store Name/Value (or Key/Value) pairs.</summary>

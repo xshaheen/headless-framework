@@ -5,7 +5,6 @@ using Headless.Permissions.GrantProviders;
 using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
 using Headless.Testing.Tests;
-using NSubstitute;
 
 namespace Tests.Providers;
 

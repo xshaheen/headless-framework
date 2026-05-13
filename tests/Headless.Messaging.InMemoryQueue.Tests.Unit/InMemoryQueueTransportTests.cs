@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.InMemoryQueue;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -11,7 +10,6 @@ namespace Tests;
 
 public sealed class InMemoryQueueTransportTests : TestBase
 {
-    private readonly MemoryQueue _queue;
     private readonly InMemoryQueueTransport _transport;
     private readonly InMemoryConsumerClient _consumerClient;
 
@@ -20,9 +18,9 @@ public sealed class InMemoryQueueTransportTests : TestBase
         var queueLogger = Substitute.For<ILogger<MemoryQueue>>();
         var transportLogger = Substitute.For<ILogger<InMemoryQueueTransport>>();
 
-        _queue = new MemoryQueue(queueLogger);
-        _transport = new InMemoryQueueTransport(_queue, transportLogger);
-        _consumerClient = new InMemoryConsumerClient(_queue, "test-group", 1);
+        var queue = new MemoryQueue(queueLogger);
+        _transport = new InMemoryQueueTransport(queue, transportLogger);
+        _consumerClient = new InMemoryConsumerClient(queue, "test-group", 1);
     }
 
     protected override async ValueTask DisposeAsyncCore()

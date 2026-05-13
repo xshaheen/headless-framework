@@ -2,7 +2,6 @@
 
 using Confluent.Kafka;
 using Headless.Messaging;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Kafka;
 using Headless.Messaging.Messages;
 using Headless.Testing.Tests;

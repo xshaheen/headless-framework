@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Net.Sockets;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Exceptions;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 

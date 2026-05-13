@@ -2,7 +2,6 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Diagnostics.CodeAnalysis;
 using Headless.Messaging;
 using Headless.Messaging.Transactions;
 

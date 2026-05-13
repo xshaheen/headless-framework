@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Emails;
 using MimeKit;
 
 namespace Headless.Emails;

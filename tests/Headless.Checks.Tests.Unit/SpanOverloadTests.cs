@@ -12,7 +12,7 @@ public sealed class SpanOverloadTests
     public void is_not_empty_span_with_items_does_not_throw()
     {
         // given
-        Span<int> span = stackalloc int[] { 1, 2, 3 };
+        Span<int> span = [1, 2, 3];
 
         // when & then
         testSpanNotEmpty(span);
@@ -69,7 +69,7 @@ public sealed class SpanOverloadTests
     public void is_not_empty_readonly_span_with_items_does_not_throw()
     {
         // given
-        ReadOnlySpan<int> span = stackalloc int[] { 1, 2, 3 };
+        ReadOnlySpan<int> span = [1, 2, 3];
 
         // when & then
         testReadOnlySpanNotEmpty(span);
@@ -163,7 +163,7 @@ public sealed class SpanOverloadTests
     {
         // given
         const int value = 2;
-        ReadOnlySpan<int> validValues = stackalloc int[] { 1, 2, 3 };
+        ReadOnlySpan<int> validValues = [1, 2, 3];
 
         // when & then
         testIsOneOfReadOnlySpan(value, validValues);
@@ -180,7 +180,7 @@ public sealed class SpanOverloadTests
     public void is_one_of_with_readonly_span_values_and_invalid_argument_throws()
     {
         // given & when & then
-        var testCode = () => testIsOneOfThrows(5, stackalloc int[] { 1, 2, 3 });
+        var testCode = () => testIsOneOfThrows(5, [1, 2, 3]);
 
         testCode.Should().ThrowExactly<ArgumentException>();
 
@@ -235,7 +235,7 @@ public sealed class SpanOverloadTests
     {
         // given & when
         const string customMessage = "Value must be 1, 2, or 3";
-        var testCode = () => testIsOneOfCustomMessage(5, stackalloc int[] { 1, 2, 3 }, customMessage);
+        var testCode = () => testIsOneOfCustomMessage(5, [1, 2, 3], customMessage);
 
         var ex = testCode.Should().ThrowExactly<ArgumentException>().And;
 

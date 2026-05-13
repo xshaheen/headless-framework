@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using System.Data.Common;
 using Headless.Testing.AspNetCore;
 using Microsoft.Data.Sqlite;
-using NSubstitute;
 
 namespace Tests;
 

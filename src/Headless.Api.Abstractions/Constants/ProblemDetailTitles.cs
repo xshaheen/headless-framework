@@ -78,7 +78,6 @@ public static class HeadlessProblemDetailsConstants
         public const string NotImplemented = "This functionality is not implemented.";
 
         public const string TenantContextRequired = "An operation required an ambient tenant context but none was set.";
-        public const string CrossTenantWrite =
-            "Tenant-owned write does not match the current tenant context.";
+        public const string CrossTenantWrite = "Tenant-owned write does not match the current tenant context.";
     }
 }

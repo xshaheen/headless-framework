@@ -1,5 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-
 namespace Headless.Jobs.Models;
 
 public class JobResult<TEntity>

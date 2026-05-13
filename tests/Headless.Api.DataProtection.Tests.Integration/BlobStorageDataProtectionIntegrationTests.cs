@@ -4,7 +4,6 @@ using System.Xml.Linq;
 using Azure.Storage.Blobs;
 using Headless.Abstractions;
 using Headless.Api;
-using Headless.Blobs;
 using Headless.Blobs.Azure;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;

@@ -260,7 +260,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         var consumeResult = new ConsumeResult<string, byte[]>
         {
             TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(2), new Offset(17)),
-            Message = new Message<string, byte[]> { Value = [1], Headers = new Confluent.Kafka.Headers() },
+            Message = new Message<string, byte[]> { Value = [1], Headers = new Headers() },
         };
 
         // when
@@ -290,7 +290,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                             new Partition(0),
                             new Offset(0)
                         ),
-                        Message = new Message<string, byte[]> { Value = [1], Headers = new Confluent.Kafka.Headers() },
+                        Message = new Message<string, byte[]> { Value = [1], Headers = [] },
                     },
                     2 => new ConsumeResult<string, byte[]>
                     {
@@ -299,7 +299,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                             new Partition(0),
                             new Offset(1)
                         ),
-                        Message = new Message<string, byte[]> { Value = [2], Headers = new Confluent.Kafka.Headers() },
+                        Message = new Message<string, byte[]> { Value = [2], Headers = [] },
                     },
                     _ => waitAndReturnNull(),
                 };
@@ -465,7 +465,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                             new Partition(0),
                             new Offset(5)
                         ),
-                        Message = new Message<string, byte[]> { Value = [1], Headers = new Confluent.Kafka.Headers() },
+                        Message = new Message<string, byte[]> { Value = [1], Headers = new Headers() },
                     };
                 }
 

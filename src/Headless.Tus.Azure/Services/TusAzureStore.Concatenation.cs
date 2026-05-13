@@ -6,7 +6,6 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Headless.Checks;
 using Headless.Tus.Models;
-using Microsoft.Extensions.Logging;
 using tusdotnet.Interfaces;
 using tusdotnet.Models.Concatenation;
 

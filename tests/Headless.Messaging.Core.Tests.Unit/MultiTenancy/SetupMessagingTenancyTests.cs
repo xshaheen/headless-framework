@@ -123,7 +123,7 @@ public sealed class SetupMessagingTenancyTests : TestBase
             .ContainSingle();
         rootBuilder
             .Services.Where(descriptor =>
-                descriptor.ServiceType == typeof(IHostedService)
+                descriptor.ServiceType == typeof(IHeadlessTenancyValidator)
                 && descriptor.ImplementationType?.Name == "TenantPropagationStartupValidator"
             )
             .Should()
@@ -131,45 +131,57 @@ public sealed class SetupMessagingTenancyTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_when_root_tenant_propagation_configured_without_real_ICurrentTenant_implementation()
+    public async Task should_emit_propagation_error_diagnostic_when_no_other_tenant_seam_or_override_is_registered()
     {
-        // given
+        // given — only Messaging propagation is wired: no HTTP / EF / Mediator seam contributes,
+        // and the consumer did not supply an ICurrentTenant override. The default CurrentTenant
+        // is registered (AsyncLocal-backed) but no one populates the accessor.
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddLogging();
         builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
 
         await using var provider = builder.Services.BuildServiceProvider();
-        provider.GetRequiredService<ICurrentTenant>().Should().BeOfType<NullCurrentTenant>();
-        var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        var validator = hostedServices.Single(s => s.GetType().Name == "TenantPropagationStartupValidator");
+        provider.GetRequiredService<ICurrentTenant>().Should().BeOfType<CurrentTenant>();
+        var validator = provider
+            .GetServices<IHeadlessTenancyValidator>()
+            .Single(v => v.GetType().Name == "TenantPropagationStartupValidator");
+        var manifest = provider.GetRequiredService<TenantPostureManifest>();
+        var context = new HeadlessTenancyValidationContext(provider, manifest);
 
         // when
-        var act = async () => await validator.StartAsync(AbortToken);
+        var diagnostics = validator.Validate(context).ToArray();
 
         // then
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*NullCurrentTenant*AddHeadlessInfrastructure*AddHeadlessTenancy*");
+        diagnostics.Should().ContainSingle();
+        diagnostics[0].Severity.Should().Be(HeadlessTenancyDiagnosticSeverity.Error);
+        diagnostics[0].Code.Should().Be("HEADLESS_TENANCY_MESSAGING_PROPAGATION_NULL_CURRENT_TENANT");
+        diagnostics[0].Seam.Should().Be(HeadlessMessagingTenancyBuilder.Seam);
+        await Task.CompletedTask;
     }
 
     [Fact]
-    public async Task should_not_throw_when_real_ICurrentTenant_is_registered_through_root_tenancy()
+    public async Task should_emit_no_propagation_diagnostic_when_consumer_supplied_ICurrentTenant_is_registered()
     {
-        // given — a real (non-null) ICurrentTenant is registered before tenancy root configures
-        // messaging propagation. The startup validator should observe the real implementation.
+        // given — a consumer-supplied (non-CurrentTenant, non-NullCurrentTenant) ICurrentTenant
+        // is registered before tenancy root configures messaging propagation. The validator should
+        // recognize the override as a real tenant source and emit no diagnostic.
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddLogging();
         builder.Services.AddSingleton(Substitute.For<ICurrentTenant>());
         builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
 
         await using var provider = builder.Services.BuildServiceProvider();
-        var hostedServices = provider.GetServices<IHostedService>().ToArray();
-        var validator = hostedServices.Single(s => s.GetType().Name == "TenantPropagationStartupValidator");
+        var validator = provider
+            .GetServices<IHeadlessTenancyValidator>()
+            .Single(v => v.GetType().Name == "TenantPropagationStartupValidator");
+        var manifest = provider.GetRequiredService<TenantPostureManifest>();
+        var context = new HeadlessTenancyValidationContext(provider, manifest);
 
         // when
-        var act = async () => await validator.StartAsync(AbortToken);
+        var diagnostics = validator.Validate(context).ToArray();
 
         // then
-        await act.Should().NotThrowAsync();
+        diagnostics.Should().BeEmpty();
+        await Task.CompletedTask;
     }
 }

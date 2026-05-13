@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Exceptions;
-using Headless.Primitives;
 using Headless.Settings.Definitions;
 using Headless.Settings.Helpers;
 using Headless.Settings.Models;
@@ -9,7 +8,6 @@ using Headless.Settings.Resources;
 using Headless.Settings.ValueProviders;
 using Headless.Settings.Values;
 using Headless.Testing.Tests;
-using NSubstitute;
 using Tests.Fakes;
 
 namespace Tests.Values;

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using Headless.Primitives;
 
 #pragma warning disable IDE0130 // Namespace does not match folder structure

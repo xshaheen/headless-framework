@@ -2,9 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Globalization;
 using Headless.Messaging;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.PostgreSql;
 using Headless.Messaging.Transactions;

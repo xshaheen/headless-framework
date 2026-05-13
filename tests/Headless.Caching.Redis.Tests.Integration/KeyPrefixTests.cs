@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using StackExchange.Redis;
-
 namespace Tests;
 
 public sealed class KeyPrefixTests(RedisCacheFixture fixture) : RedisCacheTestBase(fixture)

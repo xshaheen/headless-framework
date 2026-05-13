@@ -205,7 +205,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     {
         if (_TimeJobs.TryGetValue(id, out var job))
         {
-            return Task.FromResult(job.Request ?? Array.Empty<byte>());
+            return Task.FromResult(job.Request ?? []);
         }
 
         return Task.FromResult(Array.Empty<byte>());
@@ -575,7 +575,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     InitIdentifier = $"MemoryTicker_Seeded_{id}",
                     CreatedAt = now,
                     UpdatedAt = now,
-                    Request = Array.Empty<byte>(),
+                    Request = [],
                 };
 
                 _CronJobs.TryAdd(id, cronJob);
@@ -859,12 +859,12 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         {
             if (occurrence.CronJob != null)
             {
-                return Task.FromResult(occurrence.CronJob.Request ?? Array.Empty<byte>());
+                return Task.FromResult(occurrence.CronJob.Request ?? []);
             }
 
             if (_CronJobs.TryGetValue(occurrence.CronJobId, out var cronJob))
             {
-                return Task.FromResult(cronJob.Request ?? Array.Empty<byte>());
+                return Task.FromResult(cronJob.Request ?? []);
             }
         }
 
@@ -1091,7 +1091,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     {
         if (!_ChildrenIndex.TryGetValue(parentId, out var children) || children.IsEmpty)
         {
-            return new List<TTimeJob>();
+            return [];
         }
 
         var results = new List<TTimeJob>(children.Count);
@@ -1216,7 +1216,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
     {
         if (!_ChildrenIndex.TryGetValue(parentId, out var children))
         {
-            return Array.Empty<Guid>();
+            return [];
         }
 
         return children.Keys.ToArray();

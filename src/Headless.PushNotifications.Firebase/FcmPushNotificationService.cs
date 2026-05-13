@@ -2,7 +2,6 @@
 
 using FirebaseAdmin.Messaging;
 using Headless.Checks;
-using Headless.PushNotifications;
 using Headless.PushNotifications.Abstractions;
 using Headless.PushNotifications.Firebase.Internals;
 using Microsoft.Extensions.Logging;

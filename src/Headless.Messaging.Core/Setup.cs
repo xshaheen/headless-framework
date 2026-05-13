@@ -94,12 +94,13 @@ public static class Setup
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();
-        // Fallback ICurrentTenant when Headless.Api is not in the host. The factory's strict
-        // tenancy guard (#238) consults this — NullCurrentTenant returns Id = null so the
-        // guard fails fast at publish time when TenantContextRequired = true and no explicit
-        // PublishOptions.TenantId is supplied. Hosts that need ambient tenant resolution
-        // register a real ICurrentTenant before AddHeadlessMessaging.
-        services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
+        // Tenant context primitives shared across packages — the AsyncLocal accessor + AddOrReplaceFallbackSingleton
+        // wire CurrentTenant (AsyncLocal-backed) as the framework default while letting Headless.Api / EF / consumer
+        // overrides supply a real implementation. NullCurrentTenant remains the fallback that's stripped when a real
+        // registration appears. CurrentTenant.Id returns null when nothing populates the AsyncLocal, so the publish
+        // strict-tenancy guard (#238) still fails fast when TenantContextRequired = true and no caller / seam set a tenant.
+        services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+        services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
         services.TryAddSingleton<OutboxPublisher>();
         services.TryAddSingleton<IOutboxPublisher>(sp => sp.GetRequiredService<OutboxPublisher>());

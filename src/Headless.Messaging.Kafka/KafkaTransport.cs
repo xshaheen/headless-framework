@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Confluent.Kafka;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
-using Headers = Confluent.Kafka.Headers;
 
 namespace Headless.Messaging.Kafka;
 

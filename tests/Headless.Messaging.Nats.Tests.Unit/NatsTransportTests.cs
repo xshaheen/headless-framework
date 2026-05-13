@@ -7,7 +7,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NATS.Client.JetStream;
 using MessagingHeaders = Headless.Messaging.Headers;
-using NatsHeaders = NATS.Client.Core.NatsHeaders;
 
 namespace Tests;
 

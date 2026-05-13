@@ -5,7 +5,6 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Headless.Abstractions;
-using Headless.Blobs;
 using Headless.Blobs.Azure.Internals;
 using Headless.Blobs.Internals;
 using Headless.Checks;

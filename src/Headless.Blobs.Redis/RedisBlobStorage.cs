@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
-using Headless.Blobs;
 using Headless.Blobs.Internals;
 using Headless.Checks;
 using Headless.Constants;

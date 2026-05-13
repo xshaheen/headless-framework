@@ -3,7 +3,6 @@
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Models;
 using Headless.Testing.Tests;
-using NSubstitute;
 
 namespace Tests.Definitions;
 

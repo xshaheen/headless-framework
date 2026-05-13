@@ -3,7 +3,6 @@
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.InMemoryQueue;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.PostgreSql;
 using Headless.Testing.Tests;

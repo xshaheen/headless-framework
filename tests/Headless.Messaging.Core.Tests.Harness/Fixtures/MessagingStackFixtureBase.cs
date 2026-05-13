@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Xunit;
-
 namespace Tests.Fixtures;
 
 /// <summary>

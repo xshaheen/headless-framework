@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Caching;
 using Headless.Redis;
 using Headless.Serializer;
 using Microsoft.Extensions.Configuration;

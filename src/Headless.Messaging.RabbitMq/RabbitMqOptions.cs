@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Messaging.Messages;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 

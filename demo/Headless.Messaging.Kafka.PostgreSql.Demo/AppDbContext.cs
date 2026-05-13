@@ -1,5 +1,4 @@
 using System.Data.Common;
-using Headless.Messaging;
 using Headless.Messaging.Transactions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;

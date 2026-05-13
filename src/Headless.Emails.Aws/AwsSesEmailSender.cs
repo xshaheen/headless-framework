@@ -2,7 +2,6 @@
 
 using Amazon.SimpleEmailV2;
 using Amazon.SimpleEmailV2.Model;
-using Headless.Emails;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Emails.Aws;

@@ -3,7 +3,6 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Sql;
-using NSubstitute;
 
 namespace Tests;
 

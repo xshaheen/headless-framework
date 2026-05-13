@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using Azure.Messaging.ServiceBus;
 using Headless.Messaging.AzureServiceBus.Helpers;
 using Headless.Messaging.AzureServiceBus.Producer;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;

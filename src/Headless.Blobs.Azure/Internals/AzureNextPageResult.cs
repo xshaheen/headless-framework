@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Blobs;
-
 namespace Headless.Blobs.Azure.Internals;
 
 public sealed class AzureNextPageResult : INextPageResult

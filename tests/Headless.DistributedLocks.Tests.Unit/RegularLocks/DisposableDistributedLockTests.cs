@@ -2,7 +2,6 @@
 
 using Headless.DistributedLocks;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.RegularLocks;

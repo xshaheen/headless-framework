@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Domain;
-using Headless.Hosting.Initialization;
 using Headless.Settings.Definitions;
 using Headless.Settings.Entities;
 using Headless.Settings.Helpers;

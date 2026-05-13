@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Emails;
-
 namespace Headless.Emails.Dev;
 
 public sealed class NoopEmailSender : IEmailSender

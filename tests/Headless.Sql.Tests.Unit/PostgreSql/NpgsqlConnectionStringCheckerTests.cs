@@ -4,7 +4,6 @@ using Headless.Sql;
 using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Logging;
 using Npgsql;
-using NSubstitute;
 
 namespace Tests.PostgreSql;
 

@@ -1,13 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using FluentValidation;
 using FluentValidation.Results;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 using ValidationResult = FluentValidation.Results.ValidationResult;
 
 namespace Tests.Filters;
@@ -33,9 +31,7 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
     {
         // given
         var filter = _CreateFilter<ValidatorFilterTestRequest>();
-        var context = _CreateContext(
-            new ValidatorFilterTestRequest("Name", "test@example.com")
-        );
+        var context = _CreateContext(new ValidatorFilterTestRequest("Name", "test@example.com"));
         var expectedResult = new object();
         var next = _CreateNext(expectedResult);
 

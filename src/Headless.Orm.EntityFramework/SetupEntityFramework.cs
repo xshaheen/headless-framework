@@ -99,7 +99,7 @@ public static class SetupEntityFramework
 
             services.AddOptions<TenantWriteGuardOptions>();
             services.TryAddScoped<HeadlessDbContextServices>();
-            services.TryAddScoped<IHeadlessSaveChangesPipeline, Contexts.Runtime.HeadlessSaveChangesPipeline>();
+            services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
             services.TryAddScoped<IHeadlessAuditPersistence, HeadlessAuditPersistence>();
             services.TryAddScoped<IHeadlessMessageDispatcher, ThrowHeadlessMessageDispatcher>();
             services.TryAddSingleton<ITenantWriteGuardBypass, TenantWriteGuardBypass>();

@@ -6,7 +6,6 @@ using Headless.Settings.Models;
 using Headless.Settings.ValueProviders;
 using Headless.Settings.Values;
 using Headless.Testing.Tests;
-using NSubstitute;
 
 namespace Tests.ValueProviders;
 

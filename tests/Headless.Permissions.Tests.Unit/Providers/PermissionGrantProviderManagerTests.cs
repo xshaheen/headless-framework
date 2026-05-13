@@ -7,7 +7,6 @@ using Headless.Permissions.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using NSubstitute;
 
 namespace Tests.Providers;
 

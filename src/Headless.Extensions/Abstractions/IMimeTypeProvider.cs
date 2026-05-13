@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
-
 namespace Headless.Abstractions;
 
 /// <summary>Used to look up MIME types given a file path</summary>

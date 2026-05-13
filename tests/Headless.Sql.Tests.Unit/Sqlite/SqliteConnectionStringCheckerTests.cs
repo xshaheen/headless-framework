@@ -3,7 +3,6 @@
 using Headless.Sql;
 using Headless.Sql.Sqlite;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
 
 namespace Tests.Sqlite;
 

@@ -363,7 +363,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task where_not_null_should_filter_null_elements()
     {
         // given
-        var source = _CreateAsyncEnumerable(new string?[] { "a", null, "b", null, "c" }, AbortToken);
+        var source = _CreateAsyncEnumerable(["a", null, "b", null, "c"], AbortToken);
 
         // when
         var result = await source.WhereNotNull(AbortToken).ToListAsync(AbortToken);
@@ -391,7 +391,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task where_not_null_or_empty_should_filter_null_and_empty_strings()
     {
         // given
-        var source = _CreateAsyncEnumerable(new string?[] { "a", null, "", "b", "  ", "c" }, AbortToken);
+        var source = _CreateAsyncEnumerable(["a", null, "", "b", "  ", "c"], AbortToken);
 
         // when
         var result = await source.WhereNotNullOrEmpty(AbortToken).ToListAsync(AbortToken);
@@ -406,7 +406,7 @@ public sealed class AsyncEnumerableExtensionsTests : TestBase
     public async Task where_not_null_or_whitespace_should_filter_null_empty_and_whitespace()
     {
         // given
-        var source = _CreateAsyncEnumerable(new string?[] { "a", null, "", "b", "  ", "c" }, AbortToken);
+        var source = _CreateAsyncEnumerable(["a", null, "", "b", "  ", "c"], AbortToken);
 
         // when
         var result = await source.WhereNotNullOrWhiteSpace(AbortToken).ToListAsync(AbortToken);

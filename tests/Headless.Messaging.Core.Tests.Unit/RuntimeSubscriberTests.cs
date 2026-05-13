@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;

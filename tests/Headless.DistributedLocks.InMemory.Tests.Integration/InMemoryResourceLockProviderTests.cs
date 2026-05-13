@@ -3,7 +3,6 @@ using Headless.DistributedLocks;
 using Headless.DistributedLocks.Cache;
 using Headless.Messaging;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
 
 namespace Tests;
 

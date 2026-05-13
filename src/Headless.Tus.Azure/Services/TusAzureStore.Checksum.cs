@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;

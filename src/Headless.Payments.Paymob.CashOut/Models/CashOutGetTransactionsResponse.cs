@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
-
 namespace Headless.Payments.Paymob.CashOut.Models;
 
 [PublicAPI]

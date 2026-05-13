@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Immutable;
 using System.ComponentModel.DataAnnotations;
-using System.Diagnostics.CodeAnalysis;
 using Headless.Generator.Primitives;
 using Headless.Generator.Primitives.Models;
 using Microsoft.CodeAnalysis;
@@ -15,16 +13,17 @@ internal static class TestHelpers
 {
     // Cache assembly references to avoid repeated enumeration across tests
     private static readonly Lazy<ImmutableArray<MetadataReference>> _cachedReferences = new(() =>
-        AppDomain
-            .CurrentDomain.GetAssemblies()
-            .Where(x => !x.IsDynamic && !string.IsNullOrWhiteSpace(x.Location))
-            .Select(x => (MetadataReference)MetadataReference.CreateFromFile(x.Location))
-            .Concat([
-                (MetadataReference)MetadataReference.CreateFromFile(typeof(PrimitiveGenerator).Assembly.Location),
-                (MetadataReference)MetadataReference.CreateFromFile(typeof(IPrimitive<>).Assembly.Location),
-                (MetadataReference)MetadataReference.CreateFromFile(typeof(DisplayAttribute).Assembly.Location),
-            ])
-            .ToImmutableArray()
+        [
+            .. AppDomain
+                .CurrentDomain.GetAssemblies()
+                .Where(x => !x.IsDynamic && !string.IsNullOrWhiteSpace(x.Location))
+                .Select(x => (MetadataReference)MetadataReference.CreateFromFile(x.Location))
+                .Concat([
+                    (MetadataReference)MetadataReference.CreateFromFile(typeof(PrimitiveGenerator).Assembly.Location),
+                    (MetadataReference)MetadataReference.CreateFromFile(typeof(IPrimitive<>).Assembly.Location),
+                    (MetadataReference)MetadataReference.CreateFromFile(typeof(DisplayAttribute).Assembly.Location),
+                ]),
+        ]
     );
 
     internal static GeneratedOutput GetGeneratedOutput<T>(string source, PrimitiveGlobalOptions? globalOptions = null)

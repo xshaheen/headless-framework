@@ -5,7 +5,6 @@ using Headless.Settings.ValueProviders;
 using Headless.Settings.Values;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
-using NSubstitute;
 
 namespace Tests.ValueProviders;
 

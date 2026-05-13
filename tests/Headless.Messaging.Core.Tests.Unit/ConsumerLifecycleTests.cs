@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;

@@ -3,8 +3,8 @@ namespace Headless.Jobs.SourceGenerator.Validation;
 public static class CronValidator
 {
     // Format with seconds (6 parts only): seconds, minutes, hours, day, month, day-of-week
-    private static readonly int[] _MinValues = { 0, 0, 0, 1, 1, 0 };
-    private static readonly int[] _MaxValues = { 59, 59, 23, 31, 12, 6 };
+    private static readonly int[] _MinValues = [0, 0, 0, 1, 1, 0];
+    private static readonly int[] _MaxValues = [59, 59, 23, 31, 12, 6];
 
     // Performance constants
     private const int _RequiredPartsCount = 6;

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using Headless.Api.Filters;
 using Headless.Checks;
 using Microsoft.AspNetCore.Http;

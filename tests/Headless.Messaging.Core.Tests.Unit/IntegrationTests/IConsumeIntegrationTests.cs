@@ -3,7 +3,6 @@
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.IntegrationTests;
@@ -106,7 +105,9 @@ public sealed class IConsumeIntegrationTests
         candidates.Should().HaveCount(2);
 
         var orderService = candidates.First(c => c.GroupName.Contains("order-service", StringComparison.Ordinal));
-        var analyticsService = candidates.First(c => c.GroupName.Contains("analytics-service", StringComparison.Ordinal));
+        var analyticsService = candidates.First(c =>
+            c.GroupName.Contains("analytics-service", StringComparison.Ordinal)
+        );
 
         orderService.ImplTypeInfo.Should().Be(typeof(OrderPlacedConsumer).GetTypeInfo());
         analyticsService.ImplTypeInfo.Should().Be(typeof(OrderAnalyticsConsumer).GetTypeInfo());

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 using Headless.Constants;
 using Headless.Urls;

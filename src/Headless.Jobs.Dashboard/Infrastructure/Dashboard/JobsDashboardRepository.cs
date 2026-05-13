@@ -449,7 +449,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         int emptyPastSlots = Math.Max(0, (remainingSlots - futureDaysWithData) / 2);
         int emptyFutureSlots = Math.Max(0, remainingSlots - pastDaysWithData - emptyPastSlots);
 
-        List<CronOccurrenceJobGraphData> emptyPastDays = new List<CronOccurrenceJobGraphData>();
+        List<CronOccurrenceJobGraphData> emptyPastDays = [];
         if (emptyPastSlots > 0)
         {
             var firstPastDate = pastData.FirstOrDefault()?.Date ?? today.AddDays(-1);
@@ -459,7 +459,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             }
         }
 
-        List<CronOccurrenceJobGraphData> emptyFutureDays = new List<CronOccurrenceJobGraphData>();
+        List<CronOccurrenceJobGraphData> emptyFutureDays = [];
         if (emptyFutureSlots > 0)
         {
             var lastFutureDate = futureData.LastOrDefault()?.Date ?? today.AddDays(1);

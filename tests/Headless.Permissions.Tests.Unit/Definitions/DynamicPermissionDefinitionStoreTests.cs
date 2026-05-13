@@ -11,57 +11,50 @@ using Headless.Permissions.Repositories;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
-using NSubstitute;
 
 namespace Tests.Definitions;
 
 public sealed class DynamicPermissionDefinitionStoreTests : TestBase
 {
     private readonly IPermissionDefinitionRecordRepository _repository;
-    private readonly IStaticPermissionDefinitionStore _staticStore;
-    private readonly IPermissionDefinitionSerializer _serializer;
     private readonly ICache _cache;
     private readonly IDistributedLockProvider _distributedLockProvider;
-    private readonly IDirectPublisher _messagePublisher;
-    private readonly IGuidGenerator _guidGenerator;
-    private readonly IApplicationInformationAccessor _application;
     private readonly PermissionManagementOptions _options;
-    private readonly PermissionManagementProvidersOptions _providersOptions;
     private readonly FakeTimeProvider _timeProvider;
     private readonly DynamicPermissionDefinitionStore _sut;
 
     public DynamicPermissionDefinitionStoreTests()
     {
         _repository = Substitute.For<IPermissionDefinitionRecordRepository>();
-        _staticStore = Substitute.For<IStaticPermissionDefinitionStore>();
-        _serializer = Substitute.For<IPermissionDefinitionSerializer>();
+        var staticStore = Substitute.For<IStaticPermissionDefinitionStore>();
+        var serializer = Substitute.For<IPermissionDefinitionSerializer>();
         _cache = Substitute.For<ICache>();
         _distributedLockProvider = Substitute.For<IDistributedLockProvider>();
-        _messagePublisher = Substitute.For<IDirectPublisher>();
-        _guidGenerator = Substitute.For<IGuidGenerator>();
-        _application = Substitute.For<IApplicationInformationAccessor>();
+        var messagePublisher = Substitute.For<IDirectPublisher>();
+        var guidGenerator = Substitute.For<IGuidGenerator>();
+        var application = Substitute.For<IApplicationInformationAccessor>();
         _options = new PermissionManagementOptions { IsDynamicPermissionStoreEnabled = true };
-        _providersOptions = new PermissionManagementProvidersOptions();
+        var providersOptions = new PermissionManagementProvidersOptions();
         _timeProvider = new FakeTimeProvider();
 
-        _application.ApplicationName.Returns("TestApp");
-        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
+        application.ApplicationName.Returns("TestApp");
+        guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         var optionsAccessor = Substitute.For<IOptions<PermissionManagementOptions>>();
         optionsAccessor.Value.Returns(_options);
 
         var providersAccessor = Substitute.For<IOptions<PermissionManagementProvidersOptions>>();
-        providersAccessor.Value.Returns(_providersOptions);
+        providersAccessor.Value.Returns(providersOptions);
 
         _sut = new DynamicPermissionDefinitionStore(
             _repository,
-            _staticStore,
-            _serializer,
+            staticStore,
+            serializer,
             _cache,
             _distributedLockProvider,
-            _messagePublisher,
-            _guidGenerator,
-            _application,
+            messagePublisher,
+            guidGenerator,
+            application,
             optionsAccessor,
             providersAccessor,
             _timeProvider

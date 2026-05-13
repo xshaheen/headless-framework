@@ -244,7 +244,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return request ?? Array.Empty<byte>();
+        return request ?? [];
     }
 
     public async Task ReleaseDeadNodeTimeJobResources(
@@ -412,7 +412,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     InitIdentifier = $"MemoryTicker_Seeded_{function}",
                     CreatedAt = now,
                     UpdatedAt = now,
-                    Request = Array.Empty<byte>(),
+                    Request = [],
                 };
                 await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);
             }
@@ -728,7 +728,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return request ?? Array.Empty<byte>();
+        return request ?? [];
     }
 
     public async Task UpdateCronJobOccurrencesWithUnifiedContext(

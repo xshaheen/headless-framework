@@ -7,7 +7,6 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
-using Headers = Headless.Messaging.Headers;
 
 namespace Headless.Messaging.Kafka;
 

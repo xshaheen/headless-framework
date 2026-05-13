@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class InMemoryConsumerClientTests : TestBase
 {
     private readonly MemoryQueue _queue;
@@ -119,7 +120,8 @@ public sealed class InMemoryConsumerClientTests : TestBase
         };
 
         using var cts = new CancellationTokenSource();
-        var listenTask = Task.Run(
+
+        _ = Task.Run(
             async () =>
             {
                 try
@@ -247,7 +249,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // given
         var logger = Substitute.For<ILogger<MemoryQueue>>();
         var queue = new MemoryQueue(logger);
-        const byte concurrency = (byte)4;
+        const byte concurrency = 4;
         var client = new InMemoryConsumerClient(queue, "concurrent-group", concurrency);
         await client.SubscribeAsync(["concurrent-topic"]);
 
@@ -363,6 +365,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
     public void should_set_and_get_log_callback()
     {
         // given
+        // ReSharper disable once NotAccessedVariable
         LogMessageEventArgs? logArgs = null;
         Action<LogMessageEventArgs> callback = args => logArgs = args;
 
@@ -543,7 +546,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await client.DisposeAsync();
 
         // when / then
-        var act = () => client.DrainPendingMessages();
+        var act = client.DrainPendingMessages;
         act.Should().NotThrow();
     }
 

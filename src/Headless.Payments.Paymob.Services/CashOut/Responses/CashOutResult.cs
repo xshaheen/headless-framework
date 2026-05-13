@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
 using Headless.Primitives;
 
 namespace Headless.Payments.Paymob.Services.CashOut.Responses;

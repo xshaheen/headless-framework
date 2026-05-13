@@ -1,12 +1,9 @@
-using System.Globalization;
-using System.Text.Json;
 using Headless.AuditLog;
 using Headless.EntityFramework;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 using Tests.Fixture;
 
 namespace Tests;

@@ -4,7 +4,6 @@ using Demo.Contracts.IntegrationEvents;
 using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
-using Headless.Messaging.Messages;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,17 +21,14 @@ builder.Services.AddHeadlessMessaging(c =>
         {
             var longIdGenerator = serviceProvider.GetRequiredService<ILongIdGenerator>();
 
-            return new List<KeyValuePair<string, string>>
-            {
+            return
+            [
                 new(Headers.MessageId, longIdGenerator.Create().ToString(CultureInfo.InvariantCulture)),
                 new(Headers.MessageName, message.Subject),
                 new("IsFromSampleProject", "'true'"),
-            };
+            ];
         };
-        asb.SqlFilters = new List<KeyValuePair<string, string>>
-        {
-            new("IsFromSampleProjectFilter", "IsFromSampleProject = 'true'"),
-        };
+        asb.SqlFilters = [new("IsFromSampleProjectFilter", "IsFromSampleProject = 'true'")];
 
         asb.ConfigureCustomProducer<EntityCreatedForIntegration>(cfg =>
             cfg.UseTopic("entity-created").WithSubscription()

@@ -2,7 +2,6 @@
 
 using Confluent.Kafka;
 using FluentValidation;
-using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Kafka;
 

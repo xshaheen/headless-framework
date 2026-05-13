@@ -9,7 +9,6 @@ using Headless.Permissions.Models;
 using Headless.Permissions.Repositories;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
-using NSubstitute;
 
 namespace Tests.Grants;
 

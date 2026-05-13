@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.AuditLog;

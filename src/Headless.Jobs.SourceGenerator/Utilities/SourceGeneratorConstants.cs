@@ -30,13 +30,13 @@ internal static class SourceGeneratorConstants
     public const int InitialStringBuilderCapacity = 8192; // Pre-allocate reasonable capacity
 
     public static readonly string[] CommonNamespaces =
-    {
+    [
         "System",
         "System.Collections.Generic",
         "System.Threading",
         "System.Threading.Tasks",
         "Microsoft.Extensions.DependencyInjection",
-    };
+    ];
 
     // Pre-computed common variable names for performance (static readonly for better memory usage)
     public static readonly HashSet<string> CommonVariableNames = new(StringComparer.Ordinal)

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Abstractions;
-using Headless.Primitives;
 using Microsoft.AspNetCore.Mvc;
 
 // ReSharper disable once CheckNamespace

@@ -3,7 +3,6 @@
 using Demo;
 using Demo.Endpoints;
 using Headless.Api;
-using Headless.Api.Middlewares;
 using Headless.Constants;
 using Microsoft.AspNetCore.Authentication;
 
