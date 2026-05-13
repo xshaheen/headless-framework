@@ -45,7 +45,10 @@ public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices se
         // tenant change between Add and SaveChanges is detected as a CrossTenantWriteException
         // by the save-entry processor's validation step, rather than being silently absorbed by
         // a fallback stamp using the SaveChanges-time tenant.
-        db.ChangeTracker.Tracked += _StampTenantOnAdded;
+        if (services.IsTenantWriteGuardEnabled)
+        {
+            db.ChangeTracker.Tracked += _StampTenantOnAdded;
+        }
     }
 
     private void _StampTenantOnAdded(object? sender, EntityTrackedEventArgs e)

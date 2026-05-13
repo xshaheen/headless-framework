@@ -32,8 +32,11 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
     /// <summary>The seam name reported in the tenant posture manifest.</summary>
     public const string Seam = "EntityFramework";
 
+    private static readonly string[] _GuardTenantWritesCapabilityLabels = ["guard-tenant-writes", "ef-owned-bypass"];
+
     /// <summary>Capability labels reported by <see cref="GuardTenantWrites"/>.</summary>
-    public static readonly string[] GuardTenantWritesCapabilities = ["guard-tenant-writes", "ef-owned-bypass"];
+    public static IReadOnlyList<string> GuardTenantWritesCapabilities { get; } =
+        Array.AsReadOnly(_GuardTenantWritesCapabilityLabels);
 
     private readonly HeadlessTenancyBuilder _builder;
 
@@ -48,7 +51,7 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
     public HeadlessEntityFrameworkTenancyBuilder GuardTenantWrites(Action<TenantWriteGuardOptions>? configure = null)
     {
         _builder.Services.AddHeadlessTenantWriteGuard(configure);
-        _builder.RecordSeam(Seam, TenantPostureStatus.Guarded, GuardTenantWritesCapabilities);
+        _builder.RecordSeam(Seam, TenantPostureStatus.Guarded, _GuardTenantWritesCapabilityLabels);
 
         return this;
     }

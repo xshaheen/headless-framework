@@ -175,7 +175,7 @@ For package-level wiring without the root tenancy surface, `builder.Services.Add
 
 `IMultiTenant` writes are protected by two complementary layers, plus paths that remain out of scope:
 
-1. **Global query filter (`MultiTenancyFilter`)** — always on for `IMultiTenant` entities, wired by `HeadlessDbContextRuntime._ConfigureQueryFilters`. Scopes reads, `IQueryable<T>.ExecuteUpdate(...)`, and `IQueryable<T>.ExecuteDelete(...)` to `ICurrentTenant.Id`. Opt-out is `IgnoreMultiTenancyFilter()` (audit-logged via `HeadlessQueryFilters._LogFilterBypassed`).
+1. **Global query filter** — always on for `IMultiTenant` entities, wired by `HeadlessDbContextRuntime._ConfigureQueryFilters` and registered under the constant `HeadlessQueryFilters.MultiTenancyFilter` (string value `"MultiTenantFilter"`). Scopes reads, `IQueryable<T>.ExecuteUpdate(...)`, and `IQueryable<T>.ExecuteDelete(...)` to `ICurrentTenant.Id`. Opt-out is `IgnoreMultiTenancyFilter()` (audit-logged via `HeadlessQueryFilters._LogFilterBypassed`).
 2. **`SaveChanges` write guard** — opt-in via `.EntityFramework(ef => ef.GuardTenantWrites())`. Operates on EF's `ChangeTracker` and rejects unsafe `Add` / `Update` / `Remove` / tracked-property writes with `CrossTenantWriteException` before persistence.
 
 Known gaps:

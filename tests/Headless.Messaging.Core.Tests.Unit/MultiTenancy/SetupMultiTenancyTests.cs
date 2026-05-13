@@ -29,8 +29,8 @@ public sealed class SetupMultiTenancyTests : TestBase
         builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
 
         // then
-        builder.Services
-            .Where(descriptor =>
+        builder
+            .Services.Where(descriptor =>
                 descriptor.ServiceType == typeof(IConsumeFilter)
                 && descriptor.ImplementationType == typeof(TenantPropagationConsumeFilter)
             )
@@ -38,8 +38,8 @@ public sealed class SetupMultiTenancyTests : TestBase
             .ContainSingle()
             .Subject.Lifetime.Should()
             .Be(ServiceLifetime.Scoped);
-        builder.Services
-            .Where(descriptor =>
+        builder
+            .Services.Where(descriptor =>
                 descriptor.ServiceType == typeof(IPublishFilter)
                 && descriptor.ImplementationType == typeof(TenantPropagationPublishFilter)
             )
@@ -55,8 +55,12 @@ public sealed class SetupMultiTenancyTests : TestBase
         seam.Capabilities.Should().BeEquivalentTo("propagate-tenant");
     }
 
-    [Fact]
-    public void should_enable_strict_publish_from_headless_tenancy_root_regardless_of_messaging_setup_order()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void should_enable_strict_publish_from_headless_tenancy_root_regardless_of_messaging_setup_order(
+        bool addMessagingBeforeTenancy
+    )
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -64,10 +68,20 @@ public sealed class SetupMultiTenancyTests : TestBase
         builder.Services.AddSingleton(Substitute.For<ICurrentTenant>());
 
         // when
-        builder.AddHeadlessTenancy(tenancy =>
-            tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
-        );
-        builder.Services.AddHeadlessMessaging(_ => { });
+        if (addMessagingBeforeTenancy)
+        {
+            builder.Services.AddHeadlessMessaging(_ => { });
+            builder.AddHeadlessTenancy(tenancy =>
+                tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+            );
+        }
+        else
+        {
+            builder.AddHeadlessTenancy(tenancy =>
+                tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+            );
+            builder.Services.AddHeadlessMessaging(_ => { });
+        }
 
         using var provider = builder.Services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;

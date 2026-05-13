@@ -206,7 +206,7 @@ The HTTP middleware preserves state `1` when there is no tenant claim. It does n
 - Call `base.OnModelCreating(modelBuilder)`
 - Ensure your entity implements `IMultiTenant`
 
-With tenant resolution active, queries automatically filter on `TenantId == ICurrentTenant.Id`. The filter is registered as the named `MultiTenancyFilter` by `HeadlessDbContextRuntime._ConfigureQueryFilters`. Because `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same `IQueryable<T>`, bulk update and bulk delete inherit the tenant predicate and are scoped to the current tenant by default. Per-query opt-out is `IgnoreMultiTenancyFilter()`, which audit-logs the bypass via `HeadlessQueryFilters._LogFilterBypassed`.
+With tenant resolution active, queries automatically filter on `TenantId == ICurrentTenant.Id`. The filter is wired by `HeadlessDbContextRuntime._ConfigureQueryFilters` and registered under the constant `HeadlessQueryFilters.MultiTenancyFilter` (whose literal string value is `"MultiTenantFilter"`). Because `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same `IQueryable<T>`, bulk update and bulk delete inherit the tenant predicate and are scoped to the current tenant by default. Per-query opt-out is `IgnoreMultiTenancyFilter()`, which audit-logs the bypass via `HeadlessQueryFilters._LogFilterBypassed`.
 
 ### EF Tenant Write Guard
 
@@ -257,7 +257,7 @@ using (bypass.BeginBypass())
 
 `IMultiTenant` writes are protected by two complementary layers, plus paths that remain out of scope:
 
-1. **Global query filter (`MultiTenancyFilter`)** — always on for `IMultiTenant` entities. Scopes reads, `IQueryable<T>.ExecuteUpdate(...)`, and `IQueryable<T>.ExecuteDelete(...)` to the current tenant. Opt-out is `IgnoreMultiTenancyFilter()` (audit-logged).
+1. **Global query filter** — always on for `IMultiTenant` entities. Registered as `HeadlessQueryFilters.MultiTenancyFilter` (string value `"MultiTenantFilter"`). Scopes reads, `IQueryable<T>.ExecuteUpdate(...)`, and `IQueryable<T>.ExecuteDelete(...)` to the current tenant. Opt-out is `IgnoreMultiTenancyFilter()` (audit-logged).
 2. **`SaveChanges` write guard** — opt-in via `.EntityFramework(ef => ef.GuardTenantWrites())`. Operates on EF's `ChangeTracker`. Catches `Add` / `Update` / `Remove` / tracked-property-mutation paths and rejects unsafe writes with `CrossTenantWriteException` before persistence.
 
 Known gaps:

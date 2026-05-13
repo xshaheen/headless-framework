@@ -56,7 +56,7 @@ The origin requirements define the product scope: tenant-owned EF writes should 
 
 ### Defense Layers and Known Gaps
 
-`IMultiTenant` reads, `IQueryable<T>.ExecuteUpdate(...)`, and `IQueryable<T>.ExecuteDelete(...)` are already covered by the framework's named `MultiTenancyFilter`, wired by `HeadlessDbContextRuntime._ConfigureQueryFilters`. The filter is part of every `IQueryable<T>` against an `IMultiTenant` set, so bulk operations that consume that `IQueryable<T>` inherit the tenant predicate by default. The per-query opt-out is `IgnoreMultiTenancyFilter()`, which audit-logs the bypass.
+`IMultiTenant` reads, `IQueryable<T>.ExecuteUpdate(...)`, and `IQueryable<T>.ExecuteDelete(...)` are already covered by the framework's global query filter, wired by `HeadlessDbContextRuntime._ConfigureQueryFilters` and registered under the constant `HeadlessQueryFilters.MultiTenancyFilter` (string value `"MultiTenantFilter"`). The filter is part of every `IQueryable<T>` against an `IMultiTenant` set, so bulk operations that consume that `IQueryable<T>` inherit the tenant predicate by default. The per-query opt-out is `IgnoreMultiTenancyFilter()`, which audit-logs the bypass.
 
 The opt-in `SaveChanges` write guard added by this plan is the second defense layer. It operates on EF's `ChangeTracker` and catches `Add` / `Update` / `Remove` / tracked-property-mutation paths before persistence.
 

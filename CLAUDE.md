@@ -28,7 +28,14 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 - `*.Tests.Integration` — real deps via Testcontainers (requires Docker)
 - `*.Tests.Harness` — shared fixtures and builders
 
-**Stack**: xUnit, AwesomeAssertions (fork of FluentAssertions), NSubstitute, Bogus
+**Stack**: xUnit v3 (Microsoft Testing Platform), AwesomeAssertions (fork of FluentAssertions), NSubstitute, Bogus
+
+## Build & Test
+
+- Solution file: [headless-framework.slnx](headless-framework.slnx) (modern XML format). Passes directly to `dotnet`; older tooling may need `.sln`.
+- Tests: use the `dotnet-test` skill (xUnit v3 + MTP) instead of raw `dotnet test`.
+- Local CLI tools pinned in [dotnet-tools.json](dotnet-tools.json) — `dotnet tool restore`, then `dotnet <tool>`.
+- Headless SDKs treat warnings as errors in CI.
 
 ## Conventions
 
@@ -39,14 +46,45 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 **Options Pattern**:
 
 - Validate options with FluentValidation + hosting extensions: `AddOptions<TOptions, TValidator>()` / `Configure<TOptions, TValidator>(...)`. Avoid custom `IValidateOptions<T>` when hosting covers it.
-- Create an `internal sealed class {OptionsName}Validator : AbstractValidator<{OptionsName}>` in the same file as the options class, directly below it.
+- Create an `internal sealed class {OptionsName}Validator : AbstractValidator<{OptionsName}>` in the same file as the options class, directly below it if the option has any property that need validation.
 - Register validators via DI using `services.Configure<TOption, TValidator>(action)` or `services.AddOptions<TOption, TValidator>()` from `Headless.Hosting`; these wire up FluentValidation + `ValidateOnStart()` automatically.
-- DI option registration must expose 3 overloads: `IConfiguration`, `Action<TOptions>`, `Action<TOptions, IServiceProvider>`. Share wiring in one private/core helper.
 - Higher-level bootstrap APIs may auto-bind required options from owned default sections (for example `Headless:*`) when part of the package contract.
 - If options are required, do not offer a parameterless registration overload; require options and delegate to the optioned path.
 - Never call `new Validator().ValidateAndThrow()` manually; use the DI pipeline.
 
-** Input Validation Responsibility:**
+**DI Registration (Setup classes):**
+
+Every provider package exposes a single static `{Provider}Setup` class in `Setup.cs` at the package root, following this shape:
+
+```csharp
+[PublicAPI]
+public static class RedisCacheSetup
+{
+    extension(IServiceCollection services) // C# 14 extension members
+    {
+        public IServiceCollection AddRedisCache(IConfiguration configuration, ...) { ... }
+        public IServiceCollection AddRedisCache(Action<TOptions> setupAction, ...) { ... }
+        public IServiceCollection AddRedisCache(Action<TOptions, IServiceProvider> setupAction, ...) { ... }
+
+        private IServiceCollection _AddCacheCore(...) { /* shared wiring */ }
+    }
+}
+```
+
+- Name the shared private helper `_Add{Feature}Core` (underscore prefix per the project's private-extension naming).
+- Mark Setup classes `[PublicAPI]` so JetBrains tooling treats public members as the package surface.
+
+**Public API Discipline:**
+
+- Each package's `public` surface IS its NuGet contract — keep types `internal sealed` and promote to `public` only when consumers must reference them.
+- Annotate the intentional public surface with `[PublicAPI]` (`JetBrains.Annotations` is globally imported via [Directory.Build.props](Directory.Build.props)).
+- Use `[Pure]` (aliased to `JetBrainsPureAttribute` in [src/Headless.Core](src/Headless.Core) to avoid `System.Diagnostics.Contracts.PureAttribute` collision) and `[MustUseReturnValue]` where applicable.
+
+**Source File Header:**
+
+Every source file starts with: `// Copyright (c) Mahmoud Shaheen. All rights reserved.`
+
+**Input Validation Responsibility:**
 
 This framework delegates certain input validation to consuming applications:
 
@@ -77,3 +115,7 @@ After creating the project, attach it to [headless-framework.slnx](headless-fram
 - Keep public API XML docs in sync with the code.
 - Keep each package `README.md` in sync with the code; package READMEs live under `src/Headless.*`.
 - `docs/solutions/` is a searchable knowledge store of past fixes and patterns, organized by category (`api`, `concurrency`, `guides`, `messaging`, etc.) with YAML frontmatter (`module`, `tags`, `problem_type`). Search it before implementing features, debugging issues, or making decisions in a documented area.
+
+## LLM Documentation
+
+- Always keep docs/llms synchronized with the code. If behavior changes in a way an AI coding agent should know, update the relevant LLM docs

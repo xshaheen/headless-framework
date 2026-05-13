@@ -1,5 +1,5 @@
-using Headless.EntityFramework;
 using Headless.Abstractions;
+using Headless.EntityFramework;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
@@ -676,9 +676,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
 
         using (bypass.BeginBypass())
         {
-            var crossTenant = await db
-                .Tests.IgnoreMultiTenancyFilter()
-                .SingleAsync(x => x.Id == seededId, AbortToken);
+            var crossTenant = await db.Tests.IgnoreMultiTenancyFilter().SingleAsync(x => x.Id == seededId, AbortToken);
             crossTenant.Name = "bypass-updated";
             await db.SaveChangesAsync(AbortToken);
         }
@@ -689,10 +687,86 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
         var act = async () => await db.SaveChangesAsync(AbortToken);
         await act.Should().ThrowAsync<CrossTenantWriteException>();
 
-        var hostWriteCount = await db.Tests.IgnoreMultiTenancyFilter().CountAsync(x => x.Name == "host-write", AbortToken);
+        var hostWriteCount = await db
+            .Tests.IgnoreMultiTenancyFilter()
+            .CountAsync(x => x.Name == "host-write", AbortToken);
         hostWriteCount.Should().Be(1);
         var bypassName = await _GetTenantEntityNameAsync(fixture, seededId);
         bypassName.Should().Be("bypass-updated");
+    }
+
+    [Fact]
+    public async Task multi_tenancy_filter_should_scope_execute_update_to_current_tenant()
+    {
+        // given
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
+        var tenantAId = await _SeedTenantEntityAsync(fixture, "tenant-a", "initial-a");
+        var tenantBId = await _SeedTenantEntityAsync(fixture, "tenant-b", "initial-b");
+
+        using var tenant = fixture.CurrentTenant.Change("tenant-a");
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        // when - attempt to update all rows to "bulk-updated"
+        // The filter should restrict this to only tenant-a's rows.
+        var updatedCount = await db.Tests.ExecuteUpdateAsync(
+            s => s.SetProperty(x => x.Name, "bulk-updated"),
+            AbortToken
+        );
+
+        // then
+        updatedCount.Should().Be(1);
+
+        var nameA = await _GetTenantEntityNameAsync(fixture, tenantAId);
+        nameA.Should().Be("bulk-updated");
+
+        var nameB = await _GetTenantEntityNameAsync(fixture, tenantBId);
+        nameB.Should().Be("initial-b");
+    }
+
+    [Fact]
+    public async Task multi_tenancy_filter_should_scope_execute_delete_to_current_tenant()
+    {
+        // given
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
+        var tenantAId = await _SeedTenantEntityAsync(fixture, "tenant-a", "initial-a");
+        var tenantBId = await _SeedTenantEntityAsync(fixture, "tenant-b", "initial-b");
+
+        using var tenant = fixture.CurrentTenant.Change("tenant-a");
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        // when - attempt to delete all rows
+        // The filter should restrict this to only tenant-a's rows.
+        var deletedCount = await db.Tests.ExecuteDeleteAsync(AbortToken);
+
+        // then
+        deletedCount.Should().Be(1);
+
+        var existsA = await _TenantEntityExistsAsync(fixture, tenantAId);
+        existsA.Should().BeFalse();
+
+        var existsB = await _TenantEntityExistsAsync(fixture, tenantBId);
+        existsB.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ignore_multi_tenancy_filter_should_bypass_scoping_for_bulk_operations()
+    {
+        // given
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
+        await _SeedTenantEntityAsync(fixture, "tenant-a", "initial-a");
+        await _SeedTenantEntityAsync(fixture, "tenant-b", "initial-b");
+
+        using var tenant = fixture.CurrentTenant.Change("tenant-a");
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        // when - ignore filter and delete all
+        var deletedCount = await db.Tests.IgnoreMultiTenancyFilter().ExecuteDeleteAsync(AbortToken);
+
+        // then
+        deletedCount.Should().Be(2);
     }
 
     private async Task<Guid> _SeedTenantEntityAsync(
@@ -724,7 +798,10 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
             .SingleAsync(AbortToken);
     }
 
-    private async Task<string?> _GetTenantEntityTenantIdAsync(TenantWriteGuardDbContextTestFixture fixture, Guid entityId)
+    private async Task<string?> _GetTenantEntityTenantIdAsync(
+        TenantWriteGuardDbContextTestFixture fixture,
+        Guid entityId
+    )
     {
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();

@@ -12,6 +12,8 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
   - `IClock` - Testable time abstraction (wraps `TimeProvider`)
   - `ICurrentUser` - Current authenticated user context with roles and claims
   - `ICurrentTenant` - Multi-tenancy support with scoped tenant switching
+  - `ITenantWriteGuardBypass` - Explicit bypass scope for audited host/admin tenant writes
+  - `CrossTenantWriteException` - Non-transient exception for blocked tenant-owned writes
   - `ICurrentLocale` - Localization context (language, locale, culture)
   - `ICurrentTimeZone` - Timezone handling
   - `ICurrentPrincipalAccessor` - Scoped `ClaimsPrincipal` access with temporary switching

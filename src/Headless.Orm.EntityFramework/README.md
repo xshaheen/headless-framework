@@ -167,7 +167,7 @@ using (bypass.BeginBypass())
 
 Tenant-owned (`IMultiTenant`) writes are protected by two complementary layers:
 
-1. **Global query filter** (always on for `IMultiTenant` entities) — wired by `HeadlessDbContextRuntime._ConfigureQueryFilters` as the named `MultiTenancyFilter`. It compares each entity's `TenantId` column to `ICurrentTenant.Id` and is part of every `IQueryable<T>` against an `IMultiTenant` set. Because `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same `IQueryable<T>`, the filter scopes those bulk operations to the current tenant by default. Per-query opt-out is `IgnoreMultiTenancyFilter()`, which audit-logs the bypass via `HeadlessQueryFilters._LogFilterBypassed`.
+1. **Global query filter** (always on for `IMultiTenant` entities) — wired by `HeadlessDbContextRuntime._ConfigureQueryFilters` and registered under the constant `HeadlessQueryFilters.MultiTenancyFilter` (whose literal string value is `"MultiTenantFilter"`). It compares each entity's `TenantId` column to `ICurrentTenant.Id` and is part of every `IQueryable<T>` against an `IMultiTenant` set. Because `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same `IQueryable<T>`, the filter scopes those bulk operations to the current tenant by default. Per-query opt-out is `IgnoreMultiTenancyFilter()`, which audit-logs the bypass via `HeadlessQueryFilters._LogFilterBypassed`.
 2. **`SaveChanges` write guard** (opt-in via `.EntityFramework(ef => ef.GuardTenantWrites())`) — operates on EF's `ChangeTracker`. Catches `Add`, `Update`, `Remove`, and property mutations on tracked tenant-owned entities and rejects unsafe writes before persistence, audit capture, and domain-message publishing.
 
 #### Known Gaps
