@@ -30,34 +30,17 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
     public void cross_tenant_write_exception_should_expose_safe_structural_diagnostics()
     {
         // given
-        var exception = new CrossTenantWriteException(
-            entityType: typeof(TestEntity).FullName!,
-            writeState: "Modified",
-            currentTenantAvailable: true,
-            entityTenantAvailable: true,
-            tenantMatches: false
-        );
+        var exception = new CrossTenantWriteException(entityType: typeof(TestEntity).FullName!, operation: "Modified");
 
         // then
         exception.EntityType.Should().Be(typeof(TestEntity).FullName);
-        exception.FailureCategory.Should().Be("CrossTenantWrite");
-        exception.WriteState.Should().Be("Modified");
-        exception.CurrentTenantAvailable.Should().BeTrue();
-        exception.EntityTenantAvailable.Should().BeTrue();
-        exception.TenantMatches.Should().BeFalse();
-
-        exception.Data["EntityType"].Should().Be(typeof(TestEntity).FullName);
-        exception.Data["FailureCategory"].Should().Be("CrossTenantWrite");
-        exception.Data["WriteState"].Should().Be("Modified");
-        exception.Data["CurrentTenantAvailable"].Should().Be(true);
-        exception.Data["EntityTenantAvailable"].Should().Be(true);
-        exception.Data["TenantMatches"].Should().Be(false);
+        exception.Operation.Should().Be("Modified");
+        CrossTenantWriteException.FailureCategoryName.Should().Be("CrossTenantWrite");
 
         exception.Message.Should().Contain(nameof(TestEntity));
         exception.Message.Should().Contain("Modified");
         exception.Message.Should().NotContain("tenant-a");
         exception.Message.Should().NotContain("tenant-b");
-        exception.Data.Values.Cast<object?>().Should().NotContain("tenant-a").And.NotContain("tenant-b");
     }
 
     [Fact]
@@ -443,10 +426,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
         // then
         var exception = await act.Should().ThrowAsync<CrossTenantWriteException>();
         exception.Which.EntityType.Should().Be(typeof(TestEntity).FullName);
-        exception.Which.WriteState.Should().Be(nameof(EntityState.Added));
-        exception.Which.CurrentTenantAvailable.Should().BeTrue();
-        exception.Which.EntityTenantAvailable.Should().BeTrue();
-        exception.Which.TenantMatches.Should().BeFalse();
+        exception.Which.Operation.Should().Be(nameof(EntityState.Added));
         db.EmittedLocalMessages.Should().BeEmpty();
         var persisted = await db.Tests.IgnoreMultiTenancyFilter().CountAsync(AbortToken);
         persisted.Should().Be(0);
@@ -591,8 +571,7 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
 
         // then
         var exception = await act.Should().ThrowAsync<CrossTenantWriteException>();
-        exception.Which.WriteState.Should().Be(nameof(EntityState.Deleted));
-        exception.Which.EntityTenantAvailable.Should().BeFalse();
+        exception.Which.Operation.Should().Be(nameof(EntityState.Deleted));
         var persisted = await _TenantEntityExistsAsync(fixture, entityId);
         persisted.Should().BeTrue();
     }

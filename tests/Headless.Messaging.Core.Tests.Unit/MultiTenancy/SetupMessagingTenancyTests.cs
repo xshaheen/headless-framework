@@ -149,7 +149,7 @@ public sealed class SetupMessagingTenancyTests : TestBase
         // then
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*NullCurrentTenant*AddHeadlessInfrastructure*AddHeadlessMultiTenancy*");
+            .WithMessage("*NullCurrentTenant*AddHeadlessInfrastructure*AddHeadlessTenancy*");
     }
 
     [Fact]

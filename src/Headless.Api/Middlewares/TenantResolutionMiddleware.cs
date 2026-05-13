@@ -94,6 +94,7 @@ public sealed partial class TenantResolutionMiddleware(
             + "claims-resolved tenant, place UseHeadlessTenancy() AFTER UseAuthentication() (and before "
             + "UseAuthorization()). This warning is emitted once per process."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogMiddlewareOrderingWarning(ILogger logger);
 }
 

@@ -40,8 +40,7 @@ ApiSetup.ConfigureGlobalSettings();
 
 // Register all framework API services
 builder.AddHeadlessInfrastructure();
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Http(http => http.ResolveFromClaims()));
+builder.AddHeadlessTenancy(tenancy => tenancy .Http(http => http.ResolveFromClaims()));
 
 var app = builder.Build();
 
@@ -76,12 +75,12 @@ When the hash callback is omitted, `AddHeadlessInfrastructure(...)` still binds 
 `AddHeadlessInfrastructure()` registers base API infrastructure. Tenant posture is configured separately through the root tenancy surface:
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Http(http => http.ResolveFromClaims(options =>
+builder.AddHeadlessTenancy(
+    tenancy => tenancy.Http(http => http.ResolveFromClaims(options =>
     {
         options.ClaimType = UserClaimTypes.TenantId; // default
-    })));
-
+    }))
+);
 app.UseAuthentication();
 app.UseHeadlessTenancy();
 app.UseAuthorization();
@@ -89,7 +88,7 @@ app.UseAuthorization();
 
 Place `UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`. Headless does not call authentication or authorization internally.
 
-`AddHeadlessMultiTenancy()` and `UseTenantResolution()` remain available as lower-level compatibility APIs for advanced HTTP-only setup.
+HTTP tenancy registration is now exclusively via `AddHeadlessTenancy(...).Http(http => http.ResolveFromClaims())`. `UseTenantResolution()` remains available as a lower-level HTTP-pipeline API for callers wiring middleware manually without going through `UseHeadlessTenancy()`.
 
 ## API Defaults
 

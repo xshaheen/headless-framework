@@ -99,13 +99,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
             return;
         }
 
-        throw new CrossTenantWriteException(
-            _GetEntityTypeName(entry),
-            entry.State.ToString(),
-            currentTenantAvailable: true,
-            entityTenantAvailable: entityTenantId is not null,
-            tenantMatches: false
-        );
+        throw new CrossTenantWriteException(_GetEntityTypeName(entry), entry.State.ToString());
     }
 
     private static bool _TenantWriteMatches(EntityEntry entry, string currentTenantId, string? entityTenantId)

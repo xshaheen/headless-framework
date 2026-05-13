@@ -181,7 +181,7 @@ internal sealed partial class TenantPropagationStartupValidator(
                 "Headless messaging tenant propagation was configured but the only ICurrentTenant "
                     + $"registration is {nameof(NullCurrentTenant)} — propagation would be a silent no-op. "
                     + "Register a real ICurrentTenant implementation (typically via "
-                    + "AddHeadlessInfrastructure(), AddHeadlessMultiTenancy(), "
+                    + "AddHeadlessInfrastructure(), AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims())), "
                     + "AddHeadlessDbContextServices(), or by overriding the registration in DI) "
                     + "BEFORE calling AddHeadlessMessaging."
             );
