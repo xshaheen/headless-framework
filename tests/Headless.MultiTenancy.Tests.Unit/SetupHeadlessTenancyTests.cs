@@ -19,12 +19,12 @@ public sealed class SetupHeadlessTenancyTests
         builder.AddHeadlessTenancy(_ => { });
 
         // then
-        builder.Services
-            .Where(descriptor => descriptor.ServiceType == typeof(TenantPostureManifest))
+        builder
+            .Services.Where(descriptor => descriptor.ServiceType == typeof(TenantPostureManifest))
             .Should()
             .ContainSingle();
-        builder.Services
-            .Where(descriptor =>
+        builder
+            .Services.Where(descriptor =>
                 descriptor.ServiceType == typeof(IHostedService)
                 && descriptor.ImplementationType?.Name == "HeadlessTenancyStartupValidator"
             )
@@ -62,10 +62,11 @@ public sealed class SetupHeadlessTenancyTests
         builder.Services.AddSingleton<IHeadlessTenancyValidator>(new TestValidator());
         builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
 
-        using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IHostedLifecycleService)provider
-            .GetServices<IHostedService>()
-            .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+        await using var provider = builder.Services.BuildServiceProvider();
+        var hostedService = (IHostedLifecycleService)
+            provider
+                .GetServices<IHostedService>()
+                .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
 
         // when — validation runs in StartingAsync so it fires before any other hosted service's StartAsync.
         Func<Task> act = () => hostedService.StartingAsync(CancellationToken.None);
@@ -90,10 +91,11 @@ public sealed class SetupHeadlessTenancyTests
         );
         builder.AddHeadlessTenancy(tenancy => tenancy.RecordSeam("Http", TenantPostureStatus.Configured));
 
-        using var provider = builder.Services.BuildServiceProvider();
-        var hostedService = (IHostedLifecycleService)provider
-            .GetServices<IHostedService>()
-            .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
+        await using var provider = builder.Services.BuildServiceProvider();
+        var hostedService = (IHostedLifecycleService)
+            provider
+                .GetServices<IHostedService>()
+                .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
 
         // when
         Func<Task> act = () => hostedService.StartingAsync(CancellationToken.None);
@@ -132,12 +134,18 @@ public sealed class SetupHeadlessTenancyTests
         var allStrings = manifest
             .Seams.SelectMany(s => new[] { s.Seam }.Concat(s.Capabilities).Concat(s.RuntimeMarkers))
             .ToArray();
-        allStrings.Should().NotContain(sentinelTenantA).And.NotContain(sentinelTenantB).And.NotContain(sentinelClaimValue);
-        allStrings.Should().AllSatisfy(value =>
-        {
-            value.Should().NotContain("tenant-a", because: "manifest must not record tenant IDs");
-            value.Should().NotContain("tenant-b", because: "manifest must not record tenant IDs");
-        });
+        allStrings
+            .Should()
+            .NotContain(sentinelTenantA)
+            .And.NotContain(sentinelTenantB)
+            .And.NotContain(sentinelClaimValue);
+        allStrings
+            .Should()
+            .AllSatisfy(value =>
+            {
+                value.Should().NotContain("tenant-a", because: "manifest must not record tenant IDs");
+                value.Should().NotContain("tenant-b", because: "manifest must not record tenant IDs");
+            });
     }
 
     [Fact]

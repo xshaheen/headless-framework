@@ -87,7 +87,7 @@ public sealed class HeadlessMessagingTenancyBuilder
         // Sentinel — guard the PostConfigure registration so repeated RequireTenantOnPublish()
         // calls do not register the same callback twice. The sentinel marker registration uses
         // a singleton presence check to ensure exactly-once PostConfigure wiring.
-        if (!_builder.Services.Any(d => d.ServiceType == typeof(RequireTenantOnPublishSentinel)))
+        if (_builder.Services.All(d => d.ServiceType != typeof(RequireTenantOnPublishSentinel)))
         {
             _builder.Services.AddSingleton<RequireTenantOnPublishSentinel>();
             _builder.Services.PostConfigure<MessagingOptions>(options => options.TenantContextRequired = true);
@@ -167,8 +167,7 @@ internal sealed partial class TenantPropagationStartupValidator(
     ILogger<TenantPropagationStartupValidator> logger
 ) : IHostedService
 {
-    private const string DiagnosticCode = "HEADLESS_TENANCY_MESSAGING_PROPAGATION_NULL_CURRENT_TENANT";
-    private const string Seam = HeadlessMessagingTenancyBuilder.Seam;
+    private const string _DiagnosticCode = "HEADLESS_TENANCY_MESSAGING_PROPAGATION_NULL_CURRENT_TENANT";
 
     private readonly ICurrentTenant _currentTenant = Argument.IsNotNull(currentTenant);
 
@@ -176,9 +175,10 @@ internal sealed partial class TenantPropagationStartupValidator(
     {
         if (_currentTenant is NullCurrentTenant)
         {
-            LogPropagationNullCurrentTenant(logger, DiagnosticCode, Seam);
+            LogPropagationNullCurrentTenant(logger, _DiagnosticCode, HeadlessMessagingTenancyBuilder.Seam);
+
             throw new InvalidOperationException(
-                $"Headless messaging tenant propagation was configured but the only ICurrentTenant "
+                "Headless messaging tenant propagation was configured but the only ICurrentTenant "
                     + $"registration is {nameof(NullCurrentTenant)} — propagation would be a silent no-op. "
                     + "Register a real ICurrentTenant implementation (typically via "
                     + "AddHeadlessInfrastructure(), AddHeadlessMultiTenancy(), "
@@ -198,6 +198,7 @@ internal sealed partial class TenantPropagationStartupValidator(
         Level = LogLevel.Error,
         Message = "Headless messaging tenant propagation validation failed ({Code}) on seam {Seam}: ICurrentTenant resolves to NullCurrentTenant."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogPropagationNullCurrentTenant(ILogger logger, string code, string seam);
 }
 
@@ -214,12 +215,11 @@ internal sealed partial class MessagingTenantRequiredStartupValidator(
     ILogger<MessagingTenantRequiredStartupValidator> logger
 ) : IHostedService
 {
-    private const string DiagnosticCode = "HEADLESS_TENANCY_MESSAGING_REQUIRE_TENANT_DISABLED";
-    private const string Seam = HeadlessMessagingTenancyBuilder.Seam;
+    private const string _DiagnosticCode = "HEADLESS_TENANCY_MESSAGING_REQUIRE_TENANT_DISABLED";
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        var messagingSeam = manifest.GetSeam(Seam);
+        var messagingSeam = manifest.GetSeam(HeadlessMessagingTenancyBuilder.Seam);
 
         var recordedRequireTenant =
             messagingSeam?.Capabilities.Contains(
@@ -229,7 +229,8 @@ internal sealed partial class MessagingTenantRequiredStartupValidator(
 
         if (recordedRequireTenant && !options.Value.TenantContextRequired)
         {
-            LogRequireTenantDisabled(logger, DiagnosticCode, Seam);
+            LogRequireTenantDisabled(logger, _DiagnosticCode, HeadlessMessagingTenancyBuilder.Seam);
+
             throw new InvalidOperationException(
                 "Headless messaging seam recorded require-tenant-on-publish but MessagingOptions.TenantContextRequired "
                     + "resolved to false at startup. A later Configure<MessagingOptions>(...) call clobbered the "
@@ -249,5 +250,6 @@ internal sealed partial class MessagingTenantRequiredStartupValidator(
         Level = LogLevel.Error,
         Message = "Headless messaging require-tenant-on-publish validation failed ({Code}) on seam {Seam}: MessagingOptions.TenantContextRequired resolved to false."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogRequireTenantDisabled(ILogger logger, string code, string seam);
 }

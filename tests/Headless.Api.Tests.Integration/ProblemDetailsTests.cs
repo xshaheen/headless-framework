@@ -206,9 +206,7 @@ public sealed class ProblemDetailsTests : TestBase
      *   "instance" : "/minimal/conflict",
      *   "errors" : [ {
      *     "code" : "key",
-     *     "description" : "value",
-     *     "severity" : "information",
-     *     "params" : null
+     *     "description" : "value"
      *   } ],
      *   "traceId" : "00-4cb6fa7facd9168e5149073bc3fdea78-ac6a26b9cf09c4fa-00",
      *   "buildNumber" : "2.16.1.109",
@@ -279,10 +277,8 @@ public sealed class ProblemDetailsTests : TestBase
      *   "detail" : "One or more validation errors occurred.",
      *   "errors" : {
      *     "property" : [ {
-     *       "code" : "Error message",
-     *       "description" : "Error message",
-     *       "severity" : "information",
-     *       "params" : null
+     *       "code" : "error-code",
+     *       "description" : "Error message"
      *     } ]
      *   },
      *   "traceId" : "00-b9a104ec955015318f70edcdf19819ce-73494e5484f1a67f-00",
@@ -566,9 +562,9 @@ public sealed class ProblemDetailsTests : TestBase
     {
         error.GetProperty("code").GetString().Should().Be("error-code");
         error.GetProperty("description").GetString().Should().Be("Error message");
-        error.GetProperty("severity").GetString().Should().Be("information");
-        error.GetProperty("params").ValueKind.Should().Be(JsonValueKind.Null);
-        error.EnumerateObject().Should().HaveCount(4);
+        error.TryGetProperty("severity", out _).Should().BeFalse();
+        error.TryGetProperty("params", out _).Should().BeFalse();
+        error.EnumerateObject().Should().HaveCount(2);
     }
 
     private static void _ValidateCoreProblemDetails(

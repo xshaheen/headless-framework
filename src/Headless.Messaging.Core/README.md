@@ -235,10 +235,9 @@ Both registrations are idempotent (`TryAddEnumerable` under the hood). `OnPublis
 When a host uses the root tenancy surface, configure messaging tenant posture there:
 
 ```csharp
-builder.AddHeadlessTenancy(tenancy => tenancy
-    .Messaging(messaging => messaging
-        .PropagateTenant()
-        .RequireTenantOnPublish()));
+builder.AddHeadlessTenancy(
+    tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
+);
 ```
 
 `PropagateTenant()` registers a built-in filter pair that ties the wire envelope to `ICurrentTenant`. `RequireTenantOnPublish()` flips strict publish tenancy so every publish must resolve a tenant from `PublishOptions.TenantId` or the ambient tenant.
