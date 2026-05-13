@@ -1,5 +1,4 @@
 using Headless.EntityFramework;
-using Headless.EntityFramework.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 

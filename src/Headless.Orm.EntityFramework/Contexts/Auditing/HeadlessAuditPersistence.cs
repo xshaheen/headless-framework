@@ -12,28 +12,19 @@ using Microsoft.Extensions.Options;
 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
 
-internal sealed class HeadlessAuditPersistence : IHeadlessAuditPersistence
+internal sealed class HeadlessAuditPersistence(
+    IServiceProvider serviceProvider,
+    ILogger<HeadlessAuditPersistence>? logger = null
+) : IHeadlessAuditPersistence
 {
-    private readonly IAuditChangeCapture? _auditCapture;
-    private readonly IAuditLogStore? _auditStore;
-    private readonly ICurrentUser? _currentUser;
-    private readonly ICurrentTenant? _currentTenant;
-    private readonly ICorrelationIdProvider? _correlationIdProvider;
-    private readonly IClock? _clock;
-    private readonly IOptions<AuditLogOptions>? _auditOptions;
-    private readonly ILogger<HeadlessAuditPersistence>? _logger;
-
-    public HeadlessAuditPersistence(IServiceProvider serviceProvider, ILogger<HeadlessAuditPersistence>? logger = null)
-    {
-        _auditCapture = serviceProvider.GetService<IAuditChangeCapture>();
-        _auditStore = serviceProvider.GetService<IAuditLogStore>();
-        _currentUser = serviceProvider.GetService<ICurrentUser>();
-        _currentTenant = serviceProvider.GetService<ICurrentTenant>();
-        _correlationIdProvider = serviceProvider.GetService<ICorrelationIdProvider>();
-        _clock = serviceProvider.GetService<IClock>();
-        _auditOptions = serviceProvider.GetService<IOptions<AuditLogOptions>>();
-        _logger = logger;
-    }
+    private readonly IAuditChangeCapture? _auditCapture = serviceProvider.GetService<IAuditChangeCapture>();
+    private readonly IAuditLogStore? _auditStore = serviceProvider.GetService<IAuditLogStore>();
+    private readonly ICurrentUser? _currentUser = serviceProvider.GetService<ICurrentUser>();
+    private readonly ICurrentTenant? _currentTenant = serviceProvider.GetService<ICurrentTenant>();
+    private readonly ICorrelationIdProvider? _correlationIdProvider =
+        serviceProvider.GetService<ICorrelationIdProvider>();
+    private readonly IClock? _clock = serviceProvider.GetService<IClock>();
+    private readonly IOptions<AuditLogOptions>? _auditOptions = serviceProvider.GetService<IOptions<AuditLogOptions>>();
 
     /// <summary>
     /// Captures audit entries from a pre-materialized change-tracker snapshot.
@@ -65,7 +56,7 @@ internal sealed class HeadlessAuditPersistence : IHeadlessAuditPersistence
         {
             // Elevated to Error: capture failure means an audit-tracked entity change is going to be
             // persisted without its audit row. Operators must see this in logs.
-            _logger?.LogError(ex, "Audit change capture failed.");
+            logger?.LogError(ex, "Audit change capture failed.");
 
             var strategy = _auditOptions?.Value.CaptureErrorStrategy ?? CaptureErrorStrategy.Continue;
 

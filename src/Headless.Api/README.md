@@ -122,6 +122,7 @@ Both endpoints are named, excluded from OpenAPI descriptions, and allow anonymou
 | Exception | Response |
 |-----------|----------|
 | `MissingTenantContextException` | 400 (standard `bad-request` title; identified by `error.code: g:tenant-required`). Previously surfaced as 500 (unhandled); now 400 — terminal, do not retry. |
+| `CrossTenantWriteException` | 409 (identified by `error.code: g:cross-tenant-write`). Non-transient — MUST NOT be retried. |
 | `ConflictException` | 409 with `errors` |
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `EntityNotFoundException` | 404 |

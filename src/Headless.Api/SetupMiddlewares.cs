@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Api;
 
+[PublicAPI]
 public static class SetupMiddlewares
 {
     /// <summary>Adds the idempotency middleware.</summary>

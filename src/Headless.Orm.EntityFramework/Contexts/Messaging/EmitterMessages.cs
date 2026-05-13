@@ -2,7 +2,9 @@
 
 using Headless.Domain;
 
-namespace Headless.EntityFramework.Messaging;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Pairs a <see cref="ILocalMessageEmitter"/> with the snapshot of local messages collected from it

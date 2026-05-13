@@ -3,8 +3,8 @@
 using Headless.Abstractions;
 using Headless.Domain;
 using Headless.EntityFramework;
-using Headless.EntityFramework.Messaging;
-using Headless.EntityFramework.Processors;
+using Headless.EntityFramework.Contexts.Processors;
+using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;

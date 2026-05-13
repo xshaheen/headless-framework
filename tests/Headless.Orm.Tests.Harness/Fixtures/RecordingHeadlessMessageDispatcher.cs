@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.EntityFramework;
-using Headless.EntityFramework.Messaging;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Tests.Fixtures;

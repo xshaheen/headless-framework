@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.EntityFramework;
 
+[PublicAPI]
 public static class SetupOptionsExtension
 {
     public static DbContextOptionsBuilder AddHeadlessExtension(this DbContextOptionsBuilder optionsBuilder)
@@ -34,6 +35,7 @@ public static class SetupOptionsExtension
 }
 
 /// <summary>Registers Headless EF Core services through DbContext options.</summary>
+[PublicAPI]
 public sealed class HeadlessDbContextOptionsExtension : IDbContextOptionsExtension
 {
     public void ApplyServices(IServiceCollection services) => services.AddHeadlessDbContextServices();

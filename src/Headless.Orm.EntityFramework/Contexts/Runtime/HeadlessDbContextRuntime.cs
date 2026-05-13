@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Headless.EntityFramework;
+namespace Headless.EntityFramework.Contexts.Runtime;
 
 /// <summary>
 /// Per-<see cref="DbContext"/> runtime that wires the navigation-change tracker, runs framework

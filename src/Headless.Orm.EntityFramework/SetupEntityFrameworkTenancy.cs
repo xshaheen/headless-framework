@@ -38,7 +38,9 @@ public sealed class HeadlessEntityFrameworkTenancyBuilder
     /// <summary>The seam name reported in the tenant posture manifest.</summary>
     public const string Seam = "EntityFramework";
 
-    private static readonly string[] _GuardTenantWritesCapabilityLabels = ["guard-tenant-writes", "ef-owned-bypass"];
+    internal const string GuardTenantWritesLabel = "guard-tenant-writes";
+
+    private static readonly string[] _GuardTenantWritesCapabilityLabels = [GuardTenantWritesLabel, "ef-owned-bypass"];
 
     /// <summary>
     /// Capability labels reported by <see cref="GuardTenantWrites"/>.
@@ -89,7 +91,11 @@ internal sealed partial class EntityFrameworkTenantWriteGuardStartupValidator(
     public Task StartAsync(CancellationToken cancellationToken)
     {
         var efSeam = manifest.GetSeam(Seam);
-        var recordedGuard = efSeam?.Capabilities.Contains("guard-tenant-writes", StringComparer.Ordinal) == true;
+        var recordedGuard =
+            efSeam?.Capabilities.Contains(
+                HeadlessEntityFrameworkTenancyBuilder.GuardTenantWritesLabel,
+                StringComparer.Ordinal
+            ) == true;
 
         if (recordedGuard && !options.Value.IsEnabled)
         {

@@ -2,8 +2,8 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.EntityFramework.Contexts.Runtime;
 using Headless.EntityFramework.GlobalFilters;
-using Headless.EntityFramework.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -99,7 +99,7 @@ public static class SetupEntityFramework
 
             services.AddOptions<TenantWriteGuardOptions>();
             services.TryAddScoped<HeadlessDbContextServices>();
-            services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
+            services.TryAddScoped<IHeadlessSaveChangesPipeline, Contexts.Runtime.HeadlessSaveChangesPipeline>();
             services.TryAddScoped<IHeadlessAuditPersistence, HeadlessAuditPersistence>();
             services.TryAddScoped<IHeadlessMessageDispatcher, ThrowHeadlessMessageDispatcher>();
             services.TryAddSingleton<ITenantWriteGuardBypass, TenantWriteGuardBypass>();

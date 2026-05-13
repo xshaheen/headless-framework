@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.EntityFrameworkCore;
 
 #pragma warning disable IDE0130

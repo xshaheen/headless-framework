@@ -1,13 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.EntityFramework.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
-namespace Headless.EntityFramework.Processors;
+namespace Headless.EntityFramework.Contexts.Processors;
 
 /// <summary>
-/// Stage in the ordered processor chain run by <see cref="HeadlessSaveChangesPipeline"/> against every
+/// Stage in the ordered processor chain run by <see cref="Runtime.HeadlessSaveChangesPipeline"/> against every
 /// tracked entry before <c>SaveChanges</c> dispatches to the database.
 /// </summary>
 /// <remarks>
@@ -15,6 +14,7 @@ namespace Headless.EntityFramework.Processors;
 /// audit fields, generate IDs, or enqueue messages on the <see cref="HeadlessSaveEntryContext"/> — do
 /// not call <c>context.DbContext.SaveChanges</c> from within a processor.
 /// </remarks>
+[PublicAPI]
 public interface IHeadlessSaveEntryProcessor
 {
     void Process(EntityEntry entry, HeadlessSaveEntryContext context);
@@ -24,6 +24,7 @@ public interface IHeadlessSaveEntryProcessor
 /// Per-<c>SaveChanges</c> scratchpad threaded through the processor chain. Holds the active
 /// <see cref="DbContext"/> and the message-emitter snapshots collected this round.
 /// </summary>
+[PublicAPI]
 public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenantId = null)
 {
     /// <summary>Active EF Core context for this save.</summary>

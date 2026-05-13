@@ -1,9 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Globalization;
 using Microsoft.EntityFrameworkCore.Storage;
 
-namespace Headless.EntityFramework.Messaging;
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Dispatches local messages and transactionally enqueues distributed messages collected during EF saves.

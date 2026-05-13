@@ -3,15 +3,14 @@
 using System.Data;
 using System.Runtime.ExceptionServices;
 using Headless.AuditLog;
-using Headless.EntityFramework.Messaging;
-using Headless.EntityFramework.Processors;
+using Headless.EntityFramework.Contexts.Processors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Headless.EntityFramework;
+namespace Headless.EntityFramework.Contexts.Runtime;
 
 /// <summary>
 /// Coordinates the per-<c>SaveChanges</c> work of a <see cref="HeadlessDbContext"/>: runs the ordered
@@ -58,26 +57,20 @@ public interface IHeadlessSaveChangesPipeline
 /// pipeline owns the explicit transaction boundary that interceptors don't expose cleanly.
 /// </para>
 /// </remarks>
-internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChangesPipeline
+internal sealed partial class HeadlessSaveChangesPipeline(
+    IServiceProvider serviceProvider,
+    HeadlessDbContextOptions options,
+    IHeadlessMessageDispatcher messageDispatcher,
+    IHeadlessAuditPersistence auditPersistence,
+    ILogger<HeadlessSaveChangesPipeline>? logger = null
+) : IHeadlessSaveChangesPipeline
 {
-    private readonly IHeadlessMessageDispatcher _messageDispatcher;
-    private readonly IReadOnlyList<IHeadlessSaveEntryProcessor> _entryProcessors;
-    private readonly IHeadlessAuditPersistence _auditPersistence;
-    private readonly ILogger<HeadlessSaveChangesPipeline> _logger;
+    private readonly IReadOnlyList<IHeadlessSaveEntryProcessor> _entryProcessors = options.ResolveSaveEntryProcessors(
+        serviceProvider
+    );
 
-    public HeadlessSaveChangesPipeline(
-        IServiceProvider serviceProvider,
-        HeadlessDbContextOptions options,
-        IHeadlessMessageDispatcher messageDispatcher,
-        IHeadlessAuditPersistence auditPersistence,
-        ILogger<HeadlessSaveChangesPipeline>? logger = null
-    )
-    {
-        _messageDispatcher = messageDispatcher;
-        _entryProcessors = options.ResolveSaveEntryProcessors(serviceProvider);
-        _auditPersistence = auditPersistence;
-        _logger = logger ?? NullLogger<HeadlessSaveChangesPipeline>.Instance;
-    }
+    private readonly ILogger<HeadlessSaveChangesPipeline> _logger =
+        logger ?? NullLogger<HeadlessSaveChangesPipeline>.Instance;
 
     [LoggerMessage(
         EventId = 1,
@@ -85,6 +78,7 @@ internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChanges
         Level = LogLevel.Error,
         Message = "Audit discard failed during exception path; rethrowing the original SaveChanges exception."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogAuditDiscardFailed(ILogger logger, Exception exception);
 
     public async Task<int> SaveChangesAsync(
@@ -98,7 +92,7 @@ internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChanges
         // _ProcessEntries, so a single snapshot is correct for the audit capture too.
         var trackedEntries = _SnapshotEntries(context);
         var saveContext = _ProcessEntries(context, trackedEntries);
-        var auditEntries = _auditPersistence.CaptureEntries(trackedEntries);
+        var auditEntries = auditPersistence.CaptureEntries(trackedEntries);
 
         var state = new AsyncSaveState(
             context,
@@ -133,7 +127,7 @@ internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChanges
 #pragma warning disable MA0045 // Sync SaveChanges intentionally wraps EF sync APIs.
         var trackedEntries = _SnapshotEntries(context);
         var saveContext = _ProcessEntries(context, trackedEntries);
-        var auditEntries = _auditPersistence.CaptureEntries(trackedEntries);
+        var auditEntries = auditPersistence.CaptureEntries(trackedEntries);
 
         var state = new SaveState(context, saveContext, auditEntries, acceptAllChangesOnSuccess, baseSaveChanges);
 
@@ -216,7 +210,7 @@ internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChanges
     {
         if (commitTransaction)
         {
-            _auditPersistence.PrepareForRetry(state.Context);
+            auditPersistence.PrepareForRetry(state.Context);
         }
 
         HeadlessAuditSaveResult auditSave = default;
@@ -225,7 +219,7 @@ internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChanges
         {
             if (state.SaveContext.LocalEmitters.Count > 0)
             {
-                await _messageDispatcher
+                await messageDispatcher
                     .PublishLocalAsync(state.SaveContext.LocalEmitters, transaction, state.CancellationToken)
                     .ConfigureAwait(false);
             }
@@ -238,7 +232,7 @@ internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChanges
                 )
                 .ConfigureAwait(false);
 
-            auditSave = await _auditPersistence
+            auditSave = await auditPersistence
                 .ResolveAndPersistAsync(
                     state.Context,
                     state.AuditEntries,
@@ -249,7 +243,7 @@ internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChanges
 
             if (state.SaveContext.DistributedEmitters.Count > 0)
             {
-                await _messageDispatcher
+                await messageDispatcher
                     .EnqueueDistributedAsync(
                         state.SaveContext.DistributedEmitters,
                         transaction,
@@ -271,7 +265,7 @@ internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChanges
         {
             try
             {
-                _auditPersistence.DiscardEntries(auditSave);
+                auditPersistence.DiscardEntries(auditSave);
             }
 #pragma warning disable CA1031 // Last-resort: a discard failure must not mask the original SaveChanges exception.
             catch (Exception discardFailure)
@@ -290,7 +284,7 @@ internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChanges
 #pragma warning disable MA0045 // Sync intentionally.
         if (commitTransaction)
         {
-            _auditPersistence.PrepareForRetry(state.Context);
+            auditPersistence.PrepareForRetry(state.Context);
         }
 
         HeadlessAuditSaveResult auditSave = default;
@@ -299,16 +293,16 @@ internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChanges
         {
             if (state.SaveContext.LocalEmitters.Count > 0)
             {
-                _messageDispatcher.PublishLocal(state.SaveContext.LocalEmitters, transaction);
+                messageDispatcher.PublishLocal(state.SaveContext.LocalEmitters, transaction);
             }
 
             var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
             var result = state.BaseSaveChanges(!deferAcceptAllChanges && state.AcceptAllChangesOnSuccess);
-            auditSave = _auditPersistence.ResolveAndPersist(state.Context, state.AuditEntries, state.BaseSaveChanges);
+            auditSave = auditPersistence.ResolveAndPersist(state.Context, state.AuditEntries, state.BaseSaveChanges);
 
             if (state.SaveContext.DistributedEmitters.Count > 0)
             {
-                _messageDispatcher.EnqueueDistributed(state.SaveContext.DistributedEmitters, transaction);
+                messageDispatcher.EnqueueDistributed(state.SaveContext.DistributedEmitters, transaction);
             }
 
             if (commitTransaction)
@@ -324,7 +318,7 @@ internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChanges
         {
             try
             {
-                _auditPersistence.DiscardEntries(auditSave);
+                auditPersistence.DiscardEntries(auditSave);
             }
 #pragma warning disable CA1031 // Last-resort: a discard failure must not mask the original SaveChanges exception.
             catch (Exception discardFailure)
@@ -359,7 +353,7 @@ internal sealed partial class HeadlessSaveChangesPipeline : IHeadlessSaveChanges
         bool acceptAllChangesOnSuccess
     )
     {
-        _auditPersistence.CompleteSuccessfulSave(context, auditSave, acceptAllChangesOnSuccess);
+        auditPersistence.CompleteSuccessfulSave(context, auditSave, acceptAllChangesOnSuccess);
         saveContext.ClearEmitterMessages();
     }
 

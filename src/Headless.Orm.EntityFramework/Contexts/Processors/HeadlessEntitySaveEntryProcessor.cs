@@ -9,8 +9,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.Options;
 
-namespace Headless.EntityFramework.Processors;
+namespace Headless.EntityFramework.Contexts.Processors;
 
+[PublicAPI]
 public sealed class HeadlessEntitySaveEntryProcessor(
     IGuidGenerator guidGenerator,
     IOptions<TenantWriteGuardOptions> tenantWriteGuardOptions,

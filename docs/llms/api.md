@@ -184,6 +184,7 @@ app.Run();
 | Exception | Response |
 |-----------|----------|
 | `Headless.Abstractions.MissingTenantContextException` | 400 (standard `bad-request` title; identified by `error.code: g:tenant-required`) |
+| `Headless.Abstractions.CrossTenantWriteException` | 409 with `errors` array containing the `g:cross-tenant-write` descriptor; non-transient, MUST NOT be retried |
 | `Headless.Exceptions.ConflictException` | 409 with `errors` |
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `Headless.Exceptions.EntityNotFoundException` | 404 |

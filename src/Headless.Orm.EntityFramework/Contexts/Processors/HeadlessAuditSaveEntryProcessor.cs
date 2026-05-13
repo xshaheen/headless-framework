@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using AccountId = Headless.Primitives.AccountId;
 using UserId = Headless.Primitives.UserId;
 
-namespace Headless.EntityFramework.Processors;
+namespace Headless.EntityFramework.Contexts.Processors;
 
 public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser currentUser)
     : IHeadlessSaveEntryProcessor
