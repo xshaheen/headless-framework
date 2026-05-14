@@ -183,6 +183,56 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         stopwatch.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(30));
     }
 
+    [Fact]
+    public async Task should_persist_delayed_retry_in_single_failed_state_update_when_inline_budget_exhausts()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.CompletedTask);
+
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ConsumerExecutedResult>(new TimeoutException("boom")));
+
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxAttempts = 2,
+                    MaxInlineRetries = 0,
+                    BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromSeconds(5)),
+                },
+            }
+        );
+
+        var message = _CreateMediumMessage();
+
+        // when
+        var result = await executor.ExecuteAsync(message, _CreateDescriptor(), CancellationToken.None);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        await storage
+            .Received(1)
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Is<DateTime?>(value => value.HasValue),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     private sealed class ZeroDelayRetryBackoffStrategy : IRetryBackoffStrategy
     {
         public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null) => TimeSpan.Zero;
