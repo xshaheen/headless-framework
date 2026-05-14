@@ -35,12 +35,17 @@ internal static class RetryHelper
             return RetryDecision.Exhausted;
         }
 
-        var delay = policy.BackoffStrategy.GetNextDelay(message.Retries, exception);
+        var delay = policy.BackoffStrategy.GetNextDelay(message.Retries - 1, exception);
 
         return delay is null ? RetryDecision.Exhausted : RetryDecision.Continue(delay.Value);
     }
 
     public static bool IsCancellation(Exception ex, CancellationToken cancellationToken) =>
-        ex is OperationCanceledException oce
-        && (oce.CancellationToken == cancellationToken || cancellationToken.IsCancellationRequested);
+        cancellationToken.IsCancellationRequested
+        && ex is OperationCanceledException oce
+        && (
+            !oce.CancellationToken.CanBeCanceled
+            || oce.CancellationToken == cancellationToken
+            || oce.CancellationToken.IsCancellationRequested
+        );
 }

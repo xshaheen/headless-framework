@@ -86,6 +86,19 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
+    public void should_pass_zero_based_retry_attempt_to_backoff_strategy()
+    {
+        var message = _CreateMessage();
+        var strategy = new RecordingRetryBackoffStrategy();
+        var policy = new RetryPolicyOptions { BackoffStrategy = strategy };
+
+        RetryHelper.ComputeRetryDecision(message, new TimeoutException(), policy, isCancellation: false);
+
+        strategy.Attempts.Should().ContainSingle().Which.Should().Be(0);
+        message.Retries.Should().Be(1);
+    }
+
+    [Fact]
     public void retry_decision_states_should_not_compare_equal()
     {
         RetryDecision.Stop.Should().NotBe(RetryDecision.Exhausted);
@@ -110,6 +123,19 @@ public sealed class RetryHelperTests : TestBase
     private sealed class NullDelayStrategy : IRetryBackoffStrategy
     {
         public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null) => null;
+
+        public bool ShouldRetry(Exception exception) => true;
+    }
+
+    private sealed class RecordingRetryBackoffStrategy : IRetryBackoffStrategy
+    {
+        public List<int> Attempts { get; } = [];
+
+        public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null)
+        {
+            Attempts.Add(retryAttempt);
+            return TimeSpan.Zero;
+        }
 
         public bool ShouldRetry(Exception exception) => true;
     }

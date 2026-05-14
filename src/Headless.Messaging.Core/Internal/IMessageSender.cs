@@ -44,7 +44,8 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
         var inlineRetries = 0;
         do
         {
-            var (retryDecision, operateResult) = await _SendWithoutRetryAsync(message).ConfigureAwait(false);
+            var (retryDecision, operateResult) = await _SendWithoutRetryAsync(message, inlineRetries)
+                .ConfigureAwait(false);
             result = operateResult;
             if (result.Equals(OperateResult.Success))
             {
@@ -63,16 +64,11 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
                 continue;
             }
 
-            var nextRetryAt = _timeProvider.GetUtcNow().UtcDateTime.Add(retryDecision.Delay);
-            await _dataStorage
-                .ChangePublishStateAsync(message, StatusName.Failed, nextRetryAt: nextRetryAt)
-                .ConfigureAwait(false);
-
             return result;
         } while (true);
     }
 
-    private async Task<(RetryDecision, OperateResult)> _SendWithoutRetryAsync(MediumMessage message)
+    private async Task<(RetryDecision, OperateResult)> _SendWithoutRetryAsync(MediumMessage message, int inlineRetries)
     {
         var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).ConfigureAwait(false);
 
@@ -92,7 +88,7 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
 
         _TracingError(tracingTimestamp, transportMsg, _transport.BrokerAddress, result);
 
-        var needRetry = await _SetFailedState(message, result.Exception!).ConfigureAwait(false);
+        var needRetry = await _SetFailedState(message, result.Exception!, inlineRetries).ConfigureAwait(false);
 
         return (needRetry, OperateResult.Failed(result.Exception!));
     }
@@ -103,14 +99,21 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
         await _dataStorage.ChangePublishStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
     }
 
-    private async Task<RetryDecision> _SetFailedState(MediumMessage message, Exception ex)
+    private async Task<RetryDecision> _SetFailedState(MediumMessage message, Exception ex, int inlineRetries)
     {
         var needRetry = _UpdateMessageForRetry(message, ex);
 
         message.Origin.AddOrUpdateException(ex);
         message.ExpiresAt = message.Added.AddSeconds(_options.Value.FailedMessageExpiredAfter);
 
-        await _dataStorage.ChangePublishStateAsync(message, StatusName.Failed).ConfigureAwait(false);
+        var nextRetryAt =
+            needRetry.Outcome == RetryDecision.Kind.Continue && inlineRetries + 1 > _retryPolicy.MaxInlineRetries
+                ? _timeProvider.GetUtcNow().UtcDateTime.Add(needRetry.Delay)
+                : (DateTime?)null;
+
+        await _dataStorage
+            .ChangePublishStateAsync(message, StatusName.Failed, nextRetryAt: nextRetryAt)
+            .ConfigureAwait(false);
 
         if (needRetry.Outcome == RetryDecision.Kind.Exhausted)
         {

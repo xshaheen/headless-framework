@@ -166,6 +166,65 @@ public sealed class MessageSenderTests : TestBase
         stopwatch.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromMilliseconds(30));
     }
 
+    [Fact]
+    public async Task should_persist_delayed_retry_in_single_failed_state_update_when_inline_budget_exhausts()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.CompletedTask);
+
+        var transportMessage = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            ReadOnlyMemory<byte>.Empty
+        );
+        var serializer = Substitute.For<ISerializer>();
+        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, CancellationToken.None)
+            .Returns(OperateResult.Failed(new TimeoutException("boom")));
+
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxAttempts = 2,
+                    MaxInlineRetries = 0,
+                    BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromSeconds(5)),
+                },
+            }
+        );
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        await storage
+            .Received(1)
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Any<object?>(),
+                Arg.Is<DateTime?>(value => value.HasValue),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     private sealed class ZeroDelayRetryBackoffStrategy : IRetryBackoffStrategy
     {
         public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null) => TimeSpan.Zero;

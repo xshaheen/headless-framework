@@ -133,7 +133,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
     }
 
     [Fact]
-    public async Task OperationCanceledException_WithRequestedToken_ShouldBePersisted_As_Failed()
+    public async Task OperationCanceledException_WithRequestedToken_ShouldBePersisted_As_Failed_Without_Retrying()
     {
         // given — simulate app-shutdown cancellation:
         //   OperationCanceledException where CancellationToken.IsCancellationRequested = true
@@ -145,27 +145,45 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         var invoker = Substitute.For<ISubscribeInvoker>();
 
         using var cts = new CancellationTokenSource();
-        await cts.CancelAsync(); // token IS requested
-        var shutdownOce = new OperationCanceledException("App shutdown", cts.Token);
+        var callbackInvoked = false;
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
-            .Returns<Task<ConsumerExecutedResult>>(_ => Task.FromException<ConsumerExecutedResult>(shutdownOce));
+            .Returns<Task<ConsumerExecutedResult>>(async _ =>
+            {
+                await cts.CancelAsync();
+                var shutdownOce = new OperationCanceledException("App shutdown", cts.Token);
+                throw shutdownOce;
+            });
 
-        var executor = _CreateExecutor(invoker, storage);
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxAttempts = 1,
+                    MaxInlineRetries = 0,
+                    BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
+                    OnExhausted = _ => callbackInvoked = true,
+                },
+            }
+        );
         var message = _CreateMediumMessage();
         var descriptor = _CreateDescriptor();
 
         // when
-        var result = await executor.ExecuteAsync(message, descriptor, CancellationToken.None);
+        var result = await executor.ExecuteAsync(message, descriptor, cts.Token);
 
         // then — persisted as failed so it can be retried after restart
         result.Succeeded.Should().BeFalse();
-        message.Retries.Should().Be(1);
+        message.Retries.Should().Be(0);
+        callbackInvoked.Should().BeFalse();
         await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
     }
 
     [Fact]
-    public async Task TaskCanceledException_WithRequestedToken_ShouldBePersisted_As_Failed()
+    public async Task TaskCanceledException_WithRequestedToken_ShouldBePersisted_As_Failed_Without_Retrying()
     {
         // given — TaskCanceledException but the token IS requested (e.g. handler respected shutdown CT)
         var storage = Substitute.For<IDataStorage>();
@@ -176,22 +194,25 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         var invoker = Substitute.For<ISubscribeInvoker>();
 
         using var cts = new CancellationTokenSource();
-        await cts.CancelAsync(); // token IS requested
-        var requestedTce = new TaskCanceledException("Cancelled by shutdown", null, cts.Token);
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
-            .Returns<Task<ConsumerExecutedResult>>(_ => Task.FromException<ConsumerExecutedResult>(requestedTce));
+            .Returns<Task<ConsumerExecutedResult>>(async _ =>
+            {
+                await cts.CancelAsync();
+                var requestedTce = new TaskCanceledException("Cancelled by shutdown", null, cts.Token);
+                throw requestedTce;
+            });
 
         var executor = _CreateExecutor(invoker, storage);
         var message = _CreateMediumMessage();
         var descriptor = _CreateDescriptor();
 
         // when
-        var result = await executor.ExecuteAsync(message, descriptor, CancellationToken.None);
+        var result = await executor.ExecuteAsync(message, descriptor, cts.Token);
 
         // then — persisted as failed so it can be retried after restart
         result.Succeeded.Should().BeFalse();
-        message.Retries.Should().Be(1);
+        message.Retries.Should().Be(0);
         await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
     }
 }
