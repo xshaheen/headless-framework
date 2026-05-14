@@ -233,6 +233,74 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
+    public async Task should_persist_failed_without_invoking_on_exhausted_when_exception_is_permanent()
+    {
+        // given — strategy classifies the exception as permanent (returns Stop). The sender
+        // must persist Failed with nextRetryAt=null (no future retry scheduled) and must NOT
+        // invoke OnExhausted (Stop is a non-exhaustion terminal state — the retry budget was
+        // never consumed because the exception is non-retryable).
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.CompletedTask);
+
+        var transportMessage = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            ReadOnlyMemory<byte>.Empty
+        );
+        var serializer = Substitute.For<ISerializer>();
+        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, CancellationToken.None)
+            .Returns(OperateResult.Failed(new ArgumentNullException("param")));
+
+        var backoffStrategy = Substitute.For<IRetryBackoffStrategy>();
+        backoffStrategy.Compute(Arg.Any<int>(), Arg.Any<Exception>()).Returns(RetryDecision.Stop);
+
+        var callbackInvoked = false;
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxAttempts = 1,
+                    MaxInlineRetries = 0,
+                    BackoffStrategy = backoffStrategy,
+                    OnExhausted = _ => callbackInvoked = true,
+                },
+            }
+        );
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then — Stop classification: persisted as Failed with null nextRetryAt, no OnExhausted.
+        result.Succeeded.Should().BeFalse();
+        callbackInvoked.Should().BeFalse();
+        await storage
+            .Received()
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Any<object?>(),
+                Arg.Is<DateTime?>(v => v == null),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_treat_shutdown_oce_as_cancellation_and_skip_on_exhausted()
     {
         // given — IHostApplicationLifetime.ApplicationStopping is signalled and the transport
