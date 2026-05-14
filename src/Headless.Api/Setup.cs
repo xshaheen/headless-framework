@@ -13,6 +13,7 @@ using Headless.Constants;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Routing;
@@ -45,7 +46,7 @@ public static class ApiSetup
 
     extension(WebApplicationBuilder builder)
     {
-        public WebApplicationBuilder AddHeadlessInfrastructure()
+        public WebApplicationBuilder AddHeadless()
         {
             Argument.IsNotNull(builder);
 
@@ -55,9 +56,21 @@ public static class ApiSetup
             return builder._AddCore();
         }
 
-        public WebApplicationBuilder AddHeadlessInfrastructure(
+        public WebApplicationBuilder AddHeadless(Action<HeadlessApiInfrastructureOptions> configure)
+        {
+            Argument.IsNotNull(builder);
+            Argument.IsNotNull(configure);
+
+            builder._AddDefaultStringEncryptionService();
+            builder._AddDefaultStringHashService();
+
+            return builder._AddCore(configure);
+        }
+
+        public WebApplicationBuilder AddHeadless(
             IConfiguration stringEncryptionConfig,
-            IConfiguration stringHashConfig
+            IConfiguration stringHashConfig,
+            Action<HeadlessApiInfrastructureOptions>? configureInfrastructure = null
         )
         {
             Argument.IsNotNull(builder);
@@ -67,12 +80,13 @@ public static class ApiSetup
             builder.Services.AddStringEncryptionService(stringEncryptionConfig);
             builder.Services.AddStringHashService(stringHashConfig);
 
-            return builder._AddCore();
+            return builder._AddCore(configureInfrastructure);
         }
 
-        public WebApplicationBuilder AddHeadlessInfrastructure(
+        public WebApplicationBuilder AddHeadless(
             Action<StringEncryptionOptions> configureEncryption,
-            Action<StringHashOptions>? configureHash = null
+            Action<StringHashOptions>? configureHash = null,
+            Action<HeadlessApiInfrastructureOptions>? configureInfrastructure = null
         )
         {
             Argument.IsNotNull(builder);
@@ -89,12 +103,13 @@ public static class ApiSetup
                 builder.Services.AddStringHashService(configureHash);
             }
 
-            return builder._AddCore();
+            return builder._AddCore(configureInfrastructure);
         }
 
-        public WebApplicationBuilder AddHeadlessInfrastructure(
+        public WebApplicationBuilder AddHeadless(
             Action<StringEncryptionOptions, IServiceProvider> configureEncryption,
-            Action<StringHashOptions, IServiceProvider>? configureHash = null
+            Action<StringHashOptions, IServiceProvider>? configureHash = null,
+            Action<HeadlessApiInfrastructureOptions>? configureInfrastructure = null
         )
         {
             Argument.IsNotNull(builder);
@@ -111,7 +126,7 @@ public static class ApiSetup
                 builder.Services.AddStringHashService(configureHash);
             }
 
-            return builder._AddCore();
+            return builder._AddCore(configureInfrastructure);
         }
 
         private void _AddDefaultStringEncryptionService()
@@ -126,8 +141,11 @@ public static class ApiSetup
             builder.Services.AddStringHashService(builder.Configuration.GetRequiredSection(_StringHashSectionName));
         }
 
-        private WebApplicationBuilder _AddCore()
+        private WebApplicationBuilder _AddCore(Action<HeadlessApiInfrastructureOptions>? configureInfrastructure = null)
         {
+            var infrastructureOptions = new HeadlessApiInfrastructureOptions();
+            configureInfrastructure?.Invoke(infrastructureOptions);
+
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddHttpContextAccessor();
             builder.Services.AddResilienceEnricher();
@@ -136,7 +154,13 @@ public static class ApiSetup
             builder.Services.AddHeadlessApiResponseCompression();
             builder.Services.AddHeadlessProblemDetails();
             builder.Services.AddStatusCodesRewriterMiddleware();
-            builder.Services.ConfigureHeadlessDefaultApi();
+            builder.Services.ConfigureHeadlessDefaultApi(infrastructureOptions.AliveTag);
+            builder.AddHeadlessServiceDefaults(infrastructureOptions);
+
+            if (infrastructureOptions.AddAntiforgery)
+            {
+                builder.Services.AddHeadlessAntiforgery();
+            }
 
             builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
             builder.Services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
@@ -172,9 +196,6 @@ public static class ApiSetup
                 DynamicAuthenticationSchemeProvider
             >();
 
-            // Turn on resilience by default
-            builder.Services.ConfigureHttpClientDefaults(http => http.AddStandardResilienceHandler());
-
             return builder;
         }
     }
@@ -198,6 +219,11 @@ public static class ApiSetup
         configure?.Invoke(options);
 
         applicationBuilder.Properties[HeadlessApiDefaultsOptions.AppliedKey] = true;
+
+        if (app.Services.GetService<HeadlessApiInfrastructureOptions>() is { } infrastructureOptions)
+        {
+            infrastructureOptions.UseHeadlessDefaultsCalled = true;
+        }
 
         if (options.UseForwardedHeaders)
         {
@@ -226,7 +252,14 @@ public static class ApiSetup
 
         if (options.UseExceptionHandler)
         {
-            app.UseExceptionHandler();
+            if (string.IsNullOrWhiteSpace(options.ExceptionHandlerPath))
+            {
+                app.UseExceptionHandler();
+            }
+            else
+            {
+                app.UseExceptionHandler(options.ExceptionHandlerPath, options.CreateScopeForErrors);
+            }
         }
 
         if (options.UseHttpsRedirection)
@@ -237,6 +270,11 @@ public static class ApiSetup
         if (options.UseHsts && !app.Environment.IsDevelopment())
         {
             app.UseHsts();
+        }
+
+        if (options.UseAntiforgery)
+        {
+            app.UseAntiforgery();
         }
 
         if (options.SetNoCacheWhenMissingCacheHeaders)
@@ -255,7 +293,20 @@ public static class ApiSetup
     {
         Argument.IsNotNull(endpoints);
 
+        var infrastructureOptions = endpoints.ServiceProvider.GetService<HeadlessApiInfrastructureOptions>();
+
+        if (infrastructureOptions is { MapHeadlessDefaultEndpointsCalled: true })
+        {
+            return endpoints;
+        }
+
         var options = new HeadlessApiDefaultEndpointOptions();
+        if (infrastructureOptions is not null)
+        {
+            options.AliveTag = infrastructureOptions.AliveTag;
+            infrastructureOptions.MapHeadlessDefaultEndpointsCalled = true;
+        }
+
         configure?.Invoke(options);
 
         if (options.MapHealthEndpoint)
@@ -276,6 +327,21 @@ public static class ApiSetup
             );
 
             _ConfigureOperationalEndpoint(aliveCheck, options.AliveEndpointName, options);
+        }
+
+        if (options.MapStaticAssetsWhenManifestExists && _StaticWebAssetsManifestExists(endpoints))
+        {
+            endpoints.MapStaticAssets();
+        }
+
+        if (options.MapOpenApiDocument)
+        {
+            var openApi = endpoints.MapOpenApi(options.OpenApiRoutePattern);
+
+            if (options.CacheOpenApiDocument)
+            {
+                openApi.CacheOutput();
+            }
         }
 
         return endpoints;
@@ -301,6 +367,19 @@ public static class ApiSetup
         {
             endpoint.AllowAnonymous();
         }
+    }
+
+    private static bool _StaticWebAssetsManifestExists(IEndpointRouteBuilder endpoints)
+    {
+        var environment = endpoints.ServiceProvider.GetRequiredService<IWebHostEnvironment>();
+        var staticAssetsManifestPath = $"{environment.ApplicationName}.staticwebassets.endpoints.json";
+
+        if (!Path.IsPathRooted(staticAssetsManifestPath))
+        {
+            staticAssetsManifestPath = Path.Combine(AppContext.BaseDirectory, staticAssetsManifestPath);
+        }
+
+        return File.Exists(staticAssetsManifestPath);
     }
 
     internal static async Task WriteHealthReportAsync(HttpContext context, HealthReport report)

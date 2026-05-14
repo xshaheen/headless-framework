@@ -8,9 +8,9 @@ Consolidates repetitive ASP.NET Core API setup (compression, security headers, p
 
 ## Key Features
 
-- One-call service registration via `AddHeadlessInfrastructure()`
-- One-call middleware defaults via `UseHeadlessDefaults()`
-- Operational endpoints via `MapHeadlessDefaultEndpoints()` (`/health`, `/alive`)
+- One-call service registration via `AddHeadless()`
+- One-call middleware defaults via `UseHeadless()`
+- Operational endpoints via `MapHeadlessEndpoints()` (`/health`, `/alive`)
 - HTTP tenant resolution through the root `AddHeadlessTenancy(...).Http(...)` surface and `UseHeadlessTenancy()`
 - Unified exception-to-ProblemDetails mapping via `HeadlessApiExceptionHandler` (auto-registered by `AddHeadlessProblemDetails()`): covers tenancy, conflict, validation, not-found, EF concurrency, timeout, not-implemented, and cancellation for any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware (typically MVC actions and Minimal-API endpoints)
 - Response compression (Brotli, Gzip) with optimized settings
@@ -39,15 +39,15 @@ var builder = WebApplication.CreateBuilder(args);
 ApiSetup.ConfigureGlobalSettings();
 
 // Register all framework API services
-builder.AddHeadlessInfrastructure();
-builder.AddHeadlessTenancy(tenancy => tenancy .Http(http => http.ResolveFromClaims()));
+builder.AddHeadless();
+builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()));
 
 var app = builder.Build();
 
 // Optional: Add diagnostic listeners for debugging
 using var _ = app.AddHeadlessApiDiagnosticListeners();
 
-app.UseHeadlessDefaults(options =>
+app.UseHeadless(options =>
 {
     // Enable only when the app is reachable exclusively through trusted proxy infrastructure.
     options.TrustForwardedHeadersFromAnyProxy = false;
@@ -55,24 +55,25 @@ app.UseHeadlessDefaults(options =>
 app.UseAuthentication();
 app.UseHeadlessTenancy();
 app.UseAuthorization();
-app.MapHeadlessDefaultEndpoints();
+app.MapHeadlessEndpoints();
 
 app.Run();
 ```
 
-`AddHeadlessInfrastructure()` requires the `Headless:StringEncryption` and `Headless:StringHash` configuration sections.
+`AddHeadless()` requires the `Headless:StringEncryption` and `Headless:StringHash` configuration sections.
 
-If you do not want the default `Headless:*` binding, `AddHeadlessInfrastructure()` also exposes explicit overloads for:
+If you do not want the default `Headless:*` binding, `AddHeadless()` also exposes explicit overloads for:
 
+- `Action<HeadlessApiInfrastructureOptions>`
 - `IConfiguration stringEncryptionConfig, IConfiguration stringHashConfig`
 - `Action<StringEncryptionOptions>, Action<StringHashOptions>?`
 - `Action<StringEncryptionOptions, IServiceProvider>, Action<StringHashOptions, IServiceProvider>?`
 
-When the hash callback is omitted, `AddHeadlessInfrastructure(...)` still binds `Headless:StringHash` by default.
+The security overloads also accept an optional infrastructure-options callback. When the hash callback is omitted, `AddHeadless(...)` still binds `Headless:StringHash` by default.
 
 ## Multi-Tenancy
 
-`AddHeadlessInfrastructure()` registers base API infrastructure. Tenant posture is configured separately through the root tenancy surface:
+`AddHeadless()` registers base API infrastructure. Tenant posture is configured separately through the root tenancy surface:
 
 ```csharp
 builder.AddHeadlessTenancy(
@@ -92,7 +93,7 @@ HTTP tenancy registration is now exclusively via `AddHeadlessTenancy(...).Http(h
 
 ## API Defaults
 
-`UseHeadlessDefaults()` applies the standard middleware order for Headless APIs:
+`UseHeadless()` applies the standard middleware order for Headless APIs:
 
 - `UseForwardedHeaders()`
 - `UseResponseCompression()`
@@ -101,22 +102,51 @@ HTTP tenancy registration is now exclusively via `AddHeadlessTenancy(...).Http(h
 - `UseExceptionHandler()`
 - `UseHttpsRedirection()`
 - `UseHsts()` outside Development
+- `UseAntiforgery()`
 - no-cache response header when the response did not set `Cache-Control`
 
 `TrustForwardedHeadersFromAnyProxy` defaults to `false`. Turn it on only when the service is not directly reachable by untrusted clients; otherwise clients can spoof forwarded host/scheme values.
 
 `ConfigureHeadlessDefaultApi()` also applies conservative Kestrel limits: 30MB max request body and 40 request headers by default.
 
-`MapHeadlessDefaultEndpoints()` maps:
+`MapHeadlessEndpoints()` maps:
 
 - `/health` for all registered health checks, with a JSON body containing `status` and per-check `results`
 - `/alive` for health checks tagged `live`
+- static web assets when the generated static-web-assets endpoint manifest exists
+- OpenAPI JSON documents at `/openapi/{documentName}.json`
 
-Both endpoints are named, excluded from OpenAPI descriptions, and allow anonymous requests by default. `AddHeadlessInfrastructure()` registers the default `self` liveness check and disables Kestrel's `Server` response header.
+Both endpoints are named, excluded from OpenAPI descriptions, and allow anonymous requests by default. `AddHeadless()` registers the default `self` liveness check and disables Kestrel's `Server` response header.
+
+## Service Defaults
+
+`AddHeadless()` now includes the upstream-style service defaults directly:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.AddHeadless(options =>
+{
+    options.OpenTelemetry.Enabled = true;
+    options.HttpClient.UseServiceDiscovery = true;
+    options.ValidateUseHeadlessDefaultsOnStartup = true;
+    options.ValidateMapHeadlessDefaultEndpointsOnStartup = true;
+});
+
+var app = builder.Build();
+
+app.UseHeadless();
+app.MapHeadlessEndpoints();
+app.Run();
+```
+
+The registration bundle includes container validation, antiforgery services, Headless ProblemDetails, OpenAPI, OpenTelemetry logging/metrics/tracing, service discovery, default HttpClient resilience, application `User-Agent`, MVC/Minimal API JSON defaults, ASP.NET validation, and the default `self` health check. `UseHeadless()` applies forwarded headers, response compression, status-code rewriting, exception handling, HTTPS/HSTS, antiforgery, and no-cache fallback. `MapHeadlessEndpoints()` maps `/health`, `/alive`, static web assets when their manifest exists, and OpenAPI JSON documents.
+
+Compatibility aliases remain available: `AddHeadlessInfrastructure()`, `UseHeadlessDefaults()`, and `MapHeadlessDefaultEndpoints()`.
 
 ### Exception Mapping
 
-`AddHeadlessProblemDetails()` (called by `AddHeadlessInfrastructure()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
+`AddHeadlessProblemDetails()` (called by `AddHeadless()`) auto-registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
 
 | Exception | Response |
 |-----------|----------|
@@ -131,7 +161,7 @@ Both endpoints are named, excluded from OpenAPI descriptions, and allow anonymou
 | `OperationCanceledException` (or inner OCE at any depth) | 499 (no body — client closed request) |
 
 ```csharp
-builder.AddHeadlessInfrastructure();
+builder.AddHeadless();
 
 var app = builder.Build();
 app.UseExceptionHandler();
@@ -200,7 +230,7 @@ The same tenancy shape is reachable for direct callers via `IProblemDetailsCreat
   }
 }
 ```
-`AddHeadlessInfrastructure()` binds both `Headless:StringEncryption` and `Headless:StringHash`, and requires both sections to exist.
+`AddHeadless()` binds both `Headless:StringEncryption` and `Headless:StringHash`, and requires both sections to exist.
 
 ## Dependencies
 

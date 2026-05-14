@@ -10,7 +10,8 @@ Provides a pre-configured Identity DbContext base class with framework-specific 
 
 - `HeadlessIdentityDbContext<>` - Base DbContext with Identity support
 - Framework EF extensions pre-configured
-- Support for custom user, role, and claim types
+- Support for custom user, role, claim, and passkey types
+- ASP.NET Core Identity schema version 3 by default, enabling passkey tables for greenfield apps
 - Flexible service lifetime configuration
 
 ## Installation
@@ -22,13 +23,15 @@ dotnet add package Headless.Identity.Storage.EntityFramework
 ## Quick Start
 
 ```csharp
-public class AppDbContext : HeadlessIdentityDbContext<
-    AppUser, AppRole, Guid,
-    AppUserClaim, AppUserRole,
-    AppUserLogin, AppRoleClaim, AppUserToken
->
+public class AppDbContext(HeadlessDbContextServices services, DbContextOptions options)
+    : HeadlessIdentityDbContext<
+        AppUser, AppRole, Guid,
+        AppUserClaim, AppUserRole,
+        AppUserLogin, AppRoleClaim, AppUserToken,
+        AppUserPasskey
+    >(services, options)
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+    public override string? DefaultSchema => null;
 }
 
 // Registration
@@ -38,13 +41,13 @@ builder.Services.AddHeadlessDbContext<
     AppDbContext,
     AppUser, AppRole, Guid,
     AppUserClaim, AppUserRole, AppUserLogin,
-    AppRoleClaim, AppUserToken
+    AppRoleClaim, AppUserToken, AppUserPasskey
 >(options => options.UseNpgsql(connectionString));
 ```
 
 ## Configuration
 
-No additional configuration required beyond DbContext options.
+`AddHeadlessDbContext<...>()` configures `IdentityOptions.Stores.SchemaVersion` to `IdentitySchemaVersions.Version3` by default so new applications get the modern Identity model, including passkey storage. If a host must target an older Identity schema, override it after registration with `Configure<IdentityOptions>()`.
 
 ## Dependencies
 
@@ -55,3 +58,4 @@ No additional configuration required beyond DbContext options.
 
 - Registers DbContext with specified lifetime (default: Scoped)
 - Adds framework EF extensions to DbContext options
+- Configures Identity store schema version 3 by default

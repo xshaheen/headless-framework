@@ -105,6 +105,7 @@
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.ObjectPool" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.6.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Time.Testing" Version="10.1.0" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.6.0" />
@@ -139,6 +140,9 @@
     <!-- Transitive override: pinned to clear GHSA-4625-4j76-fww9, GHSA-mr8r-92fq-pj8p, GHSA-q834-8qmm-v933 in OpenTelemetry OTLP exporter < 1.15.3. -->
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
     <PackageVersion Include="PdfPig" Version="0.1.14" />
     <PackageVersion Include="Polly.Core" Version="8.6.6" />
     <PackageVersion Include="Polly.Extensions" Version="8.6.4" />

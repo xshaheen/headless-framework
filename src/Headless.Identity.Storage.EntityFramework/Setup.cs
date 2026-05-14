@@ -54,7 +54,8 @@ public static class OrmEntityFrameworkIdentitySetup
                 TUserRole,
                 TUserLogin,
                 TRoleClaim,
-                TUserToken
+                TUserToken,
+                IdentityUserPasskey<TKey>
             >((_, ob) => optionsAction?.Invoke(ob), contextLifetime, optionsLifetime);
         }
 
@@ -92,6 +93,110 @@ public static class OrmEntityFrameworkIdentitySetup
             where TRoleClaim : IdentityRoleClaim<TKey>
             where TUserToken : IdentityUserToken<TKey>
         {
+            return services.AddHeadlessDbContext<
+                TDbContext,
+                TUser,
+                TRole,
+                TKey,
+                TUserClaim,
+                TUserRole,
+                TUserLogin,
+                TRoleClaim,
+                TUserToken,
+                IdentityUserPasskey<TKey>
+            >(optionsAction, contextLifetime, optionsLifetime);
+        }
+
+        public IServiceCollection AddHeadlessDbContext<
+            TDbContext,
+            TUser,
+            TRole,
+            TKey,
+            TUserClaim,
+            TUserRole,
+            TUserLogin,
+            TRoleClaim,
+            TUserToken,
+            TUserPasskey
+        >(
+            Action<DbContextOptionsBuilder>? optionsAction,
+            ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
+            ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
+        )
+            where TDbContext : HeadlessIdentityDbContext<
+                    TUser,
+                    TRole,
+                    TKey,
+                    TUserClaim,
+                    TUserRole,
+                    TUserLogin,
+                    TRoleClaim,
+                    TUserToken,
+                    TUserPasskey
+                >
+            where TUser : IdentityUser<TKey>
+            where TRole : IdentityRole<TKey>
+            where TKey : IEquatable<TKey>
+            where TUserClaim : IdentityUserClaim<TKey>
+            where TUserRole : IdentityUserRole<TKey>
+            where TUserLogin : IdentityUserLogin<TKey>
+            where TRoleClaim : IdentityRoleClaim<TKey>
+            where TUserToken : IdentityUserToken<TKey>
+            where TUserPasskey : IdentityUserPasskey<TKey>
+        {
+            return services.AddHeadlessDbContext<
+                TDbContext,
+                TUser,
+                TRole,
+                TKey,
+                TUserClaim,
+                TUserRole,
+                TUserLogin,
+                TRoleClaim,
+                TUserToken,
+                TUserPasskey
+            >((_, ob) => optionsAction?.Invoke(ob), contextLifetime, optionsLifetime);
+        }
+
+        public IServiceCollection AddHeadlessDbContext<
+            TDbContext,
+            TUser,
+            TRole,
+            TKey,
+            TUserClaim,
+            TUserRole,
+            TUserLogin,
+            TRoleClaim,
+            TUserToken,
+            TUserPasskey
+        >(
+            Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
+            ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
+            ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
+        )
+            where TDbContext : HeadlessIdentityDbContext<
+                    TUser,
+                    TRole,
+                    TKey,
+                    TUserClaim,
+                    TUserRole,
+                    TUserLogin,
+                    TRoleClaim,
+                    TUserToken,
+                    TUserPasskey
+                >
+            where TUser : IdentityUser<TKey>
+            where TRole : IdentityRole<TKey>
+            where TKey : IEquatable<TKey>
+            where TUserClaim : IdentityUserClaim<TKey>
+            where TUserRole : IdentityUserRole<TKey>
+            where TUserLogin : IdentityUserLogin<TKey>
+            where TRoleClaim : IdentityRoleClaim<TKey>
+            where TUserToken : IdentityUserToken<TKey>
+            where TUserPasskey : IdentityUserPasskey<TKey>
+        {
+            services._ConfigureHeadlessIdentityDefaults();
+
             services.AddDbContext<TDbContext>(
                 (serviceProvider, optionsBuilder) =>
                 {
@@ -104,5 +209,13 @@ public static class OrmEntityFrameworkIdentitySetup
 
             return services;
         }
+    }
+
+    private static void _ConfigureHeadlessIdentityDefaults(this IServiceCollection services)
+    {
+        services.Configure<IdentityOptions>(options =>
+        {
+            options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
+        });
     }
 }

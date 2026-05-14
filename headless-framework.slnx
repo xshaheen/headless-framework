@@ -14,6 +14,7 @@
         <Project Path="src\Headless.Api.Logging.Serilog\Headless.Api.Logging.Serilog.csproj" />
         <Project Path="src\Headless.Api.MinimalApi\Headless.Api.MinimalApi.csproj" />
         <Project Path="src\Headless.Api.Mvc\Headless.Api.Mvc.csproj" />
+        <Project Path="src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
         <Project Path="src\Headless.Api\Headless.Api.csproj" />
         <Project Path="tests\Headless.Api.DataProtection.Tests.Integration\Headless.Api.DataProtection.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Api.DataProtection.Tests.Unit\Headless.Api.DataProtection.Tests.Unit.csproj" />

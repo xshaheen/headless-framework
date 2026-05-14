@@ -2,8 +2,12 @@
 
 using Headless.Abstractions;
 using Headless.Api;
+using Headless.Api.Abstractions;
 using Headless.Api.Middlewares;
+using Headless.Constants;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,7 +27,7 @@ public sealed class ApiSetupTests
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
-        builder.AddHeadlessInfrastructure();
+        builder.AddHeadless();
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
         var currentTenant = serviceProvider.GetRequiredService<ICurrentTenant>();
@@ -43,7 +47,7 @@ public sealed class ApiSetupTests
         builder.Services.AddSingleton<ICurrentTenant, NullCurrentTenant>();
 
         // when
-        builder.AddHeadlessInfrastructure();
+        builder.AddHeadless();
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
 
@@ -61,7 +65,7 @@ public sealed class ApiSetupTests
         builder.Services.AddSingleton<ICurrentTenant>(customTenant);
 
         // when
-        builder.AddHeadlessInfrastructure();
+        builder.AddHeadless();
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
 
@@ -77,7 +81,7 @@ public sealed class ApiSetupTests
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
-        builder.AddHeadlessInfrastructure();
+        builder.AddHeadless();
 
         await using var serviceProvider = builder.Services.BuildServiceProvider();
         var kestrelOptions = serviceProvider.GetRequiredService<IOptions<KestrelServerOptions>>().Value;
@@ -105,7 +109,7 @@ public sealed class ApiSetupTests
         var configuration = _CreateSecuritySectionConfiguration();
 
         // when
-        builder.AddHeadlessInfrastructure(
+        builder.AddHeadless(
             configuration.GetRequiredSection("Security:StringEncryption"),
             configuration.GetRequiredSection("Security:StringHash")
         );
@@ -129,7 +133,7 @@ public sealed class ApiSetupTests
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
-        builder.AddHeadlessInfrastructure(
+        builder.AddHeadless(
             encryption =>
             {
                 encryption.DefaultPassPhrase = "ActionPassPhrase123";
@@ -162,7 +166,7 @@ public sealed class ApiSetupTests
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
-        builder.AddHeadlessInfrastructure(encryption =>
+        builder.AddHeadless(encryption =>
         {
             encryption.DefaultPassPhrase = "ActionPassPhrase123";
             encryption.InitVectorBytes = "ActionIV01234567"u8.ToArray();
@@ -177,6 +181,78 @@ public sealed class ApiSetupTests
         encryptionOptions.DefaultPassPhrase.Should().Be("ActionPassPhrase123");
         encryptionOptions.DefaultSalt.Should().BeEquivalentTo("ActionSalt"u8.ToArray());
         hashOptions.DefaultSalt.Should().Be("TestSalt");
+    }
+
+    [Fact]
+    public async Task add_headless_api_should_register_upstream_service_defaults()
+    {
+        // given
+        var builder = WebApplication.CreateBuilder();
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
+
+        // when
+        builder.AddHeadless(options =>
+        {
+            options.ValidateDependencyContainerOnStartup = false;
+            options.OpenTelemetry.Enabled = false;
+        });
+
+        await using var serviceProvider = builder.Services.BuildServiceProvider();
+        var options = serviceProvider.GetRequiredService<HeadlessApiInfrastructureOptions>();
+        var kestrelOptions = serviceProvider.GetRequiredService<IOptions<KestrelServerOptions>>().Value;
+        var healthCheckService = serviceProvider.GetRequiredService<HealthCheckService>();
+        var healthReport = await healthCheckService.CheckHealthAsync(
+            registration => registration.Tags.Contains(options.AliveTag),
+            CancellationToken.None
+        );
+
+        // then
+        options.AddAntiforgery.Should().BeTrue();
+        options.OpenApi.Enabled.Should().BeTrue();
+        options.HttpClient.UseServiceDiscovery.Should().BeTrue();
+        kestrelOptions.AddServerHeader.Should().BeFalse();
+        serviceProvider.GetRequiredService<IAntiforgery>().Should().NotBeNull();
+        serviceProvider.GetRequiredService<IProblemDetailsCreator>().Should().NotBeNull();
+        builder.Services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IStartupFilter));
+        healthReport.Entries.Should().ContainKey("self");
+        healthReport.Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [Fact]
+    public async Task add_headless_api_should_allow_infrastructure_options_with_custom_security_callbacks()
+    {
+        // given
+        var builder = WebApplication.CreateBuilder();
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
+
+        // when
+        builder.AddHeadless(
+            encryption =>
+            {
+                encryption.DefaultPassPhrase = "ActionPassPhrase123";
+                encryption.InitVectorBytes = "ActionIV01234567"u8.ToArray();
+                encryption.DefaultSalt = "ActionSalt"u8.ToArray();
+            },
+            configureInfrastructure: options =>
+            {
+                options.ValidateDependencyContainerOnStartup = false;
+                options.OpenTelemetry.Enabled = false;
+                options.AliveTag = "ready";
+            }
+        );
+
+        await using var serviceProvider = builder.Services.BuildServiceProvider();
+        var options = serviceProvider.GetRequiredService<HeadlessApiInfrastructureOptions>();
+        var healthCheckService = serviceProvider.GetRequiredService<HealthCheckService>();
+        var healthReport = await healthCheckService.CheckHealthAsync(
+            registration => registration.Tags.Contains("ready"),
+            CancellationToken.None
+        );
+
+        // then
+        options.AliveTag.Should().Be("ready");
+        healthReport.Entries.Should().ContainKey("self");
+        healthReport.Status.Should().Be(HealthStatus.Healthy);
     }
 
     [Fact]
@@ -195,7 +271,7 @@ public sealed class ApiSetupTests
         );
 
         // when
-        builder.AddHeadlessInfrastructure(
+        builder.AddHeadless(
             (encryption, serviceProvider) =>
             {
                 var values = serviceProvider.GetRequiredService<SecurityTestValues>();
@@ -261,7 +337,7 @@ public sealed class ApiSetupTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void add_headless_multi_tenancy_should_reject_blank_claim_type(string blankClaimType)
+    public void add_headless_multi_tenancy_should_fall_back_to_default_claim_type_when_blank(string blankClaimType)
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -269,14 +345,11 @@ public sealed class ApiSetupTests
         // when
         builder.AddHeadlessMultiTenancy(options => options.ClaimType = blankClaimType);
 
-        // then — ValidateOnStart wiring throws when the host is built and options are evaluated
-        var act = () =>
-        {
-            using var provider = builder.Services.BuildServiceProvider();
-            return provider.GetRequiredService<IOptions<MultiTenancyOptions>>().Value;
-        };
+        using var provider = builder.Services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<MultiTenancyOptions>>().Value;
 
-        act.Should().Throw<OptionsValidationException>();
+        // then
+        options.ClaimType.Should().Be(UserClaimTypes.TenantId);
     }
 
     private sealed class ApiCustomCurrentTenant : ICurrentTenant

@@ -43,6 +43,27 @@ public sealed class HeadlessApiDefaultsTests : TestBase
     }
 
     [Fact]
+    public async Task should_noop_when_default_endpoints_are_mapped_more_than_once()
+    {
+        // given
+        await using var app = await _CreateAppAsync(application =>
+        {
+            application.MapHeadlessDefaultEndpoints();
+            application.MapHeadlessDefaultEndpoints();
+        });
+        using var client = _CreateClient(app);
+
+        // when
+        var health = await client.GetStringAsync("/health", AbortToken);
+        var alive = await client.GetStringAsync("/alive", AbortToken);
+
+        // then
+        using var healthDocument = JsonDocument.Parse(health);
+        healthDocument.RootElement.GetProperty("status").GetString().Should().Be("Healthy");
+        alive.Should().Be("Healthy");
+    }
+
+    [Fact]
     public async Task should_not_override_explicit_cache_control_header()
     {
         // given
@@ -117,6 +138,99 @@ public sealed class HeadlessApiDefaultsTests : TestBase
         root.GetProperty("detail").GetString().Should().Contain("/missing");
     }
 
+    [Fact]
+    public async Task should_map_headless_defaults_and_upstream_endpoints()
+    {
+        // given
+        await using var app = await _CreateAppAsync(
+            application =>
+            {
+                application.MapHeadlessDefaultEndpoints();
+                application.MapGet("/data", () => Results.Ok(new { Value = "test" }));
+                application.MapGet("/origin", (HttpRequest request) => $"{request.Scheme}://{request.Host}");
+            },
+            options => options.TrustForwardedHeadersFromAnyProxy = true
+        );
+        using var client = _CreateClient(app);
+        using var originRequest = new HttpRequestMessage(HttpMethod.Get, "/origin");
+        originRequest.Headers.Add("X-Forwarded-Proto", "https");
+        originRequest.Headers.Add("X-Forwarded-Host", "api.example.test");
+
+        // when
+        var health = await client.GetStringAsync("/health", AbortToken);
+        var alive = await client.GetStringAsync("/alive", AbortToken);
+        using var data = await client.GetAsync("/data", AbortToken);
+        using var origin = await client.SendAsync(originRequest, AbortToken);
+        var originBody = await origin.Content.ReadAsStringAsync(AbortToken);
+        using var openApi = await client.GetAsync("/openapi/v1.json", AbortToken);
+
+        // then
+        using var healthDocument = JsonDocument.Parse(health);
+        healthDocument.RootElement.GetProperty("status").GetString().Should().Be("Healthy");
+        healthDocument.RootElement.GetProperty("results").TryGetProperty("self", out _).Should().BeTrue();
+        alive.Should().Be("Healthy");
+        data.StatusCode.Should().Be(HttpStatusCode.OK);
+        data.Headers.CacheControl.Should().NotBeNull();
+        data.Headers.CacheControl!.NoCache.Should().BeTrue();
+        data.Headers.CacheControl.NoStore.Should().BeTrue();
+        data.Headers.CacheControl.MustRevalidate.Should().BeTrue();
+        origin.StatusCode.Should().Be(HttpStatusCode.OK);
+        originBody.Should().Be("https://api.example.test");
+        openApi.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task should_fail_start_when_required_headless_defaults_are_not_applied()
+    {
+        // given
+        var builder = WebApplication.CreateBuilder(
+            new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
+        );
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
+        builder.AddHeadless(options =>
+        {
+            options.ValidateDependencyContainerOnStartup = false;
+            options.OpenTelemetry.Enabled = false;
+            options.ValidateUseHeadlessDefaultsOnStartup = true;
+        });
+        await using var app = builder.Build();
+
+        // when
+        var act = () => app.StartAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*UseHeadlessDefaults*");
+    }
+
+    [Fact]
+    public async Task should_fail_start_when_required_default_endpoints_are_not_mapped()
+    {
+        var builder = WebApplication.CreateBuilder(
+            new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
+        );
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
+        builder.AddHeadless(options =>
+        {
+            options.ValidateDependencyContainerOnStartup = false;
+            options.OpenTelemetry.Enabled = false;
+            options.ValidateMapHeadlessDefaultEndpointsOnStartup = true;
+        });
+        builder.Services.AddAuthentication();
+
+        await using var app = builder.Build();
+        app.UseHeadlessDefaults(options =>
+        {
+            options.UseHttpsRedirection = false;
+            options.UseHsts = false;
+        });
+
+        Func<Task> act = () => app.StartAsync(AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*MapHeadlessDefaultEndpoints*");
+    }
+
     private async Task<WebApplication> _CreateAppAsync(
         Action<WebApplication> map,
         Action<HeadlessApiDefaultsOptions>? configure = null
@@ -127,7 +241,11 @@ public sealed class HeadlessApiDefaultsTests : TestBase
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
-        builder.AddHeadlessInfrastructure();
+        builder.AddHeadless(options =>
+        {
+            options.ValidateDependencyContainerOnStartup = false;
+            options.OpenTelemetry.Enabled = false;
+        });
         builder.Services.AddAuthentication();
 
         var app = builder.Build();

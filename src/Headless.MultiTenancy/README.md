@@ -30,7 +30,7 @@ Most applications receive this package transitively through the seam packages th
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessInfrastructure();
+builder.AddHeadless();
 
 builder.AddHeadlessTenancy(tenancy => tenancy
     .Http(http => http.ResolveFromClaims())
@@ -40,7 +40,7 @@ builder.AddHeadlessTenancy(tenancy => tenancy
 
 var app = builder.Build();
 
-app.UseHeadlessDefaults();
+app.UseHeadless();
 app.UseAuthentication();
 app.UseHeadlessTenancy();
 app.UseAuthorization();

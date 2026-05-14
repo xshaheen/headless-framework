@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.EntityFramework;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Fixtures;
@@ -17,8 +18,17 @@ public sealed class IdentityTestFixture
 {
     protected override void ConfigureDbContext(IServiceCollection services)
     {
-        services.AddDbContext<TestIdentityDbContext>(options =>
-            options.UseNpgsql(SqlConnectionString).AddHeadlessExtension()
-        );
+        services.AddHeadlessDbContext<
+            TestIdentityDbContext,
+            TestUser,
+            TestRole,
+            string,
+            IdentityUserClaim<string>,
+            IdentityUserRole<string>,
+            IdentityUserLogin<string>,
+            IdentityRoleClaim<string>,
+            IdentityUserToken<string>,
+            IdentityUserPasskey<string>
+        >(options => options.UseNpgsql(SqlConnectionString));
     }
 }

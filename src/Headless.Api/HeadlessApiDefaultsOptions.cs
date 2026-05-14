@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
 
@@ -34,6 +35,15 @@ public sealed class HeadlessApiDefaultsOptions
     /// <summary>Whether to run ASP.NET Core exception-handler middleware.</summary>
     public bool UseExceptionHandler { get; set; } = true;
 
+    /// <summary>
+    /// The error endpoint path used by ASP.NET Core's exception-handler middleware. Leave unset to use ProblemDetails directly.
+    /// </summary>
+    [StringSyntax("Route")]
+    public string? ExceptionHandlerPath { get; set; }
+
+    /// <summary>Whether exception-handler middleware should create a scope for errors when a path is configured.</summary>
+    public bool CreateScopeForErrors { get; set; } = true;
+
     /// <summary>Whether to run HTTPS redirection middleware.</summary>
     public bool UseHttpsRedirection { get; set; } = true;
 
@@ -42,4 +52,7 @@ public sealed class HeadlessApiDefaultsOptions
 
     /// <summary>Whether to add a no-cache header when the response did not set cache headers.</summary>
     public bool SetNoCacheWhenMissingCacheHeaders { get; set; } = true;
+
+    /// <summary>Whether to run antiforgery middleware.</summary>
+    public bool UseAntiforgery { get; set; } = true;
 }
