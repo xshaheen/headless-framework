@@ -60,7 +60,8 @@ builder.Services.AddHttpClient();
 
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.FailedRetryCount = 0;
+    options.RetryPolicy.MaxAttempts = 1;
+    options.RetryPolicy.MaxInlineRetries = 0;
     options.SubscribeFromAssembly(typeof(Program).Assembly);
     options.UseInMemoryStorage();
     options.UseInMemoryMessageQueue();

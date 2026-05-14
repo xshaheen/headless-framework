@@ -14,7 +14,7 @@ components:
 symptoms:
   - Open circuits can still admit work from consumers that start after the pause transition
   - HalfOpen can wedge when transport resume fails but the callback swallows the exception
-  - Retry backpressure can invert under misconfiguration when MaxPollingInterval is below FailedRetryInterval
+  - Retry backpressure can invert under misconfiguration when MaxPollingInterval is below the retry processor base interval
 severity: p1
 research:
   agents: [main-orchestrator]
@@ -34,7 +34,7 @@ The transport contracts were correct in steady state but not at lifecycle bounda
 - RabbitMQ and Azure Service Bus only paused active listeners; they had no startup gate for listeners that began after the pause.
 - NATS remembered subscribed topics but still created the initial subscriptions while already paused.
 - `ConsumerRegister._ResumeGroupAsync` logged `ResumeAsync` failures and returned success, which prevented `CircuitBreakerStateManager` from treating the half-open probe as failed.
-- `RetryProcessorOptionsValidator` validated `RetryProcessorOptions` in isolation, even though `MaxPollingInterval` must be compared against `MessagingOptions.FailedRetryInterval`.
+- `RetryProcessorOptionsValidator` validated `RetryProcessorOptions` in isolation, even though `MaxPollingInterval` must be compared against the retry processor base interval.
 
 ## Working Solution
 
@@ -95,13 +95,13 @@ throw new AggregateException(..., failureList);
 
 ### 3. Cross-option invariants belong in the FluentValidation validator
 
-The retry processor should not silently redefine invalid configuration as the primary behavior. The validator now takes `IOptions<MessagingOptions>` and rejects `MaxPollingInterval` values lower than `FailedRetryInterval` during options validation.
+The retry processor should not silently redefine invalid configuration as the primary behavior. The validator rejects `MaxPollingInterval` values lower than `BaseInterval` during options validation.
 
 ```csharp
 RuleFor(x => x.MaxPollingInterval)
     .GreaterThan(TimeSpan.Zero)
     .LessThanOrEqualTo(TimeSpan.FromHours(24))
-    .GreaterThanOrEqualTo(_failedRetryInterval);
+    .GreaterThanOrEqualTo(x => x.BaseInterval);
 ```
 
 ## Verification

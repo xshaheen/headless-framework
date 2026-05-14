@@ -42,10 +42,10 @@ builder.Services.AddHeadlessMessaging(x =>
 
     //x.EnablePublishParallelSend = true;
 
-    //x.FailedThresholdCallback = failed =>
+    //x.RetryPolicy.OnExhausted = failed =>
     //{
     //    var logger = failed.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    //    logger.LogError($@"A message of type {failed.MessageType} failed after executing {x.FailedRetryCount} several times,
+    //    logger.LogError($@"A message of type {failed.MessageType} failed after executing {x.RetryPolicy.MaxAttempts} attempts,
     //        requiring manual troubleshooting. Message name: {failed.Message.GetName()}");
     //};
     //x.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All);
