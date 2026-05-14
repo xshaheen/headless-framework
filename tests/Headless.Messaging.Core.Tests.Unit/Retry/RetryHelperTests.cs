@@ -75,6 +75,33 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
+    public void should_return_stop_without_incrementing_retries_when_max_attempts_is_one_and_exception_is_permanent()
+    {
+        // Permanent exception with MaxAttempts=1: the strategy classifies the exception as
+        // non-retryable (returns Stop) — the helper must surface Stop and leave Retries at 0
+        // (Stop means the attempt never counted toward the budget).
+        var message = _CreateMessage();
+        var strategy = Substitute.For<IRetryBackoffStrategy>();
+        strategy.Compute(Arg.Any<int>(), Arg.Any<Exception>()).Returns(RetryDecision.Stop);
+        var policy = new RetryPolicyOptions
+        {
+            MaxAttempts = 1,
+            MaxInlineRetries = 0,
+            BackoffStrategy = strategy,
+        };
+
+        var decision = RetryHelper.ComputeRetryDecision(
+            message,
+            new ArgumentNullException("param"),
+            policy,
+            isCancellation: false
+        );
+
+        decision.Should().Be(RetryDecision.Stop);
+        message.Retries.Should().Be(0);
+    }
+
+    [Fact]
     public void should_continue_with_computed_delay_when_retry_remains()
     {
         var message = _CreateMessage();

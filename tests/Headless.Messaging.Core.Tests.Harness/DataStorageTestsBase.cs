@@ -506,4 +506,114 @@ public abstract class DataStorageTestsBase : TestBase
         retriable.Should().NotBeNull();
         retriable.Should().Contain(m => m.StorageId == storedMessage.StorageId);
     }
+
+    // -------------------------------------------------------------------------
+    // Negative NextRetryAt filter cases — Failed messages must not be picked up
+    // unless NextRetryAt is in the past. Mirrors the partial-index predicates.
+    // -------------------------------------------------------------------------
+
+    public virtual async Task should_not_return_published_message_with_failed_status_and_null_next_retry_at()
+    {
+        // given — a Failed message with NextRetryAt = NULL represents a permanent failure
+        // (Stop classification). It must NOT be returned by the retry-pickup query.
+        var storage = GetStorage();
+        var message = CreateMessage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "failed-null-next-retry",
+            message,
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: null,
+            cancellationToken: AbortToken
+        );
+
+        // then
+        var retriable = await storage.GetPublishedMessagesOfNeedRetry(AbortToken);
+        retriable.Should().NotBeNull();
+        retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_not_return_published_message_with_future_next_retry_at()
+    {
+        // given — a Failed message scheduled for the future must NOT be returned until its
+        // retry time is due (the query predicate is NextRetryAt <= now()).
+        var storage = GetStorage();
+        var message = CreateMessage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "failed-future-next-retry",
+            message,
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddHours(1),
+            cancellationToken: AbortToken
+        );
+
+        // then
+        var retriable = await storage.GetPublishedMessagesOfNeedRetry(AbortToken);
+        retriable.Should().NotBeNull();
+        retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_not_return_received_message_with_failed_status_and_null_next_retry_at()
+    {
+        // given — a Failed received message with NextRetryAt = NULL must NOT be returned.
+        var storage = GetStorage();
+        var message = CreateMessage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "failed-null-next-retry",
+            "test-group",
+            message,
+            AbortToken
+        );
+
+        // when
+        await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: null,
+            cancellationToken: AbortToken
+        );
+
+        // then
+        var retriable = await storage.GetReceivedMessagesOfNeedRetry(AbortToken);
+        retriable.Should().NotBeNull();
+        retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_not_return_received_message_with_future_next_retry_at()
+    {
+        // given — a Failed received message scheduled for the future must NOT be returned
+        // until its retry time is due.
+        var storage = GetStorage();
+        var message = CreateMessage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "failed-future-next-retry",
+            "test-group",
+            message,
+            AbortToken
+        );
+
+        // when
+        await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddHours(1),
+            cancellationToken: AbortToken
+        );
+
+        // then
+        var retriable = await storage.GetReceivedMessagesOfNeedRetry(AbortToken);
+        retriable.Should().NotBeNull();
+        retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
+    }
 }

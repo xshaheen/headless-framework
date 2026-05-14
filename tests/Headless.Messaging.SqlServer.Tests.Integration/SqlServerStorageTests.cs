@@ -209,6 +209,22 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     [Fact]
     public override Task should_handle_failed_message_state() => base.should_handle_failed_message_state();
 
+    [Fact]
+    public override Task should_not_return_published_message_with_failed_status_and_null_next_retry_at() =>
+        base.should_not_return_published_message_with_failed_status_and_null_next_retry_at();
+
+    [Fact]
+    public override Task should_not_return_published_message_with_future_next_retry_at() =>
+        base.should_not_return_published_message_with_future_next_retry_at();
+
+    [Fact]
+    public override Task should_not_return_received_message_with_failed_status_and_null_next_retry_at() =>
+        base.should_not_return_received_message_with_failed_status_and_null_next_retry_at();
+
+    [Fact]
+    public override Task should_not_return_received_message_with_future_next_retry_at() =>
+        base.should_not_return_received_message_with_future_next_retry_at();
+
     #endregion
 
     #region SQL Server-Specific Tests
