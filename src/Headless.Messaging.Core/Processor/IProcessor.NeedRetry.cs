@@ -46,6 +46,16 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private int _consecutiveHealthyCycles;
     private int _consecutiveCleanCycles;
 
+    /// <summary>
+    /// One-shot startup jitter flag. The first <see cref="ProcessAsync"/> call waits a random
+    /// fraction of <see cref="_baseInterval"/> before performing any work, so that many replicas
+    /// booting simultaneously do not synchronize their poll ticks and overwhelm the storage layer
+    /// with a coordinated burst (poll-tick storm). Subsequent polls use the configured interval.
+    /// Mutated only by <see cref="ProcessAsync"/>, which is invoked sequentially per processor
+    /// instance — a plain bool is sufficient.
+    /// </summary>
+    private bool _firstPollObserved;
+
     public MessageNeedToRetryProcessor(
         IOptions<MessagingOptions> options,
         IOptions<RetryProcessorOptions> retryOptions,
@@ -82,6 +92,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     internal void SetCurrentIntervalForTest(TimeSpan value) =>
         Interlocked.Exchange(ref _currentIntervalTicks, value.Ticks);
 
+    /// <summary>Indicates whether the one-shot startup jitter has been applied. Exposed for testing.</summary>
+    internal bool FirstPollObservedForTest => _firstPollObserved;
+
     /// <inheritdoc />
     public ValueTask ResetBackpressureAsync(CancellationToken ct = default)
     {
@@ -94,6 +107,13 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     public async Task ProcessAsync(ProcessingContext context)
     {
         Argument.IsNotNull(context);
+
+        if (!_firstPollObserved)
+        {
+            var jitter = TimeSpan.FromTicks((long)(_baseInterval.Ticks * Random.Shared.NextDouble()));
+            await context.WaitAsync(jitter).ConfigureAwait(false);
+            _firstPollObserved = true;
+        }
 
         var storage = context.Provider.GetRequiredService<IDataStorage>();
 
