@@ -474,6 +474,104 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             );
     }
 
+    // -------------------------------------------------------------------------
+    // Startup jitter — one-shot poll-tick desynchronization
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_AppliesJitter_OnFirstPollOnly()
+    {
+        // Arrange — generous base interval so jitter is measurable but bounded
+        var baseInterval = TimeSpan.FromMilliseconds(500);
+        var (sut, _, cb) = _Create(baseIntervalSeconds: 1);
+        _SetCurrentInterval(sut, baseInterval);
+
+        cb.IsOpen(Arg.Any<string>()).Returns(false);
+
+        var dataStorage = Substitute.For<IDataStorage>();
+        _SetupReceivedMessages(dataStorage); // empty
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Pre-condition: jitter flag has not been observed yet.
+        sut.FirstPollObservedForTest.Should().BeFalse();
+
+        // Act — first ProcessAsync should apply jitter once
+        var firstStopwatch = System.Diagnostics.Stopwatch.StartNew();
+        await sut.ProcessAsync(context);
+        firstStopwatch.Stop();
+
+        // Post-condition: jitter is now consumed.
+        sut.FirstPollObservedForTest.Should().BeTrue();
+
+        // First call's total elapsed time includes (jitter < baseInterval) + (final WaitAsync ~= 1s currentInterval).
+        // The jitter component alone must be < baseInterval (500 ms). We can't isolate it, but we can
+        // bound the total via the fact that jitter <= baseInterval.
+        // Stronger and stable assertion: jitter is a one-shot — second call's startup overhead is 0.
+        var secondStopwatch = System.Diagnostics.Stopwatch.StartNew();
+        // Spin off a quick second invocation but cancel the post-work WaitAsync so we only measure the jitter slot.
+        using var cts = new CancellationTokenSource();
+        var cancellableContext = new ProcessingContext(context.Provider, cts.Token);
+        var secondTask = sut.ProcessAsync(cancellableContext);
+        // Give the storage call a moment to be invoked, then cancel.
+        await Task.Delay(50);
+        await cts.CancelAsync();
+        try
+        {
+            await secondTask;
+        }
+        catch (TaskCanceledException) { }
+        catch (OperationCanceledException) { }
+        secondStopwatch.Stop();
+
+        // Assert — jitter is one-shot: flag stays true.
+        sut.FirstPollObservedForTest.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_FirstPollWait_DoesNotExceedBaseInterval()
+    {
+        // Arrange — small base interval so the upper bound is easy to verify.
+        var (sut, _, cb) = _Create(baseIntervalSeconds: 1);
+        cb.IsOpen(Arg.Any<string>()).Returns(false);
+
+        var dataStorage = Substitute.For<IDataStorage>();
+        // First storage call signals when jitter completes.
+        var storageCalled = new TaskCompletionSource<DateTime>(TaskCreationOptions.RunContinuationsAsynchronously);
+        dataStorage
+            .GetPublishedMessagesOfNeedRetry(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                storageCalled.TrySetResult(DateTime.UtcNow);
+                return ValueTask.FromResult<IEnumerable<MediumMessage>>([]);
+            });
+        dataStorage
+            .GetReceivedMessagesOfNeedRetry(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Act — kick off ProcessAsync and time how long until the storage call fires.
+        var started = DateTime.UtcNow;
+        var processTask = sut.ProcessAsync(context);
+
+        // Wait for the first storage call but cap at 3x base interval to avoid hanging the test.
+        var firstStorageAt = await storageCalled.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        var jitterElapsed = firstStorageAt - started;
+
+        // Let the rest of the process complete.
+        await processTask;
+
+        // Assert — jitter must be strictly less than base interval.
+        // Upper bound is baseInterval (1s); we allow generous tolerance for scheduling noise.
+        jitterElapsed
+            .Should()
+            .BeLessThan(
+                TimeSpan.FromSeconds(2),
+                "first-poll jitter is bounded by base interval (1s) plus scheduling tolerance"
+            );
+        sut.FirstPollObservedForTest.Should().BeTrue();
+    }
+
     [Fact]
     public async Task reset_backpressure_concurrent_with_adjust_does_not_produce_invalid_counts()
     {

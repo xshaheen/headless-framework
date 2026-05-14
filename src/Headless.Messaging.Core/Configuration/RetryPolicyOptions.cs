@@ -39,6 +39,15 @@ public sealed class RetryPolicyOptions
     /// The callback runs synchronously inside the live dispatch scope carried by
     /// <see cref="FailedInfo.ServiceProvider"/>.
     /// </summary>
+    /// <remarks>
+    /// The callback is synchronous (<see cref="Action{T}"/>). Do NOT capture
+    /// <see cref="FailedInfo.ServiceProvider"/> inside a fire-and-forget continuation
+    /// (for example <c>Task.Run(...)</c>): the dispatch scope is disposed as soon as
+    /// the callback returns, and a deferred resolution will throw
+    /// <see cref="ObjectDisposedException"/>. If you need async work, resolve services
+    /// synchronously and capture concrete values, or wait for the async-callback shape
+    /// in a future release.
+    /// </remarks>
     public Action<FailedInfo>? OnExhausted { get; set; }
 }
 

@@ -175,7 +175,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
-            new NpgsqlParameter("@NextRetryAt", nextRetryAt.HasValue ? nextRetryAt.Value : DBNull.Value),
+            new NpgsqlParameter("@NextRetryAt", _ToUtcParameterValue(nextRetryAt)),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
             new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -465,7 +465,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
-            new NpgsqlParameter("@NextRetryAt", nextRetryAt.HasValue ? nextRetryAt.Value : DBNull.Value),
+            new NpgsqlParameter("@NextRetryAt", _ToUtcParameterValue(nextRetryAt)),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
         ];
 
@@ -568,5 +568,24 @@ public sealed class PostgreSqlDataStorage(
         await transaction.CommitAsync(cancellationToken);
 
         return result;
+    }
+
+    /// <summary>
+    /// Normalizes a nullable <see cref="DateTime"/> to UTC kind for Npgsql parameter binding.
+    /// Npgsql's <c>timestamptz</c> mapping rejects <see cref="DateTime"/> values whose
+    /// <see cref="DateTime.Kind"/> is not <see cref="DateTimeKind.Utc"/>. The contract on
+    /// <see cref="MediumMessage.NextRetryAt"/> requires UTC, but this defensive coercion
+    /// prevents a misconfigured caller from blowing up the retry-write path.
+    /// </summary>
+    private static object _ToUtcParameterValue(DateTime? value)
+    {
+        if (!value.HasValue)
+        {
+            return DBNull.Value;
+        }
+
+        var v = value.Value;
+
+        return v.Kind == DateTimeKind.Utc ? v : DateTime.SpecifyKind(v, DateTimeKind.Utc);
     }
 }
