@@ -727,6 +727,64 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
         persisted.Should().BeFalse();
     }
 
+    [Fact(Skip = "https://github.com/xshaheen/headless-framework/issues/249")]
+    public async Task guard_enabled_should_reject_attach_then_modify_cross_tenant_row()
+    {
+        // given
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
+        var entityId = await _SeedTenantEntityAsync(fixture, "tenant-b", "attach-update-owned-by-b");
+        var concurrencyStamp = await _GetTenantEntityConcurrencyStampAsync(fixture, entityId);
+
+        using var tenant = fixture.CurrentTenant.Change("tenant-a");
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var crafted = new TestEntity { Name = "crafted", TenantId = "tenant-a" };
+        db.Entry(crafted).Property(nameof(TestEntity.Id)).CurrentValue = entityId;
+        db.Entry(crafted).Property(nameof(TestEntity.ConcurrencyStamp)).CurrentValue = concurrencyStamp;
+        db.Attach(crafted);
+        crafted.Name = "compromised";
+
+        // when
+        var act = async () => await db.SaveChangesAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<CrossTenantWriteException>();
+        db.EmittedLocalMessages.Should().BeEmpty();
+
+        var persistedName = await _GetTenantEntityNameAsync(fixture, entityId);
+        persistedName.Should().Be("attach-update-owned-by-b");
+    }
+
+    [Fact(Skip = "https://github.com/xshaheen/headless-framework/issues/249")]
+    public async Task guard_enabled_should_reject_attach_then_remove_cross_tenant_row()
+    {
+        // given
+        await using var fixture = await TenantWriteGuardDbContextTestFixture.CreateAsync(guardEnabled: true);
+        var entityId = await _SeedTenantEntityAsync(fixture, "tenant-b", "attach-delete-owned-by-b");
+        var concurrencyStamp = await _GetTenantEntityConcurrencyStampAsync(fixture, entityId);
+
+        using var tenant = fixture.CurrentTenant.Change("tenant-a");
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var crafted = new TestEntity { Name = "crafted-delete", TenantId = "tenant-a" };
+        db.Entry(crafted).Property(nameof(TestEntity.Id)).CurrentValue = entityId;
+        db.Entry(crafted).Property(nameof(TestEntity.ConcurrencyStamp)).CurrentValue = concurrencyStamp;
+        db.Attach(crafted);
+        db.Tests.Remove(crafted);
+
+        // when
+        var act = async () => await db.SaveChangesAsync(AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<CrossTenantWriteException>();
+        db.EmittedLocalMessages.Should().BeEmpty();
+
+        var exists = await _TenantEntityExistsAsync(fixture, entityId);
+        exists.Should().BeTrue();
+    }
+
     [Fact]
     public async Task guard_enabled_should_allow_non_tenant_entity_add_update_and_delete_without_current_tenant()
     {
@@ -908,6 +966,21 @@ public sealed class HeadlessTenantWriteGuardTests : TestBase
             .Tests.IgnoreMultiTenancyFilter()
             .Where(x => x.Id == entityId)
             .Select(x => x.TenantId)
+            .SingleAsync(AbortToken);
+    }
+
+    private async Task<string?> _GetTenantEntityConcurrencyStampAsync(
+        TenantWriteGuardDbContextTestFixture fixture,
+        Guid entityId
+    )
+    {
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        return await db
+            .Tests.IgnoreMultiTenancyFilter()
+            .Where(x => x.Id == entityId)
+            .Select(x => x.ConcurrencyStamp)
             .SingleAsync(AbortToken);
     }
 
