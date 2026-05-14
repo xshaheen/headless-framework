@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Messaging;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
@@ -9,6 +10,8 @@ namespace Tests.Retry;
 
 public sealed class ExponentialBackoffStrategyTests : TestBase
 {
+    private static readonly TimeoutException _Transient = new("Transient");
+
     [Fact]
     public void should_calculate_exponential_delay()
     {
@@ -17,27 +20,23 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy(initialDelay, TimeSpan.FromMinutes(10), 2.0);
 
         // when
-        var delay0 = strategy.GetNextDelay(0);
-        var delay1 = strategy.GetNextDelay(1);
-        var delay2 = strategy.GetNextDelay(2);
-        var delay3 = strategy.GetNextDelay(3);
+        var decision0 = strategy.Compute(0, _Transient);
+        var decision1 = strategy.Compute(1, _Transient);
+        var decision2 = strategy.Compute(2, _Transient);
+        var decision3 = strategy.Compute(3, _Transient);
 
-        // then - base delays (before jitter) are 1, 2, 4, 8 seconds
-        // with ±25% jitter, delay0 should be in [0.75, 1.25] seconds
-        delay0.Should().NotBeNull();
-        delay0!.Value.TotalSeconds.Should().BeGreaterThanOrEqualTo(0.75).And.BeLessThanOrEqualTo(1.25);
+        // then - base delays (before jitter) are 1, 2, 4, 8 seconds, ±25%
+        decision0.Outcome.Should().Be(RetryDecision.Kind.Continue);
+        decision0.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(0.75).And.BeLessThanOrEqualTo(1.25);
 
-        // delay1 should be in [1.5, 2.5] seconds
-        delay1.Should().NotBeNull();
-        delay1!.Value.TotalSeconds.Should().BeGreaterThanOrEqualTo(1.5).And.BeLessThanOrEqualTo(2.5);
+        decision1.Outcome.Should().Be(RetryDecision.Kind.Continue);
+        decision1.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(1.5).And.BeLessThanOrEqualTo(2.5);
 
-        // delay2 should be in [3, 5] seconds
-        delay2.Should().NotBeNull();
-        delay2!.Value.TotalSeconds.Should().BeGreaterThanOrEqualTo(3).And.BeLessThanOrEqualTo(5);
+        decision2.Outcome.Should().Be(RetryDecision.Kind.Continue);
+        decision2.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(3).And.BeLessThanOrEqualTo(5);
 
-        // delay3 should be in [6, 10] seconds
-        delay3.Should().NotBeNull();
-        delay3!.Value.TotalSeconds.Should().BeGreaterThanOrEqualTo(6).And.BeLessThanOrEqualTo(10);
+        decision3.Outcome.Should().Be(RetryDecision.Kind.Continue);
+        decision3.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(6).And.BeLessThanOrEqualTo(10);
     }
 
     [Fact]
@@ -50,15 +49,12 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         // when - run multiple times to get different jitter values
         for (var i = 0; i < 100; i++)
         {
-            var delay = strategy.GetNextDelay(0);
-            delays.Add(delay!.Value.TotalSeconds);
+            delays.Add(strategy.Compute(0, _Transient).Delay.TotalSeconds);
         }
 
-        // then - delays should vary due to jitter
-        // with ±25% jitter on 10s, values should be in [7.5, 12.5]
+        // then - delays should vary due to jitter; with ±25% on 10s, values in [7.5, 12.5]
         delays.Should().AllSatisfy(d => d.Should().BeGreaterThanOrEqualTo(7.5).And.BeLessThanOrEqualTo(12.5));
 
-        // verify variance - not all values should be the same
         var distinctDelays = delays.Distinct().ToList();
         distinctDelays.Count.Should().BeGreaterThan(1, "jitter should cause variance in delays");
     }
@@ -71,12 +67,12 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy(TimeSpan.FromSeconds(1), maxDelay, 2.0);
 
         // when - after many retries, exponential would be huge
-        var delay = strategy.GetNextDelay(20);
+        var decision = strategy.Compute(20, _Transient);
 
         // then - should be capped at max delay (±25% jitter)
-        delay.Should().NotBeNull();
-        delay!.Value.TotalSeconds.Should().BeLessThanOrEqualTo(maxDelay.TotalSeconds * 1.25);
-        delay.Value.TotalSeconds.Should().BeGreaterThanOrEqualTo(maxDelay.TotalSeconds * 0.75);
+        decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
+        decision.Delay.TotalSeconds.Should().BeLessThanOrEqualTo(maxDelay.TotalSeconds * 1.25);
+        decision.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(maxDelay.TotalSeconds * 0.75);
     }
 
     [Fact]
@@ -84,7 +80,7 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
     {
         // given
         var strategy = new ExponentialBackoffStrategy(TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(5), 2.0);
-        var results = new ConcurrentBag<TimeSpan?>();
+        var results = new ConcurrentBag<RetryDecision>();
         var exceptions = new ConcurrentBag<Exception>();
 
         // when - multiple threads access the strategy concurrently
@@ -96,8 +92,7 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
             {
                 try
                 {
-                    var delay = strategy.GetNextDelay(i % 10);
-                    results.Add(delay);
+                    results.Add(strategy.Compute(i % 10, _Transient));
                 }
                 catch (Exception ex)
                 {
@@ -109,21 +104,21 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         // then - no exceptions should occur
         exceptions.Should().BeEmpty("strategy should be thread-safe");
         results.Should().HaveCount(1000);
-        results.Should().AllSatisfy(r => r.Should().NotBeNull());
+        results.Should().AllSatisfy(r => r.Outcome.Should().Be(RetryDecision.Kind.Continue));
     }
 
     [Fact]
-    public void should_return_null_for_permanent_exceptions()
+    public void should_return_stop_for_permanent_exceptions()
     {
         // given
         var strategy = new ExponentialBackoffStrategy();
 
         // when/then - permanent exceptions should not be retried
-        strategy.GetNextDelay(0, new SubscriberNotFoundException("Not found")).Should().BeNull();
-        strategy.GetNextDelay(0, new ArgumentNullException("value")).Should().BeNull();
-        strategy.GetNextDelay(0, new ArgumentException("Invalid arg", "value")).Should().BeNull();
-        strategy.GetNextDelay(0, new InvalidOperationException("Invalid op")).Should().BeNull();
-        strategy.GetNextDelay(0, new NotSupportedException("Not supported")).Should().BeNull();
+        strategy.Compute(0, new SubscriberNotFoundException("Not found")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, new ArgumentNullException("value")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, new ArgumentException("Invalid arg", "value")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, new InvalidOperationException("Invalid op")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, new NotSupportedException("Not supported")).Should().Be(RetryDecision.Stop);
     }
 
     [Fact]
@@ -133,40 +128,9 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy();
 
         // when/then - transient exceptions should be retried
-        strategy.GetNextDelay(0, new TimeoutException("Timeout")).Should().NotBeNull();
-        strategy.GetNextDelay(0, new IOException("Network error")).Should().NotBeNull();
-        strategy.GetNextDelay(0, new ApplicationException("Generic error")).Should().NotBeNull();
-    }
-
-    [Fact]
-    public void should_retry_without_exception()
-    {
-        // given
-        var strategy = new ExponentialBackoffStrategy();
-
-        // when
-        var delay = strategy.GetNextDelay(0);
-
-        // then - null exception means retry
-        delay.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void should_respect_retryable_exceptions_via_should_retry()
-    {
-        // given
-        var strategy = new ExponentialBackoffStrategy();
-
-        // when/then - ShouldRetry method
-        strategy.ShouldRetry(new SubscriberNotFoundException("Not found")).Should().BeFalse();
-        strategy.ShouldRetry(new ArgumentNullException("value")).Should().BeFalse();
-        strategy.ShouldRetry(new ArgumentException("Invalid", "value")).Should().BeFalse();
-        strategy.ShouldRetry(new InvalidOperationException("Op")).Should().BeFalse();
-        strategy.ShouldRetry(new NotSupportedException("Not")).Should().BeFalse();
-
-        strategy.ShouldRetry(new TimeoutException("Timeout")).Should().BeTrue();
-        strategy.ShouldRetry(new IOException("Network")).Should().BeTrue();
-        strategy.ShouldRetry(new ApplicationException("Generic")).Should().BeTrue();
+        strategy.Compute(0, new TimeoutException("Timeout")).ShouldRetry.Should().BeTrue();
+        strategy.Compute(0, new IOException("Network error")).ShouldRetry.Should().BeTrue();
+        strategy.Compute(0, new ApplicationException("Generic error")).ShouldRetry.Should().BeTrue();
     }
 
     [Fact]
@@ -176,11 +140,11 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy();
 
         // when
-        var delay = strategy.GetNextDelay(0);
+        var decision = strategy.Compute(0, _Transient);
 
         // then - default initial delay is 1 second with ±25% jitter
-        delay.Should().NotBeNull();
-        delay!.Value.TotalSeconds.Should().BeGreaterThanOrEqualTo(0.75).And.BeLessThanOrEqualTo(1.25);
+        decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
+        decision.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(0.75).And.BeLessThanOrEqualTo(1.25);
     }
 
     [Fact]
@@ -190,19 +154,14 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy(TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(10), 3.0);
 
         // when
-        var delay0 = strategy.GetNextDelay(0);
-        var delay1 = strategy.GetNextDelay(1);
-        var delay2 = strategy.GetNextDelay(2);
+        var d0 = strategy.Compute(0, _Transient);
+        var d1 = strategy.Compute(1, _Transient);
+        var d2 = strategy.Compute(2, _Transient);
 
         // then - with multiplier 3: 1, 3, 9 seconds (±25% jitter)
-        delay0.Should().NotBeNull();
-        delay0!.Value.TotalSeconds.Should().BeGreaterThanOrEqualTo(0.75).And.BeLessThanOrEqualTo(1.25);
-
-        delay1.Should().NotBeNull();
-        delay1!.Value.TotalSeconds.Should().BeGreaterThanOrEqualTo(2.25).And.BeLessThanOrEqualTo(3.75);
-
-        delay2.Should().NotBeNull();
-        delay2!.Value.TotalSeconds.Should().BeGreaterThanOrEqualTo(6.75).And.BeLessThanOrEqualTo(11.25);
+        d0.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(0.75).And.BeLessThanOrEqualTo(1.25);
+        d1.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(2.25).And.BeLessThanOrEqualTo(3.75);
+        d2.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(6.75).And.BeLessThanOrEqualTo(11.25);
     }
 
     [Fact]
@@ -212,11 +171,11 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy(TimeSpan.FromSeconds(2));
 
         // when
-        var delay = strategy.GetNextDelay(0);
+        var decision = strategy.Compute(0, _Transient);
 
         // then - 2^0 = 1, so delay = initialDelay * 1 = 2 seconds (±25%)
-        delay.Should().NotBeNull();
-        delay!.Value.TotalSeconds.Should().BeGreaterThanOrEqualTo(1.5).And.BeLessThanOrEqualTo(2.5);
+        decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
+        decision.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(1.5).And.BeLessThanOrEqualTo(2.5);
     }
 
     [Fact]
@@ -228,11 +187,11 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         // when - run many times to ensure jitter never causes negative
         for (var i = 0; i < 1000; i++)
         {
-            var delay = strategy.GetNextDelay(0);
+            var decision = strategy.Compute(0, _Transient);
 
             // then
-            delay.Should().NotBeNull();
-            delay!.Value.TotalMilliseconds.Should().BeGreaterThanOrEqualTo(0);
+            decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
+            decision.Delay.TotalMilliseconds.Should().BeGreaterThanOrEqualTo(0);
         }
     }
 }

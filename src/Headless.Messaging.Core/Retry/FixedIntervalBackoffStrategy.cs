@@ -19,19 +19,13 @@ public sealed class FixedIntervalBackoffStrategy : IRetryBackoffStrategy
     }
 
     /// <inheritdoc />
-    public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null)
+    public RetryDecision Compute(int retryCount, Exception exception)
     {
-        if (exception != null && !ShouldRetry(exception))
+        if (RetryExceptionClassifier.IsPermanent(exception))
         {
-            return null;
+            return RetryDecision.Stop;
         }
 
-        return _interval;
-    }
-
-    /// <inheritdoc />
-    public bool ShouldRetry(Exception exception)
-    {
-        return !RetryExceptionClassifier.IsPermanent(exception);
+        return RetryDecision.Continue(_interval);
     }
 }

@@ -6,10 +6,12 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -38,7 +40,8 @@ public sealed class MessageSenderTests : TestBase
         IDataStorage storage,
         ISerializer serializer,
         ITransport transport,
-        MessagingOptions options
+        MessagingOptions options,
+        IHostApplicationLifetime? lifetime = null
     )
     {
         var services = new ServiceCollection();
@@ -48,6 +51,10 @@ public sealed class MessageSenderTests : TestBase
         services.AddSingleton(transport);
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(Options.Create(options));
+        if (lifetime is not null)
+        {
+            services.AddSingleton(lifetime);
+        }
 
         var provider = services.BuildServiceProvider();
         return new MessageSender(provider.GetRequiredService<ILogger<MessageSender>>(), provider);
@@ -225,17 +232,154 @@ public sealed class MessageSenderTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_treat_shutdown_oce_as_cancellation_and_skip_on_exhausted()
+    {
+        // given — IHostApplicationLifetime.ApplicationStopping is signalled and the transport
+        // surfaces an OCE bound to that same token. The sender must classify this as cancellation
+        // (RetryDecision.Stop) and NOT invoke OnExhausted.
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.CompletedTask);
+
+        var transportMessage = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            ReadOnlyMemory<byte>.Empty
+        );
+        var serializer = Substitute.For<ISerializer>();
+        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var shutdownOce = new OperationCanceledException("App stopping", cts.Token);
+
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport.SendAsync(transportMessage, CancellationToken.None).Returns(OperateResult.Failed(shutdownOce));
+
+        var callbackInvoked = false;
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxAttempts = 5,
+                    MaxInlineRetries = 0,
+                    BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
+                    OnExhausted = _ => callbackInvoked = true,
+                },
+            },
+            new FakeHostApplicationLifetime(cts.Token)
+        );
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then — Stop classification: persisted as Failed, no OnExhausted, no Retries increment.
+        result.Succeeded.Should().BeFalse();
+        callbackInvoked.Should().BeFalse();
+        await storage
+            .Received()
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Any<object?>(),
+                Arg.Is<DateTime?>(v => v == null),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     private sealed class ZeroDelayRetryBackoffStrategy : IRetryBackoffStrategy
     {
-        public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null) => TimeSpan.Zero;
-
-        public bool ShouldRetry(Exception exception) => true;
+        public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(TimeSpan.Zero);
     }
 
     private sealed class FixedDelayRetryBackoffStrategy(TimeSpan delay) : IRetryBackoffStrategy
     {
-        public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null) => delay;
-
-        public bool ShouldRetry(Exception exception) => true;
+        public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(delay);
     }
+
+    private sealed class FakeHostApplicationLifetime(CancellationToken stoppingToken) : IHostApplicationLifetime
+    {
+        public CancellationToken ApplicationStarted => CancellationToken.None;
+
+        public CancellationToken ApplicationStopping => stoppingToken;
+
+        public CancellationToken ApplicationStopped => CancellationToken.None;
+
+        public void StopApplication() { }
+    }
+
+    [Fact]
+    public async Task on_exhausted_callback_should_resolve_same_scoped_service_as_dispatch_scope()
+    {
+        // given — a Scoped marker service. The Dispatcher creates a per-message scope and
+        // passes its IServiceProvider; MessageSender must surface that SAME provider via
+        // FailedInfo.ServiceProvider so OnExhausted sees the live scope.
+        var rootServices = new ServiceCollection();
+        rootServices.AddScoped<ScopedMarker>();
+        var rootProvider = rootServices.BuildServiceProvider();
+        using var dispatchScope = rootProvider.CreateScope();
+        var expected = dispatchScope.ServiceProvider.GetRequiredService<ScopedMarker>();
+
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.CompletedTask);
+
+        var transportMessage = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            ReadOnlyMemory<byte>.Empty
+        );
+        var serializer = Substitute.For<ISerializer>();
+        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, CancellationToken.None)
+            .Returns(OperateResult.Failed(new TimeoutException("boom")));
+
+        ScopedMarker? observed = null;
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxAttempts = 1,
+                    MaxInlineRetries = 0,
+                    BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
+                    OnExhausted = info => observed = info.ServiceProvider.GetRequiredService<ScopedMarker>(),
+                },
+            }
+        );
+
+        // when
+        await sender.SendAsync(_CreateMediumMessage(), dispatchScope.ServiceProvider);
+
+        // then — same scope means same Scoped instance
+        observed.Should().NotBeNull();
+        observed.Should().BeSameAs(expected);
+    }
+
+    private sealed class ScopedMarker;
 }

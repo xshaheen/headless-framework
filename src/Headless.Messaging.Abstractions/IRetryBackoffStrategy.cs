@@ -3,22 +3,16 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Defines a strategy for calculating retry delays and determining retry eligibility for failed messages.
+/// Defines a strategy that classifies a failed delivery attempt and computes the next retry delay.
 /// </summary>
 public interface IRetryBackoffStrategy
 {
     /// <summary>
-    /// Calculates the next retry delay based on the current retry attempt.
+    /// Decides what to do after a failure. Strategies fold permanent-vs-transient classification and
+    /// delay computation into a single call, returning <see cref="RetryDecision.Stop"/> for
+    /// non-retryable exceptions or <see cref="RetryDecision.Continue"/> with the delay otherwise.
     /// </summary>
-    /// <param name="retryAttempt">The current retry attempt number (0-based).</param>
-    /// <param name="exception">The exception that caused the failure, if available.</param>
-    /// <returns>The delay before the next retry attempt, or <c>null</c> if retries should be stopped.</returns>
-    TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null);
-
-    /// <summary>
-    /// Determines whether a failure should be retried based on the exception.
-    /// </summary>
+    /// <param name="retryCount">The number of retries already performed for this message (0-based).</param>
     /// <param name="exception">The exception that caused the failure.</param>
-    /// <returns><c>true</c> if the failure is transient and should be retried; otherwise, <c>false</c>.</returns>
-    bool ShouldRetry(Exception exception);
+    RetryDecision Compute(int retryCount, Exception exception);
 }

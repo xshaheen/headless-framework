@@ -23,6 +23,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
     private const string _TopicName = "cb.test.topic";
     private const string _GroupName = "cb.test.group";
 
+    private static readonly IServiceProvider _EmptyScope = new ServiceCollection().BuildServiceProvider();
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
@@ -133,7 +135,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then
         await cbMock.Received(1).ReportFailureAsync(_GroupName, original);
@@ -152,7 +154,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then
         await cbMock.Received(1).ReportSuccessAsync(_GroupName);
@@ -173,7 +175,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — must receive HttpRequestException, not SubscriberExecutionFailedException
         await cbMock.Received(1).ReportFailureAsync(_GroupName, Arg.Is<Exception>(e => e is HttpRequestException));
@@ -193,7 +195,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, _) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — DB state must still be persisted
         await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
@@ -212,7 +214,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — both DB persistence and circuit breaker reporting happen
         await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Succeeded);

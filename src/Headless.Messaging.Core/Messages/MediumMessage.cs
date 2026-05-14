@@ -2,6 +2,7 @@
 
 namespace Headless.Messaging.Messages;
 
+[PublicAPI]
 public class MediumMessage
 {
     public required long StorageId { get; set; }

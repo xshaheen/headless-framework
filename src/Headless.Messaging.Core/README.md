@@ -300,6 +300,7 @@ builder.Services.AddHeadlessMessaging(options =>
 
     // Adaptive retry backpressure
     options.RetryProcessor.AdaptivePolling = true;
+    options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(60);     // replaces the old FailedRetryInterval; default 60s
     options.RetryProcessor.MaxPollingInterval = TimeSpan.FromMinutes(15); // 15 min cap
     options.RetryProcessor.CircuitOpenRateThreshold = 0.8;              // back off above 80% circuit-open rate
 });

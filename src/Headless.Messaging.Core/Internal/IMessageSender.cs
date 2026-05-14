@@ -9,6 +9,7 @@ using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -16,59 +17,79 @@ namespace Headless.Messaging.Internal;
 
 public interface IMessageSender
 {
+    /// <summary>
+    /// Publishes a single outbox message using the sender's root service provider for
+    /// scoped service resolution. Prefer <see cref="SendAsync(MediumMessage, IServiceProvider)"/>
+    /// to surface the live per-message dispatch scope to the exhausted callback.
+    /// </summary>
     Task<OperateResult> SendAsync(MediumMessage message);
+
+    /// <summary>
+    /// Publishes a single outbox message and threads the caller's per-message DI scope through
+    /// to the retry pipeline so that <c>OnExhausted</c>'s <c>FailedInfo.ServiceProvider</c>
+    /// reflects the SAME scope used while sending. The caller (Dispatcher) owns this scope's
+    /// lifetime.
+    /// </summary>
+    Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices);
 }
 
-internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvider serviceProvider) : IMessageSender
+internal sealed class MessageSender : IMessageSender
 {
     // ReSharper disable once InconsistentNaming
     private static readonly DiagnosticListener _DiagnosticListener = new(
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
-    private readonly IDataStorage _dataStorage = serviceProvider.GetRequiredService<IDataStorage>();
-    private readonly ILogger _logger = logger;
-    private readonly IOptions<MessagingOptions> _options = serviceProvider.GetRequiredService<
-        IOptions<MessagingOptions>
-    >();
-    private readonly ISerializer _serializer = serviceProvider.GetRequiredService<ISerializer>();
-    private readonly ITransport _transport = serviceProvider.GetRequiredService<ITransport>();
-    private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
-    private readonly RetryPolicyOptions _retryPolicy = serviceProvider
-        .GetRequiredService<IOptions<MessagingOptions>>()
-        .Value.RetryPolicy;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly IDataStorage _dataStorage;
+    private readonly ILogger _logger;
+    private readonly MessagingOptions _options;
+    private readonly ISerializer _serializer;
+    private readonly ITransport _transport;
+    private readonly TimeProvider _timeProvider;
+    private readonly RetryPolicyOptions _retryPolicy;
+    private readonly CancellationToken _shutdownToken;
 
-    public async Task<OperateResult> SendAsync(MediumMessage message)
+    public MessageSender(ILogger<MessageSender> logger, IServiceProvider serviceProvider)
     {
-        OperateResult result;
-        var inlineRetries = 0;
-        do
-        {
-            var (retryDecision, operateResult) = await _SendWithoutRetryAsync(message, inlineRetries)
-                .ConfigureAwait(false);
-            result = operateResult;
-            if (result.Equals(OperateResult.Success))
-            {
-                return result;
-            }
+        _serviceProvider = serviceProvider;
+        _logger = logger;
+        _dataStorage = serviceProvider.GetRequiredService<IDataStorage>();
+        _serializer = serviceProvider.GetRequiredService<ISerializer>();
+        _transport = serviceProvider.GetRequiredService<ITransport>();
+        _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
+        var opts = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+        _options = opts;
+        _retryPolicy = opts.RetryPolicy;
 
-            if (retryDecision.Outcome != RetryDecision.Kind.Continue)
-            {
-                return result;
-            }
-
-            inlineRetries++;
-            if (inlineRetries <= _retryPolicy.MaxInlineRetries)
-            {
-                await Task.Delay(retryDecision.Delay).ConfigureAwait(false);
-                continue;
-            }
-
-            return result;
-        } while (true);
+        // IHostApplicationLifetime is optional so MessageSender remains usable in test contexts
+        // (and non-hosted scenarios). When absent, shutdown cancellation cannot be observed and
+        // exceptions are treated as failures rather than cancellations — the pre-existing behavior.
+        _shutdownToken =
+            serviceProvider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None;
     }
 
-    private async Task<(RetryDecision, OperateResult)> _SendWithoutRetryAsync(MediumMessage message, int inlineRetries)
+    public Task<OperateResult> SendAsync(MediumMessage message) => SendAsync(message, _serviceProvider);
+
+    public Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices)
+    {
+        Headless.Checks.Argument.IsNotNull(dispatchServices);
+
+        // Outbox sender doesn't propagate user cancellation; messages should be delivered.
+        // The inline-retry loop uses CancellationToken.None for Task.Delay as well so a
+        // background shutdown does not partially-retry mid-delay.
+        return InlineRetryLoop.ExecuteAsync(
+            (inlineRetries, _) => _SendWithoutRetryAsync(message, dispatchServices, inlineRetries),
+            _retryPolicy,
+            CancellationToken.None
+        );
+    }
+
+    private async Task<(RetryDecision Decision, OperateResult Result)> _SendWithoutRetryAsync(
+        MediumMessage message,
+        IServiceProvider dispatchServices,
+        int inlineRetries
+    )
     {
         var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).ConfigureAwait(false);
 
@@ -88,36 +109,49 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
 
         _TracingError(tracingTimestamp, transportMsg, _transport.BrokerAddress, result);
 
-        var needRetry = await _SetFailedState(message, result.Exception!, inlineRetries).ConfigureAwait(false);
+        var needRetry = await _SetFailedState(message, result.Exception!, dispatchServices, inlineRetries)
+            .ConfigureAwait(false);
 
         return (needRetry, OperateResult.Failed(result.Exception!));
     }
 
     private async Task _SetSuccessfulState(MediumMessage message)
     {
-        message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.Value.SucceedMessageExpiredAfter);
+        message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
         await _dataStorage.ChangePublishStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
     }
 
-    private async Task<RetryDecision> _SetFailedState(MediumMessage message, Exception ex, int inlineRetries)
+    private async Task<RetryDecision> _SetFailedState(
+        MediumMessage message,
+        Exception ex,
+        IServiceProvider dispatchServices,
+        int inlineRetries
+    )
     {
         var needRetry = _UpdateMessageForRetry(message, ex);
 
         message.Origin.AddOrUpdateException(ex);
-        message.ExpiresAt = message.Added.AddSeconds(_options.Value.FailedMessageExpiredAfter);
+        message.ExpiresAt = message.Added.AddSeconds(_options.FailedMessageExpiredAfter);
+
+        // Inline-retry budget still available: persist as Scheduled/NULL so a crash mid-delay
+        // leaves the row picked up by the polling query on restart (Failed/NULL is filtered out).
+        // Only transition to Failed on terminal decisions (Stop, Exhausted) or when persisting
+        // for the persisted-retry processor (Continue with inline budget exhausted, NextRetryAt set).
+        var isInlineRetryInFlight =
+            needRetry.Outcome == RetryDecision.Kind.Continue && inlineRetries + 1 <= _retryPolicy.MaxInlineRetries;
+
+        var nextStatus = isInlineRetryInFlight ? StatusName.Scheduled : StatusName.Failed;
 
         var nextRetryAt =
             needRetry.Outcome == RetryDecision.Kind.Continue && inlineRetries + 1 > _retryPolicy.MaxInlineRetries
                 ? _timeProvider.GetUtcNow().UtcDateTime.Add(needRetry.Delay)
                 : (DateTime?)null;
 
-        await _dataStorage
-            .ChangePublishStateAsync(message, StatusName.Failed, nextRetryAt: nextRetryAt)
-            .ConfigureAwait(false);
+        await _dataStorage.ChangePublishStateAsync(message, nextStatus, nextRetryAt: nextRetryAt).ConfigureAwait(false);
 
         if (needRetry.Outcome == RetryDecision.Kind.Exhausted)
         {
-            _InvokeOnExhausted(message, ex);
+            _InvokeOnExhausted(message, ex, dispatchServices);
         }
 
         return needRetry;
@@ -125,7 +159,8 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
 
     private RetryDecision _UpdateMessageForRetry(MediumMessage message, Exception ex)
     {
-        var decision = RetryHelper.ComputeRetryDecision(message, ex, _retryPolicy, isCancellation: false);
+        var isCancellation = RetryHelper.IsCancellation(ex, _shutdownToken);
+        var decision = RetryHelper.ComputeRetryDecision(message, ex, _retryPolicy, isCancellation);
         switch (decision.Outcome)
         {
             case RetryDecision.Kind.Stop:
@@ -146,15 +181,17 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
         return decision;
     }
 
-    private void _InvokeOnExhausted(MediumMessage message, Exception ex)
+    private void _InvokeOnExhausted(MediumMessage message, Exception ex, IServiceProvider dispatchServices)
     {
         try
         {
-            using var scope = serviceProvider.CreateScope();
+            // Use the live dispatch scope so scoped services resolved here are the same
+            // instances seen during SendAsync. The caller (Dispatcher) is responsible for
+            // creating and disposing that scope.
             _retryPolicy.OnExhausted?.Invoke(
                 new FailedInfo
                 {
-                    ServiceProvider = scope.ServiceProvider,
+                    ServiceProvider = dispatchServices,
                     MessageType = MessageType.Publish,
                     Message = message.Origin,
                     Exception = ex,

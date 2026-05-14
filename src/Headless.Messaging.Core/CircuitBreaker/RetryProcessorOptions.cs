@@ -52,18 +52,12 @@ internal sealed class RetryProcessorOptionsValidator : AbstractValidator<RetryPr
 {
     public RetryProcessorOptionsValidator()
     {
-        When(
-            x => x.AdaptivePolling,
-            () =>
-            {
-                RuleFor(x => x.MaxPollingInterval)
-                    .GreaterThan(TimeSpan.Zero)
-                    .LessThanOrEqualTo(TimeSpan.FromHours(24))
-                    .GreaterThanOrEqualTo(x => x.BaseInterval)
-                    .WithMessage("MaxPollingInterval must be >= BaseInterval.");
-                RuleFor(x => x.BaseInterval).GreaterThan(TimeSpan.Zero);
-                RuleFor(x => x.CircuitOpenRateThreshold).ExclusiveBetween(0, 1);
-            }
-        );
+        RuleFor(x => x.BaseInterval).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.MaxPollingInterval)
+            .GreaterThan(TimeSpan.Zero)
+            .LessThanOrEqualTo(TimeSpan.FromHours(24))
+            .GreaterThanOrEqualTo(x => x.BaseInterval)
+            .WithMessage("MaxPollingInterval must be >= BaseInterval.");
+        RuleFor(x => x.CircuitOpenRateThreshold).ExclusiveBetween(0, 1);
     }
 }

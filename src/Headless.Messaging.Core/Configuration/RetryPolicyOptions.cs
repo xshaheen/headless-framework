@@ -31,9 +31,13 @@ public sealed class RetryPolicyOptions
     public IRetryBackoffStrategy BackoffStrategy { get; set; } = new ExponentialBackoffStrategy();
 
     /// <summary>
-    /// Gets or sets the callback invoked once retry attempts are exhausted.
-    /// Permanent failures and cancellations do not invoke this callback. The callback runs synchronously
-    /// inside the live dispatch scope carried by <see cref="FailedInfo.ServiceProvider"/>.
+    /// Gets or sets the callback invoked once retry attempts are exhausted
+    /// (<see cref="MaxAttempts"/> reached or the configured <see cref="BackoffStrategy"/> signals
+    /// no further delay).
+    /// Permanent failures (for example argument validation errors or subscriber-not-found) and
+    /// cancellations short-circuit the retry budget entirely and do not invoke this callback.
+    /// The callback runs synchronously inside the live dispatch scope carried by
+    /// <see cref="FailedInfo.ServiceProvider"/>.
     /// </summary>
     public Action<FailedInfo>? OnExhausted { get; set; }
 }

@@ -315,19 +315,22 @@ public sealed class RetryProcessorOptionsTests : TestBase
     }
 
     [Fact]
-    public void validator_skips_adaptive_polling_rules_when_disabled()
+    public void validator_applies_polling_rules_regardless_of_adaptive_polling_flag()
     {
+        // BaseInterval seeds the processor's poll interval whether or not adaptive polling is on,
+        // so its validation must not be gated on AdaptivePolling.
         var opts = new RetryProcessorOptions
         {
             AdaptivePolling = false,
-            MaxPollingInterval = TimeSpan.Zero, // would fail if validated
-            CircuitOpenRateThreshold = 0, // would fail if validated
+            BaseInterval = TimeSpan.Zero, // invalid under all modes — would tight-loop
+            MaxPollingInterval = TimeSpan.Zero,
+            CircuitOpenRateThreshold = 0,
         };
         var validator = _CreateValidator();
 
         var result = validator.Validate(opts);
 
-        result.IsValid.Should().BeTrue();
+        result.IsValid.Should().BeFalse();
     }
 }
 
