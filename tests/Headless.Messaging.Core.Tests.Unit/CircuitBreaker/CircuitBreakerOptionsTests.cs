@@ -234,8 +234,7 @@ public sealed class CircuitBreakerOptionsTests : TestBase
 
 public sealed class RetryProcessorOptionsTests : TestBase
 {
-    private static RetryProcessorOptionsValidator _CreateValidator(int failedRetryIntervalSeconds = 60) =>
-        new(Options.Create(new MessagingOptions { FailedRetryInterval = failedRetryIntervalSeconds }));
+    private static RetryProcessorOptionsValidator _CreateValidator() => new();
 
     [Fact]
     public void defaults_are_correct()
@@ -243,6 +242,7 @@ public sealed class RetryProcessorOptionsTests : TestBase
         var opts = new RetryProcessorOptions();
 
         opts.AdaptivePolling.Should().BeTrue();
+        opts.BaseInterval.Should().Be(TimeSpan.FromSeconds(60));
         opts.MaxPollingInterval.Should().Be(TimeSpan.FromMinutes(15));
         opts.CircuitOpenRateThreshold.Should().Be(0.8);
     }
@@ -260,10 +260,14 @@ public sealed class RetryProcessorOptionsTests : TestBase
     }
 
     [Fact]
-    public void validator_rejects_max_polling_interval_below_failed_retry_interval()
+    public void validator_rejects_max_polling_interval_below_base_interval()
     {
-        var opts = new RetryProcessorOptions { MaxPollingInterval = TimeSpan.FromSeconds(30) };
-        var validator = _CreateValidator(failedRetryIntervalSeconds: 60);
+        var opts = new RetryProcessorOptions
+        {
+            BaseInterval = TimeSpan.FromSeconds(60),
+            MaxPollingInterval = TimeSpan.FromSeconds(30),
+        };
+        var validator = _CreateValidator();
 
         var result = validator.Validate(opts);
 

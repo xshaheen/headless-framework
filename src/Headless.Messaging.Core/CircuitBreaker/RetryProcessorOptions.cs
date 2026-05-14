@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Messaging.Configuration;
-using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.CircuitBreaker;
 
@@ -18,6 +16,12 @@ public sealed class RetryProcessorOptions
     /// Default is <see langword="true"/>.
     /// </summary>
     public bool AdaptivePolling { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the base polling interval for the retry processor.
+    /// Default is 60 seconds.
+    /// </summary>
+    public TimeSpan BaseInterval { get; set; } = TimeSpan.FromSeconds(60);
 
     /// <summary>
     /// Gets or sets the maximum polling interval when adaptive polling is enabled.
@@ -46,10 +50,8 @@ public sealed class RetryProcessorOptions
 
 internal sealed class RetryProcessorOptionsValidator : AbstractValidator<RetryProcessorOptions>
 {
-    public RetryProcessorOptionsValidator(IOptions<MessagingOptions> messagingOptions)
+    public RetryProcessorOptionsValidator()
     {
-        var failedRetryInterval = TimeSpan.FromSeconds(messagingOptions.Value.FailedRetryInterval);
-
         When(
             x => x.AdaptivePolling,
             () =>
@@ -57,10 +59,9 @@ internal sealed class RetryProcessorOptionsValidator : AbstractValidator<RetryPr
                 RuleFor(x => x.MaxPollingInterval)
                     .GreaterThan(TimeSpan.Zero)
                     .LessThanOrEqualTo(TimeSpan.FromHours(24))
-                    .GreaterThanOrEqualTo(failedRetryInterval)
-                    .WithMessage(
-                        $"MaxPollingInterval must be greater than or equal to the failed retry interval ({failedRetryInterval})."
-                    );
+                    .GreaterThanOrEqualTo(x => x.BaseInterval)
+                    .WithMessage("MaxPollingInterval must be >= BaseInterval.");
+                RuleFor(x => x.BaseInterval).GreaterThan(TimeSpan.Zero);
                 RuleFor(x => x.CircuitOpenRateThreshold).ExclusiveBetween(0, 1);
             }
         );

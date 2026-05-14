@@ -71,6 +71,7 @@ public sealed class PostgreSqlStorageInitializer(
             	"Retries" INT NOT NULL,
             	"Added" TIMESTAMPTZ NOT NULL,
                 "ExpiresAt" TIMESTAMPTZ NULL,
+                "NextRetryAt" TIMESTAMPTZ NULL,
             	"StatusName" VARCHAR(50) NOT NULL,
                 "MessageId" VARCHAR(200) NOT NULL,
                 "ExceptionInfo" text NULL
@@ -79,7 +80,8 @@ public sealed class PostgreSqlStorageInitializer(
             CREATE UNIQUE INDEX IF NOT EXISTS "idx_received_MessageId_Group" ON {GetReceivedTableName()} ("MessageId","Group");
             CREATE INDEX IF NOT EXISTS "idx_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");
-            CREATE INDEX IF NOT EXISTS "idx_received_retry" ON {GetReceivedTableName()} ("StatusName","Retries","Added") WHERE "StatusName" IN ('Failed','Scheduled');
+            CREATE INDEX IF NOT EXISTS "idx_received_next_retry" ON {GetReceivedTableName()} ("NextRetryAt") WHERE "NextRetryAt" IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS "idx_received_scheduled_null" ON {GetReceivedTableName()} ("StatusName") WHERE "StatusName" = 'Scheduled' AND "NextRetryAt" IS NULL;
             CREATE INDEX IF NOT EXISTS "idx_received_delayed" ON {GetReceivedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
 
             CREATE TABLE IF NOT EXISTS {GetPublishedTableName()}(
@@ -90,13 +92,15 @@ public sealed class PostgreSqlStorageInitializer(
             	"Retries" INT NOT NULL,
             	"Added" TIMESTAMPTZ NOT NULL,
                 "ExpiresAt" TIMESTAMPTZ NULL,
+                "NextRetryAt" TIMESTAMPTZ NULL,
             	"StatusName" VARCHAR(50) NOT NULL,
                 "MessageId" VARCHAR(200) NOT NULL
             );
 
             CREATE INDEX IF NOT EXISTS "idx_published_ExpiresAt_StatusName" ON {GetPublishedTableName()}("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_published_Version_ExpiresAt_StatusName" ON {GetPublishedTableName()} ("Version","ExpiresAt","StatusName");
-            CREATE INDEX IF NOT EXISTS "idx_published_retry" ON {GetPublishedTableName()} ("StatusName","Retries","Added") WHERE "StatusName" IN ('Failed','Scheduled');
+            CREATE INDEX IF NOT EXISTS "idx_published_next_retry" ON {GetPublishedTableName()} ("NextRetryAt") WHERE "NextRetryAt" IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS "idx_published_scheduled_null" ON {GetPublishedTableName()} ("StatusName") WHERE "StatusName" = 'Scheduled' AND "NextRetryAt" IS NULL;
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
             """;
 

@@ -45,7 +45,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     }
 
     private static (MessageNeedToRetryProcessor Sut, IDispatcher Dispatcher, ICircuitBreakerMonitor Cb) _Create(
-        int failedRetryInterval = 60,
+        int baseIntervalSeconds = 1,
         bool adaptivePolling = true,
         int maxPollingIntervalSeconds = 900,
         double circuitOpenRateThreshold = 0.8
@@ -56,11 +56,12 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var cb = Substitute.For<ICircuitBreakerMonitor>();
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
-        var options = new MessagingOptions { FailedRetryInterval = failedRetryInterval };
+        var options = new MessagingOptions();
 
         var retryProcessorOptions = new RetryProcessorOptions
         {
             AdaptivePolling = adaptivePolling,
+            BaseInterval = TimeSpan.FromSeconds(baseIntervalSeconds),
             MaxPollingInterval = TimeSpan.FromSeconds(maxPollingIntervalSeconds),
             CircuitOpenRateThreshold = circuitOpenRateThreshold,
         };
@@ -87,11 +88,11 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     private static void _SetupReceivedMessages(IDataStorage dataStorage, params MediumMessage[] messages)
     {
         dataStorage
-            .GetReceivedMessagesOfNeedRetry(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetry(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>(messages));
 
         dataStorage
-            .GetPublishedMessagesOfNeedRetry(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetry(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
     }
 
@@ -148,8 +149,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var dataStorage = Substitute.For<IDataStorage>();
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
-        var options = new MessagingOptions { FailedRetryInterval = 60 };
-        var retryProcessorOptions = new RetryProcessorOptions();
+        var options = new MessagingOptions();
+        var retryProcessorOptions = new RetryProcessorOptions { BaseInterval = TimeSpan.FromSeconds(1) };
 
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(options),
@@ -200,9 +201,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task ProcessAsync_DoublesInterval_WhenTransientRateExceedsThreshold()
     {
         // Arrange — 5 messages, 4 skipped (circuit open) = 80% > threshold
-        var (sut, dispatcher, cb) = _Create(failedRetryInterval: 10, circuitOpenRateThreshold: 0.7);
+        var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, circuitOpenRateThreshold: 0.7);
 
-        var baseInterval = TimeSpan.FromSeconds(10);
+        var baseInterval = TimeSpan.FromSeconds(1);
 
         cb.IsOpen("open-group").Returns(true);
         cb.IsOpen("healthy-group").Returns(false);
@@ -240,9 +241,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task ProcessAsync_ResetsInterval_After3CleanCycles()
     {
         // Arrange
-        var (sut, dispatcher, cb) = _Create(failedRetryInterval: 10);
+        var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1);
 
-        var baseInterval = TimeSpan.FromSeconds(10);
+        var baseInterval = TimeSpan.FromSeconds(1);
 
         cb.IsOpen(Arg.Any<string>()).Returns(false);
 
@@ -275,7 +276,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task ProcessAsync_DoesNotAdjustInterval_WhenAdaptivePollingDisabled()
     {
         // Arrange
-        var (sut, dispatcher, cb) = _Create(failedRetryInterval: 10, adaptivePolling: false);
+        var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, adaptivePolling: false);
 
         cb.IsOpen("open-group").Returns(true);
 
@@ -305,7 +306,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Arrange — maxPollingInterval=2s, base=1s, all messages skipped → high transient rate
         var maxPollingInterval = TimeSpan.FromSeconds(2);
         var (sut, dispatcher, cb) = _Create(
-            failedRetryInterval: 1,
+            baseIntervalSeconds: 1,
             maxPollingIntervalSeconds: 2,
             circuitOpenRateThreshold: 0.5
         );
@@ -334,7 +335,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         // Arrange — first elevate interval via high transient rate, then 2 healthy cycles
         var (sut, dispatcher, cb) = _Create(
-            failedRetryInterval: 1,
+            baseIntervalSeconds: 1,
             maxPollingIntervalSeconds: 60,
             circuitOpenRateThreshold: 0.5
         );
@@ -367,7 +368,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     [Fact]
     public void lock_ttl_tracks_the_effective_polling_interval()
     {
-        var (sut, _, _) = _Create(failedRetryInterval: 10);
+        var (sut, _, _) = _Create(baseIntervalSeconds: 1);
 
         _SetCurrentInterval(sut, TimeSpan.FromSeconds(20));
 
@@ -379,7 +380,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         // Arrange — set current interval to a value where * 2 would overflow a long
         var (sut, _, _) = _Create(
-            failedRetryInterval: 1,
+            baseIntervalSeconds: 1,
             maxPollingIntervalSeconds: 900,
             circuitOpenRateThreshold: 0.5
         );
@@ -403,7 +404,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Arrange — elevate interval to 4x base, then race Reset vs Adjust(double)
         var baseInterval = TimeSpan.FromSeconds(1);
         var (sut, _, _) = _Create(
-            failedRetryInterval: 1,
+            baseIntervalSeconds: 1,
             maxPollingIntervalSeconds: 900,
             circuitOpenRateThreshold: 0.5
         );
@@ -446,7 +447,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task ProcessAsync_MidRangeRate_ResetsCountersWithoutChangingInterval()
     {
         // Arrange — rate between 0.5 and threshold (0.8): e.g., 6 skipped out of 10 = 60%
-        var (sut, dispatcher, cb) = _Create(failedRetryInterval: 1, circuitOpenRateThreshold: 0.8);
+        var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, circuitOpenRateThreshold: 0.8);
         cb.IsOpen("open-group").Returns(true);
         cb.IsOpen("healthy-group").Returns(false);
 
@@ -491,7 +492,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         await Task.WhenAll(tasks);
 
         // After all operations, interval should be within valid bounds
-        sut.CurrentPollingInterval.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(60));
+        sut.CurrentPollingInterval.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1));
         sut.CurrentPollingInterval.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(900));
     }
 }

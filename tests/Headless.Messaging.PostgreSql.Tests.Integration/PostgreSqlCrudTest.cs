@@ -31,7 +31,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         services.Configure<MessagingOptions>(x =>
         {
             x.Version = "v1";
-            x.FailedRetryCount = 5;
+            x.RetryPolicy.MaxAttempts = 5;
             x.FailedMessageExpiredAfter = 3600;
         });
         services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
@@ -244,20 +244,21 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + messageId + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
             """
-            INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","StatusName","MessageId")
-            VALUES (@Id,'v1','test.topic',@Content,0,@Added,NULL,'Failed',@MessageId)
+            INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
+            VALUES (@Id,'v1','test.topic',@Content,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
             """,
             new
             {
                 Id = id,
                 Content = content,
                 Added = addedTime,
+                NextRetryAt = DateTime.UtcNow.AddSeconds(-1),
                 MessageId = messageId,
             }
         );
 
         // when
-        var messages = await _storage.GetPublishedMessagesOfNeedRetry(TimeSpan.FromMinutes(4), AbortToken);
+        var messages = await _storage.GetPublishedMessagesOfNeedRetry(AbortToken);
 
         // then
         messages.Should().NotBeEmpty();
@@ -277,20 +278,21 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
             """
-            INSERT INTO messaging.received ("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","StatusName","MessageId")
-            VALUES (@Id,'v1','test.topic','test.group',@Content,0,@Added,NULL,'Failed',@MessageId)
+            INSERT INTO messaging.received ("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
+            VALUES (@Id,'v1','test.topic','test.group',@Content,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
             """,
             new
             {
                 Id = id,
                 Content = content,
                 Added = addedTime,
+                NextRetryAt = DateTime.UtcNow.AddSeconds(-1),
                 MessageId = msgId,
             }
         );
 
         // when
-        var messages = await _storage.GetReceivedMessagesOfNeedRetry(TimeSpan.FromMinutes(4), AbortToken);
+        var messages = await _storage.GetReceivedMessagesOfNeedRetry(AbortToken);
 
         // then
         messages.Should().NotBeEmpty();
@@ -310,20 +312,21 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + messageId + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
             """
-            INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","StatusName","MessageId")
-            VALUES (@Id,'v1','test.topic',@Content,10,@Added,NULL,'Failed',@MessageId)
+            INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
+            VALUES (@Id,'v1','test.topic',@Content,10,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
             """,
             new
             {
                 Id = id,
                 Content = content,
                 Added = addedTime,
+                NextRetryAt = DateTime.UtcNow.AddSeconds(-1),
                 MessageId = messageId,
             }
         );
 
         // when
-        var messages = await _storage.GetPublishedMessagesOfNeedRetry(TimeSpan.FromMinutes(4), AbortToken);
+        var messages = await _storage.GetPublishedMessagesOfNeedRetry(AbortToken);
 
         // then
         messages.Should().NotContain(m => m.StorageId == id);

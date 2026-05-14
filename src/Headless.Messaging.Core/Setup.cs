@@ -40,7 +40,7 @@ public static class Setup
     /// services.AddHeadlessMessaging(options =>
     /// {
     ///     // Configure infrastructure
-    ///     options.FailedRetryCount = 50;
+    ///     options.RetryPolicy.MaxAttempts = 50;
     ///     options.SucceedMessageExpiredAfter = 24 * 3600;
     ///     options.UseSqlServer("connection_string");
     ///     options.UseRabbitMQ(rabbit =>
@@ -164,7 +164,7 @@ public static class Setup
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that
         // requires Services/Registry to be initialized - which only happens in AddHeadlessMessaging.
-        services.Configure<MessagingOptions>(opt =>
+        services.Configure<MessagingOptions, MessagingOptionsValidator>(opt =>
         {
             opt.Services = services;
             opt.Registry = options.Registry;
@@ -178,21 +178,17 @@ public static class Setup
             opt.Conventions = options.Conventions;
             opt.SucceedMessageExpiredAfter = options.SucceedMessageExpiredAfter;
             opt.FailedMessageExpiredAfter = options.FailedMessageExpiredAfter;
-            opt.FailedRetryInterval = options.FailedRetryInterval;
-            opt.FailedThresholdCallback = options.FailedThresholdCallback;
-            opt.FailedRetryCount = options.FailedRetryCount;
             opt.ConsumerThreadCount = options.ConsumerThreadCount;
             opt.EnableSubscriberParallelExecute = options.EnableSubscriberParallelExecute;
             opt.SubscriberParallelExecuteThreadCount = options.SubscriberParallelExecuteThreadCount;
             opt.SubscriberParallelExecuteBufferFactor = options.SubscriberParallelExecuteBufferFactor;
             opt.EnablePublishParallelSend = options.EnablePublishParallelSend;
             opt.PublishBatchSize = options.PublishBatchSize;
-            opt.FallbackWindowLookbackSeconds = options.FallbackWindowLookbackSeconds;
             opt.CollectorCleaningInterval = options.CollectorCleaningInterval;
             opt.SchedulerBatchSize = options.SchedulerBatchSize;
             opt.UseStorageLock = options.UseStorageLock;
-            opt.RetryBackoffStrategy = options.RetryBackoffStrategy;
             opt.TenantContextRequired = options.TenantContextRequired;
+            opt.RetryPolicy = options.RetryPolicy;
 
             // Copy internal collections
             foreach (var mapping in options.TopicMappings)
@@ -213,6 +209,7 @@ public static class Setup
         services.Configure<RetryProcessorOptions, RetryProcessorOptionsValidator>(rp =>
         {
             rp.AdaptivePolling = options.RetryProcessor.AdaptivePolling;
+            rp.BaseInterval = options.RetryProcessor.BaseInterval;
             rp.MaxPollingInterval = options.RetryProcessor.MaxPollingInterval;
             rp.CircuitOpenRateThreshold = options.RetryProcessor.CircuitOpenRateThreshold;
         });

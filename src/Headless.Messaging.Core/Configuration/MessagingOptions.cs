@@ -1,11 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using FluentValidation;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Retry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -80,25 +79,6 @@ public class MessagingOptions : IMessagingBuilder
     public int FailedMessageExpiredAfter { get; set; } = 15 * 24 * 3600;
 
     /// <summary>
-    /// Gets or sets the polling interval (in seconds) for the retry processor to check and retry failed messages.
-    /// Default is 60 seconds.
-    /// </summary>
-    public int FailedRetryInterval { get; set; } = 60;
-
-    /// <summary>
-    /// Gets or sets an optional callback function invoked when a message has been retried the maximum number of times
-    /// specified by <see cref="FailedRetryCount"/> without success. This callback receives detailed information about the failed message.
-    /// </summary>
-    public Action<FailedInfo>? FailedThresholdCallback { get; set; }
-
-    /// <summary>
-    /// Gets or sets the maximum number of retry attempts for failed messages (both published and subscribed).
-    /// Once this threshold is reached, the message is marked as permanently failed and no longer retried.
-    /// Default is 50 times.
-    /// </summary>
-    public int FailedRetryCount { get; set; } = 50;
-
-    /// <summary>
     /// Gets or sets the number of concurrent consumer threads for message consumption from the transport.
     /// Higher values increase parallelism but consume more resources; lower values reduce resource usage but may lower throughput.
     /// Default is 1.
@@ -146,13 +126,6 @@ public class MessagingOptions : IMessagingBuilder
     public int? PublishBatchSize { get; set; }
 
     /// <summary>
-    /// Gets or sets the lookback time window (in seconds) for the retry processor to pick up scheduled or failed status messages.
-    /// This ensures that messages with clocks slightly out of sync are still processed correctly.
-    /// Default is 240 seconds (4 minutes).
-    /// </summary>
-    public int FallbackWindowLookbackSeconds { get; set; } = 240;
-
-    /// <summary>
     /// Gets or sets the interval (in seconds) at which the cleanup processor removes expired messages from the message storage.
     /// The processor runs periodically to clean up messages that have exceeded their expiration times.
     /// Default is 300 seconds (5 minutes).
@@ -181,13 +154,6 @@ public class MessagingOptions : IMessagingBuilder
     public bool UseStorageLock { get; set; }
 
     /// <summary>
-    /// Gets or sets the retry backoff strategy used to calculate retry delays and determine retry eligibility.
-    /// When null, defaults to <see cref="ExponentialBackoffStrategy"/> with 1s initial delay, 5min max delay, and 2x multiplier.
-    /// For fixed interval retries, use <see cref="FixedIntervalBackoffStrategy"/>.
-    /// </summary>
-    public IRetryBackoffStrategy RetryBackoffStrategy { get; set; } = new ExponentialBackoffStrategy();
-
-    /// <summary>
     /// Gets or sets a value indicating whether publish calls require a resolved tenant identifier.
     /// When <see langword="true"/>, the publish wrapper rejects calls where neither
     /// <see cref="PublishOptions.TenantId"/> nor the ambient <c>ICurrentTenant.Id</c> resolves a
@@ -208,6 +174,11 @@ public class MessagingOptions : IMessagingBuilder
     /// <see cref="IConsumerBuilder{TConsumer}.WithCircuitBreaker"/>.
     /// </summary>
     public CircuitBreakerOptions CircuitBreaker { get; } = new();
+
+    /// <summary>
+    /// Gets or sets retry policy configuration for inline and persisted retries.
+    /// </summary>
+    public RetryPolicyOptions RetryPolicy { get; set; } = new();
 
     /// <summary>
     /// Gets the retry processor configuration that controls adaptive polling and backpressure behavior
@@ -492,5 +463,13 @@ public class MessagingOptions : IMessagingBuilder
         );
 
         return metadata;
+    }
+}
+
+internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOptions>
+{
+    public MessagingOptionsValidator()
+    {
+        RuleFor(x => x.RetryPolicy).NotNull().SetValidator(new RetryPolicyOptionsValidator());
     }
 }

@@ -89,7 +89,15 @@ public sealed class MessageSenderTests : TestBase
             storage,
             serializer,
             transport,
-            new MessagingOptions { FailedRetryCount = 5, RetryBackoffStrategy = new ZeroDelayRetryBackoffStrategy() }
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxAttempts = 5,
+                    MaxInlineRetries = 4,
+                    BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
+                },
+            }
         );
 
         // when
@@ -138,8 +146,11 @@ public sealed class MessageSenderTests : TestBase
             transport,
             new MessagingOptions
             {
-                FailedRetryCount = 2,
-                RetryBackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromMilliseconds(40)),
+                RetryPolicy =
+                {
+                    MaxAttempts = 2,
+                    BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromMilliseconds(40)),
+                },
             }
         );
 

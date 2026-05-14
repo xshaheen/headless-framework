@@ -172,7 +172,8 @@ public abstract class DataStorageTestsBase : TestBase
         var storedMessage = await storage.StoreReceivedMessageAsync("state-test", "group", message, AbortToken);
 
         // when
-        var act = async () => await storage.ChangeReceiveStateAsync(storedMessage, StatusName.Succeeded, AbortToken);
+        var act = async () =>
+            await storage.ChangeReceiveStateAsync(storedMessage, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // then
         await act.Should().NotThrowAsync();
@@ -202,10 +203,8 @@ public abstract class DataStorageTestsBase : TestBase
     {
         // given
         var storage = GetStorage();
-        var lookbackTime = TimeSpan.FromMinutes(5);
-
         // when
-        var result = await storage.GetPublishedMessagesOfNeedRetry(lookbackTime, AbortToken);
+        var result = await storage.GetPublishedMessagesOfNeedRetry(AbortToken);
 
         // then
         result.Should().NotBeNull();
@@ -215,10 +214,8 @@ public abstract class DataStorageTestsBase : TestBase
     {
         // given
         var storage = GetStorage();
-        var lookbackTime = TimeSpan.FromMinutes(5);
-
         // when
-        var result = await storage.GetReceivedMessagesOfNeedRetry(lookbackTime, AbortToken);
+        var result = await storage.GetReceivedMessagesOfNeedRetry(AbortToken);
 
         // then
         result.Should().NotBeNull();
@@ -497,10 +494,15 @@ public abstract class DataStorageTestsBase : TestBase
         var storedMessage = await storage.StoreMessageAsync("failed-state", message, cancellationToken: AbortToken);
 
         // when
-        await storage.ChangePublishStateAsync(storedMessage, StatusName.Failed, cancellationToken: AbortToken);
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
 
-        // then — the failed message should appear in retry results (lookback covers messages added just now)
-        var retriable = await storage.GetPublishedMessagesOfNeedRetry(TimeSpan.FromMinutes(5), AbortToken);
+        // then — the failed message should appear in retry results once its scheduled retry time is due.
+        var retriable = await storage.GetPublishedMessagesOfNeedRetry(AbortToken);
         retriable.Should().NotBeNull();
         retriable.Should().Contain(m => m.StorageId == storedMessage.StorageId);
     }

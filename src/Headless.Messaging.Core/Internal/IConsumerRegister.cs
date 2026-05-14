@@ -650,16 +650,24 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
                     try
                     {
-                        _options.FailedThresholdCallback?.Invoke(
+                        _options.RetryPolicy.OnExhausted?.Invoke(
                             new FailedInfo
                             {
                                 ServiceProvider = serviceProvider,
                                 MessageType = MessageType.Subscribe,
                                 Message = message,
+                                Exception =
+                                    dispatchBypassException
+                                    ?? new InvalidOperationException(
+                                        exceptionInfo ?? "Received message contains exception information."
+                                    ),
                             }
                         );
 
-                        _logger.ConsumerReceivedMessageAfterThreshold(message.GetId(), _options.FailedRetryCount);
+                        _logger.ConsumerReceivedMessageAfterThreshold(
+                            message.GetId(),
+                            _options.RetryPolicy.MaxAttempts
+                        );
                     }
                     catch (Exception e)
                     {

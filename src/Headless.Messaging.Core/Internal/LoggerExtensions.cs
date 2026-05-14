@@ -22,7 +22,7 @@ internal static partial class LoggerExtensions
         EventId = 3,
         EventName = "ExecutedThresholdCallbackFailed",
         Level = LogLevel.Warning,
-        Message = "FailedThresholdCallback action raised an exception: {Message}"
+        Message = "RetryPolicy.OnExhausted action raised an exception: {Message}"
     )]
     public static partial void ExecutedThresholdCallbackFailed(
         this ILogger logger,

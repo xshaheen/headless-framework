@@ -112,13 +112,15 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
-    public void should_set_default_retry_count()
+    public void should_set_default_retry_policy()
     {
         // given
         var options = new MessagingOptions();
 
         // then
-        options.FailedRetryCount.Should().Be(50);
+        options.RetryPolicy.MaxAttempts.Should().Be(50);
+        options.RetryPolicy.MaxInlineRetries.Should().Be(2);
+        options.RetryPolicy.BackoffStrategy.Should().BeOfType<ExponentialBackoffStrategy>();
     }
 
     [Fact]
@@ -147,24 +149,85 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
-    public void should_set_default_retry_interval()
+    public void should_reject_retry_policy_with_zero_max_attempts()
     {
         // given
-        var options = new MessagingOptions();
+        var options = new RetryPolicyOptions { MaxAttempts = 0 };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
 
         // then
-        options.FailedRetryInterval.Should().Be(60); // 60 seconds
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxAttempts));
     }
 
     [Fact]
-    public void should_set_default_backoff_strategy()
+    public void should_accept_retry_policy_with_one_max_attempt()
     {
         // given
-        var options = new MessagingOptions();
+        var options = new RetryPolicyOptions { MaxAttempts = 1, MaxInlineRetries = 0 };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
 
         // then
-        options.RetryBackoffStrategy.Should().NotBeNull();
-        options.RetryBackoffStrategy.Should().BeOfType<ExponentialBackoffStrategy>();
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_when_inline_retries_reach_max_attempts()
+    {
+        // given
+        var options = new RetryPolicyOptions { MaxAttempts = 2, MaxInlineRetries = 2 };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxInlineRetries));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_null_backoff_strategy()
+    {
+        // given
+        var options = new RetryPolicyOptions { BackoffStrategy = null! };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.BackoffStrategy));
+    }
+
+    [Fact]
+    public void should_accept_default_retry_policy()
+    {
+        // given
+        var options = new RetryPolicyOptions();
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_reject_messaging_options_with_null_retry_policy()
+    {
+        // given
+        var options = new MessagingOptions { RetryPolicy = null! };
+
+        // when
+        var result = new MessagingOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(MessagingOptions.RetryPolicy));
     }
 
     [Fact]
@@ -264,16 +327,6 @@ public sealed class MessagingOptionsValidationTests : TestBase
 
         // then
         options.CollectorCleaningInterval.Should().Be(300); // 5 minutes
-    }
-
-    [Fact]
-    public void should_set_default_fallback_window()
-    {
-        // given
-        var options = new MessagingOptions();
-
-        // then
-        options.FallbackWindowLookbackSeconds.Should().Be(240); // 4 minutes
     }
 
     [Fact]

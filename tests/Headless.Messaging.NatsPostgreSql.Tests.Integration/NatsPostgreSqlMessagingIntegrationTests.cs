@@ -42,7 +42,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
     protected override void ConfigureMessaging(MessagingOptions options)
     {
         options.TopicNamePrefix = _topicPrefix;
-        options.FailedRetryInterval = 1;
+        options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(1);
     }
 
     [Fact]
