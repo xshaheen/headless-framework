@@ -28,12 +28,14 @@ public interface IDataStorage
         MediumMessage message,
         StatusName state,
         object? transaction = null,
+        DateTime? nextRetryAt = null,
         CancellationToken cancellationToken = default
     );
 
     ValueTask ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
+        DateTime? nextRetryAt = null,
         CancellationToken cancellationToken = default
     );
 
@@ -71,7 +73,6 @@ public interface IDataStorage
     );
 
     ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
-        TimeSpan lookbackSeconds,
         CancellationToken cancellationToken = default
     );
 
@@ -80,10 +81,7 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
-    ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(
-        TimeSpan lookbackSeconds,
-        CancellationToken cancellationToken = default
-    );
+    ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(CancellationToken cancellationToken = default);
 
     ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default);
 

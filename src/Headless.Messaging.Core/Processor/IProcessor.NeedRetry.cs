@@ -19,7 +19,6 @@ namespace Headless.Messaging.Processor;
 /// </summary>
 public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMonitor
 {
-    private const int _MinSuggestedValueForFallbackWindowLookbackSeconds = 30;
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;
     private readonly IDispatcher _dispatcher;
     private readonly TimeSpan _baseInterval;
@@ -27,7 +26,6 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private readonly TimeSpan _maxInterval;
     private readonly IOptions<MessagingOptions> _options;
     private readonly IDataStorage _dataStorage;
-    private readonly TimeSpan _lookbackWindow;
     private readonly string _instance;
     private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
     private readonly bool _adaptivePolling;
@@ -60,9 +58,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         _options = options;
         _logger = logger;
         _dispatcher = dispatcher;
-        _baseInterval = TimeSpan.FromSeconds(options.Value.FailedRetryInterval);
+        _baseInterval = retryOptions.Value.BaseInterval;
         _currentIntervalTicks = _baseInterval.Ticks;
-        _lookbackWindow = TimeSpan.FromSeconds(options.Value.FallbackWindowLookbackSeconds);
         _dataStorage = dataStorage;
         _circuitBreakerMonitor = circuitBreakerMonitor;
 
@@ -73,8 +70,6 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         _instance = (
             (FormattableString)$"{Helper.GetInstanceHostname()}_{SnowflakeIdLongIdGenerator.GenerateWorkerId()}"
         ).ToString(CultureInfo.InvariantCulture);
-
-        _CheckSafeOptionsSet();
     }
 
     /// <inheritdoc />
@@ -182,8 +177,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         try
         {
-            var messages = await _GetSafelyAsync(connection.GetPublishedMessagesOfNeedRetry, _lookbackWindow)
-                .ConfigureAwait(false);
+            var messages = await _GetSafelyAsync(connection.GetPublishedMessagesOfNeedRetry).ConfigureAwait(false);
 
             foreach (var message in messages)
             {
@@ -224,8 +218,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         try
         {
-            var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry, _lookbackWindow)
-                .ConfigureAwait(false);
+            var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry).ConfigureAwait(false);
 
             var enqueued = 0;
             var skippedCircuitOpen = 0;
@@ -263,14 +256,13 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     }
 
     private async Task<IEnumerable<T>> _GetSafelyAsync<T>(
-        Func<TimeSpan, CancellationToken, ValueTask<IEnumerable<T>>> getMessagesAsync,
-        TimeSpan lookbackWindow,
+        Func<CancellationToken, ValueTask<IEnumerable<T>>> getMessagesAsync,
         CancellationToken cancellationToken = default
     )
     {
         try
         {
-            return await getMessagesAsync(lookbackWindow, cancellationToken).ConfigureAwait(false);
+            return await getMessagesAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -408,17 +400,6 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         var effectiveTicks = ticks > _baseInterval.Ticks ? ticks : _baseInterval.Ticks;
         return TimeSpan.FromTicks(effectiveTicks).Add(_lockSafetyMargin);
     }
-
-    private void _CheckSafeOptionsSet()
-    {
-        if (_lookbackWindow < TimeSpan.FromSeconds(_MinSuggestedValueForFallbackWindowLookbackSeconds))
-        {
-            _logger.FallbackWindowLookbackTooLow(
-                _options.Value.FallbackWindowLookbackSeconds,
-                _MinSuggestedValueForFallbackWindowLookbackSeconds
-            );
-        }
-    }
 }
 
 internal static partial class RetryProcessorLog
@@ -460,15 +441,4 @@ internal static partial class RetryProcessorLog
         Message = "Adaptive polling: healthy for 2 cycles, interval decreased to {Interval}"
     )]
     public static partial void AdaptivePollingIntervalDecreased(this ILogger logger, TimeSpan interval);
-
-    [LoggerMessage(
-        EventId = 3113,
-        Level = LogLevel.Warning,
-        Message = "The provided FallbackWindowLookbackSeconds of {CurrentSetFallbackWindowLookbackSeconds} is set to a value lower than {MinSuggestedSeconds} seconds. This might cause unwanted unsafe behavior if the consumer takes more than the provided FallbackWindowLookbackSeconds to execute. "
-    )]
-    public static partial void FallbackWindowLookbackTooLow(
-        this ILogger logger,
-        int currentSetFallbackWindowLookbackSeconds,
-        int minSuggestedSeconds
-    );
 }

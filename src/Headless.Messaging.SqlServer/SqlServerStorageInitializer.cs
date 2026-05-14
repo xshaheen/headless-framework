@@ -90,6 +90,7 @@ public sealed class SqlServerStorageInitializer(
                     [Retries] [int] NOT NULL,
                     [Added] [datetime2](7) NOT NULL,
                     [ExpiresAt] [datetime2](7) NULL,
+                    [NextRetryAt] [datetime2](7) NULL,
                     [StatusName] [nvarchar](50) NOT NULL,
                     [MessageId] [nvarchar](200) NOT NULL,
                     [ExceptionInfo] [nvarchar](max) NULL,
@@ -99,7 +100,8 @@ public sealed class SqlServerStorageInitializer(
                 CREATE UNIQUE NONCLUSTERED INDEX [IX_{receivedPrefix}_MessageId_Group] ON {GetReceivedTableName()} ([MessageId] ASC, [Group] ASC);
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
-                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_RetryQuery] ON {GetReceivedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC);
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_NextRetry] ON {GetReceivedTableName()} ([NextRetryAt] ASC) WHERE [NextRetryAt] IS NOT NULL;
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ScheduledNull] ON {GetReceivedTableName()} ([StatusName] ASC) WHERE [StatusName] = 'Scheduled' AND [NextRetryAt] IS NULL;
             END;
 
             IF OBJECT_ID(N'{GetPublishedTableName()}',N'U') IS NULL
@@ -112,6 +114,7 @@ public sealed class SqlServerStorageInitializer(
                     [Retries] [int] NOT NULL,
                     [Added] [datetime2](7) NOT NULL,
                     [ExpiresAt] [datetime2](7) NULL,
+                    [NextRetryAt] [datetime2](7) NULL,
                     [StatusName] [nvarchar](50) NOT NULL,
                     [MessageId] [nvarchar](200) NOT NULL,
                     CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
@@ -119,7 +122,8 @@ public sealed class SqlServerStorageInitializer(
 
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
-                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_RetryQuery] ON {GetPublishedTableName()} ([Version] ASC,[StatusName] ASC,[Retries] ASC,[Added] ASC);
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_NextRetry] ON {GetPublishedTableName()} ([NextRetryAt] ASC) WHERE [NextRetryAt] IS NOT NULL;
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ScheduledNull] ON {GetPublishedTableName()} ([StatusName] ASC) WHERE [StatusName] = 'Scheduled' AND [NextRetryAt] IS NULL;
             END;
 
 """;

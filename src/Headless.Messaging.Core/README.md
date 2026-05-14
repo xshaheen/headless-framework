@@ -34,7 +34,7 @@ builder.Services.AddHeadlessMessaging(options =>
 {
     // Core configuration
     options.SucceedMessageExpiredAfter = 24 * 3600;
-    options.FailedRetryCount = 50;
+    options.RetryPolicy.MaxAttempts = 50;
     options.UseConventions(c =>
     {
         c.UseKebabCaseTopics();
@@ -190,7 +190,7 @@ Register in `Program.cs`:
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.FailedRetryCount = 50;
+    options.RetryPolicy.MaxAttempts = 50;
     options.SucceedMessageExpiredAfter = 24 * 3600;
     options.ConsumerThreadCount = 1;
     options.DefaultGroupName = "myapp";

@@ -171,7 +171,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         var stored = await _storage.StoreReceivedMessageAsync("test.topic", "test.group", message, AbortToken);
 
         // when
-        await _storage.ChangeReceiveStateAsync(stored, StatusName.Succeeded, AbortToken);
+        await _storage.ChangeReceiveStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // then
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -197,7 +197,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         var stored = await _storage.StoreReceivedMessageAsync("test.topic", "test.group", message, AbortToken);
 
         // when
-        await _storage.ChangeReceiveStateAsync(stored, StatusName.Failed, AbortToken);
+        await _storage.ChangeReceiveStateAsync(stored, StatusName.Failed, cancellationToken: AbortToken);
 
         // then
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);

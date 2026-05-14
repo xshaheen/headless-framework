@@ -152,20 +152,22 @@ public sealed class PostgreSqlDataStorage(
         MediumMessage message,
         StatusName state,
         object? transaction = null,
+        DateTime? nextRetryAt = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _ChangeMessageStateAsync(_publishedTable, message, state, transaction, cancellationToken);
+        return _ChangeMessageStateAsync(_publishedTable, message, state, transaction, nextRetryAt, cancellationToken);
     }
 
     public async ValueTask ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
+        DateTime? nextRetryAt = null,
         CancellationToken cancellationToken = default
     )
     {
         var sql =
-            $"UPDATE {_receivedTable} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id";
+            $"UPDATE {_receivedTable} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id";
 
         object[] sqlParams =
         [
@@ -173,6 +175,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
+            new NpgsqlParameter("@NextRetryAt", nextRetryAt.HasValue ? nextRetryAt.Value : DBNull.Value),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
             new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -191,8 +194,8 @@ public sealed class PostgreSqlDataStorage(
     )
     {
         var sql =
-            $"INSERT INTO {_publishedTable} (\"Id\",\"Version\",\"Name\",\"Content\",\"Retries\",\"Added\",\"ExpiresAt\",\"StatusName\",\"MessageId\")"
-            + $"VALUES(@Id,'{postgreSqlOptions.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@StatusName,@MessageId);";
+            $"INSERT INTO {_publishedTable} (\"Id\",\"Version\",\"Name\",\"Content\",\"Retries\",\"Added\",\"ExpiresAt\",\"NextRetryAt\",\"StatusName\",\"MessageId\")"
+            + $"VALUES(@Id,'{postgreSqlOptions.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@StatusName,@MessageId);";
 
         var message = new MediumMessage
         {
@@ -201,6 +204,7 @@ public sealed class PostgreSqlDataStorage(
             Content = serializer.Serialize(content),
             Added = timeProvider.GetUtcNow().UtcDateTime,
             ExpiresAt = null,
+            NextRetryAt = null,
             Retries = 0,
         };
 
@@ -212,6 +216,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@Added", message.Added),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
+            new NpgsqlParameter("@NextRetryAt", DBNull.Value),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", content.GetId()),
         ];
@@ -260,12 +265,13 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Group", group),
             new NpgsqlParameter("@Content", content),
-            new NpgsqlParameter("@Retries", messagingOptions.Value.FailedRetryCount),
+            new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxAttempts),
             new NpgsqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
             new NpgsqlParameter(
                 "@ExpiresAt",
                 timeProvider.GetUtcNow().UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter)
             ),
+            new NpgsqlParameter("@NextRetryAt", DBNull.Value),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
             new NpgsqlParameter("@MessageId", serializer.Deserialize(content)!.GetId()),
             new NpgsqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
@@ -288,6 +294,7 @@ public sealed class PostgreSqlDataStorage(
             Content = serializer.Serialize(message),
             Added = timeProvider.GetUtcNow().UtcDateTime,
             ExpiresAt = null,
+            NextRetryAt = null,
             Retries = 0,
         };
 
@@ -303,6 +310,7 @@ public sealed class PostgreSqlDataStorage(
                 "@ExpiresAt",
                 mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value
             ),
+            new NpgsqlParameter("@NextRetryAt", DBNull.Value),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", message.GetId()),
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
@@ -344,21 +352,17 @@ public sealed class PostgreSqlDataStorage(
     }
 
     public async ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
-        TimeSpan lookbackSeconds,
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessagesOfNeedRetryAsync(_publishedTable, lookbackSeconds, cancellationToken)
-            .ConfigureAwait(false);
+        return await _GetMessagesOfNeedRetryAsync(_publishedTable, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(
-        TimeSpan lookbackSeconds,
         CancellationToken cancellationToken = default
     )
     {
-        return await _GetMessagesOfNeedRetryAsync(_receivedTable, lookbackSeconds, cancellationToken)
-            .ConfigureAwait(false);
+        return await _GetMessagesOfNeedRetryAsync(_receivedTable, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
@@ -448,11 +452,12 @@ public sealed class PostgreSqlDataStorage(
         MediumMessage message,
         StatusName state,
         object? transaction = null,
+        DateTime? nextRetryAt = null,
         CancellationToken cancellationToken = default
     )
     {
         var sql =
-            $"UPDATE {tableName} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"StatusName\"=@StatusName WHERE \"Id\"=@Id";
+            $"UPDATE {tableName} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"StatusName\"=@StatusName WHERE \"Id\"=@Id";
 
         object[] sqlParams =
         [
@@ -460,6 +465,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Content", serializer.Serialize(message.Origin)),
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
+            new NpgsqlParameter("@NextRetryAt", nextRetryAt.HasValue ? nextRetryAt.Value : DBNull.Value),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
         ];
 
@@ -489,12 +495,13 @@ public sealed class PostgreSqlDataStorage(
     private async ValueTask _StoreReceivedMessage(object[] sqlParams, CancellationToken cancellationToken = default)
     {
         var sql = $"""
-            INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","StatusName","MessageId","ExceptionInfo")
-            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@StatusName,@MessageId,@ExceptionInfo)
+            INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId","ExceptionInfo")
+            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@StatusName,@MessageId,@ExceptionInfo)
             ON CONFLICT ("MessageId","Group") DO UPDATE SET
                 "StatusName"=EXCLUDED."StatusName",
                 "Retries"=EXCLUDED."Retries",
                 "ExpiresAt"=EXCLUDED."ExpiresAt",
+                "NextRetryAt"=EXCLUDED."NextRetryAt",
                 "Content"=EXCLUDED."Content",
                 "ExceptionInfo"=EXCLUDED."ExceptionInfo";
             """;
@@ -508,20 +515,17 @@ public sealed class PostgreSqlDataStorage(
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
         string tableName,
-        TimeSpan lookbackSeconds,
         CancellationToken cancellationToken = default
     )
     {
-        var cutoffTime = timeProvider.GetUtcNow().UtcDateTime.Subtract(lookbackSeconds);
         var sql =
-            $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\" FROM {tableName} WHERE \"Retries\"<@Retries "
-            + $"AND \"Version\"=@Version AND \"Added\"<@Added AND \"StatusName\" IN ('{nameof(StatusName.Failed)}','{nameof(StatusName.Scheduled)}') LIMIT {_RetryBatchSize} FOR UPDATE SKIP LOCKED;";
+            $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\",\"NextRetryAt\" FROM {tableName} WHERE \"Retries\"<@Retries "
+            + $"AND \"Version\"=@Version AND ((\"NextRetryAt\" IS NOT NULL AND \"NextRetryAt\" <= now()) OR (\"StatusName\" = '{nameof(StatusName.Scheduled)}' AND \"NextRetryAt\" IS NULL)) LIMIT {_RetryBatchSize} FOR UPDATE SKIP LOCKED;";
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Retries", messagingOptions.Value.FailedRetryCount),
+            new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxAttempts),
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
-            new NpgsqlParameter("@Added", cutoffTime),
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
@@ -545,6 +549,9 @@ public sealed class PostgreSqlDataStorage(
                             Content = content,
                             Retries = reader.GetInt32(2),
                             Added = reader.GetDateTime(3),
+                            NextRetryAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(4),
                         };
 
                         messages.Add(mediumMessage);

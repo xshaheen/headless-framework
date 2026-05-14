@@ -367,7 +367,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
 
         var stored = await _storage.StoreMessageAsync(name, message, null, AbortToken);
         stored.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
-        await _storage.ChangePublishStateAsync(stored, status, null, AbortToken);
+        await _storage.ChangePublishStateAsync(stored, status, cancellationToken: AbortToken);
 
         return stored;
     }
@@ -380,7 +380,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
 
         var stored = await _storage.StoreReceivedMessageAsync("test.name", "test.group", message, AbortToken);
         stored.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
-        await _storage.ChangeReceiveStateAsync(stored, status, AbortToken);
+        await _storage.ChangeReceiveStateAsync(stored, status, cancellationToken: AbortToken);
 
         return stored;
     }

@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Exceptions;
-
 namespace Headless.Messaging.Retry;
 
 /// <summary>
@@ -54,15 +52,6 @@ public sealed class ExponentialBackoffStrategy : IRetryBackoffStrategy
     /// <inheritdoc />
     public bool ShouldRetry(Exception exception)
     {
-        // Permanent failures - don't retry
-        return exception switch
-        {
-            SubscriberNotFoundException => false,
-            ArgumentNullException => false,
-            ArgumentException => false,
-            InvalidOperationException => false,
-            NotSupportedException => false,
-            _ => true, // All other exceptions are considered transient
-        };
+        return !RetryExceptionClassifier.IsPermanent(exception);
     }
 }

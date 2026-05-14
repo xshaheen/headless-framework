@@ -14,6 +14,8 @@ public class MediumMessage
 
     public DateTime? ExpiresAt { get; set; }
 
+    public DateTime? NextRetryAt { get; set; }
+
     public int Retries { get; set; }
 
     public string? ExceptionInfo { get; set; }

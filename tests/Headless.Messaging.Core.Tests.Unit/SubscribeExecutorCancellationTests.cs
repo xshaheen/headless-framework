@@ -90,8 +90,11 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             messagingOptions
                 ?? new MessagingOptions
                 {
-                    FailedRetryCount = 1,
-                    RetryBackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
+                    RetryPolicy =
+                    {
+                        MaxAttempts = 1,
+                        BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
+                    },
                 }
         );
 
@@ -157,7 +160,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
         // then — persisted as failed so it can be retried after restart
         result.Succeeded.Should().BeFalse();
-        message.Retries.Should().Be(0);
+        message.Retries.Should().Be(1);
         await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
     }
 
@@ -188,7 +191,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
         // then — persisted as failed so it can be retried after restart
         result.Succeeded.Should().BeFalse();
-        message.Retries.Should().Be(0);
+        message.Retries.Should().Be(1);
         await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
     }
 }

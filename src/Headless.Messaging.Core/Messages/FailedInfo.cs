@@ -6,7 +6,7 @@ namespace Headless.Messaging.Messages;
 
 /// <summary>
 /// Contains information about a message that has failed processing and exceeded the retry threshold.
-/// This class is used when invoking the <see cref="MessagingOptions.FailedThresholdCallback"/> callback.
+/// This class is used when invoking the <see cref="RetryPolicyOptions.OnExhausted"/> callback.
 /// </summary>
 public class FailedInfo
 {
@@ -28,4 +28,9 @@ public class FailedInfo
     /// Contains the headers and value data that caused the failure.
     /// </summary>
     public required Message Message { get; set; }
+
+    /// <summary>
+    /// Gets the exception that triggered the exhausted retry decision.
+    /// </summary>
+    public required Exception Exception { get; init; }
 }

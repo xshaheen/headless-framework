@@ -5,6 +5,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,31 +34,42 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
     private readonly ISerializer _serializer = serviceProvider.GetRequiredService<ISerializer>();
     private readonly ITransport _transport = serviceProvider.GetRequiredService<ITransport>();
     private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
-    private readonly IRetryBackoffStrategy _backoffStrategy = serviceProvider
+    private readonly RetryPolicyOptions _retryPolicy = serviceProvider
         .GetRequiredService<IOptions<MessagingOptions>>()
-        .Value.RetryBackoffStrategy;
+        .Value.RetryPolicy;
 
     public async Task<OperateResult> SendAsync(MediumMessage message)
     {
-        bool retry;
         OperateResult result;
+        var inlineRetries = 0;
         do
         {
             var (retryDecision, operateResult) = await _SendWithoutRetryAsync(message).ConfigureAwait(false);
-            retry = retryDecision.ShouldRetry;
             result = operateResult;
             if (result.Equals(OperateResult.Success))
             {
                 return result;
             }
 
-            if (retry)
+            if (retryDecision.Outcome != RetryDecision.Kind.Continue)
+            {
+                return result;
+            }
+
+            inlineRetries++;
+            if (inlineRetries <= _retryPolicy.MaxInlineRetries)
             {
                 await Task.Delay(retryDecision.Delay).ConfigureAwait(false);
+                continue;
             }
-        } while (retry);
 
-        return result;
+            var nextRetryAt = _timeProvider.GetUtcNow().UtcDateTime.Add(retryDecision.Delay);
+            await _dataStorage
+                .ChangePublishStateAsync(message, StatusName.Failed, nextRetryAt: nextRetryAt)
+                .ConfigureAwait(false);
+
+            return result;
+        } while (true);
     }
 
     private async Task<(RetryDecision, OperateResult)> _SendWithoutRetryAsync(MediumMessage message)
@@ -100,77 +112,56 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
 
         await _dataStorage.ChangePublishStateAsync(message, StatusName.Failed).ConfigureAwait(false);
 
+        if (needRetry.Outcome == RetryDecision.Kind.Exhausted)
+        {
+            _InvokeOnExhausted(message, ex);
+        }
+
         return needRetry;
     }
 
     private RetryDecision _UpdateMessageForRetry(MediumMessage message, Exception ex)
     {
-        // Check if exception is retryable
-        if (!_backoffStrategy.ShouldRetry(ex))
+        var decision = RetryHelper.ComputeRetryDecision(message, ex, _retryPolicy, isCancellation: false);
+        switch (decision.Outcome)
         {
-            message.Retries = _options.Value.FailedRetryCount; // Mark as exhausted
-            _logger.LogWarning(
-                "Stored message {StorageId} failed with non-retryable exception: {ExceptionType}. Skipping retries.",
-                message.StorageId,
-                ex.GetType().Name
+            case RetryDecision.Kind.Stop:
+                _logger.LogWarning(
+                    "Stored message {StorageId} failed with non-retryable exception: {ExceptionType}. Skipping retries.",
+                    message.StorageId,
+                    ex.GetType().Name
+                );
+                break;
+            case RetryDecision.Kind.Exhausted:
+                _logger.SenderStoredMessageAfterThreshold(message.StorageId, _retryPolicy.MaxAttempts);
+                break;
+            case RetryDecision.Kind.Continue:
+                _logger.SenderRetrying(message.StorageId, message.Retries);
+                break;
+        }
+
+        return decision;
+    }
+
+    private void _InvokeOnExhausted(MediumMessage message, Exception ex)
+    {
+        try
+        {
+            using var scope = serviceProvider.CreateScope();
+            _retryPolicy.OnExhausted?.Invoke(
+                new FailedInfo
+                {
+                    ServiceProvider = scope.ServiceProvider,
+                    MessageType = MessageType.Publish,
+                    Message = message.Origin,
+                    Exception = ex,
+                }
             );
-            return RetryDecision.Stop;
         }
-
-        var retries = ++message.Retries;
-        if (retries >= _options.Value.FailedRetryCount)
+        catch (Exception callbackEx)
         {
-            try
-            {
-                _options.Value.FailedThresholdCallback?.Invoke(
-                    new FailedInfo
-                    {
-                        ServiceProvider = serviceProvider,
-                        MessageType = MessageType.Publish,
-                        Message = message.Origin,
-                    }
-                );
-
-                _logger.SenderStoredMessageAfterThreshold(message.StorageId, _options.Value.FailedRetryCount);
-            }
-            catch (Exception callbackEx)
-            {
-                _logger.ExecutedThresholdCallbackFailed(callbackEx, callbackEx.Message);
-            }
-
-            return RetryDecision.Stop;
+            _logger.ExecutedThresholdCallbackFailed(callbackEx, callbackEx.Message);
         }
-
-        _logger.SenderRetrying(message.StorageId, retries);
-
-        var nextDelay = _backoffStrategy.GetNextDelay(retries - 1, ex);
-        if (nextDelay is null)
-        {
-            // Strategy declined further retries — treat as threshold reached.
-            message.Retries = _options.Value.FailedRetryCount;
-
-            try
-            {
-                _options.Value.FailedThresholdCallback?.Invoke(
-                    new FailedInfo
-                    {
-                        ServiceProvider = serviceProvider,
-                        MessageType = MessageType.Publish,
-                        Message = message.Origin,
-                    }
-                );
-
-                _logger.SenderStoredMessageAfterThreshold(message.StorageId, _options.Value.FailedRetryCount);
-            }
-            catch (Exception callbackEx)
-            {
-                _logger.ExecutedThresholdCallbackFailed(callbackEx, callbackEx.Message);
-            }
-
-            return RetryDecision.Stop;
-        }
-
-        return RetryDecision.Continue(nextDelay.Value);
     }
 
     #region tracing

@@ -90,7 +90,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 
         var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILogger<SubscribeExecutor>>();
-        var options = Options.Create(new MessagingOptions { FailedRetryCount = 0 });
+        var options = Options.Create(new MessagingOptions { RetryPolicy = { MaxAttempts = 0 } });
         var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
 
         var executor = new SubscribeExecutor(
