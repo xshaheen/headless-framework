@@ -8,26 +8,27 @@ namespace Headless.Messaging.Messages;
 /// Contains information about a message that has failed processing and exceeded the retry threshold.
 /// This class is used when invoking the <see cref="RetryPolicyOptions.OnExhausted"/> callback.
 /// </summary>
-public class FailedInfo
+[PublicAPI]
+public sealed class FailedInfo
 {
     /// <summary>
-    /// Gets or sets the service provider for the current scope.
+    /// Gets the service provider for the current scope.
     /// This allows the callback to resolve dependencies from the dependency injection container.
     /// </summary>
-    public required IServiceProvider ServiceProvider { get; set; }
+    public required IServiceProvider ServiceProvider { get; init; }
 
     /// <summary>
-    /// Gets or sets the message type indicating whether this was a published or subscribed message.
+    /// Gets the message type indicating whether this was a published or subscribed message.
     /// <see cref="MessageType.Publish"/> for messages that failed to be sent to the broker.
     /// <see cref="MessageType.Subscribe"/> for messages that failed to be processed by subscribers.
     /// </summary>
-    public MessageType MessageType { get; set; }
+    public required MessageType MessageType { get; init; }
 
     /// <summary>
-    /// Gets or sets the message object that failed processing.
+    /// Gets the message object that failed processing.
     /// Contains the headers and value data that caused the failure.
     /// </summary>
-    public required Message Message { get; set; }
+    public required Message Message { get; init; }
 
     /// <summary>
     /// Gets the exception that triggered the exhausted retry decision.

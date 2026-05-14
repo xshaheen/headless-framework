@@ -6,6 +6,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -17,6 +18,7 @@ public sealed class Dispatcher : IDispatcher
     private readonly ILogger<Dispatcher> _logger;
     private readonly MessagingOptions _options;
     private readonly IMessageSender _sender;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDataStorage _storage;
     private readonly TimeProvider _timeProvider;
     private readonly ScheduledMediumMessageQueue _schedulerQueue;
@@ -48,7 +50,8 @@ public sealed class Dispatcher : IDispatcher
         IOptions<MessagingOptions> options,
         ISubscribeExecutor executor,
         IDataStorage storage,
-        TimeProvider timeProvider
+        TimeProvider timeProvider,
+        IServiceScopeFactory scopeFactory
     )
     {
         _logger = logger;
@@ -57,6 +60,7 @@ public sealed class Dispatcher : IDispatcher
         _executor = executor;
         _storage = storage;
         _timeProvider = timeProvider;
+        _scopeFactory = scopeFactory;
         _schedulerQueue = new ScheduledMediumMessageQueue(timeProvider);
         _enableParallelExecute = _options.EnableSubscriberParallelExecute;
         _enableParallelSend = _options.EnablePublishParallelSend;
@@ -155,7 +159,12 @@ public sealed class Dispatcher : IDispatcher
             }
             else
             {
-                await _executor.ExecuteAsync(message, descriptor, TasksCts.Token).ConfigureAwait(false);
+                // Per-message scope: scoped services resolved during ExecuteAsync (consumer, filters,
+                // user OnExhausted callback) all share the same scope instance for this message.
+                using var dispatchScope = _scopeFactory.CreateScope();
+                await _executor
+                    .ExecuteAsync(message, dispatchScope.ServiceProvider, descriptor, TasksCts.Token)
+                    .ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -342,7 +351,8 @@ public sealed class Dispatcher : IDispatcher
     {
         try
         {
-            var result = await _sender.SendAsync(message).ConfigureAwait(false);
+            using var dispatchScope = _scopeFactory.CreateScope();
+            var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
             if (!result.Succeeded)
             {
                 _logger.DelayedMessageSendFailed(message.StorageId);
@@ -408,7 +418,8 @@ public sealed class Dispatcher : IDispatcher
     {
         try
         {
-            var result = await _sender.SendAsync(message).ConfigureAwait(false);
+            using var dispatchScope = _scopeFactory.CreateScope();
+            var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
             if (!result.Succeeded)
             {
                 _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
@@ -422,7 +433,8 @@ public sealed class Dispatcher : IDispatcher
 
     private async Task _SendMessageDirectlyAsync(MediumMessage message)
     {
-        var result = await _sender.SendAsync(message).ConfigureAwait(false);
+        using var dispatchScope = _scopeFactory.CreateScope();
+        var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
         if (!result.Succeeded)
         {
             _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
@@ -456,7 +468,10 @@ public sealed class Dispatcher : IDispatcher
         try
         {
             var (message, descriptor) = messageData;
-            await _executor.ExecuteAsync(message, descriptor, TasksCts.Token).ConfigureAwait(false);
+            using var dispatchScope = _scopeFactory.CreateScope();
+            await _executor
+                .ExecuteAsync(message, dispatchScope.ServiceProvider, descriptor, TasksCts.Token)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

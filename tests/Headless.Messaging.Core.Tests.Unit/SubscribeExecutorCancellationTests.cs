@@ -22,6 +22,8 @@ namespace Tests;
 /// </summary>
 public sealed class SubscribeExecutorCancellationTests : TestBase
 {
+    private static readonly IServiceProvider _EmptyScope = new ServiceCollection().BuildServiceProvider();
+
     private static MediumMessage _CreateMediumMessage(string topic = "test.topic")
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -125,7 +127,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         var descriptor = _CreateDescriptor();
 
         // when
-        var result = await executor.ExecuteAsync(message, descriptor, CancellationToken.None);
+        var result = await executor.ExecuteAsync(message, _EmptyScope, descriptor, CancellationToken.None);
 
         // then — must be a failure, not swallowed
         result.Succeeded.Should().BeFalse();
@@ -173,9 +175,10 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         var descriptor = _CreateDescriptor();
 
         // when
-        var result = await executor.ExecuteAsync(message, descriptor, cts.Token);
+        var result = await executor.ExecuteAsync(message, _EmptyScope, descriptor, cts.Token);
 
-        // then — persisted as failed so it can be retried after restart
+        // then — persisted as Failed (terminal; cancellation short-circuits retry).
+        // Failed/NULL is excluded from the retry-processor polling query and ages out via DeleteExpiresAsync.
         result.Succeeded.Should().BeFalse();
         message.Retries.Should().Be(0);
         callbackInvoked.Should().BeFalse();
@@ -208,9 +211,10 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         var descriptor = _CreateDescriptor();
 
         // when
-        var result = await executor.ExecuteAsync(message, descriptor, cts.Token);
+        var result = await executor.ExecuteAsync(message, _EmptyScope, descriptor, cts.Token);
 
-        // then — persisted as failed so it can be retried after restart
+        // then — persisted as Failed (terminal; cancellation short-circuits retry).
+        // Failed/NULL is excluded from the retry-processor polling query and ages out via DeleteExpiresAsync.
         result.Succeeded.Should().BeFalse();
         message.Retries.Should().Be(0);
         await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);

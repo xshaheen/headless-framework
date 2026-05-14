@@ -4,6 +4,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Tests.Helpers;
@@ -16,6 +17,9 @@ public sealed class DispatcherTests : TestBase
     private readonly ILogger<Dispatcher> _logger = Substitute.For<ILogger<Dispatcher>>();
     private readonly ISubscribeExecutor _executor = Substitute.For<ISubscribeExecutor>();
     private readonly IDataStorage _storage = Substitute.For<IDataStorage>();
+    private readonly IServiceScopeFactory _scopeFactory = new ServiceCollection()
+        .BuildServiceProvider()
+        .GetRequiredService<IServiceScopeFactory>();
 
     [Fact]
     public async Task EnqueueToPublish_ShouldInvokeSend_WhenParallelSendDisabled()
@@ -32,7 +36,15 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
 
         using var cts = new CancellationTokenSource();
         const long storageId = 1L;
@@ -62,7 +74,15 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable.Range(1, 100).Select(i => _CreateTestMessage(i)).ToArray();
@@ -96,7 +116,15 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable.Range(1, 10000).Select(i => _CreateTestMessage(i)).ToArray();
@@ -140,7 +168,15 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable.Range(1, 3).Select(i => _CreateTestMessage(i)).ToArray();
@@ -175,7 +211,15 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable.Range(1, 10000).Select(i => _CreateTestMessage(i)).ToArray();
@@ -220,7 +264,15 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable.Range(1, 3).Select(i => _CreateTestMessage(i)).ToArray();
@@ -247,7 +299,15 @@ public sealed class DispatcherTests : TestBase
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(new MessagingOptions { EnablePublishParallelSend = true, PublishBatchSize = 50 });
 
-        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable.Range(1, 100).Select(i => _CreateTestMessage(i)).ToArray();
@@ -276,7 +336,15 @@ public sealed class DispatcherTests : TestBase
             new MessagingOptions { EnablePublishParallelSend = true } // Auto-calculate batch size
         );
 
-        await using var dispatcher = new Dispatcher(_logger, sender, options, _executor, _storage, TimeProvider.System);
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable.Range(1, 500).Select(i => _CreateTestMessage(i)).ToArray();

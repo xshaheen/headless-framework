@@ -29,15 +29,15 @@ public sealed class ExponentialBackoffStrategy : IRetryBackoffStrategy
     }
 
     /// <inheritdoc />
-    public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null)
+    public RetryDecision Compute(int retryCount, Exception exception)
     {
-        if (exception != null && !ShouldRetry(exception))
+        if (RetryExceptionClassifier.IsPermanent(exception))
         {
-            return null;
+            return RetryDecision.Stop;
         }
 
-        // Calculate exponential delay: initialDelay * (backoffMultiplier ^ retryAttempt)
-        var exponentialDelay = _initialDelay.TotalMilliseconds * Math.Pow(_backoffMultiplier, retryAttempt);
+        // Calculate exponential delay: initialDelay * (backoffMultiplier ^ retryCount)
+        var exponentialDelay = _initialDelay.TotalMilliseconds * Math.Pow(_backoffMultiplier, retryCount);
 
         // Cap at max delay
         var delayMs = Math.Min(exponentialDelay, _maxDelay.TotalMilliseconds);
@@ -46,12 +46,6 @@ public sealed class ExponentialBackoffStrategy : IRetryBackoffStrategy
         var jitter = ((Random.Shared.NextDouble() * 0.5) - 0.25) * delayMs;
         var finalDelayMs = Math.Max(0, delayMs + jitter);
 
-        return TimeSpan.FromMilliseconds(finalDelayMs);
-    }
-
-    /// <inheritdoc />
-    public bool ShouldRetry(Exception exception)
-    {
-        return !RetryExceptionClassifier.IsPermanent(exception);
+        return RetryDecision.Continue(TimeSpan.FromMilliseconds(finalDelayMs));
     }
 }

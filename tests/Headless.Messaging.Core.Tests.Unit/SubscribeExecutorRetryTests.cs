@@ -16,6 +16,8 @@ namespace Tests;
 
 public sealed class SubscribeExecutorRetryTests : TestBase
 {
+    private static readonly IServiceProvider _EmptyScope = new ServiceCollection().BuildServiceProvider();
+
     private static MediumMessage _CreateMediumMessage()
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -125,7 +127,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var message = _CreateMediumMessage();
 
         // when
-        var result = await executor.ExecuteAsync(message, _CreateDescriptor(), CancellationToken.None);
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then
         result.Succeeded.Should().BeTrue();
@@ -174,7 +176,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var stopwatch = Stopwatch.StartNew();
 
         // when
-        var result = await executor.ExecuteAsync(message, _CreateDescriptor(), CancellationToken.None);
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then
         stopwatch.Stop();
@@ -219,7 +221,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var message = _CreateMediumMessage();
 
         // when
-        var result = await executor.ExecuteAsync(message, _CreateDescriptor(), CancellationToken.None);
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then
         result.Succeeded.Should().BeFalse();
@@ -233,17 +235,71 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task on_exhausted_callback_should_resolve_same_scoped_service_as_dispatch_scope()
+    {
+        // given — a Scoped marker service. The caller (Dispatcher) creates a scope and
+        // passes its IServiceProvider; the executor must surface that SAME provider through
+        // FailedInfo.ServiceProvider so OnExhausted sees the live per-message scope.
+        var rootServices = new ServiceCollection();
+        rootServices.AddScoped<ScopedMarker>();
+        var rootProvider = rootServices.BuildServiceProvider();
+        using var dispatchScope = rootProvider.CreateScope();
+        var expected = dispatchScope.ServiceProvider.GetRequiredService<ScopedMarker>();
+
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.CompletedTask);
+
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ConsumerExecutedResult>(new TimeoutException("boom")));
+
+        ScopedMarker? observed = null;
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxAttempts = 1,
+                    MaxInlineRetries = 0,
+                    BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
+                    OnExhausted = info => observed = info.ServiceProvider.GetRequiredService<ScopedMarker>(),
+                },
+            }
+        );
+
+        // when
+        await executor.ExecuteAsync(
+            _CreateMediumMessage(),
+            dispatchScope.ServiceProvider,
+            _CreateDescriptor(),
+            CancellationToken.None
+        );
+
+        // then — same scope means same Scoped instance
+        observed.Should().NotBeNull();
+        observed.Should().BeSameAs(expected);
+    }
+
     private sealed class ZeroDelayRetryBackoffStrategy : IRetryBackoffStrategy
     {
-        public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null) => TimeSpan.Zero;
-
-        public bool ShouldRetry(Exception exception) => true;
+        public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(TimeSpan.Zero);
     }
 
     private sealed class FixedDelayRetryBackoffStrategy(TimeSpan delay) : IRetryBackoffStrategy
     {
-        public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null) => delay;
-
-        public bool ShouldRetry(Exception exception) => true;
+        public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(delay);
     }
+
+    private sealed class ScopedMarker;
 }

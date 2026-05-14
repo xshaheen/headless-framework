@@ -17,6 +17,9 @@ public sealed class TestThreadSafeMessageSender : IMessageSender
         return Task.FromResult(OperateResult.Success);
     }
 
+    public Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices) =>
+        SendAsync(message);
+
     public int Count => _messagesInOrder.Count;
     public List<MediumMessage> ReceivedMessages => _messagesInOrder.ToList();
 }

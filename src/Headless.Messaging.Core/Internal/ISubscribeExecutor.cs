@@ -21,8 +21,21 @@ namespace Headless.Messaging.Internal;
 /// </summary>
 public interface ISubscribeExecutor
 {
+    /// <summary>
+    /// Executes a single consume attempt with retries.
+    /// </summary>
+    /// <param name="message">The message to execute.</param>
+    /// <param name="dispatchServices">
+    /// The live per-message DI scope's <see cref="IServiceProvider"/>. The caller (Dispatcher) creates
+    /// this scope and disposes it after the call returns. Surfaces to <c>FailedInfo.ServiceProvider</c>
+    /// when the retry budget exhausts, so the user's exhausted callback resolves scoped services from the
+    /// SAME scope the consume attempt ran under.
+    /// </param>
+    /// <param name="descriptor">Optional consumer descriptor; resolved from the topic when omitted.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     Task<OperateResult> ExecuteAsync(
         MediumMessage message,
+        IServiceProvider dispatchServices,
         ConsumerExecutorDescriptor? descriptor = null,
         CancellationToken cancellationToken = default
     );
@@ -49,10 +62,13 @@ internal sealed class SubscribeExecutor(
 
     public async Task<OperateResult> ExecuteAsync(
         MediumMessage message,
+        IServiceProvider dispatchServices,
         ConsumerExecutorDescriptor? descriptor = null,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNull(dispatchServices);
+
         if (descriptor == null)
         {
             var selector = provider.GetRequiredService<MethodMatcherCache>();
@@ -75,51 +91,28 @@ internal sealed class SubscribeExecutor(
                     exception
                 );
 
-                await _SetFailedState(message, exception);
+                await _SetFailedState(message, exception, dispatchServices);
                 return OperateResult.Failed(exception);
             }
         }
 
-        OperateResult result;
-        var inlineRetries = 0;
-
         //record instance id
         message.Origin.Headers[Headers.ExecutionInstanceId] = _hostName;
 
-        do
-        {
-            var (retryDecision, operateResult) = await _ExecuteWithoutRetryAsync(
-                    message,
-                    descriptor,
-                    inlineRetries,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-            result = operateResult;
-            if (result.Equals(OperateResult.Success))
-            {
-                return result;
-            }
-
-            if (retryDecision.Outcome != RetryDecision.Kind.Continue)
-            {
-                return result;
-            }
-
-            inlineRetries++;
-            if (inlineRetries <= _retryPolicy.MaxInlineRetries)
-            {
-                await Task.Delay(retryDecision.Delay, cancellationToken).ConfigureAwait(false);
-                continue;
-            }
-
-            return result;
-        } while (true);
+        return await InlineRetryLoop
+            .ExecuteAsync(
+                (inlineRetries, ct) =>
+                    _ExecuteWithoutRetryAsync(message, descriptor, dispatchServices, inlineRetries, ct),
+                _retryPolicy,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
-    private async Task<(RetryDecision, OperateResult)> _ExecuteWithoutRetryAsync(
+    private async Task<(RetryDecision Decision, OperateResult Result)> _ExecuteWithoutRetryAsync(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
+        IServiceProvider dispatchServices,
         int inlineRetries,
         CancellationToken cancellationToken
     )
@@ -165,7 +158,8 @@ internal sealed class SubscribeExecutor(
             );
 
             return (
-                await _SetFailedState(message, ex, inlineRetries, cancellationToken).ConfigureAwait(false),
+                await _SetFailedState(message, ex, dispatchServices, inlineRetries, cancellationToken)
+                    .ConfigureAwait(false),
                 OperateResult.Failed(ex)
             );
         }
@@ -186,6 +180,7 @@ internal sealed class SubscribeExecutor(
     private async Task<RetryDecision> _SetFailedState(
         MediumMessage message,
         Exception ex,
+        IServiceProvider dispatchServices,
         int inlineRetries = 0,
         CancellationToken cancellationToken = default
     )
@@ -196,18 +191,25 @@ internal sealed class SubscribeExecutor(
         message.ExceptionInfo = ex.ExpandMessage();
         message.ExpiresAt = message.Added.AddSeconds(_options.FailedMessageExpiredAfter);
 
+        // Inline-retry budget still available: persist as Scheduled/NULL so a crash mid-delay
+        // leaves the row picked up by the polling query on restart (Failed/NULL is filtered out).
+        // Only transition to Failed on terminal decisions (Stop, Exhausted) or when persisting
+        // for the persisted-retry processor (Continue with inline budget exhausted, NextRetryAt set).
+        var isInlineRetryInFlight =
+            needRetry.Outcome == RetryDecision.Kind.Continue && inlineRetries + 1 <= _retryPolicy.MaxInlineRetries;
+
+        var nextStatus = isInlineRetryInFlight ? StatusName.Scheduled : StatusName.Failed;
+
         var nextRetryAt =
             needRetry.Outcome == RetryDecision.Kind.Continue && inlineRetries + 1 > _retryPolicy.MaxInlineRetries
                 ? timeProvider.GetUtcNow().UtcDateTime.Add(needRetry.Delay)
                 : (DateTime?)null;
 
-        await dataStorage
-            .ChangeReceiveStateAsync(message, StatusName.Failed, nextRetryAt: nextRetryAt)
-            .ConfigureAwait(false);
+        await dataStorage.ChangeReceiveStateAsync(message, nextStatus, nextRetryAt: nextRetryAt).ConfigureAwait(false);
 
         if (needRetry.Outcome == RetryDecision.Kind.Exhausted)
         {
-            _InvokeOnExhausted(message, ex);
+            _InvokeOnExhausted(message, ex, dispatchServices);
         }
 
         // Report the original (inner) exception to the circuit breaker so transient-classification
@@ -252,15 +254,17 @@ internal sealed class SubscribeExecutor(
         return decision;
     }
 
-    private void _InvokeOnExhausted(MediumMessage message, Exception ex)
+    private void _InvokeOnExhausted(MediumMessage message, Exception ex, IServiceProvider dispatchServices)
     {
         try
         {
-            using var scope = provider.CreateScope();
+            // Use the live dispatch scope so scoped services resolved here are the same
+            // instances seen during ExecuteAsync. The caller (Dispatcher) is responsible for
+            // creating and disposing that scope.
             _retryPolicy.OnExhausted?.Invoke(
                 new FailedInfo
                 {
-                    ServiceProvider = scope.ServiceProvider,
+                    ServiceProvider = dispatchServices,
                     MessageType = MessageType.Subscribe,
                     Message = message.Origin,
                     Exception = ex,

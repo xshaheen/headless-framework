@@ -139,6 +139,7 @@ internal sealed class InMemoryDataStorage(
         PublishedMessages[message.StorageId].StatusName = state;
         PublishedMessages[message.StorageId].ExpiresAt = message.ExpiresAt;
         PublishedMessages[message.StorageId].NextRetryAt = nextRetryAt;
+        PublishedMessages[message.StorageId].Retries = message.Retries;
         PublishedMessages[message.StorageId].Content = serializer.Serialize(message.Origin);
         return ValueTask.CompletedTask;
     }
@@ -154,6 +155,7 @@ internal sealed class InMemoryDataStorage(
         ReceivedMessages[message.StorageId].StatusName = state;
         ReceivedMessages[message.StorageId].ExpiresAt = message.ExpiresAt;
         ReceivedMessages[message.StorageId].NextRetryAt = nextRetryAt;
+        ReceivedMessages[message.StorageId].Retries = message.Retries;
         ReceivedMessages[message.StorageId].Content = serializer.Serialize(message.Origin);
         ReceivedMessages[message.StorageId].ExceptionInfo = message.ExceptionInfo;
         return ValueTask.CompletedTask;

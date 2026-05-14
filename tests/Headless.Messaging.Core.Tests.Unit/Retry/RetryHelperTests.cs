@@ -60,15 +60,18 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public void should_return_exhausted_when_strategy_returns_null_delay()
+    public void should_stop_without_incrementing_when_strategy_returns_stop()
     {
+        // Strategy's Compute returning Stop is now the unambiguous "do not retry" signal.
+        // The helper must NOT increment the message's retry count for Stop outcomes — Stop
+        // means the attempt never counted toward the retry budget.
         var message = _CreateMessage();
-        var policy = new RetryPolicyOptions { BackoffStrategy = new NullDelayStrategy() };
+        var policy = new RetryPolicyOptions { BackoffStrategy = new StopStrategy() };
 
         var decision = RetryHelper.ComputeRetryDecision(message, new TimeoutException(), policy, isCancellation: false);
 
-        decision.Should().Be(RetryDecision.Exhausted);
-        message.Retries.Should().Be(1);
+        decision.Should().Be(RetryDecision.Stop);
+        message.Retries.Should().Be(0);
     }
 
     [Fact]
@@ -115,28 +118,22 @@ public sealed class RetryHelperTests : TestBase
 
     private sealed class AlwaysRetryStrategy(TimeSpan delay) : IRetryBackoffStrategy
     {
-        public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null) => delay;
-
-        public bool ShouldRetry(Exception exception) => true;
+        public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(delay);
     }
 
-    private sealed class NullDelayStrategy : IRetryBackoffStrategy
+    private sealed class StopStrategy : IRetryBackoffStrategy
     {
-        public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null) => null;
-
-        public bool ShouldRetry(Exception exception) => true;
+        public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Stop;
     }
 
     private sealed class RecordingRetryBackoffStrategy : IRetryBackoffStrategy
     {
         public List<int> Attempts { get; } = [];
 
-        public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null)
+        public RetryDecision Compute(int retryCount, Exception exception)
         {
-            Attempts.Add(retryAttempt);
-            return TimeSpan.Zero;
+            Attempts.Add(retryCount);
+            return RetryDecision.Continue(TimeSpan.Zero);
         }
-
-        public bool ShouldRetry(Exception exception) => true;
     }
 }
