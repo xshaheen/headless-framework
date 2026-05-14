@@ -140,17 +140,17 @@ jobs:
           if-no-files-found: error
 
   push-github-packages:
-    name: "Push GitHub Packages"
+    name: "Push NuGet packages"
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.event_name == 'release'
+    if: github.event_name == 'release'
 
     permissions:
       contents: read
       packages: write
 
     environment:
-      name: "GitHub Packages"
+      name: "NuGet Release"
       url: https://github.com/xshaheen/headless-framework/packages
 
     steps:
