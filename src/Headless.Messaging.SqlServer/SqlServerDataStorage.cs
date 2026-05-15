@@ -170,7 +170,7 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
-            new SqlParameter("@NextRetryAt", _ToUtcParameterValue(nextRetryAt)),
+            new SqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
             new SqlParameter("@StatusName", state.ToString("G")),
             new SqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -468,7 +468,7 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
-            new SqlParameter("@NextRetryAt", _ToUtcParameterValue(nextRetryAt)),
+            new SqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
             new SqlParameter("@StatusName", state.ToString("G")),
         ];
 
@@ -568,23 +568,5 @@ public sealed class SqlServerDataStorage(
         await transaction.CommitAsync(cancellationToken);
 
         return result;
-    }
-
-    /// <summary>
-    /// Normalizes a nullable <see cref="DateTime"/> to UTC kind for SQL Server parameter binding.
-    /// The contract on <see cref="MediumMessage.NextRetryAt"/> requires UTC; this defensive
-    /// coercion prevents a misconfigured caller from persisting an ambiguous wall-clock time
-    /// to a <c>datetime2</c>/<c>datetimeoffset</c> column.
-    /// </summary>
-    private static object _ToUtcParameterValue(DateTime? value)
-    {
-        if (!value.HasValue)
-        {
-            return DBNull.Value;
-        }
-
-        var v = value.Value;
-
-        return v.Kind == DateTimeKind.Utc ? v : DateTime.SpecifyKind(v, DateTimeKind.Utc);
     }
 }

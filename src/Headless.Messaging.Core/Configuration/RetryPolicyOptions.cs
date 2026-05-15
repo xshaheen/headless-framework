@@ -31,6 +31,17 @@ public sealed class RetryPolicyOptions
     public IRetryBackoffStrategy BackoffStrategy { get; set; } = new ExponentialBackoffStrategy();
 
     /// <summary>
+    /// Copies all properties of this instance to <paramref name="target"/>.
+    /// </summary>
+    internal void CopyTo(RetryPolicyOptions target)
+    {
+        target.MaxAttempts = MaxAttempts;
+        target.MaxInlineRetries = MaxInlineRetries;
+        target.BackoffStrategy = BackoffStrategy;
+        target.OnExhausted = OnExhausted;
+    }
+
+    /// <summary>
     /// Gets or sets the callback invoked once retry attempts are exhausted
     /// (<see cref="MaxAttempts"/> reached or the configured <see cref="BackoffStrategy"/> signals
     /// no further delay).

@@ -14,6 +14,7 @@ namespace Headless.Messaging;
 public readonly record struct RetryDecision
 {
     /// <summary>The high-level outcome of a retry computation.</summary>
+    [PublicAPI]
     public enum Kind
     {
         /// <summary>
@@ -26,6 +27,11 @@ public readonly record struct RetryDecision
         /// The retry budget is exhausted. The failure was transient but no further attempt is
         /// allowed (max attempts reached, or the strategy returned no delay).
         /// </summary>
+        /// <remarks>
+        /// This value is emitted exclusively by the framework when the max-attempts budget is
+        /// consumed. <see cref="IRetryBackoffStrategy"/> implementations should NOT return this
+        /// value — strategies must return only <see cref="Stop"/> or <see cref="RetryDecision.Continue"/>.
+        /// </remarks>
         Exhausted,
 
         /// <summary>Retry after <see cref="Delay"/>.</summary>
@@ -39,9 +45,24 @@ public readonly record struct RetryDecision
     public TimeSpan Delay { get; init; }
 
     /// <summary>The retry pipeline should stop. Used for permanent failures and cancellation.</summary>
+    /// <remarks>
+    /// <para>
+    /// Stop preserves <c>MediumMessage.Retries</c>; permanent-failure rows therefore have
+    /// <c>Retries &lt; MaxAttempts</c> and remain in a terminal <c>Failed/null-NextRetryAt</c>
+    /// state. The retry-pickup query excludes this combination by design. Any change to the pickup
+    /// predicate must preserve this exclusion.
+    /// </para>
+    /// </remarks>
     public static RetryDecision Stop { get; } = new() { Outcome = Kind.Stop };
 
     /// <summary>The retry budget is exhausted; the exhausted callback (if any) should fire.</summary>
+    /// <remarks>
+    /// <para>
+    /// Both exhaustion paths — strategy-returned and framework-emitted — leave
+    /// <c>MediumMessage.Retries</c> unchanged. Retries therefore reflects the number of
+    /// attempts already completed, not a count that includes the terminal failing attempt.
+    /// </para>
+    /// </remarks>
     public static RetryDecision Exhausted { get; } = new() { Outcome = Kind.Exhausted };
 
     /// <summary>Continue retrying after <paramref name="delay"/>.</summary>

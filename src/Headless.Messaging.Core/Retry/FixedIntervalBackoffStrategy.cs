@@ -5,6 +5,7 @@ namespace Headless.Messaging.Retry;
 /// <summary>
 /// Implements a fixed interval backoff strategy for message retry delays.
 /// </summary>
+[PublicAPI]
 public sealed class FixedIntervalBackoffStrategy : IRetryBackoffStrategy
 {
     private readonly TimeSpan _interval;

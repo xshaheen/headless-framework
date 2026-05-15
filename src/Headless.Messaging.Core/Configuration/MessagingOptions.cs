@@ -176,15 +176,67 @@ public class MessagingOptions : IMessagingBuilder
     public CircuitBreakerOptions CircuitBreaker { get; } = new();
 
     /// <summary>
-    /// Gets or sets retry policy configuration for inline and persisted retries.
+    /// Gets retry policy configuration for inline and persisted retries.
     /// </summary>
-    public RetryPolicyOptions RetryPolicy { get; set; } = new();
+    public RetryPolicyOptions RetryPolicy { get; } = new();
 
     /// <summary>
     /// Gets the retry processor configuration that controls adaptive polling and backpressure behavior
     /// when the circuit breaker is engaged.
     /// </summary>
     public RetryProcessorOptions RetryProcessor { get; } = new();
+
+    /// <summary>
+    /// Copies all public and internal-settable properties of this instance to <paramref name="target"/>.
+    /// Also copies nested options via their own <c>CopyTo</c> methods and replicates collection state.
+    /// </summary>
+    internal void CopyTo(MessagingOptions target)
+    {
+        target.Services = Services;
+        target.Registry = Registry;
+        target.DefaultGroupName = DefaultGroupName;
+        target.IsDefaultGroupNameConfigured = IsDefaultGroupNameConfigured;
+        target.GroupNamePrefix = GroupNamePrefix;
+        target.TopicNamePrefix = TopicNamePrefix;
+        target.Version = Version;
+        target.Conventions = Conventions;
+        target.SucceedMessageExpiredAfter = SucceedMessageExpiredAfter;
+        target.FailedMessageExpiredAfter = FailedMessageExpiredAfter;
+        target.ConsumerThreadCount = ConsumerThreadCount;
+        target.EnableSubscriberParallelExecute = EnableSubscriberParallelExecute;
+        target.SubscriberParallelExecuteThreadCount = SubscriberParallelExecuteThreadCount;
+        target.SubscriberParallelExecuteBufferFactor = SubscriberParallelExecuteBufferFactor;
+        target.EnablePublishParallelSend = EnablePublishParallelSend;
+        target.PublishBatchSize = PublishBatchSize;
+        target.CollectorCleaningInterval = CollectorCleaningInterval;
+        target.SchedulerBatchSize = SchedulerBatchSize;
+        target.UseStorageLock = UseStorageLock;
+        target.TenantContextRequired = TenantContextRequired;
+        RetryPolicy.CopyTo(target.RetryPolicy);
+
+        foreach (var mapping in TopicMappings)
+        {
+            target.TopicMappings[mapping.Key] = mapping.Value;
+        }
+    }
+
+    /// <summary>
+    /// Creates a <see cref="MessagingOptions"/> instance with <see cref="RetryPolicy"/> forced to
+    /// <see langword="null"/> via reflection so the validator's not-null rule can be exercised in unit tests.
+    /// Kept internal so it never surfaces on the NuGet API.
+    /// </summary>
+    internal static MessagingOptions CreateForValidatorTest_AllowNullRetryPolicy()
+    {
+        var options = new MessagingOptions();
+        var backingField = typeof(MessagingOptions).GetField(
+            "<RetryPolicy>k__BackingField",
+            System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Instance
+                | System.Reflection.BindingFlags.DeclaredOnly
+        );
+        backingField!.SetValue(options, null);
+        return options;
+    }
 
     /// <summary>
     /// Registers a messaging options extension that will be executed when configuring messaging services.

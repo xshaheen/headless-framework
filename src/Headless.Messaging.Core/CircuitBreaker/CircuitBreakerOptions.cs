@@ -41,6 +41,18 @@ public sealed class CircuitBreakerOptions
     public int SuccessfulCyclesToResetEscalation { get; set; } = 3;
 
     /// <summary>
+    /// Copies all properties of this instance to <paramref name="target"/>.
+    /// </summary>
+    internal void CopyTo(CircuitBreakerOptions target)
+    {
+        target.FailureThreshold = FailureThreshold;
+        target.OpenDuration = OpenDuration;
+        target.MaxOpenDuration = MaxOpenDuration;
+        target.SuccessfulCyclesToResetEscalation = SuccessfulCyclesToResetEscalation;
+        target.IsTransientException = IsTransientException;
+    }
+
+    /// <summary>
     /// Gets or sets a predicate that determines whether an exception is transient and should
     /// count toward the circuit breaker failure threshold.
     /// </summary>

@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
-public interface IMessageSender
+internal interface IMessageSender
 {
     /// <summary>
     /// Publishes a single outbox message using the sender's root service provider for
@@ -137,17 +137,11 @@ internal sealed class MessageSender : IMessageSender
         // leaves the row picked up by the polling query on restart (Failed/NULL is filtered out).
         // Only transition to Failed on terminal decisions (Stop, Exhausted) or when persisting
         // for the persisted-retry processor (Continue with inline budget exhausted, NextRetryAt set).
-        var isInlineRetryInFlight =
-            needRetry.Outcome == RetryDecision.Kind.Continue && inlineRetries + 1 <= _retryPolicy.MaxInlineRetries;
+        var state = RetryHelper.ResolveNextState(needRetry, inlineRetries, _retryPolicy, _timeProvider);
 
-        var nextStatus = isInlineRetryInFlight ? StatusName.Scheduled : StatusName.Failed;
-
-        var nextRetryAt =
-            needRetry.Outcome == RetryDecision.Kind.Continue && inlineRetries + 1 > _retryPolicy.MaxInlineRetries
-                ? _timeProvider.GetUtcNow().UtcDateTime.Add(needRetry.Delay)
-                : (DateTime?)null;
-
-        await _dataStorage.ChangePublishStateAsync(message, nextStatus, nextRetryAt: nextRetryAt).ConfigureAwait(false);
+        await _dataStorage
+            .ChangePublishStateAsync(message, state.NextStatus, nextRetryAt: state.NextRetryAt)
+            .ConfigureAwait(false);
 
         if (needRetry.Outcome == RetryDecision.Kind.Exhausted)
         {
@@ -160,15 +154,11 @@ internal sealed class MessageSender : IMessageSender
     private RetryDecision _UpdateMessageForRetry(MediumMessage message, Exception ex)
     {
         var isCancellation = RetryHelper.IsCancellation(ex, _shutdownToken);
-        var decision = RetryHelper.ComputeRetryDecision(message, ex, _retryPolicy, isCancellation);
+        var decision = RetryHelper.RecordAttemptAndComputeDecision(message, ex, _retryPolicy, isCancellation);
         switch (decision.Outcome)
         {
             case RetryDecision.Kind.Stop:
-                _logger.LogWarning(
-                    "Stored message {StorageId} failed with non-retryable exception: {ExceptionType}. Skipping retries.",
-                    message.StorageId,
-                    ex.GetType().Name
-                );
+                _logger.StoredMessageNonRetryableFailure(message.StorageId, ex.GetType().Name);
                 break;
             case RetryDecision.Kind.Exhausted:
                 _logger.SenderStoredMessageAfterThreshold(message.StorageId, _retryPolicy.MaxAttempts);

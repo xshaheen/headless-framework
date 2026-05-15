@@ -282,6 +282,66 @@ Message ordering guarantees depend on the transport provider and configuration:
 - For high throughput: Use parallel processing; design consumers to be order-independent
 - Test ordering behavior with your specific transport and configuration
 
+## Retry Policy
+
+`MessagingOptions.RetryPolicy` is the single composition point for all retry behavior — both inline and persisted retries, on both consume and publish paths. Configure it once; the framework wires it into `SubscribeExecutor` (consume) and `MessageSender` (publish).
+
+### Global Configuration
+
+```csharp
+builder.Services.AddHeadlessMessaging(options =>
+{
+    options.RetryPolicy.MaxAttempts = 10;
+    options.RetryPolicy.MaxInlineRetries = 2;
+    options.RetryPolicy.BackoffStrategy = new ExponentialBackoffStrategy(
+        initialDelay: TimeSpan.FromSeconds(1),
+        maxDelay: TimeSpan.FromMinutes(5)
+    );
+    options.RetryPolicy.OnExhausted = info =>
+    {
+        // Fires only when budget is fully consumed (Exhausted), not on permanent failures (Stop).
+        var logger = info.ServiceProvider.GetRequiredService<ILogger<MyService>>();
+        logger.LogError(info.Exception, "Message {Id} permanently failed", info.Message.StorageId);
+    };
+});
+```
+
+| Property | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `MaxAttempts` | `int` | `50` | Total delivery attempts including the first. Set to `1` to disable retries. |
+| `MaxInlineRetries` | `int` | `2` | Retries to run inline before persisting for the retry processor. Must be `>= 0` and `< MaxAttempts`. |
+| `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Strategy returns `RetryDecision.Stop` (permanent) or `RetryDecision.Continue(delay)` (transient). |
+| `OnExhausted` | `Action<FailedInfo>?` | `null` | Fires only on `RetryDecision.Exhausted`. Does NOT fire on `RetryDecision.Stop`. |
+
+### Exhausted vs Stop
+
+`OnExhausted` fires **only on `RetryDecision.Exhausted`** — the retry budget was fully consumed and the failure was transient.
+
+It does **NOT** fire on `RetryDecision.Stop`. Stop is the framework's signal for:
+
+- **Permanent exceptions** classified by the backoff strategy (`SubscriberNotFoundException`, `ArgumentException`, `ArgumentNullException`, `InvalidOperationException`, `NotSupportedException`).
+- **Cancellation** (`OperationCanceledException` whose token matches the dispatch cancellation token).
+
+For a single exit point covering both Stop and Exhausted, use an `IConsumeFilter` / `IPublishFilter`.
+
+### Inline vs Persisted Retry Paths
+
+Retries up to `MaxInlineRetries` run inline inside the same `ExecuteAsync` / `SendAsync` call. Once the inline budget is exhausted but the overall `MaxAttempts` budget is not, the message is persisted with `NextRetryAt` set and picked up by `MessageNeedToRetryProcessor`.
+
+Worked example with `MaxAttempts = 10, MaxInlineRetries = 2`:
+
+```
+attempt 1 (original)        ── inline, no delay
+attempt 2 (inline retry #1) ── inline, after BackoffStrategy delay
+attempt 3 (inline retry #2) ── inline, after BackoffStrategy delay
+                                inline budget exhausted, persist
+attempt 4 (persisted)       ── retry processor polls and re-dispatches
+…
+attempt 10                  ── final attempt; on failure → Exhausted → OnExhausted fires
+```
+
+For the full property table, migration guide, and `FailedInfo` construction details, see [docs/llms/messaging.md](../../../../docs/llms/messaging.md).
+
 ## Circuit Breaker
 
 Per-consumer-group circuit breaker that pauses transport consumption when a dependency is unhealthy, preventing message-retry storms.

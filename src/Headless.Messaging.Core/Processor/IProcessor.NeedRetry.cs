@@ -197,7 +197,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         try
         {
-            var messages = await _GetSafelyAsync(connection.GetPublishedMessagesOfNeedRetry).ConfigureAwait(false);
+            var messages = await _GetSafelyAsync(connection.GetPublishedMessagesOfNeedRetry, context.CancellationToken)
+                .ConfigureAwait(false);
 
             foreach (var message in messages)
             {
@@ -238,7 +239,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         try
         {
-            var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry).ConfigureAwait(false);
+            var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry, context.CancellationToken)
+                .ConfigureAwait(false);
 
             var enqueued = 0;
             var skippedCircuitOpen = 0;
@@ -283,6 +285,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         try
         {
             return await getMessagesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

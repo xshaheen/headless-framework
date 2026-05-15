@@ -104,7 +104,7 @@ public abstract class OutboxTransaction(IDispatcher dispatcher, IOutboxTransacti
     /// This is typically called when publishing a message within a transaction context.
     /// </summary>
     /// <param name="msg">The message to add to the buffer.</param>
-    protected internal virtual void AddToSent(MediumMessage msg)
+    protected virtual void AddToSent(MediumMessage msg)
     {
         _bufferList.Enqueue(msg);
     }

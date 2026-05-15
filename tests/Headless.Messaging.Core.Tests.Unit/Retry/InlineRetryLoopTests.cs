@@ -59,6 +59,28 @@ public sealed class InlineRetryLoopTests : TestBase
     }
 
     [Fact]
+    public async Task should_call_attempt_once_when_max_inline_retries_is_zero()
+    {
+        // MaxInlineRetries=0 means no in-process retries: the loop must invoke the attempt
+        // exactly once and return regardless of the decision returned.
+        var policy = new RetryPolicyOptions { MaxAttempts = 5, MaxInlineRetries = 0 };
+        var attempts = 0;
+
+        var result = await InlineRetryLoop.ExecuteAsync<int>(
+            (inlineRetries, _) =>
+            {
+                attempts++;
+                return Task.FromResult((RetryDecision.Continue(TimeSpan.Zero), attempts));
+            },
+            policy,
+            CancellationToken.None
+        );
+
+        result.Should().Be(1);
+        attempts.Should().Be(1, "MaxInlineRetries=0 must produce exactly one attempt");
+    }
+
+    [Fact]
     public async Task should_stop_after_max_inline_retries_even_when_decision_continues()
     {
         // Budget = 1 retry. First attempt continues, second attempt is the inline retry

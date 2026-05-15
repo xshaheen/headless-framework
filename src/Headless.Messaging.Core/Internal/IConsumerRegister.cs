@@ -27,8 +27,11 @@ public interface IConsumerRegister : IProcessingServer
     ValueTask OnTopologyChangedAsync(CancellationToken cancellationToken = default);
 }
 
-internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvider serviceProvider)
-    : IConsumerRegister
+internal sealed class ConsumerRegister(
+    ILogger<ConsumerRegister> logger,
+    IServiceProvider serviceProvider,
+    IServiceScopeFactory serviceScopeFactory
+) : IConsumerRegister
 {
     private static readonly DiagnosticListener _DiagnosticListener = new(
         MessageDiagnosticListenerNames.DiagnosticListenerName
@@ -650,10 +653,13 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
                     try
                     {
+                        // Poisoned-on-arrival messages bypass the normal Dispatcher scope,
+                        // so we create a fresh async scope here instead of using the root provider.
+                        await using var exhaustedScope = serviceScopeFactory.CreateAsyncScope();
                         _options.RetryPolicy.OnExhausted?.Invoke(
                             new FailedInfo
                             {
-                                ServiceProvider = serviceProvider,
+                                ServiceProvider = exhaustedScope.ServiceProvider,
                                 MessageType = MessageType.Subscribe,
                                 Message = message,
                                 Exception =
