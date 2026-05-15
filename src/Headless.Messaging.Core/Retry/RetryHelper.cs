@@ -138,8 +138,11 @@ internal static class RetryHelper
 
         var nextStatus = isInlineRetryInFlight ? StatusName.Scheduled : StatusName.Failed;
 
+        // Always persist NextRetryAt for any Continue decision so a crash during the inline
+        // delay leaves the row in Scheduled/NextRetryAt state — visible to the polling query
+        // on restart. During normal operation the inline loop retries before the deadline.
         var nextRetryAt =
-            decision.Outcome == RetryDecision.Kind.Continue && inlineRetries + 1 > policy.MaxInlineRetries
+            decision.Outcome == RetryDecision.Kind.Continue
                 ? timeProvider.GetUtcNow().UtcDateTime.Add(decision.Delay)
                 : (DateTime?)null;
 
