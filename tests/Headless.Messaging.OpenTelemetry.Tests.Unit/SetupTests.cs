@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Messaging.OpenTelemetry;
 using Headless.Testing.Tests;
+using NSubstitute;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -35,7 +37,7 @@ public sealed class SetupTests : TestBase
 
         // when
         using var tracerProvider = Sdk.CreateTracerProviderBuilder()
-            .AddMessagingInstrumentation(enableMetrics: true)
+            .AddMessagingInstrumentation(o => o.EnableMetrics = true)
             .AddInMemoryExporter(activities)
             .Build();
 
@@ -51,11 +53,36 @@ public sealed class SetupTests : TestBase
 
         // when
         using var tracerProvider = Sdk.CreateTracerProviderBuilder()
-            .AddMessagingInstrumentation(enableMetrics: false)
+            .AddMessagingInstrumentation(o => o.EnableMetrics = false)
             .AddInMemoryExporter(activities)
             .Build();
 
         // then
+        tracerProvider.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_accept_custom_enricher()
+    {
+        // given
+        var enricher = NSubstitute.Substitute.For<IActivityTagEnricher>();
+
+        // when/then - no exception during registration
+        using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .AddMessagingInstrumentation(o => o.Enrichers.Add(enricher))
+            .Build();
+
+        tracerProvider.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_suppress_tenant_id_tag_when_configured()
+    {
+        // when/then - no exception during registration
+        using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .AddMessagingInstrumentation(o => o.SuppressTenantIdTag = true)
+            .Build();
+
         tracerProvider.Should().NotBeNull();
     }
 

@@ -1,13 +1,20 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Messaging;
 using Headless.Messaging.Diagnostics;
+using Headless.Messaging.Messages;
+using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 
 namespace Headless.Messaging.OpenTelemetry;
 
-internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<KeyValuePair<string, object?>>
+internal class DiagnosticListener(
+    IReadOnlyList<IActivityTagEnricher> enrichers,
+    ILogger<DiagnosticListener>? logger = null,
+    MessagingMetrics? metrics = null
+) : IObserver<KeyValuePair<string, object?>>
 {
     public const string SourceName = MessagingDiagnostics.SourceName;
 
@@ -54,6 +61,27 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                                 "message.persist.start",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
                             )
+                        );
+
+                        _CallEnrichers(
+                            activity,
+                            new MessagingEnrichmentContext
+                            {
+                                Kind = MessagingEventKind.Persist,
+                                MessageId = eventData.Message.GetId(),
+                                MessageName = eventData.Operation,
+                                TenantId = eventData.Message.Headers.TryGetValue(Headers.TenantId, out var persistTid)
+                                    ? persistTid
+                                    : null,
+                                CorrelationId = eventData.Message.Headers.TryGetValue(
+                                    Headers.CorrelationId,
+                                    out var persistCid
+                                )
+                                    ? persistCid
+                                    : null,
+                                RetryCount = 0,
+                                Headers = (IReadOnlyDictionary<string, string?>)eventData.Message.Headers,
+                            }
                         );
 
                         if (parentContext != default && Activity.Current != null)
@@ -156,6 +184,25 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                                 "message.publish.start",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
                             )
+                        );
+
+                        _CallEnrichers(
+                            activity,
+                            new MessagingEnrichmentContext
+                            {
+                                Kind = MessagingEventKind.Publish,
+                                MessageId = eventData.TransportMessage.GetId(),
+                                MessageName = eventData.Operation,
+                                TenantId = eventData.TransportMessage.Headers.TryGetValue(
+                                    Headers.TenantId,
+                                    out var publishTid
+                                )
+                                    ? publishTid
+                                    : null,
+                                CorrelationId = eventData.TransportMessage.GetCorrelationId(),
+                                RetryCount = 0,
+                                Headers = (IReadOnlyDictionary<string, string?>)eventData.TransportMessage.Headers,
+                            }
                         );
 
                         _Propagator.Inject(
@@ -265,6 +312,25 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
                             )
                         );
+
+                        _CallEnrichers(
+                            activity,
+                            new MessagingEnrichmentContext
+                            {
+                                Kind = MessagingEventKind.Consume,
+                                MessageId = eventData.TransportMessage.GetId(),
+                                MessageName = eventData.Operation,
+                                TenantId = eventData.TransportMessage.Headers.TryGetValue(
+                                    Headers.TenantId,
+                                    out var consumeTid
+                                )
+                                    ? consumeTid
+                                    : null,
+                                CorrelationId = eventData.TransportMessage.GetCorrelationId(),
+                                RetryCount = 0,
+                                Headers = (IReadOnlyDictionary<string, string?>)eventData.TransportMessage.Headers,
+                            }
+                        );
                     }
                 }
                 break;
@@ -354,11 +420,37 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                     {
                         activity.SetTag("code.function.name", eventData.MethodInfo!.Name);
 
+                        if (eventData.RetryCount > 0)
+                        {
+                            activity.SetTag("headless.messaging.retry_count", eventData.RetryCount);
+                        }
+
                         activity.AddEvent(
                             new ActivityEvent(
                                 "subscriber.invoke.start",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
                             )
+                        );
+
+                        _CallEnrichers(
+                            activity,
+                            new MessagingEnrichmentContext
+                            {
+                                Kind = MessagingEventKind.SubscriberInvoke,
+                                MessageId = eventData.Message.GetId(),
+                                MessageName = eventData.Operation,
+                                TenantId = eventData.Message.Headers.TryGetValue(Headers.TenantId, out var invokeTid)
+                                    ? invokeTid
+                                    : null,
+                                CorrelationId = eventData.Message.Headers.TryGetValue(
+                                    Headers.CorrelationId,
+                                    out var invokeCid
+                                )
+                                    ? invokeCid
+                                    : null,
+                                RetryCount = eventData.RetryCount,
+                                Headers = (IReadOnlyDictionary<string, string?>)eventData.Message.Headers,
+                            }
                         );
                     }
                 }
@@ -410,4 +502,28 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                 break;
         }
     }
+
+    private void _CallEnrichers(Activity activity, in MessagingEnrichmentContext context)
+    {
+        foreach (var enricher in enrichers)
+        {
+            try
+            {
+                enricher.Enrich(activity, context);
+            }
+            catch (Exception ex) when (logger != null)
+            {
+                DiagnosticListenerLog.EnricherFailed(logger, ex, enricher.GetType().Name);
+            }
+        }
+    }
+}
+
+internal static partial class DiagnosticListenerLog
+{
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "Enricher {EnricherType} threw an exception and was skipped"
+    )]
+    public static partial void EnricherFailed(ILogger logger, Exception ex, string enricherType);
 }

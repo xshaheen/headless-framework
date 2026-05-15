@@ -34,4 +34,9 @@ public class MessageEventDataSubExecute
     public long? ElapsedTimeMs { get; set; }
 
     public Exception? Exception { get; set; }
+
+    /// <summary>
+    /// Number of persisted retry pickups for this message. Zero on first delivery and inline retries.
+    /// </summary>
+    public int RetryCount { get; set; }
 }

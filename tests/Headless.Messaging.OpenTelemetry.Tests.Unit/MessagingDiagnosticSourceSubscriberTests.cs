@@ -13,7 +13,7 @@ public sealed class MessagingDiagnosticSourceSubscriberTests : TestBase
     public void should_subscribe_to_diagnostic_source()
     {
         // given
-        var handler = new DiagnosticListener();
+        var handler = new DiagnosticListener([]);
         using var subscriber = new MessagingDiagnosticSourceSubscriber(handler, isEnabledFilter: null);
 
         // when
@@ -26,7 +26,7 @@ public sealed class MessagingDiagnosticSourceSubscriberTests : TestBase
     public void should_dispose_properly()
     {
         // given
-        var handler = new DiagnosticListener();
+        var handler = new DiagnosticListener([]);
         using var subscriber = new MessagingDiagnosticSourceSubscriber(handler, isEnabledFilter: null);
         subscriber.Subscribe();
 
@@ -39,7 +39,7 @@ public sealed class MessagingDiagnosticSourceSubscriberTests : TestBase
     public void should_handle_multiple_dispose_calls()
     {
         // given
-        var handler = new DiagnosticListener();
+        var handler = new DiagnosticListener([]);
         using var subscriber = new MessagingDiagnosticSourceSubscriber(handler, isEnabledFilter: null);
         subscriber.Subscribe();
 
@@ -55,7 +55,7 @@ public sealed class MessagingDiagnosticSourceSubscriberTests : TestBase
     public void should_not_throw_on_completed()
     {
         // given
-        var handler = new DiagnosticListener();
+        var handler = new DiagnosticListener([]);
         using var subscriber = new MessagingDiagnosticSourceSubscriber(handler, isEnabledFilter: null);
 
         // when/then
@@ -67,7 +67,7 @@ public sealed class MessagingDiagnosticSourceSubscriberTests : TestBase
     public void should_not_throw_on_error()
     {
         // given
-        var handler = new DiagnosticListener();
+        var handler = new DiagnosticListener([]);
         using var subscriber = new MessagingDiagnosticSourceSubscriber(handler, isEnabledFilter: null);
 
         // when/then
@@ -79,7 +79,7 @@ public sealed class MessagingDiagnosticSourceSubscriberTests : TestBase
     public void should_only_subscribe_once()
     {
         // given
-        var handler = new DiagnosticListener();
+        var handler = new DiagnosticListener([]);
         using var subscriber = new MessagingDiagnosticSourceSubscriber(handler, isEnabledFilter: null);
 
         // when
@@ -94,7 +94,7 @@ public sealed class MessagingDiagnosticSourceSubscriberTests : TestBase
     public void should_create_with_handler_factory()
     {
         // given
-        Func<string, DiagnosticListener> handlerFactory = _ => new DiagnosticListener();
+        Func<string, DiagnosticListener> handlerFactory = _ => new DiagnosticListener([]);
         Func<System.Diagnostics.DiagnosticListener, bool> diagnosticSourceFilter = source =>
             string.Equals(source.Name, MessageDiagnosticListenerNames.DiagnosticListenerName, StringComparison.Ordinal);
 
@@ -113,7 +113,7 @@ public sealed class MessagingDiagnosticSourceSubscriberTests : TestBase
     public void should_create_with_is_enabled_filter()
     {
         // given
-        var handler = new DiagnosticListener();
+        var handler = new DiagnosticListener([]);
         Func<string, object?, object?, bool> isEnabledFilter = (_, _, _) => true;
 
         // when
