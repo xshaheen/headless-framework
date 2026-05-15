@@ -86,5 +86,28 @@ public static class FluentValidatorErrorDescriber
         {
             return new(code: "url:invalid", description: FluentValidatorErrors.url_invalid);
         }
+
+        public static ErrorDescriptor InvalidOriginFormat()
+        {
+            return new(code: "url:invalid_origin_format", description: FluentValidatorErrors.url_invalid_origin_format);
+        }
+
+        public static ErrorDescriptor InvalidOriginScheme()
+        {
+            return new(code: "url:invalid_origin_scheme", description: FluentValidatorErrors.url_invalid_origin_scheme);
+        }
+
+        public static ErrorDescriptor InvalidOriginNotRootPath()
+        {
+            return new(code: "url:invalid_origin_path", description: FluentValidatorErrors.url_invalid_origin_path);
+        }
+
+        public static ErrorDescriptor InvalidOriginTrailingSlash()
+        {
+            return new(
+                code: "url:invalid_origin_trailing_slash",
+                description: FluentValidatorErrors.url_invalid_origin_trailing_slash
+            );
+        }
     }
 }

@@ -43,6 +43,18 @@
   <data name="url:invalid" xml:space="preserve">
     <value>The URL is invalid.</value>
   </data>
+  <data name="url:invalid_origin_format" xml:space="preserve">
+    <value>The origin "{PropertyValue}" is not a valid absolute URI.</value>
+  </data>
+  <data name="url:invalid_origin_scheme" xml:space="preserve">
+    <value>The origin must use the HTTP or HTTPS scheme. Found: {Scheme}.</value>
+  </data>
+  <data name="url:invalid_origin_path" xml:space="preserve">
+    <value>The origin must not contain a path, query, or fragment.</value>
+  </data>
+  <data name="url:invalid_origin_trailing_slash" xml:space="preserve">
+    <value>The origin must not end with a trailing slash.</value>
+  </data>
   <data name="geo:invalid_latitude" xml:space="preserve">
     <value>Invalid latitude value. It must be between -90 and 90.</value>
   </data>

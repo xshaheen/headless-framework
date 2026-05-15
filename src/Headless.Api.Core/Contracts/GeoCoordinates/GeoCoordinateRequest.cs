@@ -28,7 +28,7 @@ public sealed record GeoCoordinateRequest(double Latitude, double Longitude)
 
 public static class GeoCoordinateValidatorExtensions
 {
-    public static IRuleBuilder<T, GeoCoordinateRequest?> GeoCoordinate<T>(
+    public static IRuleBuilderOptions<T, GeoCoordinateRequest?> GeoCoordinate<T>(
         this IRuleBuilder<T, GeoCoordinateRequest?> rule
     )
     {
