@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 namespace Headless.Messaging.OpenTelemetry;
 
@@ -13,6 +14,7 @@ namespace Headless.Messaging.OpenTelemetry;
 /// Headers are the raw wire headers. On the consume side they are untrusted external data;
 /// enrichers that write header values to sensitive sinks must sanitize at their own call site.
 /// </remarks>
+[PublicAPI]
 public readonly struct MessagingEnrichmentContext : IEquatable<MessagingEnrichmentContext>
 {
     /// <summary>Which span type is being enriched.</summary>
@@ -62,7 +64,7 @@ public readonly struct MessagingEnrichmentContext : IEquatable<MessagingEnrichme
 
     /// <inheritdoc />
     public override int GetHashCode() =>
-        HashCode.Combine(Kind, MessageId, MessageName, TenantId, CorrelationId, RetryCount);
+        HashCode.Combine(Kind, MessageId, MessageName, TenantId, CorrelationId, RetryCount, RuntimeHelpers.GetHashCode(Headers));
 
     public static bool operator ==(MessagingEnrichmentContext left, MessagingEnrichmentContext right) =>
         left.Equals(right);

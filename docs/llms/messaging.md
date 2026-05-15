@@ -1087,19 +1087,31 @@ builder.Services.AddHeadlessMessaging(options =>
 ## Configuration
 
 ```csharp
-options.UseOpenTelemetry(otel =>
-{
-    otel.EnrichPublisher = (activity, message) =>
-    {
-        activity?.SetTag("message.type", message.GetType().Name);
-    };
-
-    otel.EnrichConsumer = (activity, context) =>
-    {
-        activity?.SetTag("consumer.topic", context.Topic);
-    };
-});
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .AddMessagingInstrumentation(o =>
+        {
+            o.EnableMetrics = true;
+            o.SuppressTenantIdTag = false;   // set true in shared-backend scenarios
+            o.Enrichers.Add(new MyCustomEnricher());
+        })
+        .AddJaegerExporter());
 ```
+
+Custom enrichers implement `IActivityTagEnricher`:
+
+```csharp
+public sealed class MyCustomEnricher : IActivityTagEnricher
+{
+    public void Enrich(Activity activity, in MessagingEnrichmentContext context)
+    {
+        if (context.Kind == MessagingEventKind.Publish)
+            activity.SetTag("app.message.type", context.MessageName);
+    }
+}
+```
+
+`MessagingEnrichmentContext` exposes `Kind`, `MessageId`, `MessageName`, `TenantId`, `CorrelationId`, `RetryCount`, and `Headers`. An enricher that throws is isolated: the exception is swallowed (and logged as a warning when a logger is available) so subsequent enrichers and the span itself are unaffected.
 
 ## Dependencies
 

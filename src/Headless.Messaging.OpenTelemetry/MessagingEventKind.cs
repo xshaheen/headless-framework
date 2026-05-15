@@ -3,6 +3,7 @@
 namespace Headless.Messaging.OpenTelemetry;
 
 /// <summary>Identifies which messaging span type an <see cref="IActivityTagEnricher"/> is being called for.</summary>
+[PublicAPI]
 public enum MessagingEventKind
 {
     /// <summary>The outbox persist span (<c>message.persist</c>).</summary>

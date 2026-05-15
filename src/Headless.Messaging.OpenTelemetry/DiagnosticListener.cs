@@ -10,7 +10,7 @@ using OpenTelemetry.Context.Propagation;
 
 namespace Headless.Messaging.OpenTelemetry;
 
-internal class DiagnosticListener(
+internal sealed class DiagnosticListener(
     IReadOnlyList<IActivityTagEnricher> enrichers,
     ILogger<DiagnosticListener>? logger = null,
     MessagingMetrics? metrics = null
@@ -511,9 +511,10 @@ internal class DiagnosticListener(
             {
                 enricher.Enrich(activity, context);
             }
-            catch (Exception ex) when (logger != null)
+            catch (Exception ex)
             {
-                DiagnosticListenerLog.EnricherFailed(logger, ex, enricher.GetType().Name);
+                if (logger != null)
+                    DiagnosticListenerLog.EnricherFailed(logger, ex, enricher.GetType().Name);
             }
         }
     }
@@ -525,5 +526,5 @@ internal static partial class DiagnosticListenerLog
         Level = LogLevel.Warning,
         Message = "Enricher {EnricherType} threw an exception and was skipped"
     )]
-    public static partial void EnricherFailed(ILogger logger, Exception ex, string enricherType);
+    internal static partial void EnricherFailed(ILogger logger, Exception ex, string enricherType);
 }
