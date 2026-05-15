@@ -98,7 +98,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         services.Configure<MessagingOptions>(x =>
         {
             x.Version = "v1";
-            x.RetryPolicy.MaxAttempts = 5;
+            x.RetryPolicy.MaxPersistedRetries = 4;
             x.FailedMessageExpiredAfter = 3600;
             x.UseStorageLock = true;
         });

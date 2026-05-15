@@ -118,8 +118,9 @@ public sealed class MessagingOptionsValidationTests : TestBase
         var options = new MessagingOptions();
 
         // then
-        options.RetryPolicy.MaxAttempts.Should().Be(50);
         options.RetryPolicy.MaxInlineRetries.Should().Be(2);
+        options.RetryPolicy.MaxPersistedRetries.Should().Be(15);
+        options.RetryPolicy.InitialDispatchGrace.Should().Be(TimeSpan.FromSeconds(30));
         options.RetryPolicy.BackoffStrategy.Should().BeOfType<ExponentialBackoffStrategy>();
     }
 
@@ -149,24 +150,24 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
-    public void should_reject_retry_policy_with_zero_max_attempts()
+    public void should_reject_retry_policy_with_negative_max_persisted_retries()
     {
         // given
-        var options = new RetryPolicyOptions { MaxAttempts = 0 };
+        var options = new RetryPolicyOptions { MaxPersistedRetries = -1 };
 
         // when
         var result = new RetryPolicyOptionsValidator().Validate(options);
 
         // then
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxAttempts));
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxPersistedRetries));
     }
 
     [Fact]
-    public void should_accept_retry_policy_with_one_max_attempt()
+    public void should_accept_retry_policy_with_zero_persisted_retries_and_zero_inline_retries()
     {
-        // given
-        var options = new RetryPolicyOptions { MaxAttempts = 1, MaxInlineRetries = 0 };
+        // No retries at all (single attempt only) is a valid configuration.
+        var options = new RetryPolicyOptions { MaxPersistedRetries = 0, MaxInlineRetries = 0 };
 
         // when
         var result = new RetryPolicyOptionsValidator().Validate(options);
@@ -176,10 +177,10 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
-    public void should_reject_retry_policy_when_inline_retries_reach_max_attempts()
+    public void should_reject_retry_policy_with_negative_max_inline_retries()
     {
         // given
-        var options = new RetryPolicyOptions { MaxAttempts = 2, MaxInlineRetries = 2 };
+        var options = new RetryPolicyOptions { MaxInlineRetries = -1 };
 
         // when
         var result = new RetryPolicyOptionsValidator().Validate(options);
@@ -187,6 +188,34 @@ public sealed class MessagingOptionsValidationTests : TestBase
         // then
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxInlineRetries));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_non_positive_initial_dispatch_grace()
+    {
+        // given
+        var options = new RetryPolicyOptions { InitialDispatchGrace = TimeSpan.Zero };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.InitialDispatchGrace));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_when_initial_dispatch_grace_exceeds_one_hour()
+    {
+        // given
+        var options = new RetryPolicyOptions { InitialDispatchGrace = TimeSpan.FromHours(2) };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.InitialDispatchGrace));
     }
 
     [Fact]

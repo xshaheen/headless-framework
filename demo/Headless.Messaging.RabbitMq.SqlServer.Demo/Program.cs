@@ -42,11 +42,13 @@ builder.Services.AddHeadlessMessaging(x =>
 
     //x.EnablePublishParallelSend = true;
 
-    //x.RetryPolicy.OnExhausted = failed =>
+    //x.RetryPolicy.OnExhausted = (failed, ct) =>
     //{
     //    var logger = failed.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    //    logger.LogError($@"A message of type {failed.MessageType} failed after executing {x.RetryPolicy.MaxAttempts} attempts,
+    //    logger.LogError($@"A message of type {failed.MessageType} failed after consuming the retry budget
+    //        (MaxInlineRetries={x.RetryPolicy.MaxInlineRetries}, MaxPersistedRetries={x.RetryPolicy.MaxPersistedRetries}),
     //        requiring manual troubleshooting. Message name: {failed.Message.GetName()}");
+    //    return Task.CompletedTask;
     //};
     //x.JsonSerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All);
 });

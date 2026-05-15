@@ -185,7 +185,17 @@ internal sealed class SubscribeExecutor(
         CancellationToken cancellationToken = default
     )
     {
-        var needRetry = _UpdateMessageForRetry(message, ex, cancellationToken);
+        // Host shutdown: an OCE bound to the dispatch cancellation token (linked to host stopping)
+        // means the dispatch was aborted, not that the message failed. Returning without writing
+        // state preserves the row's existing NextRetryAt/Status, and the persisted retry processor
+        // will pick the row up on restart.
+        if (RetryHelper.IsCancellation(ex, cancellationToken))
+        {
+            logger.StoredMessageExecutionCanceled(message.StorageId);
+            return RetryDecision.Stop;
+        }
+
+        var needRetry = _UpdateMessageForRetry(message, ex, inlineRetries, cancellationToken);
 
         message.Origin.AddOrUpdateException(ex);
         message.ExceptionInfo = ex.ExpandMessage();
@@ -197,13 +207,21 @@ internal sealed class SubscribeExecutor(
         // for the persisted-retry processor (Continue with inline budget exhausted, NextRetryAt set).
         var state = RetryHelper.ResolveNextState(needRetry, inlineRetries, _retryPolicy, timeProvider);
 
+        // Persist transition: inline budget consumed AND decision Continue means the call site
+        // owns the Retries++ . The helper is pure with respect to MediumMessage; this is the only
+        // place persisted-pickup count advances.
+        if (needRetry.Outcome == RetryDecision.Kind.Continue && !state.IsInlineRetryInFlight)
+        {
+            message.Retries++;
+        }
+
         await dataStorage
             .ChangeReceiveStateAsync(message, state.NextStatus, nextRetryAt: state.NextRetryAt)
             .ConfigureAwait(false);
 
         if (needRetry.Outcome == RetryDecision.Kind.Exhausted)
         {
-            _InvokeOnExhausted(message, ex, dispatchServices);
+            await _InvokeOnExhausted(message, ex, dispatchServices, cancellationToken).ConfigureAwait(false);
         }
 
         // Report the original (inner) exception to the circuit breaker so transient-classification
@@ -222,6 +240,7 @@ internal sealed class SubscribeExecutor(
     private RetryDecision _UpdateMessageForRetry(
         MediumMessage message,
         Exception ex,
+        int inlineRetries,
         CancellationToken cancellationToken
     )
     {
@@ -231,14 +250,20 @@ internal sealed class SubscribeExecutor(
             logger.StoredMessageExecutionCanceled(message.StorageId);
         }
 
-        var decision = RetryHelper.RecordAttemptAndComputeDecision(message, ex, _retryPolicy, isCancellation);
+        var decision = RetryHelper.RecordAttemptAndComputeDecision(
+            message,
+            ex,
+            _retryPolicy,
+            inlineRetries,
+            isCancellation
+        );
         switch (decision.Outcome)
         {
             case RetryDecision.Kind.Stop:
                 logger.StoredMessageNonRetryableFailure(message.StorageId, ex.GetType().Name);
                 break;
             case RetryDecision.Kind.Exhausted:
-                logger.ConsumerStoredMessageAfterThreshold(message.StorageId, _retryPolicy.MaxAttempts);
+                logger.ConsumerStoredMessageAfterThreshold(message.StorageId, _retryPolicy.MaxPersistedRetries);
                 break;
             case RetryDecision.Kind.Continue:
                 logger.ConsumerExecutionRetrying(message.StorageId, message.Retries);
@@ -248,22 +273,35 @@ internal sealed class SubscribeExecutor(
         return decision;
     }
 
-    private void _InvokeOnExhausted(MediumMessage message, Exception ex, IServiceProvider dispatchServices)
+    private async Task _InvokeOnExhausted(
+        MediumMessage message,
+        Exception ex,
+        IServiceProvider dispatchServices,
+        CancellationToken cancellationToken
+    )
     {
+        var callback = _retryPolicy.OnExhausted;
+        if (callback is null)
+        {
+            return;
+        }
+
         try
         {
             // Use the live dispatch scope so scoped services resolved here are the same
             // instances seen during ExecuteAsync. The caller (Dispatcher) is responsible for
             // creating and disposing that scope.
-            _retryPolicy.OnExhausted?.Invoke(
-                new FailedInfo
-                {
-                    ServiceProvider = dispatchServices,
-                    MessageType = MessageType.Subscribe,
-                    Message = message.Origin,
-                    Exception = ex,
-                }
-            );
+            await callback(
+                    new FailedInfo
+                    {
+                        ServiceProvider = dispatchServices,
+                        MessageType = MessageType.Subscribe,
+                        Message = message.Origin,
+                        Exception = ex,
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
         catch (Exception callbackEx)
         {

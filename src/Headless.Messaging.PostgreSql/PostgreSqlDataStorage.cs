@@ -197,14 +197,15 @@ public sealed class PostgreSqlDataStorage(
             $"INSERT INTO {_publishedTable} (\"Id\",\"Version\",\"Name\",\"Content\",\"Retries\",\"Added\",\"ExpiresAt\",\"NextRetryAt\",\"StatusName\",\"MessageId\")"
             + $"VALUES(@Id,'{postgreSqlOptions.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@StatusName,@MessageId);";
 
+        var added = timeProvider.GetUtcNow().UtcDateTime;
         var message = new MediumMessage
         {
             StorageId = longIdGenerator.Create(),
             Origin = content,
             Content = serializer.Serialize(content),
-            Added = timeProvider.GetUtcNow().UtcDateTime,
+            Added = added,
             ExpiresAt = null,
-            NextRetryAt = null,
+            NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             Retries = 0,
         };
 
@@ -216,7 +217,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@Added", message.Added),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
-            new NpgsqlParameter("@NextRetryAt", DBNull.Value),
+            new NpgsqlParameter("@NextRetryAt", message.NextRetryAt!.Value),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", content.GetId()),
         ];
@@ -265,7 +266,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Group", group),
             new NpgsqlParameter("@Content", content),
-            new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxAttempts),
+            new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
             new NpgsqlParameter(
                 "@ExpiresAt",
@@ -287,14 +288,15 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        var added = timeProvider.GetUtcNow().UtcDateTime;
         var mediumMessage = new MediumMessage
         {
             StorageId = longIdGenerator.Create(),
             Origin = message,
             Content = serializer.Serialize(message),
-            Added = timeProvider.GetUtcNow().UtcDateTime,
+            Added = added,
             ExpiresAt = null,
-            NextRetryAt = null,
+            NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             Retries = 0,
         };
 
@@ -310,7 +312,7 @@ public sealed class PostgreSqlDataStorage(
                 "@ExpiresAt",
                 mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value
             ),
-            new NpgsqlParameter("@NextRetryAt", DBNull.Value),
+            new NpgsqlParameter("@NextRetryAt", mediumMessage.NextRetryAt!.Value),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", message.GetId()),
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
@@ -519,12 +521,12 @@ public sealed class PostgreSqlDataStorage(
     )
     {
         var sql =
-            $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\",\"NextRetryAt\" FROM {tableName} WHERE \"Retries\"<@Retries "
-            + $"AND \"Version\"=@Version AND ((\"NextRetryAt\" IS NOT NULL AND \"NextRetryAt\" <= now()) OR (\"StatusName\" = '{nameof(StatusName.Scheduled)}' AND \"NextRetryAt\" IS NULL)) LIMIT {_RetryBatchSize} FOR UPDATE SKIP LOCKED;";
+            $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\",\"NextRetryAt\" FROM {tableName} WHERE \"Retries\"<=@Retries "
+            + $"AND \"Version\"=@Version AND \"NextRetryAt\" IS NOT NULL AND \"NextRetryAt\" <= now() LIMIT {_RetryBatchSize} FOR UPDATE SKIP LOCKED;";
 
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxAttempts),
+            new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
         ];
 

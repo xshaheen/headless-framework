@@ -48,9 +48,10 @@ public readonly record struct RetryDecision
     /// <remarks>
     /// <para>
     /// Stop preserves <c>MediumMessage.Retries</c>; permanent-failure rows therefore have
-    /// <c>Retries &lt; MaxAttempts</c> and remain in a terminal <c>Failed/null-NextRetryAt</c>
-    /// state. The retry-pickup query excludes this combination by design. Any change to the pickup
-    /// predicate must preserve this exclusion.
+    /// <c>Retries &lt;= MaxPersistedRetries</c> and remain in a terminal <c>Failed/null-NextRetryAt</c>
+    /// state. The retry-pickup query excludes this combination because its
+    /// <c>NextRetryAt IS NOT NULL</c> clause filters out null-NextRetryAt rows. Any change to the
+    /// pickup predicate must preserve this exclusion.
     /// </para>
     /// </remarks>
     public static RetryDecision Stop { get; } = new() { Outcome = Kind.Stop };

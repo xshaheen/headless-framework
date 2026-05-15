@@ -651,33 +651,46 @@ internal sealed class ConsumerRegister(
 
                     await client.CommitAsync(sender);
 
-                    try
+                    var bypassCallback = _options.RetryPolicy.OnExhausted;
+                    if (bypassCallback is not null)
                     {
-                        // Poisoned-on-arrival messages bypass the normal Dispatcher scope,
-                        // so we create a fresh async scope here instead of using the root provider.
-                        await using var exhaustedScope = serviceScopeFactory.CreateAsyncScope();
-                        _options.RetryPolicy.OnExhausted?.Invoke(
-                            new FailedInfo
-                            {
-                                ServiceProvider = exhaustedScope.ServiceProvider,
-                                MessageType = MessageType.Subscribe,
-                                Message = message,
-                                Exception =
-                                    dispatchBypassException
-                                    ?? new InvalidOperationException(
-                                        exceptionInfo ?? "Received message contains exception information."
-                                    ),
-                            }
-                        );
+                        try
+                        {
+                            // Poisoned-on-arrival messages bypass the normal Dispatcher scope,
+                            // so we create a fresh async scope here instead of using the root provider.
+                            await using var exhaustedScope = serviceScopeFactory.CreateAsyncScope();
+                            await bypassCallback(
+                                    new FailedInfo
+                                    {
+                                        ServiceProvider = exhaustedScope.ServiceProvider,
+                                        MessageType = MessageType.Subscribe,
+                                        Message = message,
+                                        Exception =
+                                            dispatchBypassException
+                                            ?? new InvalidOperationException(
+                                                exceptionInfo ?? "Received message contains exception information."
+                                            ),
+                                    },
+                                    CancellationToken.None
+                                )
+                                .ConfigureAwait(false);
 
+                            _logger.ConsumerReceivedMessageAfterThreshold(
+                                message.GetId(),
+                                _options.RetryPolicy.MaxPersistedRetries
+                            );
+                        }
+                        catch (Exception e)
+                        {
+                            _logger.ExecutedThresholdCallbackFailed(e, LogSanitizer.Sanitize(e.Message));
+                        }
+                    }
+                    else
+                    {
                         _logger.ConsumerReceivedMessageAfterThreshold(
                             message.GetId(),
-                            _options.RetryPolicy.MaxAttempts
+                            _options.RetryPolicy.MaxPersistedRetries
                         );
-                    }
-                    catch (Exception e)
-                    {
-                        _logger.ExecutedThresholdCallbackFailed(e, LogSanitizer.Sanitize(e.Message));
                     }
 
                     _TracingAfter(tracingTimestamp, transportMessage, _serverAddress);
