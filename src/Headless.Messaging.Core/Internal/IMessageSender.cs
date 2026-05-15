@@ -156,13 +156,17 @@ internal sealed class MessageSender : IMessageSender
             message.Retries++;
         }
 
-        await _dataStorage
+        var affected = await _dataStorage
             .ChangePublishStateAsync(message, state.NextStatus, nextRetryAt: state.NextRetryAt)
             .ConfigureAwait(false);
 
-        if (needRetry.Outcome == RetryDecision.Kind.Exhausted)
+        if (affected && needRetry.Outcome == RetryDecision.Kind.Exhausted)
         {
             await _InvokeOnExhausted(message, ex, dispatchServices, _shutdownToken).ConfigureAwait(false);
+        }
+        else if (!affected)
+        {
+            _logger.LogInformation("Skipping OnExhausted: message {StorageId} already terminal", message.StorageId);
         }
 
         return needRetry;

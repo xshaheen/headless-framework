@@ -67,7 +67,7 @@ public sealed class MessageSenderTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         storage
             .ChangePublishStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var transportMessage = new TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal),
@@ -122,7 +122,7 @@ public sealed class MessageSenderTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         storage
             .ChangePublishStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var transportMessage = new TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal),
@@ -187,7 +187,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<DateTime?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var transportMessage = new TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal),
@@ -249,7 +249,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<DateTime?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var transportMessage = new TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal),
@@ -321,7 +321,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<DateTime?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var transportMessage = new TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal),
@@ -419,7 +419,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<DateTime?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var transportMessage = new TransportMessage(
             new Dictionary<string, string?>(StringComparer.Ordinal),

@@ -113,7 +113,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         storage
             .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
         // A CancellationTokenSource that has NOT been cancelled → IsCancellationRequested = false
@@ -151,7 +151,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<DateTime?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
 
@@ -218,7 +218,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<DateTime?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
 

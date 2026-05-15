@@ -143,7 +143,7 @@ public sealed class SqlServerDataStorage(
             .ConfigureAwait(false);
     }
 
-    public ValueTask ChangePublishStateAsync(
+    public ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
         object? transaction = null,
@@ -154,7 +154,7 @@ public sealed class SqlServerDataStorage(
         return _ChangeMessageStateAsync(_publishedTable, message, state, transaction, nextRetryAt, cancellationToken);
     }
 
-    public async ValueTask ChangeReceiveStateAsync(
+    public async ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
         DateTime? nextRetryAt = null,
@@ -162,7 +162,7 @@ public sealed class SqlServerDataStorage(
     )
     {
         var sql =
-            $"UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id";
+            $"UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND StatusName NOT IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')";
 
         object[] sqlParams =
         [
@@ -176,9 +176,11 @@ public sealed class SqlServerDataStorage(
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        await connection
+        var affectedRows = await connection
             .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
             .ConfigureAwait(false);
+
+        return affectedRows > 0;
     }
 
     public async ValueTask<MediumMessage> StoreMessageAsync(
@@ -452,7 +454,7 @@ public sealed class SqlServerDataStorage(
         return new SqlServerMonitoringApi(options, initializer, serializer, timeProvider);
     }
 
-    private async ValueTask _ChangeMessageStateAsync(
+    private async ValueTask<bool> _ChangeMessageStateAsync(
         string tableName,
         MediumMessage message,
         StatusName state,
@@ -462,7 +464,7 @@ public sealed class SqlServerDataStorage(
     )
     {
         var sql =
-            $"UPDATE {tableName} SET Content=@Content, Retries=@Retries,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,StatusName=@StatusName WHERE Id=@Id";
+            $"UPDATE {tableName} SET Content=@Content, Retries=@Retries,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,StatusName=@StatusName WHERE Id=@Id AND StatusName NOT IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')";
 
         object[] sqlParams =
         [
@@ -474,10 +476,11 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@StatusName", state.ToString("G")),
         ];
 
+        int affectedRows;
         if (transaction is DbTransaction dbTransaction)
         {
             var connection = dbTransaction.Connection!;
-            await connection
+            affectedRows = await connection
                 .ExecuteNonQueryAsync(sql, dbTransaction, cancellationToken, sqlParams)
                 .ConfigureAwait(false);
         }
@@ -485,15 +488,19 @@ public sealed class SqlServerDataStorage(
         {
             var dbTrans = efTransaction.GetDbTransaction();
             var connection = dbTrans.Connection!;
-            await connection.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams).ConfigureAwait(false);
+            affectedRows = await connection
+                .ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams)
+                .ConfigureAwait(false);
         }
         else
         {
             await using var connection = new SqlConnection(options.Value.ConnectionString);
-            await connection
+            affectedRows = await connection
                 .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
                 .ConfigureAwait(false);
         }
+
+        return affectedRows > 0;
     }
 
     private async ValueTask _StoreReceivedMessage(object[] sqlParams, CancellationToken cancellationToken = default)
@@ -522,7 +529,7 @@ public sealed class SqlServerDataStorage(
     {
         var sql =
             $"SELECT TOP ({_RetryBatchSize}) Id, Content, Retries, Added, NextRetryAt FROM {tableName} WITH (UPDLOCK, READPAST) "
-            + $"WHERE Retries <= @Retries AND Version = @Version AND NextRetryAt IS NOT NULL AND NextRetryAt <= GETUTCDATE();";
+            + $"WHERE Retries < @Retries AND Version = @Version AND NextRetryAt IS NOT NULL AND NextRetryAt <= GETUTCDATE();";
 
         object[] sqlParams =
         [

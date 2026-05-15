@@ -1,10 +1,13 @@
 ---
-status: proposal
+status: shipped
 date: 2026-05-15
+shipped_in: PR #254 (commit b689c98d + follow-up X1 wiring)
 supersedes: docs/plans/2026-05-14-001-feat-messaging-retry-policy-contract-plan.md
 closes-issues: [255, 256, 257, 258, 260]
 pr: 254
 ---
+
+> **Status: shipped.** All five revised leans (X1-X5) are merged on PR #254. X1's defensive prior-status guard — initially scoped down due to surface ripple — was wired through in a follow-up: `IDataStorage.ChangePublishStateAsync` / `ChangeReceiveStateAsync` now return `ValueTask<bool>`, the UPDATE WHERE clause is `... AND StatusName NOT IN ('Succeeded','Failed')`, and `_SetFailedState` skips OnExhausted when the conditional UPDATE reports zero affected rows. 679 unit tests passing.
 
 # Messaging Retry — Revised Leans (#255-260)
 

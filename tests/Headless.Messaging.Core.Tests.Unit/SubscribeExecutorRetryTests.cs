@@ -93,7 +93,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         storage
             .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
         var attempts = 0;
@@ -144,7 +144,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         storage
             .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
         var attempts = 0;
@@ -200,7 +200,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<DateTime?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
         invoker
@@ -258,7 +258,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<DateTime?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
         invoker
@@ -312,7 +312,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<DateTime?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
         invoker
@@ -350,6 +350,53 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Is<DateTime?>(v => v == null),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_skip_on_exhausted_when_status_already_failed_when_redelivered()
+    {
+        // given — simulate redelivery where storage is already terminal (Succeeded/Failed).
+        // ChangeReceiveStateAsync returns false; executor must skip OnExhausted.
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ConsumerExecutedResult>(new TimeoutException("boom")));
+
+        var callbackInvoked = false;
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxInlineRetries = 0,
+                    MaxPersistedRetries = 0,
+                    BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
+                    OnExhausted = (_, _) =>
+                    {
+                        callbackInvoked = true;
+                        return Task.CompletedTask;
+                    },
+                },
+            }
+        );
+
+        // when
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        // then
+        callbackInvoked.Should().BeFalse("OnExhausted must be skipped if storage update returned false");
     }
 
     private sealed class ZeroDelayRetryBackoffStrategy : IRetryBackoffStrategy

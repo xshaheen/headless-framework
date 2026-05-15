@@ -115,7 +115,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         storage
             .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
-            .Returns(ValueTask.CompletedTask);
+            .Returns(ValueTask.FromResult(true));
         return storage;
     }
 

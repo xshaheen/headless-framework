@@ -1,14 +1,37 @@
 ---
 id: 2026-05-14-001
 title: "Messaging P1.1: retry policy and delayed retry contract"
-status: completed
+status: superseded
 created: 2026-05-14
+superseded_on: 2026-05-15
+superseded_by: docs/plans/2026-05-15-001-feat-messaging-retry-revised-leans.md
 issue: https://github.com/xshaheen/headless-framework/issues/229
 depth: standard
 origin: issue #229 (well-specified; carries final decisions and external grounding)
 ---
 
 # Messaging P1.1: retry policy and delayed retry contract
+
+> **Superseded by [docs/plans/2026-05-15-001-feat-messaging-retry-revised-leans.md](2026-05-15-001-feat-messaging-retry-revised-leans.md).**
+>
+> The retry contract shipped in PR #254 follows the revised plan, not this one. After PR #254's first review surface, five follow-up issues (#255-#258, #260) traced back to transition-analysis gaps in the original design — most notably the linear `MaxAttempts` model and the dual-branch pickup query. The revised plan replaces those with a multiplicative budget and a single-branch pickup query (NServiceBus/Wolverine-style).
+>
+> **What actually shipped (vs this plan):**
+>
+> | This plan said | What shipped |
+> |---|---|
+> | `RetryPolicyOptions.MaxAttempts` (default 50) — single linear ceiling for total attempts | **Removed.** Replaced by `MaxInlineRetries × MaxPersistedRetries`. Total = `(MaxInlineRetries+1) × (MaxPersistedRetries+1)`. Defaults: `3 × 16 = 48`. |
+> | `MediumMessage.Retries` increments on every retry decision (inline + persisted) | `Retries` counts **persisted pickups only**. Inline iterations do not advance it. The increment happens at the executor call site on persist-transition; `RetryHelper` is pure w.r.t. `MediumMessage`. |
+> | `OnExhausted` is `Action<FailedInfo>?` | `Func<FailedInfo, CancellationToken, Task>?` (awaited inside the live dispatch scope). |
+> | Pickup query has two branches: `NextRetryAt <= now` OR `Scheduled AND NextRetryAt IS NULL` | **Collapsed to single branch**: `NextRetryAt IS NOT NULL AND NextRetryAt <= now`. The status-based fallback (and its dedicated index) is gone. |
+> | Initial store leaves `NextRetryAt = NULL` | Initial store sets `NextRetryAt = UtcNow + InitialDispatchGrace` (new option, default 30s). |
+> | Host-shutdown OCE writes terminal `Failed` state | Host-shutdown OCE returns without writing state; the row keeps its prior `NextRetryAt` for crash-recovery on restart. |
+> | `OnExhausted` contract: framework guarantees single-fire | Documented as **at-least-once**; handler MUST be idempotent (use `Message.GetId()` as dedupe key). Aligned with MassTransit/NServiceBus/Wolverine. |
+> | _(not previously planned)_ | **Defensive single-fire storage guard:** `IDataStorage.ChangePublishStateAsync` / `ChangeReceiveStateAsync` now return `ValueTask<bool>`. The UPDATE statement adds `AND StatusName NOT IN ('Succeeded','Failed')` so a redelivery of an already-terminal row reports zero affected rows; `_SetFailedState` then skips the OnExhausted invocation. This is best-effort and complements (does not replace) the at-least-once contract. |
+>
+> The rest of the original plan (typed `RetryPolicyOptions`, removal of scattered `MessagingOptions` primitives, `NextRetryAt` field, single shared exception classifier, `MessageNeedToRetryProcessor` driven by `NextRetryAt`) shipped intact and remains the authoritative reference for that scope.
+>
+> Read this document for the original design narrative and decision context; read the revised-leans plan for the final implementation surface.
 
 ## Problem Frame
 
