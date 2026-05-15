@@ -91,7 +91,8 @@ internal sealed class SubscribeExecutor(
                     exception
                 );
 
-                await _SetFailedState(message, exception, dispatchServices);
+                await _SetFailedState(message, exception, dispatchServices, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
                 return OperateResult.Failed(exception);
             }
         }
@@ -131,7 +132,7 @@ internal sealed class SubscribeExecutor(
 
             sp.Stop();
 
-            await _SetSuccessfulState(message).ConfigureAwait(false);
+            await _SetSuccessfulState(message, cancellationToken).ConfigureAwait(false);
 
             MessageEventCounterSource.Log.WriteInvokeTimeMetrics(sp.Elapsed.TotalMilliseconds);
             if (logger.IsEnabled(LogLevel.Information))
@@ -165,11 +166,13 @@ internal sealed class SubscribeExecutor(
         }
     }
 
-    private async ValueTask _SetSuccessfulState(MediumMessage message)
+    private async ValueTask _SetSuccessfulState(MediumMessage message, CancellationToken cancellationToken)
     {
         message.ExpiresAt = timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
 
-        await dataStorage.ChangeReceiveStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
+        await dataStorage
+            .ChangeReceiveStateAsync(message, StatusName.Succeeded, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
 
         if (circuitBreakerStateManager is not null)
         {
@@ -189,13 +192,15 @@ internal sealed class SubscribeExecutor(
         // means the dispatch was aborted, not that the message failed. Returning without writing
         // state preserves the row's existing NextRetryAt/Status, and the persisted retry processor
         // will pick the row up on restart.
-        if (RetryHelper.IsCancellation(ex, cancellationToken))
+        var isCancellation = RetryHelper.IsCancellation(ex, cancellationToken);
+
+        if (isCancellation)
         {
             logger.StoredMessageExecutionCanceled(message.StorageId);
             return RetryDecision.Stop;
         }
 
-        var needRetry = _UpdateMessageForRetry(message, ex, inlineRetries, cancellationToken);
+        var decision = _UpdateMessageForRetry(message, ex, inlineRetries);
 
         message.Origin.AddOrUpdateException(ex);
         message.ExceptionInfo = ex.ExpandMessage();
@@ -205,32 +210,37 @@ internal sealed class SubscribeExecutor(
         // leaves the row picked up by the polling query on restart (Failed/NULL is filtered out).
         // Only transition to Failed on terminal decisions (Stop, Exhausted) or when persisting
         // for the persisted-retry processor (Continue with inline budget exhausted, NextRetryAt set).
-        var state = RetryHelper.ResolveNextState(needRetry, inlineRetries, _retryPolicy, timeProvider);
+        var state = RetryHelper.ResolveNextState(decision, inlineRetries, _retryPolicy, timeProvider);
 
         // Persist transition: inline budget consumed AND decision Continue means the call site
         // owns the Retries++ . The helper is pure with respect to MediumMessage; this is the only
         // place persisted-pickup count advances.
-        if (needRetry.Outcome == RetryDecision.Kind.Continue && !state.IsInlineRetryInFlight)
+        if (decision.Outcome == RetryDecision.Kind.Continue && !state.IsInlineRetryInFlight)
         {
             message.Retries++;
         }
 
         var affected = await dataStorage
-            .ChangeReceiveStateAsync(message, state.NextStatus, nextRetryAt: state.NextRetryAt)
+            .ChangeReceiveStateAsync(
+                message,
+                state.NextStatus,
+                nextRetryAt: state.NextRetryAt,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
-        if (affected && needRetry.Outcome == RetryDecision.Kind.Exhausted)
+        if (affected && decision.Outcome == RetryDecision.Kind.Exhausted)
         {
             await _InvokeOnExhausted(message, ex, dispatchServices, cancellationToken).ConfigureAwait(false);
         }
         else if (!affected)
         {
-            logger.LogInformation("Skipping OnExhausted: message {StorageId} already terminal", message.StorageId);
+            logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
         }
 
         // Report the original (inner) exception to the circuit breaker so transient-classification
         // predicates see the real exception type, not the SubscriberExecutionFailedException wrapper.
-        if (circuitBreakerStateManager is not null && !RetryHelper.IsCancellation(ex, cancellationToken))
+        if (circuitBreakerStateManager is not null && !isCancellation)
         {
             var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
             await circuitBreakerStateManager
@@ -238,28 +248,17 @@ internal sealed class SubscribeExecutor(
                 .ConfigureAwait(false);
         }
 
-        return needRetry;
+        return decision;
     }
 
-    private RetryDecision _UpdateMessageForRetry(
-        MediumMessage message,
-        Exception ex,
-        int inlineRetries,
-        CancellationToken cancellationToken
-    )
+    private RetryDecision _UpdateMessageForRetry(MediumMessage message, Exception ex, int inlineRetries)
     {
-        var isCancellation = RetryHelper.IsCancellation(ex, cancellationToken);
-        if (isCancellation)
-        {
-            logger.StoredMessageExecutionCanceled(message.StorageId);
-        }
-
         var decision = RetryHelper.RecordAttemptAndComputeDecision(
             message,
             ex,
             _retryPolicy,
             inlineRetries,
-            isCancellation
+            isCancellation: false
         );
         switch (decision.Outcome)
         {

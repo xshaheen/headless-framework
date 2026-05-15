@@ -162,7 +162,7 @@ public sealed class SqlServerDataStorage(
     )
     {
         var sql =
-            $"UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND StatusName NOT IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')";
+            $"UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND NOT (StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND NextRetryAt IS NULL)";
 
         object[] sqlParams =
         [
@@ -464,7 +464,7 @@ public sealed class SqlServerDataStorage(
     )
     {
         var sql =
-            $"UPDATE {tableName} SET Content=@Content, Retries=@Retries,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,StatusName=@StatusName WHERE Id=@Id AND StatusName NOT IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')";
+            $"UPDATE {tableName} SET Content=@Content, Retries=@Retries,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,StatusName=@StatusName WHERE Id=@Id AND NOT (StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND NextRetryAt IS NULL)";
 
         object[] sqlParams =
         [

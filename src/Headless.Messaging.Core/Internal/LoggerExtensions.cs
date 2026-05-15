@@ -502,4 +502,12 @@ internal static partial class LoggerExtensions
         Message = "Ambient ICurrentTenant.Id was rejected by TenantPropagationPublishFilter because its length ({Length}) exceeds PublishOptions.TenantIdMaxLength or it is whitespace. The publish proceeds without a stamped tenant; investigate the ambient tenant source if this repeats."
     )]
     public static partial void AmbientTenantPropagationDropped(this ILogger logger, int length);
+
+    [LoggerMessage(
+        EventId = 66,
+        EventName = "SkippingOnExhaustedAlreadyTerminal",
+        Level = LogLevel.Information,
+        Message = "Skipping OnExhausted: message {StorageId} already terminal"
+    )]
+    public static partial void SkippingOnExhaustedAlreadyTerminal(this ILogger logger, long storageId);
 }

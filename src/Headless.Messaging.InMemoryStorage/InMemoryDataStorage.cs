@@ -142,19 +142,27 @@ internal sealed class InMemoryDataStorage(
             return ValueTask.FromResult(false);
         }
 
-        if (current.StatusName is StatusName.Succeeded or StatusName.Failed)
+        bool updated;
+        lock (current)
         {
-            return ValueTask.FromResult(false);
+            if (
+                current.StatusName is StatusName.Succeeded
+                || (current.StatusName is StatusName.Failed && current.NextRetryAt is null)
+            )
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            var utcNextRetryAt = nextRetryAt.ToUtcOrSelf();
+            current.StatusName = state;
+            current.ExpiresAt = message.ExpiresAt;
+            current.NextRetryAt = utcNextRetryAt;
+            current.Retries = message.Retries;
+            current.Content = serializer.Serialize(message.Origin);
+            updated = true;
         }
 
-        var utcNextRetryAt = nextRetryAt.ToUtcOrSelf();
-        current.StatusName = state;
-        current.ExpiresAt = message.ExpiresAt;
-        current.NextRetryAt = utcNextRetryAt;
-        current.Retries = message.Retries;
-        current.Content = serializer.Serialize(message.Origin);
-
-        return ValueTask.FromResult(true);
+        return ValueTask.FromResult(updated);
     }
 
     public ValueTask<bool> ChangeReceiveStateAsync(
@@ -171,20 +179,28 @@ internal sealed class InMemoryDataStorage(
             return ValueTask.FromResult(false);
         }
 
-        if (current.StatusName is StatusName.Succeeded or StatusName.Failed)
+        bool updated;
+        lock (current)
         {
-            return ValueTask.FromResult(false);
+            if (
+                current.StatusName is StatusName.Succeeded
+                || (current.StatusName is StatusName.Failed && current.NextRetryAt is null)
+            )
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            var utcNextRetryAt = nextRetryAt.ToUtcOrSelf();
+            current.StatusName = state;
+            current.ExpiresAt = message.ExpiresAt;
+            current.NextRetryAt = utcNextRetryAt;
+            current.Retries = message.Retries;
+            current.Content = serializer.Serialize(message.Origin);
+            current.ExceptionInfo = message.ExceptionInfo;
+            updated = true;
         }
 
-        var utcNextRetryAt = nextRetryAt.ToUtcOrSelf();
-        current.StatusName = state;
-        current.ExpiresAt = message.ExpiresAt;
-        current.NextRetryAt = utcNextRetryAt;
-        current.Retries = message.Retries;
-        current.Content = serializer.Serialize(message.Origin);
-        current.ExceptionInfo = message.ExceptionInfo;
-
-        return ValueTask.FromResult(true);
+        return ValueTask.FromResult(updated);
     }
 
     public ValueTask<MediumMessage> StoreMessageAsync(
