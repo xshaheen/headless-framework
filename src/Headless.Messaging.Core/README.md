@@ -34,7 +34,7 @@ builder.Services.AddHeadlessMessaging(options =>
 {
     // Core configuration
     options.SucceedMessageExpiredAfter = 24 * 3600;
-    options.RetryPolicy.MaxAttempts = 50;
+    options.RetryPolicy.MaxPersistedRetries = 50;
     options.UseConventions(c =>
     {
         c.UseKebabCaseTopics();
@@ -190,7 +190,7 @@ Register in `Program.cs`:
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.RetryPolicy.MaxAttempts = 50;
+    options.RetryPolicy.MaxPersistedRetries = 50;
     options.SucceedMessageExpiredAfter = 24 * 3600;
     options.ConsumerThreadCount = 1;
     options.DefaultGroupName = "myapp";
@@ -291,27 +291,28 @@ Message ordering guarantees depend on the transport provider and configuration:
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.RetryPolicy.MaxAttempts = 10;
     options.RetryPolicy.MaxInlineRetries = 2;
+    options.RetryPolicy.MaxPersistedRetries = 15;
     options.RetryPolicy.BackoffStrategy = new ExponentialBackoffStrategy(
         initialDelay: TimeSpan.FromSeconds(1),
         maxDelay: TimeSpan.FromMinutes(5)
     );
-    options.RetryPolicy.OnExhausted = info =>
+    options.RetryPolicy.OnExhausted = (info, ct) =>
     {
         // Fires only when budget is fully consumed (Exhausted), not on permanent failures (Stop).
         var logger = info.ServiceProvider.GetRequiredService<ILogger<MyService>>();
         logger.LogError(info.Exception, "Message {Id} permanently failed", info.Message.StorageId);
+        return Task.CompletedTask;
     };
 });
 ```
 
 | Property | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `MaxAttempts` | `int` | `50` | Total delivery attempts including the first. Set to `1` to disable retries. |
-| `MaxInlineRetries` | `int` | `2` | Retries to run inline before persisting for the retry processor. Must be `>= 0` and `< MaxAttempts`. |
+| `MaxInlineRetries` | `int` | `2` | Retries to run inline on each delivery before persisting. `>= 0`. |
+| `MaxPersistedRetries` | `int` | `15` | Maximum persisted-retry pickups. `>= 0`. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. |
 | `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Strategy returns `RetryDecision.Stop` (permanent) or `RetryDecision.Continue(delay)` (transient). |
-| `OnExhausted` | `Action<FailedInfo>?` | `null` | Fires only on `RetryDecision.Exhausted`. Does NOT fire on `RetryDecision.Stop`. |
+| `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Fires only on `RetryDecision.Exhausted`. Does NOT fire on `RetryDecision.Stop`. |
 
 ### Exhausted vs Stop
 
@@ -326,18 +327,23 @@ For a single exit point covering both Stop and Exhausted, use an `IConsumeFilter
 
 ### Inline vs Persisted Retry Paths
 
-Retries up to `MaxInlineRetries` run inline inside the same `ExecuteAsync` / `SendAsync` call. Once the inline budget is exhausted but the overall `MaxAttempts` budget is not, the message is persisted with `NextRetryAt` set and picked up by `MessageNeedToRetryProcessor`.
+Retries up to `MaxInlineRetries` run inline inside the same `ExecuteAsync` / `SendAsync` call. Once the inline budget is exhausted, the message is persisted with `NextRetryAt` set and picked up by `MessageNeedToRetryProcessor` (up to `MaxPersistedRetries` times). Each pickup then bursts another round of `MaxInlineRetries` inline attempts.
 
-Worked example with `MaxAttempts = 10, MaxInlineRetries = 2`:
+Worked example with `MaxInlineRetries = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
 
 ```
-attempt 1 (original)        ── inline, no delay
-attempt 2 (inline retry #1) ── inline, after BackoffStrategy delay
-attempt 3 (inline retry #2) ── inline, after BackoffStrategy delay
-                                inline budget exhausted, persist
-attempt 4 (persisted)       ── retry processor polls and re-dispatches
-…
-attempt 10                  ── final attempt; on failure → Exhausted → OnExhausted fires
+pickup 1 (initial dispatch):
+  attempt 1 (original)        ── inline
+  attempt 2 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 3 (inline retry #2) ── inline, after BackoffStrategy delay → persist (1/2)
+pickup 2 (persisted retry #1):
+  attempt 4                   ── inline
+  attempt 5 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 6 (inline retry #2) ── inline, after BackoffStrategy delay → persist (2/2)
+pickup 3 (persisted retry #2):
+  attempt 7                   ── inline
+  attempt 8 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
 ```
 
 For the full property table, migration guide, and `FailedInfo` construction details, see [docs/llms/messaging.md](../../../../docs/llms/messaging.md).
