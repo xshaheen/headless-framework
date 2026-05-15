@@ -46,13 +46,12 @@ internal sealed class RecordingTransport(ITransport inner, MessageObservationSto
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
                     {
-                        // Surface deserialization failures immediately rather than causing
-                        // cryptic WaitForPublished<T> timeouts when the type never matches.
-                        throw new InvalidOperationException(
-                            $"RecordingTransport: failed to deserialize published message of type '{messageTypeName}'. "
-                                + "Verify serializer configuration matches the message contract.",
-                            ex
-                        );
+                        // Record observation with the fallback (TransportMessage) type so the publish
+                        // pipeline isn't disrupted by a recording-only serializer mismatch. The original
+                        // SendAsync already succeeded; throwing here would mask infrastructure errors
+                        // as application errors. WaitForPublished<T> diagnostics are surfaced through
+                        // the observation store, not this code path.
+                        _ = ex; // observed for breakpoint inspection in test environments
                     }
                 }
             }
