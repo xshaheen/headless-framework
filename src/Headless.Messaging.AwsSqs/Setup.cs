@@ -11,23 +11,23 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class MessagesAmazonSqsSetup
 {
-    extension(MessagingOptions options)
+    extension(MessagingSetupBuilder setup)
     {
-        public MessagingOptions UseAmazonSqs(RegionEndpoint region)
+        public MessagingSetupBuilder UseAmazonSqs(RegionEndpoint region)
         {
-            return options.UseAmazonSqs(opt =>
+            return setup.UseAmazonSqs(opt =>
             {
                 opt.Region = region;
             });
         }
 
-        public MessagingOptions UseAmazonSqs(Action<AmazonSqsOptions> configure)
+        public MessagingSetupBuilder UseAmazonSqs(Action<AmazonSqsOptions> configure)
         {
             ArgumentNullException.ThrowIfNull(configure);
 
-            options.RegisterExtension(new AmazonSqsOptionsExtension(configure));
+            setup.RegisterExtension(new AmazonSqsOptionsExtension(configure));
 
-            return options;
+            return setup;
         }
     }
 

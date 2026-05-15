@@ -50,10 +50,10 @@ public sealed class MessagingBuilderTest
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(options =>
+        services.AddHeadlessMessaging(setup =>
         {
-            options.UseInMemoryMessageQueue();
-            options.UseInMemoryStorage();
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
         });
         await using var builder = services.BuildServiceProvider();
 

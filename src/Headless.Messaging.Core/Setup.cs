@@ -37,36 +37,36 @@ public static class Setup
     /// <para>
     /// <strong>Example:</strong>
     /// <code>
-    /// services.AddHeadlessMessaging(options =>
+    /// services.AddHeadlessMessaging(setup =>
     /// {
     ///     // Configure infrastructure
-    ///     options.RetryPolicy.MaxPersistedRetries = 15;
-    ///     options.SucceedMessageExpiredAfter = 24 * 3600;
-    ///     options.UseSqlServer("connection_string");
-    ///     options.UseRabbitMQ(rabbit =>
+    ///     setup.Options.RetryPolicy.MaxPersistedRetries = 15;
+    ///     setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
+    ///     setup.UseSqlServer("connection_string");
+    ///     setup.UseRabbitMQ(rabbit =>
     ///     {
     ///         rabbit.HostName = "localhost";
     ///         rabbit.Port = 5672;
     ///     });
     ///
     ///     // Configure consumers
-    ///     options.SubscribeFromAssembly(typeof(Program).Assembly);
+    ///     setup.SubscribeFromAssembly(typeof(Program).Assembly);
     ///
     ///     // Or register specific consumers
-    ///     options.Subscribe&lt;OrderPlacedHandler&gt;()
+    ///     setup.Subscribe&lt;OrderPlacedHandler&gt;()
     ///         .Topic("orders.placed")
     ///         .Group("order-service")
     ///         .Concurrency(5);
     ///
     ///     // Map message types to topics
-    ///     options.WithTopicMapping&lt;OrderPlaced&gt;("orders.placed");
+    ///     setup.WithTopicMapping&lt;OrderPlaced&gt;("orders.placed");
     /// });
     /// </code>
     /// </para>
     /// </remarks>
     public static MessagingBuilder AddHeadlessMessaging(
         this IServiceCollection services,
-        Action<MessagingOptions> configure
+        Action<MessagingSetupBuilder> configure
     )
     {
         Argument.IsNotNull(configure);
@@ -74,21 +74,23 @@ public static class Setup
         var registry = new ConsumerRegistry();
         services.TryAddSingleton<IConsumerRegistry>(registry);
         services.TryAddSingleton(registry);
-        var options = new MessagingOptions { Services = services, Registry = registry };
+        var options = new MessagingOptions();
+        var setup = new MessagingSetupBuilder(services, options, registry);
 
-        configure(options);
+        configure(setup);
 
         // Discover consumers registered via AddConsumer<TConsumer, TMessage>()
-        _DiscoverConsumersFromDI(services, options, registry);
+        _DiscoverConsumersFromDI(services, setup, registry);
 
-        return _RegisterCoreMessagingServices(services, options);
+        return _RegisterCoreMessagingServices(services, setup);
     }
 
     private static MessagingBuilder _RegisterCoreMessagingServices(
         IServiceCollection services,
-        MessagingOptions options
+        MessagingSetupBuilder setup
     )
     {
+        var options = setup.Options;
         services.AddSingleton(_ => services);
         services.TryAddSingleton(new MessagingMarkerService("Messaging"));
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
@@ -151,12 +153,12 @@ public static class Setup
 
         // Circuit breaker
         services.AddMetrics();
-        services.TryAddSingleton(options.CircuitBreakerRegistry);
+        services.TryAddSingleton(setup.CircuitBreakerRegistry);
         services.TryAddSingleton<CircuitBreakerMetrics>();
         services.TryAddSingleton<ICircuitBreakerStateManager, CircuitBreakerStateManager>();
         services.TryAddSingleton<ICircuitBreakerMonitor>(sp => sp.GetRequiredService<ICircuitBreakerStateManager>());
 
-        foreach (var serviceExtension in options.Extensions)
+        foreach (var serviceExtension in setup.Extensions)
         {
             serviceExtension.AddServices(services);
         }
@@ -193,7 +195,7 @@ public static class Setup
     /// </summary>
     private static void _DiscoverConsumersFromDI(
         IServiceCollection services,
-        MessagingOptions options,
+        MessagingSetupBuilder setup,
         ConsumerRegistry registry
     )
     {
@@ -209,13 +211,13 @@ public static class Setup
                 continue;
             }
 
-            var resolved = _ResolveDiscoveredMetadata(metadata, options);
+            var resolved = _ResolveDiscoveredMetadata(metadata, setup.Options);
             registry.Register(resolved);
 
             // Apply per-consumer circuit breaker overrides inline
             if (resolved.CircuitBreakerOverride is not null && !string.IsNullOrWhiteSpace(resolved.Group))
             {
-                options.CircuitBreakerRegistry.Register(resolved.Group, resolved.CircuitBreakerOverride);
+                setup.CircuitBreakerRegistry.Register(resolved.Group, resolved.CircuitBreakerOverride);
             }
         }
     }

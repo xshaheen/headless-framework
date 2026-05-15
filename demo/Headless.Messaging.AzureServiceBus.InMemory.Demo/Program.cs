@@ -9,12 +9,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddLogging(l => l.AddConsole());
 
-builder.Services.AddHeadlessMessaging(c =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    c.Subscribe<SampleSubscriber>().Topic("messaging.sample.tests");
+    setup.Subscribe<SampleSubscriber>().Topic("messaging.sample.tests");
 
-    c.UseInMemoryStorage();
-    c.UseAzureServiceBus(asb =>
+    setup.UseInMemoryStorage();
+    setup.UseAzureServiceBus(asb =>
     {
         asb.ConnectionString = builder.Configuration.GetConnectionString("AzureServiceBus")!;
         asb.CustomHeadersBuilder = (message, serviceProvider) =>
@@ -38,7 +38,7 @@ builder.Services.AddHeadlessMessaging(c =>
         );
     });
 
-    c.UseDashboard(d => d.WithNoAuth());
+    setup.UseDashboard(d => d.WithNoAuth());
 });
 
 var app = builder.Build();

@@ -24,9 +24,9 @@ namespace Headless.Messaging.Testing;
 /// <code>
 /// await using var harness = await MessagingTestHarness.CreateAsync(services =>
 /// {
-///     services.AddHeadlessMessaging(options =>
+///     services.AddHeadlessMessaging(setup =>
 ///     {
-///         options.Subscribe&lt;MyHandler&gt;("my-topic");
+///         setup.Subscribe&lt;MyHandler&gt;("my-topic");
 ///     });
 /// });
 ///
@@ -350,7 +350,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         {
             throw new InvalidOperationException(
                 "MessagingTestHarness requires an in-memory transport. "
-                    + "Call options.UseInMemoryMessageQueue() inside your AddHeadlessMessaging callback."
+                    + "Call setup.UseInMemoryMessageQueue() inside your AddHeadlessMessaging callback."
             );
         }
 
@@ -358,7 +358,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         {
             throw new InvalidOperationException(
                 "MessagingTestHarness requires an in-memory storage. "
-                    + "Call options.UseInMemoryStorage() inside your AddHeadlessMessaging callback."
+                    + "Call setup.UseInMemoryStorage() inside your AddHeadlessMessaging callback."
             );
         }
     }

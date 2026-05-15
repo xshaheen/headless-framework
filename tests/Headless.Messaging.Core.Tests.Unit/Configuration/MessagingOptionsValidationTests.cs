@@ -389,12 +389,12 @@ public sealed class MessagingOptionsValidationTests : TestBase
         options.PublishBatchSize.Should().BeNull();
     }
 
-    private static MessagingOptions _CreateOptions()
+    private static MessagingSetupBuilder _CreateOptions()
     {
         var services = new ServiceCollection();
         var registry = new ConsumerRegistry();
-        var options = new MessagingOptions { Services = services, Registry = registry };
-        return options;
+        var options = new MessagingOptions();
+        return new MessagingSetupBuilder(services, options, registry);
     }
 
     private sealed class TestMessage;

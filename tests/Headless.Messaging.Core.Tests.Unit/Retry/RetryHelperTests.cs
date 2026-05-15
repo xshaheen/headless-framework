@@ -251,11 +251,11 @@ public sealed class RetryHelperTests : TestBase
         // when RetryDecision.Stop fires. The pickup query MUST exclude these rows so stopped
         // messages are never re-dispatched.
         var services = new ServiceCollection();
-        services.AddHeadlessMessaging(x =>
+        services.AddHeadlessMessaging(setup =>
         {
-            x.RetryPolicy.MaxPersistedRetries = 5;
-            x.UseInMemoryMessageQueue();
-            x.UseInMemoryStorage();
+            setup.Options.RetryPolicy.MaxPersistedRetries = 5;
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
         });
 
         await using var provider = services.BuildServiceProvider();

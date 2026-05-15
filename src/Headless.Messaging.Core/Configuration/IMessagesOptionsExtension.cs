@@ -10,7 +10,7 @@ namespace Headless.Messaging.Configuration;
 /// and configure messaging functionality without modifying the core messaging assembly.
 /// </summary>
 /// <remarks>
-/// Extensions are registered through <see cref="MessagingOptions.RegisterExtension(IMessagesOptionsExtension)"/>
+/// Extensions are registered through <see cref="MessagingSetupBuilder.RegisterExtension(IMessagesOptionsExtension)"/>
 /// and are executed during the <c>AddHeadlessMessaging()</c> service registration process.
 /// This allows modular and composable configuration of storage backends, transport implementations, and other messaging components.
 /// </remarks>

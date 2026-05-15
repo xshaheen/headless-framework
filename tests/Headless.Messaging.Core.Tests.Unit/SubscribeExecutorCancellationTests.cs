@@ -79,11 +79,11 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(x =>
+        services.AddHeadlessMessaging(setup =>
         {
-            x.Subscribe<CancellationExecutorTestConsumer>().Topic("test.topic");
-            x.UseInMemoryMessageQueue();
-            x.UseInMemoryStorage();
+            setup.Subscribe<CancellationExecutorTestConsumer>().Topic("test.topic");
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
         });
 
         var provider = services.BuildServiceProvider();

@@ -17,16 +17,16 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// </summary>
 public static class MessagingOptionsExtensions
 {
-    extension(MessagingOptions options)
+    extension(MessagingSetupBuilder setup)
     {
         /// <summary>
         /// Configures PostgreSQL as the message storage using the specified connection string.
         /// </summary>
         /// <param name="connectionString">The PostgreSQL database connection string.</param>
-        /// <returns>The messaging options for chaining.</returns>
-        public MessagingOptions UsePostgreSql(string connectionString)
+        /// <returns>The setup builder for chaining.</returns>
+        public MessagingSetupBuilder UsePostgreSql(string connectionString)
         {
-            return options.UsePostgreSql(opt =>
+            return setup.UsePostgreSql(opt =>
             {
                 opt.ConnectionString = connectionString;
             });
@@ -36,27 +36,27 @@ public static class MessagingOptionsExtensions
         /// Configures PostgreSQL as the message storage with custom options.
         /// </summary>
         /// <param name="configure">Action to configure PostgreSQL options.</param>
-        /// <returns>The messaging options for chaining.</returns>
-        public MessagingOptions UsePostgreSql(Action<PostgreSqlOptions> configure)
+        /// <returns>The setup builder for chaining.</returns>
+        public MessagingSetupBuilder UsePostgreSql(Action<PostgreSqlOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            configure += x => x.Version = options.Version;
+            configure += x => x.Version = setup.Options.Version;
 
-            options.RegisterExtension(new PostgreSqlMessagesOptionsExtension(configure));
+            setup.RegisterExtension(new PostgreSqlMessagesOptionsExtension(configure));
 
-            return options;
+            return setup;
         }
 
         /// <summary>
         /// Configures Entity Framework integration for PostgreSQL messaging using the specified DbContext.
         /// </summary>
         /// <typeparam name="TContext">The DbContext type to use for transactions.</typeparam>
-        /// <returns>The messaging options for chaining.</returns>
-        public MessagingOptions UseEntityFramework<TContext>()
+        /// <returns>The setup builder for chaining.</returns>
+        public MessagingSetupBuilder UseEntityFramework<TContext>()
             where TContext : DbContext
         {
-            return options.UseEntityFramework<TContext>(opt => { });
+            return setup.UseEntityFramework<TContext>(opt => { });
         }
 
         /// <summary>
@@ -64,24 +64,24 @@ public static class MessagingOptionsExtensions
         /// </summary>
         /// <typeparam name="TContext">The DbContext type to use for transactions.</typeparam>
         /// <param name="configure">Action to configure Entity Framework messaging options.</param>
-        /// <returns>The messaging options for chaining.</returns>
-        public MessagingOptions UseEntityFramework<TContext>(
+        /// <returns>The setup builder for chaining.</returns>
+        public MessagingSetupBuilder UseEntityFramework<TContext>(
             Action<PostgreSqlEntityFrameworkMessagingOptions> configure
         )
             where TContext : DbContext
         {
             Argument.IsNotNull(configure);
 
-            options.RegisterExtension(
+            setup.RegisterExtension(
                 new PostgreSqlMessagesOptionsExtension(x =>
                 {
                     configure(x);
-                    x.Version = options.Version;
+                    x.Version = setup.Options.Version;
                     x.DbContextType = typeof(TContext);
                 })
             );
 
-            return options;
+            return setup;
         }
     }
 

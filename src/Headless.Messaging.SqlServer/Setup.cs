@@ -17,50 +17,52 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class MessagesSqlServerSetup
 {
-    extension(MessagingOptions options)
+    extension(MessagingSetupBuilder setup)
     {
-        public MessagingOptions UseSqlServer(string connectionString)
+        public MessagingSetupBuilder UseSqlServer(string connectionString)
         {
             Argument.IsNotNullOrWhiteSpace(connectionString);
 
-            return options.UseSqlServer(opt =>
+            return setup.UseSqlServer(opt =>
             {
                 opt.ConnectionString = connectionString;
             });
         }
 
-        public MessagingOptions UseSqlServer(Action<SqlServerOptions> configure)
+        public MessagingSetupBuilder UseSqlServer(Action<SqlServerOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            configure += x => x.Version = options.Version;
+            configure += x => x.Version = setup.Options.Version;
 
-            options.RegisterExtension(new SqlServerMessagesOptionsExtension(configure));
+            setup.RegisterExtension(new SqlServerMessagesOptionsExtension(configure));
 
-            return options;
+            return setup;
         }
 
-        public MessagingOptions UseEntityFramework<TContext>()
+        public MessagingSetupBuilder UseEntityFramework<TContext>()
             where TContext : DbContext
         {
-            return options.UseEntityFramework<TContext>(_ => { });
+            return setup.UseEntityFramework<TContext>(_ => { });
         }
 
-        public MessagingOptions UseEntityFramework<TContext>(Action<SqlServerEntityFrameworkMessagingOptions> configure)
+        public MessagingSetupBuilder UseEntityFramework<TContext>(
+            Action<SqlServerEntityFrameworkMessagingOptions> configure
+        )
             where TContext : DbContext
         {
             Argument.IsNotNull(configure);
 
-            options.RegisterExtension(
+            setup.RegisterExtension(
                 new SqlServerMessagesOptionsExtension(x =>
                 {
                     configure(x);
-                    x.Version = options.Version;
+                    x.Version = setup.Options.Version;
                     x.DbContextType = typeof(TContext);
                 })
             );
 
-            return options;
+            return setup;
         }
     }
 

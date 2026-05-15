@@ -11,13 +11,13 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class MessagesNatsSetup
 {
-    extension(MessagingOptions options)
+    extension(MessagingSetupBuilder setup)
     {
         /// <summary>Configuration for messaging.</summary>
         /// <param name="bootstrapServers">NATS bootstrap server urls.</param>
-        public MessagingOptions UseNats(string? bootstrapServers = null)
+        public MessagingSetupBuilder UseNats(string? bootstrapServers = null)
         {
-            return options.UseNats(opt =>
+            return setup.UseNats(opt =>
             {
                 if (bootstrapServers != null)
                 {
@@ -28,13 +28,13 @@ public static class MessagesNatsSetup
 
         /// <summary>Configuration for messaging.</summary>
         /// <param name="configure">Provides programmatic configuration for the NATS.</param>
-        public MessagingOptions UseNats(Action<MessagingNatsOptions> configure)
+        public MessagingSetupBuilder UseNats(Action<MessagingNatsOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            options.RegisterExtension(new NatsMessagesOptionsExtension(configure));
+            setup.RegisterExtension(new NatsMessagesOptionsExtension(configure));
 
-            return options;
+            return setup;
         }
     }
 

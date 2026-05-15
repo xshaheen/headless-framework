@@ -9,12 +9,12 @@ var container = new ServiceCollection();
 container.AddLogging(x => x.AddConsole());
 
 container
-    .AddHeadlessMessaging(x =>
+    .AddHeadlessMessaging(setup =>
     {
-        x.Subscribe<EventConsumer>().Topic("sample.console.showtime");
+        setup.Subscribe<EventConsumer>().Topic("sample.console.showtime");
         // Console app does not support dashboard
-        x.UseInMemoryStorage();
-        x.UseInMemoryMessageQueue();
+        setup.UseInMemoryStorage();
+        setup.UseInMemoryMessageQueue();
     })
     .AddSubscribeFilter<CustomConsumerFilter>();
 

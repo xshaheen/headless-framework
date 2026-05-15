@@ -15,30 +15,30 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class MessagesRedisSetup
 {
-    extension(MessagingOptions options)
+    extension(MessagingSetupBuilder setup)
     {
-        public MessagingOptions UseRedis()
+        public MessagingSetupBuilder UseRedis()
         {
-            return options.UseRedis(_ => { });
+            return setup.UseRedis(_ => { });
         }
 
         /// <summary>Use redis streams as the message transport.</summary>
         /// <param name="connection">The StackExchange.Redis <see cref="ConfigurationOptions" /> comma-delimited configuration string.</param>
-        public MessagingOptions UseRedis(string connection)
+        public MessagingSetupBuilder UseRedis(string connection)
         {
-            return options.UseRedis(opt => opt.Configuration = ConfigurationOptions.Parse(connection));
+            return setup.UseRedis(opt => opt.Configuration = ConfigurationOptions.Parse(connection));
         }
 
         /// <summary>Use redis streams as the message transport.</summary>
         /// <param name="configure">The redis client options.</param>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null"/>.</exception>
-        public MessagingOptions UseRedis(Action<MessagingRedisOptions> configure)
+        public MessagingSetupBuilder UseRedis(Action<MessagingRedisOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            options.RegisterExtension(new RedisOptionsExtension(configure));
+            setup.RegisterExtension(new RedisOptionsExtension(configure));
 
-            return options;
+            return setup;
         }
     }
 

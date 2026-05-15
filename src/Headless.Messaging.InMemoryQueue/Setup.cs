@@ -10,13 +10,13 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class InMemoryQueueSetup
 {
     /// <summary>Configuration for messaging.</summary>
-    /// <param name="options">Messaging configuration options</param>
-    /// <returns>The messaging options for method chaining</returns>
-    public static MessagingOptions UseInMemoryMessageQueue(this MessagingOptions options)
+    /// <param name="setup">Messaging configuration builder</param>
+    /// <returns>The setup builder for method chaining</returns>
+    public static MessagingSetupBuilder UseInMemoryMessageQueue(this MessagingSetupBuilder setup)
     {
-        options.RegisterExtension(new InMemoryQueueOptionsExtension());
+        setup.RegisterExtension(new InMemoryQueueOptionsExtension());
 
-        return options;
+        return setup;
     }
 
     /// <summary>Messaging options extension for configuring in-memory message queue services.</summary>

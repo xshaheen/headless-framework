@@ -43,7 +43,7 @@ public sealed class DirectPublisherTests : TestBase
         // given
         var testTransport = new TestTransport();
         var options = new MessagingOptions();
-        options.UseConventions(conventions => conventions.TopicNaming = TopicNamingConvention.KebabCase);
+        options.Conventions.TopicNaming = TopicNamingConvention.KebabCase;
 
         var publisher = _CreateDirectPublisher(testTransport, options);
 
@@ -516,10 +516,10 @@ public sealed class DirectPublisherTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(opt =>
+        services.AddHeadlessMessaging(setup =>
         {
-            opt.UseInMemoryMessageQueue();
-            opt.UseInMemoryStorage();
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
         });
 
         // when
@@ -537,10 +537,10 @@ public sealed class DirectPublisherTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(opt =>
+        services.AddHeadlessMessaging(setup =>
         {
-            opt.UseInMemoryMessageQueue();
-            opt.UseInMemoryStorage();
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
         });
 
         // when

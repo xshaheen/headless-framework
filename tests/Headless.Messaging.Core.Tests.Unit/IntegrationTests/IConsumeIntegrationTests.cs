@@ -18,8 +18,8 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "default";
+            messaging.Options.Version = "v1";
             messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed").Group("order-service");
         });
 
@@ -50,8 +50,8 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "default";
+            messaging.Options.Version = "v1";
             messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed");
         });
 
@@ -89,8 +89,8 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "default";
+            messaging.Options.Version = "v1";
             messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed").Group("order-service");
             messaging.Subscribe<OrderAnalyticsConsumer>().Topic("orders.placed").Group("analytics-service");
         });
@@ -122,7 +122,7 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Version = "v1";
+            messaging.Options.Version = "v1";
             messaging.WithTopicMapping<OrderPlaced>("orders.placed");
             messaging.SubscribeFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
         });
@@ -151,7 +151,7 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Version = "v1";
+            messaging.Options.Version = "v1";
             messaging.SubscribeFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
         });
 

@@ -9,20 +9,20 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddHeadlessMessaging(x =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    x.SubscribeFromAssembly(typeof(Program).Assembly);
-    x.WithTopicMapping<Person>("test-message");
+    setup.SubscribeFromAssembly(typeof(Program).Assembly);
+    setup.WithTopicMapping<Person>("test-message");
 
-    x.UseRedis(redis =>
+    setup.UseRedis(redis =>
     {
         redis.Configuration = ConfigurationOptions.Parse("redis-node-0:6379,password=headless");
         redis.OnConsumeError = context => throw new InvalidOperationException("Redis consume error", context.Exception);
     });
 
-    x.UseSqlServer("Server=db;Database=master;User=sa;Password=P@ssw0rd;Encrypt=False");
+    setup.UseSqlServer("Server=db;Database=master;User=sa;Password=P@ssw0rd;Encrypt=False");
 
-    x.UseDashboard(d => d.WithNoAuth());
+    setup.UseDashboard(d => d.WithNoAuth());
 });
 
 var app = builder.Build();

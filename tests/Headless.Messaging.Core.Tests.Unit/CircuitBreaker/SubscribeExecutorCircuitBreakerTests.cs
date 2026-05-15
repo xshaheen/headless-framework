@@ -83,11 +83,11 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(x =>
+        services.AddHeadlessMessaging(setup =>
         {
-            x.Subscribe<CbTestConsumer>().Topic(_TopicName);
-            x.UseInMemoryMessageQueue();
-            x.UseInMemoryStorage();
+            setup.Subscribe<CbTestConsumer>().Topic(_TopicName);
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
         });
 
         var provider = services.BuildServiceProvider();

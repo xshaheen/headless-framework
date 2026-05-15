@@ -20,9 +20,9 @@ public sealed class NatsPostgreSqlBootstrapReadinessTests(NatsPostgreSqlFixture 
         await base.InitializeAsync();
     }
 
-    protected override void ConfigureTransport(MessagingOptions options)
+    protected override void ConfigureTransport(MessagingSetupBuilder setup)
     {
-        options.UseNats(nats =>
+        setup.UseNats(nats =>
         {
             nats.Servers = fixture.NatsConnectionString;
             nats.EnableSubscriberClientStreamAndSubjectCreation = true;
@@ -30,15 +30,15 @@ public sealed class NatsPostgreSqlBootstrapReadinessTests(NatsPostgreSqlFixture 
         });
     }
 
-    protected override void ConfigureStorage(MessagingOptions options)
+    protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
-        options.UsePostgreSql(fixture.PostgreSqlConnectionString);
+        setup.UsePostgreSql(fixture.PostgreSqlConnectionString);
     }
 
-    protected override void ConfigureMessaging(MessagingOptions options)
+    protected override void ConfigureMessaging(MessagingSetupBuilder setup)
     {
-        options.TopicNamePrefix = _topicPrefix;
-        options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(1);
+        setup.Options.TopicNamePrefix = _topicPrefix;
+        setup.Options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(1);
     }
 
     [Fact]

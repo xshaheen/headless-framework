@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemoryQueue;
 using Headless.Messaging.Transport;
@@ -119,15 +120,15 @@ public sealed class InMemoryQueueSetupTests : TestBase
     }
 
     [Fact]
-    public void should_return_options_for_method_chaining()
+    public void should_return_setup_for_method_chaining()
     {
         // given
-        var options = new MessagingOptions();
+        var setup = new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());
 
         // when
-        var result = options.UseInMemoryMessageQueue();
+        var result = setup.UseInMemoryMessageQueue();
 
         // then
-        result.Should().BeSameAs(options);
+        result.Should().BeSameAs(setup);
     }
 }

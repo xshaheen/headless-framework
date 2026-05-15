@@ -19,8 +19,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "default";
+            messaging.Options.Version = "v1";
             messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic").Group("test-group");
         });
 
@@ -108,9 +108,9 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.TopicNamePrefix = "my-app";
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v1";
+            messaging.Options.TopicNamePrefix = "my-app";
+            messaging.Options.DefaultGroupName = "default";
+            messaging.Options.Version = "v1";
             messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic");
         });
 
@@ -133,8 +133,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "default";
+            messaging.Options.Version = "v1";
             messaging.Subscribe<SelectorTestConsumer>().Topic("orders.placed");
             messaging.Subscribe<AnotherSelectorConsumer>().Topic("orders.cancelled");
         });
@@ -160,8 +160,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "default";
+            messaging.Options.Version = "v1";
             messaging.Subscribe<SelectorTestConsumer>().Topic("orders.placed");
         });
 
@@ -184,8 +184,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "default";
+            messaging.Options.Version = "v1";
             messaging.Subscribe<SelectorTestConsumer>().Topic("orders.*");
         });
 
@@ -209,8 +209,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "default";
+            messaging.Options.Version = "v1";
             messaging.Subscribe<SelectorTestConsumer>().Topic("orders.placed").Group("group1");
             messaging.Subscribe<AnotherSelectorConsumer>().Topic("orders.placed").Group("group2");
         });
@@ -235,8 +235,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "default";
+            messaging.Options.Version = "v1";
             messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic");
         });
 
@@ -286,8 +286,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "default";
+            messaging.Options.Version = "v1";
             messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic").Concurrency(5);
         });
 
@@ -310,8 +310,8 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "default";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "default";
+            messaging.Options.Version = "v1";
             messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic");
         });
 

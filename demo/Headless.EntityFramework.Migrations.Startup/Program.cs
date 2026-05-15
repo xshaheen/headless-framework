@@ -75,10 +75,10 @@ static void addInMemoryDistributedLock(IServiceCollection services)
     services.AddInMemoryCache();
 
     // Messages
-    services.AddHeadlessMessaging(options =>
+    services.AddHeadlessMessaging(setup =>
     {
-        options.UseInMemoryMessageQueue();
-        options.UseInMemoryStorage();
+        setup.UseInMemoryMessageQueue();
+        setup.UseInMemoryStorage();
     });
 
     // Resource Locks

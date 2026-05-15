@@ -58,14 +58,14 @@ builder.Services.AddAuthorization(options =>
 
 builder.Services.AddHttpClient();
 
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    options.RetryPolicy.MaxPersistedRetries = 0;
-    options.RetryPolicy.MaxInlineRetries = 0;
-    options.SubscribeFromAssembly(typeof(Program).Assembly);
-    options.UseInMemoryStorage();
-    options.UseInMemoryMessageQueue();
-    options.UseDashboard(d => d.WithHostAuthentication(dashboardPolicy));
+    setup.Options.RetryPolicy.MaxPersistedRetries = 0;
+    setup.Options.RetryPolicy.MaxInlineRetries = 0;
+    setup.SubscribeFromAssembly(typeof(Program).Assembly);
+    setup.UseInMemoryStorage();
+    setup.UseInMemoryMessageQueue();
+    setup.UseDashboard(d => d.WithHostAuthentication(dashboardPolicy));
 });
 
 builder.Services.AddHostedService<DemoMessagePublisher>();
