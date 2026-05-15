@@ -14,6 +14,12 @@ namespace Headless.Messaging;
 public readonly record struct RetryDecision
 {
     /// <summary>The high-level outcome of a retry computation.</summary>
+    /// <remarks>
+    /// New values may be added in future minor versions when the retry pipeline grows a new
+    /// terminal state. Consumers that <c>switch</c> on <see cref="Outcome"/> should include a
+    /// <c>default:</c> branch (treat unknown values as terminal) rather than relying on an
+    /// exhaustive arm-per-value match.
+    /// </remarks>
     [PublicAPI]
     public enum Kind
     {
@@ -25,12 +31,14 @@ public readonly record struct RetryDecision
 
         /// <summary>
         /// The retry budget is exhausted. The failure was transient but no further attempt is
-        /// allowed (max attempts reached, or the strategy returned no delay).
+        /// allowed (max attempts reached, or the strategy returned no delay). The exhausted
+        /// callback fires.
         /// </summary>
         /// <remarks>
-        /// This value is emitted exclusively by the framework when the max-attempts budget is
-        /// consumed. <see cref="IRetryBackoffStrategy"/> implementations should NOT return this
-        /// value — strategies must return only <see cref="Stop"/> or <see cref="RetryDecision.Continue"/>.
+        /// Most strategies return only <see cref="Stop"/> or <see cref="Continue"/> and let the
+        /// framework emit <see cref="Exhausted"/> when the configured budgets are consumed.
+        /// Strategies that implement their own attempt accounting MAY return this value directly;
+        /// both sources are treated identically by the pipeline.
         /// </remarks>
         Exhausted,
 
@@ -62,6 +70,11 @@ public readonly record struct RetryDecision
     /// Both exhaustion paths — strategy-returned and framework-emitted — leave
     /// <c>MediumMessage.Retries</c> unchanged. Retries therefore reflects the number of
     /// attempts already completed, not a count that includes the terminal failing attempt.
+    /// </para>
+    /// <para>
+    /// Strategies that implement their own attempt accounting (for example, a custom budget keyed
+    /// on the exception type) MAY return this value directly to signal terminal exhaustion. The
+    /// retry pipeline applies identical handling regardless of which side emitted it.
     /// </para>
     /// </remarks>
     public static RetryDecision Exhausted { get; } = new() { Outcome = Kind.Exhausted };

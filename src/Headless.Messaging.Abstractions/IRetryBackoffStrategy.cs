@@ -14,10 +14,18 @@ public interface IRetryBackoffStrategy
     /// non-retryable exceptions or <see cref="RetryDecision.Continue"/> with the delay otherwise.
     /// </summary>
     /// <remarks>
-    /// Implementations must return only <see cref="RetryDecision.Stop"/> or
-    /// <see cref="RetryDecision.Continue"/>. <see cref="RetryDecision.Kind.Exhausted"/> is a
-    /// framework-internal signal emitted when the max-attempts budget is consumed; returning it
-    /// from a strategy is not supported and will be treated as <see cref="RetryDecision.Stop"/>.
+    /// <para>
+    /// Typical strategies return only <see cref="RetryDecision.Stop"/> or
+    /// <see cref="RetryDecision.Continue"/>; the framework emits <see cref="RetryDecision.Exhausted"/>
+    /// on its behalf when the configured <c>MaxInlineRetries</c>/<c>MaxPersistedRetries</c> budgets
+    /// are consumed.
+    /// </para>
+    /// <para>
+    /// Strategies that implement their own attempt accounting (for example, a custom budget keyed
+    /// on the exception type) MAY return <see cref="RetryDecision.Exhausted"/> directly. The retry
+    /// pipeline treats both sources identically: the persisted-retry counter is preserved, the row
+    /// transitions to terminal <c>Failed</c>, and the configured <c>OnExhausted</c> callback fires.
+    /// </para>
     /// </remarks>
     /// <param name="retryCount">The number of retries already performed for this message (0-based).</param>
     /// <param name="exception">The exception that caused the failure.</param>
