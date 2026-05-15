@@ -204,8 +204,8 @@ Always install four packages together: **Abstractions + Core + one transport + o
 
 **Storage** (pick one):
 
-- `Headless.Messaging.PostgreSql` -- PostgreSQL outbox with auto-migration
-- `Headless.Messaging.SqlServer` -- SQL Server outbox with auto-migration
+- `Headless.Messaging.PostgreSql` -- PostgreSQL outbox with `CREATE TABLE IF NOT EXISTS` initialization
+- `Headless.Messaging.SqlServer` -- SQL Server outbox with `CREATE TABLE IF NOT EXISTS` initialization
 - `Headless.Messaging.InMemoryStorage` -- dev/testing only, ephemeral
 
 **Optional add-ons:**
@@ -599,8 +599,8 @@ var info = new FailedInfo
 | --- | --- | --- |
 | `BaseInterval` | `60s` | Base polling interval. Replaces the old `FailedRetryInterval`. |
 | `AdaptivePolling` | `true` | When enabled, polling interval halves on healthy cycles and doubles when circuit-open skip rate exceeds threshold. |
-| `MaxPollingInterval` | `10m` | Cap on adaptive doubling. |
-| `CircuitOpenRateThreshold` | `0.5` | Above this fraction of circuit-open skips, the processor backs off. |
+| `MaxPollingInterval` | `15m` | Cap on adaptive doubling. |
+| `CircuitOpenRateThreshold` | `0.8` | Above this fraction of circuit-open skips, the processor backs off. |
 
 #### Migration from pre-RetryPolicy primitives
 
@@ -1756,12 +1756,12 @@ PostgreSQL outbox storage provider for the messaging system.
 
 ## Problem Solved
 
-Provides durable, transactional message storage using PostgreSQL with automatic schema management, message archival, and high-performance queries.
+Provides durable, transactional message storage using PostgreSQL with schema initialization, message archival, and high-performance queries.
 
 ## Key Features
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
-- **Auto-Migration**: Automatic table creation and schema updates
+- **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup. Does NOT add columns or indexes to pre-existing tables.
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for high throughput
 - **Monitoring**: Built-in dashboard data queries
@@ -1822,12 +1822,12 @@ SQL Server outbox storage provider for the messaging system.
 
 ## Problem Solved
 
-Provides durable, transactional message storage using SQL Server with automatic schema management, message archival, and optimized queries for Windows environments.
+Provides durable, transactional message storage using SQL Server with schema initialization, message archival, and optimized queries for Windows environments.
 
 ## Key Features
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
-- **Auto-Migration**: Automatic table creation and schema updates
+- **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup. Does NOT add columns or indexes to pre-existing tables.
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for SQL Server
 - **Monitoring**: Built-in dashboard data queries

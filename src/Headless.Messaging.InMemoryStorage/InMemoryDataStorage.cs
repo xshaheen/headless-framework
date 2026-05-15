@@ -136,9 +136,10 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var utcNextRetryAt = nextRetryAt.ToUtcOrSelf();
         PublishedMessages[message.StorageId].StatusName = state;
         PublishedMessages[message.StorageId].ExpiresAt = message.ExpiresAt;
-        PublishedMessages[message.StorageId].NextRetryAt = nextRetryAt;
+        PublishedMessages[message.StorageId].NextRetryAt = utcNextRetryAt;
         PublishedMessages[message.StorageId].Retries = message.Retries;
         PublishedMessages[message.StorageId].Content = serializer.Serialize(message.Origin);
         return ValueTask.CompletedTask;
@@ -152,9 +153,10 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var utcNextRetryAt = nextRetryAt.ToUtcOrSelf();
         ReceivedMessages[message.StorageId].StatusName = state;
         ReceivedMessages[message.StorageId].ExpiresAt = message.ExpiresAt;
-        ReceivedMessages[message.StorageId].NextRetryAt = nextRetryAt;
+        ReceivedMessages[message.StorageId].NextRetryAt = utcNextRetryAt;
         ReceivedMessages[message.StorageId].Retries = message.Retries;
         ReceivedMessages[message.StorageId].Content = serializer.Serialize(message.Origin);
         ReceivedMessages[message.StorageId].ExceptionInfo = message.ExceptionInfo;
@@ -319,11 +321,6 @@ internal sealed class InMemoryDataStorage(
             .Take(200)
             .Cast<MediumMessage>()
             .ToList();
-
-        //foreach (var message in result)
-        //{
-        //    message.Origin = _serializer.DeserializeAsync(message.Content)!;
-        //}
 
         return ValueTask.FromResult(result);
     }

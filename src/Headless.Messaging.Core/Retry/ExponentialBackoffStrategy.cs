@@ -5,6 +5,7 @@ namespace Headless.Messaging.Retry;
 /// <summary>
 /// Implements exponential backoff with jitter for message retry delays.
 /// </summary>
+[PublicAPI]
 public sealed class ExponentialBackoffStrategy : IRetryBackoffStrategy
 {
     private readonly TimeSpan _initialDelay;

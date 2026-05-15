@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Processor;
 
-public sealed class Dispatcher : IDispatcher
+internal sealed class Dispatcher : IDispatcher
 {
     private readonly ISubscribeExecutor _executor;
     private readonly ILogger<Dispatcher> _logger;
@@ -161,7 +161,7 @@ public sealed class Dispatcher : IDispatcher
             {
                 // Per-message scope: scoped services resolved during ExecuteAsync (consumer, filters,
                 // user OnExhausted callback) all share the same scope instance for this message.
-                using var dispatchScope = _scopeFactory.CreateScope();
+                await using var dispatchScope = _scopeFactory.CreateAsyncScope();
                 await _executor
                     .ExecuteAsync(message, dispatchScope.ServiceProvider, descriptor, TasksCts.Token)
                     .ConfigureAwait(false);
@@ -351,7 +351,7 @@ public sealed class Dispatcher : IDispatcher
     {
         try
         {
-            using var dispatchScope = _scopeFactory.CreateScope();
+            await using var dispatchScope = _scopeFactory.CreateAsyncScope();
             var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
             if (!result.Succeeded)
             {
@@ -418,7 +418,7 @@ public sealed class Dispatcher : IDispatcher
     {
         try
         {
-            using var dispatchScope = _scopeFactory.CreateScope();
+            await using var dispatchScope = _scopeFactory.CreateAsyncScope();
             var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
             if (!result.Succeeded)
             {
@@ -433,7 +433,7 @@ public sealed class Dispatcher : IDispatcher
 
     private async Task _SendMessageDirectlyAsync(MediumMessage message)
     {
-        using var dispatchScope = _scopeFactory.CreateScope();
+        await using var dispatchScope = _scopeFactory.CreateAsyncScope();
         var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
         if (!result.Succeeded)
         {
@@ -468,7 +468,7 @@ public sealed class Dispatcher : IDispatcher
         try
         {
             var (message, descriptor) = messageData;
-            using var dispatchScope = _scopeFactory.CreateScope();
+            await using var dispatchScope = _scopeFactory.CreateAsyncScope();
             await _executor
                 .ExecuteAsync(message, dispatchScope.ServiceProvider, descriptor, TasksCts.Token)
                 .ConfigureAwait(false);

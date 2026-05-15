@@ -219,8 +219,9 @@ public sealed class MessagingOptionsValidationTests : TestBase
     [Fact]
     public void should_reject_messaging_options_with_null_retry_policy()
     {
-        // given
-        var options = new MessagingOptions { RetryPolicy = null! };
+        // given — use the internal seam that forces RetryPolicy to null without coupling the test
+        // to a compiler-generated backing field name.
+        var options = MessagingOptions.CreateForValidatorTest_AllowNullRetryPolicy();
 
         // when
         var result = new MessagingOptionsValidator().Validate(options);

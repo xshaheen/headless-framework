@@ -100,8 +100,8 @@ public sealed class SqlServerStorageInitializer(
                 CREATE UNIQUE NONCLUSTERED INDEX [IX_{receivedPrefix}_MessageId_Group] ON {GetReceivedTableName()} ([MessageId] ASC, [Group] ASC);
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
                 CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
-                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_NextRetry] ON {GetReceivedTableName()} ([NextRetryAt] ASC) WHERE [NextRetryAt] IS NOT NULL;
-                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ScheduledNull] ON {GetReceivedTableName()} ([StatusName] ASC) WHERE [StatusName] = 'Scheduled' AND [NextRetryAt] IS NULL;
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_NextRetry] ON {GetReceivedTableName()} ([NextRetryAt] ASC) INCLUDE ([Version]) WHERE [NextRetryAt] IS NOT NULL;
+                CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ScheduledNull] ON {GetReceivedTableName()} ([StatusName] ASC) INCLUDE ([Version]) WHERE [StatusName] = 'Scheduled' AND [NextRetryAt] IS NULL;
             END;
 
             IF OBJECT_ID(N'{GetPublishedTableName()}',N'U') IS NULL
@@ -122,8 +122,8 @@ public sealed class SqlServerStorageInitializer(
 
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
                 CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
-                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_NextRetry] ON {GetPublishedTableName()} ([NextRetryAt] ASC) WHERE [NextRetryAt] IS NOT NULL;
-                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ScheduledNull] ON {GetPublishedTableName()} ([StatusName] ASC) WHERE [StatusName] = 'Scheduled' AND [NextRetryAt] IS NULL;
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_NextRetry] ON {GetPublishedTableName()} ([NextRetryAt] ASC) INCLUDE ([Version]) WHERE [NextRetryAt] IS NOT NULL;
+                CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ScheduledNull] ON {GetPublishedTableName()} ([StatusName] ASC) INCLUDE ([Version]) WHERE [StatusName] = 'Scheduled' AND [NextRetryAt] IS NULL;
             END;
 
 """;

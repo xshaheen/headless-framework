@@ -24,6 +24,18 @@ public interface IDataStorage
 
     ValueTask ChangePublishStateToDelayedAsync(long[] storageIds, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Updates the status of a published message in storage.
+    /// </summary>
+    /// <param name="message">The message whose state is changing.</param>
+    /// <param name="state">The new status to persist.</param>
+    /// <param name="transaction">Optional ambient transaction (DbTransaction or IDbContextTransaction).</param>
+    /// <param name="nextRetryAt">
+    /// UTC timestamp at which the retry processor should re-dispatch this message.
+    /// Must be UTC — non-UTC values are provider-normalized. Pass <see langword="null"/> to clear
+    /// the persisted column. Only retry-transition paths pass a value.
+    /// </param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     ValueTask ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
@@ -32,6 +44,17 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Updates the status of a received message in storage.
+    /// </summary>
+    /// <param name="message">The message whose state is changing.</param>
+    /// <param name="state">The new status to persist.</param>
+    /// <param name="nextRetryAt">
+    /// UTC timestamp at which the retry processor should re-dispatch this message.
+    /// Must be UTC — non-UTC values are provider-normalized. Pass <see langword="null"/> to clear
+    /// the persisted column. Only retry-transition paths pass a value.
+    /// </param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     ValueTask ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
@@ -72,6 +95,11 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Returns published messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c>
+    /// (persisted-retry path) or <c>StatusName = Scheduled AND NextRetryAt IS NULL</c>
+    /// (first-dispatch path). No lookback window is applied.
+    /// </summary>
     ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
         CancellationToken cancellationToken = default
     );
@@ -81,6 +109,11 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Returns received messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c>
+    /// (persisted-retry path) or <c>StatusName = Scheduled AND NextRetryAt IS NULL</c>
+    /// (first-dispatch path). No lookback window is applied.
+    /// </summary>
     ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(CancellationToken cancellationToken = default);
 
     ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default);

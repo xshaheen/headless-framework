@@ -166,52 +166,17 @@ public static class Setup
         // requires Services/Registry to be initialized - which only happens in AddHeadlessMessaging.
         services.Configure<MessagingOptions, MessagingOptionsValidator>(opt =>
         {
-            opt.Services = services;
-            opt.Registry = options.Registry;
-
-            // Copy public properties
-            opt.DefaultGroupName = options.DefaultGroupName;
-            opt.IsDefaultGroupNameConfigured = options.IsDefaultGroupNameConfigured;
-            opt.GroupNamePrefix = options.GroupNamePrefix;
-            opt.TopicNamePrefix = options.TopicNamePrefix;
-            opt.Version = options.Version;
-            opt.Conventions = options.Conventions;
-            opt.SucceedMessageExpiredAfter = options.SucceedMessageExpiredAfter;
-            opt.FailedMessageExpiredAfter = options.FailedMessageExpiredAfter;
-            opt.ConsumerThreadCount = options.ConsumerThreadCount;
-            opt.EnableSubscriberParallelExecute = options.EnableSubscriberParallelExecute;
-            opt.SubscriberParallelExecuteThreadCount = options.SubscriberParallelExecuteThreadCount;
-            opt.SubscriberParallelExecuteBufferFactor = options.SubscriberParallelExecuteBufferFactor;
-            opt.EnablePublishParallelSend = options.EnablePublishParallelSend;
-            opt.PublishBatchSize = options.PublishBatchSize;
-            opt.CollectorCleaningInterval = options.CollectorCleaningInterval;
-            opt.SchedulerBatchSize = options.SchedulerBatchSize;
-            opt.UseStorageLock = options.UseStorageLock;
-            opt.TenantContextRequired = options.TenantContextRequired;
-            opt.RetryPolicy = options.RetryPolicy;
-
-            // Copy internal collections
-            foreach (var mapping in options.TopicMappings)
-            {
-                opt.TopicMappings[mapping.Key] = mapping.Value;
-            }
+            options.CopyTo(opt);
         });
 
         // Register and validate circuit breaker and retry processor options via DI pipeline
         services.Configure<CircuitBreakerOptions, CircuitBreakerOptionsValidator>(cb =>
         {
-            cb.FailureThreshold = options.CircuitBreaker.FailureThreshold;
-            cb.OpenDuration = options.CircuitBreaker.OpenDuration;
-            cb.MaxOpenDuration = options.CircuitBreaker.MaxOpenDuration;
-            cb.SuccessfulCyclesToResetEscalation = options.CircuitBreaker.SuccessfulCyclesToResetEscalation;
-            cb.IsTransientException = options.CircuitBreaker.IsTransientException;
+            options.CircuitBreaker.CopyTo(cb);
         });
         services.Configure<RetryProcessorOptions, RetryProcessorOptionsValidator>(rp =>
         {
-            rp.AdaptivePolling = options.RetryProcessor.AdaptivePolling;
-            rp.BaseInterval = options.RetryProcessor.BaseInterval;
-            rp.MaxPollingInterval = options.RetryProcessor.MaxPollingInterval;
-            rp.CircuitOpenRateThreshold = options.RetryProcessor.CircuitOpenRateThreshold;
+            options.RetryProcessor.CopyTo(rp);
         });
 
         //Startup and Hosted

@@ -32,6 +32,17 @@ public sealed class RetryProcessorOptions
     public TimeSpan MaxPollingInterval { get; set; } = TimeSpan.FromMinutes(15);
 
     /// <summary>
+    /// Copies all properties of this instance to <paramref name="target"/>.
+    /// </summary>
+    internal void CopyTo(RetryProcessorOptions target)
+    {
+        target.AdaptivePolling = AdaptivePolling;
+        target.BaseInterval = BaseInterval;
+        target.MaxPollingInterval = MaxPollingInterval;
+        target.CircuitOpenRateThreshold = CircuitOpenRateThreshold;
+    }
+
+    /// <summary>
     /// Gets or sets the circuit-open rate above which the retry processor will back off.
     /// Expressed as a fraction between 0 (exclusive) and 1 (exclusive). When the proportion
     /// of messages skipped due to open circuits exceeds this threshold, the processor slows

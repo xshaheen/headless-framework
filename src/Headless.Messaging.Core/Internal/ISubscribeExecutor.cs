@@ -19,7 +19,7 @@ namespace Headless.Messaging.Internal;
 /// <summary>
 /// Consumer executor
 /// </summary>
-public interface ISubscribeExecutor
+internal interface ISubscribeExecutor
 {
     /// <summary>
     /// Executes a single consume attempt with retries.
@@ -195,17 +195,11 @@ internal sealed class SubscribeExecutor(
         // leaves the row picked up by the polling query on restart (Failed/NULL is filtered out).
         // Only transition to Failed on terminal decisions (Stop, Exhausted) or when persisting
         // for the persisted-retry processor (Continue with inline budget exhausted, NextRetryAt set).
-        var isInlineRetryInFlight =
-            needRetry.Outcome == RetryDecision.Kind.Continue && inlineRetries + 1 <= _retryPolicy.MaxInlineRetries;
+        var state = RetryHelper.ResolveNextState(needRetry, inlineRetries, _retryPolicy, timeProvider);
 
-        var nextStatus = isInlineRetryInFlight ? StatusName.Scheduled : StatusName.Failed;
-
-        var nextRetryAt =
-            needRetry.Outcome == RetryDecision.Kind.Continue && inlineRetries + 1 > _retryPolicy.MaxInlineRetries
-                ? timeProvider.GetUtcNow().UtcDateTime.Add(needRetry.Delay)
-                : (DateTime?)null;
-
-        await dataStorage.ChangeReceiveStateAsync(message, nextStatus, nextRetryAt: nextRetryAt).ConfigureAwait(false);
+        await dataStorage
+            .ChangeReceiveStateAsync(message, state.NextStatus, nextRetryAt: state.NextRetryAt)
+            .ConfigureAwait(false);
 
         if (needRetry.Outcome == RetryDecision.Kind.Exhausted)
         {
@@ -214,7 +208,7 @@ internal sealed class SubscribeExecutor(
 
         // Report the original (inner) exception to the circuit breaker so transient-classification
         // predicates see the real exception type, not the SubscriberExecutionFailedException wrapper.
-        if (circuitBreakerStateManager is not null && !_IsRequestedCancellation(ex, cancellationToken))
+        if (circuitBreakerStateManager is not null && !RetryHelper.IsCancellation(ex, cancellationToken))
         {
             var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
             await circuitBreakerStateManager
@@ -231,13 +225,13 @@ internal sealed class SubscribeExecutor(
         CancellationToken cancellationToken
     )
     {
-        var isCancellation = _IsRequestedCancellation(ex, cancellationToken);
+        var isCancellation = RetryHelper.IsCancellation(ex, cancellationToken);
         if (isCancellation)
         {
             logger.StoredMessageExecutionCanceled(message.StorageId);
         }
 
-        var decision = RetryHelper.ComputeRetryDecision(message, ex, _retryPolicy, isCancellation);
+        var decision = RetryHelper.RecordAttemptAndComputeDecision(message, ex, _retryPolicy, isCancellation);
         switch (decision.Outcome)
         {
             case RetryDecision.Kind.Stop:
@@ -335,11 +329,6 @@ internal sealed class SubscribeExecutor(
 
             e.ReThrow();
         }
-    }
-
-    private static bool _IsRequestedCancellation(Exception exception, CancellationToken cancellationToken)
-    {
-        return RetryHelper.IsCancellation(exception, cancellationToken);
     }
 
     #region tracing

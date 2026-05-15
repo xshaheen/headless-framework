@@ -291,6 +291,60 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         observed.Should().BeSameAs(expected);
     }
 
+    [Fact]
+    public async Task should_not_retry_on_permanent_exception()
+    {
+        // A strategy that classifies ArgumentException as permanent (returns Stop) must result
+        // in exactly one invocation and a Failed state update with no NextRetryAt — mirroring the
+        // Stop outcome produced by RetryHelper for non-retryable exceptions.
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.CompletedTask);
+
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ConsumerExecutedResult>(new ArgumentException("invalid param")));
+
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxAttempts = 5,
+                    MaxInlineRetries = 3,
+                    BackoffStrategy = new PermanentForArgumentExceptionStrategy(),
+                },
+            }
+        );
+
+        var message = _CreateMediumMessage();
+
+        // when
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        // then — permanent failure: no retries, Failed state persisted with no next-retry timestamp
+        result.Succeeded.Should().BeFalse();
+        await invoker.Received(1).InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>());
+        message.Retries.Should().Be(0, "permanent failures must not advance the retry counter");
+        await storage
+            .Received(1)
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Is<DateTime?>(v => v == null),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     private sealed class ZeroDelayRetryBackoffStrategy : IRetryBackoffStrategy
     {
         public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(TimeSpan.Zero);
@@ -299,6 +353,17 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     private sealed class FixedDelayRetryBackoffStrategy(TimeSpan delay) : IRetryBackoffStrategy
     {
         public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(delay);
+    }
+
+    private sealed class PermanentForArgumentExceptionStrategy : IRetryBackoffStrategy
+    {
+        // SubscribeExecutor wraps handler exceptions in SubscriberExecutionFailedException; unwrap
+        // to reach the original exception type before classifying permanence.
+        public RetryDecision Compute(int retryCount, Exception exception)
+        {
+            var inner = exception is SubscriberExecutionFailedException { InnerException: { } i } ? i : exception;
+            return inner is ArgumentException ? RetryDecision.Stop : RetryDecision.Continue(TimeSpan.Zero);
+        }
     }
 
     private sealed class ScopedMarker;
