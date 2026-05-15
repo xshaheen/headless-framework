@@ -94,7 +94,8 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 {
                     RetryPolicy =
                     {
-                        MaxAttempts = 1,
+                        MaxInlineRetries = 0,
+                        MaxPersistedRetries = 0,
                         BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
                     },
                 }
@@ -135,13 +136,21 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
     }
 
     [Fact]
-    public async Task OperationCanceledException_WithRequestedToken_ShouldBePersisted_As_Failed_Without_Retrying()
+    public async Task OperationCanceledException_WithRequestedToken_ShouldNotWriteState()
     {
         // given — simulate app-shutdown cancellation:
-        //   OperationCanceledException where CancellationToken.IsCancellationRequested = true
+        //   OperationCanceledException where CancellationToken.IsCancellationRequested = true.
+        // The executor must classify this as cancellation (RetryDecision.Stop), NOT invoke
+        // OnExhausted, and NOT write a state transition. The row keeps its prior NextRetryAt and
+        // the persisted retry processor picks it up on restart.
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.CompletedTask);
 
         var invoker = Substitute.For<ISubscribeInvoker>();
@@ -164,10 +173,14 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxAttempts = 1,
                     MaxInlineRetries = 0,
+                    MaxPersistedRetries = 0,
                     BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
-                    OnExhausted = _ => callbackInvoked = true,
+                    OnExhausted = (_, _) =>
+                    {
+                        callbackInvoked = true;
+                        return Task.CompletedTask;
+                    },
                 },
             }
         );
@@ -177,21 +190,34 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         // when
         var result = await executor.ExecuteAsync(message, _EmptyScope, descriptor, cts.Token);
 
-        // then — persisted as Failed (terminal; cancellation short-circuits retry).
-        // Failed/NULL is excluded from the retry-processor polling query and ages out via DeleteExpiresAsync.
+        // then — Shutdown OCE: no state write, no OnExhausted. Row keeps prior NextRetryAt/Status.
         result.Succeeded.Should().BeFalse();
         message.Retries.Should().Be(0);
         callbackInvoked.Should().BeFalse();
-        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        await storage
+            .DidNotReceive()
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
-    public async Task TaskCanceledException_WithRequestedToken_ShouldBePersisted_As_Failed_Without_Retrying()
+    public async Task TaskCanceledException_WithRequestedToken_ShouldNotWriteState()
     {
-        // given — TaskCanceledException but the token IS requested (e.g. handler respected shutdown CT)
+        // given — TaskCanceledException but the token IS requested (handler respected shutdown CT).
+        // X4 invariant: shutdown-classified cancellations leave the row untouched so the persisted
+        // retry processor picks it up on restart.
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.CompletedTask);
 
         var invoker = Substitute.For<ISubscribeInvoker>();
@@ -213,11 +239,17 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         // when
         var result = await executor.ExecuteAsync(message, _EmptyScope, descriptor, cts.Token);
 
-        // then — persisted as Failed (terminal; cancellation short-circuits retry).
-        // Failed/NULL is excluded from the retry-processor polling query and ages out via DeleteExpiresAsync.
+        // then — Shutdown OCE: no state write. Row keeps prior NextRetryAt/Status.
         result.Succeeded.Should().BeFalse();
         message.Retries.Should().Be(0);
-        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        await storage
+            .DidNotReceive()
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 }
 

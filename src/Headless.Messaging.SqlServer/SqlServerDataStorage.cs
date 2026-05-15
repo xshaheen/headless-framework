@@ -192,14 +192,15 @@ public sealed class SqlServerDataStorage(
             $"INSERT INTO {_publishedTable} ([Id],[Version],[Name],[Content],[Retries],[Added],[ExpiresAt],[NextRetryAt],[StatusName],[MessageId])"
             + $"VALUES(@Id,'{options.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@StatusName,@MessageId);";
 
+        var added = timeProvider.GetUtcNow().UtcDateTime;
         var message = new MediumMessage
         {
             StorageId = longIdGenerator.Create(),
             Origin = content,
             Content = serializer.Serialize(content),
-            Added = timeProvider.GetUtcNow().UtcDateTime,
+            Added = added,
             ExpiresAt = null,
-            NextRetryAt = null,
+            NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             Retries = 0,
         };
 
@@ -211,7 +212,7 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@Added", message.Added),
             new SqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
-            new SqlParameter("@NextRetryAt", DBNull.Value),
+            new SqlParameter("@NextRetryAt", message.NextRetryAt!.Value),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new SqlParameter("@MessageId", content.GetId()),
         ];
@@ -260,7 +261,7 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Name", name),
             new SqlParameter("@Group", group),
             new SqlParameter("@Content", content),
-            new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxAttempts),
+            new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
             new SqlParameter(
                 "@ExpiresAt",
@@ -283,14 +284,15 @@ public sealed class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        var added = timeProvider.GetUtcNow().UtcDateTime;
         var mediumMessage = new MediumMessage
         {
             StorageId = longIdGenerator.Create(),
             Origin = message,
             Content = serializer.Serialize(message),
-            Added = timeProvider.GetUtcNow().UtcDateTime,
+            Added = added,
             ExpiresAt = null,
-            NextRetryAt = null,
+            NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             Retries = 0,
         };
 
@@ -306,7 +308,7 @@ public sealed class SqlServerDataStorage(
                 "@ExpiresAt",
                 mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value
             ),
-            new SqlParameter("@NextRetryAt", DBNull.Value),
+            new SqlParameter("@NextRetryAt", mediumMessage.NextRetryAt!.Value),
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new SqlParameter("@MessageId", message.GetId()),
             new SqlParameter("@Version", messagingOptions.Value.Version),
@@ -520,11 +522,11 @@ public sealed class SqlServerDataStorage(
     {
         var sql =
             $"SELECT TOP ({_RetryBatchSize}) Id, Content, Retries, Added, NextRetryAt FROM {tableName} WITH (UPDLOCK, READPAST) "
-            + $"WHERE Retries < @Retries AND Version = @Version AND ((NextRetryAt IS NOT NULL AND NextRetryAt <= GETUTCDATE()) OR (StatusName = '{nameof(StatusName.Scheduled)}' AND NextRetryAt IS NULL));";
+            + $"WHERE Retries <= @Retries AND Version = @Version AND NextRetryAt IS NOT NULL AND NextRetryAt <= GETUTCDATE();";
 
         object[] sqlParams =
         [
-            new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxAttempts),
+            new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Version", messagingOptions.Value.Version),
         ];
 

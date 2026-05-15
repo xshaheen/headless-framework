@@ -12,7 +12,7 @@ public sealed class InlineRetryLoopTests : TestBase
     [Fact]
     public async Task should_return_immediately_when_first_attempt_signals_stop()
     {
-        var policy = new RetryPolicyOptions { MaxAttempts = 5, MaxInlineRetries = 3 };
+        var policy = new RetryPolicyOptions { MaxPersistedRetries = 4, MaxInlineRetries = 3 };
         var attempts = 0;
 
         var result = await InlineRetryLoop.ExecuteAsync<string>(
@@ -32,7 +32,7 @@ public sealed class InlineRetryLoopTests : TestBase
     [Fact]
     public async Task should_continue_until_attempt_returns_terminal_decision()
     {
-        var policy = new RetryPolicyOptions { MaxAttempts = 5, MaxInlineRetries = 5 };
+        var policy = new RetryPolicyOptions { MaxPersistedRetries = 4, MaxInlineRetries = 5 };
         var attempts = 0;
         var observedInlineRetries = new List<int>();
 
@@ -63,7 +63,7 @@ public sealed class InlineRetryLoopTests : TestBase
     {
         // MaxInlineRetries=0 means no in-process retries: the loop must invoke the attempt
         // exactly once and return regardless of the decision returned.
-        var policy = new RetryPolicyOptions { MaxAttempts = 5, MaxInlineRetries = 0 };
+        var policy = new RetryPolicyOptions { MaxPersistedRetries = 4, MaxInlineRetries = 0 };
         var attempts = 0;
 
         var result = await InlineRetryLoop.ExecuteAsync<int>(
@@ -86,7 +86,7 @@ public sealed class InlineRetryLoopTests : TestBase
         // Budget = 1 retry. First attempt continues, second attempt is the inline retry
         // (inlineRetries=1, still within budget), third attempt would exceed (inlineRetries=2 > 1)
         // so the loop must return after the second attempt completes.
-        var policy = new RetryPolicyOptions { MaxAttempts = 10, MaxInlineRetries = 1 };
+        var policy = new RetryPolicyOptions { MaxPersistedRetries = 9, MaxInlineRetries = 1 };
         var attempts = 0;
 
         var result = await InlineRetryLoop.ExecuteAsync<int>(

@@ -100,8 +100,8 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxAttempts = 5,
                     MaxInlineRetries = 4,
+                    MaxPersistedRetries = 0,
                     BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
                 },
             }
@@ -155,7 +155,8 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxAttempts = 2,
+                    MaxInlineRetries = 1,
+                    MaxPersistedRetries = 0,
                     BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromMilliseconds(40)),
                 },
             }
@@ -209,8 +210,8 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxAttempts = 2,
                     MaxInlineRetries = 0,
+                    MaxPersistedRetries = 1,
                     BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromSeconds(5)),
                 },
             }
@@ -275,10 +276,14 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxAttempts = 1,
                     MaxInlineRetries = 0,
+                    MaxPersistedRetries = 0,
                     BackoffStrategy = backoffStrategy,
-                    OnExhausted = _ => callbackInvoked = true,
+                    OnExhausted = (_, _) =>
+                    {
+                        callbackInvoked = true;
+                        return Task.CompletedTask;
+                    },
                 },
             }
         );
@@ -301,11 +306,12 @@ public sealed class MessageSenderTests : TestBase
     }
 
     [Fact]
-    public async Task should_treat_shutdown_oce_as_cancellation_and_skip_on_exhausted()
+    public async Task should_treat_shutdown_oce_as_cancellation_without_writing_state()
     {
         // given — IHostApplicationLifetime.ApplicationStopping is signalled and the transport
         // surfaces an OCE bound to that same token. The sender must classify this as cancellation
-        // (RetryDecision.Stop) and NOT invoke OnExhausted.
+        // (RetryDecision.Stop), NOT invoke OnExhausted, and NOT write a state transition. The row's
+        // existing NextRetryAt remains and the persisted retry processor picks it up on restart.
         var storage = Substitute.For<IDataStorage>();
         storage
             .ChangePublishStateAsync(
@@ -341,10 +347,14 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxAttempts = 5,
                     MaxInlineRetries = 0,
+                    MaxPersistedRetries = 4,
                     BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
-                    OnExhausted = _ => callbackInvoked = true,
+                    OnExhausted = (_, _) =>
+                    {
+                        callbackInvoked = true;
+                        return Task.CompletedTask;
+                    },
                 },
             },
             new FakeHostApplicationLifetime(cts.Token)
@@ -353,16 +363,16 @@ public sealed class MessageSenderTests : TestBase
         // when
         var result = await sender.SendAsync(_CreateMediumMessage());
 
-        // then — Stop classification: persisted as Failed, no OnExhausted, no Retries increment.
+        // then — Shutdown OCE: no state write, no OnExhausted. Row keeps prior NextRetryAt/Status.
         result.Succeeded.Should().BeFalse();
         callbackInvoked.Should().BeFalse();
         await storage
-            .Received()
+            .DidNotReceive()
             .ChangePublishStateAsync(
                 Arg.Any<MediumMessage>(),
-                StatusName.Failed,
+                Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
-                Arg.Is<DateTime?>(v => v == null),
+                Arg.Any<DateTime?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -433,10 +443,14 @@ public sealed class MessageSenderTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxAttempts = 1,
                     MaxInlineRetries = 0,
+                    MaxPersistedRetries = 0,
                     BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
-                    OnExhausted = info => observed = info.ServiceProvider.GetRequiredService<ScopedMarker>(),
+                    OnExhausted = (info, _) =>
+                    {
+                        observed = info.ServiceProvider.GetRequiredService<ScopedMarker>();
+                        return Task.CompletedTask;
+                    },
                 },
             }
         );

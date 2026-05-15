@@ -14,9 +14,14 @@ namespace Headless.Messaging.Retry;
 /// <para>
 /// <see cref="IRetryBackoffStrategy.Compute"/> should only return <see cref="RetryDecision.Stop"/>
 /// or <see cref="RetryDecision.Continue"/>. <see cref="RetryDecision.Exhausted"/> is the
-/// framework's signal — emitted by <see cref="RecordAttemptAndComputeDecision"/> when the max-attempts
+/// framework's signal — emitted by <see cref="RecordAttemptAndComputeDecision"/> when the persisted-retry
 /// budget is consumed. Strategies that return <see cref="RetryDecision.Kind.Exhausted"/> are
 /// treated as a no-Retries-increment stop (same convention as <see cref="RetryDecision.Stop"/>).
+/// </para>
+/// <para>
+/// <c>MediumMessage.Retries</c> counts persisted-retry pickups only — inline iterations do not
+/// advance it. The call site (not this helper) increments the counter when the resulting transition
+/// is "persist for a later pickup". This helper is pure with respect to <see cref="MediumMessage"/>.
 /// </para>
 /// </remarks>
 internal static class RetryHelper
@@ -29,18 +34,29 @@ internal static class RetryHelper
     private static readonly TimeSpan _MaxDelay = TimeSpan.FromHours(24);
 
     /// <summary>
-    /// Computes the next retry decision for a failed delivery attempt.
-    /// On <see cref="RetryDecision.Kind.Continue"/>, increments
-    /// <paramref name="message"/>.<see cref="MediumMessage.Retries"/>.
-    /// On <see cref="RetryDecision.Kind.Stop"/> and <see cref="RetryDecision.Kind.Exhausted"/>,
-    /// leaves <c>Retries</c> unchanged — both terminal paths agree that the attempt count reflects
-    /// completed retries, not the final failing attempt.
-    /// Do not call more than once per failure event — each call may advance the retry counter.
+    /// Classifies a failed delivery attempt into <see cref="RetryDecision.Stop"/>,
+    /// <see cref="RetryDecision.Exhausted"/>, or <see cref="RetryDecision.Continue"/>.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This method does NOT mutate <paramref name="message"/>. The persisted-pickup counter
+    /// (<c>MediumMessage.Retries</c>) is advanced by the call site after consulting
+    /// <see cref="ResolveNextState"/> — the increment happens only when the transition routes through
+    /// persistence (inline budget consumed AND persisted budget remains).
+    /// </para>
+    /// <para>
+    /// <see cref="RetryDecision.Kind.Exhausted"/> is returned only when BOTH the inline budget
+    /// is consumed on the current dispatch (<c>inlineRetries + 1 &gt; policy.MaxInlineRetries</c>)
+    /// AND the persisted budget is consumed (<c>message.Retries &gt;= policy.MaxPersistedRetries</c>).
+    /// While inline budget remains the helper returns Continue so the inline retry loop can
+    /// continue burst-retrying on the current pickup before terminal.
+    /// </para>
+    /// </remarks>
     public static RetryDecision RecordAttemptAndComputeDecision(
         MediumMessage message,
         Exception exception,
         RetryPolicyOptions policy,
+        int inlineRetries,
         bool isCancellation
     )
     {
@@ -65,18 +81,15 @@ internal static class RetryHelper
             return RetryDecision.Exhausted;
         }
 
-        // Check budget before committing the increment: both Exhausted paths (strategy-returned
-        // and framework-emitted) must leave Retries unchanged so callers can rely on Retries
-        // reflecting the number of attempts already made, not counting the terminal one.
-        var nextAttemptCount = message.Retries + 1;
-        var remainingAttempts = policy.MaxAttempts - nextAttemptCount;
-
-        if (remainingAttempts <= 0)
+        // Exhaust only when both axes are consumed. The inline retry loop will burst attempts
+        // up to MaxInlineRetries on each pickup; the persisted retry processor will pick the row
+        // up at most MaxPersistedRetries times after the initial dispatch. The two budgets compose
+        // multiplicatively.
+        var hasInlineBudget = inlineRetries + 1 <= policy.MaxInlineRetries;
+        if (!hasInlineBudget && message.Retries >= policy.MaxPersistedRetries)
         {
             return RetryDecision.Exhausted;
         }
-
-        message.Retries = nextAttemptCount;
 
         // Strategy returned Continue: clamp the delay then surface it.
         // Defensive clamp because IRetryBackoffStrategy is a public-extension point and

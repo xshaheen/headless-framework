@@ -40,7 +40,7 @@ public static class Setup
     /// services.AddHeadlessMessaging(options =>
     /// {
     ///     // Configure infrastructure
-    ///     options.RetryPolicy.MaxAttempts = 50;
+    ///     options.RetryPolicy.MaxPersistedRetries = 15;
     ///     options.SucceedMessageExpiredAfter = 24 * 3600;
     ///     options.UseSqlServer("connection_string");
     ///     options.UseRabbitMQ(rabbit =>

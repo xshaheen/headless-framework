@@ -14,7 +14,7 @@ namespace Tests.Retry;
 public sealed class RetryHelperTests : TestBase
 {
     [Fact]
-    public void should_stop_without_incrementing_for_cancellation()
+    public void should_stop_for_cancellation()
     {
         var message = _CreateMessage();
 
@@ -22,6 +22,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new OperationCanceledException(),
             new RetryPolicyOptions(),
+            inlineRetries: 0,
             isCancellation: true
         );
 
@@ -30,7 +31,7 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public void should_stop_without_incrementing_for_permanent_exception()
+    public void should_stop_for_permanent_exception()
     {
         var message = _CreateMessage();
 
@@ -38,6 +39,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new InvalidOperationException("permanent"),
             new RetryPolicyOptions(),
+            inlineRetries: 0,
             isCancellation: false
         );
 
@@ -46,13 +48,15 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public void should_return_exhausted_when_max_attempts_reached()
+    public void should_return_exhausted_when_both_budgets_consumed()
     {
+        // Inline budget = 0 (no inline retries), persisted budget = 0 (no persisted retries).
+        // Total budget = (0+1) × (0+1) = 1 attempt. First failure exhausts.
         var message = _CreateMessage();
         var policy = new RetryPolicyOptions
         {
-            MaxAttempts = 1,
             MaxInlineRetries = 0,
+            MaxPersistedRetries = 0,
             BackoffStrategy = new AlwaysRetryStrategy(TimeSpan.Zero),
         };
 
@@ -60,21 +64,68 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
+            inlineRetries: 0,
             isCancellation: false
         );
 
         decision.Should().Be(RetryDecision.Exhausted);
-        message
-            .Retries.Should()
-            .Be(0, "Exhausted must not advance the retry counter — budget check fires before the increment");
+        message.Retries.Should().Be(0, "helper is pure with respect to MediumMessage");
     }
 
     [Fact]
-    public void should_stop_without_incrementing_when_strategy_returns_stop()
+    public void should_continue_when_inline_budget_remains_even_if_persisted_budget_consumed()
     {
-        // Strategy's Compute returning Stop is now the unambiguous "do not retry" signal.
-        // The helper must NOT increment the message's retry count for Stop outcomes — Stop
-        // means the attempt never counted toward the retry budget.
+        // Persisted budget consumed (Retries == MaxPersistedRetries), but the current dispatch
+        // still has 2 inline retries remaining. The helper must NOT exhaust yet — inline burst
+        // is the final chance on the last persisted pickup.
+        var message = _CreateMessage();
+        message.Retries = 5;
+        var policy = new RetryPolicyOptions
+        {
+            MaxInlineRetries = 2,
+            MaxPersistedRetries = 5,
+            BackoffStrategy = new AlwaysRetryStrategy(TimeSpan.Zero),
+        };
+
+        var decision = RetryHelper.RecordAttemptAndComputeDecision(
+            message,
+            new TimeoutException(),
+            policy,
+            inlineRetries: 0,
+            isCancellation: false
+        );
+
+        decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
+    }
+
+    [Fact]
+    public void should_exhaust_after_inline_burst_on_terminal_pickup()
+    {
+        // Same setup as above, but inlineRetries has reached MaxInlineRetries — the inline burst
+        // is consumed AND persisted is consumed. Now exhaust.
+        var message = _CreateMessage();
+        message.Retries = 5;
+        var policy = new RetryPolicyOptions
+        {
+            MaxInlineRetries = 2,
+            MaxPersistedRetries = 5,
+            BackoffStrategy = new AlwaysRetryStrategy(TimeSpan.Zero),
+        };
+
+        var decision = RetryHelper.RecordAttemptAndComputeDecision(
+            message,
+            new TimeoutException(),
+            policy,
+            inlineRetries: 2,
+            isCancellation: false
+        );
+
+        decision.Should().Be(RetryDecision.Exhausted);
+    }
+
+    [Fact]
+    public void should_stop_when_strategy_returns_stop()
+    {
         var message = _CreateMessage();
         var policy = new RetryPolicyOptions { BackoffStrategy = new StopStrategy() };
 
@@ -82,6 +133,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
+            inlineRetries: 0,
             isCancellation: false
         );
 
@@ -90,38 +142,9 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
-    public void should_return_stop_without_incrementing_retries_when_max_attempts_is_one_and_exception_is_permanent()
+    public void should_return_exhausted_when_strategy_returns_exhausted()
     {
-        // Permanent exception with MaxAttempts=1: the strategy classifies the exception as
-        // non-retryable (returns Stop) — the helper must surface Stop and leave Retries at 0
-        // (Stop means the attempt never counted toward the budget).
-        var message = _CreateMessage();
-        var strategy = Substitute.For<IRetryBackoffStrategy>();
-        strategy.Compute(Arg.Any<int>(), Arg.Any<Exception>()).Returns(RetryDecision.Stop);
-        var policy = new RetryPolicyOptions
-        {
-            MaxAttempts = 1,
-            MaxInlineRetries = 0,
-            BackoffStrategy = strategy,
-        };
-
-        var decision = RetryHelper.RecordAttemptAndComputeDecision(
-            message,
-            new ArgumentNullException("param"),
-            policy,
-            isCancellation: false
-        );
-
-        decision.Should().Be(RetryDecision.Stop);
-        message.Retries.Should().Be(0);
-    }
-
-    [Fact]
-    public void should_return_exhausted_without_incrementing_when_strategy_returns_exhausted()
-    {
-        // RetryDecision.Kind.Exhausted returned by a strategy is an unsupported use-case; the
-        // helper treats it as Stop (no retry-counter increment). This pins that contract so a
-        // future refactor cannot silently change it.
+        // Strategy-returned Exhausted is unusual but the helper passes it through.
         var message = _CreateMessage();
         var strategy = Substitute.For<IRetryBackoffStrategy>();
         strategy.Compute(Arg.Any<int>(), Arg.Any<Exception>()).Returns(RetryDecision.Exhausted);
@@ -131,11 +154,12 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
+            inlineRetries: 0,
             isCancellation: false
         );
 
         decision.Outcome.Should().Be(RetryDecision.Kind.Exhausted);
-        message.Retries.Should().Be(0, "Exhausted from strategy must not advance the retry counter");
+        message.Retries.Should().Be(0);
     }
 
     [Fact]
@@ -149,25 +173,32 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
+            inlineRetries: 0,
             isCancellation: false
         );
 
         decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
         decision.Delay.Should().Be(delay);
-        message.Retries.Should().Be(1);
+        message.Retries.Should().Be(0, "helper does not mutate MediumMessage — call site owns increments");
     }
 
     [Fact]
-    public void should_pass_zero_based_retry_attempt_to_backoff_strategy()
+    public void should_pass_persisted_retry_count_to_backoff_strategy()
     {
         var message = _CreateMessage();
+        message.Retries = 3;
         var strategy = new RecordingRetryBackoffStrategy();
         var policy = new RetryPolicyOptions { BackoffStrategy = strategy };
 
-        RetryHelper.RecordAttemptAndComputeDecision(message, new TimeoutException(), policy, isCancellation: false);
+        RetryHelper.RecordAttemptAndComputeDecision(
+            message,
+            new TimeoutException(),
+            policy,
+            inlineRetries: 0,
+            isCancellation: false
+        );
 
-        strategy.Attempts.Should().ContainSingle().Which.Should().Be(0);
-        message.Retries.Should().Be(1);
+        strategy.Attempts.Should().ContainSingle().Which.Should().Be(3);
     }
 
     [Fact]
@@ -180,6 +211,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
+            inlineRetries: 0,
             isCancellation: false
         );
 
@@ -197,6 +229,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
+            inlineRetries: 0,
             isCancellation: false
         );
 
@@ -211,40 +244,16 @@ public sealed class RetryHelperTests : TestBase
         RetryDecision.Stop.Should().NotBe(RetryDecision.Continue(TimeSpan.Zero));
     }
 
-    // B3 — pinning tests for the Stop-preserves-Retries invariant.
-
     [Fact]
-    public void should_not_increment_retries_when_strategy_returns_stop_for_permanent_exception()
+    public async Task pickup_predicate_should_exclude_failed_rows_with_null_next_retry_at()
     {
-        // Permanent failures use RetryDecision.Stop; the retry counter must stay at zero
-        // so the pickup query's (Retries < MaxAttempts) guard does not re-queue stopped rows.
-        var message = _CreateMessage();
-        var strategy = Substitute.For<IRetryBackoffStrategy>();
-        strategy.Compute(Arg.Any<int>(), Arg.Any<Exception>()).Returns(RetryDecision.Stop);
-
-        var policy = new RetryPolicyOptions { BackoffStrategy = strategy };
-
-        var decision = RetryHelper.RecordAttemptAndComputeDecision(
-            message,
-            new InvalidOperationException("permanent"),
-            policy,
-            isCancellation: false
-        );
-
-        decision.Outcome.Should().Be(RetryDecision.Kind.Stop);
-        message.Retries.Should().Be(0, "Stop must never advance the retry counter");
-    }
-
-    [Fact]
-    public async Task pickup_predicate_should_exclude_failed_rows_with_null_next_retry_at_below_max_attempts()
-    {
-        // (StatusName=Failed, NextRetryAt=null, Retries < MaxAttempts) is the permanent-failure
-        // fingerprint produced when RetryDecision.Stop fires. The pickup query MUST exclude these
-        // rows so stopped messages are never re-dispatched.
+        // (StatusName=Failed, NextRetryAt=null) is the permanent-failure fingerprint produced
+        // when RetryDecision.Stop fires. The pickup query MUST exclude these rows so stopped
+        // messages are never re-dispatched.
         var services = new ServiceCollection();
         services.AddHeadlessMessaging(x =>
         {
-            x.RetryPolicy.MaxAttempts = 5;
+            x.RetryPolicy.MaxPersistedRetries = 5;
             x.UseInMemoryMessageQueue();
             x.UseInMemoryStorage();
         });
@@ -256,7 +265,7 @@ public sealed class RetryHelperTests : TestBase
         var origin = new Message(headers, null);
         var stored = await storage.StoreReceivedMessageAsync("test.topic", "test-group", origin);
 
-        // Simulate a Stop outcome: Failed status, no NextRetryAt, Retries stays below MaxAttempts.
+        // Simulate a Stop outcome: Failed status, no NextRetryAt, Retries stays below MaxPersistedRetries.
         stored.Retries = 0;
         await storage.ChangeReceiveStateAsync(stored, StatusName.Failed, nextRetryAt: null);
 

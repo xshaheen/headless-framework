@@ -172,14 +172,15 @@ internal sealed class InMemoryDataStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        var added = timeProvider.GetUtcNow().UtcDateTime;
         var message = new MediumMessage
         {
             StorageId = longIdGenerator.Create(),
             Origin = content,
             Content = serializer.Serialize(content),
-            Added = timeProvider.GetUtcNow().UtcDateTime,
+            Added = added,
             ExpiresAt = null,
-            NextRetryAt = null,
+            NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             Retries = 0,
         };
 
@@ -219,7 +220,7 @@ internal sealed class InMemoryDataStorage(
                 ?? throw new InvalidOperationException("Failed to deserialize received exception message content."),
             Name = name,
             Content = content,
-            Retries = messagingOptions.Value.RetryPolicy.MaxAttempts,
+            Retries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries,
             Added = timeProvider.GetUtcNow().UtcDateTime,
             ExpiresAt = timeProvider
                 .GetUtcNow()
@@ -240,14 +241,15 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var added = timeProvider.GetUtcNow().UtcDateTime;
         var mdMessage = new MediumMessage
         {
             StorageId = longIdGenerator.Create(),
             Origin = message,
             Content = serializer.Serialize(message),
-            Added = timeProvider.GetUtcNow().UtcDateTime,
+            Added = added,
             ExpiresAt = null,
-            NextRetryAt = null,
+            NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
             Retries = 0,
         };
 
@@ -309,15 +311,9 @@ internal sealed class InMemoryDataStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var maxAttempts = messagingOptions.Value.RetryPolicy.MaxAttempts;
+        var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         IEnumerable<MediumMessage> result = PublishedMessages
-            .Values.Where(x =>
-                x.Retries < maxAttempts
-                && (
-                    (x.NextRetryAt is not null && x.NextRetryAt <= now)
-                    || (x.StatusName == StatusName.Scheduled && x.NextRetryAt is null)
-                )
-            )
+            .Values.Where(x => x.Retries <= maxPersistedRetries && x.NextRetryAt is not null && x.NextRetryAt <= now)
             .Take(200)
             .Cast<MediumMessage>()
             .ToList();
@@ -331,15 +327,9 @@ internal sealed class InMemoryDataStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var maxAttempts = messagingOptions.Value.RetryPolicy.MaxAttempts;
+        var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         IEnumerable<MediumMessage> result = ReceivedMessages
-            .Values.Where(x =>
-                x.Retries < maxAttempts
-                && (
-                    (x.NextRetryAt is not null && x.NextRetryAt <= now)
-                    || (x.StatusName == StatusName.Scheduled && x.NextRetryAt is null)
-                )
-            )
+            .Values.Where(x => x.Retries <= maxPersistedRetries && x.NextRetryAt is not null && x.NextRetryAt <= now)
             .Take(200)
             .Select(x => (MediumMessage)x)
             .ToList();

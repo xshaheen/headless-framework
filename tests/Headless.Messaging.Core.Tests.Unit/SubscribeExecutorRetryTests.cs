@@ -117,8 +117,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxAttempts = 5,
                     MaxInlineRetries = 4,
+                    MaxPersistedRetries = 0,
                     BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
                 },
             }
@@ -132,7 +132,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         // then
         result.Succeeded.Should().BeTrue();
         attempts.Should().Be(5);
-        message.Retries.Should().Be(4);
+        // Inline retries do not increment MediumMessage.Retries (which now counts persisted pickups
+        // only). The 5th attempt succeeded inline, so no persist-transition ever happened.
+        message.Retries.Should().Be(0);
     }
 
     [Fact]
@@ -166,7 +168,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxAttempts = 2,
+                    MaxInlineRetries = 1,
+                    MaxPersistedRetries = 0,
                     BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromMilliseconds(40)),
                 },
             }
@@ -211,8 +214,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxAttempts = 2,
                     MaxInlineRetries = 0,
+                    MaxPersistedRetries = 1,
                     BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromSeconds(5)),
                 },
             }
@@ -270,10 +273,14 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxAttempts = 1,
                     MaxInlineRetries = 0,
+                    MaxPersistedRetries = 0,
                     BackoffStrategy = new ZeroDelayRetryBackoffStrategy(),
-                    OnExhausted = info => observed = info.ServiceProvider.GetRequiredService<ScopedMarker>(),
+                    OnExhausted = (info, _) =>
+                    {
+                        observed = info.ServiceProvider.GetRequiredService<ScopedMarker>();
+                        return Task.CompletedTask;
+                    },
                 },
             }
         );
@@ -319,8 +326,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             {
                 RetryPolicy =
                 {
-                    MaxAttempts = 5,
                     MaxInlineRetries = 3,
+                    MaxPersistedRetries = 4,
                     BackoffStrategy = new PermanentForArgumentExceptionStrategy(),
                 },
             }
