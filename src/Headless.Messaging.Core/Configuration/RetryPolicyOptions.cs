@@ -109,8 +109,9 @@ internal sealed class RetryPolicyOptionsValidator : AbstractValidator<RetryPolic
         RuleFor(x => x.MaxPersistedRetries).GreaterThanOrEqualTo(0);
         RuleFor(x => x.InitialDispatchGrace)
             .GreaterThan(TimeSpan.Zero)
+            .WithMessage("InitialDispatchGrace must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromHours(1))
-            .WithMessage("InitialDispatchGrace must be in (0, 1h].");
+            .WithMessage("InitialDispatchGrace must not exceed 1 hour.");
         RuleFor(x => x.BackoffStrategy).NotNull();
     }
 }
