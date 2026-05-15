@@ -127,7 +127,7 @@ internal sealed class InMemoryDataStorage(
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask ChangePublishStateAsync(
+    public ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
         object? dbTransaction = null,
@@ -136,16 +136,28 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (!PublishedMessages.TryGetValue(message.StorageId, out var current))
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        if (current.StatusName is StatusName.Succeeded or StatusName.Failed)
+        {
+            return ValueTask.FromResult(false);
+        }
+
         var utcNextRetryAt = nextRetryAt.ToUtcOrSelf();
-        PublishedMessages[message.StorageId].StatusName = state;
-        PublishedMessages[message.StorageId].ExpiresAt = message.ExpiresAt;
-        PublishedMessages[message.StorageId].NextRetryAt = utcNextRetryAt;
-        PublishedMessages[message.StorageId].Retries = message.Retries;
-        PublishedMessages[message.StorageId].Content = serializer.Serialize(message.Origin);
-        return ValueTask.CompletedTask;
+        current.StatusName = state;
+        current.ExpiresAt = message.ExpiresAt;
+        current.NextRetryAt = utcNextRetryAt;
+        current.Retries = message.Retries;
+        current.Content = serializer.Serialize(message.Origin);
+
+        return ValueTask.FromResult(true);
     }
 
-    public ValueTask ChangeReceiveStateAsync(
+    public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
         DateTime? nextRetryAt = null,
@@ -153,14 +165,26 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (!ReceivedMessages.TryGetValue(message.StorageId, out var current))
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        if (current.StatusName is StatusName.Succeeded or StatusName.Failed)
+        {
+            return ValueTask.FromResult(false);
+        }
+
         var utcNextRetryAt = nextRetryAt.ToUtcOrSelf();
-        ReceivedMessages[message.StorageId].StatusName = state;
-        ReceivedMessages[message.StorageId].ExpiresAt = message.ExpiresAt;
-        ReceivedMessages[message.StorageId].NextRetryAt = utcNextRetryAt;
-        ReceivedMessages[message.StorageId].Retries = message.Retries;
-        ReceivedMessages[message.StorageId].Content = serializer.Serialize(message.Origin);
-        ReceivedMessages[message.StorageId].ExceptionInfo = message.ExceptionInfo;
-        return ValueTask.CompletedTask;
+        current.StatusName = state;
+        current.ExpiresAt = message.ExpiresAt;
+        current.NextRetryAt = utcNextRetryAt;
+        current.Retries = message.Retries;
+        current.Content = serializer.Serialize(message.Origin);
+        current.ExceptionInfo = message.ExceptionInfo;
+
+        return ValueTask.FromResult(true);
     }
 
     public ValueTask<MediumMessage> StoreMessageAsync(
@@ -313,7 +337,7 @@ internal sealed class InMemoryDataStorage(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         IEnumerable<MediumMessage> result = PublishedMessages
-            .Values.Where(x => x.Retries <= maxPersistedRetries && x.NextRetryAt is not null && x.NextRetryAt <= now)
+            .Values.Where(x => x.Retries < maxPersistedRetries && x.NextRetryAt is not null && x.NextRetryAt <= now)
             .Take(200)
             .Cast<MediumMessage>()
             .ToList();
@@ -329,7 +353,7 @@ internal sealed class InMemoryDataStorage(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         IEnumerable<MediumMessage> result = ReceivedMessages
-            .Values.Where(x => x.Retries <= maxPersistedRetries && x.NextRetryAt is not null && x.NextRetryAt <= now)
+            .Values.Where(x => x.Retries < maxPersistedRetries && x.NextRetryAt is not null && x.NextRetryAt <= now)
             .Take(200)
             .Select(x => (MediumMessage)x)
             .ToList();

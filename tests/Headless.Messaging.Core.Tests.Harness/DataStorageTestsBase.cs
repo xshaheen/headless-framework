@@ -616,4 +616,42 @@ public abstract class DataStorageTestsBase : TestBase
         retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
+
+    public virtual async Task should_not_pickup_message_at_max_persisted_retries_limit()
+    {
+        // given — with MaxPersistedRetries = 4, a message with Retries = 4 represents a
+        // row that has already been picked up 4 times (and failed). It must NOT be picked up
+        // a 5th time; the budget is exhausted.
+        var storage = GetStorage();
+        var message = CreateMessage();
+        var storedMessage = await storage.StoreMessageAsync("max-retries-test", message, cancellationToken: AbortToken);
+
+        // simulate 4 failed persisted pickups. the query predicate must be Retries < MaxPersistedRetries.
+        storedMessage.Retries = 4;
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
+
+        // when
+        var retriable = await storage.GetPublishedMessagesOfNeedRetry(AbortToken);
+
+        // then
+        retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
+
+        // Same for received messages
+        var received = await storage.StoreReceivedMessageAsync("max-retries-test", "group", message, AbortToken);
+        received.Retries = 4;
+        await storage.ChangeReceiveStateAsync(
+            received,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
+
+        var retriableReceived = await storage.GetReceivedMessagesOfNeedRetry(AbortToken);
+        retriableReceived.Should().NotContain(m => m.StorageId == received.StorageId);
+    }
 }

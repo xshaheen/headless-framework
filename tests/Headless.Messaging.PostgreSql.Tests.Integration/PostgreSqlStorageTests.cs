@@ -309,19 +309,15 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
 
     // -------------------------------------------------------------------------
     // EXPLAIN ANALYZE — verify the retry-pickup query plans use the partial
-    // indexes (idx_*_next_retry, idx_*_scheduled_null). A regression to a full
-    // sequential scan would silently degrade throughput at high message volumes;
-    // pinning the plan in tests fails fast on accidental schema/query drift.
+    // index (idx_*_next_retry). A regression to a full sequential scan would
+    // silently degrade throughput at high message volumes; pinning the plan
+    // in tests fails fast on accidental schema/query drift.
     // -------------------------------------------------------------------------
 
     [Theory]
-    [InlineData("received", "idx_received_next_retry", "idx_received_scheduled_null")]
-    [InlineData("published", "idx_published_next_retry", "idx_published_scheduled_null")]
-    public async Task should_use_partial_indexes_in_retry_pickup_query_plan(
-        string tableSuffix,
-        string nextRetryIndex,
-        string scheduledNullIndex
-    )
+    [InlineData("received", "idx_received_next_retry")]
+    [InlineData("published", "idx_published_next_retry")]
+    public async Task should_use_partial_indexes_in_retry_pickup_query_plan(string tableSuffix, string nextRetryIndex)
     {
         // given — ensure the table has at least a few rows in each predicate branch so
         // the planner has a reason to choose the partial index over a seq scan on a tiny table.
@@ -341,8 +337,8 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             SELECT "Id","Content","Retries","Added","NextRetryAt" FROM {qualifiedTable}
             WHERE "Retries" < @Retries
               AND "Version" = @Version
-              AND (("NextRetryAt" IS NOT NULL AND "NextRetryAt" <= now())
-                   OR ("StatusName" = 'Scheduled' AND "NextRetryAt" IS NULL))
+              AND "NextRetryAt" IS NOT NULL
+              AND "NextRetryAt" <= now()
             LIMIT 200
             """;
 
@@ -352,9 +348,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             new { Retries = 50, Version = "v1" }
         );
 
-        // then — the plan should reference at least one of the partial indexes. We accept
-        // either index because the planner may pick either side of the OR depending on
-        // selectivity. The critical signal is that no Seq Scan dominates.
+        // then — the plan should reference the partial index.
         planJson.Should().NotBeNullOrEmpty();
         var nodeTypes = _CollectNodeTypes(planJson!);
         var indexNames = _CollectIndexNames(planJson!);
@@ -364,12 +358,9 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         indexNames
             .Should()
             .Contain(
-                name =>
-                    string.Equals(name, nextRetryIndex, StringComparison.Ordinal)
-                    || string.Equals(name, scheduledNullIndex, StringComparison.Ordinal),
-                because: "the retry-pickup query must use the partial indexes ({0}, {1}) to avoid sequential scans",
-                nextRetryIndex,
-                scheduledNullIndex
+                name => string.Equals(name, nextRetryIndex, StringComparison.Ordinal),
+                because: "the retry-pickup query must use the partial index ({0}) to avoid sequential scans",
+                nextRetryIndex
             );
     }
 

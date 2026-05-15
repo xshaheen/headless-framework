@@ -36,7 +36,7 @@ public interface IDataStorage
     /// the persisted column. Only retry-transition paths pass a value.
     /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    ValueTask ChangePublishStateAsync(
+    ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
         object? transaction = null,
@@ -55,7 +55,7 @@ public interface IDataStorage
     /// the persisted column. Only retry-transition paths pass a value.
     /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    ValueTask ChangeReceiveStateAsync(
+    ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
         DateTime? nextRetryAt = null,
@@ -96,9 +96,8 @@ public interface IDataStorage
     );
 
     /// <summary>
-    /// Returns published messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c>
-    /// (persisted-retry path) or <c>StatusName = Scheduled AND NextRetryAt IS NULL</c>
-    /// (first-dispatch path). No lookback window is applied.
+    /// Returns published messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c>.
+    /// No lookback window is applied.
     /// </summary>
     ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
         CancellationToken cancellationToken = default
@@ -110,9 +109,8 @@ public interface IDataStorage
     );
 
     /// <summary>
-    /// Returns received messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c>
-    /// (persisted-retry path) or <c>StatusName = Scheduled AND NextRetryAt IS NULL</c>
-    /// (first-dispatch path). No lookback window is applied.
+    /// Returns received messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c>.
+    /// No lookback window is applied.
     /// </summary>
     ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(CancellationToken cancellationToken = default);
 

@@ -215,13 +215,17 @@ internal sealed class SubscribeExecutor(
             message.Retries++;
         }
 
-        await dataStorage
+        var affected = await dataStorage
             .ChangeReceiveStateAsync(message, state.NextStatus, nextRetryAt: state.NextRetryAt)
             .ConfigureAwait(false);
 
-        if (needRetry.Outcome == RetryDecision.Kind.Exhausted)
+        if (affected && needRetry.Outcome == RetryDecision.Kind.Exhausted)
         {
             await _InvokeOnExhausted(message, ex, dispatchServices, cancellationToken).ConfigureAwait(false);
+        }
+        else if (!affected)
+        {
+            logger.LogInformation("Skipping OnExhausted: message {StorageId} already terminal", message.StorageId);
         }
 
         // Report the original (inner) exception to the circuit breaker so transient-classification
