@@ -12,11 +12,13 @@ namespace Headless.Messaging.Retry;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="IRetryBackoffStrategy.Compute"/> should only return <see cref="RetryDecision.Stop"/>
-/// or <see cref="RetryDecision.Continue"/>. <see cref="RetryDecision.Exhausted"/> is the
-/// framework's signal — emitted by <see cref="RecordAttemptAndComputeDecision"/> when the persisted-retry
-/// budget is consumed. Strategies that return <see cref="RetryDecision.Kind.Exhausted"/> are
-/// treated as a no-Retries-increment stop (same convention as <see cref="RetryDecision.Stop"/>).
+/// Typical <see cref="IRetryBackoffStrategy.Compute"/> implementations return
+/// <see cref="RetryDecision.Stop"/> or <see cref="RetryDecision.Continue"/> and let
+/// <see cref="RecordAttemptAndComputeDecision"/> emit <see cref="RetryDecision.Exhausted"/> when the
+/// configured <c>MaxInlineRetries</c>/<c>MaxPersistedRetries</c> budgets are consumed.
+/// Strategies with their own attempt accounting MAY return <see cref="RetryDecision.Kind.Exhausted"/>
+/// directly; this helper forwards it as a terminal exhaustion (Retries unchanged, <c>OnExhausted</c>
+/// fires) — identical handling to the framework-emitted path.
 /// </para>
 /// <para>
 /// <c>MediumMessage.Retries</c> counts persisted-retry pickups only — inline iterations do not
