@@ -18,7 +18,7 @@ public static class MessagingTestHarnessExtensions
     /// <see cref="MessagingTestHarness.CreateAsync"/> — for example:
     /// <code>
     /// services.AddSingleton&lt;TestConsumer&lt;MyMessage&gt;&gt;();
-    /// options.Subscribe&lt;TestConsumer&lt;MyMessage&gt;&gt;("my-topic");
+    /// setup.Subscribe&lt;TestConsumer&lt;MyMessage&gt;&gt;("my-topic");
     /// </code>
     /// </remarks>
     public static TestConsumer<TMessage> GetTestConsumer<TMessage>(this MessagingTestHarness harness)

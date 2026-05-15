@@ -36,12 +36,12 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
     {
         Harness = await MessagingTestHarness.CreateAsync(services =>
         {
-            services.AddHeadlessMessaging(options =>
+            services.AddHeadlessMessaging(setup =>
             {
-                options.UseInMemoryMessageQueue();
-                options.UseInMemoryStorage();
-                options.Subscribe<AlphaConsumer>("alpha-topic");
-                options.Subscribe<BetaConsumer>("beta-topic");
+                setup.UseInMemoryMessageQueue();
+                setup.UseInMemoryStorage();
+                setup.Subscribe<AlphaConsumer>("alpha-topic");
+                setup.Subscribe<BetaConsumer>("beta-topic");
             });
         });
     }

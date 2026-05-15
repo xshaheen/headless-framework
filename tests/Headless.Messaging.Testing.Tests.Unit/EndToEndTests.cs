@@ -42,15 +42,15 @@ public sealed class NotifyingConsumer(INotificationService notifier) : IConsume<
 
 public sealed class EndToEndTests : TestBase
 {
-    private static Task<MessagingTestHarness> _CreateHarnessAsync(Action<MessagingOptions>? configure = null)
+    private static Task<MessagingTestHarness> _CreateHarnessAsync(Action<MessagingSetupBuilder>? configure = null)
     {
         return MessagingTestHarness.CreateAsync(services =>
         {
-            services.AddHeadlessMessaging(options =>
+            services.AddHeadlessMessaging(setup =>
             {
-                options.UseInMemoryMessageQueue();
-                options.UseInMemoryStorage();
-                configure?.Invoke(options);
+                setup.UseInMemoryMessageQueue();
+                setup.UseInMemoryStorage();
+                configure?.Invoke(setup);
             });
         });
     }

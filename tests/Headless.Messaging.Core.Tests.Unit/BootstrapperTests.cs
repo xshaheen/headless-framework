@@ -119,11 +119,11 @@ public sealed class BootstrapperTests : TestBase
             services.AddSingleton(beforeMessaging);
         }
 
-        services.AddHeadlessMessaging(options =>
+        services.AddHeadlessMessaging(setup =>
         {
-            options.UseInMemoryMessageQueue();
-            options.UseInMemoryStorage();
-            options.UseConventions(c =>
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
+            setup.UseConventions(c =>
             {
                 c.UseApplicationId("bootstrap-tests");
                 c.UseVersion("v1");

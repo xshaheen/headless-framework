@@ -36,8 +36,8 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "test-group";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "test-group";
+            messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("direct-test-topic");
             messaging.Subscribe<DirectTestConsumer>().Topic("direct-test-topic");
             messaging.UseInMemoryMessageQueue();
@@ -76,8 +76,8 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "test-group";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "test-group";
+            messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("direct-test-topic");
             messaging.Subscribe<DirectTestConsumer>().Topic("direct-test-topic");
             messaging.UseInMemoryMessageQueue();
@@ -110,8 +110,8 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "test-group";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "test-group";
+            messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("custom-topic-name");
             messaging.Subscribe<DirectTestConsumer>().Topic("custom-topic-name");
             messaging.UseInMemoryMessageQueue();
@@ -143,8 +143,8 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "test-group";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "test-group";
+            messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("multi-group-test");
             messaging.Subscribe<DirectTestConsumer>().Topic("multi-group-test").Group("direct.primary");
             messaging.Subscribe<DirectAnalyticsConsumer>().Topic("multi-group-test").Group("direct.analytics");
@@ -179,9 +179,9 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "test-group";
-            messaging.Version = "v1";
-            messaging.TopicNamePrefix = "myapp";
+            messaging.Options.DefaultGroupName = "test-group";
+            messaging.Options.Version = "v1";
+            messaging.Options.TopicNamePrefix = "myapp";
             messaging.WithTopicMapping<DirectTestMessage>("prefixed-test");
             messaging.Subscribe<DirectTestConsumer>().Topic("prefixed-test");
             messaging.UseInMemoryMessageQueue();
@@ -212,8 +212,8 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "test-group";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "test-group";
+            messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("header-test-topic");
             messaging.Subscribe<DirectTestConsumerWithHeaders>().Topic("header-test-topic");
             messaging.UseInMemoryMessageQueue();
@@ -257,8 +257,8 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "test-group";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "test-group";
+            messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("tenant-test-topic");
             messaging.Subscribe<DirectTestConsumerWithHeaders>().Topic("tenant-test-topic");
             messaging.UseInMemoryMessageQueue();
@@ -297,8 +297,8 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "test-group";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "test-group";
+            messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("tenant-unset-topic");
             messaging.Subscribe<DirectTestConsumerWithHeaders>().Topic("tenant-unset-topic");
             messaging.UseInMemoryMessageQueue();
@@ -335,8 +335,8 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "test-group";
-            messaging.Version = "v1";
+            messaging.Options.DefaultGroupName = "test-group";
+            messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("sequential-test");
             messaging.Subscribe<DirectTestConsumer>().Topic("sequential-test");
             messaging.UseInMemoryMessageQueue();

@@ -11,17 +11,17 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class MessagesAzureServiceBusSetup
 {
-    extension(MessagingOptions options)
+    extension(MessagingSetupBuilder setup)
     {
         /// <summary>
         /// Configuration for messaging.
         /// </summary>
         /// <param name="connectionString">Connection string for namespace or the entity.</param>
-        public MessagingOptions UseAzureServiceBus(string connectionString)
+        public MessagingSetupBuilder UseAzureServiceBus(string connectionString)
         {
             Argument.IsNotNull(connectionString);
 
-            return options.UseAzureServiceBus(opt =>
+            return setup.UseAzureServiceBus(opt =>
             {
                 opt.ConnectionString = connectionString;
             });
@@ -31,13 +31,13 @@ public static class MessagesAzureServiceBusSetup
         /// Configuration for messaging.
         /// </summary>
         /// <param name="configure">Provides programmatic configuration for the Azure Service Bus.</param>
-        public MessagingOptions UseAzureServiceBus(Action<AzureServiceBusOptions> configure)
+        public MessagingSetupBuilder UseAzureServiceBus(Action<AzureServiceBusOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            options.RegisterExtension(new AzureServiceBusOptionsExtension(configure));
+            setup.RegisterExtension(new AzureServiceBusOptionsExtension(configure));
 
-            return options;
+            return setup;
         }
     }
 

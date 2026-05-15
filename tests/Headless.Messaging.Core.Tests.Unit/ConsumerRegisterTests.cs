@@ -307,7 +307,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
     private ServiceProvider _CreateProvider(
         ICircuitBreakerStateManager? circuitBreakerStateManager = null,
-        Action<MessagingOptions>? configureMessaging = null,
+        Action<MessagingSetupBuilder>? configureMessaging = null,
         Action<IServiceCollection>? configureServices = null
     )
     {
@@ -318,17 +318,17 @@ public sealed class ConsumerRegisterTests : TestBase
             builder.SetMinimumLevel(LogLevel.Debug);
         });
 
-        services.AddHeadlessMessaging(options =>
+        services.AddHeadlessMessaging(setup =>
         {
-            options.UseInMemoryMessageQueue();
-            options.UseInMemoryStorage();
-            options.UseConventions(c =>
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
+            setup.UseConventions(c =>
             {
                 c.UseApplicationId("messaging-tests");
                 c.UseVersion("v1");
             });
 
-            configureMessaging?.Invoke(options);
+            configureMessaging?.Invoke(setup);
         });
 
         if (circuitBreakerStateManager is not null)

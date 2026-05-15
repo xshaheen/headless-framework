@@ -73,11 +73,11 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(x =>
+        services.AddHeadlessMessaging(setup =>
         {
-            x.Subscribe<CancellationExecutorTestConsumer>().Topic("test.topic").Group("test-group");
-            x.UseInMemoryMessageQueue();
-            x.UseInMemoryStorage();
+            setup.Subscribe<CancellationExecutorTestConsumer>().Topic("test.topic").Group("test-group");
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
         });
 
         var provider = services.BuildServiceProvider();

@@ -51,10 +51,10 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         services.AddServiceProviderLocalMessagePublisher();
 
         // Messages
-        services.AddHeadlessMessaging(options =>
+        services.AddHeadlessMessaging(setup =>
         {
-            options.UseInMemoryMessageQueue();
-            options.UseInMemoryStorage();
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
         });
         // Cache
         services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);

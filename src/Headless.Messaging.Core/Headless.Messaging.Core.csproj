@@ -21,6 +21,13 @@
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
     <InternalsVisibleTo Include="Headless.Messaging.Testing" />
     <InternalsVisibleTo Include="Headless.Messaging.Testing.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Dashboard.K8s.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.InMemoryQueue.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.PostgreSql.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.RedisStreams.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Pulsar.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Nats.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Kafka.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FastExpressionCompiler" />

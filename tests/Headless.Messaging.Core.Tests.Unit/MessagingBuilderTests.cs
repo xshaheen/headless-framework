@@ -310,7 +310,7 @@ public sealed class MessagingBuilderTests
         {
             messaging.UseInMemoryMessageQueue();
             messaging.UseInMemoryStorage();
-            messaging.TopicNamePrefix = "billing";
+            messaging.Options.TopicNamePrefix = "billing";
         });
 
         using var provider = services.BuildServiceProvider();
@@ -550,7 +550,7 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.DefaultGroupName = "shared-group";
+            messaging.Options.DefaultGroupName = "shared-group";
             messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
         });
 
@@ -570,7 +570,7 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.GroupNamePrefix = "tenant-a";
+            messaging.Options.GroupNamePrefix = "tenant-a";
             messaging.UseConventions(conventions =>
             {
                 conventions.UseApplicationId("orders");

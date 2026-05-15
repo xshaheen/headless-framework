@@ -32,28 +32,28 @@ public static class MessagingDiscoveryOptionsExtensions
     /// <summary>
     /// Use K8s as a service discovery to view data from other nodes in the Dashboard.
     /// </summary>
-    /// <param name="messagingOptions"></param>
-    public static MessagingOptions UseK8sDiscovery(this MessagingOptions messagingOptions)
+    /// <param name="setup"></param>
+    public static MessagingSetupBuilder UseK8sDiscovery(this MessagingSetupBuilder setup)
     {
-        return messagingOptions.UseK8sDiscovery(opt => { });
+        return setup.UseK8sDiscovery(opt => { });
     }
 
     // ReSharper disable once InconsistentNaming
     /// <summary>
     /// Use K8s as a service discovery to view data from other nodes in the Dashboard.
     /// </summary>
-    /// <param name="messagingOptions"></param>
+    /// <param name="setup"></param>
     /// <param name="options">The option of <see cref="K8sDiscoveryOptions" /></param>
     /// <exception cref="ArgumentNullException"></exception>
-    public static MessagingOptions UseK8sDiscovery(
-        this MessagingOptions messagingOptions,
+    public static MessagingSetupBuilder UseK8sDiscovery(
+        this MessagingSetupBuilder setup,
         Action<K8sDiscoveryOptions> options
     )
     {
         Argument.IsNotNull(options);
 
-        messagingOptions.RegisterExtension(new K8sDiscoveryOptionsExtension(options));
+        setup.RegisterExtension(new K8sDiscoveryOptionsExtension(options));
 
-        return messagingOptions;
+        return setup;
     }
 }

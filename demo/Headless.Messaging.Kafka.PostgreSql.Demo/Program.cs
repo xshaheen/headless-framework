@@ -14,13 +14,13 @@ builder.Services.AddDbContext<AppDbContext>(
     }
 );
 
-builder.Services.AddHeadlessMessaging(x =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    x.SubscribeFromAssembly(typeof(Program).Assembly);
+    setup.SubscribeFromAssembly(typeof(Program).Assembly);
 
-    //x.UseEntityFramework<AppDbContext>();
+    //setup.UseEntityFramework<AppDbContext>();
     //docker run --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=mysecretpassword -d postgres
-    x.UsePostgreSql(AppConstants.DbConnectionString);
+    setup.UsePostgreSql(AppConstants.DbConnectionString);
 
     /* //Run Kafka Docker Container (Powershell)
     docker run -d `
@@ -41,8 +41,8 @@ builder.Services.AddHeadlessMessaging(x =>
         -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 `
         apache/kafka:3.7.0
     */
-    x.UseKafka("127.0.0.1:9092");
-    x.UseDashboard(d => d.WithNoAuth());
+    setup.UseKafka("127.0.0.1:9092");
+    setup.UseDashboard(d => d.WithNoAuth());
 });
 
 builder.Services.AddControllers();

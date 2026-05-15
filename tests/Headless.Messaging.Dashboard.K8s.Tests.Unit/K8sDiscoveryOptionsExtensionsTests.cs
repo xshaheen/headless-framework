@@ -1,48 +1,50 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.K8s;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
 public sealed class K8SDiscoveryOptionsExtensionsTests : TestBase
 {
     [Fact]
-    public void UseK8sDiscovery_should_return_same_MessagingOptions_instance()
+    public void UseK8sDiscovery_should_return_same_setup_instance()
     {
         // given
-        var messagingOptions = new MessagingOptions();
+        var setup = _CreateSetup();
 
         // when
-        var result = messagingOptions.UseK8sDiscovery();
+        var result = setup.UseK8sDiscovery();
 
         // then
-        result.Should().BeSameAs(messagingOptions);
+        result.Should().BeSameAs(setup);
     }
 
     [Fact]
-    public void UseK8sDiscovery_with_options_should_return_same_MessagingOptions_instance()
+    public void UseK8sDiscovery_with_options_should_return_same_setup_instance()
     {
         // given
-        var messagingOptions = new MessagingOptions();
+        var setup = _CreateSetup();
 
         // when
-        var result = messagingOptions.UseK8sDiscovery(opt => opt.ShowOnlyExplicitVisibleNodes = false);
+        var result = setup.UseK8sDiscovery(opt => opt.ShowOnlyExplicitVisibleNodes = false);
 
         // then
-        result.Should().BeSameAs(messagingOptions);
+        result.Should().BeSameAs(setup);
     }
 
     [Fact]
     public void UseK8sDiscovery_should_throw_when_options_action_is_null()
     {
         // given
-        var messagingOptions = new MessagingOptions();
+        var setup = _CreateSetup();
 
         // when
-        var act = () => messagingOptions.UseK8sDiscovery(null!);
+        var act = () => setup.UseK8sDiscovery(null!);
 
         // then
         act.Should().Throw<ArgumentNullException>();
@@ -52,19 +54,24 @@ public sealed class K8SDiscoveryOptionsExtensionsTests : TestBase
     public void UseK8sDiscovery_should_register_extension()
     {
         // given
-        var messagingOptions = new MessagingOptions();
+        var setup = _CreateSetup();
 
         // when
-        messagingOptions.UseK8sDiscovery();
+        setup.UseK8sDiscovery();
 
         // then - verify extension was registered via internal property
-        var extensionsProp = typeof(MessagingOptions).GetProperty(
+        var extensionsProp = typeof(MessagingSetupBuilder).GetProperty(
             "Extensions",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
-        var extensions = extensionsProp?.GetValue(messagingOptions) as IList<IMessagesOptionsExtension>;
+        var extensions = extensionsProp?.GetValue(setup) as IList<IMessagesOptionsExtension>;
 
         extensions.Should().NotBeNullOrEmpty();
         extensions.Should().ContainSingle(x => x.GetType().Name == "K8sDiscoveryOptionsExtension");
+    }
+
+    private static MessagingSetupBuilder _CreateSetup()
+    {
+        return new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());
     }
 }

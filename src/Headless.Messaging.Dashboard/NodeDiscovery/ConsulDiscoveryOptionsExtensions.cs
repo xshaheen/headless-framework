@@ -31,20 +31,20 @@ public static class MessagingDiscoveryOptionsExtensions
     /// <summary>
     /// Default use kubernetes as service discovery.
     /// </summary>
-    public static MessagingOptions UseConsulDiscovery(this MessagingOptions messagingOptions)
+    public static MessagingSetupBuilder UseConsulDiscovery(this MessagingSetupBuilder setup)
     {
-        return messagingOptions.UseConsulDiscovery(_ => { });
+        return setup.UseConsulDiscovery(_ => { });
     }
 
-    public static MessagingOptions UseConsulDiscovery(
-        this MessagingOptions messagingOptions,
+    public static MessagingSetupBuilder UseConsulDiscovery(
+        this MessagingSetupBuilder setup,
         Action<ConsulDiscoveryOptions> options
     )
     {
         Argument.IsNotNull(options);
 
-        messagingOptions.RegisterExtension(new ConsulDiscoveryOptionsExtension(options));
+        setup.RegisterExtension(new ConsulDiscoveryOptionsExtension(options));
 
-        return messagingOptions;
+        return setup;
     }
 }

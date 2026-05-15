@@ -92,7 +92,7 @@ public sealed class TenantPropagationE2ETests : TestBase
 {
     private static Task<MessagingTestHarness> _CreateHarnessAsync(
         TenantCapture capture,
-        Action<MessagingOptions> configureMessaging
+        Action<MessagingSetupBuilder> configureMessaging
     )
     {
         return MessagingTestHarness.CreateAsync(services =>
@@ -105,11 +105,11 @@ public sealed class TenantPropagationE2ETests : TestBase
             services.AddTransient<TenantCapturingConsumer>();
             services.AddSingleton<FlakyTenantConsumer>();
 
-            services.AddHeadlessMessaging(options =>
+            services.AddHeadlessMessaging(setup =>
             {
-                options.UseInMemoryMessageQueue();
-                options.UseInMemoryStorage();
-                configureMessaging(options);
+                setup.UseInMemoryMessageQueue();
+                setup.UseInMemoryStorage();
+                configureMessaging(setup);
             });
             services.AddTenantPropagationServices();
         });
@@ -253,11 +253,11 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            options =>
+            setup =>
             {
-                options.Subscribe<TenantCapturingConsumer>("tenant-orders");
+                setup.Subscribe<TenantCapturingConsumer>("tenant-orders");
                 // Allow parallel subscriber execution to actually exercise concurrent dispatch
-                options.EnableSubscriberParallelExecute = true;
+                setup.Options.EnableSubscriberParallelExecute = true;
             }
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
