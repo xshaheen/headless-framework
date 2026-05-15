@@ -257,7 +257,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 - **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
-- **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxAttempts`, `MaxInlineRetries`, `BackoffStrategy`, `OnExhausted`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
+- **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `BackoffStrategy`, `OnExhausted`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
 
 ---
 
@@ -403,7 +403,7 @@ builder.Services.AddHeadlessMessaging(options =>
 {
     // Core configuration
     options.SucceedMessageExpiredAfter = 24 * 3600;
-    options.RetryPolicy.MaxAttempts = 50;
+    options.RetryPolicy.MaxPersistedRetries = 50;
 
     // Add storage (required)
     options.UsePostgreSql("connection_string");
@@ -528,7 +528,7 @@ Register in `Program.cs`:
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.RetryPolicy.MaxAttempts = 50;
+    options.RetryPolicy.MaxPersistedRetries = 50;
     options.SucceedMessageExpiredAfter = 24 * 3600;
     options.ConsumerThreadCount = 1;
     options.DefaultGroupName = "myapp";
@@ -543,10 +543,10 @@ builder.Services.AddHeadlessMessaging(options =>
 
 | Property | Type | Default | Validation invariant |
 | --- | --- | --- | --- |
-| `MaxAttempts` | `int` | `50` | `>= 1`. Total delivery attempts including the first non-retry execution. Set to `1` to disable retries. |
-| `MaxInlineRetries` | `int` | `2` | `>= 0` AND `< MaxAttempts`. Retries to run inline before persisting for the retry processor. |
+| `MaxInlineRetries` | `int` | `2` | `>= 0`. Retries to run inline on each delivery before persisting for the retry processor. |
+| `MaxPersistedRetries` | `int` | `15` | `>= 0`. Maximum persisted-retry pickups. Set to `0` to disable persisted retries. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. |
 | `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Not null. Strategy implementations are now single-method: `RetryDecision Compute(int retryCount, Exception exception)`. |
-| `OnExhausted` | `Action<FailedInfo>?` | `null` | Optional. Fires only when the retry budget is exhausted (see distinction below). |
+| `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Optional. Fires only when the retry budget is exhausted (see distinction below). |
 
 #### Exhausted vs Stop
 
@@ -561,18 +561,23 @@ If you want a single exit point for *any* unrecoverable failure (Stop + Exhauste
 
 #### MaxInlineRetries — inline vs persisted retry paths
 
-Retries up to `MaxInlineRetries` run **inline** inside the same `ExecuteAsync` / `SendAsync` call (with `Task.Delay` between attempts). Once the inline budget is exhausted but the overall `MaxAttempts` budget is not, the message is persisted with `NextRetryAt` set and picked up later by `MessageNeedToRetryProcessor`.
+Retries up to `MaxInlineRetries` run **inline** inside the same `ExecuteAsync` / `SendAsync` call (with `Task.Delay` between attempts). Once the inline budget is exhausted, the message is persisted with `NextRetryAt` set and picked up by `MessageNeedToRetryProcessor` (up to `MaxPersistedRetries` times). Each pickup then bursts another round of `MaxInlineRetries` inline attempts.
 
-Worked example with `MaxAttempts = 10, MaxInlineRetries = 2`:
+Worked example with `MaxInlineRetries = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
 
 ```
-attempt 1 (original)        ── inline, no delay
-attempt 2 (inline retry #1) ── inline, after BackoffStrategy delay
-attempt 3 (inline retry #2) ── inline, after BackoffStrategy delay
-                                inline budget exhausted, persist
-attempt 4 (persisted)       ── retry processor polls and re-dispatches
-…
-attempt 10                  ── final attempt; on failure → Exhausted → OnExhausted fires
+pickup 1 (initial dispatch):
+  attempt 1 (original)        ── inline
+  attempt 2 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 3 (inline retry #2) ── inline, after BackoffStrategy delay → persist (1/2)
+pickup 2 (persisted retry #1):
+  attempt 4                   ── inline
+  attempt 5 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 6 (inline retry #2) ── inline, after BackoffStrategy delay → persist (2/2)
+pickup 3 (persisted retry #2):
+  attempt 7                   ── inline
+  attempt 8 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
 ```
 
 #### FailedInfo construction (for tests / fakes)
@@ -606,7 +611,7 @@ var info = new FailedInfo
 
 | Old property | New property | Notes |
 | --- | --- | --- |
-| `FailedRetryCount` | `RetryPolicy.MaxAttempts` | Total attempts now, not "retries after the first". `MaxAttempts = 1` disables retries. |
+| `FailedRetryCount` | `RetryPolicy.MaxPersistedRetries` | Controls persisted-retry pickups. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. Set both to `0` to disable retries. |
 | `FailedRetryInterval` | `RetryProcessorOptions.BaseInterval` | Default `60s`. |
 | `FallbackWindowLookbackSeconds` | *removed* | No replacement — `MessageNeedToRetryProcessor` now polls without a lookback window. |
 | `RetryBackoffStrategy` | `RetryPolicy.BackoffStrategy` | Strategy contract is now one `Compute` method returning `RetryDecision`. |
