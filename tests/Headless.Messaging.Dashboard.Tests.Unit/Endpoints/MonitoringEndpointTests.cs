@@ -4,6 +4,7 @@ using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.GatewayProxy;
 using Headless.Messaging.Dashboard.NodeDiscovery;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
@@ -184,6 +185,9 @@ public sealed class MonitoringEndpointTests : TestBase
         appBuilder.Services.AddScoped<IAuthService, AuthService>();
         appBuilder.Services.AddSingleton(dataStorage);
         appBuilder.Services.AddSingleton<MessagingMetricsEventListener>();
+        // Stats endpoint resolves MethodMatcherCache to compute subscriber count.
+        appBuilder.Services.AddSingleton(Substitute.For<IConsumerServiceSelector>());
+        appBuilder.Services.AddSingleton<MethodMatcherCache>();
 
         // Register gateway proxy dependencies (must come before discoveryProvider override)
         _RegisterGatewayProxyDeps(appBuilder.Services);
