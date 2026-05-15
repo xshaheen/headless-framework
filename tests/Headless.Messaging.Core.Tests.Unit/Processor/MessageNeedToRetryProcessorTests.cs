@@ -509,19 +509,28 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Stronger and stable assertion: jitter is a one-shot — second call's startup overhead is 0.
         var secondStopwatch = System.Diagnostics.Stopwatch.StartNew();
         // Spin off a quick second invocation but cancel the post-work WaitAsync so we only measure the jitter slot.
-        using var cts = new CancellationTokenSource();
-        var cancellableContext = new ProcessingContext(context.Provider, cts.Token);
-        var secondTask = sut.ProcessAsync(cancellableContext);
-        // Give the storage call a moment to be invoked, then cancel.
-        await Task.Delay(50);
-        await cts.CancelAsync();
+        // Explicit try/finally Dispose (not `using var`) so the analyzer can verify the task completes
+        // before the CancellationTokenSource is disposed
+        var cts = new CancellationTokenSource();
         try
         {
-            await secondTask;
+            var cancellableContext = new ProcessingContext(context.Provider, cts.Token);
+            var secondTask = sut.ProcessAsync(cancellableContext);
+            // Give the storage call a moment to be invoked, then cancel.
+            await Task.Delay(50, AbortToken);
+            await cts.CancelAsync();
+            try
+            {
+                await secondTask;
+            }
+            catch (TaskCanceledException) { }
+            catch (OperationCanceledException) { }
+            secondStopwatch.Stop();
         }
-        catch (TaskCanceledException) { }
-        catch (OperationCanceledException) { }
-        secondStopwatch.Stop();
+        finally
+        {
+            cts.Dispose();
+        }
 
         // Assert — jitter is one-shot: flag stays true.
         sut.FirstPollObservedForTest.Should().BeTrue();

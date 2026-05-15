@@ -22,8 +22,8 @@ public class MediumMessage
     /// <remarks>
     /// The value MUST be UTC (<see cref="DateTimeKind.Utc"/>). Use
     /// <see cref="DateTime.UtcNow"/> or <see cref="TimeProvider.GetUtcNow"/>.UtcDateTime —
-    /// never <see cref="DateTime.Now"/>. Storage providers (Npgsql in particular) reject
-    /// non-UTC <see cref="DateTime"/> values when writing to <c>timestamptz</c> columns.
+    /// never the local-clock <c>DateTime.Now</c>. Storage providers (Npgsql in particular)
+    /// reject non-UTC <see cref="DateTime"/> values when writing to <c>timestamptz</c> columns.
     /// </remarks>
     public DateTime? NextRetryAt { get; set; }
 

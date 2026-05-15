@@ -54,7 +54,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     /// Mutated only by <see cref="ProcessAsync"/>, which is invoked sequentially per processor
     /// instance — a plain bool is sufficient.
     /// </summary>
+#pragma warning disable IDE0032 // Project convention: private state uses _camelCase fields, not PascalCase auto-properties.
     private bool _firstPollObserved;
+#pragma warning restore IDE0032
 
     public MessageNeedToRetryProcessor(
         IOptions<MessagingOptions> options,
