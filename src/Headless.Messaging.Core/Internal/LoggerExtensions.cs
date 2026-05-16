@@ -539,4 +539,12 @@ internal static partial class LoggerExtensions
         Message = "Publish succeeded after a terminal-Failed write for message {StorageId}; storage state will not be updated. Consumers will observe at-least-once delivery."
     )]
     public static partial void PublishSucceededButStorageTerminal(this ILogger logger, long storageId);
+
+    [LoggerMessage(
+        EventId = 70,
+        EventName = "SkippingPoisonedOnExhaustedAlreadyTerminal",
+        Level = LogLevel.Information,
+        Message = "Skipping poisoned-message OnExhausted: message {MessageId} already terminal"
+    )]
+    public static partial void SkippingPoisonedOnExhaustedAlreadyTerminal(this ILogger logger, string messageId);
 }

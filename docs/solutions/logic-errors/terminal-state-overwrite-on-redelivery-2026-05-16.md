@@ -57,6 +57,8 @@ The fix arrived through several intermediate states; the ones below were attempt
 
 The fix has two halves that must land together: **storage rejects terminal-row overwrites** and **callers respect that rejection**.
 
+Follow-up hardening extended the same affected-row contract to poisoned-on-arrival messages: `StoreReceivedExceptionMessageAsync` now returns `false` when the upsert is rejected by the terminal-row guard. `IConsumerRegister` still commits the broker redelivery, but skips `RetryPolicy.OnExhausted` because storage proved the terminal row was not mutated. This keeps deserialization-failure redelivery from double-firing exhausted callbacks.
+
 ### 1. Storage-layer terminal-row guard
 
 SQL Server ([SqlServerDataStorage.cs:528-538](../../../src/Headless.Messaging.SqlServer/SqlServerDataStorage.cs)) — the `_StoreReceivedMessage` MERGE adds a `WHEN MATCHED AND NOT (...)` predicate so the `UPDATE` branch is skipped for terminal rows; the `INSERT` branch is unaffected:

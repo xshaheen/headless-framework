@@ -26,13 +26,19 @@ public sealed class MessagingOptionsCopyToTests : TestBase
         var target = new MessagingOptions();
 
         // when
-        var copyTo = typeof(MessagingOptions).GetMethod("CopyTo", BindingFlags.Instance | BindingFlags.NonPublic);
+        var copyTo = typeof(MessagingOptions).GetMethod(
+            "CopyTo",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(MessagingOptions)],
+            null
+        );
         copyTo!.Invoke(source, [target]);
 
         // then — every public read/write property must round-trip
         var publicMutableProperties = typeof(MessagingOptions)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.CanWrite && p.SetMethod is { IsPublic: true });
+            .Where(p => p is { CanWrite: true, SetMethod.IsPublic: true });
 
         foreach (var prop in publicMutableProperties)
         {
@@ -79,20 +85,28 @@ public sealed class MessagingOptionsCopyToTests : TestBase
     [Fact]
     public void should_deep_copy_circuit_breaker_and_retry_processor_state()
     {
-        var source = new MessagingOptions();
-        source.CircuitBreaker.FailureThreshold = 42;
-        source.CircuitBreaker.OpenDuration = TimeSpan.FromMinutes(7);
-        source.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(13);
-        source.RetryProcessor.CircuitOpenRateThreshold = 0.42;
+        var source = new MessagingOptions
+        {
+            CircuitBreaker = { FailureThreshold = 42, OpenDuration = TimeSpan.FromMinutes(7) },
+            RetryProcessor = { BaseInterval = TimeSpan.FromSeconds(13), CircuitOpenRateThreshold = 0.42 },
+            RetryPolicy = { DispatchTimeout = TimeSpan.FromSeconds(23) },
+        };
 
         var target = new MessagingOptions();
-        var copyTo = typeof(MessagingOptions).GetMethod("CopyTo", BindingFlags.Instance | BindingFlags.NonPublic);
+        var copyTo = typeof(MessagingOptions).GetMethod(
+            "CopyTo",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(MessagingOptions)],
+            null
+        );
         copyTo!.Invoke(source, [target]);
 
         target.CircuitBreaker.FailureThreshold.Should().Be(42);
         target.CircuitBreaker.OpenDuration.Should().Be(TimeSpan.FromMinutes(7));
         target.RetryProcessor.BaseInterval.Should().Be(TimeSpan.FromSeconds(13));
         target.RetryProcessor.CircuitOpenRateThreshold.Should().Be(0.42);
+        target.RetryPolicy.DispatchTimeout.Should().Be(TimeSpan.FromSeconds(23));
     }
 
     [Fact]
@@ -115,7 +129,13 @@ public sealed class MessagingOptionsCopyToTests : TestBase
 
         var target = new MessagingOptions();
 
-        var copyTo = typeof(MessagingOptions).GetMethod("CopyTo", BindingFlags.Instance | BindingFlags.NonPublic);
+        var copyTo = typeof(MessagingOptions).GetMethod(
+            nameof(MessagingOptions.CopyTo),
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(MessagingOptions)],
+            null
+        );
         copyTo!.Invoke(source, [target]);
 
         target.JsonSerializerOptions.PropertyNamingPolicy.Should().Be(JsonNamingPolicy.SnakeCaseLower);
@@ -143,5 +163,8 @@ public sealed class MessagingOptionsCopyToTests : TestBase
         options.SchedulerBatchSize = 7;
         options.UseStorageLock = true;
         options.TenantContextRequired = true;
+        options.TransportPublishTimeout = TimeSpan.FromSeconds(17);
+        options.CommandTimeout = TimeSpan.FromSeconds(19);
+        options.RetryPolicy.DispatchTimeout = TimeSpan.FromSeconds(23);
     }
 }

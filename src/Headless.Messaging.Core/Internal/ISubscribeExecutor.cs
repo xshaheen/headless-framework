@@ -121,6 +121,11 @@ internal sealed class SubscribeExecutor(
         Argument.IsNotNull(message);
 
         cancellationToken.ThrowIfCancellationRequested();
+        var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
+        if (!leased)
+        {
+            return (RetryDecision.Stop, OperateResult.Success);
+        }
 
         try
         {
@@ -225,9 +230,42 @@ internal sealed class SubscribeExecutor(
         // place persisted-pickup count advances.
         if (decision.Outcome == RetryDecision.Kind.Continue && !state.IsInlineRetryInFlight)
         {
+            var originalRetries = message.Retries;
             message.Retries++;
+            return await _PersistFailedStateAsync(
+                    message,
+                    ex,
+                    dispatchServices,
+                    decision,
+                    state,
+                    originalRetries,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
+        return await _PersistFailedStateAsync(
+                message,
+                ex,
+                dispatchServices,
+                decision,
+                state,
+                originalRetries: null,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<RetryDecision> _PersistFailedStateAsync(
+        MediumMessage message,
+        Exception ex,
+        IServiceProvider dispatchServices,
+        RetryDecision decision,
+        RetryNextState state,
+        int? originalRetries,
+        CancellationToken cancellationToken
+    )
+    {
         // Use CancellationToken.None for the terminal state write. If host shutdown fires between
         // computing the Exhausted decision and persisting it, we still want the row to land in its
         // terminal Failed/NULL state and OnExhausted to fire — otherwise on next pickup we'd re-invoke
@@ -240,6 +278,7 @@ internal sealed class SubscribeExecutor(
                 message,
                 state.NextStatus,
                 nextRetryAt: state.NextRetryAt,
+                originalRetries: originalRetries,
                 cancellationToken: CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -267,7 +306,7 @@ internal sealed class SubscribeExecutor(
         // Skip the report when the conditional UPDATE returned zero affected rows: that signals a
         // broker redelivery of an already-terminal row, not a fresh failure — counting it would
         // wrongly accumulate toward the breaker threshold.
-        if (circuitBreakerStateManager is not null && !isCancellation && affected)
+        if (circuitBreakerStateManager is not null && affected)
         {
             var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
             await circuitBreakerStateManager
@@ -276,6 +315,12 @@ internal sealed class SubscribeExecutor(
         }
 
         return decision;
+    }
+
+    private async Task<bool> _LeaseAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        var lockedUntil = timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
+        return await dataStorage.LeaseReceiveAsync(message, lockedUntil, cancellationToken).ConfigureAwait(false);
     }
 
     private RetryDecision _UpdateMessageForRetry(MediumMessage message, Exception ex, int inlineRetries)
@@ -303,7 +348,7 @@ internal sealed class SubscribeExecutor(
         return decision;
     }
 
-    private Task _InvokeOnExhausted(
+    private async Task _InvokeOnExhausted(
         MediumMessage message,
         Exception ex,
         IServiceProvider dispatchServices,
@@ -313,27 +358,30 @@ internal sealed class SubscribeExecutor(
         var callback = _retryPolicy.OnExhausted;
         if (callback is null)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         // Use the live dispatch scope so scoped services resolved here are the same
         // instances seen during ExecuteAsync. The caller (Dispatcher) is responsible for
         // creating and disposing that scope. RetryHelper.InvokeOnExhaustedAsync applies
         // the configured OnExhaustedTimeout and swallows handler exceptions.
-        return RetryHelper.InvokeOnExhaustedAsync(
-            callback,
-            new FailedInfo
-            {
-                ServiceProvider = dispatchServices,
-                MessageType = MessageType.Subscribe,
-                Message = message.Origin,
-                Exception = ex,
-            },
-            _retryPolicy.OnExhaustedTimeout,
-            message.StorageId,
-            logger,
-            cancellationToken
-        );
+        using var tenantScope = TenantContextScope.ChangeFromEnvelope(dispatchServices, message.Origin, logger);
+        await RetryHelper
+            .InvokeOnExhaustedAsync(
+                callback,
+                new FailedInfo
+                {
+                    ServiceProvider = dispatchServices,
+                    MessageType = MessageType.Subscribe,
+                    Message = message.Origin,
+                    Exception = ex,
+                },
+                _retryPolicy.OnExhaustedTimeout,
+                message.StorageId,
+                logger,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private async Task _InvokeConsumerMethodAsync(

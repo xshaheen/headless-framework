@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
@@ -18,12 +19,14 @@ namespace Headless.Messaging.PostgreSql;
 /// </summary>
 public sealed class PostgreSqlMonitoringApi(
     IOptions<PostgreSqlOptions> options,
+    IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
     ISerializer serializer,
     TimeProvider timeProvider
 ) : IMonitoringApi
 {
     private readonly PostgreSqlOptions _options = Argument.IsNotNull(options.Value);
+    private readonly MessagingOptions _messagingOptions = messagingOptions.Value;
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
 
@@ -84,6 +87,7 @@ public sealed class PostgreSqlMonitoringApi(
 
                     return statisticsDto;
                 },
+                commandTimeout: _messagingOptions.CommandTimeout,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -143,7 +147,12 @@ public sealed class PostgreSqlMonitoringApi(
         ];
 
         var totalCount = await connection
-            .ExecuteScalarAsync(countQuery, cancellationToken, sqlParams)
+            .ExecuteScalarAsync(
+                countQuery,
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (totalCount == 0)
@@ -185,8 +194,9 @@ public sealed class PostgreSqlMonitoringApi(
                     }
                     return messages;
                 },
-                cancellationToken: cancellationToken,
-                sqlParams: sqlParams
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -246,7 +256,14 @@ public sealed class PostgreSqlMonitoringApi(
 
         object[] sqlParams = [new NpgsqlParameter("@State", statusName)];
 
-        return await connection.ExecuteScalarAsync(sqlQuery, cancellationToken, sqlParams).ConfigureAwait(false);
+        return await connection
+            .ExecuteScalarAsync(
+                sqlQuery,
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(
@@ -314,8 +331,9 @@ public sealed class PostgreSqlMonitoringApi(
 
                     return dictionary;
                 },
-                cancellationToken: cancellationToken,
-                sqlParams: sqlParams
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -371,8 +389,9 @@ public sealed class PostgreSqlMonitoringApi(
 
                     return message;
                 },
-                cancellationToken: cancellationToken,
-                sqlParams: new NpgsqlParameter("@Id", id)
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: [new NpgsqlParameter("@Id", id)],
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 

@@ -77,6 +77,10 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         ICircuitBreakerStateManager? circuitBreaker = null
     )
     {
+        storage
+            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
@@ -149,7 +153,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -200,7 +204,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             );
     }
 
@@ -216,7 +220,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -248,7 +252,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             );
     }
 }

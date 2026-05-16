@@ -72,6 +72,10 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         MessagingOptions options
     )
     {
+        storage
+            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
@@ -97,7 +101,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -153,7 +157,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -209,7 +213,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -245,6 +249,8 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Is<DateTime?>(value => value.HasValue),
+                Arg.Any<DateTime?>(),
+                Arg.Is<int?>(value => value == 0),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -267,7 +273,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -321,7 +327,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -359,7 +365,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Is<DateTime?>(v => v == null),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             );
     }
 
@@ -374,7 +380,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(false));
 

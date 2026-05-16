@@ -67,7 +67,13 @@ public sealed class SqlServerStorageInitializer(
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         await connection
-            .ExecuteNonQueryAsync(sql, transaction, cancellationToken, sqlParams.AsArray())
+            .ExecuteNonQueryAsync(
+                sql,
+                transaction: transaction,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams.AsArray(),
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -112,6 +118,7 @@ public sealed class SqlServerStorageInitializer(
                         [Added] [datetime2](7) NOT NULL,
                         [ExpiresAt] [datetime2](7) NULL,
                         [NextRetryAt] [datetime2](7) NULL,
+                        [LockedUntil] [datetime2](7) NULL,
                         [StatusName] [nvarchar](50) NOT NULL,
                         [MessageId] [nvarchar](200) NOT NULL,
                         [ExceptionInfo] [nvarchar](max) NULL,
@@ -124,12 +131,20 @@ public sealed class SqlServerStorageInitializer(
                     -- Filtered index for retry pickup. Version is a residual filter (included
                     -- column), not a seek predicate, so rolling-upgrade scenarios with a stale
                     -- Version see up to 200 wasted index lookups per cycle (batch size = 200).
-                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_NextRetry] ON {GetReceivedTableName()} ([NextRetryAt] ASC) INCLUDE ([Version],[Retries]) WHERE [NextRetryAt] IS NOT NULL;
+                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_NextRetry] ON {GetReceivedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries]) WHERE [NextRetryAt] IS NOT NULL;
                 END;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() <> 2714 THROW;
             END CATCH;
+
+            IF COL_LENGTH(N'{GetReceivedTableName()}', N'LockedUntil') IS NULL
+            BEGIN
+                ALTER TABLE {GetReceivedTableName()} ADD [LockedUntil] [datetime2](7) NULL;
+            END;
+            IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_NextRetry' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                DROP INDEX [IX_{receivedPrefix}_NextRetry] ON {GetReceivedTableName()};
+            CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_NextRetry] ON {GetReceivedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries]) WHERE [NextRetryAt] IS NOT NULL;
 
             BEGIN TRY
                 IF OBJECT_ID(N'{GetPublishedTableName()}',N'U') IS NULL
@@ -143,6 +158,7 @@ public sealed class SqlServerStorageInitializer(
                         [Added] [datetime2](7) NOT NULL,
                         [ExpiresAt] [datetime2](7) NULL,
                         [NextRetryAt] [datetime2](7) NULL,
+                        [LockedUntil] [datetime2](7) NULL,
                         [StatusName] [nvarchar](50) NOT NULL,
                         [MessageId] [nvarchar](200) NOT NULL,
                         CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
@@ -153,12 +169,20 @@ public sealed class SqlServerStorageInitializer(
                     -- Filtered index for retry pickup. Version is a residual filter (included
                     -- column), not a seek predicate, so rolling-upgrade scenarios with a stale
                     -- Version see up to 200 wasted index lookups per cycle (batch size = 200).
-                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_NextRetry] ON {GetPublishedTableName()} ([NextRetryAt] ASC) INCLUDE ([Version],[Retries]) WHERE [NextRetryAt] IS NOT NULL;
+                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_NextRetry] ON {GetPublishedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries]) WHERE [NextRetryAt] IS NOT NULL;
                 END;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() <> 2714 THROW;
             END CATCH;
+
+            IF COL_LENGTH(N'{GetPublishedTableName()}', N'LockedUntil') IS NULL
+            BEGIN
+                ALTER TABLE {GetPublishedTableName()} ADD [LockedUntil] [datetime2](7) NULL;
+            END;
+            IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_NextRetry' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
+                DROP INDEX [IX_{publishedPrefix}_NextRetry] ON {GetPublishedTableName()};
+            CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_NextRetry] ON {GetPublishedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries]) WHERE [NextRetryAt] IS NOT NULL;
 
 """;
 

@@ -51,7 +51,7 @@ public sealed class PostgreSqlDataStorage(
 
     public IMonitoringApi GetMonitoringApi()
     {
-        return new PostgreSqlMonitoringApi(postgreSqlOptions, initializer, serializer, timeProvider);
+        return new PostgreSqlMonitoringApi(postgreSqlOptions, messagingOptions, initializer, serializer, timeProvider);
     }
 
     public async ValueTask<bool> AcquireLockAsync(
@@ -74,7 +74,12 @@ public sealed class PostgreSqlDataStorage(
         ];
 
         var opResult = await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
         return opResult > 0;
@@ -95,7 +100,12 @@ public sealed class PostgreSqlDataStorage(
         ];
 
         await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -119,7 +129,12 @@ public sealed class PostgreSqlDataStorage(
         ];
 
         await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -144,7 +159,12 @@ public sealed class PostgreSqlDataStorage(
         await using var connection = postgreSqlOptions.Value.CreateConnection();
 
         await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -153,16 +173,35 @@ public sealed class PostgreSqlDataStorage(
         StatusName state,
         object? transaction = null,
         DateTime? nextRetryAt = null,
+        DateTime? lockedUntil = null,
+        int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _ChangeMessageStateAsync(_publishedTable, message, state, transaction, nextRetryAt, cancellationToken);
+        return _ChangeMessageStateAsync(
+            _publishedTable,
+            message,
+            state,
+            transaction,
+            nextRetryAt,
+            cancellationToken,
+            lockedUntil,
+            originalRetries
+        );
     }
+
+    public ValueTask<bool> LeasePublishAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        CancellationToken cancellationToken = default
+    ) => _LeaseMessageAsync(_publishedTable, message, lockedUntil, cancellationToken);
 
     public async ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
         DateTime? nextRetryAt = null,
+        DateTime? lockedUntil = null,
+        int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -174,7 +213,7 @@ public sealed class PostgreSqlDataStorage(
         // processor can rewrite it on the next pickup. The plan's stricter form would block
         // that, breaking the persisted-retry flow.
         var sql =
-            $"UPDATE {_receivedTable} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id AND NOT (\"StatusName\" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND \"NextRetryAt\" IS NULL)";
+            $"UPDATE {_receivedTable} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id AND NOT (\"StatusName\" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND \"NextRetryAt\" IS NULL) AND (@OriginalRetries IS NULL OR \"Retries\"=@OriginalRetries)";
 
         object[] sqlParams =
         [
@@ -183,17 +222,30 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
+            new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
+            new NpgsqlParameter("@OriginalRetries", originalRetries ?? (object)DBNull.Value),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
             new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var affectedRows = await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
         return affectedRows > 0;
     }
+
+    public ValueTask<bool> LeaseReceiveAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        CancellationToken cancellationToken = default
+    ) => _LeaseMessageAsync(_receivedTable, message, lockedUntil, cancellationToken);
 
     public async ValueTask<MediumMessage> StoreMessageAsync(
         string name,
@@ -203,8 +255,8 @@ public sealed class PostgreSqlDataStorage(
     )
     {
         var sql =
-            $"INSERT INTO {_publishedTable} (\"Id\",\"Version\",\"Name\",\"Content\",\"Retries\",\"Added\",\"ExpiresAt\",\"NextRetryAt\",\"StatusName\",\"MessageId\")"
-            + $"VALUES(@Id,'{postgreSqlOptions.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@StatusName,@MessageId);";
+            $"INSERT INTO {_publishedTable} (\"Id\",\"Version\",\"Name\",\"Content\",\"Retries\",\"Added\",\"ExpiresAt\",\"NextRetryAt\",\"LockedUntil\",\"StatusName\",\"MessageId\")"
+            + $"VALUES(@Id,'{postgreSqlOptions.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@StatusName,@MessageId);";
 
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var message = new MediumMessage
@@ -215,6 +267,7 @@ public sealed class PostgreSqlDataStorage(
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+            LockedUntil = null,
             Retries = 0,
         };
 
@@ -227,6 +280,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Added", message.Added),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new NpgsqlParameter("@NextRetryAt", message.NextRetryAt.ToUtcParameterValue()),
+            new NpgsqlParameter("@LockedUntil", message.LockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", content.GetId()),
         ];
@@ -235,7 +289,12 @@ public sealed class PostgreSqlDataStorage(
         {
             await using var connection = postgreSqlOptions.Value.CreateConnection();
             await connection
-                .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+                .ExecuteNonQueryAsync(
+                    sql,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         else
@@ -254,14 +313,20 @@ public sealed class PostgreSqlDataStorage(
             }
 
             await dbTrans
-                .Connection!.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams)
+                .Connection!.ExecuteNonQueryAsync(
+                    sql,
+                    transaction: dbTrans,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
         return message;
     }
 
-    public async ValueTask StoreReceivedExceptionMessageAsync(
+    public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
         string group,
         string content,
@@ -282,12 +347,13 @@ public sealed class PostgreSqlDataStorage(
                 timeProvider.GetUtcNow().UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter)
             ),
             new NpgsqlParameter("@NextRetryAt", DBNull.Value),
+            new NpgsqlParameter("@LockedUntil", DBNull.Value),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Failed)),
             new NpgsqlParameter("@MessageId", serializer.Deserialize(content)!.GetId()),
             new NpgsqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
         ];
 
-        await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        return await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<MediumMessage> StoreReceivedMessageAsync(
@@ -306,6 +372,7 @@ public sealed class PostgreSqlDataStorage(
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+            LockedUntil = null,
             Retries = 0,
         };
 
@@ -322,6 +389,7 @@ public sealed class PostgreSqlDataStorage(
                 mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value
             ),
             new NpgsqlParameter("@NextRetryAt", mediumMessage.NextRetryAt.ToUtcParameterValue()),
+            new NpgsqlParameter("@LockedUntil", mediumMessage.LockedUntil.ToUtcParameterValue()),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", message.GetId()),
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
@@ -356,8 +424,9 @@ public sealed class PostgreSqlDataStorage(
                 )
                 """,
                 transaction: null,
-                cancellationToken,
-                sqlParams
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
     }
@@ -382,7 +451,12 @@ public sealed class PostgreSqlDataStorage(
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var result = await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new NpgsqlParameter("@Id", id))
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: [new NpgsqlParameter("@Id", id)],
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
         return result;
     }
@@ -393,7 +467,12 @@ public sealed class PostgreSqlDataStorage(
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         var result = await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: new NpgsqlParameter("@Id", id))
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: [new NpgsqlParameter("@Id", id)],
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
         return result;
     }
@@ -447,9 +526,10 @@ public sealed class PostgreSqlDataStorage(
 
                     return messages;
                 },
-                transaction,
-                cancellationToken,
-                sqlParams
+                transaction: transaction,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -464,11 +544,13 @@ public sealed class PostgreSqlDataStorage(
         StatusName state,
         object? transaction = null,
         DateTime? nextRetryAt = null,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        DateTime? lockedUntil = null,
+        int? originalRetries = null
     )
     {
         var sql =
-            $"UPDATE {tableName} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"StatusName\"=@StatusName WHERE \"Id\"=@Id AND NOT (\"StatusName\" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND \"NextRetryAt\" IS NULL)";
+            $"UPDATE {tableName} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"StatusName\"=@StatusName WHERE \"Id\"=@Id AND NOT (\"StatusName\" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND \"NextRetryAt\" IS NULL) AND (@OriginalRetries IS NULL OR \"Retries\"=@OriginalRetries)";
 
         object[] sqlParams =
         [
@@ -477,6 +559,8 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
+            new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
+            new NpgsqlParameter("@OriginalRetries", originalRetries ?? (object)DBNull.Value),
             new NpgsqlParameter("@StatusName", state.ToString("G")),
         ];
 
@@ -485,7 +569,13 @@ public sealed class PostgreSqlDataStorage(
         {
             var connection = dbTransaction.Connection!;
             affectedRows = await connection
-                .ExecuteNonQueryAsync(sql, dbTransaction, cancellationToken, sqlParams)
+                .ExecuteNonQueryAsync(
+                    sql,
+                    transaction: dbTransaction,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         else if (transaction is IDbContextTransaction efTransaction)
@@ -493,7 +583,13 @@ public sealed class PostgreSqlDataStorage(
             var dbTrans = efTransaction.GetDbTransaction();
             var connection = dbTrans.Connection!;
             affectedRows = await connection
-                .ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams)
+                .ExecuteNonQueryAsync(
+                    sql,
+                    transaction: dbTrans,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         else
@@ -501,27 +597,36 @@ public sealed class PostgreSqlDataStorage(
             await using var connection = postgreSqlOptions.Value.CreateConnection();
 
             affectedRows = await connection
-                .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+                .ExecuteNonQueryAsync(
+                    sql,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
         return affectedRows > 0;
     }
 
-    private async ValueTask _StoreReceivedMessage(object[] sqlParams, CancellationToken cancellationToken = default)
+    private async ValueTask<bool> _StoreReceivedMessage(
+        object[] sqlParams,
+        CancellationToken cancellationToken = default
+    )
     {
         // The conditional UPDATE skips rows that are already in a terminal Succeeded/Failed state
         // with no scheduled retry. Without the guard, a broker-redelivered message whose payload
         // again fails to deserialize would overwrite a previously-Succeeded row's status to Failed,
         // firing OnExhausted for a message that actually succeeded.
         var sql = $"""
-            INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId","ExceptionInfo")
-            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@StatusName,@MessageId,@ExceptionInfo)
+            INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId","ExceptionInfo")
+            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@StatusName,@MessageId,@ExceptionInfo)
             ON CONFLICT ("MessageId","Group") DO UPDATE SET
                 "StatusName"=EXCLUDED."StatusName",
                 "Retries"=EXCLUDED."Retries",
                 "ExpiresAt"=EXCLUDED."ExpiresAt",
                 "NextRetryAt"=EXCLUDED."NextRetryAt",
+                "LockedUntil"=EXCLUDED."LockedUntil",
                 "Content"=EXCLUDED."Content",
                 "ExceptionInfo"=EXCLUDED."ExceptionInfo"
             WHERE NOT (
@@ -532,9 +637,50 @@ public sealed class PostgreSqlDataStorage(
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
 
-        await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+        var affectedRows = await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
+
+        return affectedRows > 0;
+    }
+
+    private async ValueTask<bool> _LeaseMessageAsync(
+        string tableName,
+        MediumMessage message,
+        DateTime lockedUntil,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var sql =
+            $"UPDATE {tableName} SET \"LockedUntil\"=@LockedUntil WHERE \"Id\"=@Id AND NOT (\"StatusName\" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND \"NextRetryAt\" IS NULL)";
+
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@Id", message.StorageId),
+            new NpgsqlParameter("@LockedUntil", ((DateTime?)lockedUntil).ToUtcParameterValue()),
+        ];
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        var affectedRows = await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (affectedRows > 0)
+        {
+            message.LockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
+        }
+
+        return affectedRows > 0;
     }
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
@@ -546,8 +692,8 @@ public sealed class PostgreSqlDataStorage(
         // SQL providers share identical pickup semantics — keeps tests with a fake clock honest
         // and avoids subtle drift between application time and DB time.
         var sql =
-            $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\",\"NextRetryAt\" FROM {tableName} WHERE \"Retries\"<=@Retries "
-            + $"AND \"Version\"=@Version AND \"NextRetryAt\" IS NOT NULL AND \"NextRetryAt\" <= @Now LIMIT {_RetryBatchSize} FOR UPDATE SKIP LOCKED;";
+            $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\",\"NextRetryAt\",\"LockedUntil\" FROM {tableName} WHERE \"Retries\"<=@Retries "
+            + $"AND \"Version\"=@Version AND \"NextRetryAt\" IS NOT NULL AND \"NextRetryAt\" <= @Now AND (\"LockedUntil\" IS NULL OR \"LockedUntil\" <= @Now) LIMIT {_RetryBatchSize} FOR UPDATE SKIP LOCKED;";
 
         object[] sqlParams =
         [
@@ -580,6 +726,9 @@ public sealed class PostgreSqlDataStorage(
                             NextRetryAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false)
                                 ? null
                                 : reader.GetDateTime(4),
+                            LockedUntil = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(5),
                         };
 
                         messages.Add(mediumMessage);
@@ -587,9 +736,10 @@ public sealed class PostgreSqlDataStorage(
 
                     return messages;
                 },
-                transaction,
-                cancellationToken,
-                sqlParams
+                transaction: transaction,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 

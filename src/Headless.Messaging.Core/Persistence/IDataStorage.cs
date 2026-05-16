@@ -6,6 +6,8 @@ using Headless.Messaging.Monitoring;
 
 namespace Headless.Messaging.Persistence;
 
+#pragma warning disable CA1068 // Preserve existing optional-parameter call sites while adding concurrency metadata.
+
 [PublicAPI]
 public interface IDataStorage
 {
@@ -36,6 +38,8 @@ public interface IDataStorage
     /// Must be UTC — non-UTC values are provider-normalized. Pass <see langword="null"/> to clear
     /// the persisted column. Only retry-transition paths pass a value.
     /// </param>
+    /// <param name="lockedUntil"></param>
+    /// <param name="originalRetries"></param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
     /// <c>true</c> when the row was updated; <c>false</c> when the row was already in a terminal state
@@ -47,6 +51,17 @@ public interface IDataStorage
         StatusName state,
         object? transaction = null,
         DateTime? nextRetryAt = null,
+        DateTime? lockedUntil = null,
+        int? originalRetries = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Leases a published message before a dispatch attempt.
+    /// </summary>
+    ValueTask<bool> LeasePublishAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
         CancellationToken cancellationToken = default
     );
 
@@ -60,6 +75,8 @@ public interface IDataStorage
     /// Must be UTC — non-UTC values are provider-normalized. Pass <see langword="null"/> to clear
     /// the persisted column. Only retry-transition paths pass a value.
     /// </param>
+    /// <param name="lockedUntil"></param>
+    /// <param name="originalRetries"></param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
     /// <c>true</c> when the row was updated; <c>false</c> when the row was already in a terminal state
@@ -70,6 +87,17 @@ public interface IDataStorage
         MediumMessage message,
         StatusName state,
         DateTime? nextRetryAt = null,
+        DateTime? lockedUntil = null,
+        int? originalRetries = null,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Leases a received message before a consume attempt.
+    /// </summary>
+    ValueTask<bool> LeaseReceiveAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
         CancellationToken cancellationToken = default
     );
 
@@ -84,7 +112,7 @@ public interface IDataStorage
     /// Stores a failed received message using serialized <see cref="Message"/> JSON so providers can persist message headers.
     /// </summary>
     /// <param name="content">Serialized <see cref="Message"/> payload, including headers.</param>
-    ValueTask StoreReceivedExceptionMessageAsync(
+    ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
         string group,
         string content,
@@ -131,3 +159,5 @@ public interface IDataStorage
 
     ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default);
 }
+
+#pragma warning restore CA1068

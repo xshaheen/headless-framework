@@ -45,6 +45,10 @@ public sealed class MessageSenderTests : TestBase
         IHostApplicationLifetime? lifetime = null
     )
     {
+        storage
+            .LeasePublishAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(storage);
@@ -72,7 +76,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -87,7 +91,7 @@ public sealed class MessageSenderTests : TestBase
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
         var attempts = 0;
         transport
-            .SendAsync(transportMessage, CancellationToken.None)
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 attempts++;
@@ -133,7 +137,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -148,7 +152,7 @@ public sealed class MessageSenderTests : TestBase
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
         var attempts = 0;
         transport
-            .SendAsync(transportMessage, CancellationToken.None)
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 attempts++;
@@ -198,7 +202,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -212,7 +216,7 @@ public sealed class MessageSenderTests : TestBase
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
         transport
-            .SendAsync(transportMessage, CancellationToken.None)
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
             .Returns(OperateResult.Failed(new TimeoutException("boom")));
 
         var sender = _CreateSender(
@@ -242,6 +246,8 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<object?>(),
                 Arg.Is<DateTime?>(value => value.HasValue),
+                Arg.Any<DateTime?>(),
+                Arg.Is<int?>(value => value == 0),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -260,7 +266,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -274,7 +280,7 @@ public sealed class MessageSenderTests : TestBase
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
         transport
-            .SendAsync(transportMessage, CancellationToken.None)
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
             .Returns(OperateResult.Failed(new ArgumentNullException("param")));
 
         var backoffStrategy = Substitute.For<IRetryBackoffStrategy>();
@@ -314,7 +320,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<object?>(),
                 Arg.Is<DateTime?>(v => v == null),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             );
     }
 
@@ -332,7 +338,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -349,7 +355,7 @@ public sealed class MessageSenderTests : TestBase
 
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
-        transport.SendAsync(transportMessage, CancellationToken.None).Returns(OperateResult.Failed(shutdownOce));
+        transport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(OperateResult.Failed(shutdownOce));
 
         var callbackInvoked = false;
         var sender = _CreateSender(
@@ -386,7 +392,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             );
     }
 
@@ -405,7 +411,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(false));
 
@@ -419,7 +425,7 @@ public sealed class MessageSenderTests : TestBase
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
         transport
-            .SendAsync(transportMessage, CancellationToken.None)
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
             .Returns(OperateResult.Failed(new TimeoutException("transient")));
 
         var callbackInvoked = false;
@@ -456,7 +462,7 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<object?>(),
                 Arg.Is<DateTime?>(v => v == null),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             );
     }
 
@@ -490,7 +496,7 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -504,7 +510,7 @@ public sealed class MessageSenderTests : TestBase
         var transport = Substitute.For<ITransport>();
         transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
         transport
-            .SendAsync(transportMessage, CancellationToken.None)
+            .SendAsync(transportMessage, Arg.Any<CancellationToken>())
             .Returns(OperateResult.Failed(new TimeoutException("boom")));
 
         ScopedMarker? observed = null;

@@ -8,7 +8,7 @@ using Headless.Checks;
 namespace System.Threading.Tasks;
 
 [PublicAPI]
-public static class TaskExtensions
+public static class HeadlessTaskExtensions
 {
     #region Forget
 

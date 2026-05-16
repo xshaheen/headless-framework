@@ -445,8 +445,10 @@ internal sealed class ConsumerRegister(
                 await PulseAsync().ConfigureAwait(false);
             }
 #pragma warning disable ERP022 // Best-effort cleanup — state reset below prevents stale handles from being accessible.
-            // ReSharper disable once EmptyGeneralCatchClause
-            catch { }
+            catch
+            {
+                // ignore
+            }
 #pragma warning restore ERP022
 
             Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
@@ -648,12 +650,14 @@ internal sealed class ConsumerRegister(
                     var content = _serializer.Serialize(message);
 #pragma warning restore VSTHRD103, CA1849
 
-                    await _storage.StoreReceivedExceptionMessageAsync(name, group, content, exceptionInfo);
+                    var stored = await _storage
+                        .StoreReceivedExceptionMessageAsync(name, group, content, exceptionInfo, hostShutdownToken)
+                        .ConfigureAwait(false);
 
                     await client.CommitAsync(sender);
 
                     var bypassCallback = _options.RetryPolicy.OnExhausted;
-                    if (bypassCallback is not null)
+                    if (stored && bypassCallback is not null)
                     {
                         // Poisoned-on-arrival messages bypass the normal Dispatcher scope,
                         // so we create a fresh async scope here instead of using the root provider.
@@ -661,6 +665,13 @@ internal sealed class ConsumerRegister(
                         // and swallows handler exceptions; pass the group/host shutdown token so a
                         // cooperative callback can short-circuit when the consumer is stopping.
                         await using var exhaustedScope = serviceScopeFactory.CreateAsyncScope();
+
+                        using var tenantScope = TenantContextScope.ChangeFromEnvelope(
+                            exhaustedScope.ServiceProvider,
+                            message,
+                            _logger
+                        );
+
                         await RetryHelper
                             .InvokeOnExhaustedAsync(
                                 bypassCallback,
@@ -681,6 +692,13 @@ internal sealed class ConsumerRegister(
                                 hostShutdownToken
                             )
                             .ConfigureAwait(false);
+                    }
+                    else if (!stored)
+                    {
+                        if (_logger.IsEnabled(LogLevel.Information))
+                        {
+                            _logger.SkippingPoisonedOnExhaustedAlreadyTerminal(message.GetId());
+                        }
                     }
 
                     _logger.ConsumerReceivedMessageAfterThreshold(

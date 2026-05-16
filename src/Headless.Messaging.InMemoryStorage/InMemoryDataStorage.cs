@@ -137,6 +137,8 @@ internal sealed class InMemoryDataStorage(
         StatusName state,
         object? dbTransaction = null,
         DateTime? nextRetryAt = null,
+        DateTime? lockedUntil = null,
+        int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -161,10 +163,17 @@ internal sealed class InMemoryDataStorage(
                 return ValueTask.FromResult(false);
             }
 
+            if (originalRetries.HasValue && current.Retries != originalRetries.Value)
+            {
+                return ValueTask.FromResult(false);
+            }
+
             var utcNextRetryAt = nextRetryAt.ToUtcOrSelf();
+            var utcLockedUntil = lockedUntil.ToUtcOrSelf();
             current.StatusName = state;
             current.ExpiresAt = message.ExpiresAt;
             current.NextRetryAt = utcNextRetryAt;
+            current.LockedUntil = utcLockedUntil;
             current.Retries = message.Retries;
             current.Content = serializer.Serialize(message.Origin);
             updated = true;
@@ -173,10 +182,18 @@ internal sealed class InMemoryDataStorage(
         return ValueTask.FromResult(updated);
     }
 
+    public ValueTask<bool> LeasePublishAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        CancellationToken cancellationToken = default
+    ) => _LeaseAsync(PublishedMessages, message, lockedUntil, cancellationToken);
+
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
         DateTime? nextRetryAt = null,
+        DateTime? lockedUntil = null,
+        int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -199,10 +216,17 @@ internal sealed class InMemoryDataStorage(
                 return ValueTask.FromResult(false);
             }
 
+            if (originalRetries.HasValue && current.Retries != originalRetries.Value)
+            {
+                return ValueTask.FromResult(false);
+            }
+
             var utcNextRetryAt = nextRetryAt.ToUtcOrSelf();
+            var utcLockedUntil = lockedUntil.ToUtcOrSelf();
             current.StatusName = state;
             current.ExpiresAt = message.ExpiresAt;
             current.NextRetryAt = utcNextRetryAt;
+            current.LockedUntil = utcLockedUntil;
             current.Retries = message.Retries;
             current.Content = serializer.Serialize(message.Origin);
             current.ExceptionInfo = message.ExceptionInfo;
@@ -211,6 +235,12 @@ internal sealed class InMemoryDataStorage(
 
         return ValueTask.FromResult(updated);
     }
+
+    public ValueTask<bool> LeaseReceiveAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        CancellationToken cancellationToken = default
+    ) => _LeaseAsync(ReceivedMessages, message, lockedUntil, cancellationToken);
 
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,
@@ -230,6 +260,7 @@ internal sealed class InMemoryDataStorage(
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+            LockedUntil = null,
             Retries = 0,
         };
 
@@ -243,6 +274,7 @@ internal sealed class InMemoryDataStorage(
             Added = message.Added,
             ExpiresAt = message.ExpiresAt,
             NextRetryAt = message.NextRetryAt,
+            LockedUntil = message.LockedUntil,
             StatusName = StatusName.Scheduled,
             Version = messagingOptions.Value.Version,
         };
@@ -250,7 +282,7 @@ internal sealed class InMemoryDataStorage(
         return ValueTask.FromResult(message);
     }
 
-    public ValueTask StoreReceivedExceptionMessageAsync(
+    public ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
         string group,
         string content,
@@ -292,17 +324,18 @@ internal sealed class InMemoryDataStorage(
                 )
                 {
                     // Terminal — leave it alone.
-                    return ValueTask.CompletedTask;
+                    return ValueTask.FromResult(false);
                 }
 
                 existing.StatusName = StatusName.Failed;
                 existing.Retries = retries;
                 existing.ExpiresAt = expiresAt;
                 existing.NextRetryAt = null;
+                existing.LockedUntil = null;
                 existing.Content = content;
                 existing.ExceptionInfo = exceptionInfo;
 
-                return ValueTask.CompletedTask;
+                return ValueTask.FromResult(true);
             }
 
             var id = longIdGenerator.Create();
@@ -317,12 +350,13 @@ internal sealed class InMemoryDataStorage(
                 Added = now,
                 ExpiresAt = expiresAt,
                 NextRetryAt = null,
+                LockedUntil = null,
                 StatusName = StatusName.Failed,
                 ExceptionInfo = exceptionInfo,
                 Version = version,
             };
 
-            return ValueTask.CompletedTask;
+            return ValueTask.FromResult(true);
         }
     }
 
@@ -343,6 +377,7 @@ internal sealed class InMemoryDataStorage(
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+            LockedUntil = null,
             Retries = 0,
         };
 
@@ -357,6 +392,7 @@ internal sealed class InMemoryDataStorage(
             Added = mdMessage.Added,
             ExpiresAt = mdMessage.ExpiresAt,
             NextRetryAt = mdMessage.NextRetryAt,
+            LockedUntil = mdMessage.LockedUntil,
             StatusName = StatusName.Scheduled,
             Version = messagingOptions.Value.Version,
         };
@@ -418,6 +454,7 @@ internal sealed class InMemoryDataStorage(
                 && x.Retries <= maxPersistedRetries
                 && x.NextRetryAt is not null
                 && x.NextRetryAt <= now
+                && (x.LockedUntil is null || x.LockedUntil <= now)
             )
             .Take(200)
             .Select(_ToSnapshot)
@@ -440,6 +477,7 @@ internal sealed class InMemoryDataStorage(
                 && x.Retries <= maxPersistedRetries
                 && x.NextRetryAt is not null
                 && x.NextRetryAt <= now
+                && (x.LockedUntil is null || x.LockedUntil <= now)
             )
             .Take(200)
             .Select(_ToSnapshot)
@@ -463,9 +501,38 @@ internal sealed class InMemoryDataStorage(
             Added = m.Added,
             ExpiresAt = m.ExpiresAt,
             NextRetryAt = m.NextRetryAt,
+            LockedUntil = m.LockedUntil,
             Retries = m.Retries,
             ExceptionInfo = m.ExceptionInfo,
         };
+
+    private static ValueTask<bool> _LeaseAsync(
+        ConcurrentDictionary<long, MemoryMessage> messages,
+        MediumMessage message,
+        DateTime lockedUntil,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!messages.TryGetValue(message.StorageId, out var current))
+        {
+            return ValueTask.FromResult(false);
+        }
+
+        lock (current)
+        {
+            if ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            var utcLockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
+            current.LockedUntil = utcLockedUntil;
+            message.LockedUntil = utcLockedUntil;
+            return ValueTask.FromResult(true);
+        }
+    }
 
     public ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
