@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -445,16 +446,6 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Is<DateTime?>(v => v == null),
                 Arg.Any<CancellationToken>()
             );
-    }
-
-    private sealed class ZeroDelayRetryBackoffStrategy : IRetryBackoffStrategy
-    {
-        public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(TimeSpan.Zero);
-    }
-
-    private sealed class FixedDelayRetryBackoffStrategy(TimeSpan delay) : IRetryBackoffStrategy
-    {
-        public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(delay);
     }
 
     private sealed class FakeHostApplicationLifetime(CancellationToken stoppingToken) : IHostApplicationLifetime

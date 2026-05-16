@@ -128,9 +128,9 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy();
 
         // when/then - transient exceptions should be retried
-        strategy.Compute(0, new TimeoutException("Timeout")).ShouldRetry.Should().BeTrue();
-        strategy.Compute(0, new IOException("Network error")).ShouldRetry.Should().BeTrue();
-        strategy.Compute(0, new ApplicationException("Generic error")).ShouldRetry.Should().BeTrue();
+        strategy.Compute(0, new TimeoutException("Timeout")).Outcome.Should().Be(RetryDecision.Kind.Continue);
+        strategy.Compute(0, new IOException("Network error")).Outcome.Should().Be(RetryDecision.Kind.Continue);
+        strategy.Compute(0, new ApplicationException("Generic error")).Outcome.Should().Be(RetryDecision.Kind.Continue);
     }
 
     [Fact]

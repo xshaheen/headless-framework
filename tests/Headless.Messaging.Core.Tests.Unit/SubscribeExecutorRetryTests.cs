@@ -11,6 +11,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -397,27 +398,6 @@ public sealed class SubscribeExecutorRetryTests : TestBase
 
         // then
         callbackInvoked.Should().BeFalse("OnExhausted must be skipped if storage update returned false");
-    }
-
-    private sealed class ZeroDelayRetryBackoffStrategy : IRetryBackoffStrategy
-    {
-        public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(TimeSpan.Zero);
-    }
-
-    private sealed class FixedDelayRetryBackoffStrategy(TimeSpan delay) : IRetryBackoffStrategy
-    {
-        public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(delay);
-    }
-
-    private sealed class PermanentForArgumentExceptionStrategy : IRetryBackoffStrategy
-    {
-        // SubscribeExecutor wraps handler exceptions in SubscriberExecutionFailedException; unwrap
-        // to reach the original exception type before classifying permanence.
-        public RetryDecision Compute(int retryCount, Exception exception)
-        {
-            var inner = exception is SubscriberExecutionFailedException { InnerException: { } i } ? i : exception;
-            return inner is ArgumentException ? RetryDecision.Stop : RetryDecision.Continue(TimeSpan.Zero);
-        }
     }
 
     private sealed class ScopedMarker;
