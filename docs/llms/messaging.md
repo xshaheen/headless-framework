@@ -399,24 +399,24 @@ dotnet add package Headless.Messaging.Core
 
 ```csharp
 // Register messaging with storage and transport
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    // Core configuration
-    options.SucceedMessageExpiredAfter = 24 * 3600;
-    options.RetryPolicy.MaxPersistedRetries = 50;
+    // Core configuration (value-typed options live under setup.Options)
+    setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
+    setup.Options.RetryPolicy.MaxPersistedRetries = 50;
 
     // Add storage (required)
-    options.UsePostgreSql("connection_string");
+    setup.UsePostgreSql("connection_string");
 
     // Add transport (required)
-    options.UseRabbitMQ(rmq =>
+    setup.UseRabbitMQ(rmq =>
     {
         rmq.HostName = "localhost";
         rmq.Port = 5672;
     });
 
     // Register consumers
-    options.SubscribeFromAssemblyContaining<Program>();
+    setup.SubscribeFromAssemblyContaining<Program>();
 });
 
 // Publish messages with outbox (reliable delivery)
@@ -526,12 +526,12 @@ Consumers can modify callback behavior during handling via `context.Headers`:
 Register in `Program.cs`:
 
 ```csharp
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    options.RetryPolicy.MaxPersistedRetries = 50;
-    options.SucceedMessageExpiredAfter = 24 * 3600;
-    options.ConsumerThreadCount = 1;
-    options.DefaultGroupName = "myapp";
+    setup.Options.RetryPolicy.MaxPersistedRetries = 50;
+    setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
+    setup.Options.ConsumerThreadCount = 1;
+    setup.Options.DefaultGroupName = "myapp";
 });
 ```
 
@@ -747,24 +747,24 @@ Open duration escalates exponentially on repeated trips and resets after consecu
 ### Global Configuration
 
 ```csharp
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
     // Global circuit breaker (applies to all consumer groups)
-    options.CircuitBreaker.FailureThreshold = 5;          // consecutive transient failures to trip
-    options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);   // initial open duration
-    options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
+    setup.Options.CircuitBreaker.FailureThreshold = 5;          // consecutive transient failures to trip
+    setup.Options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);   // initial open duration
+    setup.Options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
 
     // Adaptive retry backpressure
-    options.RetryProcessor.AdaptivePolling = true;
-    options.RetryProcessor.MaxPollingInterval = TimeSpan.FromMinutes(15);
-    options.RetryProcessor.CircuitOpenRateThreshold = 0.8; // back off above 80% circuit-open rate
+    setup.Options.RetryProcessor.AdaptivePolling = true;
+    setup.Options.RetryProcessor.MaxPollingInterval = TimeSpan.FromMinutes(15);
+    setup.Options.RetryProcessor.CircuitOpenRateThreshold = 0.8; // back off above 80% circuit-open rate
 });
 ```
 
 ### Per-Consumer Override
 
 ```csharp
-options.Subscribe<PaymentHandler>()
+setup.Subscribe<PaymentHandler>()
     .Topic("payments.process")
     .WithCircuitBreaker(cb =>
     {
@@ -773,14 +773,14 @@ options.Subscribe<PaymentHandler>()
     });
 
 // Disable circuit breaker for a best-effort consumer
-options.Subscribe<MetricsHandler>()
+setup.Subscribe<MetricsHandler>()
     .WithCircuitBreaker(cb => cb.Enabled = false);
 ```
 
 ### Custom Exception Predicate
 
 ```csharp
-options.CircuitBreaker.IsTransientException = ex =>
+setup.Options.CircuitBreaker.IsTransientException = ex =>
     CircuitBreakerDefaults.IsTransient(ex) || ex is MyCustomTransientException;
 ```
 
@@ -1260,8 +1260,8 @@ await publisher.PublishAsync(
 ### Consumer Configuration
 
 ```csharp
-options.ConsumerThreadCount = 1; // Recommended for strict ordering
-options.EnableSubscriberParallelExecute = false;
+setup.Options.ConsumerThreadCount = 1; // Recommended for strict ordering
+setup.Options.EnableSubscriberParallelExecute = false;
 ```
 
 ### Ordering Guarantees
@@ -1371,8 +1371,8 @@ kafka.MainConfig["acks"] = "all";
 Set `ConsumerThreadCount = 1` for sequential processing:
 
 ```csharp
-options.ConsumerThreadCount = 1; // Sequential processing maintains partition order
-options.EnableSubscriberParallelExecute = false; // Disable parallel execution
+setup.Options.ConsumerThreadCount = 1; // Sequential processing maintains partition order
+setup.Options.EnableSubscriberParallelExecute = false; // Disable parallel execution
 ```
 
 ### Ordering Guarantees
@@ -1618,8 +1618,8 @@ Messages are delivered in FIFO order to a single consumer on a single channel:
 
 ```csharp
 // Configure for sequential processing
-options.ConsumerThreadCount = 1; // Single consumer thread
-options.EnableSubscriberParallelExecute = false; // No parallel execution
+setup.Options.ConsumerThreadCount = 1; // Single consumer thread
+setup.Options.EnableSubscriberParallelExecute = false; // No parallel execution
 ```
 
 ### Ordering Guarantees
