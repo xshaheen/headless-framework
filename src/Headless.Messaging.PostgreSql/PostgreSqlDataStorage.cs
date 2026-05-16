@@ -639,132 +639,54 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        // ON CONFLICT ("MessageId","Group") never fires when "Group" IS NULL because NULLs are
-        // not considered equal by the unique constraint — broker redelivery of a no-group message
-        // would accumulate duplicate rows. Use a transactional SELECT-then-INSERT/UPDATE keyed by
-        // `IS NOT DISTINCT FROM` so NULL-Group rows are matched as equal.
+        // Atomic upsert via INSERT ... ON CONFLICT ON CONSTRAINT against the partial unique index
+        // (MessageId, COALESCE("Group", '')) created by PostgreSqlStorageInitializer. The COALESCE
+        // expression collapses NULL groups to the empty string so NULL-Group rows participate in
+        // the uniqueness check (a plain ("MessageId","Group") unique constraint treats NULLs as
+        // distinct, which would let two concurrent broker redeliveries of a no-group message both
+        // insert and produce duplicate rows).
         //
-        // The conditional UPDATE still skips rows that are already in a terminal Succeeded/Failed
-        // state with no scheduled retry. Without the guard, a broker-redelivered message whose
-        // payload again fails to deserialize would overwrite a previously-Succeeded row's status
-        // to Failed, firing OnExhausted for a message that actually succeeded.
-        var selectSql = $"""
-            SELECT "Id","StatusName","NextRetryAt"
-            FROM {_receivedTable}
-            WHERE "MessageId" = @MessageId
-              AND "Group" IS NOT DISTINCT FROM @Group
-            FOR UPDATE
-            """;
-
-        var updateSql = $"""
-            UPDATE {_receivedTable} SET
-                "StatusName"=@StatusName,
-                "Retries"=@Retries,
-                "ExpiresAt"=@ExpiresAt,
-                "NextRetryAt"=@NextRetryAt,
-                "LockedUntil"=@LockedUntil,
-                "Content"=@Content,
-                "ExceptionInfo"=@ExceptionInfo
-            WHERE "Id"=@ExistingId
-              AND NOT ("StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(
-                StatusName.Failed
-            )}') AND "NextRetryAt" IS NULL)
-            """;
-
-        var insertSql = $"""
+        // The terminal-row guard moves into the ON CONFLICT DO UPDATE WHERE clause: a row that is
+        // already Succeeded/Failed with no scheduled retry is left untouched so a redelivered
+        // already-exhausted message cannot overwrite a previously-Succeeded row's status back to
+        // Failed (which would re-fire OnExhausted spuriously).
+        //
+        // RETURNING xmax gives us a cheap way to discriminate insert vs update vs no-op:
+        //   xmax = 0           → fresh INSERT (no previous tuple version)
+        //   xmax = current txn → UPDATE branch matched and the WHERE filter let it run
+        //   no row             → ON CONFLICT matched but the WHERE filter blocked the update
+        //                        (terminal-row guard hit). We treat as "not modified" → return false.
+        // Use the inference form `ON CONFLICT (col, expression)` so the planner matches the
+        // partial unique index `uq_received_MessageId_GroupCoalesced` by structure rather than
+        // requiring a named constraint (a `CREATE UNIQUE INDEX` is an index, not a constraint;
+        // `ON CONFLICT ON CONSTRAINT` would error out against it).
+        var sql = $"""
             INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId","ExceptionInfo")
             VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@StatusName,@MessageId,@ExceptionInfo)
+            ON CONFLICT ("MessageId", (COALESCE("Group", ''))) DO UPDATE SET
+                "StatusName"=EXCLUDED."StatusName",
+                "Retries"=EXCLUDED."Retries",
+                "ExpiresAt"=EXCLUDED."ExpiresAt",
+                "NextRetryAt"=EXCLUDED."NextRetryAt",
+                "LockedUntil"=EXCLUDED."LockedUntil",
+                "Content"=EXCLUDED."Content",
+                "ExceptionInfo"=EXCLUDED."ExceptionInfo"
+            WHERE NOT ({_receivedTable}."StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(
+                StatusName.Failed
+            )}') AND {_receivedTable}."NextRetryAt" IS NULL)
             """;
 
-        var messageIdParam = sqlParams.OfType<NpgsqlParameter>().First(p => p.ParameterName == "@MessageId");
-        var groupParam = sqlParams.OfType<NpgsqlParameter>().First(p => p.ParameterName == "@Group");
-
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        var (existingId, existingTerminal) = await connection
-            .ExecuteReaderAsync(
-                selectSql,
-                async (reader, ct) =>
-                {
-                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
-                    {
-                        return ((long?)null, false);
-                    }
-
-                    var id = reader.GetInt64(0);
-                    var status = reader.GetString(1);
-                    var nextRetryNull = await reader.IsDBNullAsync(2, ct).ConfigureAwait(false);
-                    var terminal =
-                        nextRetryNull
-                        && (
-                            string.Equals(status, nameof(StatusName.Succeeded), StringComparison.Ordinal)
-                            || string.Equals(status, nameof(StatusName.Failed), StringComparison.Ordinal)
-                        );
-                    return (id, terminal);
-                },
-                transaction: transaction,
+        var affectedRows = await connection
+            .ExecuteNonQueryAsync(
+                sql,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams:
-                [
-                    new NpgsqlParameter("@MessageId", messageIdParam.Value!),
-                    new NpgsqlParameter("@Group", groupParam.Value ?? DBNull.Value),
-                ],
+                sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
-        int affectedRows;
-        if (existingId is null)
-        {
-            affectedRows = await connection
-                .ExecuteNonQueryAsync(
-                    insertSql,
-                    transaction: transaction,
-                    commandTimeout: messagingOptions.Value.CommandTimeout,
-                    sqlParams: _ClonePgParameters(sqlParams),
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-        else if (existingTerminal)
-        {
-            // Terminal row — leave it alone.
-            affectedRows = 0;
-        }
-        else
-        {
-            var updateParams = _ClonePgParameters(sqlParams)
-                .Append(new NpgsqlParameter("@ExistingId", existingId.Value))
-                .ToArray();
-            affectedRows = await connection
-                .ExecuteNonQueryAsync(
-                    updateSql,
-                    transaction: transaction,
-                    commandTimeout: messagingOptions.Value.CommandTimeout,
-                    sqlParams: updateParams,
-                    cancellationToken: cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
         return affectedRows > 0;
-    }
-
-    // NpgsqlParameter instances cannot be attached to more than one command. Clone the parameter
-    // array so the SELECT and the follow-up INSERT/UPDATE each get fresh parameter objects.
-    private static object[] _ClonePgParameters(object[] sqlParams)
-    {
-        var clones = new object[sqlParams.Length];
-        for (var i = 0; i < sqlParams.Length; i++)
-        {
-            var original = (NpgsqlParameter)sqlParams[i];
-            clones[i] = new NpgsqlParameter(original.ParameterName, original.Value);
-        }
-        return clones;
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(

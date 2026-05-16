@@ -28,6 +28,18 @@ public abstract class DataStorageTestsBase : TestBase
     protected virtual DataStorageCapabilities Capabilities => DataStorageCapabilities.Default;
 
     /// <summary>
+    /// Counts persisted received-message rows matching the supplied <paramref name="messageId"/>
+    /// (and optionally <paramref name="group"/>). Provider-specific because the row visibility
+    /// after a concurrent upsert storm needs a direct count query — the public monitoring API
+    /// does not filter by MessageId.
+    /// </summary>
+    protected abstract Task<int> CountReceivedMessagesByIdentityAsync(
+        string messageId,
+        string? group,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// Thread-safe counter for generating unique logical message IDs.
     /// </summary>
     private static long _MessageIdCounter;
@@ -804,6 +816,15 @@ public abstract class DataStorageTestsBase : TestBase
         // creates a Failed/NULL row, so subsequent storm writes hit the terminal guard and
         // return false. We assert the row-count invariant and that exception info matches one
         // of the contributors — see the comment in the InMemory provider on upsert semantics).
+        // R10 — pre-warm the thread pool so a CI box with a low default min-thread count does not
+        // starve the workers and produce a false-failure "lock starvation suspected" within the
+        // 30s wall-clock budget. Without this, 64 Task.Run callbacks can sit in the global queue
+        // for seconds before the threadpool grows.
+        ThreadPool.SetMinThreads(
+            Math.Max(64, Environment.ProcessorCount * 2),
+            Math.Max(64, Environment.ProcessorCount * 2)
+        );
+
         var storage = GetStorage();
         var serializer = GetSerializer();
         var message = CreateMessage($"storm-{Guid.NewGuid():N}");
@@ -861,6 +882,183 @@ public abstract class DataStorageTestsBase : TestBase
             AbortToken
         );
         followUp.Should().BeFalse("the row is terminal — no further upserts should succeed");
+    }
+
+    public virtual async Task should_handle_concurrent_first_insert_storm_with_null_and_non_null_group()
+    {
+        // R1 regression — guards against the F8-redux duplicate-row bug on the
+        // StoreReceivedExceptionMessageAsync path. Two parallel storms exercise both halves of the
+        // upsert identity:
+        //   - NULL Group: a plain ("MessageId","Group") unique index treats NULLs as distinct, so
+        //     the previous SELECT-FOR-UPDATE-then-INSERT pattern let two concurrent first-inserts
+        //     both fall through and produce duplicate rows. PostgreSQL must rely on a NULL-safe
+        //     conflict target (COALESCE("Group", '')); SqlServer's MERGE already handles this
+        //     case in its ON clause.
+        //   - non-NULL Group: the standard unique-constraint path. A regression would either
+        //     produce duplicates (no constraint at all) or surface a raw 23505 sqlstate /
+        //     2627 unique-violation to the caller. We assert exactly one row converges and no
+        //     exception escapes.
+        // Pre-warm the thread pool so a CI box with low default min-threads does not starve the
+        // workers and produce a false "lock starvation" timeout.
+        ThreadPool.SetMinThreads(
+            Math.Max(64, Environment.ProcessorCount * 2),
+            Math.Max(64, Environment.ProcessorCount * 2)
+        );
+
+        var storage = GetStorage();
+        var serializer = GetSerializer();
+        const int concurrency = 32;
+
+        await _RunFirstInsertStormAsync(group: null);
+        await _RunFirstInsertStormAsync(group: "g1");
+
+        return;
+
+        async Task _RunFirstInsertStormAsync(string? group)
+        {
+            var messageId = $"first-insert-storm-{group ?? "null"}-{Guid.NewGuid():N}";
+            var message = CreateMessage(messageId);
+            var content = serializer.Serialize(message);
+
+            using var startGate = new ManualResetEventSlim(initialState: false);
+            var results = new ConcurrentBag<bool>();
+            var exceptions = new ConcurrentBag<Exception>();
+
+            var workers = Enumerable
+                .Range(0, concurrency)
+                .Select(index =>
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            startGate.Wait(AbortToken);
+                            // group! tolerates the InMemory provider's non-nullable string group
+                            // parameter while still exercising the SQL providers' COALESCE/MERGE
+                            // NULL-equivalent upsert key on the database side.
+                            var ok = await storage.StoreReceivedExceptionMessageAsync(
+                                "first-insert-storm",
+                                group!,
+                                content,
+                                $"writer-{index}",
+                                AbortToken
+                            );
+                            results.Add(ok);
+                        }
+                        catch (Exception ex)
+                        {
+                            exceptions.Add(ex);
+                        }
+                    })
+                )
+                .ToArray();
+
+            startGate.Set();
+            var stormCompletion = Task.WhenAll(workers);
+            var timeout = Task.Delay(TimeSpan.FromSeconds(30), AbortToken);
+            var winner = await Task.WhenAny(stormCompletion, timeout);
+            winner
+                .Should()
+                .BeSameAs(
+                    stormCompletion,
+                    $"storm with group={group ?? "<null>"} must finish well under 30s — lock starvation or deadlock suspected"
+                );
+
+            exceptions
+                .Should()
+                .BeEmpty(
+                    $"no concurrent insert should surface a unique-violation or sqlstate 23505 to the caller (group={group ?? "<null>"})"
+                );
+            results.Count(x => x).Should().Be(1, $"exactly one writer must insert the row (group={group ?? "<null>"})");
+            results
+                .Count(x => !x)
+                .Should()
+                .Be(
+                    concurrency - 1,
+                    $"all losing writers must observe the existing terminal row (group={group ?? "<null>"})"
+                );
+
+            var rowCount = await CountReceivedMessagesByIdentityAsync(messageId, group, AbortToken);
+            rowCount
+                .Should()
+                .Be(1, $"the concurrent storm must converge to exactly one persisted row (group={group ?? "<null>"})");
+        }
+    }
+
+    public virtual async Task should_handle_concurrent_store_received_message_with_same_identity()
+    {
+        // R3 regression — StoreReceivedMessageAsync (the non-exception path) must also serialize
+        // through the same identity check that StoreReceivedExceptionMessageAsync uses. Before R3
+        // the InMemory provider's non-exception path performed an unconditional insert + index
+        // overwrite, so two concurrent calls with the same (Version, MessageId, Group) produced
+        // duplicate rows that both showed up in GetReceivedMessagesOfNeedRetryAsync — running the
+        // consume executor twice. The SQL providers enforce uniqueness via the DB constraint;
+        // this test exercises the InMemory parity path as well as the PG/SqlServer DB paths.
+        ThreadPool.SetMinThreads(
+            Math.Max(64, Environment.ProcessorCount * 2),
+            Math.Max(64, Environment.ProcessorCount * 2)
+        );
+
+        var storage = GetStorage();
+        const int concurrency = 32;
+
+        await _RunStoreReceivedStormAsync(group: null);
+        await _RunStoreReceivedStormAsync(group: "consume-group");
+
+        return;
+
+        async Task _RunStoreReceivedStormAsync(string? group)
+        {
+            var messageId = $"store-received-storm-{group ?? "null"}-{Guid.NewGuid():N}";
+            var sharedMessage = CreateMessage(messageId);
+
+            using var startGate = new ManualResetEventSlim(initialState: false);
+            var exceptions = new ConcurrentBag<Exception>();
+
+            var workers = Enumerable
+                .Range(0, concurrency)
+                .Select(_ =>
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            startGate.Wait(AbortToken);
+                            await storage.StoreReceivedMessageAsync(
+                                "store-received-storm",
+                                group!,
+                                sharedMessage,
+                                AbortToken
+                            );
+                        }
+                        catch (Exception ex)
+                        {
+                            exceptions.Add(ex);
+                        }
+                    })
+                )
+                .ToArray();
+
+            startGate.Set();
+            var stormCompletion = Task.WhenAll(workers);
+            var timeout = Task.Delay(TimeSpan.FromSeconds(30), AbortToken);
+            var winner = await Task.WhenAny(stormCompletion, timeout);
+            winner
+                .Should()
+                .BeSameAs(
+                    stormCompletion,
+                    $"storm with group={group ?? "<null>"} must finish well under 30s — lock starvation or deadlock suspected"
+                );
+
+            exceptions
+                .Should()
+                .BeEmpty(
+                    $"no concurrent insert should surface a unique-violation or sqlstate 23505 to the caller (group={group ?? "<null>"})"
+                );
+
+            var rowCount = await CountReceivedMessagesByIdentityAsync(messageId, group, AbortToken);
+            rowCount
+                .Should()
+                .Be(1, $"the concurrent storm must converge to exactly one persisted row (group={group ?? "<null>"})");
+        }
     }
 
     public virtual async Task should_pickup_message_at_max_persisted_retries_and_exclude_above()

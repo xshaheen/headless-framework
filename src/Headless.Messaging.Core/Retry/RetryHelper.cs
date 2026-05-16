@@ -102,7 +102,7 @@ internal static class RetryHelper
         // up to MaxInlineRetries on each pickup; the persisted retry processor will pick the row
         // up at most MaxPersistedRetries times after the initial dispatch. The two budgets compose
         // multiplicatively.
-        if (!policy.HasInlineBudgetRemaining(inlineRetries) && message.Retries >= policy.MaxPersistedRetries)
+        if (!policy.HasMoreInlineAttempts(inlineRetries) && message.Retries >= policy.MaxPersistedRetries)
         {
             return RetryDecision.Exhausted;
         }
@@ -236,7 +236,7 @@ internal static class RetryHelper
     )
     {
         var isInlineRetryInFlight =
-            decision.Outcome == RetryDecision.Kind.Continue && policy.HasInlineBudgetRemaining(inlineRetries);
+            decision.Outcome == RetryDecision.Kind.Continue && policy.HasMoreInlineAttempts(inlineRetries);
 
         var nextStatus = isInlineRetryInFlight ? StatusName.Scheduled : StatusName.Failed;
 

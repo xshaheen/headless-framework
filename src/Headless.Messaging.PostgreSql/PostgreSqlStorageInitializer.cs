@@ -97,6 +97,13 @@ public sealed class PostgreSqlStorageInitializer(
             );
 
             CREATE UNIQUE INDEX IF NOT EXISTS "idx_received_MessageId_Group" ON {GetReceivedTableName()} ("MessageId","Group");
+            -- NULL-safe upsert key. PostgreSQL treats NULL values as distinct in a multi-column
+            -- unique index, so the plain ("MessageId","Group") index above does NOT prevent
+            -- duplicate inserts when "Group" IS NULL (broker redelivery of a no-group message
+            -- would accumulate rows). COALESCE("Group", '') collapses NULL into a sentinel so the
+            -- INSERT ... ON CONFLICT path in PostgreSqlDataStorage._StoreReceivedMessage can name
+            -- this index as its conflict target and converge concurrent inserts to a single row.
+            CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_MessageId_GroupCoalesced" ON {GetReceivedTableName()} ("MessageId", (COALESCE("Group", '')));
             CREATE INDEX IF NOT EXISTS "idx_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");
             -- Partial index for retry pickup. Keyed on (Version, NextRetryAt) so Version is a seek
@@ -105,7 +112,32 @@ public sealed class PostgreSqlStorageInitializer(
             -- can be evaluated from the index without a per-candidate heap fetch. Index-only scan
             -- requires healthy autovacuum so the visibility map covers the relation; under heavy
             -- write load the planner may fall back to heap fetches bounded by the retry batch size.
-            DROP INDEX IF EXISTS "{schema}"."idx_received_Version_NextRetryAt" CASCADE;
+            --
+            -- Conditional recreate (R4): mirror SqlServerStorageInitializer's gated DROP/CREATE so
+            -- the AccessExclusiveLock is only taken when the existing index is missing the
+            -- LockedUntil column from its INCLUDE list. Unconditional DROP/CREATE on every startup
+            -- would lock the hot retry-pickup index on every boot.
+            DO $do$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM pg_indexes
+                    WHERE schemaname = '{schema}' AND indexname = 'idx_received_Version_NextRetryAt'
+                ) AND NOT EXISTS (
+                    -- Check ALL columns the index covers (key + INCLUDE), not just key columns.
+                    -- Querying pg_attribute against the index relation's OID (c.oid) returns every
+                    -- column physically stored in the index, which is what we need to detect
+                    -- LockedUntil in the INCLUDE list.
+                    SELECT 1 FROM pg_index i
+                    JOIN pg_class c ON c.oid = i.indexrelid
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    JOIN pg_attribute a ON a.attrelid = c.oid
+                    WHERE n.nspname = '{schema}'
+                      AND c.relname = 'idx_received_Version_NextRetryAt'
+                      AND a.attname = 'LockedUntil'
+                ) THEN
+                    EXECUTE 'DROP INDEX IF EXISTS "{schema}"."idx_received_Version_NextRetryAt" CASCADE';
+                END IF;
+            END $do$;
             CREATE INDEX IF NOT EXISTS "idx_received_Version_NextRetryAt" ON {GetReceivedTableName()} ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
             CREATE INDEX IF NOT EXISTS "idx_received_delayed" ON {GetReceivedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
 
@@ -131,7 +163,27 @@ public sealed class PostgreSqlStorageInitializer(
             -- can be evaluated from the index without a per-candidate heap fetch. Index-only scan
             -- requires healthy autovacuum so the visibility map covers the relation; under heavy
             -- write load the planner may fall back to heap fetches bounded by the retry batch size.
-            DROP INDEX IF EXISTS "{schema}"."idx_published_Version_NextRetryAt" CASCADE;
+            --
+            -- Conditional recreate (R4): see the matching comment on the received-table block above.
+            DO $do$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM pg_indexes
+                    WHERE schemaname = '{schema}' AND indexname = 'idx_published_Version_NextRetryAt'
+                ) AND NOT EXISTS (
+                    -- See the matching pg_attribute join on the received-index block above for why
+                    -- we query against c.oid (the index relation) rather than against indrelid+indkey.
+                    SELECT 1 FROM pg_index i
+                    JOIN pg_class c ON c.oid = i.indexrelid
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    JOIN pg_attribute a ON a.attrelid = c.oid
+                    WHERE n.nspname = '{schema}'
+                      AND c.relname = 'idx_published_Version_NextRetryAt'
+                      AND a.attname = 'LockedUntil'
+                ) THEN
+                    EXECUTE 'DROP INDEX IF EXISTS "{schema}"."idx_published_Version_NextRetryAt" CASCADE';
+                END IF;
+            END $do$;
             CREATE INDEX IF NOT EXISTS "idx_published_Version_NextRetryAt" ON {GetPublishedTableName()} ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
             """;
