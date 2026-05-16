@@ -430,11 +430,22 @@ internal sealed class Dispatcher : IDispatcher
 
     private async Task _SendMessageDirectlyAsync(MediumMessage message)
     {
-        await using var dispatchScope = _scopeFactory.CreateAsyncScope();
-        var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
-        if (!result.Succeeded)
+        try
         {
-            _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
+            await using var dispatchScope = _scopeFactory.CreateAsyncScope();
+            var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
+            if (!result.Succeeded)
+            {
+                _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            // Match _SendMessageAsync (parallel sibling): exceptions from the scope factory, sender
+            // construction, or transport itself must not propagate to the channel-reader loop. The
+            // outer EnqueueToPublish catches OCEs only — non-OCE exceptions previously escaped
+            // through this method and unwound to the caller.
+            _logger.TransportSendError(ex, message.StorageId);
         }
     }
 

@@ -254,26 +254,66 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var id = longIdGenerator.Create();
 
+        var origin =
+            serializer.Deserialize(content)
+            ?? throw new InvalidOperationException("Failed to deserialize received exception message content.");
+
+        var messageId = origin.GetId();
+        var version = messagingOptions.Value.Version;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var expiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
+        var retries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
+
+        // Upsert on (Version, MessageId, Group) — mirrors the SQL providers' MERGE / ON CONFLICT
+        // semantics so broker redelivery doesn't accumulate duplicate rows. The terminal-row guard
+        // also matches: a Succeeded/Failed entry with no scheduled retry is left alone so a
+        // previously-succeeded row isn't overwritten back to Failed by a redelivery-then-deserialize-fail.
+        var existing = ReceivedMessages.Values.FirstOrDefault(m =>
+            string.Equals(m.Version, version, StringComparison.Ordinal)
+            && string.Equals(m.Origin.GetId(), messageId, StringComparison.Ordinal)
+            && string.Equals(m.Group, group, StringComparison.Ordinal)
+        );
+
+        if (existing is not null)
+        {
+            lock (existing)
+            {
+                if (
+                    (existing.StatusName is StatusName.Succeeded || existing.StatusName is StatusName.Failed)
+                    && existing.NextRetryAt is null
+                )
+                {
+                    // Terminal — leave it alone.
+                    return ValueTask.CompletedTask;
+                }
+
+                existing.StatusName = StatusName.Failed;
+                existing.Retries = retries;
+                existing.ExpiresAt = expiresAt;
+                existing.NextRetryAt = null;
+                existing.Content = content;
+                existing.ExceptionInfo = exceptionInfo;
+            }
+
+            return ValueTask.CompletedTask;
+        }
+
+        var id = longIdGenerator.Create();
         ReceivedMessages[id] = new MemoryMessage
         {
             StorageId = id,
             Group = group,
-            Origin =
-                serializer.Deserialize(content)
-                ?? throw new InvalidOperationException("Failed to deserialize received exception message content."),
+            Origin = origin,
             Name = name,
             Content = content,
-            Retries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries,
-            Added = timeProvider.GetUtcNow().UtcDateTime,
-            ExpiresAt = timeProvider
-                .GetUtcNow()
-                .UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter),
+            Retries = retries,
+            Added = now,
+            ExpiresAt = expiresAt,
             NextRetryAt = null,
             StatusName = StatusName.Failed,
             ExceptionInfo = exceptionInfo,
-            Version = messagingOptions.Value.Version,
+            Version = version,
         };
 
         return ValueTask.CompletedTask;
@@ -360,6 +400,11 @@ internal sealed class InMemoryDataStorage(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         var version = messagingOptions.Value.Version;
+        // Return a snapshot (plain MediumMessage), not the live MemoryMessage reference, so that
+        // pre-write caller mutations (ExceptionInfo, ExpiresAt, AddOrUpdateException on Origin) do
+        // NOT leak into the dictionary entry when ChangeReceiveStateAsync's terminal guard rejects
+        // the conditional UPDATE. The SQL providers naturally produce a snapshot because every column
+        // comes back through deserialization; InMemory must do this explicitly.
         IEnumerable<MediumMessage> result = PublishedMessages
             .Values.Where(x =>
                 string.Equals(x.Version, version, StringComparison.Ordinal)
@@ -368,7 +413,7 @@ internal sealed class InMemoryDataStorage(
                 && x.NextRetryAt <= now
             )
             .Take(200)
-            .Cast<MediumMessage>()
+            .Select(_ToSnapshot)
             .ToList();
 
         return ValueTask.FromResult(result);
@@ -390,11 +435,30 @@ internal sealed class InMemoryDataStorage(
                 && x.NextRetryAt <= now
             )
             .Take(200)
-            .Select(x => (MediumMessage)x)
+            .Select(_ToSnapshot)
             .ToList();
 
         return ValueTask.FromResult(result);
     }
+
+    private static MediumMessage _ToSnapshot(MemoryMessage m) =>
+        new()
+        {
+            StorageId = m.StorageId,
+            // Clone the Origin's Headers dictionary so caller mutations (e.g., AddOrUpdateException
+            // before a write that the terminal-row guard then rejects) cannot leak back into the
+            // stored Origin. Value is shared by reference — payload semantics treat it as immutable.
+            Origin = new Message(
+                new Dictionary<string, string?>(m.Origin.Headers, StringComparer.Ordinal),
+                m.Origin.Value
+            ),
+            Content = m.Content,
+            Added = m.Added,
+            ExpiresAt = m.ExpiresAt,
+            NextRetryAt = m.NextRetryAt,
+            Retries = m.Retries,
+            ExceptionInfo = m.ExceptionInfo,
+        };
 
     public ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
