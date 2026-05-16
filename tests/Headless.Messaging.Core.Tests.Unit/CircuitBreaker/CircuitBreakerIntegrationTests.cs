@@ -91,11 +91,11 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     private static void _SetupReceivedMessages(IDataStorage dataStorage, params MediumMessage[] messages)
     {
         dataStorage
-            .GetReceivedMessagesOfNeedRetry(Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>(messages));
 
         dataStorage
-            .GetPublishedMessagesOfNeedRetry(Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
     }
 

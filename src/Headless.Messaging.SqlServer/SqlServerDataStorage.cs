@@ -352,14 +352,14 @@ public sealed class SqlServerDataStorage(
             .ConfigureAwait(false);
     }
 
-    public ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
+    public ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
     {
         return _GetMessagesOfNeedRetryAsync(_publishedTable, cancellationToken);
     }
 
-    public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(
+    public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
     {

@@ -257,7 +257,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 - **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
-- **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
+- **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`, `OnExhaustedTimeout`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
 
 ---
 
@@ -1946,7 +1946,7 @@ Integration-testing a messaging pipeline typically requires a running broker and
 ## Key Features
 
 - **Zero Infrastructure**: No broker, no Docker -- runs entirely in-process
-- **Awaitable Assertions**: `WaitForPublished`, `WaitForConsumed`, `WaitForFaulted` block until observed or timed out
+- **Awaitable Assertions**: `WaitForPublished`, `WaitForConsumed`, `WaitForFaulted`, `WaitForExhausted` block until observed or timed out
 - **Full Pipeline Coverage**: Decorates the real transport and consume pipeline, so middleware, serialization, and consumer logic all execute
 - **Host Integration**: `AddMessagingTestHarness()` decorates an existing DI container for use with `WebApplicationFactory`, `IHost`, or `WebApplication`
 - **Isolated Per Test**: Each `MessagingTestHarness` instance owns its own observation store
@@ -2022,13 +2022,14 @@ var harness = app.Services.GetRequiredService<MessagingTestHarness>();
 
 ## Observable Collections
 
-The harness records every message in three snapshot collections:
+The harness records every message in four snapshot collections:
 
 - `harness.Published` -- all messages sent to the transport
 - `harness.Consumed` -- all messages consumed successfully
 - `harness.Faulted` -- all messages whose consumer threw an unhandled exception
+- `harness.Exhausted` -- all messages whose retry budget was exhausted (`RetryDecision.Exhausted`). Recorded **before** the user-supplied `RetryPolicy.OnExhausted` callback runs, so a hanging or throwing callback cannot lose the observation.
 
-Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `Topic`, `Timestamp`, and (for faulted) `Exception`.
+Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `Topic`, `Timestamp`, and (for faulted/exhausted) `Exception`.
 
 ## WaitFor\* Methods
 
@@ -2043,9 +2044,10 @@ var recorded = await harness.WaitForConsumed<OrderCreated>(
     predicate: m => m.OrderId == "ORD-1",
     timeout: TimeSpan.FromSeconds(5));
 
-// Same API for published and faulted
+// Same API for published, faulted, and exhausted
 await harness.WaitForPublished<OrderCreated>(TimeSpan.FromSeconds(5));
 await harness.WaitForFaulted<BadMessage>(TimeSpan.FromSeconds(5));
+await harness.WaitForExhausted<OrderCreated>(TimeSpan.FromSeconds(5));
 ```
 
 ## TestConsumer\<T\>

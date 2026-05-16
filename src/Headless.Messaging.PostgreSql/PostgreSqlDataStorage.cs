@@ -362,14 +362,14 @@ public sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
     }
 
-    public async ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
+    public async ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
     {
         return await _GetMessagesOfNeedRetryAsync(_publishedTable, cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(
+    public async ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
     {

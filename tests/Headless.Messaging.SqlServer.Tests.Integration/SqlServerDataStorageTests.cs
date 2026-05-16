@@ -405,7 +405,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         _timeProvider.Advance(TimeSpan.FromMinutes(5));
 
         // when
-        var retryMessages = await _storage.GetPublishedMessagesOfNeedRetry(AbortToken);
+        var retryMessages = await _storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
 
         // then
         retryMessages.Should().NotBeNull();
@@ -432,7 +432,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         _timeProvider.Advance(TimeSpan.FromMinutes(5));
 
         // when
-        var retryMessages = await _storage.GetReceivedMessagesOfNeedRetry(AbortToken);
+        var retryMessages = await _storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
 
         // then
         retryMessages.Should().NotBeNull();

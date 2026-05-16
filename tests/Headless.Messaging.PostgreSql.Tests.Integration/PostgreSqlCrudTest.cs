@@ -258,7 +258,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         );
 
         // when
-        var messages = await _storage.GetPublishedMessagesOfNeedRetry(AbortToken);
+        var messages = await _storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
 
         // then
         messages.Should().NotBeEmpty();
@@ -292,7 +292,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         );
 
         // when
-        var messages = await _storage.GetReceivedMessagesOfNeedRetry(AbortToken);
+        var messages = await _storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
 
         // then
         messages.Should().NotBeEmpty();
@@ -326,7 +326,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         );
 
         // when
-        var messages = await _storage.GetPublishedMessagesOfNeedRetry(AbortToken);
+        var messages = await _storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
 
         // then
         messages.Should().NotContain(m => m.StorageId == id);

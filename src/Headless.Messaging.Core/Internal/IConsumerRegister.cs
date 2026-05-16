@@ -342,7 +342,7 @@ internal sealed class ConsumerRegister(
 
                                 _serverAddress = innerClient.BrokerAddress;
 
-                                _RegisterMessageProcessor(innerClient);
+                                _RegisterMessageProcessor(innerClient, groupCts.Token);
 
                                 await innerClient.SubscribeAsync(topics);
                                 await _AwaitConsumerReadyThenListenAsync(innerClient, startupReady, groupCts.Token)
@@ -534,7 +534,7 @@ internal sealed class ConsumerRegister(
         );
     }
 
-    private void _RegisterMessageProcessor(IConsumerClient client)
+    private void _RegisterMessageProcessor(IConsumerClient client, CancellationToken hostShutdownToken)
     {
         client.OnLogCallback = _WriteLog;
         client.OnMessageCallback = async (transportMessage, sender) =>
@@ -658,8 +658,8 @@ internal sealed class ConsumerRegister(
                         // Poisoned-on-arrival messages bypass the normal Dispatcher scope,
                         // so we create a fresh async scope here instead of using the root provider.
                         // RetryHelper.InvokeOnExhaustedAsync applies the configured OnExhaustedTimeout
-                        // and swallows handler exceptions; the bypass path has no logical "dispatch
-                        // cancellation" so the supplied token is CancellationToken.None.
+                        // and swallows handler exceptions; pass the group/host shutdown token so a
+                        // cooperative callback can short-circuit when the consumer is stopping.
                         await using var exhaustedScope = serviceScopeFactory.CreateAsyncScope();
                         await RetryHelper
                             .InvokeOnExhaustedAsync(
@@ -678,7 +678,7 @@ internal sealed class ConsumerRegister(
                                 _options.RetryPolicy.OnExhaustedTimeout,
                                 storageId: 0,
                                 _logger,
-                                CancellationToken.None
+                                hostShutdownToken
                             )
                             .ConfigureAwait(false);
                     }

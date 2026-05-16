@@ -392,7 +392,7 @@ internal sealed class InMemoryDataStorage(
         return ValueTask.FromResult(removed);
     }
 
-    public ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
+    public ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
     {
@@ -419,7 +419,7 @@ internal sealed class InMemoryDataStorage(
         return ValueTask.FromResult(result);
     }
 
-    public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(
+    public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
     {
