@@ -27,7 +27,13 @@ public interface IRetryBackoffStrategy
     /// transitions to terminal <c>Failed</c>, and the configured <c>OnExhausted</c> callback fires.
     /// </para>
     /// </remarks>
-    /// <param name="retryCount">The number of retries already performed for this message (0-based).</param>
+    /// <param name="persistedRetryCount">
+    /// The number of persisted-retry pickups already performed for this message (0-based).
+    /// Inline retries within a single pickup do NOT advance this counter — every inline attempt on the
+    /// same pickup observes the same value. Strategies that want a per-attempt monotonic counter (e.g.,
+    /// exponential backoff per attempt) must layer it on top using <see cref="Exception"/> identity or
+    /// strategy-internal state; the framework does not expose the inline iteration index here.
+    /// </param>
     /// <param name="exception">The exception that caused the failure.</param>
-    RetryDecision Compute(int retryCount, Exception exception);
+    RetryDecision Compute(int persistedRetryCount, Exception exception);
 }

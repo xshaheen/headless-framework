@@ -214,7 +214,8 @@ internal sealed class MessageSender : IMessageSender
             ex,
             _retryPolicy,
             inlineRetries,
-            isCancellation: false
+            isCancellation: false,
+            logger: _logger
         );
         switch (decision.Outcome)
         {

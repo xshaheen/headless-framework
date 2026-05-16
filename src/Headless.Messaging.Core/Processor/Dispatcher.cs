@@ -184,6 +184,13 @@ internal sealed class Dispatcher : IDispatcher
             return;
         }
 
+        // Flush scheduler queue to storage BEFORE cancelling/disposing _tasksCts. Earlier
+        // implementations did this in a CancellationToken.Register callback that ran synchronously
+        // on the stopping thread; we used .GetAwaiter().GetResult() which blocks the threadpool slot
+        // the async storage continuation needs and creates a shutdown deadlock window. Performing
+        // the async flush here keeps the operation cooperatively async.
+        await _FlushSchedulerQueueAsync().ConfigureAwait(false);
+
         if (_tasksCts is not null)
         {
             await castAndDispose(_tasksCts);
@@ -205,6 +212,25 @@ internal sealed class Dispatcher : IDispatcher
             {
                 resource.Dispose();
             }
+        }
+    }
+
+    private async Task _FlushSchedulerQueueAsync()
+    {
+        try
+        {
+            if (_schedulerQueue.Count == 0)
+            {
+                return;
+            }
+
+            var messageIds = _schedulerQueue.UnorderedItems.Select(x => x.StorageId).ToArray();
+            await _storage.ChangePublishStateToDelayedAsync(messageIds).ConfigureAwait(false);
+            _logger.DelayedStorageUpdateSuccess();
+        }
+        catch (Exception e)
+        {
+            _logger.DelayedStorageUpdateFailed(e);
         }
     }
 
@@ -275,8 +301,6 @@ internal sealed class Dispatcher : IDispatcher
         return Task.Run(
             async () =>
             {
-                _RegisterSchedulerCancellationHandler();
-
                 while (!TasksCts.Token.IsCancellationRequested)
                 {
                     try
@@ -302,33 +326,6 @@ internal sealed class Dispatcher : IDispatcher
     #endregion
 
     #region Scheduler Methods
-
-    private void _RegisterSchedulerCancellationHandler()
-    {
-        TasksCts.Token.Register(() =>
-        {
-            try
-            {
-                if (_schedulerQueue.Count == 0)
-                {
-                    return;
-                }
-
-                var messageIds = _schedulerQueue.UnorderedItems.Select(x => x.StorageId).ToArray();
-                _storage
-                    .ChangePublishStateToDelayedAsync(messageIds)
-                    .AsTask()
-                    .ConfigureAwait(false)
-                    .GetAwaiter()
-                    .GetResult();
-                _logger.DelayedStorageUpdateSuccess();
-            }
-            catch (Exception e)
-            {
-                _logger.DelayedStorageUpdateFailed(e);
-            }
-        });
-    }
 
     private async Task _ProcessScheduledMessagesAsync()
     {

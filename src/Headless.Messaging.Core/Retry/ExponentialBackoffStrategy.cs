@@ -30,15 +30,15 @@ public sealed class ExponentialBackoffStrategy : IRetryBackoffStrategy
     }
 
     /// <inheritdoc />
-    public RetryDecision Compute(int retryCount, Exception exception)
+    public RetryDecision Compute(int persistedRetryCount, Exception exception)
     {
         if (RetryExceptionClassifier.IsPermanent(exception))
         {
             return RetryDecision.Stop;
         }
 
-        // Calculate exponential delay: initialDelay * (backoffMultiplier ^ retryCount)
-        var exponentialDelay = _initialDelay.TotalMilliseconds * Math.Pow(_backoffMultiplier, retryCount);
+        // Calculate exponential delay: initialDelay * (backoffMultiplier ^ persistedRetryCount)
+        var exponentialDelay = _initialDelay.TotalMilliseconds * Math.Pow(_backoffMultiplier, persistedRetryCount);
 
         // Cap at max delay
         var delayMs = Math.Min(exponentialDelay, _maxDelay.TotalMilliseconds);

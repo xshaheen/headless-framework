@@ -20,7 +20,7 @@ public sealed class FixedIntervalBackoffStrategy : IRetryBackoffStrategy
     }
 
     /// <inheritdoc />
-    public RetryDecision Compute(int retryCount, Exception exception)
+    public RetryDecision Compute(int persistedRetryCount, Exception exception)
     {
         if (RetryExceptionClassifier.IsPermanent(exception))
         {

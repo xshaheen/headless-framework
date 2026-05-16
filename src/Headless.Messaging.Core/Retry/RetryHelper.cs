@@ -60,7 +60,8 @@ internal static class RetryHelper
         Exception exception,
         RetryPolicyOptions policy,
         int inlineRetries,
-        bool isCancellation
+        bool isCancellation,
+        ILogger? logger = null
     )
     {
         // Diagnostic guard: validator runs at startup only; post-startup mutation to null would
@@ -72,7 +73,21 @@ internal static class RetryHelper
             return RetryDecision.Stop;
         }
 
-        var decision = policy.BackoffStrategy.Compute(message.Retries, exception);
+        // Wrap the strategy call: a throwing custom strategy must not create an infinite
+        // consumer-invocation loop. Treating a throw as Exhausted routes the row to terminal Failed
+        // and invokes OnExhausted so the user is notified, instead of leaving the row in a state
+        // that keeps getting re-picked.
+        RetryDecision decision;
+
+        try
+        {
+            decision = policy.BackoffStrategy.Compute(message.Retries, exception);
+        }
+        catch (Exception strategyEx)
+        {
+            logger?.BackoffStrategyThrew(strategyEx, message.StorageId, strategyEx.GetType().Name);
+            return RetryDecision.Exhausted;
+        }
 
         if (decision.Outcome == RetryDecision.Kind.Stop)
         {
@@ -96,10 +111,17 @@ internal static class RetryHelper
 
         // Strategy returned Continue: clamp the delay then surface it.
         // Defensive clamp because IRetryBackoffStrategy is a public-extension point and
-        // custom strategies may return negative / overflowing values that would crash
-        // Task.Delay or DateTime.Add. Negative -> Zero; > 24h -> 24h.
+        // custom strategies may return negative / overflowing / non-finite values that would crash
+        // Task.Delay or DateTime.Add. NaN/Infinity slip past ordinary `<`/`>` comparisons (every NaN
+        // comparison returns false), so check finiteness explicitly first. Negative -> Zero; > 24h -> 24h.
         var clamped = decision.Delay;
-        if (clamped < TimeSpan.Zero)
+        var ms = clamped.TotalMilliseconds;
+        if (double.IsNaN(ms) || double.IsInfinity(ms))
+        {
+            logger?.BackoffDelayNonFinite(message.StorageId, ms);
+            clamped = TimeSpan.Zero;
+        }
+        else if (clamped < TimeSpan.Zero)
         {
             clamped = TimeSpan.Zero;
         }
@@ -132,6 +154,13 @@ internal static class RetryHelper
     /// are caught and logged so they cannot crash the dispatch loop. Cancellation observed
     /// on the supplied token is treated like any other callback exception — logged and absorbed.
     /// </summary>
+    /// <remarks>
+    /// On timeout, the linked CTS attached to the callback's <see cref="CancellationToken"/> is
+    /// cancelled — this gives a cooperative callback a chance to short-circuit before the surrounding
+    /// dispatch scope is disposed and <see cref="FailedInfo.ServiceProvider"/> becomes invalid. A
+    /// callback that ignores its CT is still orphaned (we cannot abort an unmanaged Task), but the
+    /// well-behaved case lands cleanly.
+    /// </remarks>
     public static async Task InvokeOnExhaustedAsync(
         Func<FailedInfo, CancellationToken, Task> callback,
         FailedInfo failedInfo,
@@ -143,13 +172,27 @@ internal static class RetryHelper
     {
         Argument.IsNotNull(callback);
 
+        using var callbackCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
         try
         {
-            await callback(failedInfo, cancellationToken).WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+            await callback(failedInfo, callbackCts.Token).WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
             logger.OnExhaustedTimedOut(storageId, timeout.TotalSeconds);
+
+            // Signal the callback to stop touching scope-bound services (e.g., FailedInfo.ServiceProvider).
+            // A cooperative callback observes the token and unwinds; an uncooperative one is orphaned
+            // and may still race the dispatch scope's disposal — documented as user responsibility.
+            try
+            {
+                await callbackCts.CancelAsync().ConfigureAwait(false);
+            }
+            catch (Exception cancelEx)
+            {
+                logger.ExecutedThresholdCallbackFailed(cancelEx, LogSanitizer.Sanitize(cancelEx.Message));
+            }
         }
         catch (Exception callbackEx)
         {
