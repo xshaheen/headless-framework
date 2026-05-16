@@ -188,9 +188,9 @@ public sealed class SqlServerDataStorage(
             state,
             transaction,
             nextRetryAt,
-            cancellationToken,
             lockedUntil,
-            originalRetries
+            originalRetries,
+            cancellationToken
         );
     }
 
@@ -565,11 +565,11 @@ public sealed class SqlServerDataStorage(
         string tableName,
         MediumMessage message,
         StatusName state,
-        object? transaction = null,
-        DateTime? nextRetryAt = null,
-        CancellationToken cancellationToken = default,
-        DateTime? lockedUntil = null,
-        int? originalRetries = null
+        object? transaction,
+        DateTime? nextRetryAt,
+        DateTime? lockedUntil,
+        int? originalRetries,
+        CancellationToken cancellationToken
     )
     {
         var sql =
