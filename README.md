@@ -9,7 +9,7 @@
 
 116+ NuGet packages &bull; Abstraction + Provider pattern &bull; Zero lock-in
 
-[Quick Start](#quick-start) &bull; [Packages](#packages) &bull; [Architecture](#architecture) &bull; [LLM Context](#llm-context) &bull; [Contributing](#contributing)
+[Quick Start](#quick-start) &bull; [Packages](#packages) &bull; [Architecture](#architecture) &bull; [Using with AI Agents](#using-headless-with-ai-agents) &bull; [Contributing](#contributing)
 
 </div>
 
@@ -386,61 +386,22 @@ This means you can:
 - **Mock any dependency** in unit tests
 - **Add your own provider** by implementing the abstraction
 
-## LLM Context
+## Using Headless with AI Agents
 
-Machine-readable project context for AI-assisted development:
-
-- [`llms.txt`](llms.txt) — Compact overview
-- [`llms-full.txt`](llms-full.txt) — Full package documentation
-
-## For Consumers
-
-If your project uses Headless packages, add the following to your `CLAUDE.md` or `AGENTS.md` so AI agents can fetch the correct documentation:
+If your project uses Headless packages, add the following to your `AGENTS.md` or `CLAUDE.md` so AI coding agents can fetch the correct documentation on demand:
 
 ```markdown
 ## Headless Framework
 
-This project uses [Headless .NET Framework](https://github.com/xshaheen/headless-framework) packages.
+This project uses [Headless .NET Framework](https://github.com/xshaheen/headless-framework).
 
-Documentation index: https://raw.githubusercontent.com/xshaheen/headless-framework/main/llms.txt
+When working with Headless packages, fetch the docs index:
+https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/index.md
 
-When working with a Headless domain, fetch the relevant domain doc:
-- API & Web: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/api.md
-- Core: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/core.md
-- Multi-Tenancy: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/multi-tenancy.md
-- Blob Storage: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/blobs.md
-- Caching: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/caching.md
-- Email: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/emails.md
-- Feature Management: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/features.md
-- Identity: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/identity.md
-- Imaging: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/imaging.md
-- Logging: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/logging.md
-- Media: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/media.md
-- Messaging (Distributed Bus): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/messaging.md
-- Audit Log: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/audit-log.md
-- OpenAPI: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/openapi.md
-- ORM: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/orm.md
-- Payments: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/payments.md
-- Permissions: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/permissions.md
-- Push Notifications: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/push-notifications.md
-- Distributed Locks: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/distributed-locks.md
-- Serialization: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/serialization.md
-- Settings: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/settings.md
-- SMS: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/sms.md
-- SQL: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/sql.md
-- Testing: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/testing.md
-- Jobs (Background Jobs): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/jobs.md
-- TUS (Resumable Uploads): https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/tus.md
-- Utilities: https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/utilities.md
-
-Key rules:
-- Use `ICache` from `Headless.Caching.Abstractions`, NOT `Microsoft.Extensions.Caching.Distributed.IDistributedCache`
-- Use `IBlobStorage` from `Headless.Blobs.Abstractions`, not cloud SDK clients directly
-- Use `Headless.Messaging` for distributed messaging, not raw transport clients (`RabbitMQ.Client`, `Confluent.Kafka`)
-- Use `Headless.Jobs` for background jobs with `[Jobs]` attribute + source generator, not Hangfire/Quartz
-- Use `*.Dev` packages (Emails.Dev, Sms.Dev, PushNotifications.Dev) in development
-- Always depend on `*.Abstractions` packages for interfaces, add one provider for implementation
+The index lists per-domain docs to fetch as needed.
 ```
+
+The index contains the framework's agent rules and links to per-domain documentation under [`docs/llms/`](docs/llms/).
 
 ## Contributing
 

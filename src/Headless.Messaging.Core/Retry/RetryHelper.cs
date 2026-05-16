@@ -111,17 +111,14 @@ internal static class RetryHelper
 
         // Strategy returned Continue: clamp the delay then surface it.
         // Defensive clamp because IRetryBackoffStrategy is a public-extension point and
-        // custom strategies may return negative / overflowing / non-finite values that would crash
-        // Task.Delay or DateTime.Add. NaN/Infinity slip past ordinary `<`/`>` comparisons (every NaN
-        // comparison returns false), so check finiteness explicitly first. Negative -> Zero; > 24h -> 24h.
+        // custom strategies may return negative / overflowing values that would crash
+        // Task.Delay or DateTime.Add. Non-finite TimeSpan values (NaN, ±Infinity) cannot be
+        // constructed via TimeSpan.FromMilliseconds — the BCL rejects them at construction time
+        // (ArgumentException / OverflowException). If a strategy tries to produce one, the strategy
+        // call itself throws and the try/catch above routes it to Exhausted. So this clamp only
+        // needs to handle finite-but-out-of-range values: Negative -> Zero; > 24h -> 24h.
         var clamped = decision.Delay;
-        var ms = clamped.TotalMilliseconds;
-        if (double.IsNaN(ms) || double.IsInfinity(ms))
-        {
-            logger?.BackoffDelayNonFinite(message.StorageId, ms);
-            clamped = TimeSpan.Zero;
-        }
-        else if (clamped < TimeSpan.Zero)
+        if (clamped < TimeSpan.Zero)
         {
             clamped = TimeSpan.Zero;
         }

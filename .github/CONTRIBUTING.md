@@ -49,7 +49,7 @@ Most domains follow an abstraction + provider split:
 - Add or update tests with every behavior change.
 - Update XML docs for public API changes.
 - Update the package `README.md` under `src/Headless.*/` when package behavior, options, or setup changes.
-- Keep `README.md`, `llms.txt`, and domain docs in sync when you change public guidance.
+- Keep `README.md`, `docs/llms/index.md`, and domain docs under `docs/llms/` in sync when you change public guidance.
 
 ## Pull Requests
 
