@@ -175,7 +175,8 @@ builder.AddHeadless(configureServices: options =>
     options.Validation.ValidateServiceProviderOnStartup = true;
     options.Validation.RequireUseHeadless = true;
     options.Validation.RequireMapHeadlessEndpoints = true;
-    options.Antiforgery.Enabled = false; // opt in for cookie-auth apps
+    // Antiforgery defaults to false. Set to true for cookie-auth apps; bearer-token APIs leave it off.
+    options.Antiforgery.Enabled = false;
 });
 ```
 

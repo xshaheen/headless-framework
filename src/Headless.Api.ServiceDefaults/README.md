@@ -65,7 +65,7 @@ Without those overloads, `AddHeadless()` binds `Headless:StringEncryption` and `
 `AddHeadless()` performs the following:
 
 - Service-provider validation on startup (`ValidateOnBuild`, `ValidateScopes`)
-- All core primitives from [`Headless.Api.Core`](../Headless.Api.Core/README.md) (problem details, response compression, antiforgery, JWT, identity, status codes rewriter, default API conventions)
+- All core primitives from [`Headless.Api.Core`](../Headless.Api.Core/README.md) (problem details, response compression, JWT, identity, status codes rewriter, default API conventions). Antiforgery service registration is opt-in via `options.Antiforgery.Enabled` (cookie-auth apps only).
 - MVC and Minimal API JSON serializer defaults
 - ASP.NET Core source-generated input validation (`services.AddValidation()`)
 - OpenTelemetry logging, metrics, and tracing (when `OpenTelemetry.Enabled`)
@@ -123,8 +123,10 @@ app.UseHeadless();
 app.UseAuthentication();
 app.UseHeadlessTenancy();   // between auth and authz
 app.UseAuthorization();
-app.UseAntiforgery();       // after auth so the principal is set
 app.MapHeadlessEndpoints();
+// Cookie-auth apps that opted into `options.Antiforgery.Enabled` should also
+// call `app.UseAntiforgery()` here, after authorization. See the Antiforgery
+// section above. Bearer-token APIs leave it out.
 ```
 
 ## Startup Validation
