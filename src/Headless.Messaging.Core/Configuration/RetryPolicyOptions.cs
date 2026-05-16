@@ -111,6 +111,13 @@ public sealed class RetryPolicyOptions
     /// fast on stop. Throwing from the callback is caught and logged; it does not crash the
     /// dispatch loop.
     /// </para>
+    /// <para>
+    /// Scope nuance: for poisoned-on-arrival messages (failed to deserialize or no subscriber
+    /// registered) no consume execution ever runs, so the framework creates a fresh DI scope for
+    /// the callback instead of reusing a dispatch scope. <see cref="FailedInfo.ServiceProvider"/>
+    /// is still valid for the duration of the callback in both paths, but services resolved on
+    /// the bypass path will be fresh instances unrelated to any (never-happened) consume.
+    /// </para>
     /// </remarks>
     public Func<FailedInfo, CancellationToken, Task>? OnExhausted { get; set; }
 }

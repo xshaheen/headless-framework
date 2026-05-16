@@ -239,6 +239,7 @@ internal sealed class InMemoryDataStorage(
             ExpiresAt = message.ExpiresAt,
             NextRetryAt = message.NextRetryAt,
             StatusName = StatusName.Scheduled,
+            Version = messagingOptions.Value.Version,
         };
 
         return ValueTask.FromResult(message);
@@ -272,6 +273,7 @@ internal sealed class InMemoryDataStorage(
             NextRetryAt = null,
             StatusName = StatusName.Failed,
             ExceptionInfo = exceptionInfo,
+            Version = messagingOptions.Value.Version,
         };
 
         return ValueTask.CompletedTask;
@@ -309,6 +311,7 @@ internal sealed class InMemoryDataStorage(
             ExpiresAt = mdMessage.ExpiresAt,
             NextRetryAt = mdMessage.NextRetryAt,
             StatusName = StatusName.Scheduled,
+            Version = messagingOptions.Value.Version,
         };
 
         return ValueTask.FromResult(mdMessage);
@@ -356,8 +359,14 @@ internal sealed class InMemoryDataStorage(
         cancellationToken.ThrowIfCancellationRequested();
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
+        var version = messagingOptions.Value.Version;
         IEnumerable<MediumMessage> result = PublishedMessages
-            .Values.Where(x => x.Retries <= maxPersistedRetries && x.NextRetryAt is not null && x.NextRetryAt <= now)
+            .Values.Where(x =>
+                string.Equals(x.Version, version, StringComparison.Ordinal)
+                && x.Retries <= maxPersistedRetries
+                && x.NextRetryAt is not null
+                && x.NextRetryAt <= now
+            )
             .Take(200)
             .Cast<MediumMessage>()
             .ToList();
@@ -372,8 +381,14 @@ internal sealed class InMemoryDataStorage(
         cancellationToken.ThrowIfCancellationRequested();
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
+        var version = messagingOptions.Value.Version;
         IEnumerable<MediumMessage> result = ReceivedMessages
-            .Values.Where(x => x.Retries <= maxPersistedRetries && x.NextRetryAt is not null && x.NextRetryAt <= now)
+            .Values.Where(x =>
+                string.Equals(x.Version, version, StringComparison.Ordinal)
+                && x.Retries <= maxPersistedRetries
+                && x.NextRetryAt is not null
+                && x.NextRetryAt <= now
+            )
             .Take(200)
             .Select(x => (MediumMessage)x)
             .ToList();
@@ -401,12 +416,19 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var version = messagingOptions.Value.Version;
         var result = PublishedMessages
             .Values.Where(x =>
-                (x.StatusName == StatusName.Delayed && x.ExpiresAt < timeProvider.GetUtcNow().UtcDateTime.AddMinutes(2))
-                || (
-                    x.StatusName == StatusName.Queued
-                    && x.ExpiresAt < timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1)
+                string.Equals(x.Version, version, StringComparison.Ordinal)
+                && (
+                    (
+                        x.StatusName == StatusName.Delayed
+                        && x.ExpiresAt < timeProvider.GetUtcNow().UtcDateTime.AddMinutes(2)
+                    )
+                    || (
+                        x.StatusName == StatusName.Queued
+                        && x.ExpiresAt < timeProvider.GetUtcNow().UtcDateTime.AddMinutes(-1)
+                    )
                 )
             )
             .Take(messagingOptions.Value.SchedulerBatchSize)

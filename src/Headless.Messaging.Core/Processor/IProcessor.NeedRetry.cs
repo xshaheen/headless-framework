@@ -16,7 +16,10 @@ namespace Headless.Messaging.Processor;
 
 /// <summary>
 /// Processes messages that need to be retried, with adaptive polling and circuit breaker awareness.
+/// Exposed publicly so dashboards and observability extensions can resolve it through
+/// <see cref="IRetryProcessorMonitor"/> when reporting pickup health.
 /// </summary>
+[PublicAPI]
 public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMonitor
 {
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;
