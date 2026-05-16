@@ -7,6 +7,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 namespace Headless.Api;
 
 /// <summary>Options for <see cref="ApiSetup.MapHeadlessEndpoints(WebApplication, Action{HeadlessApiDefaultEndpointOptions}?)"/>.</summary>
+[PublicAPI]
 public sealed class HeadlessApiDefaultEndpointOptions
 {
     internal const string AppliedKey = "Headless.Api.MapHeadlessEndpoints.Applied";

@@ -40,7 +40,7 @@ No additional configuration beyond what `AddHeadless()` requires. Configure `Hea
 
 ## Dependencies
 
-- `Headless.Api`
+- `Headless.Api.Core`
 - `Asp.Versioning.Http`
 - `Microsoft.EntityFrameworkCore`
 

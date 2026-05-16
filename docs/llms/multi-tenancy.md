@@ -1,6 +1,6 @@
 ---
 domain: Multi-Tenancy
-packages: MultiTenancy, Api, Core, Mediator, Messaging.Core, Orm.EntityFramework, Permissions.Core
+packages: MultiTenancy, Api.Core, Api.ServiceDefaults, Core, Mediator, Messaging.Core, Orm.EntityFramework, Permissions.Core
 ---
 
 # Multi-Tenancy
@@ -236,7 +236,7 @@ When enabled, `SaveChanges()` and `SaveChangesAsync()` reject unsafe `IMultiTena
 
 Missing tenant context uses the shared `Headless.Abstractions.MissingTenantContextException`, so HTTP hosts using `UseExceptionHandler()` get the existing normalized 400 mapping. Cross-tenant mutation uses `Headless.Abstractions.CrossTenantWriteException` (located in `Headless.Core` to keep the failure shared across packages without forcing an Api → EF project reference).
 
-`HeadlessApiExceptionHandler` (registered by `AddHeadlessApi()`) maps `CrossTenantWriteException` to HTTP 409 Conflict with the `g:cross-tenant-write` error descriptor and emits a structured warning log (event name `CrossTenantWriteException`). No exception data is leaked into the response body — only the descriptor code and title.
+`HeadlessApiExceptionHandler` (registered by `AddHeadlessProblemDetails()`) maps `CrossTenantWriteException` to HTTP 409 Conflict with the `g:cross-tenant-write` error descriptor and emits a structured warning log (event name `CrossTenantWriteException`). No exception data is leaked into the response body — only the descriptor code and title.
 
 `CrossTenantWriteException` is non-transient and must NOT be retried. Catch-all retry policies (for example `Policy.Handle<Exception>()`) should exclude it explicitly; retrying a cross-tenant write either fails identically or — if the ambient tenant context changes between attempts — persists the unsafe write.
 

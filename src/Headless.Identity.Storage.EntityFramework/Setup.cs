@@ -3,6 +3,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.EntityFramework;
 
@@ -213,9 +214,21 @@ public static class OrmEntityFrameworkIdentitySetup
 
     private static void _ConfigureHeadlessIdentityDefaults(this IServiceCollection services)
     {
+        // Sentinel-based idempotency: AddHeadlessDbContext can be invoked once per DbContext
+        // type, so multiple calls would otherwise accumulate duplicate IConfigureOptions
+        // delegates on IdentityOptions. The TryAddSingleton sentinel collapses subsequent
+        // calls to a no-op for the shared IdentityOptions wiring.
+        if (services.Any(static d => d.ServiceType == typeof(HeadlessIdentityDefaultsSentinel)))
+        {
+            return;
+        }
+
+        services.TryAddSingleton<HeadlessIdentityDefaultsSentinel>();
         services.Configure<IdentityOptions>(options =>
         {
             options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
         });
     }
+
+    private sealed class HeadlessIdentityDefaultsSentinel;
 }

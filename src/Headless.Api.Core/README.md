@@ -65,7 +65,9 @@ app.UseTenantResolution();
 | EF Core `DbUpdateConcurrencyException` (matched by type name) | 409 with concurrency-failure error |
 | `TimeoutException` | 408 |
 | `NotImplementedException` | 501 |
-| `OperationCanceledException` (or inner OCE at any depth) | 499 (no body — client closed request) |
+| `OperationCanceledException` (or inner OCE at any depth) when `HttpContext.RequestAborted` is the source | 499 (no body — client closed request) |
+
+OCEs from other sources (server-side timeouts surfaced by `RequestTimeoutsMiddleware`, library-thrown OCEs whose cancellation token is not `RequestAborted`) are intentionally not mapped here — the handler returns `false` so the platform default or a downstream handler can render them.
 
 Prerequisites: call `app.UseExceptionHandler()` to wire the `IExceptionHandler` chain into the pipeline.
 

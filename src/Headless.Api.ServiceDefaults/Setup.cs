@@ -65,7 +65,7 @@ public static class ApiSetup
             builder._AddDefaultStringEncryptionService();
             builder._AddDefaultStringHashService();
 
-            return builder._AddCore(configureServices);
+            return builder._AddApiCore(configureServices);
         }
 
         public WebApplicationBuilder AddHeadless(
@@ -81,7 +81,7 @@ public static class ApiSetup
             builder.Services.AddStringEncryptionService(stringEncryptionConfig);
             builder.Services.AddStringHashService(stringHashConfig);
 
-            return builder._AddCore(configureServices);
+            return builder._AddApiCore(configureServices);
         }
 
         public WebApplicationBuilder AddHeadless(
@@ -104,7 +104,7 @@ public static class ApiSetup
                 builder.Services.AddStringHashService(configureHash);
             }
 
-            return builder._AddCore(configureServices);
+            return builder._AddApiCore(configureServices);
         }
 
         public WebApplicationBuilder AddHeadless(
@@ -127,7 +127,7 @@ public static class ApiSetup
                 builder.Services.AddStringHashService(configureHash);
             }
 
-            return builder._AddCore(configureServices);
+            return builder._AddApiCore(configureServices);
         }
 
         private void _AddDefaultStringEncryptionService()
@@ -142,7 +142,7 @@ public static class ApiSetup
             builder.Services.AddStringHashService(builder.Configuration.GetRequiredSection(_StringHashSectionName));
         }
 
-        private WebApplicationBuilder _AddCore(Action<HeadlessServiceDefaultsOptions>? configureServices)
+        private WebApplicationBuilder _AddApiCore(Action<HeadlessServiceDefaultsOptions>? configureServices)
         {
             var options = new HeadlessServiceDefaultsOptions();
             configureServices?.Invoke(options);
@@ -157,11 +157,16 @@ public static class ApiSetup
             }
 
             builder.Services.TryAddSingleton(options);
+            builder.Services.TryAddSingleton<HeadlessServiceDefaultsValidationStartupFilter>();
             builder.Services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IStartupFilter, HeadlessServiceDefaultsValidationStartupFilter>()
+                ServiceDescriptor.Singleton<IStartupFilter, HeadlessServiceDefaultsValidationStartupFilter>(sp =>
+                    sp.GetRequiredService<HeadlessServiceDefaultsValidationStartupFilter>()
+                )
             );
             builder.Services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IHostedLifecycleService, HeadlessServiceDefaultsValidationStartupFilter>()
+                ServiceDescriptor.Singleton<IHostedLifecycleService, HeadlessServiceDefaultsValidationStartupFilter>(
+                    sp => sp.GetRequiredService<HeadlessServiceDefaultsValidationStartupFilter>()
+                )
             );
 
             // Core API primitives
@@ -424,10 +429,10 @@ public static class ApiSetup
             return app;
         }
 
-        applicationBuilder.Properties[HeadlessApiDefaultEndpointOptions.AppliedKey] = true;
-
         var options = new HeadlessApiDefaultEndpointOptions();
         configure?.Invoke(options);
+
+        applicationBuilder.Properties[HeadlessApiDefaultEndpointOptions.AppliedKey] = true;
 
         if (options.MapHealthEndpoint)
         {

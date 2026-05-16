@@ -56,7 +56,7 @@ No additional configuration beyond what `AddHeadless()` requires. Configure `Hea
 
 ## Dependencies
 
-- `Headless.Api`
+- `Headless.Api.Core`
 - `Asp.Versioning.Mvc`
 - `Asp.Versioning.Mvc.ApiExplorer`
 - `Microsoft.EntityFrameworkCore`

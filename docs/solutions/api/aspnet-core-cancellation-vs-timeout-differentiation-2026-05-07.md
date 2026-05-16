@@ -161,7 +161,7 @@ The `??=` is load-bearing: the `IExceptionHandler` factory (`RequestTimeout()`) 
 
 ## 5. DI registration via `TryAddEnumerable`
 
-`src/Headless.Api.ServiceDefaults/Setup.cs`:
+`src/Headless.Api.Core/SetupApiServices.cs`:
 
 ```csharp
 public static IServiceCollection AddHeadlessProblemDetails(this IServiceCollection services)
@@ -276,5 +276,5 @@ Unit test coverage for `HeadlessApiExceptionHandler`:
 - `src/Headless.Api.Core/Middlewares/HeadlessApiExceptionHandler.cs` — handler, OCE arm, `_IsCancellationException`, `case TimeoutException`
 - `src/Headless.Api.Core/Abstractions/IProblemDetailsCreator.cs` — `Normalize` with 408/501 backfill, `RequestTimeout()` / `NotImplemented()` factories
 - `src/Headless.Api.Abstractions/Constants/ProblemDetailTitles.cs` — Types/Titles/Details constants
-- `src/Headless.Api.ServiceDefaults/Setup.cs` — `AddHeadlessProblemDetails` + `TryAddEnumerable` registration
+- `src/Headless.Api.Core/SetupApiServices.cs` — `AddHeadlessProblemDetails` + `TryAddEnumerable` registration
 - `demo/Headless.Api.Demo/Program.cs` — pipeline-ordering example
