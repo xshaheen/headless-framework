@@ -81,7 +81,4 @@ public readonly record struct RetryDecision
 
     /// <summary>Continue retrying after <paramref name="delay"/>.</summary>
     public static RetryDecision Continue(TimeSpan delay) => new() { Outcome = Kind.Continue, Delay = delay };
-
-    /// <summary>True when the decision is <see cref="Kind.Continue"/>.</summary>
-    public bool ShouldRetry => Outcome == Kind.Continue;
 }
