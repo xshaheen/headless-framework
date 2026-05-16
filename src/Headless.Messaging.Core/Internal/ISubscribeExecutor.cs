@@ -303,11 +303,19 @@ internal sealed class SubscribeExecutor(
         // short-circuited true host-shutdown OCEs; from this point on we are committed. Mirrors the
         // publish path (IMessageSender._SetFailedState) which makes the same choice for the same
         // reason.
+        //
+        // #14 — Preserve the active pickup lease on inline-in-flight transitions. Without an
+        // explicit `lockedUntil`, the storage default of NULL would clear the row's lease mid-burst,
+        // making the row eligible for pickup by the retry processor while the inline-retry loop is
+        // still mid-sleep. Persisted-retry transitions DO clear the lease (lockedUntil: null) so the
+        // row can be re-picked.
+        var lockedUntil = state.IsInlineRetryInFlight ? message.LockedUntil : null;
         var affected = await dataStorage
             .ChangeReceiveStateAsync(
                 message,
                 state.NextStatus,
                 nextRetryAt: state.NextRetryAt,
+                lockedUntil: lockedUntil,
                 originalRetries: originalRetries,
                 cancellationToken: CancellationToken.None
             )

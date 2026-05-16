@@ -7,6 +7,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -520,6 +521,70 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<DateTime?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_treat_wrapped_argument_exception_as_permanent_with_default_strategy()
+    {
+        // #6: SubscribeExecutor wraps every consumer exception in SubscriberExecutionFailedException.
+        // The default backoff strategies (FixedInterval / Exponential) classify via
+        // RetryExceptionClassifier. The classifier MUST unwrap the wrapper so consumer code throwing
+        // ArgumentException terminates after 1 attempt (Stop), not 48× retries.
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ConsumerExecutedResult>(new ArgumentException("user error")));
+
+        var callbackInvoked = false;
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxInlineRetries = 3,
+                    MaxPersistedRetries = 5,
+                    // Default strategy — relies on RetryExceptionClassifier to detect permanent
+                    // failures. The classifier sees the wrapped exception and must unwrap it.
+                    BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.FromMilliseconds(1)),
+                    OnExhausted = (_, _) =>
+                    {
+                        callbackInvoked = true;
+                        return Task.CompletedTask;
+                    },
+                },
+            }
+        );
+
+        var message = _CreateMediumMessage();
+
+        // when
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        // then — Stop path: exactly one invocation, OnExhausted does NOT fire.
+        result.Succeeded.Should().BeFalse();
+        await invoker.Received(1).InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>());
+        message.Retries.Should().Be(0);
+        callbackInvoked.Should().BeFalse("Stop path skips OnExhausted — only Exhausted fires it");
+        await storage
+            .Received(1)
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Is<DateTime?>(v => v == null),
+                cancellationToken: Arg.Any<CancellationToken>()
             );
     }
 

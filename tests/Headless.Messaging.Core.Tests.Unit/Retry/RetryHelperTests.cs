@@ -573,4 +573,124 @@ public sealed class RetryHelperTests : TestBase
         var cancelled = await observedCancellation.Task.WaitAsync(TimeSpan.FromSeconds(2));
         cancelled.Should().BeTrue();
     }
+
+    // ─── #1: orphan-callback CTS disposal race — must complete with OCE, not ObjectDisposedException ─
+
+    [Fact]
+    public async Task invoke_on_exhausted_orphan_callback_should_observe_oce_not_object_disposed()
+    {
+        // After timeout, the callback Task is orphaned but still holds callbackCts.Token. The
+        // helper must NOT dispose the CTS while the orphan is still running — otherwise the
+        // orphan's `Task.Delay(_, ct)` throws ObjectDisposedException instead of OCE.
+        var failed = new FailedInfo
+        {
+            Message = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), null),
+            MessageType = MessageType.Subscribe,
+            ServiceProvider = new ServiceCollection().BuildServiceProvider(),
+            Exception = new InvalidOperationException("orig"),
+        };
+
+        Exception? observedException = null;
+        var observed = new TaskCompletionSource<bool>();
+
+        await RetryHelper.InvokeOnExhaustedAsync(
+            async (_, ct) =>
+            {
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    observedException = ex;
+                    observed.TrySetResult(true);
+                    throw;
+                }
+            },
+            failed,
+            timeout: TimeSpan.FromMilliseconds(50),
+            storageId: 101,
+            Substitute.For<ILogger>(),
+            cancellationToken: CancellationToken.None
+        );
+
+        // After helper returns (timeout fired), the orphan should eventually observe cancellation
+        // through OCE — never ObjectDisposedException. CTS disposal must be deferred to after the
+        // orphan completes.
+        await observed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        observedException.Should().NotBeNull();
+        observedException
+            .Should()
+            .BeAssignableTo<OperationCanceledException>(
+                "the orphan must observe OCE; ObjectDisposedException indicates premature CTS disposal"
+            );
+    }
+
+    // ─── #13: shutdown OCE filter widening — accept linked callbackCts.Token, not just host token ─
+
+    [Fact]
+    public async Task invoke_on_exhausted_should_treat_inner_token_oce_as_shutdown_when_host_token_cancelled()
+    {
+        // A cooperative callback awaiting Task.Delay(_, ct) (where ct is the linked callbackCts.Token)
+        // throws an OCE bound to callbackCts.Token — not to the outer host token. Token-identity
+        // against the host token alone fails. The widened filter must also accept callbackCts.Token
+        // when the host token is cancelled, so the shutdown path takes effect (debug log) rather
+        // than ExecutedThresholdCallbackFailed (warning).
+        var failed = new FailedInfo
+        {
+            Message = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), null),
+            MessageType = MessageType.Subscribe,
+            ServiceProvider = new ServiceCollection().BuildServiceProvider(),
+            Exception = new InvalidOperationException("orig"),
+        };
+
+        // Pre-cancel the host token so the link fires immediately when WaitAsync observes it.
+        using var hostCts = new CancellationTokenSource();
+        await hostCts.CancelAsync();
+
+        var logger = Substitute.For<ILogger>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+
+        await RetryHelper.InvokeOnExhaustedAsync(
+            async (_, ct) =>
+            {
+                // The pre-cancelled host token has propagated through the linked CTS — Task.Delay
+                // raises OCE bound to the inner token, not the outer host token.
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false);
+            },
+            failed,
+            timeout: TimeSpan.FromSeconds(30),
+            storageId: 202,
+            logger,
+            cancellationToken: hostCts.Token
+        );
+
+        // Shutdown path: OnExhaustedCallbackCancelledAtShutdown emitted, NOT
+        // ExecutedThresholdCallbackFailed (which would mis-blame a cooperative callback).
+        // Generated logger calls translate to ILogger.Log with EventId carrying the event name.
+        var receivedCalls = logger.ReceivedCalls().ToList();
+        receivedCalls
+            .Should()
+            .Contain(
+                c =>
+                    c.GetMethodInfo().Name == "Log"
+                    && c.GetArguments()
+                        .OfType<EventId>()
+                        .Any(e =>
+                            string.Equals(e.Name, "OnExhaustedCallbackCancelledAtShutdown", StringComparison.Ordinal)
+                        ),
+                because: "the shutdown path must emit OnExhaustedCallbackCancelledAtShutdown"
+            );
+
+        receivedCalls
+            .Should()
+            .NotContain(
+                c =>
+                    c.GetMethodInfo().Name == "Log"
+                    && c.GetArguments()
+                        .OfType<EventId>()
+                        .Any(e => string.Equals(e.Name, "ExecutedThresholdCallbackFailed", StringComparison.Ordinal)),
+                because: "a cooperative-callback OCE during shutdown must not log ExecutedThresholdCallbackFailed"
+            );
+    }
 }

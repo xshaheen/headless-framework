@@ -33,7 +33,6 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 ## Build & Test
 
 - Solution file: [headless-framework.slnx](headless-framework.slnx) (modern XML format). Passes directly to `dotnet`; older tooling may need `.sln`.
-- Tests: use the `dotnet-test` skill (xUnit v3 + MTP) instead of raw `dotnet test`.
 - Local CLI tools pinned in [dotnet-tools.json](dotnet-tools.json) — `dotnet tool restore`, then `dotnet <tool>`.
 - Headless SDKs treat warnings as errors in CI.
 
@@ -54,11 +53,11 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 
 **DI Registration (Setup classes):**
 
-Every provider package exposes a single static `{Provider}Setup` class in `Setup.cs` at the package root, following this shape:
+Every provider package exposes a single static `Setup{Provider}` class in `Setup.cs` at the package root, following this shape:
 
 ```csharp
 [PublicAPI]
-public static class RedisCacheSetup
+public static class SetupRedisCache
 {
     extension(IServiceCollection services) // C# 14 extension members
     {
@@ -71,14 +70,14 @@ public static class RedisCacheSetup
 }
 ```
 
-- Name the shared private helper `_Add{Feature}Core` (underscore prefix per the project's private-extension naming).
-- Mark Setup classes `[PublicAPI]` so JetBrains tooling treats public members as the package surface.
+- Name the shared private helper `_Add{Feature}Core`.
 
 **Public API Discipline:**
 
 - Each package's `public` surface IS its NuGet contract — keep types `internal sealed` and promote to `public` only when consumers must reference them.
-- Annotate the intentional public surface with `[PublicAPI]` (`JetBrains.Annotations` is globally imported via [Directory.Build.props](Directory.Build.props)).
-- Use `[Pure]` (aliased to `JetBrainsPureAttribute` in [src/Headless.Core](src/Headless.Core) to avoid `System.Diagnostics.Contracts.PureAttribute` collision) and `[MustUseReturnValue]` where applicable.
+- Use `JetBrains.Annotations` is globally imported via [Directory.Build.props](Directory.Build.props)
+    - Annotate the intentional public surface with `[PublicAPI]`.
+    - Use `[Pure]`, `[MustDisposeResource]` and `[MustUseReturnValue]` where applicable.
 
 **Source File Header:**
 
@@ -108,14 +107,10 @@ When adding a new `.csproj` to the solution, set the project SDK to one of the H
 | Blazor WebAssembly | `Headless.NET.Sdk.BlazorWebAssembly` |
 | WPF / Windows Forms | `Headless.NET.Sdk.WindowsDesktop` |
 
-After creating the project, attach it to [headless-framework.slnx](headless-framework.slnx). The Headless SDKs apply the project's strict baseline, including nullable references, current analyzers, banned `Newtonsoft.Json`, deterministic builds, and CI-aware warning handling. Do not disable defaults without a documented reason. Configuration switches and `Disable*` properties are documented at https://github.com/xshaheen/headless-sdk.
+After creating the project, attach it to [headless-framework.slnx](headless-framework.slnx). The Headless SDKs apply the project's strict baseline, including nullable references, current analyzers, banned `Newtonsoft.Json`, deterministic builds, and CI-aware warning handling. Do not disable defaults without a documented reason. Configuration switches and `Disable*` properties are documented at https://raw.githubusercontent.com/xshaheen/headless-sdk/refs/heads/main/README.md.
 
 ## Documentation
 
-- Keep public API XML docs in sync with the code.
+- ALWAYS keep docs/llms synchronized with the code. If behavior changes in a way an AI coding agent should know, update the relevant LLM docs
 - Keep each package `README.md` in sync with the code; package READMEs live under `src/Headless.*`.
 - `docs/solutions/` is a searchable knowledge store of past fixes and patterns, organized by category (`api`, `concurrency`, `guides`, `messaging`, etc.) with YAML frontmatter (`module`, `tags`, `problem_type`). Search it before implementing features, debugging issues, or making decisions in a documented area.
-
-## LLM Documentation
-
-- ALWAYS keep docs/llms synchronized with the code. If behavior changes in a way an AI coding agent should know, update the relevant LLM docs

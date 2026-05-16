@@ -608,15 +608,47 @@ internal sealed class Dispatcher : IDispatcher
         CancellationToken cancellationToken = default
     )
     {
+        // Guard against post-dispose access. Two pre/post-dispose shapes to cover:
+        //   (1) Pre-start / never-initialized:  `_tasksCts is null`
+        //   (2) Post-dispose: `_disposed == true`. DisposeAsync only flips the flag and disposes
+        //       the CTS; it does not null `_tasksCts`, so `_tasksCts is null` does NOT catch this.
+        //       Accessing `_tasksCts.Token` after dispose throws ObjectDisposedException, which
+        //       the callers (EnqueueToExecute / EnqueueToPublish) do not catch.
+        // Producing an OCE in both shapes keeps the catch contract uniform: a write after dispose
+        // unwinds as benign cancellation, not as an unhandled exception escaping the dispatch loop.
+        if (_tasksCts is null || _disposed)
+        {
+            throw new OperationCanceledException("Dispatcher is not started or has been disposed.");
+        }
+
         if (!channel.Writer.TryWrite(item))
         {
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(TasksCts.Token, cancellationToken);
-            while (await channel.Writer.WaitToWriteAsync(linkedCts.Token).ConfigureAwait(false))
+            // A concurrent DisposeAsync between the guard above and CreateLinkedTokenSource below
+            // can still race ObjectDisposedException out of the access to _tasksCts.Token.
+            // Convert any such race to OCE so the catch contract holds end-to-end.
+            CancellationTokenSource linkedCts;
+            try
             {
-                if (channel.Writer.TryWrite(item))
+                linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_tasksCts.Token, cancellationToken);
+            }
+            catch (ObjectDisposedException ex)
+            {
+                throw new OperationCanceledException("Dispatcher was disposed during write.", ex);
+            }
+
+            try
+            {
+                while (await channel.Writer.WaitToWriteAsync(linkedCts.Token).ConfigureAwait(false))
                 {
-                    break;
+                    if (channel.Writer.TryWrite(item))
+                    {
+                        break;
+                    }
                 }
+            }
+            finally
+            {
+                linkedCts.Dispose();
             }
         }
     }

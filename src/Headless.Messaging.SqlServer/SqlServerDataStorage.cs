@@ -666,13 +666,22 @@ public sealed class SqlServerDataStorage(
         // retry. Without the guard, a broker-redelivered message whose payload again fails to
         // deserialize would overwrite a previously-Succeeded row's status to Failed, firing
         // OnExhausted for a message that actually succeeded.
+        //
+        // #9 — narrow the WHEN MATCHED predicate to additionally skip rows whose lease is still
+        // active (LockedUntil in the future). A redelivered message that arrives while the row
+        // is being dispatched would otherwise overwrite LockedUntil = NULL and Retries = 0,
+        // releasing the active pickup lease mid-attempt and causing the retry processor to
+        // re-pick the row while the inline retry loop is still in flight.
         var sql = $"""
             MERGE {_receivedTable} WITH (HOLDLOCK) AS target
             USING (SELECT @MessageId AS MessageId, @Group AS [Group]) AS source
             ON target.MessageId = source.MessageId AND (target.[Group] = source.[Group] OR (target.[Group] IS NULL AND source.[Group] IS NULL))
-            WHEN MATCHED AND NOT (target.StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(
-                StatusName.Failed
-            )}') AND target.NextRetryAt IS NULL) THEN
+            WHEN MATCHED
+                AND NOT (target.StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(
+                    StatusName.Failed
+                )}') AND target.NextRetryAt IS NULL)
+                AND (target.LockedUntil IS NULL OR target.LockedUntil <= GETUTCDATE())
+            THEN
                 UPDATE SET StatusName = @StatusName, Retries = @Retries, ExpiresAt = @ExpiresAt, NextRetryAt = @NextRetryAt, LockedUntil = @LockedUntil, Content = @Content, ExceptionInfo = @ExceptionInfo
             WHEN NOT MATCHED THEN
                 INSERT ([Id],[Version],[Name],[Group],[Content],[Retries],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[StatusName],[MessageId],[ExceptionInfo])

@@ -212,11 +212,16 @@ internal sealed class MessageSender : IMessageSender
         int? originalRetries
     )
     {
+        // #14 — Preserve the active pickup lease on inline-in-flight transitions; clear it on
+        // persisted-retry and terminal transitions so the retry processor can re-pick the row.
+        // Mirrors the consume path's _PersistFailedStateAsync.
+        var lockedUntil = state.IsInlineRetryInFlight ? message.LockedUntil : (DateTime?)null;
         var affected = await _dataStorage
             .ChangePublishStateAsync(
                 message,
                 state.NextStatus,
                 nextRetryAt: state.NextRetryAt,
+                lockedUntil: lockedUntil,
                 originalRetries: originalRetries,
                 cancellationToken: CancellationToken.None
             )

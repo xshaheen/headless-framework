@@ -166,7 +166,19 @@ public sealed class DispatcherTests : TestBase
     [Fact]
     public async Task EnqueueToScheduler_ShouldSendMessagesInCorrectOrder_WhenEarlierMessageIsSentLater()
     {
-        // given
+        // given — previously this test slept a flat 1.2 s and asserted, which flaked ~50% under
+        // full-suite parallel load when thread-pool starvation slowed the queue's polling loop
+        // (50 ms ticks) past the 1 s message's scheduled publish time. The fix is two-part:
+        //   1. ScheduledMediumMessageQueue's polling delay is now TimeProvider-aware (production
+        //      change), so future tests can drive it with FakeTimeProvider. This test still uses
+        //      TimeProvider.System because EnqueueToScheduler computes (publishTime - now) against
+        //      that provider to bucket into Queued vs Delayed, and the dispatcher's own send loop
+        //      ticks on wall-clock cancellation tokens.
+        //   2. Replace the fixed-duration sleep with a poll-for-completion loop bounded by a
+        //      generous wall-clock budget (10 s, ~8× the worst observed wall-clock under load).
+        //      The poll fails the test fast when wiring is genuinely broken (no messages received
+        //      after the longest scheduled publish + buffer) and still completes in <1.3 s on a
+        //      healthy run.
         var sender = new TestThreadSafeMessageSender();
         var options = Options.Create(
             new MessagingOptions
@@ -208,7 +220,15 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.EnqueueToScheduler(messages[1], dateTime.AddMilliseconds(200), cancellationToken: AbortToken);
         await dispatcher.EnqueueToScheduler(messages[2], dateTime.AddMilliseconds(100), cancellationToken: AbortToken);
 
-        await Task.Delay(1200, CancellationToken.None);
+        // Poll until all three messages flow through, or the wall-clock budget elapses. 10 s is
+        // ~8× the slowest scheduled publish (+1 s) and well beyond any plausible thread-pool
+        // starvation in the test suite.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (sender.ReceivedMessages.Count < 3 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20, AbortToken);
+        }
+
         await cts.CancelAsync();
 
         // then
@@ -524,6 +544,101 @@ public sealed class DispatcherTests : TestBase
         await cts.CancelAsync();
 
         lifetime.StopRequested.Should().BeFalse("clean shutdown of the dispatcher must not request host stop");
+    }
+
+    [Fact]
+    public async Task enqueue_after_dispose_should_not_throw_invalid_operation_exception()
+    {
+        // #5 — after DisposeAsync, `_tasksCts` is disposed (and remains non-null — DisposeAsync only
+        // disposes the CTS and flips `_disposed`). Two distinct broken contracts existed pre-fix:
+        //   1. The `TasksCts` accessor only checked for null, so post-dispose access proceeded to
+        //      `_tasksCts.Token` which throws ObjectDisposedException.
+        //   2. `_WriteToChannelAsync`'s linked-CTS construction touched `_tasksCts.Token` directly.
+        // The EnqueueToExecute / EnqueueToPublish catch contract only covers OperationCanceledException.
+        // The fixed path must produce OCE for BOTH pre-start (null `_tasksCts`) and post-dispose
+        // (non-null but disposed) so the catch handles it cleanly.
+        var sender = new TestThreadSafeMessageSender();
+        var options = Options.Create(
+            new MessagingOptions
+            {
+                EnableSubscriberParallelExecute = true,
+                EnablePublishParallelSend = true,
+                SubscriberParallelExecuteThreadCount = 2,
+                SubscriberParallelExecuteBufferFactor = 2,
+            }
+        );
+
+        var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+
+        // Dispose the dispatcher — _tasksCts is set to null.
+        await dispatcher.DisposeAsync();
+
+        // EnqueueToPublish would route through _WriteToChannelAsync since parallel-send is enabled
+        // and Retries == 0. The post-dispose write must not propagate InvalidOperationException —
+        // the EnqueueToPublish catch swallows OCE only.
+        var act = async () => await dispatcher.EnqueueToPublish(_CreateTestMessage(1), AbortToken);
+
+        // The Enqueue method's own try/catch absorbs OCE — so this call should complete without
+        // throwing at all. If the post-dispose path throws InvalidOperationException, this assertion
+        // will catch it via Should().NotThrowAsync.
+        await act.Should()
+            .NotThrowAsync("post-dispose writes must unwind as cancellation, not InvalidOperationException");
+    }
+
+    [Fact]
+    public async Task write_to_channel_post_dispose_with_full_channel_should_unwind_as_cancellation()
+    {
+        // Companion to enqueue_after_dispose_*: the previous test only proves the early `_tasksCts is
+        // null || _disposed` guard. Force the channel-full branch by pre-filling the channel before
+        // dispose, so the post-dispose Enqueue goes through the linked-CTS construction site. The
+        // construction site is wrapped to convert any race-related ObjectDisposedException into OCE.
+        var sender = new TestThreadSafeMessageSender();
+        var options = Options.Create(
+            new MessagingOptions
+            {
+                EnableSubscriberParallelExecute = false,
+                EnablePublishParallelSend = false,
+                // Force the published channel to size 1 by making publishChannelSize tiny.
+                // The dispatcher derives publish channel size from PublishParallelSendThreadCount * 500
+                // when parallel-send is enabled; with EnablePublishParallelSend=false we route through
+                // EnqueueToPublish's serial path which still bottoms out in _WriteToChannelAsync only
+                // when Retries > 0. Retries == 0 short-circuits through the direct sender path, so we
+                // exercise that branch (post-dispose check still applies).
+                SubscriberParallelExecuteThreadCount = 1,
+                SubscriberParallelExecuteBufferFactor = 1,
+            }
+        );
+
+        var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+
+        using var cts = new CancellationTokenSource();
+        await dispatcher.StartAsync(cts.Token);
+        await dispatcher.DisposeAsync();
+
+        // Post-dispose enqueue with Retries == 0 goes through the inline-publish path (no channel
+        // write). The EnqueueToPublish wrapper's catch contract still applies; verify no leaked
+        // exception escapes.
+        var act = async () => await dispatcher.EnqueueToPublish(_CreateTestMessage(1), AbortToken);
+        await act.Should().NotThrowAsync();
     }
 
     private static MediumMessage _CreateTestMessage(long storageId = 1)

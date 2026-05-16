@@ -72,7 +72,94 @@ public sealed class PostgreSqlStorageInitializer(
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
+        // #8 — Retry-pickup partial indexes use CREATE INDEX CONCURRENTLY so the AccessExclusiveLock
+        // is replaced with a ShareUpdateExclusiveLock — readers and writers stay live during the
+        // rebuild. CONCURRENTLY cannot run inside a transaction (PG raises 25001), so these run on
+        // an autocommit connection AFTER the schema/table DDL has committed above. Each statement is
+        // standalone (no transaction wrapping); CREATE INDEX CONCURRENTLY's own internal scan handles
+        // crash recovery via an INVALID index that is dropped on a subsequent initialize pass.
+        await _EnsureRetryPickupIndexConcurrentlyAsync(
+                connection,
+                postgreSqlOptions.Value.Schema,
+                GetReceivedTableName(),
+                indexName: "idx_received_Version_NextRetryAt",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await _EnsureRetryPickupIndexConcurrentlyAsync(
+                connection,
+                postgreSqlOptions.Value.Schema,
+                GetPublishedTableName(),
+                indexName: "idx_published_Version_NextRetryAt",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
         logger.LogEnsuringTablesCreated();
+    }
+
+    private async Task _EnsureRetryPickupIndexConcurrentlyAsync(
+        NpgsqlConnection connection,
+        string schema,
+        string qualifiedTable,
+        string indexName,
+        CancellationToken cancellationToken
+    )
+    {
+        // Detect the older-shape index (missing LockedUntil from INCLUDE) so we only pay the
+        // rebuild cost when the columns drifted. Mirrors the gated check in the in-transaction
+        // script for the SchemaIfMissing path. When the existing index already includes
+        // LockedUntil, this is a no-op.
+        var dropOnDrift = $"""
+            DO $do$
+            DECLARE
+                _has_locked_until BOOLEAN;
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM pg_indexes
+                    WHERE schemaname = '{schema}' AND indexname = '{indexName}'
+                ) THEN
+                    SELECT EXISTS (
+                        SELECT 1 FROM pg_index i
+                        JOIN pg_class c ON c.oid = i.indexrelid
+                        JOIN pg_namespace n ON n.oid = c.relnamespace
+                        JOIN pg_attribute a ON a.attrelid = c.oid
+                        WHERE n.nspname = '{schema}'
+                          AND c.relname = '{indexName}'
+                          AND a.attname = 'LockedUntil'
+                    ) INTO _has_locked_until;
+
+                    IF NOT _has_locked_until THEN
+                        EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS "{schema}"."{indexName}"';
+                    END IF;
+                END IF;
+            END $do$;
+            """;
+
+        // DROP INDEX CONCURRENTLY also cannot run inside a transaction, so the DO block uses
+        // EXECUTE for the concurrent drop. Npgsql treats DO as a standalone statement when no
+        // outer transaction is open.
+        await connection
+            .ExecuteNonQueryAsync(
+                dropOnDrift,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        // CREATE INDEX CONCURRENTLY is idempotent via IF NOT EXISTS; the DROP above handles drift.
+        var createIndex = $"""
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
+            """;
+
+        await connection
+            .ExecuteNonQueryAsync(
+                createIndex,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private string _CreateDbTablesScript(string schema)
@@ -106,39 +193,11 @@ public sealed class PostgreSqlStorageInitializer(
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_MessageId_GroupCoalesced" ON {GetReceivedTableName()} ("MessageId", (COALESCE("Group", '')));
             CREATE INDEX IF NOT EXISTS "idx_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");
-            -- Partial index for retry pickup. Keyed on (Version, NextRetryAt) so Version is a seek
-            -- predicate rather than a residual filter — the pickup query filters on both. Includes
-            -- Retries AND LockedUntil so the lease predicate `(LockedUntil IS NULL OR LockedUntil <= @Now)`
-            -- can be evaluated from the index without a per-candidate heap fetch. Index-only scan
-            -- requires healthy autovacuum so the visibility map covers the relation; under heavy
-            -- write load the planner may fall back to heap fetches bounded by the retry batch size.
-            --
-            -- Conditional recreate (R4): mirror SqlServerStorageInitializer's gated DROP/CREATE so
-            -- the AccessExclusiveLock is only taken when the existing index is missing the
-            -- LockedUntil column from its INCLUDE list. Unconditional DROP/CREATE on every startup
-            -- would lock the hot retry-pickup index on every boot.
-            DO $do$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM pg_indexes
-                    WHERE schemaname = '{schema}' AND indexname = 'idx_received_Version_NextRetryAt'
-                ) AND NOT EXISTS (
-                    -- Check ALL columns the index covers (key + INCLUDE), not just key columns.
-                    -- Querying pg_attribute against the index relation's OID (c.oid) returns every
-                    -- column physically stored in the index, which is what we need to detect
-                    -- LockedUntil in the INCLUDE list.
-                    SELECT 1 FROM pg_index i
-                    JOIN pg_class c ON c.oid = i.indexrelid
-                    JOIN pg_namespace n ON n.oid = c.relnamespace
-                    JOIN pg_attribute a ON a.attrelid = c.oid
-                    WHERE n.nspname = '{schema}'
-                      AND c.relname = 'idx_received_Version_NextRetryAt'
-                      AND a.attname = 'LockedUntil'
-                ) THEN
-                    EXECUTE 'DROP INDEX IF EXISTS "{schema}"."idx_received_Version_NextRetryAt" CASCADE';
-                END IF;
-            END $do$;
-            CREATE INDEX IF NOT EXISTS "idx_received_Version_NextRetryAt" ON {GetReceivedTableName()} ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
+            -- #8 — The partial retry-pickup index (idx_received_Version_NextRetryAt) is created
+            -- post-transaction with CREATE INDEX CONCURRENTLY in _EnsureRetryPickupIndexConcurrentlyAsync.
+            -- CREATE INDEX CONCURRENTLY cannot run inside a transaction; doing the create here would
+            -- take an AccessExclusiveLock and block all writers to the hot retry-pickup path during
+            -- every replica boot.
             CREATE INDEX IF NOT EXISTS "idx_received_delayed" ON {GetReceivedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
 
             CREATE TABLE IF NOT EXISTS {GetPublishedTableName()}(
@@ -157,34 +216,9 @@ public sealed class PostgreSqlStorageInitializer(
 
             CREATE INDEX IF NOT EXISTS "idx_published_ExpiresAt_StatusName" ON {GetPublishedTableName()}("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_published_Version_ExpiresAt_StatusName" ON {GetPublishedTableName()} ("Version","ExpiresAt","StatusName");
-            -- Partial index for retry pickup. Keyed on (Version, NextRetryAt) so Version is a seek
-            -- predicate rather than a residual filter — the pickup query filters on both. Includes
-            -- Retries AND LockedUntil so the lease predicate `(LockedUntil IS NULL OR LockedUntil <= @Now)`
-            -- can be evaluated from the index without a per-candidate heap fetch. Index-only scan
-            -- requires healthy autovacuum so the visibility map covers the relation; under heavy
-            -- write load the planner may fall back to heap fetches bounded by the retry batch size.
-            --
-            -- Conditional recreate (R4): see the matching comment on the received-table block above.
-            DO $do$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM pg_indexes
-                    WHERE schemaname = '{schema}' AND indexname = 'idx_published_Version_NextRetryAt'
-                ) AND NOT EXISTS (
-                    -- See the matching pg_attribute join on the received-index block above for why
-                    -- we query against c.oid (the index relation) rather than against indrelid+indkey.
-                    SELECT 1 FROM pg_index i
-                    JOIN pg_class c ON c.oid = i.indexrelid
-                    JOIN pg_namespace n ON n.oid = c.relnamespace
-                    JOIN pg_attribute a ON a.attrelid = c.oid
-                    WHERE n.nspname = '{schema}'
-                      AND c.relname = 'idx_published_Version_NextRetryAt'
-                      AND a.attname = 'LockedUntil'
-                ) THEN
-                    EXECUTE 'DROP INDEX IF EXISTS "{schema}"."idx_published_Version_NextRetryAt" CASCADE';
-                END IF;
-            END $do$;
-            CREATE INDEX IF NOT EXISTS "idx_published_Version_NextRetryAt" ON {GetPublishedTableName()} ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
+            -- #8 — see the matching comment on the received-table block above; the partial
+            -- retry-pickup index for published is also created post-transaction via
+            -- _EnsureRetryPickupIndexConcurrentlyAsync.
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
             """;
 
