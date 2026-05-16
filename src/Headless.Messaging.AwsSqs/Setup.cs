@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Amazon;
+using Headless.Checks;
 using Headless.Messaging.AwsSqs;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Transport;
@@ -23,7 +24,7 @@ public static class MessagesAmazonSqsSetup
 
         public MessagingSetupBuilder UseAmazonSqs(Action<AmazonSqsOptions> configure)
         {
-            ArgumentNullException.ThrowIfNull(configure);
+            Argument.IsNotNull(configure);
 
             setup.RegisterExtension(new AmazonSqsOptionsExtension(configure));
 

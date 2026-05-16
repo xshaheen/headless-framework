@@ -335,7 +335,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         var explainSql = $"""
             EXPLAIN (ANALYZE, FORMAT JSON)
             SELECT "Id","Content","Retries","Added","NextRetryAt" FROM {qualifiedTable}
-            WHERE "Retries" < @Retries
+            WHERE "Retries" <= @Retries
               AND "Version" = @Version
               AND "NextRetryAt" IS NOT NULL
               AND "NextRetryAt" <= now()

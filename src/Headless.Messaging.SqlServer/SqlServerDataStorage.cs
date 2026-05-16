@@ -162,6 +162,9 @@ public sealed class SqlServerDataStorage(
     )
     {
         var sql =
+            // X1 terminal-row guard: refuses updates to rows that are already terminal AND
+            // have NextRetryAt cleared. Failed rows with non-null NextRetryAt stay mutable so
+            // the retry processor can rewrite them — see the matching note in PostgreSqlDataStorage.
             $"UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND NOT (StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND NextRetryAt IS NULL)";
 
         object[] sqlParams =
@@ -529,7 +532,7 @@ public sealed class SqlServerDataStorage(
     {
         var sql =
             $"SELECT TOP ({_RetryBatchSize}) Id, Content, Retries, Added, NextRetryAt FROM {tableName} WITH (UPDLOCK, READPAST) "
-            + $"WHERE Retries < @Retries AND Version = @Version AND NextRetryAt IS NOT NULL AND NextRetryAt <= GETUTCDATE();";
+            + $"WHERE Retries <= @Retries AND Version = @Version AND NextRetryAt IS NOT NULL AND NextRetryAt <= GETUTCDATE();";
 
         object[] sqlParams =
         [

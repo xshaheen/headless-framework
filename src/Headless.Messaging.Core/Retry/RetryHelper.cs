@@ -4,6 +4,7 @@ using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Retry;
 
@@ -124,15 +125,55 @@ internal static class RetryHelper
         && oce.CancellationToken == cancellationToken;
 
     /// <summary>
+    /// Invokes the supplied <paramref name="callback"/> with a hard timeout via
+    /// <see cref="TaskExtensions.WaitAsync(Task,TimeSpan,CancellationToken)"/>.
+    /// On timeout the callback is orphaned (continues running in the background) and a
+    /// <c>OnExhaustedTimedOut</c> log event is emitted. Exceptions thrown by the callback
+    /// are caught and logged so they cannot crash the dispatch loop. Cancellation observed
+    /// on the supplied token is treated like any other callback exception — logged and absorbed.
+    /// </summary>
+    public static async Task InvokeOnExhaustedAsync(
+        Func<FailedInfo, CancellationToken, Task> callback,
+        FailedInfo failedInfo,
+        TimeSpan timeout,
+        long storageId,
+        ILogger logger,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(callback);
+
+        try
+        {
+            await callback(failedInfo, cancellationToken).WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            logger.OnExhaustedTimedOut(storageId, timeout.TotalSeconds);
+        }
+        catch (Exception callbackEx)
+        {
+            logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message));
+        }
+    }
+
+    /// <summary>
     /// Derives the persistence state from a retry decision and inline-retry counters.
     /// Both the consume path (SubscribeExecutor) and the publish path (MessageSender) share
     /// identical logic; a single definition prevents the two from drifting.
     /// </summary>
+    /// <param name="currentNextRetryAt">
+    /// The message's current <c>NextRetryAt</c> from storage. Used to pick the LATER of
+    /// (the inline-retry resume time + safety margin) and the existing schedule, so that
+    /// <c>InitialDispatchGrace</c> on a freshly-stored message is not lowered by a smaller
+    /// inline delay (and so the polling query cannot race the inline-retry mid-sleep).
+    /// </param>
     public static RetryNextState ResolveNextState(
         RetryDecision decision,
         int inlineRetries,
         RetryPolicyOptions policy,
-        TimeProvider timeProvider
+        TimeProvider timeProvider,
+        DateTime? currentNextRetryAt = null
     )
     {
         var isInlineRetryInFlight =
@@ -140,13 +181,29 @@ internal static class RetryHelper
 
         var nextStatus = isInlineRetryInFlight ? StatusName.Scheduled : StatusName.Failed;
 
-        // Always persist NextRetryAt for any Continue decision so a crash during the inline
-        // delay leaves the row in Scheduled/NextRetryAt state — visible to the polling query
-        // on restart. During normal operation the inline loop retries before the deadline.
-        var nextRetryAt =
-            decision.Outcome == RetryDecision.Kind.Continue
-                ? timeProvider.GetUtcNow().UtcDateTime.Add(decision.Delay)
-                : (DateTime?)null;
+        if (decision.Outcome != RetryDecision.Kind.Continue)
+        {
+            // Stop / Exhausted: clear NextRetryAt so the row is terminal and excluded from pickup.
+            return new RetryNextState(isInlineRetryInFlight, NextRetryAt: null, nextStatus);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var inlineResumeAt = now.Add(decision.Delay);
+
+        if (!isInlineRetryInFlight)
+        {
+            // Persisted-retry transition: NextRetryAt drives when the retry processor picks up
+            // the row, so it MUST equal the strategy's delay (no padding, no preservation).
+            return new RetryNextState(isInlineRetryInFlight, inlineResumeAt, nextStatus);
+        }
+
+        // Inline-retry in-flight transition: the persisted NextRetryAt only matters for
+        // crash recovery (the inline loop itself drives the actual Task.Delay). Push NextRetryAt
+        // past the inline-retry resume point by InitialDispatchGrace so the polling cycle does
+        // not race the inline path mid-sleep, AND preserve any existing schedule that is later
+        // (e.g., InitialDispatchGrace from initial store).
+        var paddedResume = inlineResumeAt.Add(policy.InitialDispatchGrace);
+        var nextRetryAt = currentNextRetryAt is { } existing && existing > paddedResume ? existing : paddedResume;
 
         return new RetryNextState(isInlineRetryInFlight, nextRetryAt, nextStatus);
     }

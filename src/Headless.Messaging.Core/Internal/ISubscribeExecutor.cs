@@ -210,7 +210,15 @@ internal sealed class SubscribeExecutor(
         // leaves the row picked up by the polling query on restart (Failed/NULL is filtered out).
         // Only transition to Failed on terminal decisions (Stop, Exhausted) or when persisting
         // for the persisted-retry processor (Continue with inline budget exhausted, NextRetryAt set).
-        var state = RetryHelper.ResolveNextState(decision, inlineRetries, _retryPolicy, timeProvider);
+        // Pass the message's current NextRetryAt so ResolveNextState can preserve InitialDispatchGrace
+        // on inline-in-flight transitions and pad the schedule against polling races.
+        var state = RetryHelper.ResolveNextState(
+            decision,
+            inlineRetries,
+            _retryPolicy,
+            timeProvider,
+            currentNextRetryAt: message.NextRetryAt
+        );
 
         // Persist transition: inline budget consumed AND decision Continue means the call site
         // owns the Retries++ . The helper is pure with respect to MediumMessage; this is the only
@@ -233,14 +241,21 @@ internal sealed class SubscribeExecutor(
         {
             await _InvokeOnExhausted(message, ex, dispatchServices, cancellationToken).ConfigureAwait(false);
         }
-        else if (!affected)
+        else if (!affected && decision.Outcome == RetryDecision.Kind.Exhausted)
         {
+            // Storage proves the row is already terminal — a redelivered already-exhausted message.
+            // OnExhausted is skipped here; the log line is only emitted when the decision would
+            // otherwise have fired the callback (Stop redeliveries never fire OnExhausted regardless,
+            // so suppressing the log avoids noise for non-callback paths).
             logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
         }
 
         // Report the original (inner) exception to the circuit breaker so transient-classification
         // predicates see the real exception type, not the SubscriberExecutionFailedException wrapper.
-        if (circuitBreakerStateManager is not null && !isCancellation)
+        // Skip the report when the conditional UPDATE returned zero affected rows: that signals a
+        // broker redelivery of an already-terminal row, not a fresh failure — counting it would
+        // wrongly accumulate toward the breaker threshold.
+        if (circuitBreakerStateManager is not null && !isCancellation && affected)
         {
             var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
             await circuitBreakerStateManager
@@ -276,7 +291,7 @@ internal sealed class SubscribeExecutor(
         return decision;
     }
 
-    private async Task _InvokeOnExhausted(
+    private Task _InvokeOnExhausted(
         MediumMessage message,
         Exception ex,
         IServiceProvider dispatchServices,
@@ -286,30 +301,27 @@ internal sealed class SubscribeExecutor(
         var callback = _retryPolicy.OnExhausted;
         if (callback is null)
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        try
-        {
-            // Use the live dispatch scope so scoped services resolved here are the same
-            // instances seen during ExecuteAsync. The caller (Dispatcher) is responsible for
-            // creating and disposing that scope.
-            await callback(
-                    new FailedInfo
-                    {
-                        ServiceProvider = dispatchServices,
-                        MessageType = MessageType.Subscribe,
-                        Message = message.Origin,
-                        Exception = ex,
-                    },
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-        catch (Exception callbackEx)
-        {
-            logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message));
-        }
+        // Use the live dispatch scope so scoped services resolved here are the same
+        // instances seen during ExecuteAsync. The caller (Dispatcher) is responsible for
+        // creating and disposing that scope. RetryHelper.InvokeOnExhaustedAsync applies
+        // the configured OnExhaustedTimeout and swallows handler exceptions.
+        return RetryHelper.InvokeOnExhaustedAsync(
+            callback,
+            new FailedInfo
+            {
+                ServiceProvider = dispatchServices,
+                MessageType = MessageType.Subscribe,
+                Message = message.Origin,
+                Exception = ex,
+            },
+            _retryPolicy.OnExhaustedTimeout,
+            message.StorageId,
+            logger,
+            cancellationToken
+        );
     }
 
     private async Task _InvokeConsumerMethodAsync(

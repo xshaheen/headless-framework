@@ -44,8 +44,7 @@ public static class MessagesRedisSetup
 
     private sealed class RedisOptionsExtension(Action<MessagingRedisOptions> configure) : IMessagesOptionsExtension
     {
-        private readonly Action<MessagingRedisOptions> _configure =
-            configure ?? throw new ArgumentNullException(nameof(configure));
+        private readonly Action<MessagingRedisOptions> _configure = Argument.IsNotNull(configure);
 
         public void AddServices(IServiceCollection services)
         {

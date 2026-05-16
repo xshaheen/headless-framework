@@ -166,6 +166,13 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        // X1 terminal-row guard: the WHERE clause refuses updates to rows that are already
+        // terminal (Succeeded or Failed) AND have NextRetryAt cleared — the marker for a
+        // permanently-completed row. The narrower form (instead of `StatusName NOT IN
+        // ('Succeeded','Failed')` as the X1 plan suggested) is deliberate: a Failed row with a
+        // non-null NextRetryAt is "persisted for retry" and MUST remain mutable so the retry
+        // processor can rewrite it on the next pickup. The plan's stricter form would block
+        // that, breaking the persisted-retry flow.
         var sql =
             $"UPDATE {_receivedTable} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id AND NOT (\"StatusName\" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND \"NextRetryAt\" IS NULL)";
 
@@ -528,7 +535,7 @@ public sealed class PostgreSqlDataStorage(
     )
     {
         var sql =
-            $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\",\"NextRetryAt\" FROM {tableName} WHERE \"Retries\"<@Retries "
+            $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\",\"NextRetryAt\" FROM {tableName} WHERE \"Retries\"<=@Retries "
             + $"AND \"Version\"=@Version AND \"NextRetryAt\" IS NOT NULL AND \"NextRetryAt\" <= now() LIMIT {_RetryBatchSize} FOR UPDATE SKIP LOCKED;";
 
         object[] sqlParams =

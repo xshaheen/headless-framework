@@ -3039,7 +3039,7 @@ builder.Services.AddMessages(options =>
 {
     // Core configuration
     options.SucceedMessageExpiredAfter = 24 * 3600;
-    options.RetryPolicy.MaxAttempts = 50;
+    options.RetryPolicy.MaxPersistedRetries = 50;
 
     // Add storage (required)
     options.UsePostgreSql("connection_string");
@@ -3133,7 +3133,7 @@ Register in `Program.cs`:
 ```csharp
 builder.Services.AddMessages(options =>
 {
-    options.RetryPolicy.MaxAttempts = 50;
+    options.RetryPolicy.MaxPersistedRetries = 50;
     options.SucceedMessageExpiredAfter = 24 * 3600;
     options.ConsumerThreadCount = 1;
     options.DefaultGroupName = "myapp";

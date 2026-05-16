@@ -12,9 +12,25 @@ namespace Headless.Messaging.Messages;
 public sealed class FailedInfo
 {
     /// <summary>
-    /// Gets the service provider for the current scope.
-    /// This allows the callback to resolve dependencies from the dependency injection container.
+    /// Gets the live per-message dispatch scope's <see cref="IServiceProvider"/>. Use it to resolve
+    /// scoped dependencies that share state with the consume/send attempt (e.g., a unit-of-work or
+    /// a request-scoped database session).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The provider is owned by the dispatch scope that ran the message; the scope is disposed
+    /// immediately after the <see cref="RetryPolicyOptions.OnExhausted"/> callback completes.
+    /// Resolve services synchronously inside the callback and complete all async work via
+    /// <see langword="await"/> before returning. Capturing the provider into a <c>Task.Run</c>,
+    /// <c>async void</c> lambda, or any work that outlives the callback will hit
+    /// <see cref="ObjectDisposedException"/> at runtime.
+    /// </para>
+    /// <para>
+    /// For the poisoned-on-arrival bypass path (a message that fails before any consume or send
+    /// attempt), this provider is a freshly-created scope rather than the dispatch scope — there
+    /// is no prior attempt to share state with — but the same lifetime rule still applies.
+    /// </para>
+    /// </remarks>
     public required IServiceProvider ServiceProvider { get; init; }
 
     /// <summary>

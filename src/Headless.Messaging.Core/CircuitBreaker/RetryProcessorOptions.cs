@@ -7,6 +7,7 @@ namespace Headless.Messaging.CircuitBreaker;
 /// <summary>
 /// Configuration options for the retry processor's adaptive polling and backpressure behavior.
 /// </summary>
+[PublicAPI]
 public sealed class RetryProcessorOptions
 {
     /// <summary>
