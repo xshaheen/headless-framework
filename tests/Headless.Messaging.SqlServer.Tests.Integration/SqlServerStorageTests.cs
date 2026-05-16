@@ -237,6 +237,22 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     public override Task should_report_false_when_received_exception_message_is_already_terminal() =>
         base.should_report_false_when_received_exception_message_is_already_terminal();
 
+    [Fact]
+    public override Task should_handle_concurrent_redelivery_storm_on_same_message_id() =>
+        base.should_handle_concurrent_redelivery_storm_on_same_message_id();
+
+    [Fact]
+    public override Task should_pickup_message_at_max_persisted_retries_and_exclude_above() =>
+        base.should_pickup_message_at_max_persisted_retries_and_exclude_above();
+
+    [Fact]
+    public override Task should_not_return_leased_received_message_until_lease_expires() =>
+        base.should_not_return_leased_received_message_until_lease_expires();
+
+    [Fact]
+    public override Task should_handle_concurrent_state_updates_to_same_row() =>
+        base.should_handle_concurrent_state_updates_to_same_row();
+
     #endregion
 
     #region SQL Server-Specific Tests

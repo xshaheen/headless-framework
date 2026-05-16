@@ -458,5 +458,70 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_persist_inline_in_flight_state_with_scheduled_status_and_padded_next_retry_at()
+    {
+        // ResolveNextState inline-in-flight branch: after the first failure but BEFORE inline
+        // exhausts, the executor must call ChangeReceiveStateAsync with Scheduled (not Failed)
+        // and a NextRetryAt at least InitialDispatchGrace in the future, so a crash mid-delay
+        // leaves the row pickup-eligible by the polling query.
+        var options = new MessagingOptions
+        {
+            RetryPolicy =
+            {
+                MaxInlineRetries = 2,
+                MaxPersistedRetries = 1,
+                BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromSeconds(1)),
+                InitialDispatchGrace = TimeSpan.FromSeconds(5),
+            },
+        };
+
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        var attempt = 0;
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                attempt++;
+                if (attempt == 1)
+                {
+                    return Task.FromException<ConsumerExecutedResult>(new TimeoutException("boom"));
+                }
+
+                return Task.FromResult(new ConsumerExecutedResult(null, Guid.NewGuid().ToString(), null, null));
+            });
+
+        var executor = _CreateExecutor(invoker, storage, options);
+        var nowBefore = DateTime.UtcNow;
+        var message = _CreateMediumMessage();
+
+        // when
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        // then — inline-in-flight write happened exactly once with Scheduled status and a
+        // padded NextRetryAt (≥ InitialDispatchGrace past first-failure resume point).
+        result.Succeeded.Should().BeTrue();
+        await storage
+            .Received(1)
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Scheduled,
+                Arg.Is<DateTime?>(v => v.HasValue && v.Value > nowBefore.Add(options.RetryPolicy.InitialDispatchGrace)),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     private sealed class ScopedMarker;
 }

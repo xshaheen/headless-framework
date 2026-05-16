@@ -30,7 +30,7 @@ public sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> log
     {
         try
         {
-            async ValueTask scheduleTask(object transaction, IEnumerable<MediumMessage> messages)
+            async ValueTask scheduleTask(object? transaction, IEnumerable<MediumMessage> messages)
             {
                 foreach (var message in messages)
                 {

@@ -36,6 +36,8 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
             PublishedFailed = storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Failed),
             ReceivedFailed = storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Failed),
             PublishedDelayed = storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Delayed),
+            PublishedPendingRetry = storage.PublishedMessages.Values.Count(x => x.NextRetryAt is not null),
+            ReceivedPendingRetry = storage.ReceivedMessages.Values.Count(x => x.NextRetryAt is not null),
         };
 
         return ValueTask.FromResult(stats);
@@ -102,6 +104,8 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     Name = x.Name,
                     Retries = x.Retries,
                     StatusName = x.StatusName.ToString(),
+                    NextRetryAt = x.NextRetryAt,
+                    LockedUntil = x.LockedUntil,
                 })
                 .ToList();
 
@@ -158,6 +162,8 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     Name = x.Name,
                     Retries = x.Retries,
                     StatusName = x.StatusName.ToString(),
+                    NextRetryAt = x.NextRetryAt,
+                    LockedUntil = x.LockedUntil,
                 })
                 .ToList();
 

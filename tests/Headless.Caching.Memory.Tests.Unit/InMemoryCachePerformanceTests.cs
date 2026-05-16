@@ -1,6 +1,8 @@
+using System;
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Reflection;
 using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
@@ -39,14 +41,17 @@ public sealed class InMemoryCachePerformanceTests : TestBase
 
         var maintenanceMethod = typeof(InMemoryCache).GetMethod(
             "_DoMaintenanceAsync",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            Type.EmptyTypes,
+            null
         );
 
         sw.Restart();
         await (Task)maintenanceMethod!.Invoke(cache, null)!;
         sw.Stop();
 
-        var timeWith100k = sw.ElapsedMilliseconds;
+        var timeWith100K = sw.ElapsedMilliseconds;
 
         // Add more items
         for (int i = count; i < count * 2; i++)
@@ -58,17 +63,17 @@ public sealed class InMemoryCachePerformanceTests : TestBase
         await (Task)maintenanceMethod!.Invoke(cache, null)!;
         sw.Stop();
 
-        var timeWith200k = sw.ElapsedMilliseconds;
+        var timeWith200K = sw.ElapsedMilliseconds;
 
         // then - time should NOT have doubled (O(N) would double)
         // With O(1)/O(log N) expiration check, it should be near-zero
         // since nothing is actually expired.
 
-        timeWith100k.Should().BeLessThan(100, "maintenance should be fast even with 100k items");
-        timeWith200k.Should().BeLessThan(100, "maintenance should be fast even with 200k items");
+        timeWith100K.Should().BeLessThan(100, "maintenance should be fast even with 100k items");
+        timeWith200K.Should().BeLessThan(100, "maintenance should be fast even with 200k items");
 
         // The difference should be minimal
-        Math.Abs(timeWith200k - timeWith100k)
+        Math.Abs(timeWith200K - timeWith100K)
             .Should()
             .BeLessThan(50, "overhead increase should be negligible between 100k and 200k items");
     }

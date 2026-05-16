@@ -12,6 +12,7 @@ namespace Headless.Messaging.CircuitBreaker;
 /// They apply globally to all consumer groups unless overridden per consumer via
 /// <c>ConsumerCircuitBreakerOptions</c>.
 /// </remarks>
+[PublicAPI]
 public sealed class CircuitBreakerOptions
 {
     /// <summary>

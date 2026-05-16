@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
@@ -73,7 +74,7 @@ internal sealed class MessageSender : IMessageSender
 
     public Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices)
     {
-        Headless.Checks.Argument.IsNotNull(dispatchServices);
+        Argument.IsNotNull(dispatchServices);
 
         // Outbox sender doesn't propagate user cancellation; messages should be delivered.
         // We DO honor host shutdown (_shutdownToken from IHostApplicationLifetime.ApplicationStopping)

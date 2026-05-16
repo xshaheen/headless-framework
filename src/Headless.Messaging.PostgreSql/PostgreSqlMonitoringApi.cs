@@ -64,7 +64,13 @@ public sealed class PostgreSqlMonitoringApi(
             ) AS "ReceivedFailed",
             (
                 SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Delayed'
-            ) AS "PublishedDelayed";
+            ) AS "PublishedDelayed",
+            (
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "NextRetryAt" IS NOT NULL
+            ) AS "PublishedPendingRetry",
+            (
+                SELECT COUNT("Id") FROM {_receivedTable} WHERE "NextRetryAt" IS NOT NULL
+            ) AS "ReceivedPendingRetry";
             """;
 
         await using var connection = _options.CreateConnection();
@@ -83,6 +89,8 @@ public sealed class PostgreSqlMonitoringApi(
                         statisticsDto.PublishedFailed = reader.GetInt64(2);
                         statisticsDto.ReceivedFailed = reader.GetInt64(3);
                         statisticsDto.PublishedDelayed = reader.GetInt64(4);
+                        statisticsDto.PublishedPendingRetry = reader.GetInt64(5);
+                        statisticsDto.ReceivedPendingRetry = reader.GetInt64(6);
                     }
 
                     return statisticsDto;
@@ -103,8 +111,8 @@ public sealed class PostgreSqlMonitoringApi(
         var tableName = query.MessageType == MessageType.Publish ? _publishedTable : _receivedTable;
         var selectColumns =
             query.MessageType == MessageType.Publish
-                ? @"""Id"",""MessageId"",""Version"",""Name"",CAST(NULL AS VARCHAR(200)) AS ""Group"",""Content"",""Retries"",""Added"",""ExpiresAt"",""StatusName"""
-                : @"""Id"",""MessageId"",""Version"",""Name"",""Group"",""Content"",""Retries"",""Added"",""ExpiresAt"",""StatusName""";
+                ? @"""Id"",""MessageId"",""Version"",""Name"",CAST(NULL AS VARCHAR(200)) AS ""Group"",""Content"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil"""
+                : @"""Id"",""MessageId"",""Version"",""Name"",""Group"",""Content"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil""";
         var where = string.Empty;
 
         if (!string.IsNullOrEmpty(query.StatusName))
@@ -188,7 +196,13 @@ public sealed class PostgreSqlMonitoringApi(
                                 ExpiresAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(index - 1),
-                                StatusName = reader.GetString(index),
+                                StatusName = reader.GetString(index++),
+                                NextRetryAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(index - 1),
+                                LockedUntil = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(index - 1),
                             }
                         );
                     }
@@ -358,7 +372,7 @@ public sealed class PostgreSqlMonitoringApi(
             ? @"""ExceptionInfo"""
             : "NULL AS \"ExceptionInfo\"";
         var sql =
-            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql} FROM {tableName} WHERE ""Id""=@Id";
+            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} WHERE ""Id""=@Id";
 
         await using var connection = _options.CreateConnection();
 
@@ -384,6 +398,12 @@ public sealed class PostgreSqlMonitoringApi(
                             ExceptionInfo = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
                                 ? null
                                 : reader.GetString(5),
+                            NextRetryAt = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(6),
+                            LockedUntil = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(7),
                         };
                     }
 

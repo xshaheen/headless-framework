@@ -130,8 +130,9 @@ public sealed class SqlServerStorageInitializer(
                     CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
                     -- Filtered index for retry pickup. Keyed on (Version, NextRetryAt) so Version
                     -- is a seek predicate rather than a residual filter; the pickup query filters
-                    -- on both.
-                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries]) WHERE [NextRetryAt] IS NOT NULL;
+                    -- on both. INCLUDE covers Retries AND LockedUntil so the lease predicate is
+                    -- satisfied from the index without a per-candidate heap fetch.
+                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
                 END;
             END TRY
             BEGIN CATCH
@@ -160,12 +161,54 @@ public sealed class SqlServerStorageInitializer(
                     CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
                     -- Filtered index for retry pickup. Keyed on (Version, NextRetryAt) so Version
                     -- is a seek predicate rather than a residual filter; the pickup query filters
-                    -- on both.
-                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries]) WHERE [NextRetryAt] IS NOT NULL;
+                    -- on both. INCLUDE covers Retries AND LockedUntil so the lease predicate is
+                    -- satisfied from the index without a per-candidate heap fetch.
+                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
                 END;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() <> 2714 THROW;
+            END CATCH;
+
+            -- Recreate the filtered retry-pickup index if it exists with an older shape (missing
+            -- LockedUntil from the INCLUDE list). DROP_EXISTING ensures the new definition replaces
+            -- the older one in place when the columns differ.
+            BEGIN TRY
+                IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    AND NOT EXISTS (
+                        SELECT 1 FROM sys.index_columns ic
+                        JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                        WHERE ic.object_id = OBJECT_ID(N'{GetReceivedTableName()}')
+                          AND ic.index_id = (SELECT index_id FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                          AND ic.is_included_column = 1
+                          AND c.name = 'LockedUntil'
+                    )
+                BEGIN
+                    DROP INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()};
+                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                END;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() <> 3701 THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
+                    AND NOT EXISTS (
+                        SELECT 1 FROM sys.index_columns ic
+                        JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                        WHERE ic.object_id = OBJECT_ID(N'{GetPublishedTableName()}')
+                          AND ic.index_id = (SELECT index_id FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
+                          AND ic.is_included_column = 1
+                          AND c.name = 'LockedUntil'
+                    )
+                BEGIN
+                    DROP INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()};
+                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                END;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() <> 3701 THROW;
             END CATCH;
 
 """;

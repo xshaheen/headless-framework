@@ -35,13 +35,20 @@ internal static class InlineRetryLoop
                 return result;
             }
 
-            inlineRetries++;
-
-            if (inlineRetries > policy.MaxInlineRetries)
+            // Check budget BEFORE incrementing so the predicate matches its name (the count of
+            // inline retries already consumed). Equivalent to the previous post-increment
+            // `inlineRetries > MaxInlineRetries` check.
+            if (!policy.HasInlineBudgetRemaining(inlineRetries))
             {
                 return result;
             }
 
+            inlineRetries++;
+
+            // Defend against a zero-delay strategy spinning past cancellation between attempts:
+            // Task.Delay(TimeSpan.Zero, ct) can return synchronously without observing the token,
+            // so check explicitly before waiting and re-entering the loop.
+            cancellationToken.ThrowIfCancellationRequested();
             await Task.Delay(decision.Delay, cancellationToken).ConfigureAwait(false);
         }
     }

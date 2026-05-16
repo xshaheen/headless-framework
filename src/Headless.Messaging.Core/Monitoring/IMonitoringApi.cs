@@ -5,6 +5,7 @@ using Headless.Primitives;
 
 namespace Headless.Messaging.Monitoring;
 
+[PublicAPI]
 public interface IMonitoringApi
 {
     ValueTask<MediumMessage?> GetPublishedMessageAsync(long storageId, CancellationToken cancellationToken = default);

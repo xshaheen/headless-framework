@@ -36,7 +36,7 @@ public sealed class InlineRetryLoopTests : TestBase
         var attempts = 0;
         var observedInlineRetries = new List<int>();
 
-        var result = await InlineRetryLoop.ExecuteAsync<int>(
+        var result = await InlineRetryLoop.ExecuteAsync(
             (inlineRetries, _) =>
             {
                 observedInlineRetries.Add(inlineRetries);
@@ -66,7 +66,7 @@ public sealed class InlineRetryLoopTests : TestBase
         var policy = new RetryPolicyOptions { MaxPersistedRetries = 4, MaxInlineRetries = 0 };
         var attempts = 0;
 
-        var result = await InlineRetryLoop.ExecuteAsync<int>(
+        var result = await InlineRetryLoop.ExecuteAsync(
             (inlineRetries, _) =>
             {
                 attempts++;
@@ -89,7 +89,7 @@ public sealed class InlineRetryLoopTests : TestBase
         var policy = new RetryPolicyOptions { MaxPersistedRetries = 9, MaxInlineRetries = 1 };
         var attempts = 0;
 
-        var result = await InlineRetryLoop.ExecuteAsync<int>(
+        var result = await InlineRetryLoop.ExecuteAsync(
             (inlineRetries, _) =>
             {
                 attempts++;

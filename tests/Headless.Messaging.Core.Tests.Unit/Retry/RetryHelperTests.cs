@@ -474,8 +474,7 @@ public sealed class RetryHelperTests : TestBase
             Exception = new InvalidOperationException("orig"),
         };
 
-        var loggerCalls = new List<string>();
-        var logger = NSubstitute.Substitute.For<ILogger>();
+        var logger = Substitute.For<ILogger>();
 
         // Should NOT throw — exception is logged and absorbed.
         await RetryHelper.InvokeOnExhaustedAsync(
@@ -491,6 +490,57 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
+    public async Task invoke_on_exhausted_should_cancel_callback_token_on_host_shutdown()
+    {
+        // Host-shutdown OCE branch: when WaitAsync observes the supplied (host) cancellation
+        // token, the callback's linked CTS must be cancelled so a cooperative callback unwinds
+        // cleanly. The method must not propagate the OCE.
+        var failed = new FailedInfo
+        {
+            Message = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), null),
+            MessageType = MessageType.Subscribe,
+            ServiceProvider = new ServiceCollection().BuildServiceProvider(),
+            Exception = new InvalidOperationException("orig"),
+        };
+
+        using var hostCts = new CancellationTokenSource();
+        var observedCallbackCt = CancellationToken.None;
+        var callbackCancelled = new TaskCompletionSource<bool>();
+
+        await RetryHelper.InvokeOnExhaustedAsync(
+            async (info, ct) =>
+            {
+                observedCallbackCt = ct;
+                ct.Register(() => callbackCancelled.TrySetResult(true));
+
+                // Trigger host shutdown after the callback registers its cancellation hook so
+                // WaitAsync observes the host token, producing an OCE bound to that token.
+                _ = Task.Run(
+                    async () =>
+                    {
+                        await Task.Delay(50, AbortToken).ConfigureAwait(false);
+                        // ReSharper disable once AccessToDisposedClosure
+                        await hostCts.CancelAsync().ConfigureAwait(false);
+                    },
+                    AbortToken
+                );
+
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false);
+            },
+            failed,
+            timeout: TimeSpan.FromSeconds(30),
+            storageId: 7,
+            Substitute.For<ILogger>(),
+            cancellationToken: hostCts.Token
+        );
+
+        // The callback's CT should have been cancelled by the OCE branch's CancelAsync call.
+        var cancelled = await callbackCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cancelled.Should().BeTrue();
+        observedCallbackCt.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task invoke_on_exhausted_should_cancel_callback_token_on_timeout()
     {
         var policy = new RetryPolicyOptions();
@@ -502,13 +552,11 @@ public sealed class RetryHelperTests : TestBase
             Exception = new InvalidOperationException("orig"),
         };
 
-        var observedCt = CancellationToken.None;
         var observedCancellation = new TaskCompletionSource<bool>();
 
         await RetryHelper.InvokeOnExhaustedAsync(
             async (_, ct) =>
             {
-                observedCt = ct;
                 ct.Register(() => observedCancellation.TrySetResult(true));
                 // Park forever so the timeout fires.
                 await Task.Delay(Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false);
@@ -516,7 +564,7 @@ public sealed class RetryHelperTests : TestBase
             failed,
             timeout: TimeSpan.FromMilliseconds(100),
             storageId: 99,
-            NSubstitute.Substitute.For<ILogger>(),
+            Substitute.For<ILogger>(),
             cancellationToken: CancellationToken.None
         );
 
