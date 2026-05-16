@@ -531,12 +531,4 @@ internal static partial class LoggerExtensions
         long storageId,
         string exceptionType
     );
-
-    [LoggerMessage(
-        EventId = 69,
-        EventName = "BackoffDelayNonFinite",
-        Level = LogLevel.Warning,
-        Message = "IRetryBackoffStrategy.Compute returned a non-finite delay ({Delay}) for message {StorageId}. Coerced to TimeSpan.Zero."
-    )]
-    public static partial void BackoffDelayNonFinite(this ILogger logger, long storageId, double delay);
 }
