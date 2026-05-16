@@ -273,7 +273,8 @@ internal sealed class SubscribeExecutor(
             ex,
             _retryPolicy,
             inlineRetries,
-            isCancellation: false
+            isCancellation: false,
+            logger: logger
         );
         switch (decision.Outcome)
         {

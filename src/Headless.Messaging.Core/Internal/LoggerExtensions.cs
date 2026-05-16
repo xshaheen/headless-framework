@@ -518,4 +518,25 @@ internal static partial class LoggerExtensions
         Message = "RetryPolicy.OnExhausted callback for message {StorageId} did not complete within {TimeoutSeconds}s. The callback is orphaned; the dispatch loop has resumed."
     )]
     public static partial void OnExhaustedTimedOut(this ILogger logger, long storageId, double timeoutSeconds);
+
+    [LoggerMessage(
+        EventId = 68,
+        EventName = "BackoffStrategyThrew",
+        Level = LogLevel.Error,
+        Message = "IRetryBackoffStrategy.Compute threw {ExceptionType} for message {StorageId}. Treating as Exhausted to avoid an infinite retry loop on a buggy strategy."
+    )]
+    public static partial void BackoffStrategyThrew(
+        this ILogger logger,
+        Exception ex,
+        long storageId,
+        string exceptionType
+    );
+
+    [LoggerMessage(
+        EventId = 69,
+        EventName = "BackoffDelayNonFinite",
+        Level = LogLevel.Warning,
+        Message = "IRetryBackoffStrategy.Compute returned a non-finite delay ({Delay}) for message {StorageId}. Coerced to TimeSpan.Zero."
+    )]
+    public static partial void BackoffDelayNonFinite(this ILogger logger, long storageId, double delay);
 }
