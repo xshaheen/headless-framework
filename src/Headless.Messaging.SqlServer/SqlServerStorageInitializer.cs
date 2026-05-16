@@ -121,6 +121,9 @@ public sealed class SqlServerStorageInitializer(
                     CREATE UNIQUE NONCLUSTERED INDEX [IX_{receivedPrefix}_MessageId_Group] ON {GetReceivedTableName()} ([MessageId] ASC, [Group] ASC);
                     CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
                     CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
+                    -- Filtered index for retry pickup. Version is a residual filter (included
+                    -- column), not a seek predicate, so rolling-upgrade scenarios with a stale
+                    -- Version see up to 200 wasted index lookups per cycle (batch size = 200).
                     CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_NextRetry] ON {GetReceivedTableName()} ([NextRetryAt] ASC) INCLUDE ([Version],[Retries]) WHERE [NextRetryAt] IS NOT NULL;
                 END;
             END TRY
@@ -147,6 +150,9 @@ public sealed class SqlServerStorageInitializer(
 
                     CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
                     CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_ExpiresAt_StatusName] ON {GetPublishedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
+                    -- Filtered index for retry pickup. Version is a residual filter (included
+                    -- column), not a seek predicate, so rolling-upgrade scenarios with a stale
+                    -- Version see up to 200 wasted index lookups per cycle (batch size = 200).
                     CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_NextRetry] ON {GetPublishedTableName()} ([NextRetryAt] ASC) INCLUDE ([Version],[Retries]) WHERE [NextRetryAt] IS NOT NULL;
                 END;
             END TRY

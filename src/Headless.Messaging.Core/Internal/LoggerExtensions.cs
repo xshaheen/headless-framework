@@ -531,4 +531,12 @@ internal static partial class LoggerExtensions
         long storageId,
         string exceptionType
     );
+
+    [LoggerMessage(
+        EventId = 69,
+        EventName = "PublishSucceededButStorageTerminal",
+        Level = LogLevel.Information,
+        Message = "Publish succeeded after a terminal-Failed write for message {StorageId}; storage state will not be updated. Consumers will observe at-least-once delivery."
+    )]
+    public static partial void PublishSucceededButStorageTerminal(this ILogger logger, long storageId);
 }

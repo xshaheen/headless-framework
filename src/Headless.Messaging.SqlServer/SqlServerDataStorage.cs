@@ -172,8 +172,11 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Id", message.StorageId),
             new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
-            new SqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
-            new SqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTime2)
+            {
+                Value = message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value,
+            },
+            new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = nextRetryAt.ToUtcParameterValue() },
             new SqlParameter("@StatusName", state.ToString("G")),
             new SqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -216,8 +219,11 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Content", message.Content),
             new SqlParameter("@Retries", message.Retries),
             new SqlParameter("@Added", message.Added),
-            new SqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
-            new SqlParameter("@NextRetryAt", message.NextRetryAt!.Value),
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTime2)
+            {
+                Value = message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value,
+            },
+            new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = message.NextRetryAt.ToUtcParameterValue() },
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new SqlParameter("@MessageId", content.GetId()),
         ];
@@ -268,11 +274,13 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Content", content),
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
-            new SqlParameter(
-                "@ExpiresAt",
-                timeProvider.GetUtcNow().UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter)
-            ),
-            new SqlParameter("@NextRetryAt", DBNull.Value),
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTime2)
+            {
+                Value = timeProvider
+                    .GetUtcNow()
+                    .UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter),
+            },
+            new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = DBNull.Value },
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
             new SqlParameter("@MessageId", serializer.Deserialize(content)!.GetId()),
             new SqlParameter("@Version", messagingOptions.Value.Version),
@@ -309,11 +317,14 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Content", mediumMessage.Content),
             new SqlParameter("@Retries", mediumMessage.Retries),
             new SqlParameter("@Added", mediumMessage.Added),
-            new SqlParameter(
-                "@ExpiresAt",
-                mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value
-            ),
-            new SqlParameter("@NextRetryAt", mediumMessage.NextRetryAt!.Value),
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTime2)
+            {
+                Value = mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value,
+            },
+            new SqlParameter("@NextRetryAt", SqlDbType.DateTime2)
+            {
+                Value = mediumMessage.NextRetryAt.ToUtcParameterValue(),
+            },
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new SqlParameter("@MessageId", message.GetId()),
             new SqlParameter("@Version", messagingOptions.Value.Version),
@@ -474,8 +485,11 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Id", message.StorageId),
             new SqlParameter("@Content", serializer.Serialize(message.Origin)),
             new SqlParameter("@Retries", message.Retries),
-            new SqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
-            new SqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
+            new SqlParameter("@ExpiresAt", SqlDbType.DateTime2)
+            {
+                Value = message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value,
+            },
+            new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = nextRetryAt.ToUtcParameterValue() },
             new SqlParameter("@StatusName", state.ToString("G")),
         ];
 
@@ -536,14 +550,18 @@ public sealed class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        // Use the injected TimeProvider rather than the DB server clock (GETUTCDATE()) so InMemory
+        // and SQL providers share identical pickup semantics — keeps tests with a fake clock honest
+        // and avoids subtle drift between application time and DB time.
         var sql =
             $"SELECT TOP ({_RetryBatchSize}) Id, Content, Retries, Added, NextRetryAt FROM {tableName} WITH (UPDLOCK, READPAST) "
-            + $"WHERE Retries <= @Retries AND Version = @Version AND NextRetryAt IS NOT NULL AND NextRetryAt <= GETUTCDATE();";
+            + $"WHERE Retries <= @Retries AND Version = @Version AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now;";
 
         object[] sqlParams =
         [
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Version", messagingOptions.Value.Version),
+            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);

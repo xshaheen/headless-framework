@@ -219,6 +219,34 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
+    public void should_reject_retry_policy_with_non_positive_on_exhausted_timeout()
+    {
+        // given
+        var options = new RetryPolicyOptions { OnExhaustedTimeout = TimeSpan.Zero };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.OnExhaustedTimeout));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_when_on_exhausted_timeout_exceeds_one_hour()
+    {
+        // given
+        var options = new RetryPolicyOptions { OnExhaustedTimeout = TimeSpan.FromHours(2) };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.OnExhaustedTimeout));
+    }
+
+    [Fact]
     public void should_reject_retry_policy_with_null_backoff_strategy()
     {
         // given
@@ -248,9 +276,17 @@ public sealed class MessagingOptionsValidationTests : TestBase
     [Fact]
     public void should_reject_messaging_options_with_null_retry_policy()
     {
-        // given — use the internal seam that forces RetryPolicy to null without coupling the test
-        // to a compiler-generated backing field name.
-        var options = MessagingOptions.CreateForValidatorTest_AllowNullRetryPolicy();
+        // given — force the _retryPolicy backing field to null via reflection. RetryPolicy is a
+        // get-only public property with a named backing field, so reflection is stable (no
+        // compiler-generated naming). Reflection lives in the test rather than in a production
+        // test seam.
+        var options = new MessagingOptions();
+        var field = typeof(MessagingOptions).GetField(
+            "_retryPolicy",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+        );
+        field.Should().NotBeNull("named backing field _retryPolicy must exist on MessagingOptions");
+        field!.SetValue(options, null);
 
         // when
         var result = new MessagingOptionsValidator().Validate(options);

@@ -9,14 +9,16 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary>Extension methods for configuring messaging with In-Memory message queue.</summary>
 public static class InMemoryQueueSetup
 {
-    /// <summary>Configuration for messaging.</summary>
-    /// <param name="setup">Messaging configuration builder</param>
-    /// <returns>The setup builder for method chaining</returns>
-    public static MessagingSetupBuilder UseInMemoryMessageQueue(this MessagingSetupBuilder setup)
+    extension(MessagingSetupBuilder setup)
     {
-        setup.RegisterExtension(new InMemoryQueueOptionsExtension());
+        /// <summary>Configuration for messaging.</summary>
+        /// <returns>The setup builder for method chaining</returns>
+        public MessagingSetupBuilder UseInMemoryMessageQueue()
+        {
+            setup.RegisterExtension(new InMemoryQueueOptionsExtension());
 
-        return setup;
+            return setup;
+        }
     }
 
     /// <summary>Messaging options extension for configuring in-memory message queue services.</summary>

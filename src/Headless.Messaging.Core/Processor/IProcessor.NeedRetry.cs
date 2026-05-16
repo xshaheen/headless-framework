@@ -34,6 +34,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
     private Task? _failedRetryConsumeTask;
+    private Task? _publishedRetryConsumeTask;
 
     // Threading contract:
     // - _AdjustPollingInterval is called only from ProcessAsync (sequential).
@@ -118,20 +119,35 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         var storage = context.Provider.GetRequiredService<IDataStorage>();
 
-        _ = Task
-            .Factory.StartNew(
-                () => _ProcessPublishedAsync(storage, context),
-                CancellationToken.None,
-                TaskCreationOptions.DenyChildAttach,
-                TaskScheduler.Default
-            )
-            .Unwrap()
-            .ContinueWith(
+        // Mirror the received-retry guard below: skip spawning a new published-retry task while
+        // the previous one is still running under UseStorageLock to avoid concurrent lock-renewal
+        // contention. Without UseStorageLock the guard is a no-op (multiple in-flight tasks are
+        // acceptable since the storage layer's own concurrency primitives serialize writes).
+        if (!_options.Value.UseStorageLock || _publishedRetryConsumeTask is not { IsCompleted: false })
+        {
+            _publishedRetryConsumeTask = Task
+                .Factory.StartNew(
+                    () => _ProcessPublishedAsync(storage, context),
+                    CancellationToken.None,
+                    TaskCreationOptions.DenyChildAttach,
+                    TaskScheduler.Default
+                )
+                .Unwrap();
+
+            _ = _publishedRetryConsumeTask.ContinueWith(
                 t => _logger.PublishedRetryProcessingUnhandled(t.Exception),
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted,
                 TaskScheduler.Default
             );
+
+            _ = _publishedRetryConsumeTask.ContinueWith(
+                _ => _publishedRetryConsumeTask = null,
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default
+            );
+        }
 
         if (_options.Value.UseStorageLock && _failedRetryConsumeTask is { IsCompleted: false })
         {

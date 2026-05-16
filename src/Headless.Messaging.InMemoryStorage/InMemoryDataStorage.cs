@@ -26,6 +26,11 @@ internal sealed class InMemoryDataStorage(
     internal ConcurrentDictionary<string, (string Instance, DateTime ExpiresAt)> Locks { get; } =
         new(StringComparer.Ordinal);
 
+    // Serializes the lookup-then-insert/update path in StoreReceivedExceptionMessageAsync so
+    // two concurrent broker redeliveries cannot both decide "not found" and race to insert
+    // duplicate rows for the same (Version, MessageId, Group) tuple.
+    private readonly Lock _receivedExceptionUpsertLock = new();
+
     public void Clear()
     {
         PublishedMessages.Clear();
@@ -269,15 +274,17 @@ internal sealed class InMemoryDataStorage(
         // semantics so broker redelivery doesn't accumulate duplicate rows. The terminal-row guard
         // also matches: a Succeeded/Failed entry with no scheduled retry is left alone so a
         // previously-succeeded row isn't overwritten back to Failed by a redelivery-then-deserialize-fail.
-        var existing = ReceivedMessages.Values.FirstOrDefault(m =>
-            string.Equals(m.Version, version, StringComparison.Ordinal)
-            && string.Equals(m.Origin.GetId(), messageId, StringComparison.Ordinal)
-            && string.Equals(m.Group, group, StringComparison.Ordinal)
-        );
-
-        if (existing is not null)
+        // Lock the entire lookup-then-insert/update path so concurrent broker redeliveries cannot
+        // both decide "not found" and race to insert duplicate rows.
+        lock (_receivedExceptionUpsertLock)
         {
-            lock (existing)
+            var existing = ReceivedMessages.Values.FirstOrDefault(m =>
+                string.Equals(m.Version, version, StringComparison.Ordinal)
+                && string.Equals(m.Origin.GetId(), messageId, StringComparison.Ordinal)
+                && string.Equals(m.Group, group, StringComparison.Ordinal)
+            );
+
+            if (existing is not null)
             {
                 if (
                     (existing.StatusName is StatusName.Succeeded || existing.StatusName is StatusName.Failed)
@@ -294,29 +301,29 @@ internal sealed class InMemoryDataStorage(
                 existing.NextRetryAt = null;
                 existing.Content = content;
                 existing.ExceptionInfo = exceptionInfo;
+
+                return ValueTask.CompletedTask;
             }
+
+            var id = longIdGenerator.Create();
+            ReceivedMessages[id] = new MemoryMessage
+            {
+                StorageId = id,
+                Group = group,
+                Origin = origin,
+                Name = name,
+                Content = content,
+                Retries = retries,
+                Added = now,
+                ExpiresAt = expiresAt,
+                NextRetryAt = null,
+                StatusName = StatusName.Failed,
+                ExceptionInfo = exceptionInfo,
+                Version = version,
+            };
 
             return ValueTask.CompletedTask;
         }
-
-        var id = longIdGenerator.Create();
-        ReceivedMessages[id] = new MemoryMessage
-        {
-            StorageId = id,
-            Group = group,
-            Origin = origin,
-            Name = name,
-            Content = content,
-            Retries = retries,
-            Added = now,
-            ExpiresAt = expiresAt,
-            NextRetryAt = null,
-            StatusName = StatusName.Failed,
-            ExceptionInfo = exceptionInfo,
-            Version = version,
-        };
-
-        return ValueTask.CompletedTask;
     }
 
     public ValueTask<MediumMessage> StoreReceivedMessageAsync(

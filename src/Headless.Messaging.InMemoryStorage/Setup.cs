@@ -11,10 +11,13 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class InMemoryStorageSetup
 {
-    public static MessagingSetupBuilder UseInMemoryStorage(this MessagingSetupBuilder setup)
+    extension(MessagingSetupBuilder setup)
     {
-        setup.RegisterExtension(new InMemoryMessagesOptionsExtension());
-        return setup;
+        public MessagingSetupBuilder UseInMemoryStorage()
+        {
+            setup.RegisterExtension(new InMemoryMessagesOptionsExtension());
+            return setup;
+        }
     }
 
     private sealed class InMemoryMessagesOptionsExtension : IMessagesOptionsExtension

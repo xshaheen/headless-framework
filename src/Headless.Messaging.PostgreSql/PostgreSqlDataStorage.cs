@@ -226,7 +226,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Retries", message.Retries),
             new NpgsqlParameter("@Added", message.Added),
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
-            new NpgsqlParameter("@NextRetryAt", message.NextRetryAt!.Value),
+            new NpgsqlParameter("@NextRetryAt", message.NextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", content.GetId()),
         ];
@@ -321,7 +321,7 @@ public sealed class PostgreSqlDataStorage(
                 "@ExpiresAt",
                 mediumMessage.ExpiresAt.HasValue ? mediumMessage.ExpiresAt.Value : DBNull.Value
             ),
-            new NpgsqlParameter("@NextRetryAt", mediumMessage.NextRetryAt!.Value),
+            new NpgsqlParameter("@NextRetryAt", mediumMessage.NextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new NpgsqlParameter("@MessageId", message.GetId()),
             new NpgsqlParameter("@ExceptionInfo", DBNull.Value),
@@ -542,14 +542,18 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        // Use the injected TimeProvider rather than the DB server clock (now()) so InMemory and
+        // SQL providers share identical pickup semantics — keeps tests with a fake clock honest
+        // and avoids subtle drift between application time and DB time.
         var sql =
             $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\",\"NextRetryAt\" FROM {tableName} WHERE \"Retries\"<=@Retries "
-            + $"AND \"Version\"=@Version AND \"NextRetryAt\" IS NOT NULL AND \"NextRetryAt\" <= now() LIMIT {_RetryBatchSize} FOR UPDATE SKIP LOCKED;";
+            + $"AND \"Version\"=@Version AND \"NextRetryAt\" IS NOT NULL AND \"NextRetryAt\" <= @Now LIMIT {_RetryBatchSize} FOR UPDATE SKIP LOCKED;";
 
         object[] sqlParams =
         [
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
