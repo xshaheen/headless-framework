@@ -8,9 +8,6 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Respawn" />
-    <PackageReference Include="Testcontainers" />
-    <PackageReference Include="Testcontainers.PostgreSql" />
-    <PackageReference Include="Testcontainers.Redis" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
@@ -21,6 +18,7 @@
     <ProjectReference Include="..\..\src\Headless.Permissions.Storage.EntityFramework\Headless.Permissions.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Redis\Headless.DistributedLocks.Redis.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Update="TestSetup\postgre-init.sql">

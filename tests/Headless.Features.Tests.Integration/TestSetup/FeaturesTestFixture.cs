@@ -2,6 +2,7 @@
 
 using Headless.Redis;
 using Headless.Testing.AspNetCore;
+using Headless.Testing.Testcontainers;
 using Npgsql;
 using StackExchange.Redis;
 using Testcontainers.PostgreSql;
@@ -77,7 +78,7 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
 
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
-        return new PostgreSqlBuilder("postgres:18.1-alpine3.23")
+        return new PostgreSqlBuilder(TestImages.PostgreSql)
             .WithDatabase("headless_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
@@ -86,6 +87,6 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder("redis:7-alpine").Build();
+        return new RedisBuilder(TestImages.Redis).Build();
     }
 }

@@ -2,17 +2,13 @@
 
 using Headless.DistributedLocks.Redis;
 using Headless.Redis;
+using Headless.Testing.Testcontainers;
 using StackExchange.Redis;
-using Testcontainers.Redis;
-using Testcontainers.Xunit;
-using Xunit.Sdk;
 
 namespace Tests;
 
 [CollectionDefinition(DisableParallelization = false)]
-public sealed class RedisTestFixture(IMessageSink messageSink)
-    : ContainerFixture<RedisBuilder, RedisContainer>(messageSink),
-        ICollectionFixture<RedisTestFixture>
+public sealed class RedisTestFixture : HeadlessRedisFixture, ICollectionFixture<RedisTestFixture>
 {
     private HeadlessRedisScriptsLoader? _scriptLoader;
 
@@ -21,11 +17,6 @@ public sealed class RedisTestFixture(IMessageSink messageSink)
     public RedisDistributedLockStorage LockStorage { get; private set; } = null!;
 
     public RedisThrottlingDistributedLockStorage ThrottlingLockStorage { get; private set; } = null!;
-
-    protected override RedisBuilder Configure()
-    {
-        return base.Configure().WithImage("redis:7-alpine");
-    }
 
     protected override async ValueTask InitializeAsync()
     {

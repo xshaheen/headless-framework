@@ -9,7 +9,7 @@ public sealed class SqlServerConnectionFactoryTests(SqlServerTestFixture fixture
 {
     public override string GetConnection()
     {
-        return fixture.GetConnectionString();
+        return fixture.ConnectionString;
     }
 
     public override ISqlConnectionFactory GetFactory()

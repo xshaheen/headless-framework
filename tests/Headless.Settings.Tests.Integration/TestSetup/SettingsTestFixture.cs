@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Redis;
+using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 using Respawn;
@@ -85,7 +86,7 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
 
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
-        return new PostgreSqlBuilder("postgres:18.1-alpine3.23")
+        return new PostgreSqlBuilder(TestImages.PostgreSql)
             .WithLabel("type", "settings")
             .WithDatabase("headless_test")
             .WithUsername("postgres")
@@ -95,6 +96,6 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder("redis:7-alpine").Build();
+        return new RedisBuilder(TestImages.Redis).Build();
     }
 }

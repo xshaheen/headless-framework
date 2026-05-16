@@ -1,19 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Testcontainers.Azurite;
-using Testcontainers.Xunit;
-using Xunit.Sdk;
+using Headless.Testing.Testcontainers;
 
 namespace Tests.TestSetup;
 
 [UsedImplicitly]
 [CollectionDefinition]
-public sealed class TusAzureFixture(IMessageSink messageSink)
-    : ContainerFixture<AzuriteBuilder, AzuriteContainer>(messageSink),
-        ICollectionFixture<TusAzureFixture>
-{
-    protected override AzuriteBuilder Configure()
-    {
-        return base.Configure().WithImage("mcr.microsoft.com/azure-storage/azurite:latest");
-    }
-}
+public sealed class TusAzureFixture : HeadlessAzuriteFixture, ICollectionFixture<TusAzureFixture>;

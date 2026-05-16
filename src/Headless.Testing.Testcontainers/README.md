@@ -8,10 +8,24 @@ Provides pre-configured Testcontainers fixtures for common infrastructure (Redis
 
 ## Key Features
 
-- `HeadlessRedisFixture` - Redis 7 Alpine container fixture
-- `TestContextMessageSink` - xUnit output integration
-- Automatic container lifecycle management
-- Clean test isolation
+- `TestImages` — single source of truth for all container image tags (pinned, no `:latest`)
+- Shared `ContainerFixture` subclasses for every backing service used in the framework:
+  - `HeadlessPostgreSqlFixture`
+  - `HeadlessRedisFixture`
+  - `HeadlessRabbitMqFixture`
+  - `HeadlessNatsFixture`
+  - `HeadlessAzuriteFixture`
+  - `HeadlessLocalStackFixture`
+  - `HeadlessSqlServerFixture` (architecture-aware: SQL Server 2022 on x86_64, Azure SQL Edge on ARM64)
+- `TestContextMessageSink` — xUnit v3 diagnostic-message forwarder
+- Automatic container lifecycle management via `Testcontainers.Xunit`
+
+## Why pin image tags
+
+Floating tags such as `:latest` force Docker to hit the registry on every pull to
+check the digest, even when the local image is current. Pinning each image in
+`TestImages` keeps the working set small and reproducible across CI and local runs.
+Bump versions in one place when you want a refresh.
 
 ## Installation
 

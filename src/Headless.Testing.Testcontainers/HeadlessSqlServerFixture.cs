@@ -18,9 +18,7 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
 
     // Use Azure SQL Edge for ARM64 (e.g., Apple Silicon), SQL Server 2022 for x86_64
     private static readonly string _Image =
-        RuntimeInformation.ProcessArchitecture == Architecture.Arm64
-            ? "mcr.microsoft.com/azure-sql-edge:latest"
-            : "mcr.microsoft.com/mssql/server:2022-latest";
+        RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? TestImages.AzureSqlEdge : TestImages.MsSqlServer;
 
     private readonly IContainer _container = new ContainerBuilder(_Image)
         .WithPortBinding(1433, true)

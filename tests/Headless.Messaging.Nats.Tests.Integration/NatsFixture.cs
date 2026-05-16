@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Testing.Testcontainers;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
@@ -8,7 +9,7 @@ using Testcontainers.Nats;
 namespace Tests;
 
 [UsedImplicitly]
-public sealed class NatsFixture : IAsyncLifetime
+public sealed class NatsFixture : HeadlessNatsFixture
 {
     private static readonly byte[] _NatsConfig = Encoding.UTF8.GetBytes(
         """
@@ -18,18 +19,19 @@ public sealed class NatsFixture : IAsyncLifetime
         """
     );
 
-    private readonly NatsContainer _container = new NatsBuilder("nats:2-alpine")
-        .WithResourceMapping(_NatsConfig, "/etc/nats/nats-server.conf")
-        .Build();
-
     private NatsConnection? _connection;
 
     /// <summary>Gets the NATS connection string.</summary>
-    public string ConnectionString => _container.GetConnectionString();
+    public string ConnectionString => Container.GetConnectionString();
 
-    public async ValueTask InitializeAsync()
+    protected override NatsBuilder Configure()
     {
-        await _container.StartAsync();
+        return base.Configure().WithResourceMapping(_NatsConfig, "/etc/nats/nats-server.conf");
+    }
+
+    protected override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
         // Eagerly establish the shared connection to fail fast on startup issues
         await GetConnectionAsync();
     }
@@ -72,14 +74,14 @@ public sealed class NatsFixture : IAsyncLifetime
         return _connection;
     }
 
-    public async ValueTask DisposeAsync()
+    protected override async ValueTask DisposeAsyncCore()
     {
         if (_connection is not null)
         {
             await _connection.DisposeAsync();
         }
 
-        await _container.DisposeAsync();
+        await base.DisposeAsyncCore();
     }
 }
 
