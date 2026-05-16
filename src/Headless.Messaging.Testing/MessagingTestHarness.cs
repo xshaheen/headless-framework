@@ -5,11 +5,13 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemoryQueue;
 using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Testing.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Testing;
 
@@ -123,6 +125,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
         _DecorateTransport(services, store);
         _DecoratePipeline(services, store);
+        _DecorateOnExhausted(services, store);
 
         services.TryAddSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IDirectPublisher>());
 
@@ -142,6 +145,12 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
     /// <summary>Gets a snapshot of all messages whose consumer threw an unhandled exception.</summary>
     public IReadOnlyCollection<RecordedMessage> Faulted => _store.Faulted;
+
+    /// <summary>
+    /// Gets a snapshot of all messages whose retry budget was exhausted (the framework invoked
+    /// <c>RetryPolicy.OnExhausted</c>). Observed BEFORE the user-supplied callback runs.
+    /// </summary>
+    public IReadOnlyCollection<RecordedMessage> Exhausted => _store.Exhausted;
 
     // -------------------------------------------------------------------------
     // Awaitable assertions — Published
@@ -249,6 +258,44 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Faulted,
+            obj => predicate((T)obj),
+            timeout ?? DefaultTimeout,
+            cancellationToken
+        );
+
+    // -------------------------------------------------------------------------
+    // Awaitable assertions — Exhausted
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Waits until the retry budget for a message of type <typeparamref name="T"/> is exhausted
+    /// (the framework invoked <c>RetryPolicy.OnExhausted</c>), or throws
+    /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
+    /// </summary>
+    public Task<RecordedMessage> WaitForExhausted<T>(
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    ) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Exhausted,
+            predicate: null,
+            timeout ?? DefaultTimeout,
+            cancellationToken
+        );
+
+    /// <summary>
+    /// Waits until an exhausted message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
+    /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
+    /// </summary>
+    public Task<RecordedMessage> WaitForExhausted<T>(
+        Func<T, bool> predicate,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    ) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Exhausted,
             obj => predicate((T)obj),
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -397,6 +444,34 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         {
             var inner = _ResolveFromDescriptor<IConsumeExecutionPipeline>(sp, original);
             return new RecordingConsumeExecutionPipeline(inner, store);
+        });
+    }
+
+    /// <summary>
+    /// Wraps <c>RetryPolicy.OnExhausted</c> with a recording decorator that captures the
+    /// observation BEFORE invoking the user-supplied callback. <c>PostConfigure</c> runs after
+    /// all <c>Configure&lt;MessagingOptions&gt;</c> calls (including the harness's own and the
+    /// caller's), so the wrap is always the outermost layer.
+    /// </summary>
+    private static void _DecorateOnExhausted(IServiceCollection services, MessageObservationStore store)
+    {
+        services.PostConfigure<MessagingOptions>(opt =>
+        {
+            var original = opt.RetryPolicy.OnExhausted;
+            opt.RetryPolicy.OnExhausted = async (info, ct) =>
+            {
+                // Record FIRST so a hanging or throwing user callback doesn't lose the observation.
+                var payload = info.Message.Value ?? info.Message;
+                store.Record(
+                    RecordedMessage.FromHeaders(info.Message.Headers, payload, payload.GetType(), info.Exception),
+                    MessageObservationType.Exhausted
+                );
+
+                if (original is not null)
+                {
+                    await original(info, ct).ConfigureAwait(false);
+                }
+            };
         });
     }
 

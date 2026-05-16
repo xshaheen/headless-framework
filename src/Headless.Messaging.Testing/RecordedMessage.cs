@@ -15,6 +15,13 @@ public enum MessageObservationType
 
     /// <summary>Message processing faulted.</summary>
     Faulted,
+
+    /// <summary>
+    /// Retry budget was exhausted and the framework invoked <c>RetryPolicy.OnExhausted</c>.
+    /// Recorded BEFORE the user-supplied callback runs, so a hanging or throwing callback
+    /// cannot lose the observation.
+    /// </summary>
+    Exhausted,
 }
 
 /// <summary>A message captured by the test harness.</summary>
