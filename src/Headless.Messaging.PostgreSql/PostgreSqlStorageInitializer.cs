@@ -42,6 +42,7 @@ public sealed class PostgreSqlStorageInitializer(
 
         var sql = _CreateDbTablesScript(postgreSqlOptions.Value.Schema);
         await using var connection = postgreSqlOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         object[] sqlParams =
         [
@@ -50,9 +51,13 @@ public sealed class PostgreSqlStorageInitializer(
             new NpgsqlParameter("@LastLockTime", DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc)),
         ];
 
-        await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
-            .ConfigureAwait(false);
+        // PostgreSQL supports transactional DDL — wrap the batch so a mid-script failure
+        // (network drop, broker-side abort) cannot leave the schema half-initialized.
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        await connection.ExecuteNonQueryAsync(sql, transaction, cancellationToken, sqlParams).ConfigureAwait(false);
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         logger.LogEnsuringTablesCreated();
     }
