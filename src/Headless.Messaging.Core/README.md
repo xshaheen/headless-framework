@@ -30,12 +30,12 @@ dotnet add package Headless.Messaging.Core
 
 ```csharp
 // Register messaging with storage and transport
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    // Core configuration
-    options.SucceedMessageExpiredAfter = 24 * 3600;
-    options.RetryPolicy.MaxPersistedRetries = 50;
-    options.UseConventions(c =>
+    // Core configuration (value-typed options live under setup.Options)
+    setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
+    setup.Options.RetryPolicy.MaxPersistedRetries = 50;
+    setup.UseConventions(c =>
     {
         c.UseKebabCaseTopics();
         c.UseApplicationId("ordering-api");
@@ -43,17 +43,17 @@ builder.Services.AddHeadlessMessaging(options =>
     });
 
     // Add storage (required)
-    options.UsePostgreSql("connection_string");
+    setup.UsePostgreSql("connection_string");
 
     // Add transport (required)
-    options.UseRabbitMQ(rmq =>
+    setup.UseRabbitMQ(rmq =>
     {
         rmq.HostName = "localhost";
         rmq.Port = 5672;
     });
 
     // Register consumers
-    options.SubscribeFromAssemblyContaining<Program>();
+    setup.SubscribeFromAssemblyContaining<Program>();
 });
 
 // Publish messages with outbox (reliable delivery)
@@ -188,12 +188,12 @@ When runtime delegates are attached during application startup, the messaging ru
 Register in `Program.cs`:
 
 ```csharp
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    options.RetryPolicy.MaxPersistedRetries = 50;
-    options.SucceedMessageExpiredAfter = 24 * 3600;
-    options.ConsumerThreadCount = 1;
-    options.DefaultGroupName = "myapp";
+    setup.Options.RetryPolicy.MaxPersistedRetries = 50;
+    setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
+    setup.Options.ConsumerThreadCount = 1;
+    setup.Options.DefaultGroupName = "myapp";
 });
 ```
 
@@ -223,7 +223,7 @@ public sealed class CorrelationPublishFilter : PublishFilter
     }
 }
 
-builder.Services.AddHeadlessMessaging(options => { /* ... */ })
+builder.Services.AddHeadlessMessaging(setup => { /* ... */ })
     .AddSubscribeFilter<LoggingConsumeFilter>()
     .AddPublishFilter<CorrelationPublishFilter>();
 ```
@@ -289,15 +289,15 @@ Message ordering guarantees depend on the transport provider and configuration:
 ### Global Configuration
 
 ```csharp
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    options.RetryPolicy.MaxInlineRetries = 2;
-    options.RetryPolicy.MaxPersistedRetries = 15;
-    options.RetryPolicy.BackoffStrategy = new ExponentialBackoffStrategy(
+    setup.Options.RetryPolicy.MaxInlineRetries = 2;
+    setup.Options.RetryPolicy.MaxPersistedRetries = 15;
+    setup.Options.RetryPolicy.BackoffStrategy = new ExponentialBackoffStrategy(
         initialDelay: TimeSpan.FromSeconds(1),
         maxDelay: TimeSpan.FromMinutes(5)
     );
-    options.RetryPolicy.OnExhausted = (info, ct) =>
+    setup.Options.RetryPolicy.OnExhausted = (info, ct) =>
     {
         // Fires only when budget is fully consumed (Exhausted), not on permanent failures (Stop).
         var logger = info.ServiceProvider.GetRequiredService<ILogger<MyService>>();
@@ -357,25 +357,25 @@ Per-consumer-group circuit breaker that pauses transport consumption when a depe
 ### Global Configuration
 
 ```csharp
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
     // Circuit breaker (applies to all consumer groups)
-    options.CircuitBreaker.FailureThreshold = 5;                       // consecutive transient failures to trip
-    options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);    // initial open duration
-    options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
+    setup.Options.CircuitBreaker.FailureThreshold = 5;                       // consecutive transient failures to trip
+    setup.Options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);    // initial open duration
+    setup.Options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
 
     // Adaptive retry backpressure
-    options.RetryProcessor.AdaptivePolling = true;
-    options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(60);     // replaces the old FailedRetryInterval; default 60s
-    options.RetryProcessor.MaxPollingInterval = TimeSpan.FromMinutes(15); // 15 min cap
-    options.RetryProcessor.CircuitOpenRateThreshold = 0.8;              // back off above 80% circuit-open rate
+    setup.Options.RetryProcessor.AdaptivePolling = true;
+    setup.Options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(60);     // replaces the old FailedRetryInterval; default 60s
+    setup.Options.RetryProcessor.MaxPollingInterval = TimeSpan.FromMinutes(15); // 15 min cap
+    setup.Options.RetryProcessor.CircuitOpenRateThreshold = 0.8;              // back off above 80% circuit-open rate
 });
 ```
 
 ### Per-Consumer Override
 
 ```csharp
-options.Subscribe<PaymentHandler>()
+setup.Subscribe<PaymentHandler>()
     .Topic("payments.process")
     .WithCircuitBreaker(cb =>
     {
@@ -384,14 +384,14 @@ options.Subscribe<PaymentHandler>()
     });
 
 // Disable circuit breaker for a best-effort consumer
-options.Subscribe<MetricsHandler>()
+setup.Subscribe<MetricsHandler>()
     .WithCircuitBreaker(cb => cb.Enabled = false);
 ```
 
 ### Custom Exception Predicate
 
 ```csharp
-options.CircuitBreaker.IsTransientException = ex =>
+setup.Options.CircuitBreaker.IsTransientException = ex =>
     CircuitBreakerDefaults.IsTransient(ex) || ex is MyCustomTransientException;
 ```
 
