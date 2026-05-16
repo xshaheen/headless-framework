@@ -64,6 +64,19 @@ public sealed class RetryPolicyOptions
     public IRetryBackoffStrategy BackoffStrategy { get; set; } = new ExponentialBackoffStrategy();
 
     /// <summary>
+    /// Gets or sets the upper bound on how long the framework will await the
+    /// <see cref="OnExhausted"/> callback before logging a timeout and continuing.
+    /// Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// A callback that does not return within this window is observed via <c>Task.WaitAsync</c>
+    /// and a <c>OnExhaustedTimedOut</c> log event is emitted. The orphaned callback continues
+    /// running in the background but the dispatch loop is no longer blocked by it. Keep callbacks
+    /// short and honor the supplied <see cref="CancellationToken"/> to avoid leaking resources.
+    /// </remarks>
+    public TimeSpan OnExhaustedTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Copies all properties of this instance to <paramref name="target"/>.
     /// </summary>
     internal void CopyTo(RetryPolicyOptions target)
@@ -73,6 +86,7 @@ public sealed class RetryPolicyOptions
         target.InitialDispatchGrace = InitialDispatchGrace;
         target.BackoffStrategy = BackoffStrategy;
         target.OnExhausted = OnExhausted;
+        target.OnExhaustedTimeout = OnExhaustedTimeout;
     }
 
     /// <summary>
@@ -105,13 +119,24 @@ internal sealed class RetryPolicyOptionsValidator : AbstractValidator<RetryPolic
 {
     public RetryPolicyOptionsValidator()
     {
-        RuleFor(x => x.MaxInlineRetries).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.MaxPersistedRetries).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.MaxInlineRetries)
+            .GreaterThanOrEqualTo(0)
+            .LessThanOrEqualTo(10_000)
+            .WithMessage("MaxInlineRetries must be in the range [0, 10000].");
+        RuleFor(x => x.MaxPersistedRetries)
+            .GreaterThanOrEqualTo(0)
+            .LessThanOrEqualTo(10_000)
+            .WithMessage("MaxPersistedRetries must be in the range [0, 10000].");
         RuleFor(x => x.InitialDispatchGrace)
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("InitialDispatchGrace must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromHours(1))
             .WithMessage("InitialDispatchGrace must not exceed 1 hour.");
+        RuleFor(x => x.OnExhaustedTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("OnExhaustedTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromHours(1))
+            .WithMessage("OnExhaustedTimeout must not exceed 1 hour.");
         RuleFor(x => x.BackoffStrategy).NotNull();
     }
 }

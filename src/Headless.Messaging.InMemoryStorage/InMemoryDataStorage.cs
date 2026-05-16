@@ -145,9 +145,12 @@ internal sealed class InMemoryDataStorage(
         bool updated;
         lock (current)
         {
+            // Mirror the SQL providers' terminal guard: only reject when status is terminal AND
+            // NextRetryAt is null. A Succeeded row with non-null NextRetryAt is degenerate but
+            // shouldn't be blocked by this guard — cross-storage parity per the at-least-once contract.
             if (
-                current.StatusName is StatusName.Succeeded
-                || (current.StatusName is StatusName.Failed && current.NextRetryAt is null)
+                (current.StatusName is StatusName.Succeeded || current.StatusName is StatusName.Failed)
+                && current.NextRetryAt is null
             )
             {
                 return ValueTask.FromResult(false);
@@ -182,9 +185,10 @@ internal sealed class InMemoryDataStorage(
         bool updated;
         lock (current)
         {
+            // Mirror the SQL providers' terminal guard (see ChangePublishStateAsync above).
             if (
-                current.StatusName is StatusName.Succeeded
-                || (current.StatusName is StatusName.Failed && current.NextRetryAt is null)
+                (current.StatusName is StatusName.Succeeded || current.StatusName is StatusName.Failed)
+                && current.NextRetryAt is null
             )
             {
                 return ValueTask.FromResult(false);
@@ -353,7 +357,7 @@ internal sealed class InMemoryDataStorage(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         IEnumerable<MediumMessage> result = PublishedMessages
-            .Values.Where(x => x.Retries < maxPersistedRetries && x.NextRetryAt is not null && x.NextRetryAt <= now)
+            .Values.Where(x => x.Retries <= maxPersistedRetries && x.NextRetryAt is not null && x.NextRetryAt <= now)
             .Take(200)
             .Cast<MediumMessage>()
             .ToList();
@@ -369,7 +373,7 @@ internal sealed class InMemoryDataStorage(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         IEnumerable<MediumMessage> result = ReceivedMessages
-            .Values.Where(x => x.Retries < maxPersistedRetries && x.NextRetryAt is not null && x.NextRetryAt <= now)
+            .Values.Where(x => x.Retries <= maxPersistedRetries && x.NextRetryAt is not null && x.NextRetryAt <= now)
             .Take(200)
             .Select(x => (MediumMessage)x)
             .ToList();

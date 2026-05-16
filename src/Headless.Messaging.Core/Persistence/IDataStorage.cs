@@ -6,6 +6,7 @@ using Headless.Messaging.Monitoring;
 
 namespace Headless.Messaging.Persistence;
 
+[PublicAPI]
 public interface IDataStorage
 {
     // Dashboard api

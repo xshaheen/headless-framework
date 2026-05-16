@@ -377,6 +377,76 @@ public sealed class MessageSenderTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_skip_on_exhausted_when_publish_state_change_reports_already_terminal()
+    {
+        // given — X1 contract: a broker redelivery (or any path where the row reached terminal
+        // state by another worker) means ChangePublishStateAsync's conditional UPDATE matches zero
+        // rows and returns false. The sender MUST skip OnExhausted in that case so the callback is
+        // not invoked twice for the same logical exhaustion. The Subscribe path has the same
+        // guarantee; this test pins the publish-side mirror.
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+
+        var transportMessage = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal),
+            ReadOnlyMemory<byte>.Empty
+        );
+        var serializer = Substitute.For<ISerializer>();
+        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+        transport
+            .SendAsync(transportMessage, CancellationToken.None)
+            .Returns(OperateResult.Failed(new TimeoutException("transient")));
+
+        var callbackInvoked = false;
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxInlineRetries = 0,
+                    MaxPersistedRetries = 0,
+                    BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.Zero),
+                    OnExhausted = (_, _) =>
+                    {
+                        callbackInvoked = true;
+                        return Task.CompletedTask;
+                    },
+                },
+            }
+        );
+
+        // when — config forces Exhausted on the first failure
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then — conditional UPDATE returned false: callback skipped despite the Exhausted decision
+        result.Succeeded.Should().BeFalse();
+        callbackInvoked.Should().BeFalse();
+        await storage
+            .Received(1)
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Any<object?>(),
+                Arg.Is<DateTime?>(v => v == null),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     private sealed class ZeroDelayRetryBackoffStrategy : IRetryBackoffStrategy
     {
         public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(TimeSpan.Zero);

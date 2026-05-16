@@ -20,6 +20,7 @@ namespace Headless.Messaging.Configuration;
 /// cannot leak into the runtime instance. The <c>CopyTo</c> below must propagate every public mutable
 /// property; a reflection-based test guards against drift.
 /// </remarks>
+[PublicAPI]
 public class MessagingOptions
 {
 #pragma warning disable IDE0032
@@ -175,10 +176,12 @@ public class MessagingOptions
     /// </summary>
     public CircuitBreakerOptions CircuitBreaker { get; } = new();
 
+    private RetryPolicyOptions _retryPolicy = new();
+
     /// <summary>
     /// Gets retry policy configuration for inline and persisted retries.
     /// </summary>
-    public RetryPolicyOptions RetryPolicy { get; } = new();
+    public RetryPolicyOptions RetryPolicy => _retryPolicy;
 
     /// <summary>
     /// Gets the retry processor configuration that controls adaptive polling and backpressure behavior
@@ -269,21 +272,21 @@ public class MessagingOptions
 
     /// <summary>
     /// Creates a <see cref="MessagingOptions"/> instance with <see cref="RetryPolicy"/> forced to
-    /// <see langword="null"/> via reflection so the validator's not-null rule can be exercised in unit tests.
+    /// <see langword="null"/> so the validator's not-null rule can be exercised in unit tests.
     /// Kept internal so it never surfaces on the NuGet API.
     /// </summary>
     internal static MessagingOptions CreateForValidatorTest_AllowNullRetryPolicy()
     {
         var options = new MessagingOptions();
-        var backingField = typeof(MessagingOptions).GetField(
-            "<RetryPolicy>k__BackingField",
-            System.Reflection.BindingFlags.NonPublic
-                | System.Reflection.BindingFlags.Instance
-                | System.Reflection.BindingFlags.DeclaredOnly
-        );
-        backingField!.SetValue(options, null);
+        options._SetRetryPolicyForTest(null!);
         return options;
     }
+
+    /// <summary>
+    /// Test-only seam that nulls out <see cref="RetryPolicy"/> without relying on the
+    /// compiler-generated backing-field name (which is unstable under AOT/trimming).
+    /// </summary>
+    internal void _SetRetryPolicyForTest(RetryPolicyOptions value) => _retryPolicy = value;
 
     /// <summary>
     /// Registers a topic mapping for a message type. Used by <see cref="MessagingSetupBuilder"/>.

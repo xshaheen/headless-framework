@@ -8,6 +8,7 @@ using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -654,44 +655,38 @@ internal sealed class ConsumerRegister(
                     var bypassCallback = _options.RetryPolicy.OnExhausted;
                     if (bypassCallback is not null)
                     {
-                        try
-                        {
-                            // Poisoned-on-arrival messages bypass the normal Dispatcher scope,
-                            // so we create a fresh async scope here instead of using the root provider.
-                            await using var exhaustedScope = serviceScopeFactory.CreateAsyncScope();
-                            await bypassCallback(
-                                    new FailedInfo
-                                    {
-                                        ServiceProvider = exhaustedScope.ServiceProvider,
-                                        MessageType = MessageType.Subscribe,
-                                        Message = message,
-                                        Exception =
-                                            dispatchBypassException
-                                            ?? new InvalidOperationException(
-                                                exceptionInfo ?? "Received message contains exception information."
-                                            ),
-                                    },
-                                    CancellationToken.None
-                                )
-                                .ConfigureAwait(false);
+                        // Poisoned-on-arrival messages bypass the normal Dispatcher scope,
+                        // so we create a fresh async scope here instead of using the root provider.
+                        // RetryHelper.InvokeOnExhaustedAsync applies the configured OnExhaustedTimeout
+                        // and swallows handler exceptions; the bypass path has no logical "dispatch
+                        // cancellation" so the supplied token is CancellationToken.None.
+                        await using var exhaustedScope = serviceScopeFactory.CreateAsyncScope();
+                        await RetryHelper
+                            .InvokeOnExhaustedAsync(
+                                bypassCallback,
+                                new FailedInfo
+                                {
+                                    ServiceProvider = exhaustedScope.ServiceProvider,
+                                    MessageType = MessageType.Subscribe,
+                                    Message = message,
+                                    Exception =
+                                        dispatchBypassException
+                                        ?? new InvalidOperationException(
+                                            exceptionInfo ?? "Received message contains exception information."
+                                        ),
+                                },
+                                _options.RetryPolicy.OnExhaustedTimeout,
+                                storageId: 0,
+                                _logger,
+                                CancellationToken.None
+                            )
+                            .ConfigureAwait(false);
+                    }
 
-                            _logger.ConsumerReceivedMessageAfterThreshold(
-                                message.GetId(),
-                                _options.RetryPolicy.MaxPersistedRetries
-                            );
-                        }
-                        catch (Exception e)
-                        {
-                            _logger.ExecutedThresholdCallbackFailed(e, LogSanitizer.Sanitize(e.Message));
-                        }
-                    }
-                    else
-                    {
-                        _logger.ConsumerReceivedMessageAfterThreshold(
-                            message.GetId(),
-                            _options.RetryPolicy.MaxPersistedRetries
-                        );
-                    }
+                    _logger.ConsumerReceivedMessageAfterThreshold(
+                        message.GetId(),
+                        _options.RetryPolicy.MaxPersistedRetries
+                    );
 
                     _TracingAfter(tracingTimestamp, transportMessage, _serverAddress);
                 }

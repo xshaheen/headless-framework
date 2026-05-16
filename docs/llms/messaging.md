@@ -257,7 +257,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 - **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
-- **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `BackoffStrategy`, `OnExhausted`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
+- **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
 
 ---
 
@@ -543,10 +543,12 @@ builder.Services.AddHeadlessMessaging(options =>
 
 | Property | Type | Default | Validation invariant |
 | --- | --- | --- | --- |
-| `MaxInlineRetries` | `int` | `2` | `>= 0`. Retries to run inline on each delivery before persisting for the retry processor. |
-| `MaxPersistedRetries` | `int` | `15` | `>= 0`. Maximum persisted-retry pickups. Set to `0` to disable persisted retries. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. |
+| `MaxInlineRetries` | `int` | `2` | `0..10000`. Retries to run inline on each delivery before persisting for the retry processor. |
+| `MaxPersistedRetries` | `int` | `15` | `0..10000`. Maximum persisted-retry pickups. Set to `0` to disable persisted retries. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. |
+| `InitialDispatchGrace` | `TimeSpan` | `30s` | `> 0` and `<= 1h`. Applied to `NextRetryAt` on initial store: the persisted retry processor will not pick the row up until `Added + InitialDispatchGrace` elapses, giving the normal dispatch + inline-retry path room to complete first. After that window the processor treats the row as crash-recovery work. Combined with `RetryProcessorOptions.BaseInterval` (60s default) the worst-case crash-recovery latency is `InitialDispatchGrace + BaseInterval` (~90s with defaults). |
 | `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Not null. Strategy implementations are now single-method: `RetryDecision Compute(int retryCount, Exception exception)`. |
-| `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Optional. Fires only when the retry budget is exhausted (see distinction below). |
+| `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Optional. Fires only when the retry budget is exhausted (see distinction below). The supplied `IServiceProvider` on `FailedInfo` is the live per-message dispatch scope and is disposed after the callback returns — resolve scoped services **synchronously**; do not capture the provider into a `Task.Run` or other background work, which would race scope disposal. |
+| `OnExhaustedTimeout` | `TimeSpan` | `30s` | `> 0` and `<= 1h`. Hard timeout on the `OnExhausted` callback. If the callback does not complete within this window the framework logs `OnExhaustedTimedOut` and resumes the dispatch loop; the callback is orphaned but the loop is not blocked. |
 
 #### Exhausted vs Stop
 

@@ -113,8 +113,16 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
     private static IDataStorage _CreateStorage()
     {
         var storage = Substitute.For<IDataStorage>();
+        // Use Arg.Any<>() on every parameter — including the optional ones.
+        // NSubstitute records optional defaults as exact-value matchers, which makes
+        // setups silently miss when callers pass a non-default nextRetryAt or CT.
         storage
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(true));
         return storage;
     }

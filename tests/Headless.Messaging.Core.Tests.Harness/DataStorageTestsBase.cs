@@ -617,41 +617,77 @@ public abstract class DataStorageTestsBase : TestBase
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 
-    public virtual async Task should_not_pickup_message_at_max_persisted_retries_limit()
+    public virtual async Task should_pickup_message_at_max_persisted_retries_and_exclude_above()
     {
-        // given — with MaxPersistedRetries = 4, a message with Retries = 4 represents a
-        // row that has already been picked up 4 times (and failed). It must NOT be picked up
-        // a 5th time; the budget is exhausted.
+        // given — with MaxPersistedRetries = 4, the pickup predicate is `Retries <= 4`.
+        // Retries == 4 is the LAST allowed pickup (where the helper returns Exhausted on
+        // budget consumption). Retries == 5 represents the terminal state past the budget
+        // and must NOT be picked up. Total dispatches = (MaxPersistedRetries + 1) = 5.
         var storage = GetStorage();
         var message = CreateMessage();
-        var storedMessage = await storage.StoreMessageAsync("max-retries-test", message, cancellationToken: AbortToken);
 
-        // simulate 4 failed persisted pickups. the query predicate must be Retries < MaxPersistedRetries.
-        storedMessage.Retries = 4;
+        // Boundary case 1 (published): Retries == MaxPersistedRetries → picked up.
+        var atLimit = await storage.StoreMessageAsync("max-retries-test-pub", message, cancellationToken: AbortToken);
+        atLimit.Retries = 4;
         await storage.ChangePublishStateAsync(
-            storedMessage,
+            atLimit,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
+
+        // Boundary case 2 (published): Retries == MaxPersistedRetries + 1 → NOT picked up.
+        var aboveLimit = await storage.StoreMessageAsync(
+            "above-retries-test-pub",
+            message,
+            cancellationToken: AbortToken
+        );
+        aboveLimit.Retries = 5;
+        await storage.ChangePublishStateAsync(
+            aboveLimit,
             StatusName.Failed,
             nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
         // when
-        var retriable = await storage.GetPublishedMessagesOfNeedRetry(AbortToken);
+        var retriable = (await storage.GetPublishedMessagesOfNeedRetry(AbortToken)).ToList();
 
         // then
-        retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
+        retriable.Should().Contain(m => m.StorageId == atLimit.StorageId);
+        retriable.Should().NotContain(m => m.StorageId == aboveLimit.StorageId);
 
-        // Same for received messages
-        var received = await storage.StoreReceivedMessageAsync("max-retries-test", "group", message, AbortToken);
-        received.Retries = 4;
+        // Same boundary semantics for received messages.
+        var atLimitRecv = await storage.StoreReceivedMessageAsync(
+            "max-retries-test-recv",
+            "group",
+            message,
+            AbortToken
+        );
+        atLimitRecv.Retries = 4;
         await storage.ChangeReceiveStateAsync(
-            received,
+            atLimitRecv,
             StatusName.Failed,
             nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
-        var retriableReceived = await storage.GetReceivedMessagesOfNeedRetry(AbortToken);
-        retriableReceived.Should().NotContain(m => m.StorageId == received.StorageId);
+        var aboveLimitRecv = await storage.StoreReceivedMessageAsync(
+            "above-retries-test-recv",
+            "group",
+            message,
+            AbortToken
+        );
+        aboveLimitRecv.Retries = 5;
+        await storage.ChangeReceiveStateAsync(
+            aboveLimitRecv,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
+
+        var retriableReceived = (await storage.GetReceivedMessagesOfNeedRetry(AbortToken)).ToList();
+        retriableReceived.Should().Contain(m => m.StorageId == atLimitRecv.StorageId);
+        retriableReceived.Should().NotContain(m => m.StorageId == aboveLimitRecv.StorageId);
     }
 }

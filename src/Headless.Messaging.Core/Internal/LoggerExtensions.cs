@@ -510,4 +510,12 @@ internal static partial class LoggerExtensions
         Message = "Skipping OnExhausted: message {StorageId} already terminal"
     )]
     public static partial void SkippingOnExhaustedAlreadyTerminal(this ILogger logger, long storageId);
+
+    [LoggerMessage(
+        EventId = 67,
+        EventName = "OnExhaustedTimedOut",
+        Level = LogLevel.Warning,
+        Message = "RetryPolicy.OnExhausted callback for message {StorageId} did not complete within {TimeoutSeconds}s. The callback is orphaned; the dispatch loop has resumed."
+    )]
+    public static partial void OnExhaustedTimedOut(this ILogger logger, long storageId, double timeoutSeconds);
 }
