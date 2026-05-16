@@ -15,23 +15,6 @@ namespace Tests.Retry;
 public sealed class RetryHelperTests : TestBase
 {
     [Fact]
-    public void should_stop_for_cancellation()
-    {
-        var message = _CreateMessage();
-
-        var decision = RetryHelper.RecordAttemptAndComputeDecision(
-            message,
-            new OperationCanceledException(),
-            new RetryPolicyOptions(),
-            inlineRetries: 0,
-            isCancellation: true
-        );
-
-        decision.Should().Be(RetryDecision.Stop);
-        message.Retries.Should().Be(0);
-    }
-
-    [Fact]
     public void should_stop_for_permanent_exception()
     {
         var message = _CreateMessage();
@@ -40,8 +23,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new InvalidOperationException("permanent"),
             new RetryPolicyOptions(),
-            inlineRetries: 0,
-            isCancellation: false
+            inlineRetries: 0
         );
 
         decision.Should().Be(RetryDecision.Stop);
@@ -65,8 +47,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
-            inlineRetries: 0,
-            isCancellation: false
+            inlineRetries: 0
         );
 
         decision.Should().Be(RetryDecision.Exhausted);
@@ -92,8 +73,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
-            inlineRetries: 0,
-            isCancellation: false
+            inlineRetries: 0
         );
 
         decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
@@ -117,8 +97,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
-            inlineRetries: 2,
-            isCancellation: false
+            inlineRetries: 2
         );
 
         decision.Should().Be(RetryDecision.Exhausted);
@@ -134,8 +113,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
-            inlineRetries: 0,
-            isCancellation: false
+            inlineRetries: 0
         );
 
         decision.Should().Be(RetryDecision.Stop);
@@ -155,8 +133,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
-            inlineRetries: 0,
-            isCancellation: false
+            inlineRetries: 0
         );
 
         decision.Outcome.Should().Be(RetryDecision.Kind.Exhausted);
@@ -174,8 +151,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
-            inlineRetries: 0,
-            isCancellation: false
+            inlineRetries: 0
         );
 
         decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
@@ -191,13 +167,7 @@ public sealed class RetryHelperTests : TestBase
         var strategy = new RecordingRetryBackoffStrategy();
         var policy = new RetryPolicyOptions { BackoffStrategy = strategy };
 
-        RetryHelper.RecordAttemptAndComputeDecision(
-            message,
-            new TimeoutException(),
-            policy,
-            inlineRetries: 0,
-            isCancellation: false
-        );
+        RetryHelper.RecordAttemptAndComputeDecision(message, new TimeoutException(), policy, inlineRetries: 0);
 
         strategy.Attempts.Should().ContainSingle().Which.Should().Be(3);
     }
@@ -212,8 +182,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
-            inlineRetries: 0,
-            isCancellation: false
+            inlineRetries: 0
         );
 
         decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
@@ -230,8 +199,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
-            inlineRetries: 0,
-            isCancellation: false
+            inlineRetries: 0
         );
 
         decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
@@ -327,8 +295,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
-            inlineRetries: 0,
-            isCancellation: false
+            inlineRetries: 0
         );
 
         decision.Outcome.Should().Be(RetryDecision.Kind.Exhausted);
@@ -363,8 +330,7 @@ public sealed class RetryHelperTests : TestBase
             message,
             new TimeoutException(),
             policy,
-            inlineRetries: 0,
-            isCancellation: false
+            inlineRetries: 0
         );
 
         decision.Outcome.Should().Be(RetryDecision.Kind.Exhausted);

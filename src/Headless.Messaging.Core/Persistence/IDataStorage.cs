@@ -37,6 +37,11 @@ public interface IDataStorage
     /// the persisted column. Only retry-transition paths pass a value.
     /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>
+    /// <c>true</c> when the row was updated; <c>false</c> when the row was already in a terminal state
+    /// (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled retry)
+    /// or the row was not found.
+    /// </returns>
     ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
         StatusName state,
@@ -56,6 +61,11 @@ public interface IDataStorage
     /// the persisted column. Only retry-transition paths pass a value.
     /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>
+    /// <c>true</c> when the row was updated; <c>false</c> when the row was already in a terminal state
+    /// (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled retry)
+    /// or the row was not found.
+    /// </returns>
     ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,

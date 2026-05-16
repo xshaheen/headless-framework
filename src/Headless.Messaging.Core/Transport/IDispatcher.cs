@@ -5,6 +5,7 @@ using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Transport;
 
+[PublicAPI]
 public interface IDispatcher : IProcessingServer
 {
     ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default);

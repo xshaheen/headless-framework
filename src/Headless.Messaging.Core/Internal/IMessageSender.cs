@@ -131,9 +131,18 @@ internal sealed class MessageSender : IMessageSender
     private async Task _SetSuccessfulState(MediumMessage message, CancellationToken cancellationToken)
     {
         message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
-        await _dataStorage
+        var updated = await _dataStorage
             .ChangePublishStateAsync(message, StatusName.Succeeded, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
+
+        if (!updated)
+        {
+            // Storage's terminal-row guard rejected the write — the row is already in a terminal
+            // state (typically Failed/NULL after a prior exhausted attempt). The broker DID accept
+            // the publish, so the consumer will observe the message; at-least-once delivery means
+            // duplicates are the user's responsibility to dedupe on the receive side.
+            _logger.PublishSucceededButStorageTerminal(message.StorageId);
+        }
     }
 
     private async Task<RetryDecision> _SetFailedState(
@@ -147,9 +156,9 @@ internal sealed class MessageSender : IMessageSender
         // Host shutdown: an OCE bound to the host's stopping token means the dispatch was aborted,
         // not that the message failed. Returning without writing state preserves the row's existing
         // NextRetryAt/Status, and the persisted retry processor will pick the row up on restart.
-        // Match either the inline-loop token (forwarded as cancellationToken) or the shutdown
-        // token directly, since both reflect the same host-stopping signal in the typical wiring.
-        if (RetryHelper.IsCancellation(ex, cancellationToken) || RetryHelper.IsCancellation(ex, _shutdownToken))
+        // cancellationToken on this path IS _shutdownToken — see InlineRetryLoop wiring in
+        // SendAsync above, which forwards _shutdownToken as the inline-loop CT.
+        if (RetryHelper.IsCancellation(ex, cancellationToken))
         {
             _logger.StoredMessageNonRetryableFailure(message.StorageId, "HostShutdown");
             return RetryDecision.Stop;
@@ -219,7 +228,6 @@ internal sealed class MessageSender : IMessageSender
             ex,
             _retryPolicy,
             inlineRetries,
-            isCancellation: false,
             logger: _logger
         );
         switch (decision.Outcome)

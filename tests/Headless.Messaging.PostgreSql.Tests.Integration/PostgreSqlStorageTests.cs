@@ -291,8 +291,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     [Theory]
     [InlineData("published", "Added")]
     [InlineData("published", "ExpiresAt")]
+    [InlineData("published", "NextRetryAt")]
     [InlineData("received", "Added")]
     [InlineData("received", "ExpiresAt")]
+    [InlineData("received", "NextRetryAt")]
     public async Task should_use_timestamptz_for_time_columns(string table, string column)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);

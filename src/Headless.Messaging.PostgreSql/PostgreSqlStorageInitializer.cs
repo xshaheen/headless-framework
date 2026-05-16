@@ -85,6 +85,9 @@ public sealed class PostgreSqlStorageInitializer(
             CREATE UNIQUE INDEX IF NOT EXISTS "idx_received_MessageId_Group" ON {GetReceivedTableName()} ("MessageId","Group");
             CREATE INDEX IF NOT EXISTS "idx_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");
+            -- Partial index for retry pickup. Index-only scan requires healthy autovacuum so the
+            -- visibility map covers the relation; under heavy write load the planner may fall back
+            -- to heap fetches bounded by the retry batch size (200 rows / cycle).
             CREATE INDEX IF NOT EXISTS "idx_received_next_retry" ON {GetReceivedTableName()} ("NextRetryAt") INCLUDE ("Version","Retries") WHERE "NextRetryAt" IS NOT NULL;
             CREATE INDEX IF NOT EXISTS "idx_received_delayed" ON {GetReceivedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
 
@@ -103,6 +106,9 @@ public sealed class PostgreSqlStorageInitializer(
 
             CREATE INDEX IF NOT EXISTS "idx_published_ExpiresAt_StatusName" ON {GetPublishedTableName()}("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_published_Version_ExpiresAt_StatusName" ON {GetPublishedTableName()} ("Version","ExpiresAt","StatusName");
+            -- Partial index for retry pickup. Index-only scan requires healthy autovacuum so the
+            -- visibility map covers the relation; under heavy write load the planner may fall back
+            -- to heap fetches bounded by the retry batch size (200 rows / cycle).
             CREATE INDEX IF NOT EXISTS "idx_published_next_retry" ON {GetPublishedTableName()} ("NextRetryAt") INCLUDE ("Version","Retries") WHERE "NextRetryAt" IS NOT NULL;
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
             """;

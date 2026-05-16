@@ -118,6 +118,11 @@ public sealed class RetryPolicyOptions
     /// is still valid for the duration of the callback in both paths, but services resolved on
     /// the bypass path will be fresh instances unrelated to any (never-happened) consume.
     /// </para>
+    /// <para>
+    /// On host crash between the terminal storage write and the callback completion, OnExhausted
+    /// may NOT fire for that message — handlers must tolerate at-most-once delivery in addition to
+    /// the documented at-least-once contract above.
+    /// </para>
     /// </remarks>
     public Func<FailedInfo, CancellationToken, Task>? OnExhausted { get; set; }
 }

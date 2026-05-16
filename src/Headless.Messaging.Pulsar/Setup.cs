@@ -9,7 +9,7 @@ using Headless.Messaging.Transport;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-public static class MessagingOptionsExtensions
+public static class PulsarMessagingSetup
 {
     extension(MessagingSetupBuilder setup)
     {

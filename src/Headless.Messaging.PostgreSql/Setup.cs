@@ -15,7 +15,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary>
 /// Extension methods for configuring PostgreSQL as the messaging storage backend.
 /// </summary>
-public static class MessagingOptionsExtensions
+public static class PostgreSqlMessagingSetup
 {
     extension(MessagingSetupBuilder setup)
     {

@@ -54,24 +54,23 @@ internal static class RetryHelper
     /// While inline budget remains the helper returns Continue so the inline retry loop can
     /// continue burst-retrying on the current pickup before terminal.
     /// </para>
+    /// <para>
+    /// Callers MUST pre-check cancellation via <see cref="IsCancellation"/> and return early before
+    /// invoking this method. The helper does not re-check the token and will record an attempt
+    /// against the retry budget even for shutdown-cancelled invocations if called.
+    /// </para>
     /// </remarks>
     public static RetryDecision RecordAttemptAndComputeDecision(
         MediumMessage message,
         Exception exception,
         RetryPolicyOptions policy,
         int inlineRetries,
-        bool isCancellation,
         ILogger? logger = null
     )
     {
         // Diagnostic guard: validator runs at startup only; post-startup mutation to null would
         // otherwise produce a bare NullReferenceException with no actionable context.
         Argument.IsNotNull(policy.BackoffStrategy);
-
-        if (isCancellation)
-        {
-            return RetryDecision.Stop;
-        }
 
         // Wrap the strategy call: a throwing custom strategy must not create an infinite
         // consumer-invocation loop. Treating a throw as Exhausted routes the row to terminal Failed
@@ -189,6 +188,20 @@ internal static class RetryHelper
             catch (Exception cancelEx)
             {
                 logger.ExecutedThresholdCallbackFailed(cancelEx, LogSanitizer.Sanitize(cancelEx.Message));
+            }
+        }
+        catch (OperationCanceledException oce) when (IsCancellation(oce, cancellationToken))
+        {
+            // Host shutdown observed during WaitAsync. Cancel the linked CTS BEFORE its `using`
+            // disposes so a cooperative callback sees cancellation and unwinds cleanly instead
+            // of touching a disposed scope. Not a callback fault — emit a debug log only.
+            try
+            {
+                await callbackCts.CancelAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // Best-effort: a throw here would only mask the shutdown signal — swallow.
             }
         }
         catch (Exception callbackEx)

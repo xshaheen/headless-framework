@@ -273,24 +273,6 @@ public sealed class MessagingOptions
     }
 
     /// <summary>
-    /// Creates a <see cref="MessagingOptions"/> instance with <see cref="RetryPolicy"/> forced to
-    /// <see langword="null"/> so the validator's not-null rule can be exercised in unit tests.
-    /// Kept internal so it never surfaces on the NuGet API.
-    /// </summary>
-    internal static MessagingOptions CreateForValidatorTest_AllowNullRetryPolicy()
-    {
-        var options = new MessagingOptions();
-        options._SetRetryPolicyForTest(null!);
-        return options;
-    }
-
-    /// <summary>
-    /// Test-only seam that nulls out <see cref="RetryPolicy"/> without relying on the
-    /// compiler-generated backing-field name (which is unstable under AOT/trimming).
-    /// </summary>
-    internal void _SetRetryPolicyForTest(RetryPolicyOptions value) => _retryPolicy = value;
-
-    /// <summary>
     /// Registers a topic mapping for a message type. Used by <see cref="MessagingSetupBuilder"/>.
     /// </summary>
     internal void WithTopicMapping(Type messageType, string topic)
