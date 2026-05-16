@@ -174,14 +174,15 @@ internal sealed class RetryPolicyOptionsValidator : AbstractValidator<RetryPolic
 {
     public RetryPolicyOptionsValidator()
     {
+        // Caps intentionally well above any realistic production budget
         RuleFor(x => x.MaxInlineRetries)
             .GreaterThanOrEqualTo(0)
-            .LessThanOrEqualTo(10_000)
-            .WithMessage("MaxInlineRetries must be in the range [0, 10000].");
+            .LessThanOrEqualTo(100)
+            .WithMessage("MaxInlineRetries must be in the range [0, 100].");
         RuleFor(x => x.MaxPersistedRetries)
             .GreaterThanOrEqualTo(0)
-            .LessThanOrEqualTo(10_000)
-            .WithMessage("MaxPersistedRetries must be in the range [0, 10000].");
+            .LessThanOrEqualTo(1_000)
+            .WithMessage("MaxPersistedRetries must be in the range [0, 1000].");
         RuleFor(x => x.InitialDispatchGrace)
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("InitialDispatchGrace must be greater than zero.")

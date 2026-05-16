@@ -194,6 +194,41 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
+    public void should_reject_retry_policy_with_max_inline_retries_above_cap()
+    {
+        // Cap is intentionally well above realistic production budgets but tight enough
+        // to bound DoS-by-config: a custom backoff strategy returning Continue(TimeSpan.Zero)
+        // combined with very high inline budget could saturate the retry-pickup index.
+        var options = new RetryPolicyOptions { MaxInlineRetries = 101 };
+
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxInlineRetries));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_max_persisted_retries_above_cap()
+    {
+        var options = new RetryPolicyOptions { MaxPersistedRetries = 1_001 };
+
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxPersistedRetries));
+    }
+
+    [Fact]
+    public void should_accept_retry_policy_at_max_inline_and_persisted_caps()
+    {
+        var options = new RetryPolicyOptions { MaxInlineRetries = 100, MaxPersistedRetries = 1_000 };
+
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
     public void should_reject_retry_policy_with_non_positive_initial_dispatch_grace()
     {
         // given

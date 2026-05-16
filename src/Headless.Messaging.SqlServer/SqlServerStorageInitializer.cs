@@ -171,8 +171,24 @@ public sealed class SqlServerStorageInitializer(
             END CATCH;
 
             -- Recreate the filtered retry-pickup index if it exists with an older shape (missing
-            -- LockedUntil from the INCLUDE list). DROP_EXISTING ensures the new definition replaces
-            -- the older one in place when the columns differ.
+            -- LockedUntil from the INCLUDE list). #11 — replace DROP+CREATE with
+            -- CREATE WITH (DROP_EXISTING = ON, ONLINE = ON) so the index rebuild does NOT take a
+            -- table-wide SCH-M lock (offline rebuild would block all writers to the table for the
+            -- duration of the rebuild — unacceptable on a hot retry-pickup index in production).
+            --
+            -- ONLINE = ON requires Enterprise/Developer/Azure SQL editions. We probe edition via
+            -- SERVERPROPERTY('EngineEdition') rather than catching the edition error from the engine,
+            -- which historically does NOT have a single stable error number across SQL Server versions
+            -- (1218 is the unrelated ABORT_AFTER_WAIT lock-request error; the actual edition-restriction
+            -- message text varies). Edition codes (per Microsoft docs):
+            --   1 = Personal/Desktop, 2 = Standard, 3 = Enterprise/Developer, 4 = Express,
+            --   5 = Azure SQL Database, 6 = Azure Synapse Analytics, 8 = Azure SQL MI, 9 = SQL Edge,
+            --   11 = Azure SQL DB Hyperscale.
+            -- ONLINE index ops are supported on Enterprise/Developer (3) and the Azure family (5, 8, 9, 11).
+            --   3701 — index does not exist (idempotency under TOCTOU race)
+            DECLARE @engineEdition INT = CAST(SERVERPROPERTY('EngineEdition') AS INT);
+            DECLARE @supportsOnline BIT = CASE WHEN @engineEdition IN (3, 5, 8, 9, 11) THEN 1 ELSE 0 END;
+
             BEGIN TRY
                 IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
                     AND NOT EXISTS (
@@ -184,8 +200,10 @@ public sealed class SqlServerStorageInitializer(
                           AND c.name = 'LockedUntil'
                     )
                 BEGIN
-                    DROP INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()};
-                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                    IF @supportsOnline = 1
+                        CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL WITH (DROP_EXISTING = ON, ONLINE = ON);
+                    ELSE
+                        CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_NextRetryAt] ON {GetReceivedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL WITH (DROP_EXISTING = ON, ONLINE = OFF);
                 END;
             END TRY
             BEGIN CATCH
@@ -203,8 +221,10 @@ public sealed class SqlServerStorageInitializer(
                           AND c.name = 'LockedUntil'
                     )
                 BEGIN
-                    DROP INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()};
-                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+                    IF @supportsOnline = 1
+                        CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL WITH (DROP_EXISTING = ON, ONLINE = ON);
+                    ELSE
+                        CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL WITH (DROP_EXISTING = ON, ONLINE = OFF);
                 END;
             END TRY
             BEGIN CATCH

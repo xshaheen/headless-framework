@@ -167,52 +167,106 @@ internal static class RetryHelper
     {
         Argument.IsNotNull(callback);
 
-        using var callbackCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // #1 — own disposal explicitly. On timeout the callback Task is orphaned but still holds
+        // callbackCts.Token. If we `using`-dispose the CTS here, any subsequent `ct.ThrowIf*` or
+        // `Task.Delay(_, ct)` inside the orphan throws ObjectDisposedException instead of
+        // OperationCanceledException, breaking the cooperative-cancel contract. Dispose the CTS
+        // only after the orphan completes (fire-and-forget continuation).
+        // CA2000 false-positive: disposal IS guaranteed via the try/finally `ctsOwned` flag below,
+        // or transferred to the orphan-completion continuation.
+#pragma warning disable CA2000
+        var callbackCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+#pragma warning restore CA2000
+        var ctsOwned = true;
 
         try
         {
-            await callback(failedInfo, callbackCts.Token).WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
-        }
-        catch (TimeoutException)
-        {
-            logger.OnExhaustedTimedOut(storageId, timeout.TotalSeconds);
-            // Orphan warning: scope-bound services (FailedInfo.ServiceProvider) may become invalid
-            // after the dispatch scope disposes. The orphaned callback continues running in the
-            // background; an uncooperative callback that ignores the CT may race scope disposal.
-            logger.OnExhaustedCallbackOrphaned(storageId);
+            // Invoke via Task.Run-equivalent capture so a synchronous throw from the user callback
+            // is materialized as a faulted Task — matching the original `await callback(...)` semantics
+            // where the await harvests both synchronous and asynchronous exceptions. Without this,
+            // a synchronously-throwing callback would escape outside the inner try and crash the
+            // dispatch loop.
+            Task callbackTask;
+            try
+            {
+                callbackTask = callback(failedInfo, callbackCts.Token);
+            }
+            catch (Exception syncEx)
+            {
+                callbackTask = Task.FromException(syncEx);
+            }
 
-            // Signal the callback to stop touching scope-bound services (e.g., FailedInfo.ServiceProvider).
-            // A cooperative callback observes the token and unwinds; an uncooperative one is orphaned
-            // and may still race the dispatch scope's disposal — documented as user responsibility.
             try
             {
-                await callbackCts.CancelAsync().ConfigureAwait(false);
+                await callbackTask.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception cancelEx)
+            catch (TimeoutException)
             {
-                logger.ExecutedThresholdCallbackFailed(cancelEx, LogSanitizer.Sanitize(cancelEx.Message));
+                logger.OnExhaustedTimedOut(storageId, timeout.TotalSeconds);
+                // Orphan warning: scope-bound services (FailedInfo.ServiceProvider) may become
+                // invalid after the dispatch scope disposes. The orphaned callback continues running
+                // in the background; an uncooperative callback that ignores the CT may race scope
+                // disposal.
+                logger.OnExhaustedCallbackOrphaned(storageId);
+
+                // Signal the callback to stop touching scope-bound services. A cooperative callback
+                // observes the token and unwinds; an uncooperative one is orphaned and may still
+                // race the dispatch scope's disposal — documented as user responsibility.
+                try
+                {
+                    await callbackCts.CancelAsync().ConfigureAwait(false);
+                }
+                catch (Exception cancelEx)
+                {
+                    logger.ExecutedThresholdCallbackFailed(cancelEx, LogSanitizer.Sanitize(cancelEx.Message));
+                }
+
+                // Hand ownership of CTS disposal to a continuation that fires when the orphan
+                // completes. This ensures a cooperative callback observes OCE (not
+                // ObjectDisposedException) when it checks the token after timeout.
+                var localCts = callbackCts;
+                _ = callbackTask.ContinueWith(
+                    _ => localCts.Dispose(),
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default
+                );
+                ctsOwned = false;
             }
-        }
-        catch (OperationCanceledException oce) when (IsCancellation(oce, cancellationToken))
-        {
-            // Host shutdown observed during WaitAsync. Cancel the linked CTS BEFORE its `using`
-            // disposes so a cooperative callback sees cancellation and unwinds cleanly instead
-            // of touching a disposed scope. Not a callback fault — emit a debug log only.
-            logger.OnExhaustedCallbackCancelledAtShutdown(storageId);
-            try
+            catch (OperationCanceledException oce)
+                when (cancellationToken.IsCancellationRequested
+                    && (oce.CancellationToken == cancellationToken || oce.CancellationToken == callbackCts.Token)
+                )
             {
-                await callbackCts.CancelAsync().ConfigureAwait(false);
-            }
+                // #13 — Host shutdown observed during WaitAsync. The OCE may carry either the outer
+                // host token (when WaitAsync raises it directly) or the inner linked callbackCts.Token
+                // (when a cooperative callback awaits something tied to its CT and the linked CTS
+                // fires first). Both indicate shutdown — accept either token-identity.
+                // Cancel the linked CTS so a cooperative callback sees cancellation and unwinds
+                // cleanly instead of touching a disposed scope. Not a callback fault — debug log only.
+                logger.OnExhaustedCallbackCancelledAtShutdown(storageId);
+                try
+                {
+                    await callbackCts.CancelAsync().ConfigureAwait(false);
+                }
 #pragma warning disable ERP022  // Best-effort: a throw here would only mask the shutdown signal — swallow.
-            catch
-            {
-                // ignored
-            }
+                catch
+                {
+                    // ignored
+                }
 #pragma warning restore ERP022
+            }
+            catch (Exception callbackEx)
+            {
+                logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message));
+            }
         }
-        catch (Exception callbackEx)
+        finally
         {
-            logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message));
+            if (ctsOwned)
+            {
+                callbackCts.Dispose();
+            }
         }
     }
 
