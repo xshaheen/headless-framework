@@ -320,6 +320,8 @@ builder.Services.AddHeadlessMessaging(setup =>
 | `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Fires only on `RetryDecision.Exhausted`. Does NOT fire on `RetryDecision.Stop`. |
 | `OnExhaustedTimeout` | `TimeSpan` | `30s` | Bounds the exhausted callback wait. |
 
+Top-level messaging timeouts that influence retry behavior:
+
 | `MessagingOptions` property | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `TransportPublishTimeout` | `TimeSpan` | `10s` | Linked with host shutdown and passed to transport publish calls. If the broker client honors cancellation, stuck publishes fail into the retry policy instead of outliving shutdown. |

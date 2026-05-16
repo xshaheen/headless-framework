@@ -6,8 +6,6 @@ using Headless.Messaging.Monitoring;
 
 namespace Headless.Messaging.Persistence;
 
-#pragma warning disable CA1068 // Preserve existing optional-parameter call sites while adding concurrency metadata.
-
 [PublicAPI]
 public interface IDataStorage
 {
@@ -32,19 +30,28 @@ public interface IDataStorage
     /// </summary>
     /// <param name="message">The message whose state is changing.</param>
     /// <param name="state">The new status to persist.</param>
-    /// <param name="transaction">Optional ambient transaction (DbTransaction or IDbContextTransaction).</param>
+    /// <param name="transaction">Optional ambient transaction (<see cref="System.Data.Common.DbTransaction"/> or an EF Core <c>IDbContextTransaction</c>).</param>
     /// <param name="nextRetryAt">
     /// UTC timestamp at which the retry processor should re-dispatch this message.
     /// Must be UTC — non-UTC values are provider-normalized. Pass <see langword="null"/> to clear
     /// the persisted column. Only retry-transition paths pass a value.
     /// </param>
-    /// <param name="lockedUntil"></param>
-    /// <param name="originalRetries"></param>
+    /// <param name="lockedUntil">
+    /// UTC timestamp until which the row is leased by an active dispatch attempt. Pass
+    /// <see langword="null"/> on terminal and retry-schedule writes so the row becomes
+    /// pickup-eligible again. Only retry-transition or in-flight paths supply a value, and the
+    /// pre-attempt lease itself is written via <see cref="LeasePublishAsync"/>.
+    /// </param>
+    /// <param name="originalRetries">
+    /// Optimistic-concurrency token. When supplied, storage applies <c>AND Retries = @OriginalRetries</c>
+    /// to the conditional update so a concurrent replica's advance cannot be silently overwritten.
+    /// Pass <see langword="null"/> on non-retry transitions where counter-race protection is unneeded.
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
     /// <c>true</c> when the row was updated; <c>false</c> when the row was already in a terminal state
-    /// (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled retry)
-    /// or the row was not found.
+    /// (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled retry),
+    /// the row was not found, or the optimistic <paramref name="originalRetries"/> predicate did not match.
     /// </returns>
     ValueTask<bool> ChangePublishStateAsync(
         MediumMessage message,
@@ -57,8 +64,17 @@ public interface IDataStorage
     );
 
     /// <summary>
-    /// Leases a published message before a dispatch attempt.
+    /// Writes a pre-attempt lease on a published message, setting <c>LockedUntil</c> on the row so
+    /// the persisted retry processor excludes it while a dispatch attempt is active.
     /// </summary>
+    /// <param name="message">The message to lease. On success the caller's <c>LockedUntil</c> is also updated.</param>
+    /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>
+    /// <c>true</c> when the lease was written; <c>false</c> when the row was already in a terminal
+    /// state (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled
+    /// retry) or the row was not found. Callers must stop the attempt path on <c>false</c>.
+    /// </returns>
     ValueTask<bool> LeasePublishAsync(
         MediumMessage message,
         DateTime lockedUntil,
@@ -75,13 +91,21 @@ public interface IDataStorage
     /// Must be UTC — non-UTC values are provider-normalized. Pass <see langword="null"/> to clear
     /// the persisted column. Only retry-transition paths pass a value.
     /// </param>
-    /// <param name="lockedUntil"></param>
-    /// <param name="originalRetries"></param>
+    /// <param name="lockedUntil">
+    /// UTC timestamp until which the row is leased by an active consume attempt. Pass
+    /// <see langword="null"/> on terminal and retry-schedule writes so the row becomes
+    /// pickup-eligible again. The pre-attempt lease itself is written via <see cref="LeaseReceiveAsync"/>.
+    /// </param>
+    /// <param name="originalRetries">
+    /// Optimistic-concurrency token. When supplied, storage applies <c>AND Retries = @OriginalRetries</c>
+    /// to the conditional update so a concurrent replica's advance cannot be silently overwritten.
+    /// Pass <see langword="null"/> on non-retry transitions where counter-race protection is unneeded.
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>
     /// <c>true</c> when the row was updated; <c>false</c> when the row was already in a terminal state
-    /// (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled retry)
-    /// or the row was not found.
+    /// (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled retry),
+    /// the row was not found, or the optimistic <paramref name="originalRetries"/> predicate did not match.
     /// </returns>
     ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
@@ -93,8 +117,17 @@ public interface IDataStorage
     );
 
     /// <summary>
-    /// Leases a received message before a consume attempt.
+    /// Writes a pre-attempt lease on a received message, setting <c>LockedUntil</c> on the row so
+    /// the persisted retry processor excludes it while a consume attempt is active.
     /// </summary>
+    /// <param name="message">The message to lease. On success the caller's <c>LockedUntil</c> is also updated.</param>
+    /// <param name="lockedUntil">UTC timestamp at which the lease expires.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>
+    /// <c>true</c> when the lease was written; <c>false</c> when the row was already in a terminal
+    /// state (<see cref="StatusName.Failed"/> or <see cref="StatusName.Succeeded"/> with no scheduled
+    /// retry) or the row was not found. Callers must stop the attempt path on <c>false</c>.
+    /// </returns>
     ValueTask<bool> LeaseReceiveAsync(
         MediumMessage message,
         DateTime lockedUntil,
@@ -159,5 +192,3 @@ public interface IDataStorage
 
     ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default);
 }
-
-#pragma warning restore CA1068

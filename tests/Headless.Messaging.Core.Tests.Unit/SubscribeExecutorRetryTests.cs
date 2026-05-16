@@ -416,5 +416,47 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         callbackInvoked.Should().BeFalse("OnExhausted must be skipped if storage update returned false");
     }
 
+    [Fact]
+    public async Task should_stop_without_invoking_consumer_when_lease_rejects_terminal_row()
+    {
+        // given — lease returns false (storage proves the row is terminal). Executor must
+        // short-circuit without invoking the consumer body and without writing any state.
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        var storage = Substitute.For<IDataStorage>();
+
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions { RetryPolicy = { MaxInlineRetries = 0, MaxPersistedRetries = 0 } }
+        );
+
+        // Override the happy-path lease stub from _CreateExecutor so the lease returns false.
+        storage
+            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(false));
+
+        // when
+        var result = await executor.ExecuteAsync(
+            _CreateMediumMessage(),
+            _EmptyScope,
+            _CreateDescriptor(),
+            CancellationToken.None
+        );
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await invoker.DidNotReceive().InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>());
+        await storage
+            .DidNotReceive()
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
     private sealed class ScopedMarker;
 }

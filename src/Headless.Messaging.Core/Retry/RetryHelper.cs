@@ -144,7 +144,7 @@ internal static class RetryHelper
 
     /// <summary>
     /// Invokes the supplied <paramref name="callback"/> with a hard timeout via
-    /// <see cref="TaskExtensions.WaitAsync(Task,TimeSpan,CancellationToken)"/>.
+    /// <see cref="Task.WaitAsync(TimeSpan,CancellationToken)"/>.
     /// On timeout the callback is orphaned (continues running in the background) and a
     /// <c>OnExhaustedTimedOut</c> log event is emitted. Exceptions thrown by the callback
     /// are caught and logged so they cannot crash the dispatch loop. Cancellation observed

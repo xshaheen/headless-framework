@@ -542,5 +542,40 @@ public sealed class MessageSenderTests : TestBase
         observed.Should().BeSameAs(expected);
     }
 
+    [Fact]
+    public async Task should_stop_without_publishing_when_lease_rejects_terminal_row()
+    {
+        // given — lease returns false (storage proves the row is terminal). Sender must short-circuit
+        // without invoking the transport and without writing any state.
+        var storage = Substitute.For<IDataStorage>();
+        var serializer = Substitute.For<ISerializer>();
+        var transport = Substitute.For<ITransport>();
+        transport.BrokerAddress.Returns(new BrokerAddress("Test", "localhost"));
+
+        var sender = _CreateSender(
+            storage,
+            serializer,
+            transport,
+            new MessagingOptions { RetryPolicy = { MaxInlineRetries = 0, MaxPersistedRetries = 0 } }
+        );
+
+        // Override the happy-path lease stub from _CreateSender so the lease returns false.
+        storage
+            .LeasePublishAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(false));
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage());
+
+        // then — transport publish, serialization, and state writes must all be skipped.
+        // Use ReceivedCalls() rather than DidNotReceive() because NSubstitute's argument matcher
+        // invokes TransportMessage.Equals during call enumeration, which throws on default record
+        // values without first being populated.
+        result.Succeeded.Should().BeTrue();
+        transport.ReceivedCalls().Should().BeEmpty();
+        serializer.ReceivedCalls().Should().BeEmpty();
+        storage.ReceivedCalls().Select(c => c.GetMethodInfo().Name).Should().NotContain("ChangePublishStateAsync");
+    }
+
     private sealed class ScopedMarker;
 }

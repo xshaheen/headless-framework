@@ -329,8 +329,52 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     // -------------------------------------------------------------------------
 
     [Theory]
-    [InlineData("received", "idx_received_next_retry")]
-    [InlineData("published", "idx_published_next_retry")]
+    [InlineData("idx_received_Version_NextRetryAt")]
+    [InlineData("idx_published_Version_NextRetryAt")]
+    public async Task should_key_retry_pickup_index_on_version_then_next_retry_at(string indexName)
+    {
+        // Pin the retry-pickup index shape: Version must be the leading key column so it is a
+        // seek predicate, not a residual filter. Regression here would silently fan the planner
+        // out to both versions during a rolling upgrade and discard rows post-fetch.
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var columns = (
+            await connection.QueryAsync<string>(
+                """
+                SELECT a.attname
+                FROM pg_index i
+                JOIN pg_class c ON c.oid = i.indexrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+                JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+                WHERE n.nspname = 'messaging' AND c.relname = @IndexName
+                ORDER BY k.ord;
+                """,
+                new { IndexName = indexName }
+            )
+        ).ToList();
+
+        columns.Should().BeEquivalentTo(["Version", "NextRetryAt"], opts => opts.WithStrictOrdering());
+
+        // Filtered predicate must be `NextRetryAt IS NOT NULL` so terminal rows are physically
+        // excluded from the index — keeps it small even under high failed-message volume.
+        var predicate = await connection.QueryFirstOrDefaultAsync<string>(
+            """
+            SELECT pg_get_expr(i.indpred, i.indrelid, true)
+            FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'messaging' AND c.relname = @IndexName;
+            """,
+            new { IndexName = indexName }
+        );
+        predicate.Should().NotBeNull().And.Contain("NextRetryAt").And.Contain("IS NOT NULL");
+    }
+
+    [Theory]
+    [InlineData("received", "idx_received_Version_NextRetryAt")]
+    [InlineData("published", "idx_published_Version_NextRetryAt")]
     public async Task should_use_partial_indexes_in_retry_pickup_query_plan(string tableSuffix, string nextRetryIndex)
     {
         // given — ensure the table has at least a few rows in each predicate branch so
