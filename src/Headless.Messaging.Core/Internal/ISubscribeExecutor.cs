@@ -175,9 +175,18 @@ internal sealed class SubscribeExecutor(
     {
         message.ExpiresAt = timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
 
-        await dataStorage
-            .ChangeReceiveStateAsync(message, StatusName.Succeeded, cancellationToken: cancellationToken)
+        // Mirror the failure path's SkippingOnExhaustedAlreadyTerminal log: when storage proves
+        // the row is already terminal (typically Failed/NULL after a prior exhausted attempt),
+        // surface the asymmetry for operators. Use CancellationToken.None so the must-complete
+        // success-write semantics align with the publish-path's MessageSender._SetSuccessfulState.
+        var updated = await dataStorage
+            .ChangeReceiveStateAsync(message, StatusName.Succeeded, cancellationToken: CancellationToken.None)
             .ConfigureAwait(false);
+
+        if (!updated)
+        {
+            logger.SkippingSuccessfulAlreadyTerminal(message.StorageId);
+        }
 
         if (circuitBreakerStateManager is not null)
         {
@@ -266,6 +275,13 @@ internal sealed class SubscribeExecutor(
         CancellationToken cancellationToken
     )
     {
+        // Concurrent-Exhausted CAS guard: when two inverse-order pickups race to terminal-write,
+        // the `Retries=@OriginalRetries` predicate inside ChangeReceiveStateAsync acts as the CAS
+        // token. The first writer that wins sees `affected=true` and fires OnExhausted; the loser
+        // sees `affected=false` and emits SkippingOnExhaustedAlreadyTerminal below. The per-row
+        // Retries counter is the single source of truth — no extra CAS over the terminal-status
+        // field is needed.
+        //
         // Use CancellationToken.None for the terminal state write. If host shutdown fires between
         // computing the Exhausted decision and persisting it, we still want the row to land in its
         // terminal Failed/NULL state and OnExhausted to fire — otherwise on next pickup we'd re-invoke

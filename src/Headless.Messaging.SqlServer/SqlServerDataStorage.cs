@@ -35,6 +35,22 @@ public sealed class SqlServerDataStorage(
     private const int _RetryBatchSize = 200;
 
     /// <summary>
+    /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
+    /// (<c>Succeeded</c> / <c>Failed</c>) with no scheduled retry, while still respecting an
+    /// optional optimistic-concurrency token (<c>@OriginalRetries</c>). Used by Change*StateAsync
+    /// paths that pass <c>@OriginalRetries</c>.
+    /// </summary>
+    private const string _TerminalRowGuardWithRetries =
+        "NOT (StatusName IN ('Succeeded','Failed') AND NextRetryAt IS NULL) AND (@OriginalRetries IS NULL OR Retries=@OriginalRetries)";
+
+    /// <summary>
+    /// Reusable WHERE-clause fragment for paths that do not supply <c>@OriginalRetries</c>
+    /// (lease / store-received MERGE). Same terminal-row semantics as
+    /// <see cref="_TerminalRowGuardWithRetries"/> without the concurrency-token clause.
+    /// </summary>
+    private const string _TerminalRowGuardSimple = "NOT (StatusName IN ('Succeeded','Failed') AND NextRetryAt IS NULL)";
+
+    /// <summary>
     /// Lookahead window for delayed messages.
     /// Messages expiring within this window are pre-fetched for scheduling.
     /// </summary>
@@ -209,11 +225,14 @@ public sealed class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        // NOTE: ChangeReceiveStateAsync does not call _ChangeMessageStateAsync because the receive
+        // path additionally writes ExceptionInfo, a column absent from the published table schema.
+        // Keep these two methods in sync when adding columns.
         var sql =
             // X1 terminal-row guard: refuses updates to rows that are already terminal AND
             // have NextRetryAt cleared. Failed rows with non-null NextRetryAt stay mutable so
             // the retry processor can rewrite them — see the matching note in PostgreSqlDataStorage.
-            $"UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, LockedUntil=@LockedUntil, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND NOT (StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND NextRetryAt IS NULL) AND (@OriginalRetries IS NULL OR Retries=@OriginalRetries)";
+            $"UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, LockedUntil=@LockedUntil, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND {_TerminalRowGuardWithRetries}";
 
         object[] sqlParams =
         [
@@ -435,6 +454,7 @@ public sealed class SqlServerDataStorage(
                      FROM {table} WITH (READPAST)
                      WHERE ExpiresAt < @timeout
                      AND StatusName IN('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
+                     AND NextRetryAt IS NULL
                  );
                 """,
                 transaction: null,
@@ -496,7 +516,7 @@ public sealed class SqlServerDataStorage(
     }
 
     public async ValueTask ScheduleMessagesOfDelayedAsync(
-        Func<object, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
+        Func<object?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
         CancellationToken cancellationToken = default
     )
     {
@@ -561,6 +581,9 @@ public sealed class SqlServerDataStorage(
         return new SqlServerMonitoringApi(options, messagingOptions, initializer, serializer, timeProvider);
     }
 
+    // NOTE: ChangeReceiveStateAsync does not call this helper because the receive path additionally
+    // writes ExceptionInfo, a column absent from the published table schema. Keep these two methods
+    // in sync when adding columns.
     private async ValueTask<bool> _ChangeMessageStateAsync(
         string tableName,
         MediumMessage message,
@@ -573,7 +596,7 @@ public sealed class SqlServerDataStorage(
     )
     {
         var sql =
-            $"UPDATE {tableName} SET Content=@Content, Retries=@Retries,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,LockedUntil=@LockedUntil,StatusName=@StatusName WHERE Id=@Id AND NOT (StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND NextRetryAt IS NULL) AND (@OriginalRetries IS NULL OR Retries=@OriginalRetries)";
+            $"UPDATE {tableName} SET Content=@Content, Retries=@Retries,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,LockedUntil=@LockedUntil,StatusName=@StatusName WHERE Id=@Id AND {_TerminalRowGuardWithRetries}";
 
         object[] sqlParams =
         [
@@ -676,8 +699,7 @@ public sealed class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var sql =
-            $"UPDATE {tableName} SET LockedUntil=@LockedUntil WHERE Id=@Id AND NOT (StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND NextRetryAt IS NULL)";
+        var sql = $"UPDATE {tableName} SET LockedUntil=@LockedUntil WHERE Id=@Id AND {_TerminalRowGuardSimple}";
 
         object[] sqlParams =
         [
@@ -711,23 +733,44 @@ public sealed class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        // Atomic claim-and-return: UPDATE TOP (N) ... OUTPUT inserted.* leases the rows (sets
+        // LockedUntil) and returns the selected columns in one round-trip. Replaces the previous
+        // two-step SELECT-UPDLOCK-then-Lease pattern, which committed the SELECT transaction
+        // before _LeaseAsync wrote LockedUntil. In between, a concurrent replica could pass the
+        // same "LockedUntil IS NULL" filter and lease the same row — double-dispatch.
+        //
+        // WITH (UPDLOCK, READPAST, ROWLOCK) on the UPDATE preserves the "skip rows another
+        // replica is mid-claim on" behaviour. The UPDATE assigns @NewLease = now + DispatchTimeout
+        // so subsequent pickup polls (anywhere) see the row as leased until the dispatch attempt
+        // completes (or the lease expires).
+        //
         // Use the injected TimeProvider rather than the DB server clock (GETUTCDATE()) so InMemory
         // and SQL providers share identical pickup semantics — keeps tests with a fake clock honest
         // and avoids subtle drift between application time and DB time.
-        var sql =
-            $"SELECT TOP ({_RetryBatchSize}) Id, Content, Retries, Added, NextRetryAt, LockedUntil FROM {tableName} WITH (UPDLOCK, READPAST) "
-            + $"WHERE Retries <= @Retries AND Version = @Version AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now AND (LockedUntil IS NULL OR LockedUntil <= @Now);";
+        var sql = $"""
+            UPDATE TOP (@BatchSize) {tableName} WITH (UPDLOCK, READPAST, ROWLOCK)
+            SET LockedUntil = @NewLease
+            OUTPUT inserted.Id, inserted.Content, inserted.Retries, inserted.Added, inserted.NextRetryAt, inserted.LockedUntil
+            WHERE Retries <= @Retries
+              AND Version = @Version
+              AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now
+              AND (LockedUntil IS NULL OR LockedUntil <= @Now)
+              AND {_TerminalRowGuardSimple};
+            """;
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
 
         object[] sqlParams =
         [
+            new SqlParameter("@BatchSize", _RetryBatchSize),
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Version", messagingOptions.Value.Version),
-            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
+            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = now },
+            new SqlParameter("@NewLease", SqlDbType.DateTime2) { Value = newLease },
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         var result = await connection
             .ExecuteReaderAsync(
@@ -759,14 +802,11 @@ public sealed class SqlServerDataStorage(
 
                     return messages;
                 },
-                transaction: transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-
-        await transaction.CommitAsync(cancellationToken);
 
         return result;
     }

@@ -2,6 +2,7 @@
 
 namespace Headless.Messaging.Monitoring;
 
+[PublicAPI]
 public class MessageView
 {
     public required long StorageId { get; set; }
@@ -23,4 +24,10 @@ public class MessageView
     public int Retries { get; set; }
 
     public required string StatusName { get; set; }
+
+    /// <summary>UTC timestamp at which the retry processor should re-dispatch this message; <see langword="null"/> when the row is terminal or has no pending retry.</summary>
+    public DateTime? NextRetryAt { get; set; }
+
+    /// <summary>UTC timestamp until which the row is leased by an active dispatch attempt; <see langword="null"/> when no lease is active.</summary>
+    public DateTime? LockedUntil { get; set; }
 }

@@ -62,8 +62,17 @@ public sealed class RetryPolicyOptions
     /// Default is 5 minutes.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// While <c>LockedUntil</c> is in the future, the persisted retry processor excludes the row.
     /// Handlers that run longer than this lease remain at-least-once and may be re-dispatched.
+    /// </para>
+    /// <para>
+    /// <b>Rolling-restart retry gap:</b> on host-shutdown during dispatch, the row's
+    /// <c>LockedUntil</c> is preserved; the retry processor will not pick it up until
+    /// <c>LockedUntil</c> expires. Keep <see cref="DispatchTimeout"/> aligned with your expected
+    /// rolling-restart window — values greater than ~2 minutes may produce a noticeable retry delay
+    /// after deployment because in-flight messages stay invisible until the lease expires.
+    /// </para>
     /// </remarks>
     public TimeSpan DispatchTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
@@ -85,6 +94,18 @@ public sealed class RetryPolicyOptions
     /// short and honor the supplied <see cref="CancellationToken"/> to avoid leaking resources.
     /// </remarks>
     public TimeSpan OnExhaustedTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the inline-retry budget is not yet consumed for the
+    /// current dispatch. Pass the count of inline retries already attempted on this pickup; the
+    /// helper is the single source of truth so the three persistence/loop call sites cannot drift.
+    /// </summary>
+    /// <remarks>
+    /// Semantics: <c>HasInlineBudgetRemaining(0)</c> with <c>MaxInlineRetries=0</c> returns
+    /// <see langword="false"/> (first attempt is the only attempt); <c>HasInlineBudgetRemaining(0)</c>
+    /// with <c>MaxInlineRetries=3</c> returns <see langword="true"/> (3 inline retries left).
+    /// </remarks>
+    public bool HasInlineBudgetRemaining(int attemptsCompleted) => attemptsCompleted < MaxInlineRetries;
 
     /// <summary>
     /// Copies all properties of this instance to <paramref name="target"/>.
@@ -133,6 +154,15 @@ public sealed class RetryPolicyOptions
     /// On host crash between the terminal storage write and the callback completion, OnExhausted
     /// may NOT fire for that message — handlers must tolerate at-most-once delivery in addition to
     /// the documented at-least-once contract above.
+    /// </para>
+    /// <para>
+    /// <b>Resource lifetime:</b> the supplied <see cref="CancellationToken"/> is the framework's
+    /// signal that the dispatch scope is winding down (timeout via <see cref="OnExhaustedTimeout"/>
+    /// or host shutdown). Callbacks MUST observe the token and unwind promptly; do NOT capture or
+    /// retain <see cref="FailedInfo.ServiceProvider"/> beyond the awaited window because the
+    /// dispatch scope is disposed once this method returns or the timeout fires (whichever comes
+    /// first). An orphaned callback that touches scope-bound services after timeout will race
+    /// scope disposal and may observe <see cref="ObjectDisposedException"/>.
     /// </para>
     /// </remarks>
     public Func<FailedInfo, CancellationToken, Task>? OnExhausted { get; set; }

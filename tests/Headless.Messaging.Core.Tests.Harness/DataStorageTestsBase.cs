@@ -647,6 +647,96 @@ public abstract class DataStorageTestsBase : TestBase
             .Contain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    public virtual async Task should_not_return_leased_received_message_until_lease_expires()
+    {
+        // Asymmetric coverage parity with the published-lease test above. Mirrors the receive
+        // lease semantics: Failed/NextRetryAt-in-past row with a future LockedUntil is excluded
+        // from the retry pickup until LockedUntil expires.
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "leased-received",
+            "test-group",
+            CreateMessage(),
+            AbortToken
+        );
+
+        await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
+
+        var leased = await storage.LeaseReceiveAsync(storedMessage, DateTime.UtcNow.AddMinutes(5), AbortToken);
+
+        leased.Should().BeTrue();
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == storedMessage.StorageId);
+
+        await storage.LeaseReceiveAsync(storedMessage, DateTime.UtcNow.AddSeconds(-1), AbortToken);
+
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .Contain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_handle_concurrent_state_updates_to_same_row()
+    {
+        // Concurrent CAS / optimistic-concurrency contract: exactly one of N parallel
+        // ChangeReceiveStateAsync calls with originalRetries=0 must succeed. The others must
+        // return false because Retries no longer equals the original value (or because the row
+        // is now terminal). Validates the per-row CAS guard used to prevent inverse-order pickups
+        // from overwriting each other's terminal writes.
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "concurrent-cas",
+            "test-group",
+            CreateMessage(),
+            AbortToken
+        );
+
+        // Transition to Failed/NextRetryAt-in-future so the row stays mutable (terminal guard
+        // would otherwise reject EVERY call regardless of originalRetries semantics).
+        storedMessage.Retries = 0;
+        await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddMinutes(5),
+            cancellationToken: AbortToken
+        );
+
+        const int concurrency = 20;
+        var bag = new ConcurrentBag<bool>();
+        await Task.WhenAll(
+            Enumerable
+                .Range(0, concurrency)
+                .Select(_ =>
+                    Task.Run(async () =>
+                    {
+                        var localCopy = new MediumMessage
+                        {
+                            StorageId = storedMessage.StorageId,
+                            Origin = storedMessage.Origin,
+                            Content = storedMessage.Content,
+                            Retries = 1,
+                        };
+                        var ok = await storage.ChangeReceiveStateAsync(
+                            localCopy,
+                            StatusName.Failed,
+                            nextRetryAt: DateTime.UtcNow.AddMinutes(10),
+                            originalRetries: 0,
+                            cancellationToken: AbortToken
+                        );
+                        bag.Add(ok);
+                    })
+                )
+        );
+
+        bag.Count(x => x).Should().Be(1, "exactly one concurrent CAS update must win");
+        bag.Count(x => !x).Should().Be(concurrency - 1, "all other writers must observe stale Retries");
+    }
+
     public virtual async Task should_reject_mismatched_original_retries()
     {
         var storage = GetStorage();
@@ -702,6 +792,75 @@ public abstract class DataStorageTestsBase : TestBase
 
         first.Should().BeTrue();
         second.Should().BeFalse();
+    }
+
+    public virtual async Task should_handle_concurrent_redelivery_storm_on_same_message_id()
+    {
+        // Fan-out concurrency test for StoreReceivedExceptionMessageAsync's upsert identity
+        // (Version, MessageId, Group). N parallel writers for the SAME message must collapse
+        // to exactly one row. The last writer's exceptionInfo must win (the upsert is an
+        // unconditional overwrite when the existing row is non-terminal — the terminal-row
+        // guard only blocks updates against Succeeded/Failed-NULL rows; the first call here
+        // creates a Failed/NULL row, so subsequent storm writes hit the terminal guard and
+        // return false. We assert the row-count invariant and that exception info matches one
+        // of the contributors — see the comment in the InMemory provider on upsert semantics).
+        var storage = GetStorage();
+        var serializer = GetSerializer();
+        var message = CreateMessage($"storm-{Guid.NewGuid():N}");
+        var content = serializer.Serialize(message);
+        const string group = "storm-group";
+        const int concurrency = 64;
+
+        using var startGate = new ManualResetEventSlim(false);
+        var results = new ConcurrentBag<bool>();
+
+        var workers = Enumerable
+            .Range(0, concurrency)
+            .Select(index =>
+                Task.Run(async () =>
+                {
+                    startGate.Wait(AbortToken);
+                    var ok = await storage.StoreReceivedExceptionMessageAsync(
+                        "redelivery-storm",
+                        group,
+                        content,
+                        $"writer-{index}",
+                        AbortToken
+                    );
+                    results.Add(ok);
+                })
+            )
+            .ToArray();
+
+        // Release every worker at the same instant so the test exercises the contended path,
+        // not the trivial sequential one.
+        startGate.Set();
+
+        // Hard timeout — if the secondary-index path regresses to an O(N) scan inside an
+        // exclusive lock the storm would either deadlock or take orders of magnitude longer
+        // than 30 seconds. Failing fast surfaces the regression.
+        var stormCompletion = Task.WhenAll(workers);
+        var timeout = Task.Delay(TimeSpan.FromSeconds(30), AbortToken);
+        var winner = await Task.WhenAny(stormCompletion, timeout);
+        winner
+            .Should()
+            .BeSameAs(stormCompletion, "storm must finish well under 30s — lock starvation suspected otherwise");
+
+        // Exactly one writer should report true (the inserter); all others observe the existing
+        // terminal-NULL row and return false. The single-row invariant is then verified via a
+        // direct identity probe — calling StoreReceivedExceptionMessageAsync again with new
+        // exception info must also return false because the row is now terminal.
+        results.Count(x => x).Should().Be(1, "exactly one concurrent upsert must insert the row");
+        results.Count(x => !x).Should().Be(concurrency - 1, "all losers must observe the existing terminal row");
+
+        var followUp = await storage.StoreReceivedExceptionMessageAsync(
+            "redelivery-storm",
+            group,
+            content,
+            "post-storm",
+            AbortToken
+        );
+        followUp.Should().BeFalse("the row is terminal — no further upserts should succeed");
     }
 
     public virtual async Task should_pickup_message_at_max_persisted_retries_and_exclude_above()

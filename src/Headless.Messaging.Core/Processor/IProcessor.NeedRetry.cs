@@ -22,10 +22,11 @@ namespace Headless.Messaging.Processor;
 [PublicAPI]
 public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMonitor
 {
+    private static readonly TimeSpan _LockSafetyMargin = TimeSpan.FromSeconds(10);
+
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;
     private readonly IDispatcher _dispatcher;
     private readonly TimeSpan _baseInterval;
-    private static readonly TimeSpan _lockSafetyMargin = TimeSpan.FromSeconds(10);
     private readonly TimeSpan _maxInterval;
     private readonly IOptions<MessagingOptions> _options;
     private readonly IDataStorage _dataStorage;
@@ -49,6 +50,13 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private long _currentIntervalTicks;
     private int _consecutiveHealthyCycles;
     private int _consecutiveCleanCycles;
+
+    // Tracks consecutive storage-pickup failures so adaptive polling backs off (rather than
+    // accelerating from artificially "clean" cycles when storage throws and returns an empty list).
+    // Escalates to Error after _StoragePickupErrorEscalationThreshold to surface ongoing outages.
+    private int _consecutiveStoragePickupFailures;
+
+    private const int _StoragePickupErrorEscalationThreshold = 3;
 
     public MessageNeedToRetryProcessor(
         IOptions<MessagingOptions> options,
@@ -103,6 +111,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         Interlocked.Exchange(ref _currentIntervalTicks, _baseInterval.Ticks);
         Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
         Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
+        Interlocked.Exchange(ref _consecutiveStoragePickupFailures, 0);
         return ValueTask.CompletedTask;
     }
 
@@ -307,7 +316,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     {
         try
         {
-            return await getMessagesAsync(cancellationToken).ConfigureAwait(false);
+            var result = await getMessagesAsync(cancellationToken).ConfigureAwait(false);
+            Interlocked.Exchange(ref _consecutiveStoragePickupFailures, 0);
+            return result;
         }
         catch (OperationCanceledException)
         {
@@ -315,7 +326,20 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         }
         catch (Exception ex)
         {
-            _logger.GetMessagesFromStorageFailed(ex);
+            // Back off polling so a sustained storage outage isn't masked by artificially "clean"
+            // cycles (empty list ≠ healthy). Escalate the log to Error after a small streak so
+            // monitoring picks up persistent failures.
+            var failureCount = Interlocked.Increment(ref _consecutiveStoragePickupFailures);
+            _CompareExchangeDouble();
+
+            if (failureCount >= _StoragePickupErrorEscalationThreshold)
+            {
+                _logger.RetryStoragePickupFailureEscalated(ex, failureCount);
+            }
+            else
+            {
+                _logger.GetMessagesFromStorageFailed(ex);
+            }
 
             return [];
         }
@@ -447,7 +471,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     {
         var ticks = Interlocked.Read(ref _currentIntervalTicks);
         var effectiveTicks = ticks > _baseInterval.Ticks ? ticks : _baseInterval.Ticks;
-        return TimeSpan.FromTicks(effectiveTicks).Add(_lockSafetyMargin);
+        return TimeSpan.FromTicks(effectiveTicks).Add(_LockSafetyMargin);
     }
 }
 

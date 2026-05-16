@@ -547,4 +547,40 @@ internal static partial class LoggerExtensions
         Message = "Skipping poisoned-message OnExhausted: message {MessageId} already terminal"
     )]
     public static partial void SkippingPoisonedOnExhaustedAlreadyTerminal(this ILogger logger, string messageId);
+
+    [LoggerMessage(
+        EventId = 71,
+        EventName = "SkippingSuccessfulAlreadyTerminal",
+        Level = LogLevel.Information,
+        Message = "Skipping Succeeded state write: message {StorageId} already terminal"
+    )]
+    public static partial void SkippingSuccessfulAlreadyTerminal(this ILogger logger, long storageId);
+
+    [LoggerMessage(
+        EventId = 72,
+        EventName = "OnExhaustedCallbackCancelledAtShutdown",
+        Level = LogLevel.Debug,
+        Message = "RetryPolicy.OnExhausted callback for message {StorageId} was cancelled by host shutdown."
+    )]
+    public static partial void OnExhaustedCallbackCancelledAtShutdown(this ILogger logger, long storageId);
+
+    [LoggerMessage(
+        EventId = 73,
+        EventName = "OnExhaustedCallbackOrphaned",
+        Level = LogLevel.Warning,
+        Message = "RetryPolicy.OnExhausted callback for message {StorageId} timed out and is orphaned. Scope-bound services (FailedInfo.ServiceProvider) may become invalid once the dispatch scope disposes; cooperative callbacks should honor the supplied CancellationToken."
+    )]
+    public static partial void OnExhaustedCallbackOrphaned(this ILogger logger, long storageId);
+
+    [LoggerMessage(
+        EventId = 74,
+        EventName = "RetryStoragePickupFailureEscalated",
+        Level = LogLevel.Error,
+        Message = "Retry-pickup storage call failed for {ConsecutiveFailures} consecutive cycles. Adaptive polling is backing off; investigate storage health."
+    )]
+    public static partial void RetryStoragePickupFailureEscalated(
+        this ILogger logger,
+        Exception exception,
+        int consecutiveFailures
+    );
 }

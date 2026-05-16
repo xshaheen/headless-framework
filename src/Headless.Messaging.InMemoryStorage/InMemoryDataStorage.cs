@@ -26,6 +26,17 @@ internal sealed class InMemoryDataStorage(
     internal ConcurrentDictionary<string, (string Instance, DateTime ExpiresAt)> Locks { get; } =
         new(StringComparer.Ordinal);
 
+    // Secondary index keyed on the SQL-providers' upsert identity (Version, MessageId, Group?).
+    // Maps to the primary row id in <see cref="ReceivedMessages"/>. The lookup that backs
+    // StoreReceivedExceptionMessageAsync is then O(1) via TryGetValue instead of an O(N) scan
+    // over the whole received-message map. Updated in lockstep with every code path that inserts
+    // into or removes from ReceivedMessages. ValueTuple's default equality uses ordinal string
+    // equality for each component, matching the SQL providers' BINARY-collation key semantics.
+    private readonly ConcurrentDictionary<
+        (string Version, string MessageId, string? Group),
+        long
+    > _receivedIdentityIndex = new();
+
     // Serializes the lookup-then-insert/update path in StoreReceivedExceptionMessageAsync so
     // two concurrent broker redeliveries cannot both decide "not found" and race to insert
     // duplicate rows for the same (Version, MessageId, Group) tuple.
@@ -35,6 +46,7 @@ internal sealed class InMemoryDataStorage(
     {
         PublishedMessages.Clear();
         ReceivedMessages.Clear();
+        _receivedIdentityIndex.Clear();
         Locks.Clear();
     }
 
@@ -301,20 +313,40 @@ internal sealed class InMemoryDataStorage(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var expiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
         var retries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
+        var indexKey = (version, messageId, (string?)group);
 
         // Upsert on (Version, MessageId, Group) — mirrors the SQL providers' MERGE / ON CONFLICT
         // semantics so broker redelivery doesn't accumulate duplicate rows. The terminal-row guard
         // also matches: a Succeeded/Failed entry with no scheduled retry is left alone so a
         // previously-succeeded row isn't overwritten back to Failed by a redelivery-then-deserialize-fail.
-        // Lock the entire lookup-then-insert/update path so concurrent broker redeliveries cannot
-        // both decide "not found" and race to insert duplicate rows.
+        //
+        // Lookup is O(1) via the secondary identity index, outside the per-write lock. The lock is
+        // still required to serialize "decided not found → insert" against another concurrent
+        // redelivery that made the same decision in the same micro-second — otherwise both would
+        // race to insert duplicate rows. Lock scope is intentionally narrow: existence check inside
+        // the lock so two losers fall through to the update branch.
+        MemoryMessage? existing = null;
+        if (
+            _receivedIdentityIndex.TryGetValue(indexKey, out var existingId)
+            && ReceivedMessages.TryGetValue(existingId, out var found)
+        )
+        {
+            existing = found;
+        }
+
         lock (_receivedExceptionUpsertLock)
         {
-            var existing = ReceivedMessages.Values.FirstOrDefault(m =>
-                string.Equals(m.Version, version, StringComparison.Ordinal)
-                && string.Equals(m.Origin.GetId(), messageId, StringComparison.Ordinal)
-                && string.Equals(m.Group, group, StringComparison.Ordinal)
-            );
+            // Re-check inside the lock so two concurrent inserts for the same identity converge to
+            // a single row. The first arrival reserves the index slot below; the second observes it
+            // here and takes the update branch.
+            if (
+                existing is null
+                && _receivedIdentityIndex.TryGetValue(indexKey, out existingId)
+                && ReceivedMessages.TryGetValue(existingId, out var foundUnderLock)
+            )
+            {
+                existing = foundUnderLock;
+            }
 
             if (existing is not null)
             {
@@ -355,6 +387,7 @@ internal sealed class InMemoryDataStorage(
                 ExceptionInfo = exceptionInfo,
                 Version = version,
             };
+            _receivedIdentityIndex[indexKey] = id;
 
             return ValueTask.FromResult(true);
         }
@@ -381,6 +414,7 @@ internal sealed class InMemoryDataStorage(
             Retries = 0,
         };
 
+        var version = messagingOptions.Value.Version;
         ReceivedMessages[mdMessage.StorageId] = new MemoryMessage
         {
             StorageId = mdMessage.StorageId,
@@ -394,8 +428,20 @@ internal sealed class InMemoryDataStorage(
             NextRetryAt = mdMessage.NextRetryAt,
             LockedUntil = mdMessage.LockedUntil,
             StatusName = StatusName.Scheduled,
-            Version = messagingOptions.Value.Version,
+            Version = version,
         };
+
+        // Index update is best-effort: the SQL providers' upsert constraint applies only when
+        // MessageId is present (rows missing the header don't participate in upsert identity).
+        // Mirror that tolerance here so degenerate test inputs without the MessageId header still
+        // round-trip through StoreReceivedMessageAsync.
+        if (
+            message.Headers.TryGetValue(Headless.Messaging.Headers.MessageId, out var messageId)
+            && messageId is not null
+        )
+        {
+            _receivedIdentityIndex[(version, messageId, group)] = mdMessage.StorageId;
+        }
 
         return ValueTask.FromResult(mdMessage);
     }
@@ -427,9 +473,17 @@ internal sealed class InMemoryDataStorage(
                     x.ExpiresAt < timeout && (x.StatusName == StatusName.Succeeded || x.StatusName == StatusName.Failed)
                 )
                 .Select(x => x.StorageId)
-                .Take(batchCount);
+                .Take(batchCount)
+                .ToList();
 
-            removed += ids.Count(id => ReceivedMessages.TryRemove(id, out _));
+            foreach (var id in ids)
+            {
+                if (ReceivedMessages.TryRemove(id, out var removedMsg))
+                {
+                    _RemoveFromIdentityIndex(removedMsg);
+                    removed++;
+                }
+            }
         }
 
         return ValueTask.FromResult(removed);
@@ -439,51 +493,81 @@ internal sealed class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
-        var version = messagingOptions.Value.Version;
-        // Return a snapshot (plain MediumMessage), not the live MemoryMessage reference, so that
-        // pre-write caller mutations (ExceptionInfo, ExpiresAt, AddOrUpdateException on Origin) do
-        // NOT leak into the dictionary entry when ChangeReceiveStateAsync's terminal guard rejects
-        // the conditional UPDATE. The SQL providers naturally produce a snapshot because every column
-        // comes back through deserialization; InMemory must do this explicitly.
-        IEnumerable<MediumMessage> result = PublishedMessages
-            .Values.Where(x =>
-                string.Equals(x.Version, version, StringComparison.Ordinal)
-                && x.Retries <= maxPersistedRetries
-                && x.NextRetryAt is not null
-                && x.NextRetryAt <= now
-                && (x.LockedUntil is null || x.LockedUntil <= now)
-            )
-            .Take(200)
-            .Select(_ToSnapshot)
-            .ToList();
-
-        return ValueTask.FromResult(result);
+        return ValueTask.FromResult(_ClaimMessagesOfNeedRetry(PublishedMessages, cancellationToken));
     }
 
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
     {
+        return ValueTask.FromResult(_ClaimMessagesOfNeedRetry(ReceivedMessages, cancellationToken));
+    }
+
+    private IEnumerable<MediumMessage> _ClaimMessagesOfNeedRetry(
+        ConcurrentDictionary<long, MemoryMessage> source,
+        CancellationToken cancellationToken
+    )
+    {
         cancellationToken.ThrowIfCancellationRequested();
         var now = timeProvider.GetUtcNow().UtcDateTime;
+        var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
         var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
         var version = messagingOptions.Value.Version;
-        IEnumerable<MediumMessage> result = ReceivedMessages
-            .Values.Where(x =>
-                string.Equals(x.Version, version, StringComparison.Ordinal)
-                && x.Retries <= maxPersistedRetries
-                && x.NextRetryAt is not null
-                && x.NextRetryAt <= now
-                && (x.LockedUntil is null || x.LockedUntil <= now)
-            )
-            .Take(200)
-            .Select(_ToSnapshot)
-            .ToList();
 
-        return ValueTask.FromResult(result);
+        // Atomic claim-and-return mirrors the SQL providers' single-statement UPDATE...RETURNING/
+        // OUTPUT semantics: the pickup query both leases (sets LockedUntil = now + DispatchTimeout)
+        // and returns the rows in one step, preventing two concurrent pickups from observing the
+        // same "LockedUntil IS NULL" row and double-dispatching. Each candidate row is leased under
+        // its per-row lock so the claim is atomic with respect to other writers.
+        //
+        // Return a snapshot (plain MediumMessage), not the live MemoryMessage reference, so that
+        // pre-write caller mutations (ExceptionInfo, ExpiresAt, AddOrUpdateException on Origin) do
+        // NOT leak into the dictionary entry when ChangeReceiveStateAsync's terminal guard rejects
+        // the conditional UPDATE. The SQL providers naturally produce a snapshot because every column
+        // comes back through deserialization; InMemory must do this explicitly.
+        var claimed = new List<MediumMessage>();
+        foreach (var candidate in source.Values)
+        {
+            if (claimed.Count >= 200)
+            {
+                break;
+            }
+
+            if (!string.Equals(candidate.Version, version, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            lock (candidate)
+            {
+                if (candidate.Retries > maxPersistedRetries)
+                {
+                    continue;
+                }
+
+                if (candidate.NextRetryAt is null || candidate.NextRetryAt > now)
+                {
+                    continue;
+                }
+
+                if (candidate.LockedUntil is not null && candidate.LockedUntil > now)
+                {
+                    continue;
+                }
+
+                if (
+                    (candidate.StatusName is StatusName.Succeeded or StatusName.Failed) && candidate.NextRetryAt is null
+                )
+                {
+                    continue;
+                }
+
+                candidate.LockedUntil = newLease;
+                claimed.Add(_ToSnapshot(candidate));
+            }
+        }
+
+        return claimed;
     }
 
     private static MediumMessage _ToSnapshot(MemoryMessage m) =>
@@ -537,8 +621,28 @@ internal sealed class InMemoryDataStorage(
     public ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var deleteResult = ReceivedMessages.TryRemove(id, out _);
-        return ValueTask.FromResult(deleteResult ? 1 : 0);
+        if (ReceivedMessages.TryRemove(id, out var removed))
+        {
+            _RemoveFromIdentityIndex(removed);
+            return ValueTask.FromResult(1);
+        }
+        return ValueTask.FromResult(0);
+    }
+
+    private void _RemoveFromIdentityIndex(MemoryMessage removed)
+    {
+        // Same tolerance as the insert path: only attempt the index removal when MessageId is
+        // actually present on the row's headers. Rows that opted out of the upsert identity at
+        // insert time are not in the secondary index — TryRemove on a synthesized key would be a
+        // no-op anyway, but skipping the GetId() call avoids a KeyNotFoundException during
+        // shutdown cleanup of degenerate test inputs.
+        if (
+            removed.Origin.Headers.TryGetValue(Headless.Messaging.Headers.MessageId, out var messageId)
+            && messageId is not null
+        )
+        {
+            _receivedIdentityIndex.TryRemove((removed.Version, messageId, removed.Group), out _);
+        }
     }
 
     public ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default)
@@ -549,7 +653,7 @@ internal sealed class InMemoryDataStorage(
     }
 
     public ValueTask ScheduleMessagesOfDelayedAsync(
-        Func<object, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
+        Func<object?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
         CancellationToken cancellationToken = default
     )
     {
@@ -572,7 +676,8 @@ internal sealed class InMemoryDataStorage(
             .Take(messagingOptions.Value.SchedulerBatchSize)
             .Cast<MediumMessage>();
 
-        return scheduleTask(null!, result);
+        // InMemory provider has no transaction handle; the nullability is part of the contract.
+        return scheduleTask(null, result);
     }
 
     public IMonitoringApi GetMonitoringApi()

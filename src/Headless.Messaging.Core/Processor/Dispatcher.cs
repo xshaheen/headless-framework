@@ -85,7 +85,21 @@ internal sealed class Dispatcher : IDispatcher
             await _StartProcessingTasksAsync().ConfigureAwait(false);
         }
 
-        _ = _StartSchedulerTaskAsync().ConfigureAwait(false);
+        var schedulerTask = _StartSchedulerTaskAsync();
+        _ = schedulerTask.ContinueWith(
+            _LogSchedulerFault,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default
+        );
+    }
+
+    private void _LogSchedulerFault(Task task)
+    {
+        if (task.Exception is { } ex)
+        {
+            _logger.DelayedMessagePublishFailed(ex, ex.Message);
+        }
     }
 
     public async Task EnqueueToScheduler(
@@ -285,19 +299,41 @@ internal sealed class Dispatcher : IDispatcher
 
     #region Task Startup Methods
 
-    private async Task _StartSendingTaskAsync()
+    private Task _StartSendingTaskAsync()
     {
-        await Task.Run(_SendingAsync, TasksCts.Token).ConfigureAwait(false);
+        // Fire-and-forget the sending loop on the thread pool, but attach a fault continuation so
+        // unobserved exceptions surface in logs. Using `async Task` (changed from `async ValueTask`)
+        // ensures Task.Run picks the unwrapping overload, so the returned Task tracks the loop's
+        // lifetime rather than completing the moment the ValueTask struct is returned.
+        var loop = Task.Run(_SendingAsync, TasksCts.Token);
+        _ = loop.ContinueWith(
+            t => _logger.SubscriberInvocationFailed(t.Exception!, 0),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default
+        );
+        return Task.CompletedTask;
     }
 
-    private async Task _StartProcessingTasksAsync()
+    private Task _StartProcessingTasksAsync()
     {
+        // Fire-and-forget per-thread processing loops, faults logged via continuation.
         var processingTasks = Enumerable
             .Range(0, _options.SubscriberParallelExecuteThreadCount)
             .Select(_ => Task.Run(_ProcessingAsync, TasksCts.Token))
             .ToArray();
 
-        await Task.WhenAll(processingTasks).ConfigureAwait(false);
+        foreach (var loop in processingTasks)
+        {
+            _ = loop.ContinueWith(
+                t => _logger.SubscriberInvocationFailed(t.Exception!, 0),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default
+            );
+        }
+
+        return Task.CompletedTask;
     }
 
     private Task _StartSchedulerTaskAsync()
@@ -310,7 +346,7 @@ internal sealed class Dispatcher : IDispatcher
                     try
                     {
                         await _ProcessScheduledMessagesAsync().ConfigureAwait(false);
-                        TasksCts.Token.WaitHandle.WaitOne(100);
+                        await Task.Delay(TimeSpan.FromMilliseconds(100), TasksCts.Token).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
@@ -369,7 +405,7 @@ internal sealed class Dispatcher : IDispatcher
 
     #region Background Workers - Sending
 
-    private async ValueTask _SendingAsync()
+    private async Task _SendingAsync()
     {
         try
         {
@@ -457,7 +493,7 @@ internal sealed class Dispatcher : IDispatcher
 
     #region Background Workers - Processing
 
-    private async ValueTask _ProcessingAsync()
+    private async Task _ProcessingAsync()
     {
         try
         {

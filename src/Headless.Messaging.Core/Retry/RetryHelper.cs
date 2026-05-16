@@ -102,8 +102,7 @@ internal static class RetryHelper
         // up to MaxInlineRetries on each pickup; the persisted retry processor will pick the row
         // up at most MaxPersistedRetries times after the initial dispatch. The two budgets compose
         // multiplicatively.
-        var hasInlineBudget = inlineRetries + 1 <= policy.MaxInlineRetries;
-        if (!hasInlineBudget && message.Retries >= policy.MaxPersistedRetries)
+        if (!policy.HasInlineBudgetRemaining(inlineRetries) && message.Retries >= policy.MaxPersistedRetries)
         {
             return RetryDecision.Exhausted;
         }
@@ -177,6 +176,10 @@ internal static class RetryHelper
         catch (TimeoutException)
         {
             logger.OnExhaustedTimedOut(storageId, timeout.TotalSeconds);
+            // Orphan warning: scope-bound services (FailedInfo.ServiceProvider) may become invalid
+            // after the dispatch scope disposes. The orphaned callback continues running in the
+            // background; an uncooperative callback that ignores the CT may race scope disposal.
+            logger.OnExhaustedCallbackOrphaned(storageId);
 
             // Signal the callback to stop touching scope-bound services (e.g., FailedInfo.ServiceProvider).
             // A cooperative callback observes the token and unwinds; an uncooperative one is orphaned
@@ -195,6 +198,7 @@ internal static class RetryHelper
             // Host shutdown observed during WaitAsync. Cancel the linked CTS BEFORE its `using`
             // disposes so a cooperative callback sees cancellation and unwinds cleanly instead
             // of touching a disposed scope. Not a callback fault — emit a debug log only.
+            logger.OnExhaustedCallbackCancelledAtShutdown(storageId);
             try
             {
                 await callbackCts.CancelAsync().ConfigureAwait(false);
@@ -232,7 +236,7 @@ internal static class RetryHelper
     )
     {
         var isInlineRetryInFlight =
-            decision.Outcome == RetryDecision.Kind.Continue && inlineRetries + 1 <= policy.MaxInlineRetries;
+            decision.Outcome == RetryDecision.Kind.Continue && policy.HasInlineBudgetRemaining(inlineRetries);
 
         var nextStatus = isInlineRetryInFlight ? StatusName.Scheduled : StatusName.Failed;
 

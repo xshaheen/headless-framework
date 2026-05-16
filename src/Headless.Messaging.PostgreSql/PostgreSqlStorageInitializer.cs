@@ -44,12 +44,17 @@ public sealed class PostgreSqlStorageInitializer(
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        object[] sqlParams =
-        [
-            new NpgsqlParameter("@PubKey", $"publish_retry_{messagingOptions.Value.Version}"),
-            new NpgsqlParameter("@RecKey", $"received_retry_{messagingOptions.Value.Version}"),
-            new NpgsqlParameter("@LastLockTime", DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc)),
-        ];
+        // Only include lock parameters if UseStorageLock is enabled. Npgsql throws at execute time
+        // when parameters are present but the SQL has no matching placeholders — mirrors the existing
+        // guard in SqlServerStorageInitializer.
+        object[] sqlParams = messagingOptions.Value.UseStorageLock
+            ?
+            [
+                new NpgsqlParameter("@PubKey", $"publish_retry_{messagingOptions.Value.Version}"),
+                new NpgsqlParameter("@RecKey", $"received_retry_{messagingOptions.Value.Version}"),
+                new NpgsqlParameter("@LastLockTime", DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc)),
+            ]
+            : [];
 
         // PostgreSQL supports transactional DDL — wrap the batch so a mid-script failure
         // (network drop, broker-side abort) cannot leave the schema half-initialized.
@@ -95,10 +100,13 @@ public sealed class PostgreSqlStorageInitializer(
             CREATE INDEX IF NOT EXISTS "idx_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");
             -- Partial index for retry pickup. Keyed on (Version, NextRetryAt) so Version is a seek
-            -- predicate rather than a residual filter — the pickup query filters on both. Index-only
-            -- scan requires healthy autovacuum so the visibility map covers the relation; under heavy
+            -- predicate rather than a residual filter — the pickup query filters on both. Includes
+            -- Retries AND LockedUntil so the lease predicate `(LockedUntil IS NULL OR LockedUntil <= @Now)`
+            -- can be evaluated from the index without a per-candidate heap fetch. Index-only scan
+            -- requires healthy autovacuum so the visibility map covers the relation; under heavy
             -- write load the planner may fall back to heap fetches bounded by the retry batch size.
-            CREATE INDEX IF NOT EXISTS "idx_received_Version_NextRetryAt" ON {GetReceivedTableName()} ("Version","NextRetryAt") INCLUDE ("Retries") WHERE "NextRetryAt" IS NOT NULL;
+            DROP INDEX IF EXISTS "{schema}"."idx_received_Version_NextRetryAt" CASCADE;
+            CREATE INDEX IF NOT EXISTS "idx_received_Version_NextRetryAt" ON {GetReceivedTableName()} ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
             CREATE INDEX IF NOT EXISTS "idx_received_delayed" ON {GetReceivedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
 
             CREATE TABLE IF NOT EXISTS {GetPublishedTableName()}(
@@ -118,10 +126,13 @@ public sealed class PostgreSqlStorageInitializer(
             CREATE INDEX IF NOT EXISTS "idx_published_ExpiresAt_StatusName" ON {GetPublishedTableName()}("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_published_Version_ExpiresAt_StatusName" ON {GetPublishedTableName()} ("Version","ExpiresAt","StatusName");
             -- Partial index for retry pickup. Keyed on (Version, NextRetryAt) so Version is a seek
-            -- predicate rather than a residual filter — the pickup query filters on both. Index-only
-            -- scan requires healthy autovacuum so the visibility map covers the relation; under heavy
+            -- predicate rather than a residual filter — the pickup query filters on both. Includes
+            -- Retries AND LockedUntil so the lease predicate `(LockedUntil IS NULL OR LockedUntil <= @Now)`
+            -- can be evaluated from the index without a per-candidate heap fetch. Index-only scan
+            -- requires healthy autovacuum so the visibility map covers the relation; under heavy
             -- write load the planner may fall back to heap fetches bounded by the retry batch size.
-            CREATE INDEX IF NOT EXISTS "idx_published_Version_NextRetryAt" ON {GetPublishedTableName()} ("Version","NextRetryAt") INCLUDE ("Retries") WHERE "NextRetryAt" IS NOT NULL;
+            DROP INDEX IF EXISTS "{schema}"."idx_published_Version_NextRetryAt" CASCADE;
+            CREATE INDEX IF NOT EXISTS "idx_published_Version_NextRetryAt" ON {GetPublishedTableName()} ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
             """;
 

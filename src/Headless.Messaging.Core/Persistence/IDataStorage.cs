@@ -28,6 +28,15 @@ public interface IDataStorage
     /// <summary>
     /// Updates the status of a published message in storage.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>ExceptionInfo asymmetry:</b> <see cref="MediumMessage.ExceptionInfo"/> is intentionally
+    /// not persisted on the publish path; only the receive path (<see cref="ChangeReceiveStateAsync"/>)
+    /// persists exception info because the <c>Published</c> table schema has no <c>ExceptionInfo</c>
+    /// column. A 4th-provider implementation should mirror this asymmetry — never persist
+    /// <c>ExceptionInfo</c> from this method.
+    /// </para>
+    /// </remarks>
     /// <param name="message">The message whose state is changing.</param>
     /// <param name="state">The new status to persist.</param>
     /// <param name="transaction">Optional ambient transaction (<see cref="System.Data.Common.DbTransaction"/> or an EF Core <c>IDbContextTransaction</c>).</param>
@@ -171,12 +180,38 @@ public interface IDataStorage
     /// Returns published messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c>.
     /// No lookback window is applied.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Atomic claim-and-return:</b> returned rows are already leased — the same statement that
+    /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>.
+    /// Callers do NOT need to invoke <see cref="LeasePublishAsync"/> immediately after pickup; the
+    /// pickup itself is the claim. This prevents two replicas from picking up the same row between
+    /// a SELECT commit and a follow-up lease write (the prior two-step design double-dispatched).
+    /// </para>
+    /// <para>
+    /// Replicas with a stale view will skip these rows because the lease is now in the future.
+    /// The dispatch path will still call <see cref="LeasePublishAsync"/> to refresh the lease per
+    /// attempt; that lease overwrites the pickup-grant value with a fresh
+    /// <c>now + DispatchTimeout</c>.
+    /// </para>
+    /// </remarks>
     ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Streams delayed published messages to <paramref name="scheduleTask"/> for re-scheduling onto
+    /// the publish path.
+    /// </summary>
+    /// <param name="scheduleTask">
+    /// Callback invoked with the active transaction handle and the matching delayed messages. The
+    /// transaction handle is non-null when a transactional provider is in use (PostgreSQL, SQL Server)
+    /// and <see langword="null"/> for non-transactional providers (InMemory). Callers MUST null-check
+    /// before casting.
+    /// </param>
+    /// <param name="cancellationToken">The cancellation token.</param>
     ValueTask ScheduleMessagesOfDelayedAsync(
-        Func<object, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
+        Func<object?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
         CancellationToken cancellationToken = default
     );
 
@@ -184,6 +219,21 @@ public interface IDataStorage
     /// Returns received messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c>.
     /// No lookback window is applied.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Atomic claim-and-return:</b> returned rows are already leased — the same statement that
+    /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>.
+    /// Callers do NOT need to invoke <see cref="LeaseReceiveAsync"/> immediately after pickup; the
+    /// pickup itself is the claim. This prevents two replicas from picking up the same row between
+    /// a SELECT commit and a follow-up lease write (the prior two-step design double-dispatched).
+    /// </para>
+    /// <para>
+    /// Replicas with a stale view will skip these rows because the lease is now in the future.
+    /// The consume path will still call <see cref="LeaseReceiveAsync"/> to refresh the lease per
+    /// attempt; that lease overwrites the pickup-grant value with a fresh
+    /// <c>now + DispatchTimeout</c>.
+    /// </para>
+    /// </remarks>
     ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     );

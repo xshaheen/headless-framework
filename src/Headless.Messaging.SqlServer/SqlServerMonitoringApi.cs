@@ -12,7 +12,11 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.SqlServer;
 
-internal sealed class SqlServerMonitoringApi(
+/// <summary>
+/// SQL Server implementation of <see cref="IMonitoringApi"/> for querying message statistics and history.
+/// </summary>
+[PublicAPI]
+public sealed class SqlServerMonitoringApi(
     IOptions<SqlServerOptions> options,
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
@@ -33,7 +37,9 @@ internal sealed class SqlServerMonitoringApi(
                 (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE StatusName = N'Succeeded') AS ReceivedSucceeded,
                 (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Failed') AS PublishedFailed,
                 (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE StatusName = N'Failed') AS ReceivedFailed,
-                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Delayed') AS PublishedDelayed;
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Delayed') AS PublishedDelayed,
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE NextRetryAt IS NOT NULL) AS PublishedPendingRetry,
+                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE NextRetryAt IS NOT NULL) AS ReceivedPendingRetry;
             """;
 
         await using var connection = new SqlConnection(_options.ConnectionString);
@@ -52,6 +58,8 @@ internal sealed class SqlServerMonitoringApi(
                         statisticsDto.PublishedFailed = reader.GetInt64(2);
                         statisticsDto.ReceivedFailed = reader.GetInt64(3);
                         statisticsDto.PublishedDelayed = reader.GetInt64(4);
+                        statisticsDto.PublishedPendingRetry = reader.GetInt64(5);
+                        statisticsDto.ReceivedPendingRetry = reader.GetInt64(6);
                     }
 
                     return statisticsDto;
@@ -92,8 +100,8 @@ internal sealed class SqlServerMonitoringApi(
         var tableName = query.MessageType == MessageType.Publish ? _publishedTable : _receivedTable;
         var selectColumns =
             query.MessageType == MessageType.Publish
-                ? "[Id],[MessageId],[Version],[Name],CAST(NULL AS nvarchar(200)) AS [Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName]"
-                : "[Id],[MessageId],[Version],[Name],[Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName]";
+                ? "[Id],[MessageId],[Version],[Name],CAST(NULL AS nvarchar(200)) AS [Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]"
+                : "[Id],[MessageId],[Version],[Name],[Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]";
         var where = string.Empty;
         if (!string.IsNullOrEmpty(query.StatusName))
         {
@@ -184,7 +192,13 @@ internal sealed class SqlServerMonitoringApi(
                                 ExpiresAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(index - 1),
-                                StatusName = reader.GetString(index),
+                                StatusName = reader.GetString(index++),
+                                NextRetryAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(index - 1),
+                                LockedUntil = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(index - 1),
                             }
                         );
                     }
@@ -351,7 +365,7 @@ internal sealed class SqlServerMonitoringApi(
             ? "ExceptionInfo"
             : "CAST(NULL AS nvarchar(max)) AS ExceptionInfo";
         var sql =
-            $"SELECT TOP(1) Id, Content, Added, ExpiresAt, Retries, {exceptionInfoSql} FROM {tableName} WITH (READPAST) WHERE Id=@Id";
+            $"SELECT TOP(1) Id, Content, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id=@Id";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 
@@ -376,6 +390,12 @@ internal sealed class SqlServerMonitoringApi(
                             ExceptionInfo = await reader.IsDBNullAsync(5, ct).ConfigureAwait(false)
                                 ? null
                                 : reader.GetString(5),
+                            NextRetryAt = await reader.IsDBNullAsync(6, ct).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(6),
+                            LockedUntil = await reader.IsDBNullAsync(7, ct).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(7),
                         };
                     }
 

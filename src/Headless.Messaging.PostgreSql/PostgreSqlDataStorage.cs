@@ -34,6 +34,23 @@ public sealed class PostgreSqlDataStorage(
     private const int _RetryBatchSize = 200;
 
     /// <summary>
+    /// Reusable WHERE-clause fragment that refuses updates to rows already in a terminal state
+    /// (<c>Succeeded</c> / <c>Failed</c>) with no scheduled retry, while still respecting an
+    /// optional optimistic-concurrency token (<c>@OriginalRetries</c>). Used by Change*StateAsync
+    /// paths that pass <c>@OriginalRetries</c>.
+    /// </summary>
+    private const string _TerminalRowGuardWithRetries =
+        "NOT (\"StatusName\" IN ('Succeeded','Failed') AND \"NextRetryAt\" IS NULL) AND (@OriginalRetries IS NULL OR \"Retries\"=@OriginalRetries)";
+
+    /// <summary>
+    /// Reusable WHERE-clause fragment for paths that do not supply <c>@OriginalRetries</c>
+    /// (lease / store-received MERGE/INSERT-UPDATE). Same terminal-row semantics as
+    /// <see cref="_TerminalRowGuardWithRetries"/> without the concurrency-token clause.
+    /// </summary>
+    private const string _TerminalRowGuardSimple =
+        "NOT (\"StatusName\" IN ('Succeeded','Failed') AND \"NextRetryAt\" IS NULL)";
+
+    /// <summary>
     /// Lookahead window for delayed messages.
     /// Messages expiring within this window are pre-fetched for scheduling.
     /// </summary>
@@ -205,6 +222,10 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        // NOTE: ChangeReceiveStateAsync does not call _ChangeMessageStateAsync because the receive
+        // path additionally writes ExceptionInfo, a column absent from the published table schema.
+        // Keep these two methods in sync when adding columns.
+        //
         // X1 terminal-row guard: the WHERE clause refuses updates to rows that are already
         // terminal (Succeeded or Failed) AND have NextRetryAt cleared — the marker for a
         // permanently-completed row. The narrower form (instead of `StatusName NOT IN
@@ -213,7 +234,7 @@ public sealed class PostgreSqlDataStorage(
         // processor can rewrite it on the next pickup. The plan's stricter form would block
         // that, breaking the persisted-retry flow.
         var sql =
-            $"UPDATE {_receivedTable} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id AND NOT (\"StatusName\" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND \"NextRetryAt\" IS NULL) AND (@OriginalRetries IS NULL OR \"Retries\"=@OriginalRetries)";
+            $"UPDATE {_receivedTable} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"StatusName\"=@StatusName,\"ExceptionInfo\"=@ExceptionInfo WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries}";
 
         object[] sqlParams =
         [
@@ -420,6 +441,7 @@ public sealed class PostgreSqlDataStorage(
                     FROM {table}
                     WHERE "ExpiresAt" < @timeout
                     AND "StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
+                    AND "NextRetryAt" IS NULL
                     LIMIT @batchCount
                 )
                 """,
@@ -478,7 +500,7 @@ public sealed class PostgreSqlDataStorage(
     }
 
     public async ValueTask ScheduleMessagesOfDelayedAsync(
-        Func<object, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
+        Func<object?, IEnumerable<MediumMessage>, ValueTask> scheduleTask,
         CancellationToken cancellationToken = default
     )
     {
@@ -538,6 +560,9 @@ public sealed class PostgreSqlDataStorage(
         await transaction.CommitAsync(cancellationToken);
     }
 
+    // NOTE: ChangeReceiveStateAsync does not call this helper because the receive path additionally
+    // writes ExceptionInfo, a column absent from the published table schema. Keep these two methods
+    // in sync when adding columns.
     private async ValueTask<bool> _ChangeMessageStateAsync(
         string tableName,
         MediumMessage message,
@@ -550,7 +575,7 @@ public sealed class PostgreSqlDataStorage(
     )
     {
         var sql =
-            $"UPDATE {tableName} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"StatusName\"=@StatusName WHERE \"Id\"=@Id AND NOT (\"StatusName\" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND \"NextRetryAt\" IS NULL) AND (@OriginalRetries IS NULL OR \"Retries\"=@OriginalRetries)";
+            $"UPDATE {tableName} SET \"Content\"=@Content,\"Retries\"=@Retries,\"ExpiresAt\"=@ExpiresAt,\"NextRetryAt\"=@NextRetryAt,\"LockedUntil\"=@LockedUntil,\"StatusName\"=@StatusName WHERE \"Id\"=@Id AND {_TerminalRowGuardWithRetries}";
 
         object[] sqlParams =
         [
@@ -614,39 +639,132 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        // The conditional UPDATE skips rows that are already in a terminal Succeeded/Failed state
-        // with no scheduled retry. Without the guard, a broker-redelivered message whose payload
-        // again fails to deserialize would overwrite a previously-Succeeded row's status to Failed,
-        // firing OnExhausted for a message that actually succeeded.
-        var sql = $"""
-            INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId","ExceptionInfo")
-            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@StatusName,@MessageId,@ExceptionInfo)
-            ON CONFLICT ("MessageId","Group") DO UPDATE SET
-                "StatusName"=EXCLUDED."StatusName",
-                "Retries"=EXCLUDED."Retries",
-                "ExpiresAt"=EXCLUDED."ExpiresAt",
-                "NextRetryAt"=EXCLUDED."NextRetryAt",
-                "LockedUntil"=EXCLUDED."LockedUntil",
-                "Content"=EXCLUDED."Content",
-                "ExceptionInfo"=EXCLUDED."ExceptionInfo"
-            WHERE NOT (
-                {_receivedTable}."StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
-                AND {_receivedTable}."NextRetryAt" IS NULL
-            );
+        // ON CONFLICT ("MessageId","Group") never fires when "Group" IS NULL because NULLs are
+        // not considered equal by the unique constraint — broker redelivery of a no-group message
+        // would accumulate duplicate rows. Use a transactional SELECT-then-INSERT/UPDATE keyed by
+        // `IS NOT DISTINCT FROM` so NULL-Group rows are matched as equal.
+        //
+        // The conditional UPDATE still skips rows that are already in a terminal Succeeded/Failed
+        // state with no scheduled retry. Without the guard, a broker-redelivered message whose
+        // payload again fails to deserialize would overwrite a previously-Succeeded row's status
+        // to Failed, firing OnExhausted for a message that actually succeeded.
+        var selectSql = $"""
+            SELECT "Id","StatusName","NextRetryAt"
+            FROM {_receivedTable}
+            WHERE "MessageId" = @MessageId
+              AND "Group" IS NOT DISTINCT FROM @Group
+            FOR UPDATE
             """;
 
-        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        var updateSql = $"""
+            UPDATE {_receivedTable} SET
+                "StatusName"=@StatusName,
+                "Retries"=@Retries,
+                "ExpiresAt"=@ExpiresAt,
+                "NextRetryAt"=@NextRetryAt,
+                "LockedUntil"=@LockedUntil,
+                "Content"=@Content,
+                "ExceptionInfo"=@ExceptionInfo
+            WHERE "Id"=@ExistingId
+              AND NOT ("StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(
+                StatusName.Failed
+            )}') AND "NextRetryAt" IS NULL)
+            """;
 
-        var affectedRows = await connection
-            .ExecuteNonQueryAsync(
-                sql,
+        var insertSql = $"""
+            INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId","ExceptionInfo")
+            VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@StatusName,@MessageId,@ExceptionInfo)
+            """;
+
+        var messageIdParam = sqlParams.OfType<NpgsqlParameter>().First(p => p.ParameterName == "@MessageId");
+        var groupParam = sqlParams.OfType<NpgsqlParameter>().First(p => p.ParameterName == "@Group");
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        var (existingId, existingTerminal) = await connection
+            .ExecuteReaderAsync(
+                selectSql,
+                async (reader, ct) =>
+                {
+                    if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        return ((long?)null, false);
+                    }
+
+                    var id = reader.GetInt64(0);
+                    var status = reader.GetString(1);
+                    var nextRetryNull = await reader.IsDBNullAsync(2, ct).ConfigureAwait(false);
+                    var terminal =
+                        nextRetryNull
+                        && (
+                            string.Equals(status, nameof(StatusName.Succeeded), StringComparison.Ordinal)
+                            || string.Equals(status, nameof(StatusName.Failed), StringComparison.Ordinal)
+                        );
+                    return (id, terminal);
+                },
+                transaction: transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
+                sqlParams:
+                [
+                    new NpgsqlParameter("@MessageId", messageIdParam.Value!),
+                    new NpgsqlParameter("@Group", groupParam.Value ?? DBNull.Value),
+                ],
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
+        int affectedRows;
+        if (existingId is null)
+        {
+            affectedRows = await connection
+                .ExecuteNonQueryAsync(
+                    insertSql,
+                    transaction: transaction,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: _ClonePgParameters(sqlParams),
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        else if (existingTerminal)
+        {
+            // Terminal row — leave it alone.
+            affectedRows = 0;
+        }
+        else
+        {
+            var updateParams = _ClonePgParameters(sqlParams)
+                .Append(new NpgsqlParameter("@ExistingId", existingId.Value))
+                .ToArray();
+            affectedRows = await connection
+                .ExecuteNonQueryAsync(
+                    updateSql,
+                    transaction: transaction,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: updateParams,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
         return affectedRows > 0;
+    }
+
+    // NpgsqlParameter instances cannot be attached to more than one command. Clone the parameter
+    // array so the SELECT and the follow-up INSERT/UPDATE each get fresh parameter objects.
+    private static object[] _ClonePgParameters(object[] sqlParams)
+    {
+        var clones = new object[sqlParams.Length];
+        for (var i = 0; i < sqlParams.Length; i++)
+        {
+            var original = (NpgsqlParameter)sqlParams[i];
+            clones[i] = new NpgsqlParameter(original.ParameterName, original.Value);
+        }
+        return clones;
     }
 
     private async ValueTask<bool> _LeaseMessageAsync(
@@ -656,8 +774,7 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var sql =
-            $"UPDATE {tableName} SET \"LockedUntil\"=@LockedUntil WHERE \"Id\"=@Id AND NOT (\"StatusName\" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND \"NextRetryAt\" IS NULL)";
+        var sql = $"UPDATE {tableName} SET \"LockedUntil\"=@LockedUntil WHERE \"Id\"=@Id AND {_TerminalRowGuardSimple}";
 
         object[] sqlParams =
         [
@@ -688,23 +805,48 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
+        // Atomic claim-and-return: a single UPDATE statement leases the rows (sets LockedUntil)
+        // and RETURNS the selected columns in one round-trip. Replaces the previous two-step
+        // SELECT-FOR-UPDATE-then-Lease pattern, which committed the SELECT transaction before
+        // _LeaseAsync wrote LockedUntil. In between, a concurrent replica could pass the same
+        // "LockedUntil IS NULL" filter and lease the same row — double-dispatch.
+        //
+        // FOR UPDATE SKIP LOCKED on the inner SELECT preserves the "skip rows another replica
+        // is mid-claim on" behaviour. The UPDATE then assigns @NewLease = now + DispatchTimeout
+        // so subsequent pickup polls (anywhere) see the row as leased until the dispatch
+        // attempt completes (or the lease expires).
+        //
         // Use the injected TimeProvider rather than the DB server clock (now()) so InMemory and
         // SQL providers share identical pickup semantics — keeps tests with a fake clock honest
         // and avoids subtle drift between application time and DB time.
-        var sql =
-            $"SELECT \"Id\",\"Content\",\"Retries\",\"Added\",\"NextRetryAt\",\"LockedUntil\" FROM {tableName} WHERE \"Retries\"<=@Retries "
-            + $"AND \"Version\"=@Version AND \"NextRetryAt\" IS NOT NULL AND \"NextRetryAt\" <= @Now AND (\"LockedUntil\" IS NULL OR \"LockedUntil\" <= @Now) LIMIT {_RetryBatchSize} FOR UPDATE SKIP LOCKED;";
+        var sql = $"""
+            UPDATE {tableName} SET "LockedUntil" = @NewLease
+            WHERE "Id" IN (
+                SELECT "Id" FROM {tableName}
+                WHERE "Retries" <= @Retries
+                  AND "Version" = @Version
+                  AND "NextRetryAt" IS NOT NULL AND "NextRetryAt" <= @Now
+                  AND ("LockedUntil" IS NULL OR "LockedUntil" <= @Now)
+                  AND {_TerminalRowGuardSimple}
+                ORDER BY "NextRetryAt"
+                LIMIT {_RetryBatchSize}
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING "Id","Content","Retries","Added","NextRetryAt","LockedUntil";
+            """;
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
 
         object[] sqlParams =
         [
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
-            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
+            new NpgsqlParameter("@Now", now),
+            new NpgsqlParameter("@NewLease", newLease),
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
-        await connection.OpenAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         var result = await connection
             .ExecuteReaderAsync(
@@ -736,14 +878,11 @@ public sealed class PostgreSqlDataStorage(
 
                     return messages;
                 },
-                transaction: transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-
-        await transaction.CommitAsync(cancellationToken);
 
         return result;
     }
