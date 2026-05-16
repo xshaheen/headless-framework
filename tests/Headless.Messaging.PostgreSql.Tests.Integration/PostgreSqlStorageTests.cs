@@ -60,6 +60,28 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     /// <inheritdoc />
+    protected override async Task<int> CountReceivedMessagesByIdentityAsync(
+        string messageId,
+        string? group,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        const string sqlWithGroup =
+            "SELECT COUNT(*) FROM messaging.received WHERE \"MessageId\" = @MessageId AND \"Group\" = @Group";
+        const string sqlWithoutGroup =
+            "SELECT COUNT(*) FROM messaging.received WHERE \"MessageId\" = @MessageId AND \"Group\" IS NULL";
+
+        var rowCount = group is null
+            ? await connection.ExecuteScalarAsync<long>(sqlWithoutGroup, new { MessageId = messageId })
+            : await connection.ExecuteScalarAsync<long>(sqlWithGroup, new { MessageId = messageId, Group = group });
+
+        return (int)rowCount;
+    }
+
+    /// <inheritdoc />
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
@@ -248,6 +270,14 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     [Fact]
     public override Task should_handle_concurrent_redelivery_storm_on_same_message_id() =>
         base.should_handle_concurrent_redelivery_storm_on_same_message_id();
+
+    [Fact]
+    public override Task should_handle_concurrent_first_insert_storm_with_null_and_non_null_group() =>
+        base.should_handle_concurrent_first_insert_storm_with_null_and_non_null_group();
+
+    [Fact]
+    public override Task should_handle_concurrent_store_received_message_with_same_identity() =>
+        base.should_handle_concurrent_store_received_message_with_same_identity();
 
     [Fact]
     public override Task should_pickup_message_at_max_persisted_retries_and_exclude_above() =>

@@ -96,16 +96,18 @@ public sealed class RetryPolicyOptions
     public TimeSpan OnExhaustedTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Returns <see langword="true"/> when the inline-retry budget is not yet consumed for the
-    /// current dispatch. Pass the count of inline retries already attempted on this pickup; the
-    /// helper is the single source of truth so the three persistence/loop call sites cannot drift.
+    /// Returns <see langword="true"/> when more inline retry attempts remain within the policy
+    /// budget. Pass the count of inline retries already completed on this pickup; the helper is
+    /// the single source of truth so the call sites in the inline-retry loop and the retry helper
+    /// cannot drift.
     /// </summary>
     /// <remarks>
-    /// Semantics: <c>HasInlineBudgetRemaining(0)</c> with <c>MaxInlineRetries=0</c> returns
-    /// <see langword="false"/> (first attempt is the only attempt); <c>HasInlineBudgetRemaining(0)</c>
-    /// with <c>MaxInlineRetries=3</c> returns <see langword="true"/> (3 inline retries left).
+    /// Semantics: <c>HasMoreInlineAttempts(0)</c> with <c>MaxInlineRetries=0</c> returns
+    /// <see langword="false"/> (the initial attempt is the only attempt — no inline retries
+    /// configured); <c>HasMoreInlineAttempts(0)</c> with <c>MaxInlineRetries=3</c> returns
+    /// <see langword="true"/> (three inline retries still available).
     /// </remarks>
-    public bool HasInlineBudgetRemaining(int attemptsCompleted) => attemptsCompleted < MaxInlineRetries;
+    public bool HasMoreInlineAttempts(int attemptsCompleted) => attemptsCompleted < MaxInlineRetries;
 
     /// <summary>
     /// Copies all properties of this instance to <paramref name="target"/>.

@@ -583,4 +583,28 @@ internal static partial class LoggerExtensions
         Exception exception,
         int consecutiveFailures
     );
+
+    [LoggerMessage(
+        EventId = 75,
+        EventName = "DispatcherLoopFaultedAndTerminated",
+        Level = LogLevel.Critical,
+        Message = "Dispatcher '{LoopName}' loop faulted and terminated. The message pipeline cannot be restarted in place; the host has been signalled to stop so a supervisor (Kubernetes, systemd, IIS) can recycle the process."
+    )]
+    public static partial void DispatcherLoopFaultedAndTerminated(
+        this ILogger logger,
+        Exception exception,
+        string loopName
+    );
+
+    [LoggerMessage(
+        EventId = 76,
+        EventName = "DispatcherLoopStopApplicationFailed",
+        Level = LogLevel.Error,
+        Message = "Dispatcher '{LoopName}' fault path failed to request IHostApplicationLifetime.StopApplication. The original loop fault is preserved; this nested failure is suppressed."
+    )]
+    public static partial void DispatcherLoopStopApplicationFailed(
+        this ILogger logger,
+        Exception exception,
+        string loopName
+    );
 }

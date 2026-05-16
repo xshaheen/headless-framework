@@ -37,10 +37,12 @@ internal sealed class InMemoryDataStorage(
         long
     > _receivedIdentityIndex = new();
 
-    // Serializes the lookup-then-insert/update path in StoreReceivedExceptionMessageAsync so
-    // two concurrent broker redeliveries cannot both decide "not found" and race to insert
-    // duplicate rows for the same (Version, MessageId, Group) tuple.
-    private readonly Lock _receivedExceptionUpsertLock = new();
+    // Serializes the lookup-then-insert/update paths in BOTH StoreReceivedExceptionMessageAsync
+    // and StoreReceivedMessageAsync so two concurrent broker redeliveries (or two concurrent first
+    // arrivals via the consume path) cannot both decide "not found" and race to insert duplicate
+    // rows for the same (Version, MessageId, Group) tuple. Renamed from _receivedExceptionUpsertLock
+    // when the consume path adopted the same check-then-insert pattern in R3.
+    private readonly Lock _receivedUpsertLock = new();
 
     public void Clear()
     {
@@ -334,7 +336,7 @@ internal sealed class InMemoryDataStorage(
             existing = found;
         }
 
-        lock (_receivedExceptionUpsertLock)
+        lock (_receivedUpsertLock)
         {
             // Re-check inside the lock so two concurrent inserts for the same identity converge to
             // a single row. The first arrival reserves the index slot below; the second observes it
@@ -401,20 +403,136 @@ internal sealed class InMemoryDataStorage(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var version = messagingOptions.Value.Version;
         var added = timeProvider.GetUtcNow().UtcDateTime;
+        var initialNextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace);
+        var serialized = serializer.Serialize(message);
+
+        // Tolerate missing MessageId header (degenerate test inputs / synthetic payloads): without
+        // a MessageId there's no upsert identity to share, so concurrent calls degrade to plain
+        // inserts. This matches the SQL providers' MERGE/ON CONFLICT semantics — the constraint
+        // is on MessageId, so a NULL MessageId effectively opts out of dedupe.
+        var hasMessageId =
+            message.Headers.TryGetValue(Headless.Messaging.Headers.MessageId, out var messageId)
+            && messageId is not null;
+
+        if (!hasMessageId)
+        {
+            var inserted = _InsertNewReceivedRow(name, group, message, serialized, added, initialNextRetryAt, version);
+            return ValueTask.FromResult(inserted);
+        }
+
+        var indexKey = (version, messageId!, (string?)group);
+
+        // R3 — extend the same lock + check-then-insert/update pattern from
+        // StoreReceivedExceptionMessageAsync to the non-exception path. Before R3 two concurrent
+        // StoreReceivedMessageAsync calls with the same (Version, MessageId, Group) tuple both
+        // allocated distinct StorageIds, both wrote into ReceivedMessages, and both overwrote the
+        // index slot last-writer-wins. _ClaimMessagesOfNeedRetry then returned BOTH rows, running
+        // the consume executor twice. SQL providers enforce uniqueness via the DB constraint;
+        // InMemory must enforce it explicitly under the same lock the exception path uses.
+        MemoryMessage? existing = null;
+        if (
+            _receivedIdentityIndex.TryGetValue(indexKey, out var existingId)
+            && ReceivedMessages.TryGetValue(existingId, out var found)
+        )
+        {
+            existing = found;
+        }
+
+        lock (_receivedUpsertLock)
+        {
+            if (
+                existing is null
+                && _receivedIdentityIndex.TryGetValue(indexKey, out existingId)
+                && ReceivedMessages.TryGetValue(existingId, out var foundUnderLock)
+            )
+            {
+                existing = foundUnderLock;
+            }
+
+            if (existing is not null)
+            {
+                // Mirror the exception path's terminal-row guard: a Succeeded/Failed entry with no
+                // scheduled retry is left alone so a redelivery cannot overwrite a previously-
+                // terminal row. Surface the existing row as a snapshot to the caller so the
+                // dispatcher continues to receive a MediumMessage value.
+                if ((existing.StatusName is StatusName.Succeeded or StatusName.Failed) && existing.NextRetryAt is null)
+                {
+                    return ValueTask.FromResult(
+                        new MediumMessage
+                        {
+                            StorageId = existing.StorageId,
+                            Origin = existing.Origin,
+                            Content = existing.Content,
+                            Added = existing.Added,
+                            ExpiresAt = existing.ExpiresAt,
+                            NextRetryAt = existing.NextRetryAt,
+                            LockedUntil = existing.LockedUntil,
+                            Retries = existing.Retries,
+                            ExceptionInfo = existing.ExceptionInfo,
+                        }
+                    );
+                }
+
+                // Non-terminal existing row: refresh in place with the latest payload + reset to
+                // the freshly-stored Scheduled state, mirroring the SQL providers' MERGE WHEN
+                // MATCHED UPDATE branch. Name/Group/Version are init-only on MemoryMessage; the
+                // identity is keyed on (Version, MessageId, Group) so those values are pinned at
+                // insert time and never need refreshing across redeliveries of the same identity.
+                existing.Origin = message;
+                existing.Content = serialized;
+                existing.Retries = 0;
+                existing.Added = added;
+                existing.ExpiresAt = null;
+                existing.NextRetryAt = initialNextRetryAt;
+                existing.LockedUntil = null;
+                existing.StatusName = StatusName.Scheduled;
+                existing.ExceptionInfo = null;
+
+                return ValueTask.FromResult(
+                    new MediumMessage
+                    {
+                        StorageId = existing.StorageId,
+                        Origin = existing.Origin,
+                        Content = existing.Content,
+                        Added = existing.Added,
+                        ExpiresAt = existing.ExpiresAt,
+                        NextRetryAt = existing.NextRetryAt,
+                        LockedUntil = existing.LockedUntil,
+                        Retries = existing.Retries,
+                    }
+                );
+            }
+
+            var inserted = _InsertNewReceivedRow(name, group, message, serialized, added, initialNextRetryAt, version);
+            _receivedIdentityIndex[indexKey] = inserted.StorageId;
+            return ValueTask.FromResult(inserted);
+        }
+    }
+
+    private MediumMessage _InsertNewReceivedRow(
+        string name,
+        string group,
+        Message message,
+        string serialized,
+        DateTime added,
+        DateTime initialNextRetryAt,
+        string version
+    )
+    {
         var mdMessage = new MediumMessage
         {
             StorageId = longIdGenerator.Create(),
             Origin = message,
-            Content = serializer.Serialize(message),
+            Content = serialized,
             Added = added,
             ExpiresAt = null,
-            NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+            NextRetryAt = initialNextRetryAt,
             LockedUntil = null,
             Retries = 0,
         };
 
-        var version = messagingOptions.Value.Version;
         ReceivedMessages[mdMessage.StorageId] = new MemoryMessage
         {
             StorageId = mdMessage.StorageId,
@@ -431,19 +549,7 @@ internal sealed class InMemoryDataStorage(
             Version = version,
         };
 
-        // Index update is best-effort: the SQL providers' upsert constraint applies only when
-        // MessageId is present (rows missing the header don't participate in upsert identity).
-        // Mirror that tolerance here so degenerate test inputs without the MessageId header still
-        // round-trip through StoreReceivedMessageAsync.
-        if (
-            message.Headers.TryGetValue(Headless.Messaging.Headers.MessageId, out var messageId)
-            && messageId is not null
-        )
-        {
-            _receivedIdentityIndex[(version, messageId, group)] = mdMessage.StorageId;
-        }
-
-        return ValueTask.FromResult(mdMessage);
+        return mdMessage;
     }
 
     public ValueTask<int> DeleteExpiresAsync(
@@ -555,13 +661,10 @@ internal sealed class InMemoryDataStorage(
                     continue;
                 }
 
-                if (
-                    (candidate.StatusName is StatusName.Succeeded or StatusName.Failed) && candidate.NextRetryAt is null
-                )
-                {
-                    continue;
-                }
-
+                // R7 — terminal-row exclusion is already enforced by the NextRetryAt > now check
+                // above (terminal Succeeded/Failed rows have NextRetryAt IS NULL and so are
+                // rejected by the `NextRetryAt is null` guard). The redundant terminal-status
+                // block was unreachable and has been removed.
                 candidate.LockedUntil = newLease;
                 claimed.Add(_ToSnapshot(candidate));
             }

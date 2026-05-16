@@ -121,10 +121,21 @@ internal sealed class SubscribeExecutor(
         Argument.IsNotNull(message);
 
         cancellationToken.ThrowIfCancellationRequested();
-        var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
-        if (!leased)
+
+        // R6 — skip the redundant lease call when the atomic-claim pickup has already leased the
+        // row. The pickup query (GetReceivedMessagesOfNeedRetryAsync) writes
+        // `LockedUntil = now + DispatchTimeout` in the same UPDATE that returns the row, so any
+        // message arriving here with a future LockedUntil was leased less than a few milliseconds
+        // ago and re-leasing only inflates the rolling-restart retry-gap upper bound by the queue
+        // delay. Fresh transport dispatches (LockedUntil null or expired) still take the lease.
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        if (message.LockedUntil is not { } lockedUntil || lockedUntil <= now)
         {
-            return (RetryDecision.Stop, OperateResult.Success);
+            var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
+            if (!leased)
+            {
+                return (RetryDecision.Stop, OperateResult.Success);
+            }
         }
 
         try
@@ -137,7 +148,7 @@ internal sealed class SubscribeExecutor(
 
             sp.Stop();
 
-            await _SetSuccessfulState(message, cancellationToken).ConfigureAwait(false);
+            await _SetSuccessfulState(message).ConfigureAwait(false);
 
             MessageEventCounterSource.Log.WriteInvokeTimeMetrics(sp.Elapsed.TotalMilliseconds);
             if (logger.IsEnabled(LogLevel.Information))
@@ -171,8 +182,11 @@ internal sealed class SubscribeExecutor(
         }
     }
 
-    private async ValueTask _SetSuccessfulState(MediumMessage message, CancellationToken cancellationToken)
+    private async ValueTask _SetSuccessfulState(MediumMessage message)
     {
+        // R8 — the cancellation token parameter is unused since F30 switched the storage write
+        // to CancellationToken.None below. The method is private; the parameter is removed
+        // outright rather than discarded.
         message.ExpiresAt = timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
 
         // Mirror the failure path's SkippingOnExhaustedAlreadyTerminal log: when storage proves

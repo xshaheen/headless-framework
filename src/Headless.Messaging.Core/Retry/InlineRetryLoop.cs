@@ -38,7 +38,7 @@ internal static class InlineRetryLoop
             // Check budget BEFORE incrementing so the predicate matches its name (the count of
             // inline retries already consumed). Equivalent to the previous post-increment
             // `inlineRetries > MaxInlineRetries` check.
-            if (!policy.HasInlineBudgetRemaining(inlineRetries))
+            if (!policy.HasMoreInlineAttempts(inlineRetries))
             {
                 return result;
             }

@@ -7,6 +7,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -21,6 +22,7 @@ internal sealed class Dispatcher : IDispatcher
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDataStorage _storage;
     private readonly TimeProvider _timeProvider;
+    private readonly IHostApplicationLifetime? _hostApplicationLifetime;
     private readonly ScheduledMediumMessageQueue _schedulerQueue;
     private readonly bool _enableParallelExecute;
     private readonly bool _enableParallelSend;
@@ -51,7 +53,8 @@ internal sealed class Dispatcher : IDispatcher
         ISubscribeExecutor executor,
         IDataStorage storage,
         TimeProvider timeProvider,
-        IServiceScopeFactory scopeFactory
+        IServiceScopeFactory scopeFactory,
+        IHostApplicationLifetime? hostApplicationLifetime = null
     )
     {
         _logger = logger;
@@ -61,6 +64,7 @@ internal sealed class Dispatcher : IDispatcher
         _storage = storage;
         _timeProvider = timeProvider;
         _scopeFactory = scopeFactory;
+        _hostApplicationLifetime = hostApplicationLifetime;
         _schedulerQueue = new ScheduledMediumMessageQueue(timeProvider);
         _enableParallelExecute = _options.EnableSubscriberParallelExecute;
         _enableParallelSend = _options.EnablePublishParallelSend;
@@ -87,18 +91,43 @@ internal sealed class Dispatcher : IDispatcher
 
         var schedulerTask = _StartSchedulerTaskAsync();
         _ = schedulerTask.ContinueWith(
-            _LogSchedulerFault,
+            _OnSchedulerLoopFaulted,
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default
         );
     }
 
-    private void _LogSchedulerFault(Task task)
+    private void _OnSchedulerLoopFaulted(Task task)
     {
         if (task.Exception is { } ex)
         {
-            _logger.DelayedMessagePublishFailed(ex, ex.Message);
+            _SignalLoopTermination("scheduler", ex);
+        }
+    }
+
+    /// <summary>
+    /// Surfaces a terminal loop fault to operators and to the host. The diagnostic is logged at
+    /// Critical level (a dispatcher loop has died and cannot be restarted in-place; published
+    /// channel backpressure will eventually block <see cref="EnqueueToPublish"/> forever otherwise),
+    /// then <see cref="IHostApplicationLifetime.StopApplication"/> is requested so process supervisors
+    /// (Kubernetes, systemd, IIS) trigger a clean restart instead of leaving a "healthy" host with
+    /// a dead message pipeline.
+    /// </summary>
+    private void _SignalLoopTermination(string loopName, Exception exception)
+    {
+        _logger.DispatcherLoopFaultedAndTerminated(exception, loopName);
+
+        try
+        {
+            _hostApplicationLifetime?.StopApplication();
+        }
+        catch (Exception stopEx)
+        {
+            // StopApplication may throw if the host is already shutting down; log and absorb so
+            // the fault continuation does not propagate to the thread-pool unobserved exception
+            // hook (which would crash the process for a benign double-signal).
+            _logger.DispatcherLoopStopApplicationFailed(stopEx, loopName);
         }
     }
 
@@ -302,12 +331,18 @@ internal sealed class Dispatcher : IDispatcher
     private Task _StartSendingTaskAsync()
     {
         // Fire-and-forget the sending loop on the thread pool, but attach a fault continuation so
-        // unobserved exceptions surface in logs. Using `async Task` (changed from `async ValueTask`)
-        // ensures Task.Run picks the unwrapping overload, so the returned Task tracks the loop's
-        // lifetime rather than completing the moment the ValueTask struct is returned.
+        // unobserved exceptions surface in logs AND signal host shutdown (R2). Using `async Task`
+        // (changed from `async ValueTask`) ensures Task.Run picks the unwrapping overload, so the
+        // returned Task tracks the loop's lifetime rather than completing the moment the ValueTask
+        // struct is returned.
+        //
+        // The fault path MUST notify the host. A non-OCE exception that kills the sending loop
+        // would otherwise leave PublishedChannel filling indefinitely (BoundedChannelFullMode.Wait)
+        // and every subsequent EnqueueToPublish would block forever while the host still reports
+        // "healthy".
         var loop = Task.Run(_SendingAsync, TasksCts.Token);
         _ = loop.ContinueWith(
-            t => _logger.SubscriberInvocationFailed(t.Exception!, 0),
+            t => _SignalLoopTermination("sending", t.Exception!),
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default
@@ -317,7 +352,9 @@ internal sealed class Dispatcher : IDispatcher
 
     private Task _StartProcessingTasksAsync()
     {
-        // Fire-and-forget per-thread processing loops, faults logged via continuation.
+        // Fire-and-forget per-thread processing loops; faults are signalled to the host (R2)
+        // via _SignalLoopTermination. A dead processing loop would leave ReceivedChannel filling
+        // and EnqueueToExecute would block forever, masking the failure from the host.
         var processingTasks = Enumerable
             .Range(0, _options.SubscriberParallelExecuteThreadCount)
             .Select(_ => Task.Run(_ProcessingAsync, TasksCts.Token))
@@ -326,7 +363,7 @@ internal sealed class Dispatcher : IDispatcher
         foreach (var loop in processingTasks)
         {
             _ = loop.ContinueWith(
-                t => _logger.SubscriberInvocationFailed(t.Exception!, 0),
+                t => _SignalLoopTermination("processing", t.Exception!),
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted,
                 TaskScheduler.Default
