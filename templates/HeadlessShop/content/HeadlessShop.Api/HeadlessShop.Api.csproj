@@ -1,0 +1,21 @@
+<Project Sdk="Headless.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Headless.Api" />
+    <PackageReference Include="Headless.Mediator" />
+    <PackageReference Include="Headless.Messaging.Core" />
+    <PackageReference Include="Headless.Messaging.InMemoryQueue" />
+    <PackageReference Include="Headless.Messaging.InMemoryStorage" />
+    <PackageReference Include="Headless.MultiTenancy" />
+    <PackageReference Include="Headless.OpenApi.Nswag" />
+    <PackageReference Include="Headless.OpenApi.Scalar" />
+    <PackageReference Include="Headless.Orm.EntityFramework" />
+    <PackageReference Include="Mediator.SourceGenerator" PrivateAssets="all" OutputItemType="Analyzer" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HeadlessShop.Modules\HeadlessShop.Modules.csproj" />
+  </ItemGroup>
+</Project>

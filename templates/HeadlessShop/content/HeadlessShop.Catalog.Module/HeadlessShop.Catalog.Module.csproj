@@ -1,0 +1,16 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Headless.Orm.EntityFramework" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HeadlessShop.Catalog.Api\HeadlessShop.Catalog.Api.csproj" />
+    <ProjectReference Include="..\HeadlessShop.Catalog.Application\HeadlessShop.Catalog.Application.csproj" />
+    <ProjectReference Include="..\HeadlessShop.Catalog.Infrastructure\HeadlessShop.Catalog.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

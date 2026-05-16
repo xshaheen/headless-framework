@@ -1,0 +1,25 @@
+<Solution>
+  <Folder Name="/Shop/">
+    <Project Path="HeadlessShop.Api/HeadlessShop.Api.csproj" />
+    <Project Path="HeadlessShop.Contracts/HeadlessShop.Contracts.csproj" />
+    <Project Path="HeadlessShop.Modules/HeadlessShop.Modules.csproj" />
+  </Folder>
+  <Folder Name="/Catalog/">
+    <Project Path="HeadlessShop.Catalog.Domain/HeadlessShop.Catalog.Domain.csproj" />
+    <Project Path="HeadlessShop.Catalog.Application/HeadlessShop.Catalog.Application.csproj" />
+    <Project Path="HeadlessShop.Catalog.Infrastructure/HeadlessShop.Catalog.Infrastructure.csproj" />
+    <Project Path="HeadlessShop.Catalog.Api/HeadlessShop.Catalog.Api.csproj" />
+    <Project Path="HeadlessShop.Catalog.Module/HeadlessShop.Catalog.Module.csproj" />
+  </Folder>
+  <Folder Name="/Ordering/">
+    <Project Path="HeadlessShop.Ordering.Domain/HeadlessShop.Ordering.Domain.csproj" />
+    <Project Path="HeadlessShop.Ordering.Application/HeadlessShop.Ordering.Application.csproj" />
+    <Project Path="HeadlessShop.Ordering.Infrastructure/HeadlessShop.Ordering.Infrastructure.csproj" />
+    <Project Path="HeadlessShop.Ordering.Api/HeadlessShop.Ordering.Api.csproj" />
+    <Project Path="HeadlessShop.Ordering.Module/HeadlessShop.Ordering.Module.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="HeadlessShop.Tests.Architecture/HeadlessShop.Tests.Architecture.csproj" />
+    <Project Path="HeadlessShop.Tests.Integration/HeadlessShop.Tests.Integration.csproj" />
+  </Folder>
+</Solution>
