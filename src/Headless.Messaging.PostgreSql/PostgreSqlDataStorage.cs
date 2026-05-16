@@ -510,6 +510,10 @@ public sealed class PostgreSqlDataStorage(
 
     private async ValueTask _StoreReceivedMessage(object[] sqlParams, CancellationToken cancellationToken = default)
     {
+        // The conditional UPDATE skips rows that are already in a terminal Succeeded/Failed state
+        // with no scheduled retry. Without the guard, a broker-redelivered message whose payload
+        // again fails to deserialize would overwrite a previously-Succeeded row's status to Failed,
+        // firing OnExhausted for a message that actually succeeded.
         var sql = $"""
             INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId","ExceptionInfo")
             VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@StatusName,@MessageId,@ExceptionInfo)
@@ -519,7 +523,11 @@ public sealed class PostgreSqlDataStorage(
                 "ExpiresAt"=EXCLUDED."ExpiresAt",
                 "NextRetryAt"=EXCLUDED."NextRetryAt",
                 "Content"=EXCLUDED."Content",
-                "ExceptionInfo"=EXCLUDED."ExceptionInfo";
+                "ExceptionInfo"=EXCLUDED."ExceptionInfo"
+            WHERE NOT (
+                {_receivedTable}."StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}')
+                AND {_receivedTable}."NextRetryAt" IS NULL
+            );
             """;
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();

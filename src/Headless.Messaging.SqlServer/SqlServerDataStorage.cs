@@ -508,11 +508,17 @@ public sealed class SqlServerDataStorage(
 
     private async ValueTask _StoreReceivedMessage(object[] sqlParams, CancellationToken cancellationToken = default)
     {
+        // The WHEN MATCHED predicate skips terminal Succeeded/Failed rows that have no scheduled
+        // retry. Without the guard, a broker-redelivered message whose payload again fails to
+        // deserialize would overwrite a previously-Succeeded row's status to Failed, firing
+        // OnExhausted for a message that actually succeeded.
         var sql = $"""
             MERGE {_receivedTable} WITH (HOLDLOCK) AS target
             USING (SELECT @MessageId AS MessageId, @Group AS [Group]) AS source
             ON target.MessageId = source.MessageId AND (target.[Group] = source.[Group] OR (target.[Group] IS NULL AND source.[Group] IS NULL))
-            WHEN MATCHED THEN
+            WHEN MATCHED AND NOT (target.StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(
+                StatusName.Failed
+            )}') AND target.NextRetryAt IS NULL) THEN
                 UPDATE SET StatusName = @StatusName, Retries = @Retries, ExpiresAt = @ExpiresAt, NextRetryAt = @NextRetryAt, Content = @Content, ExceptionInfo = @ExceptionInfo
             WHEN NOT MATCHED THEN
                 INSERT ([Id],[Version],[Name],[Group],[Content],[Retries],[Added],[ExpiresAt],[NextRetryAt],[StatusName],[MessageId],[ExceptionInfo])

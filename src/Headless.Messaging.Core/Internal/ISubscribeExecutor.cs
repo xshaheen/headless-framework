@@ -228,12 +228,19 @@ internal sealed class SubscribeExecutor(
             message.Retries++;
         }
 
+        // Use CancellationToken.None for the terminal state write. If host shutdown fires between
+        // computing the Exhausted decision and persisting it, we still want the row to land in its
+        // terminal Failed/NULL state and OnExhausted to fire — otherwise on next pickup we'd re-invoke
+        // the consumer as if the budget wasn't exhausted. The IsCancellation guard above already
+        // short-circuited true host-shutdown OCEs; from this point on we are committed. Mirrors the
+        // publish path (IMessageSender._SetFailedState) which makes the same choice for the same
+        // reason.
         var affected = await dataStorage
             .ChangeReceiveStateAsync(
                 message,
                 state.NextStatus,
                 nextRetryAt: state.NextRetryAt,
-                cancellationToken: cancellationToken
+                cancellationToken: CancellationToken.None
             )
             .ConfigureAwait(false);
 
