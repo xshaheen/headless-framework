@@ -5,6 +5,7 @@ using MsgHeaders = Headless.Messaging.Headers;
 namespace Headless.Messaging.Testing;
 
 /// <summary>Identifies which observable collection a recorded message belongs to.</summary>
+[PublicAPI]
 public enum MessageObservationType
 {
     /// <summary>Message was published.</summary>
@@ -25,6 +26,7 @@ public enum MessageObservationType
 }
 
 /// <summary>A message captured by the test harness.</summary>
+[PublicAPI]
 public sealed record RecordedMessage
 {
     /// <summary>The CLR type of the message payload.</summary>

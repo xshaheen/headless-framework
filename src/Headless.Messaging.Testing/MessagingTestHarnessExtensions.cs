@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Messaging.Testing;
 
 /// <summary>Extension methods for <see cref="MessagingTestHarness"/>.</summary>
+[PublicAPI]
 public static class MessagingTestHarnessExtensions
 {
     /// <summary>

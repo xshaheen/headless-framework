@@ -100,7 +100,7 @@ public interface IDataStorage
     /// Returns published messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c>.
     /// No lookback window is applied.
     /// </summary>
-    ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetry(
+    ValueTask<IEnumerable<MediumMessage>> GetPublishedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     );
 
@@ -113,7 +113,9 @@ public interface IDataStorage
     /// Returns received messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c>.
     /// No lookback window is applied.
     /// </summary>
-    ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetry(CancellationToken cancellationToken = default);
+    ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
+        CancellationToken cancellationToken = default
+    );
 
     ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default);
 

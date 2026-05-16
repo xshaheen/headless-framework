@@ -208,7 +208,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — DB state must still be persisted
-        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        await storage.Received(1).ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
     }
 
     [Fact]
@@ -227,7 +227,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — both DB persistence and circuit breaker reporting happen
-        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Succeeded);
+        await storage.Received(1).ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Succeeded);
         await cbMock.Received(1).ReportSuccessAsync(_GroupName);
     }
 }

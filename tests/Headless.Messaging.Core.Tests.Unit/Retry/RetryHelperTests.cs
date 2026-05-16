@@ -270,7 +270,7 @@ public sealed class RetryHelperTests : TestBase
         stored.Retries = 0;
         await storage.ChangeReceiveStateAsync(stored, StatusName.Failed, nextRetryAt: null);
 
-        var candidates = await storage.GetReceivedMessagesOfNeedRetry();
+        var candidates = await storage.GetReceivedMessagesOfNeedRetryAsync();
 
         candidates.Should().BeEmpty("Stop-terminated rows must be excluded from the retry pickup query");
     }

@@ -204,7 +204,7 @@ public abstract class DataStorageTestsBase : TestBase
         // given
         var storage = GetStorage();
         // when
-        var result = await storage.GetPublishedMessagesOfNeedRetry(AbortToken);
+        var result = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
 
         // then
         result.Should().NotBeNull();
@@ -215,7 +215,7 @@ public abstract class DataStorageTestsBase : TestBase
         // given
         var storage = GetStorage();
         // when
-        var result = await storage.GetReceivedMessagesOfNeedRetry(AbortToken);
+        var result = await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
 
         // then
         result.Should().NotBeNull();
@@ -502,7 +502,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         // then — the failed message should appear in retry results once its scheduled retry time is due.
-        var retriable = await storage.GetPublishedMessagesOfNeedRetry(AbortToken);
+        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
         retriable.Should().NotBeNull();
         retriable.Should().Contain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -533,7 +533,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         // then
-        var retriable = await storage.GetPublishedMessagesOfNeedRetry(AbortToken);
+        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
         retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -559,7 +559,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         // then
-        var retriable = await storage.GetPublishedMessagesOfNeedRetry(AbortToken);
+        var retriable = await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
         retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -585,7 +585,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         // then
-        var retriable = await storage.GetReceivedMessagesOfNeedRetry(AbortToken);
+        var retriable = await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
         retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -612,7 +612,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         // then
-        var retriable = await storage.GetReceivedMessagesOfNeedRetry(AbortToken);
+        var retriable = await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
         retriable.Should().NotBeNull();
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
@@ -651,7 +651,7 @@ public abstract class DataStorageTestsBase : TestBase
         );
 
         // when
-        var retriable = (await storage.GetPublishedMessagesOfNeedRetry(AbortToken)).ToList();
+        var retriable = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
 
         // then
         retriable.Should().Contain(m => m.StorageId == atLimit.StorageId);
@@ -686,7 +686,7 @@ public abstract class DataStorageTestsBase : TestBase
             cancellationToken: AbortToken
         );
 
-        var retriableReceived = (await storage.GetReceivedMessagesOfNeedRetry(AbortToken)).ToList();
+        var retriableReceived = (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken)).ToList();
         retriableReceived.Should().Contain(m => m.StorageId == atLimitRecv.StorageId);
         retriableReceived.Should().NotContain(m => m.StorageId == aboveLimitRecv.StorageId);
     }

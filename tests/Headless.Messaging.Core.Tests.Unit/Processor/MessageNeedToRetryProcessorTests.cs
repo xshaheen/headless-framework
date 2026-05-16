@@ -88,11 +88,11 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     private static void _SetupReceivedMessages(IDataStorage dataStorage, params MediumMessage[] messages)
     {
         dataStorage
-            .GetReceivedMessagesOfNeedRetry(Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>(messages));
 
         dataStorage
-            .GetPublishedMessagesOfNeedRetry(Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
     }
 
@@ -547,14 +547,14 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // First storage call signals when jitter completes.
         var storageCalled = new TaskCompletionSource<DateTime>(TaskCreationOptions.RunContinuationsAsynchronously);
         dataStorage
-            .GetPublishedMessagesOfNeedRetry(Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 storageCalled.TrySetResult(DateTime.UtcNow);
                 return ValueTask.FromResult<IEnumerable<MediumMessage>>([]);
             });
         dataStorage
-            .GetReceivedMessagesOfNeedRetry(Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
 
         var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());

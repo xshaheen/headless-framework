@@ -14,7 +14,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_validate_topic_name_length()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
         var longTopic = new string('a', 256);
 
         // when
@@ -31,7 +31,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_accept_max_length_topic_name()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
         var maxLengthTopic = new string('a', 255);
 
         // when
@@ -45,7 +45,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_validate_topic_name_characters()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when/then - invalid characters
         var act1 = () => options.WithTopicMapping<TestMessage>("topic@name");
@@ -65,7 +65,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_accept_valid_topic_name_characters()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when/then - valid characters: alphanumeric, dots, hyphens, underscores
         var result1 = options.WithTopicMapping<TestMessage>("valid.topic-name_123");
@@ -76,7 +76,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_leading_dots()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when
         var act = () => options.WithTopicMapping<TestMessage>(".leading.dot");
@@ -89,7 +89,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_trailing_dots()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when
         var act = () => options.WithTopicMapping<TestMessage>("trailing.dot.");
@@ -102,7 +102,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_consecutive_dots()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when
         var act = () => options.WithTopicMapping<TestMessage>("topic..name");
@@ -274,7 +274,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_duplicate_topic_mapping_with_different_topic()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
         options.WithTopicMapping<TestMessage>("first.topic");
 
         // when
@@ -290,7 +290,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_allow_same_topic_mapping()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
         options.WithTopicMapping<TestMessage>("same.topic");
 
         // when
@@ -304,7 +304,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_null_topic()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when
         var act = () => options.WithTopicMapping<TestMessage>(null!);
@@ -317,7 +317,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_empty_topic()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when
         var act = () => options.WithTopicMapping<TestMessage>("");
@@ -330,7 +330,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_whitespace_topic()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when
         var act = () => options.WithTopicMapping<TestMessage>("   ");
@@ -389,7 +389,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
         options.PublishBatchSize.Should().BeNull();
     }
 
-    private static MessagingSetupBuilder _CreateOptions()
+    private static MessagingSetupBuilder _CreateBuilder()
     {
         var services = new ServiceCollection();
         var registry = new ConsumerRegistry();

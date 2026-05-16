@@ -21,7 +21,7 @@ namespace Headless.Messaging.Configuration;
 /// property; a reflection-based test guards against drift.
 /// </remarks>
 [PublicAPI]
-public class MessagingOptions
+public sealed class MessagingOptions
 {
 #pragma warning disable IDE0032
     private string _defaultGroupName =
@@ -219,6 +219,8 @@ public class MessagingOptions
         target.TenantContextRequired = TenantContextRequired;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
+        CircuitBreaker.CopyTo(target.CircuitBreaker);
+        RetryProcessor.CopyTo(target.RetryProcessor);
 
         foreach (var mapping in TopicMappings)
         {

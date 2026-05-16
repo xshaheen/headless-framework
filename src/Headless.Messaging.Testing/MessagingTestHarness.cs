@@ -37,6 +37,7 @@ namespace Headless.Messaging.Testing;
 /// </code>
 /// </para>
 /// </remarks>
+[PublicAPI]
 public sealed class MessagingTestHarness : IAsyncDisposable
 {
     /// <summary>Default timeout for <c>WaitFor*</c> methods when no explicit timeout is provided.</summary>

@@ -198,7 +198,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         try
         {
-            var messages = await _GetSafelyAsync(connection.GetPublishedMessagesOfNeedRetry, context.CancellationToken)
+            var messages = await _GetSafelyAsync(
+                    connection.GetPublishedMessagesOfNeedRetryAsync,
+                    context.CancellationToken
+                )
                 .ConfigureAwait(false);
 
             foreach (var message in messages)
@@ -240,7 +243,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         try
         {
-            var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry, context.CancellationToken)
+            var messages = await _GetSafelyAsync(
+                    connection.GetReceivedMessagesOfNeedRetryAsync,
+                    context.CancellationToken
+                )
                 .ConfigureAwait(false);
 
             var enqueued = 0;

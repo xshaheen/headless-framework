@@ -11,6 +11,7 @@ namespace Headless.Messaging.Testing;
 /// use <see cref="ReceivedContexts"/> when you need the full <see cref="ConsumeContext{TMessage}"/>.
 /// </summary>
 /// <typeparam name="TMessage">The type of message to consume. Must be a reference type.</typeparam>
+[PublicAPI]
 public sealed class TestConsumer<TMessage> : IConsume<TMessage>
     where TMessage : class
 {
