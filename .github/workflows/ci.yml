@@ -9,7 +9,10 @@ on:
       - 'Makefile'
       - 'eng/**'
       - 'src/**'
+      - 'templates/**'
       - 'tests/**'
+      - 'tools/**'
+      - 'docs/llms/templates.md'
       - 'Directory.*'
       - 'global.json'
       - 'headless-framework.slnx'
@@ -22,7 +25,10 @@ on:
       - 'Makefile'
       - 'eng/**'
       - 'src/**'
+      - 'templates/**'
       - 'tests/**'
+      - 'tools/**'
+      - 'docs/llms/templates.md'
       - 'Directory.*'
       - 'global.json'
       - 'headless-framework.slnx'
@@ -117,6 +123,17 @@ jobs:
         env:
           BuildDashboardSpa: "false"
         run: make ci-build
+
+      - name: "Pack and validate headless-shop template"
+        # `make ci-build` already restored + built the solution (template project
+        # included), so pack the template with --no-restore --no-build, then validate
+        # the generated project against the locally-built Headless.* packages.
+        run: |
+          set -euo pipefail
+          dotnet pack templates/HeadlessShop/HeadlessShop.csproj --configuration "${CONFIGURATION}" --no-restore --no-build --output "${PACKAGES_DIR}"
+          package_path="$(find "${PACKAGES_DIR}" -name 'Headless.Templates.HeadlessShop.*.nupkg' -type f | head -n 1)"
+          HEADLESS_SHOP_TEMPLATE_PACKAGE_PATH="$package_path" HEADLESS_SHOP_LOCAL_PACKAGE_SOURCE="${PACKAGES_DIR}" ./tools/validate-headless-shop-template.sh
+        shell: bash
 
       - name: "Publish Artifacts"
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
