@@ -67,7 +67,13 @@ public sealed class MessageSenderTests : TestBase
         // given
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangePublishStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(true));
 
         var transportMessage = new TransportMessage(
@@ -122,7 +128,13 @@ public sealed class MessageSenderTests : TestBase
         // given
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangePublishStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(true));
 
         var transportMessage = new TransportMessage(

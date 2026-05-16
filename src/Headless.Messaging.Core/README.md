@@ -311,7 +311,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 | --- | --- | --- | --- |
 | `MaxInlineRetries` | `int` | `2` | Retries to run inline on each delivery before persisting. `>= 0`. |
 | `MaxPersistedRetries` | `int` | `15` | Maximum persisted-retry pickups. `>= 0`. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. |
-| `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Strategy returns `RetryDecision.Stop` (permanent) or `RetryDecision.Continue(delay)` (transient). |
+| `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Strategy returns `RetryDecision.Stop` (permanent), `RetryDecision.Continue(delay)` (transient), or `RetryDecision.Exhausted` (custom budget exhausted). |
 | `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Fires only on `RetryDecision.Exhausted`. Does NOT fire on `RetryDecision.Stop`. |
 
 ### Exhausted vs Stop

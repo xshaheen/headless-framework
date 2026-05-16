@@ -93,7 +93,12 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         // given
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
@@ -144,7 +149,12 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         // given
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();

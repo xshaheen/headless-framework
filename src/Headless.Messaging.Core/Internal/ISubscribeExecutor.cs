@@ -248,13 +248,18 @@ internal sealed class SubscribeExecutor(
         {
             await _InvokeOnExhausted(message, ex, dispatchServices, cancellationToken).ConfigureAwait(false);
         }
-        else if (!affected && decision.Outcome == RetryDecision.Kind.Exhausted)
+        else if (!affected)
         {
             // Storage proves the row is already terminal — a redelivered already-exhausted message.
             // OnExhausted is skipped here; the log line is only emitted when the decision would
             // otherwise have fired the callback (Stop redeliveries never fire OnExhausted regardless,
             // so suppressing the log avoids noise for non-callback paths).
-            logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
+            if (decision.Outcome == RetryDecision.Kind.Exhausted)
+            {
+                logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
+            }
+
+            return RetryDecision.Stop;
         }
 
         // Report the original (inner) exception to the circuit breaker so transient-classification
