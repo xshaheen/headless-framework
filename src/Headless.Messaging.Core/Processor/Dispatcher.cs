@@ -102,7 +102,11 @@ internal sealed class Dispatcher : IDispatcher
         var timeSpan = publishTime - _timeProvider.GetUtcNow().UtcDateTime;
         var statusName = timeSpan <= TimeSpan.FromMinutes(1) ? StatusName.Queued : StatusName.Delayed;
 
-        await _storage.ChangePublishStateAsync(message, statusName, transaction).ConfigureAwait(false);
+        var changed = await _storage.ChangePublishStateAsync(message, statusName, transaction).ConfigureAwait(false);
+        if (!changed)
+        {
+            return;
+        }
 
         if (statusName == StatusName.Queued)
         {

@@ -128,6 +128,15 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable.Range(1, 10000).Select(i => _CreateTestMessage(i)).ToArray();
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new ValueTask<bool>(true));
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -180,6 +189,15 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable.Range(1, 3).Select(i => _CreateTestMessage(i)).ToArray();
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new ValueTask<bool>(true));
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -223,6 +241,15 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable.Range(1, 10000).Select(i => _CreateTestMessage(i)).ToArray();
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new ValueTask<bool>(true));
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -276,6 +303,15 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
 
         var messages = Enumerable.Range(1, 3).Select(i => _CreateTestMessage(i)).ToArray();
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new ValueTask<bool>(true));
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -290,6 +326,47 @@ public sealed class DispatcherTests : TestBase
 
         // then
         sender.ReceivedMessages.Select(m => m.StorageId).Should().Equal([3L, 2L, 1L]);
+    }
+
+    [Fact]
+    public async Task EnqueueToScheduler_ShouldNotQueueMessage_WhenStateChangeIsRejected()
+    {
+        // given
+        var sender = new TestThreadSafeMessageSender();
+        var options = Options.Create(new MessagingOptions { EnablePublishParallelSend = false });
+        _storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(new ValueTask<bool>(false));
+
+        await using var dispatcher = new Dispatcher(
+            _logger,
+            sender,
+            options,
+            _executor,
+            _storage,
+            TimeProvider.System,
+            _scopeFactory
+        );
+        using var cts = new CancellationTokenSource();
+
+        // when
+        await dispatcher.StartAsync(cts.Token);
+        await dispatcher.EnqueueToScheduler(
+            _CreateTestMessage(),
+            DateTime.UtcNow.AddMilliseconds(50),
+            cancellationToken: AbortToken
+        );
+        await Task.Delay(200, CancellationToken.None);
+        await cts.CancelAsync();
+
+        // then
+        sender.Count.Should().Be(0);
     }
 
     [Fact]

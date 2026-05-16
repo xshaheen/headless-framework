@@ -197,11 +197,16 @@ internal sealed class MessageSender : IMessageSender
             // contract documented on RetryPolicyOptions.OnExhausted and the consume path's behavior.
             await _InvokeOnExhausted(message, ex, dispatchServices, _shutdownToken).ConfigureAwait(false);
         }
-        else if (!affected && decision.Outcome == RetryDecision.Kind.Exhausted)
+        else if (!affected)
         {
             // Storage proves the row is already terminal — only log when the decision would
             // otherwise have fired the callback (Stop never fires OnExhausted regardless).
-            _logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
+            if (decision.Outcome == RetryDecision.Kind.Exhausted)
+            {
+                _logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
+            }
+
+            return RetryDecision.Stop;
         }
 
         return decision;
