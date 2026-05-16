@@ -1,6 +1,7 @@
 using Headless.Abstractions;
 using Headless.EntityFramework;
 using Headless.Testing.Helpers;
+using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -48,7 +49,7 @@ public sealed class HeadlessDbContextTestFixture : ICollectionFixture<HeadlessDb
 
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
-        return new PostgreSqlBuilder("postgres:18.1-alpine3.23")
+        return new PostgreSqlBuilder(TestImages.PostgreSql)
             .WithLabel("type", "permissions")
             .WithDatabase("headless_test")
             .WithUsername("postgres")

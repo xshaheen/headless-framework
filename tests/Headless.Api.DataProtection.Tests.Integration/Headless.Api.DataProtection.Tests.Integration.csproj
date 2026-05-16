@@ -5,8 +5,6 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Testcontainers.Azurite" />
-    <PackageReference Include="Testcontainers.XunitV3" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
@@ -14,5 +12,6 @@
     <ProjectReference Include="..\..\src\Headless.Blobs.Azure\Headless.Blobs.Azure.csproj" />
     <ProjectReference Include="..\..\src\Headless.Blobs.FileSystem\Headless.Blobs.FileSystem.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
   </ItemGroup>
 </Project>

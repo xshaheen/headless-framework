@@ -1,21 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Testing.Testcontainers;
 using RabbitMQ.Client;
 using Testcontainers.RabbitMq;
-using Testcontainers.Xunit;
-using Xunit.Sdk;
 
 namespace Tests;
 
 /// <summary>
 /// Collection fixture providing a RabbitMQ container for integration tests.
-/// Uses Testcontainers.RabbitMq for container lifecycle management.
 /// </summary>
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
-public sealed class RabbitMqFixture(IMessageSink messageSink)
-    : ContainerFixture<RabbitMqBuilder, RabbitMqContainer>(messageSink),
-        ICollectionFixture<RabbitMqFixture>
+public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixture<RabbitMqFixture>
 {
     private IConnection? _connection;
 
@@ -52,11 +48,6 @@ public sealed class RabbitMqFixture(IMessageSink messageSink)
 
         _connection = await factory.CreateConnectionAsync();
         return _connection;
-    }
-
-    protected override RabbitMqBuilder Configure()
-    {
-        return base.Configure().WithImage("rabbitmq:3-alpine");
     }
 
     protected override async ValueTask DisposeAsyncCore()

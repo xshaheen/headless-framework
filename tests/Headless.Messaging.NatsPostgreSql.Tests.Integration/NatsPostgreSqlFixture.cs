@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Testing.Testcontainers;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
@@ -42,7 +43,7 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
 
     private sealed class NatsStackComponent : IAsyncLifetime
     {
-        private readonly NatsContainer _container = new NatsBuilder("nats:2-alpine")
+        private readonly NatsContainer _container = new NatsBuilder(TestImages.Nats)
             .WithResourceMapping(_NatsConfig, "/etc/nats/nats-server.conf")
             .Build();
 
@@ -104,7 +105,7 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
 
     private sealed class PostgreSqlStackComponent : IAsyncLifetime
     {
-        private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:18.1-alpine3.23")
+        private readonly PostgreSqlContainer _container = new PostgreSqlBuilder(TestImages.PostgreSql)
             .WithDatabase("messages_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
