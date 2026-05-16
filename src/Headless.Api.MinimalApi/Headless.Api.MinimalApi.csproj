@@ -7,6 +7,6 @@
     <PackageReference Include="Asp.Versioning.Http" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Api\Headless.Api.csproj" />
+    <ProjectReference Include="..\Headless.Api.Core\Headless.Api.Core.csproj" />
   </ItemGroup>
 </Project>

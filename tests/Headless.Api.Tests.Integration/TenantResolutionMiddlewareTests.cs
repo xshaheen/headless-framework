@@ -240,7 +240,14 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
 
         if (addInfrastructure)
         {
-            builder.AddHeadless();
+            builder.AddHeadless(configureServices: options =>
+            {
+                options.Validation.ValidateServiceProviderOnStartup = false;
+                options.Validation.RequireUseHeadless = false;
+                options.Validation.RequireMapHeadlessEndpoints = false;
+                options.OpenTelemetry.Enabled = false;
+                options.OpenApi.Enabled = false;
+            });
         }
 
         if (setup == TenancySetup.RootHttp)

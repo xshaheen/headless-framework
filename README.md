@@ -29,7 +29,7 @@ Every feature ships as a pair: a thin **abstraction** package (interfaces and co
 ## Quick Start
 
 ```bash
-dotnet add package Headless.Api
+dotnet add package Headless.Api.ServiceDefaults
 dotnet add package Headless.Caching.Redis
 dotnet add package Headless.Orm.EntityFramework
 ```
@@ -37,7 +37,7 @@ dotnet add package Headless.Orm.EntityFramework
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessInfrastructure();
+builder.AddHeadless();
 
 builder.Services.AddHeadlessRedisCache(options =>
 {
@@ -70,7 +70,8 @@ Everything you need to stand up production-grade ASP.NET Core APIs — request/r
 
 | Package | Description |
 |---------|-------------|
-| [Headless.Api](src/Headless.Api/README.md) | ASP.NET Core API utilities and conventions |
+| [Headless.Api.Core](src/Headless.Api.Core/README.md) | ASP.NET Core API building blocks (problem details, JWT, identity, middleware) |
+| [Headless.Api.ServiceDefaults](src/Headless.Api.ServiceDefaults/README.md) | `AddHeadless()` orchestrator plus Aspire-style defaults (OpenTelemetry, OpenAPI, service discovery) |
 | [Headless.Api.Abstractions](src/Headless.Api.Abstractions/README.md) | API abstractions and contracts |
 | [Headless.Api.DataProtection](src/Headless.Api.DataProtection/README.md) | Data protection key storage |
 | [Headless.Api.FluentValidation](src/Headless.Api.FluentValidation/README.md) | FluentValidation integration for APIs |

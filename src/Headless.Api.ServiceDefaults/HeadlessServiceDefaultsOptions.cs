@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.OpenApi;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
@@ -11,54 +9,71 @@ namespace Headless.Api;
 
 /// <summary>Options for configuring Headless API service defaults.</summary>
 [PublicAPI]
-public sealed class HeadlessApiInfrastructureOptions
+public sealed class HeadlessServiceDefaultsOptions
 {
-    internal bool UseHeadlessDefaultsCalled { get; set; }
+    internal bool UseHeadlessCalled { get; set; }
 
-    internal bool MapHeadlessDefaultEndpointsCalled { get; set; }
+    internal bool MapHeadlessEndpointsCalled { get; set; }
 
-    /// <summary>Whether to validate the dependency container when the host starts.</summary>
-    public bool ValidateDependencyContainerOnStartup { get; set; } = true;
-
-    /// <summary>Whether startup should fail when <c>UseHeadlessDefaults()</c> was not applied.</summary>
-    public bool ValidateUseHeadlessDefaultsOnStartup { get; set; }
-
-    /// <summary>Whether startup should fail when <c>MapHeadlessDefaultEndpoints()</c> was not applied.</summary>
-    public bool ValidateMapHeadlessDefaultEndpointsOnStartup { get; set; }
+    /// <summary>Startup validation defaults.</summary>
+    public HeadlessServiceDefaultsValidationOptions Validation { get; } = new();
 
     /// <summary>OpenTelemetry defaults.</summary>
-    public HeadlessApiOpenTelemetryOptions OpenTelemetry { get; } = new();
+    public HeadlessServiceDefaultsOpenTelemetryOptions OpenTelemetry { get; } = new();
 
     /// <summary>OpenAPI service-registration defaults.</summary>
-    public HeadlessApiOpenApiOptions OpenApi { get; } = new();
+    public HeadlessServiceDefaultsOpenApiOptions OpenApi { get; } = new();
+
+    /// <summary>Static web asset defaults.</summary>
+    public HeadlessServiceDefaultsStaticAssetsOptions StaticAssets { get; } = new();
 
     /// <summary>HttpClient defaults.</summary>
-    public HeadlessApiHttpClientOptions HttpClient { get; } = new();
+    public HeadlessServiceDefaultsHttpClientOptions HttpClient { get; } = new();
+}
 
-    /// <summary>Whether to register ASP.NET Core antiforgery services.</summary>
-    public bool AddAntiforgery { get; set; } = true;
+/// <summary>Startup validation defaults.</summary>
+[PublicAPI]
+public sealed class HeadlessServiceDefaultsValidationOptions
+{
+    /// <summary>Whether to validate the service provider when the host starts.</summary>
+    public bool ValidateServiceProviderOnStartup { get; set; } = true;
 
-    /// <summary>The health-check tag used for the default liveness check.</summary>
-    public string AliveTag { get; set; } = "live";
+    /// <summary>Whether startup should fail when <c>UseHeadless()</c> was not applied.</summary>
+    public bool RequireUseHeadless { get; set; } = true;
 
-    /// <summary>Allows callers to tune MVC and Minimal API JSON options.</summary>
-    public Action<JsonSerializerOptions>? ConfigureJsonOptions { get; set; }
+    /// <summary>Whether startup should fail when <c>MapHeadlessEndpoints()</c> was not applied.</summary>
+    public bool RequireMapHeadlessEndpoints { get; set; } = true;
 }
 
 /// <summary>OpenAPI service-registration defaults.</summary>
 [PublicAPI]
-public sealed class HeadlessApiOpenApiOptions
+public sealed class HeadlessServiceDefaultsOpenApiOptions
 {
     /// <summary>Whether to register OpenAPI document generation.</summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>Allows callers to tune ASP.NET Core OpenAPI options.</summary>
     public Action<OpenApiOptions>? ConfigureOpenApi { get; set; }
+
+    /// <summary>The route pattern for OpenAPI JSON documents.</summary>
+    [StringSyntax("Route")]
+    public string RoutePattern { get; set; } = "/openapi/{documentName}.json";
+
+    /// <summary>Whether to attach output-cache metadata to OpenAPI document endpoints.</summary>
+    public bool CacheDocument { get; set; } = true;
+}
+
+/// <summary>Static web asset defaults.</summary>
+[PublicAPI]
+public sealed class HeadlessServiceDefaultsStaticAssetsOptions
+{
+    /// <summary>Whether to map static web assets when the generated manifest exists.</summary>
+    public bool Enabled { get; set; } = true;
 }
 
 /// <summary>OpenTelemetry defaults.</summary>
 [PublicAPI]
-public sealed class HeadlessApiOpenTelemetryOptions
+public sealed class HeadlessServiceDefaultsOpenTelemetryOptions
 {
     /// <summary>Whether to register OpenTelemetry logging, metrics, and tracing defaults.</summary>
     public bool Enabled { get; set; } = true;
@@ -78,7 +93,7 @@ public sealed class HeadlessApiOpenTelemetryOptions
 
 /// <summary>HttpClient defaults.</summary>
 [PublicAPI]
-public sealed class HeadlessApiHttpClientOptions
+public sealed class HeadlessServiceDefaultsHttpClientOptions
 {
     /// <summary>Whether to add the standard resilience handler to default HttpClient builders.</summary>
     public bool UseStandardResilienceHandler { get; set; } = true;

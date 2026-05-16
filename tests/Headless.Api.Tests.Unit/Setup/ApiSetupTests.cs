@@ -184,73 +184,37 @@ public sealed class ApiSetupTests
     }
 
     [Fact]
-    public async Task add_headless_api_should_register_upstream_service_defaults()
+    public async Task add_headless_should_register_convention_defaults()
     {
         // given
         var builder = WebApplication.CreateBuilder();
         _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
-        builder.AddHeadless(options =>
+        builder.AddHeadless(configureServices: options =>
         {
-            options.ValidateDependencyContainerOnStartup = false;
+            options.Validation.ValidateServiceProviderOnStartup = false;
             options.OpenTelemetry.Enabled = false;
         });
 
         await using var serviceProvider = builder.Services.BuildServiceProvider();
-        var options = serviceProvider.GetRequiredService<HeadlessApiInfrastructureOptions>();
+        var options = serviceProvider.GetRequiredService<HeadlessServiceDefaultsOptions>();
         var kestrelOptions = serviceProvider.GetRequiredService<IOptions<KestrelServerOptions>>().Value;
         var healthCheckService = serviceProvider.GetRequiredService<HealthCheckService>();
         var healthReport = await healthCheckService.CheckHealthAsync(
-            registration => registration.Tags.Contains(options.AliveTag),
+            registration => registration.Tags.Contains("live"),
             CancellationToken.None
         );
 
         // then
-        options.AddAntiforgery.Should().BeTrue();
         options.OpenApi.Enabled.Should().BeTrue();
+        options.Validation.RequireUseHeadless.Should().BeTrue();
+        options.Validation.RequireMapHeadlessEndpoints.Should().BeTrue();
         options.HttpClient.UseServiceDiscovery.Should().BeTrue();
         kestrelOptions.AddServerHeader.Should().BeFalse();
         serviceProvider.GetRequiredService<IAntiforgery>().Should().NotBeNull();
         serviceProvider.GetRequiredService<IProblemDetailsCreator>().Should().NotBeNull();
         builder.Services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IStartupFilter));
-        healthReport.Entries.Should().ContainKey("self");
-        healthReport.Status.Should().Be(HealthStatus.Healthy);
-    }
-
-    [Fact]
-    public async Task add_headless_api_should_allow_infrastructure_options_with_custom_security_callbacks()
-    {
-        // given
-        var builder = WebApplication.CreateBuilder();
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
-
-        // when
-        builder.AddHeadless(
-            encryption =>
-            {
-                encryption.DefaultPassPhrase = "ActionPassPhrase123";
-                encryption.InitVectorBytes = "ActionIV01234567"u8.ToArray();
-                encryption.DefaultSalt = "ActionSalt"u8.ToArray();
-            },
-            configureInfrastructure: options =>
-            {
-                options.ValidateDependencyContainerOnStartup = false;
-                options.OpenTelemetry.Enabled = false;
-                options.AliveTag = "ready";
-            }
-        );
-
-        await using var serviceProvider = builder.Services.BuildServiceProvider();
-        var options = serviceProvider.GetRequiredService<HeadlessApiInfrastructureOptions>();
-        var healthCheckService = serviceProvider.GetRequiredService<HealthCheckService>();
-        var healthReport = await healthCheckService.CheckHealthAsync(
-            registration => registration.Tags.Contains("ready"),
-            CancellationToken.None
-        );
-
-        // then
-        options.AliveTag.Should().Be("ready");
         healthReport.Entries.Should().ContainKey("self");
         healthReport.Status.Should().Be(HealthStatus.Healthy);
     }

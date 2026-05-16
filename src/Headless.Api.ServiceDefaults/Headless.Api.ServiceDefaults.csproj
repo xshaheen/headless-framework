@@ -1,10 +1,8 @@
 <Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Api</RootNamespace>
   </PropertyGroup>
-  <ItemGroup>
-    <InternalsVisibleTo Include="Headless.Api" />
-  </ItemGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
@@ -17,6 +15,6 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
+    <ProjectReference Include="..\Headless.Api.Core\Headless.Api.Core.csproj" />
   </ItemGroup>
 </Project>

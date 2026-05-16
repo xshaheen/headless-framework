@@ -41,7 +41,7 @@ The first row is the OCE path. The second is *also* an OCE underneath, but it ne
 
 ## 1. The OCE arm with `RequestAborted` gate
 
-`src/Headless.Api/Middlewares/HeadlessApiExceptionHandler.cs`:
+`src/Headless.Api.Core/Middlewares/HeadlessApiExceptionHandler.cs`:
 
 ```csharp
 // Cancellation handled first. Only treat OCE as client-cancelled when RequestAborted
@@ -113,7 +113,7 @@ This routes any code-thrown `TimeoutException` to the 408 ProblemDetails factory
 
 ## 4. `Normalize()` backfilling for 408/501
 
-`src/Headless.Api/Abstractions/IProblemDetailsCreator.cs`:
+`src/Headless.Api.Core/Abstractions/IProblemDetailsCreator.cs`:
 
 ```csharp
 public void Normalize(ProblemDetails problemDetails)
@@ -161,7 +161,7 @@ The `??=` is load-bearing: the `IExceptionHandler` factory (`RequestTimeout()`) 
 
 ## 5. DI registration via `TryAddEnumerable`
 
-`src/Headless.Api/Setup.cs`:
+`src/Headless.Api.ServiceDefaults/Setup.cs`:
 
 ```csharp
 public static IServiceCollection AddHeadlessProblemDetails(this IServiceCollection services)
@@ -273,8 +273,8 @@ Unit test coverage for `HeadlessApiExceptionHandler`:
 
 # Files Referenced
 
-- `src/Headless.Api/Middlewares/HeadlessApiExceptionHandler.cs` — handler, OCE arm, `_IsCancellationException`, `case TimeoutException`
-- `src/Headless.Api/Abstractions/IProblemDetailsCreator.cs` — `Normalize` with 408/501 backfill, `RequestTimeout()` / `NotImplemented()` factories
+- `src/Headless.Api.Core/Middlewares/HeadlessApiExceptionHandler.cs` — handler, OCE arm, `_IsCancellationException`, `case TimeoutException`
+- `src/Headless.Api.Core/Abstractions/IProblemDetailsCreator.cs` — `Normalize` with 408/501 backfill, `RequestTimeout()` / `NotImplemented()` factories
 - `src/Headless.Api.Abstractions/Constants/ProblemDetailTitles.cs` — Types/Titles/Details constants
-- `src/Headless.Api/Setup.cs` — `AddHeadlessProblemDetails` + `TryAddEnumerable` registration
+- `src/Headless.Api.ServiceDefaults/Setup.cs` — `AddHeadlessProblemDetails` + `TryAddEnumerable` registration
 - `demo/Headless.Api.Demo/Program.cs` — pipeline-ordering example

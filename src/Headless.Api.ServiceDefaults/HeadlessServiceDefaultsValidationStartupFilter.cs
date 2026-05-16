@@ -6,11 +6,11 @@ using Microsoft.Extensions.Hosting;
 
 namespace Headless.Api;
 
-internal sealed class HeadlessApiInfrastructureValidationStartupFilter(HeadlessApiInfrastructureOptions options)
+internal sealed class HeadlessServiceDefaultsValidationStartupFilter(HeadlessServiceDefaultsOptions options)
     : IStartupFilter,
         IHostedLifecycleService
 {
-    private readonly HeadlessApiInfrastructureOptions _options = options;
+    private readonly HeadlessServiceDefaultsOptions _options = options;
 
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
     {
@@ -39,16 +39,16 @@ internal sealed class HeadlessApiInfrastructureValidationStartupFilter(HeadlessA
 
     public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    private static void _Validate(HeadlessApiInfrastructureOptions options)
+    private static void _Validate(HeadlessServiceDefaultsOptions options)
     {
-        if (options.ValidateUseHeadlessDefaultsOnStartup && !options.UseHeadlessDefaultsCalled)
+        if (options.Validation.RequireUseHeadless && !options.UseHeadlessCalled)
         {
-            throw new InvalidOperationException("Call UseHeadlessDefaults before the application starts.");
+            throw new InvalidOperationException("Call UseHeadless before the application starts.");
         }
 
-        if (options.ValidateMapHeadlessDefaultEndpointsOnStartup && !options.MapHeadlessDefaultEndpointsCalled)
+        if (options.Validation.RequireMapHeadlessEndpoints && !options.MapHeadlessEndpointsCalled)
         {
-            throw new InvalidOperationException("Call MapHeadlessDefaultEndpoints before the application starts.");
+            throw new InvalidOperationException("Call MapHeadlessEndpoints before the application starts.");
         }
     }
 }

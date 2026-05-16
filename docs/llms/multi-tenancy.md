@@ -29,7 +29,7 @@ Headless multi-tenancy is built from these pieces:
 
 - `Headless.MultiTenancy` provides the root `AddHeadlessTenancy(...)` composition surface and a shared, non-PII tenant posture manifest.
 - `ICurrentTenant` and `ICurrentTenantAccessor` live in the `Headless.Abstractions` namespace (implemented in `src/Headless.Core/Abstractions`) and hold the current tenant in an `AsyncLocal` scope.
-- `Headless.Api` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` when HTTP tenancy is configured.
+- `Headless.Api.Core` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` when HTTP tenancy is configured.
 - `Headless.Mediator` enforces tenant presence at request dispatch boundaries via `.Mediator(mediator => mediator.RequireTenant())` or the lower-level `AddTenantRequiredBehavior()`.
 - `Headless.Messaging.Core` propagates tenant context across message publish/consume and can require tenant context on publish.
 - `Headless.Orm.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities and can opt in to a save-time tenant write guard.

@@ -1,6 +1,6 @@
 ---
 domain: API & Web
-packages: Api, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc, MultiTenancy
+packages: Api.Core, Api.ServiceDefaults, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc, MultiTenancy
 ---
 
 # API & Web
@@ -9,7 +9,7 @@ packages: Api, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.L
 
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
-- [Headless.Api](#headlessapi)
+- [Headless.Api.ServiceDefaults](#headlessapiservicedefaults)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
     - [Installation](#installation)
@@ -74,7 +74,12 @@ packages: Api, Api.Abstractions, Api.DataProtection, Api.FluentValidation, Api.L
 
 ## Quick Orientation
 
-The core package is `Headless.Api` — call `AddHeadless()` to register compression, health checks, problem details, JWT, identity, and validation in one shot. Use `UseHeadless()` for the standard middleware order and `MapHeadlessEndpoints()` for `/health` and `/alive`. Then choose an endpoint style:
+The package split:
+
+- **`Headless.Api.ServiceDefaults`** — the one-line bootstrap. Call `AddHeadless()` to register compression, health checks, problem details, JWT, identity, validation, antiforgery, JSON defaults, OpenTelemetry, OpenAPI, service discovery, and HttpClient resilience in one shot. Use `UseHeadless()` for the standard middleware order and `MapHeadlessEndpoints()` for `/health`, `/alive`, OpenAPI JSON, and static assets. Pull this for the happy path — it transitively brings in `Headless.Api.Core`.
+- **`Headless.Api.Core`** — the building blocks only. Pull this when composing your own pipeline without the framework orchestrator, or when you only need individual primitives like `AddHeadlessProblemDetails()`, `AddHeadlessAntiforgery()`, or `AddHeadlessApiResponseCompression()`.
+
+Choose an endpoint style:
 
 - **Minimal API** (recommended for new projects): Add `Headless.Api.MinimalApi` and call `ConfigureMinimalApi()` for JSON config, validation filters, and exception handling.
 - **MVC/Controllers**: Add `Headless.Api.Mvc` and call `ConfigureMvc()` for base controllers, exception filters, and URL canonicalization.
@@ -89,12 +94,13 @@ Additional packages:
 
 ## Agent Instructions
 
-- Use `AddHeadless()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, or problem details.
-- Use `UseHeadless()` for the default middleware order (`UseStatusCodePages()` before `UseExceptionHandler()`), then add auth/tenant middleware, then map endpoints.
+- Default install for any new Headless API: `Headless.Api.ServiceDefaults`. It transitively pulls in `Headless.Api.Core`. Only reach for `Headless.Api.Core` directly when you specifically want primitives without the orchestrator.
+- Use `AddHeadless()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, antiforgery, JSON defaults, OpenTelemetry, OpenAPI, or problem details. `AddHeadless(configureServices: options => ...)` accepts a `HeadlessServiceDefaultsOptions` callback for Aspire-style toggles (OTel, OpenAPI, service discovery, validation).
+- Use `UseHeadless()` for the default middleware order (`UseStatusCodePages()` before `UseExceptionHandler()`), then add auth/tenant middleware, then map endpoints. `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 - For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`.
-- Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets when their manifest exists. `AddHeadless()` registers a `self` health check tagged `live`.
+- Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets. `AddHeadless()` registers a `self` health check tagged `live`.
 - Keep `TrustForwardedHeadersFromAnyProxy` disabled unless the service is reachable only through trusted proxy infrastructure.
-- Configure upstream-style service defaults through `AddHeadless(options => ...)`, `UseHeadless(options => ...)`, and `MapHeadlessEndpoints(options => ...)`; there is no separate experimental namespace.
+- `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()` and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false` and `options.Validation.RequireMapHeadlessEndpoints = false`.
 - Call `ApiSetup.ConfigureGlobalSettings()` before `AddHeadless()` to set regex timeout, FluentValidation, and JWT defaults.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureMvc()` not manual `MvcOptions` configuration.
@@ -106,36 +112,32 @@ Additional packages:
 
 ---
 
-# Headless.Api
+# Headless.Api.ServiceDefaults
 
-Core ASP.NET Core API infrastructure providing service registration, middleware, security, JWT handling, and common API utilities.
+The one-line bootstrap for Headless APIs. Combines `Headless.Api.Core` primitives with Aspire-style host conventions (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience).
 
 ## Problem Solved
 
-Consolidates repetitive ASP.NET Core API setup (compression, security headers, problem details, JWT, identity, validation) into a single cohesive registration, ensuring consistent configuration across all API projects.
+Consolidates the entire ASP.NET Core API setup (compression, security headers, problem details, JWT, identity, validation, antiforgery, JSON defaults, OpenTelemetry, OpenAPI, service discovery, HttpClient resilience) into a single `AddHeadless()` call plus `UseHeadless()` / `MapHeadlessEndpoints()` for the pipeline.
 
 ## Key Features
 
-- One-call service registration via `AddHeadless()`
+- One-call service registration via `AddHeadless()` (covers primitives + Aspire conventions)
 - One-call middleware defaults via `UseHeadless()`
-- Operational health endpoints via `MapHeadlessEndpoints()`
-- OpenAPI, OpenTelemetry, service discovery, antiforgery, and HttpClient resilience defaults in the core bootstrap path
-- Response compression (Brotli, Gzip) with optimized settings
-- Problem details standardization
-- Unified exception-to-ProblemDetails mapping via `HeadlessApiExceptionHandler` (auto-registered by `AddHeadlessProblemDetails()`): covers tenancy, conflict, validation, not-found, EF concurrency, timeout, not-implemented, and cancellation across MVC, Minimal API, middleware, hosted services, and hubs
-- JWT token factory and claims principal handling
-- HSTS security configuration
-- API versioning integration
-- Device detection
-- Idempotency middleware
-- Server timing middleware
-- Request cancellation handling
-- Diagnostic listeners for debugging
+- One-call endpoint mapping via `MapHeadlessEndpoints()` (`/health`, `/alive`, OpenAPI JSON, static assets)
+- Service-provider validation on startup
+- Startup filter validates `UseHeadless()` and `MapHeadlessEndpoints()` were called
+- OpenTelemetry logging, metrics, tracing with sensible defaults
+- OpenAPI document registration and mapping
+- Service discovery and HttpClient resilience
+- MVC and Minimal API JSON defaults
+- ASP.NET Core source-generated input validation
+- Transitively brings in all `Headless.Api.Core` primitives
 
 ## Installation
 
 ```bash
-dotnet add package Headless.Api
+dotnet add package Headless.Api.ServiceDefaults
 ```
 
 ## Quick Start
@@ -146,7 +148,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Configure global settings (regex timeout, FluentValidation, JWT)
 ApiSetup.ConfigureGlobalSettings();
 
-// Register all framework API services
+// Register all framework API services + Aspire conventions
 builder.AddHeadless();
 
 var app = builder.Build();
@@ -158,6 +160,22 @@ app.UseHeadless();
 app.MapHeadlessEndpoints();
 
 app.Run();
+```
+
+## Configuration
+
+```csharp
+builder.AddHeadless(configureServices: options =>
+{
+    options.OpenTelemetry.Enabled = true;
+    options.OpenApi.Enabled = true;
+    options.HttpClient.UseServiceDiscovery = true;
+    options.HttpClient.UseStandardResilienceHandler = true;
+    options.StaticAssets.Enabled = true;
+    options.Validation.ValidateServiceProviderOnStartup = true;
+    options.Validation.RequireUseHeadless = true;
+    options.Validation.RequireMapHeadlessEndpoints = true;
+});
 ```
 
 ## API Defaults
@@ -178,29 +196,7 @@ app.Run();
 
 `TrustForwardedHeadersFromAnyProxy` defaults to `false`. Turn it on only when the app is not directly reachable by untrusted clients; otherwise clients can spoof forwarded host/scheme values.
 
-`MapHeadlessEndpoints()` maps `/health` for all health checks with a JSON body containing `status` and per-check `results`, `/alive` for checks tagged `live`, OpenAPI JSON documents at `/openapi/{documentName}.json`, and static web assets when the generated endpoint manifest exists. Health endpoints are named, excluded from OpenAPI descriptions, and allow anonymous requests by default. `AddHeadless()` registers the default `self` liveness check, disables Kestrel's `Server` response header, and applies conservative Kestrel limits: 30MB max request body and 40 request headers.
-
-## Service Defaults
-
-`AddHeadless()` includes the upstream-style service-default registrations directly:
-
-```csharp
-builder.AddHeadless(options =>
-{
-    options.OpenTelemetry.Enabled = true;
-    options.HttpClient.UseServiceDiscovery = true;
-    options.ValidateUseHeadlessDefaultsOnStartup = true;
-    options.ValidateMapHeadlessDefaultEndpointsOnStartup = true;
-});
-
-var app = builder.Build();
-app.UseHeadless();
-app.MapHeadlessEndpoints();
-```
-
-`AddHeadless()` registers container validation, antiforgery, Headless ProblemDetails, OpenAPI, OpenTelemetry logging/metrics/tracing, service discovery, default HttpClient resilience, application `User-Agent`, MVC/Minimal API JSON defaults, ASP.NET validation, and the `self` liveness check. `UseHeadless()` applies forwarded headers, response compression, status-code rewriting, HTTPS redirection, exception handling, HSTS, antiforgery, and no-cache fallback. `MapHeadlessEndpoints()` maps `/health`, `/alive`, OpenAPI JSON, and static web assets when the manifest exists.
-
-Compatibility aliases remain available: `AddHeadlessInfrastructure()`, `UseHeadlessDefaults()`, and `MapHeadlessDefaultEndpoints()`.
+`MapHeadlessEndpoints()` maps `/health` for all health checks with a JSON body containing `status` and per-check `results`, and `/alive` for checks tagged `live`. It also maps OpenAPI JSON documents and static web assets when configured. Health endpoints are named, excluded from OpenAPI descriptions, and allow anonymous requests by default. `AddHeadless()` registers the default `self` liveness check, disables Kestrel's `Server` response header, and applies conservative Kestrel limits: 30MB max request body and 40 request headers. Both `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 
 ## Exception Mapping
 
@@ -549,7 +545,7 @@ Framework integration for ASP.NET Core Minimal APIs with JSON configuration, val
 
 ## Problem Solved
 
-Provides consistent JSON serialization and validation for Minimal API endpoints matching the framework's conventions. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`).
+Provides consistent JSON serialization and validation for Minimal API endpoints matching the framework's conventions. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api.Core`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`).
 
 ## Key Features
 
@@ -585,7 +581,7 @@ No additional configuration required. Uses framework JSON settings automatically
 
 ## Dependencies
 
-- `Headless.Api`
+- `Headless.Api.Core` (and `Headless.Api.ServiceDefaults` if you want the orchestrator)
 - `Asp.Versioning.Http`
 - `Microsoft.EntityFrameworkCore`
 
@@ -601,7 +597,7 @@ Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JS
 
 ## Problem Solved
 
-Provides consistent MVC configuration, base controllers, and URL canonicalization for traditional controller-based APIs. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`), so MVC actions get the same response shape as Minimal-API endpoints.
+Provides consistent MVC configuration, base controllers, and URL canonicalization for traditional controller-based APIs. Exception-to-ProblemDetails mapping is handled globally by `Headless.Api.Core`'s `HeadlessApiExceptionHandler` (registered via `AddHeadlessProblemDetails()`), so MVC actions get the same response shape as Minimal-API endpoints.
 
 ## Key Features
 
@@ -653,7 +649,7 @@ No additional configuration required.
 
 ## Dependencies
 
-- `Headless.Api`
+- `Headless.Api.Core` (and `Headless.Api.ServiceDefaults` if you want the orchestrator)
 - `Asp.Versioning.Mvc`
 - `Asp.Versioning.Mvc.ApiExplorer`
 - `Microsoft.EntityFrameworkCore`

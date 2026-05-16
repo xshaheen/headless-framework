@@ -8,7 +8,7 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Headless.Api\Headless.Api.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\src\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />

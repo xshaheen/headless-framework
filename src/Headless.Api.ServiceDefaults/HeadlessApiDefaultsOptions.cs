@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 
 namespace Headless.Api;
 
-/// <summary>Options for <see cref="ApiSetup.UseHeadlessDefaults(WebApplication, Action{HeadlessApiDefaultsOptions}?)"/>.</summary>
+/// <summary>Options for <see cref="ApiSetup.UseHeadless(WebApplication, Action{HeadlessApiDefaultsOptions}?)"/>.</summary>
 public sealed class HeadlessApiDefaultsOptions
 {
     internal const string AppliedKey = "Headless.Api.Defaults.Applied";

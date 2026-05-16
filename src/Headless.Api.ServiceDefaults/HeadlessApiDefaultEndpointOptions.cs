@@ -1,15 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics.CodeAnalysis;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Headless.Api;
 
-/// <summary>Options for <see cref="ApiSetup.MapHeadlessDefaultEndpoints(IEndpointRouteBuilder, Action{HeadlessApiDefaultEndpointOptions}?)"/>.</summary>
+/// <summary>Options for <see cref="ApiSetup.MapHeadlessEndpoints(WebApplication, Action{HeadlessApiDefaultEndpointOptions}?)"/>.</summary>
 public sealed class HeadlessApiDefaultEndpointOptions
 {
+    internal const string AppliedKey = "Headless.Api.MapHeadlessEndpoints.Applied";
+
     /// <summary>Whether to map the aggregate health endpoint.</summary>
     public bool MapHealthEndpoint { get; set; } = true;
 
@@ -40,16 +41,4 @@ public sealed class HeadlessApiDefaultEndpointOptions
     /// <summary>The response writer used by the aggregate health endpoint.</summary>
     public Func<HttpContext, HealthReport, Task> HealthResponseWriter { get; set; } = ApiSetup.WriteHealthReportAsync;
 
-    /// <summary>Whether to map static web assets when the generated manifest exists.</summary>
-    public bool MapStaticAssetsWhenManifestExists { get; set; } = true;
-
-    /// <summary>Whether to map OpenAPI JSON documents.</summary>
-    public bool MapOpenApiDocument { get; set; } = true;
-
-    /// <summary>The route pattern for OpenAPI JSON documents.</summary>
-    [StringSyntax("Route")]
-    public string OpenApiRoutePattern { get; set; } = "/openapi/{documentName}.json";
-
-    /// <summary>Whether to attach output-cache metadata to OpenAPI document endpoints.</summary>
-    public bool CacheOpenApiDocument { get; set; } = true;
 }
