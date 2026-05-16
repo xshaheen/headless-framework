@@ -179,7 +179,12 @@ public static class ApiSetup
             builder.Services.AddHeadlessProblemDetails();
             builder.Services.AddStatusCodesRewriterMiddleware();
             builder.Services.ConfigureHeadlessDefaultApi();
-            builder.Services.AddHeadlessAntiforgery();
+
+            if (options.Antiforgery.Enabled)
+            {
+                builder.Services.AddHeadlessAntiforgery();
+            }
+
             builder.Services.AddValidation();
             builder.Services.Configure<MvcJsonOptions>(jsonOptions =>
                 JsonConstants.ConfigureWebJsonOptions(jsonOptions.JsonSerializerOptions)

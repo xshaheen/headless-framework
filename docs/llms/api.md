@@ -76,7 +76,7 @@ packages: Api.Core, Api.ServiceDefaults, Api.Abstractions, Api.DataProtection, A
 
 The package split:
 
-- **`Headless.Api.ServiceDefaults`** — the one-line bootstrap. Call `AddHeadless()` to register compression, health checks, problem details, JWT, identity, validation, antiforgery, JSON defaults, OpenTelemetry, OpenAPI, service discovery, and HttpClient resilience in one shot. Use `UseHeadless()` for the standard middleware order and `MapHeadlessEndpoints()` for `/health`, `/alive`, OpenAPI JSON, and static assets. Pull this for the happy path — it transitively brings in `Headless.Api.Core`.
+- **`Headless.Api.ServiceDefaults`** — the one-line bootstrap. Call `AddHeadless()` to register compression, health checks, problem details, JWT, identity, validation, JSON defaults, OpenTelemetry, OpenAPI, service discovery, and HttpClient resilience in one shot. Antiforgery is opt-in (`options.Antiforgery.Enabled = true`) and the middleware is consumer-owned. Use `UseHeadless()` for the standard middleware order and `MapHeadlessEndpoints()` for `/health`, `/alive`, OpenAPI JSON, and static assets. Pull this for the happy path — it transitively brings in `Headless.Api.Core`.
 - **`Headless.Api.Core`** — the building blocks only. Pull this when composing your own pipeline without the framework orchestrator, or when you only need individual primitives like `AddHeadlessProblemDetails()`, `AddHeadlessAntiforgery()`, or `AddHeadlessApiResponseCompression()`.
 
 Choose an endpoint style:
@@ -95,7 +95,7 @@ Additional packages:
 ## Agent Instructions
 
 - Default install for any new Headless API: `Headless.Api.ServiceDefaults`. It transitively pulls in `Headless.Api.Core`. Only reach for `Headless.Api.Core` directly when you specifically want primitives without the orchestrator.
-- Use `AddHeadless()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, antiforgery, JSON defaults, OpenTelemetry, OpenAPI, or problem details. `AddHeadless(configureServices: options => ...)` accepts a `HeadlessServiceDefaultsOptions` callback for Aspire-style toggles (OTel, OpenAPI, service discovery, validation).
+- Use `AddHeadless()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, JSON defaults, OpenTelemetry, OpenAPI, or problem details. `AddHeadless(configureServices: options => ...)` accepts a `HeadlessServiceDefaultsOptions` callback for Aspire-style toggles (OTel, OpenAPI, service discovery, validation, antiforgery). Antiforgery is opt-in — set `options.Antiforgery.Enabled = true` for cookie-auth apps and wire `app.UseAntiforgery()` yourself after `UseAuthentication()`/`UseAuthorization()`; bearer-token APIs leave it disabled.
 - Use `UseHeadless()` for the default middleware order (`UseStatusCodePages()` before `UseExceptionHandler()`), then add auth/tenant middleware, then map endpoints. `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 - For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`.
 - Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets. `AddHeadless()` registers a `self` health check tagged `live`.
@@ -118,7 +118,7 @@ The one-line bootstrap for Headless APIs. Combines `Headless.Api.Core` primitive
 
 ## Problem Solved
 
-Consolidates the entire ASP.NET Core API setup (compression, security headers, problem details, JWT, identity, validation, antiforgery, JSON defaults, OpenTelemetry, OpenAPI, service discovery, HttpClient resilience) into a single `AddHeadless()` call plus `UseHeadless()` / `MapHeadlessEndpoints()` for the pipeline.
+Consolidates the entire ASP.NET Core API setup (compression, security headers, problem details, JWT, identity, validation, JSON defaults, OpenTelemetry, OpenAPI, service discovery, HttpClient resilience) into a single `AddHeadless()` call plus `UseHeadless()` / `MapHeadlessEndpoints()` for the pipeline. Antiforgery is opt-in via `options.Antiforgery.Enabled` (cookie-auth apps), with the middleware consumer-owned.
 
 ## Key Features
 
@@ -175,6 +175,7 @@ builder.AddHeadless(configureServices: options =>
     options.Validation.ValidateServiceProviderOnStartup = true;
     options.Validation.RequireUseHeadless = true;
     options.Validation.RequireMapHeadlessEndpoints = true;
+    options.Antiforgery.Enabled = false; // opt in for cookie-auth apps
 });
 ```
 
@@ -189,8 +190,9 @@ builder.AddHeadless(configureServices: options =>
 - `UseExceptionHandler()`
 - `UseHttpsRedirection()`
 - `UseHsts()` outside Development
-- `UseAntiforgery()`
 - no-cache response header when the response did not set `Cache-Control`
+
+Antiforgery is **opt-in and consumer-owned**: `AddHeadless()` does not register the antiforgery service unless `options.Antiforgery.Enabled = true`, and `UseHeadless()` never wires `app.UseAntiforgery()` (cookie-auth consumers call it themselves after auth/authz so the middleware sees the authenticated principal). Bearer-token APIs have no CSRF surface and leave the flag false.
 
 `UseStatusCodePages()` intentionally runs before `UseExceptionHandler()` so bare status responses, including middleware-emitted 408s, can be normalized by `IProblemDetailsCreator.Normalize`. `UseStatusCodesRewriter()` runs inside it so bare 401, 403, and unmatched-route 404 responses use the framework-specific `IProblemDetailsCreator` factories before the generic status-code page fills the response.
 

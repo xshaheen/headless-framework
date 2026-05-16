@@ -29,6 +29,9 @@ public sealed class HeadlessServiceDefaultsOptions
 
     /// <summary>HttpClient defaults.</summary>
     public HeadlessServiceDefaultsHttpClientOptions HttpClient { get; } = new();
+
+    /// <summary>Antiforgery defaults. Opt-in: most APIs use bearer-token auth and don't need CSRF protection.</summary>
+    public HeadlessServiceDefaultsAntiforgeryOptions Antiforgery { get; } = new();
 }
 
 /// <summary>Startup validation defaults.</summary>
@@ -103,4 +106,18 @@ public sealed class HeadlessServiceDefaultsHttpClientOptions
 
     /// <summary>Whether to add a default User-Agent header based on the host application name.</summary>
     public bool AddApplicationUserAgent { get; set; } = true;
+}
+
+/// <summary>Antiforgery defaults.</summary>
+/// <remarks>
+/// CSRF protection only applies to cookie-based authentication. For bearer-token / API-key / OAuth APIs the browser
+/// does not auto-attach credentials cross-origin, so antiforgery is not needed and adds latency. Enable explicitly
+/// when the API uses cookie-based auth (ASP.NET Core Identity cookies, Server-rendered MVC sessions, etc.).
+/// Consumers wire the middleware themselves via <c>app.UseAntiforgery()</c> after <c>UseAuthentication()</c>/<c>UseAuthorization()</c>.
+/// </remarks>
+[PublicAPI]
+public sealed class HeadlessServiceDefaultsAntiforgeryOptions
+{
+    /// <summary>Whether <c>AddHeadless()</c> should register the antiforgery service. Default: <c>false</c>.</summary>
+    public bool Enabled { get; set; }
 }

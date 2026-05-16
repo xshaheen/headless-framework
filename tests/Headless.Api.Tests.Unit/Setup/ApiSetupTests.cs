@@ -212,11 +212,33 @@ public sealed class ApiSetupTests
         options.Validation.RequireMapHeadlessEndpoints.Should().BeTrue();
         options.HttpClient.UseServiceDiscovery.Should().BeTrue();
         kestrelOptions.AddServerHeader.Should().BeFalse();
-        serviceProvider.GetRequiredService<IAntiforgery>().Should().NotBeNull();
+        options.Antiforgery.Enabled.Should().BeFalse();
+        serviceProvider.GetService<IAntiforgery>().Should().BeNull("antiforgery is opt-in by default");
         serviceProvider.GetRequiredService<IProblemDetailsCreator>().Should().NotBeNull();
         builder.Services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IStartupFilter));
         healthReport.Entries.Should().ContainKey("self");
         healthReport.Status.Should().Be(HealthStatus.Healthy);
+    }
+
+    [Fact]
+    public void add_headless_should_register_antiforgery_when_explicitly_enabled()
+    {
+        // given
+        var builder = WebApplication.CreateBuilder();
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
+
+        // when
+        builder.AddHeadless(configureServices: options =>
+        {
+            options.Validation.ValidateServiceProviderOnStartup = false;
+            options.OpenTelemetry.Enabled = false;
+            options.Antiforgery.Enabled = true;
+        });
+
+        using var serviceProvider = builder.Services.BuildServiceProvider();
+
+        // then
+        serviceProvider.GetRequiredService<IAntiforgery>().Should().NotBeNull();
     }
 
     [Fact]

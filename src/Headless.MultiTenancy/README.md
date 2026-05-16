@@ -44,10 +44,9 @@ app.UseHeadless();
 app.UseAuthentication();
 app.UseHeadlessTenancy();
 app.UseAuthorization();
-app.UseAntiforgery();
 ```
 
-`UseHeadlessTenancy()` belongs after application-owned authentication and before application-owned authorization. It does not call either middleware internally. `UseAntiforgery()` is consumer-owned and must run after authentication/authorization so the middleware sees the authenticated principal — `UseHeadless()` does not wire it.
+`UseHeadlessTenancy()` belongs after application-owned authentication and before application-owned authorization. It does not call either middleware internally. Antiforgery is **opt-in and consumer-owned**: `AddHeadless()` does not register the service unless `options.Antiforgery.Enabled = true`, and `UseHeadless()` does not wire the middleware. CSRF protection applies to cookie-based auth only — opt in (and call `app.UseAntiforgery()` after auth/authz) when needed.
 
 ## Configuration
 

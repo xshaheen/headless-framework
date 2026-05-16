@@ -86,9 +86,16 @@ Without those overloads, `AddHeadless()` binds `Headless:StringEncryption` and `
 - `UseHsts()` outside Development
 - no-cache response header when the response did not set `Cache-Control`
 
-Antiforgery is consumer-owned. `AddHeadless()` registers the antiforgery service, but `UseHeadless()` does not wire `app.UseAntiforgery()` — call it yourself after `UseAuthentication()`/`UseAuthorization()` so the middleware sees the authenticated principal:
+Antiforgery is consumer-owned and **opt-in**. By default `AddHeadless()` does *not* register the antiforgery service and `UseHeadless()` does not wire the middleware — CSRF protection is meaningful only for cookie-based authentication, and most "headless" APIs use bearer tokens / API keys where there is no CSRF surface. Cookie-auth consumers explicitly opt in and wire the middleware after `UseAuthentication()`/`UseAuthorization()`:
 
 ```csharp
+builder.AddHeadless(configureServices: options =>
+{
+    options.Antiforgery.Enabled = true;
+});
+
+// ...
+
 app.UseHeadless();
 app.UseAuthentication();
 app.UseAuthorization();
