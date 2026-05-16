@@ -396,11 +396,6 @@ public static class ApiSetup
             app.UseHsts();
         }
 
-        if (options.UseAntiforgery)
-        {
-            app.UseAntiforgery();
-        }
-
         if (options.SetNoCacheWhenMissingCacheHeaders)
         {
             app.UseNoCacheWhenMissingCacheHeaders();

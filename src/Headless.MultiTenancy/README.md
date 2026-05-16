@@ -44,9 +44,10 @@ app.UseHeadless();
 app.UseAuthentication();
 app.UseHeadlessTenancy();
 app.UseAuthorization();
+app.UseAntiforgery();
 ```
 
-`UseHeadlessTenancy()` belongs after application-owned authentication and before application-owned authorization. It does not call either middleware internally.
+`UseHeadlessTenancy()` belongs after application-owned authentication and before application-owned authorization. It does not call either middleware internally. `UseAntiforgery()` is consumer-owned and must run after authentication/authorization so the middleware sees the authenticated principal — `UseHeadless()` does not wire it.
 
 ## Configuration
 

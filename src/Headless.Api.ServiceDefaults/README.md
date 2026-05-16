@@ -84,8 +84,16 @@ Without those overloads, `AddHeadless()` binds `Headless:StringEncryption` and `
 - `UseExceptionHandler()`
 - `UseHttpsRedirection()`
 - `UseHsts()` outside Development
-- `UseAntiforgery()`
 - no-cache response header when the response did not set `Cache-Control`
+
+Antiforgery is consumer-owned. `AddHeadless()` registers the antiforgery service, but `UseHeadless()` does not wire `app.UseAntiforgery()` — call it yourself after `UseAuthentication()`/`UseAuthorization()` so the middleware sees the authenticated principal:
+
+```csharp
+app.UseHeadless();
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseAntiforgery();
+```
 
 `MapHeadlessEndpoints()` maps:
 
@@ -108,6 +116,7 @@ app.UseHeadless();
 app.UseAuthentication();
 app.UseHeadlessTenancy();   // between auth and authz
 app.UseAuthorization();
+app.UseAntiforgery();       // after auth so the principal is set
 app.MapHeadlessEndpoints();
 ```
 

@@ -53,7 +53,4 @@ public sealed class HeadlessApiDefaultsOptions
 
     /// <summary>Whether to add a no-cache header when the response did not set cache headers.</summary>
     public bool SetNoCacheWhenMissingCacheHeaders { get; set; } = true;
-
-    /// <summary>Whether to run antiforgery middleware.</summary>
-    public bool UseAntiforgery { get; set; } = true;
 }

@@ -268,38 +268,6 @@ public sealed class HeadlessApiDefaultsTests : TestBase
     }
 
     [Fact]
-    public async Task should_skip_antiforgery_middleware_when_disabled_in_pipeline_options()
-    {
-        var builder = WebApplication.CreateBuilder(
-            new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
-        );
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
-        builder.AddHeadless(configureServices: options =>
-        {
-            options.Validation.ValidateServiceProviderOnStartup = false;
-            options.OpenTelemetry.Enabled = false;
-        });
-        builder.Services.AddAuthentication();
-
-        await using var app = builder.Build();
-        app.UseHeadless(options =>
-        {
-            options.UseHttpsRedirection = false;
-            options.UseHsts = false;
-            options.UseAntiforgery = false;
-        });
-        app.MapHeadlessEndpoints();
-
-        await app.StartAsync(AbortToken);
-
-        using var client = _CreateClient(app);
-        using var response = await client.GetAsync("/health", AbortToken);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [Fact]
     public async Task should_not_map_openapi_document_when_openapi_is_disabled()
     {
         await using var app = await _CreateAppAsync(
