@@ -293,6 +293,9 @@ builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.Options.RetryPolicy.MaxInlineRetries = 2;
     setup.Options.RetryPolicy.MaxPersistedRetries = 15;
+    setup.Options.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5);
+    setup.Options.TransportPublishTimeout = TimeSpan.FromSeconds(10);
+    setup.Options.CommandTimeout = TimeSpan.FromSeconds(30);
     setup.Options.RetryPolicy.BackoffStrategy = new ExponentialBackoffStrategy(
         initialDelay: TimeSpan.FromSeconds(1),
         maxDelay: TimeSpan.FromMinutes(5)
@@ -311,12 +314,24 @@ builder.Services.AddHeadlessMessaging(setup =>
 | --- | --- | --- | --- |
 | `MaxInlineRetries` | `int` | `2` | Retries to run inline on each delivery before persisting. `>= 0`. |
 | `MaxPersistedRetries` | `int` | `15` | Maximum persisted-retry pickups. `>= 0`. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. |
+| `InitialDispatchGrace` | `TimeSpan` | `30s` | Initial `NextRetryAt` delay before crash-recovery pickup can see a newly stored row. |
+| `DispatchTimeout` | `TimeSpan` | `5m` | Active delivery lease written to `LockedUntil` before each publish/consume attempt. `> 0`, `<= 1h`. Handlers exceeding this remain at-least-once and may be re-dispatched. |
 | `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Strategy returns `RetryDecision.Stop` (permanent), `RetryDecision.Continue(delay)` (transient), or `RetryDecision.Exhausted` (custom budget exhausted). |
 | `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Fires only on `RetryDecision.Exhausted`. Does NOT fire on `RetryDecision.Stop`. |
+| `OnExhaustedTimeout` | `TimeSpan` | `30s` | Bounds the exhausted callback wait. |
+
+| `MessagingOptions` property | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `TransportPublishTimeout` | `TimeSpan` | `10s` | Linked with host shutdown and passed to transport publish calls. If the broker client honors cancellation, stuck publishes fail into the retry policy instead of outliving shutdown. |
+| `CommandTimeout` | `TimeSpan` | `30s` | Applied to SQL-backed storage commands, including terminal writes that deliberately use `CancellationToken.None`. |
+
+Persisted retries use two independent timestamps: `NextRetryAt` controls when a row is due, and `LockedUntil` controls whether an active attempt still owns the row. Retry pickup filters on both. Retry state writes clear `LockedUntil`; counter advances use an optimistic `Retries == originalRetries` predicate so concurrent replicas cannot overwrite each other's retry budget.
 
 ### Exhausted vs Stop
 
 `OnExhausted` fires **only on `RetryDecision.Exhausted`** — the retry budget was fully consumed and the failure was transient.
+
+When tenant propagation is configured, `OnExhausted` runs under the message envelope tenant for publish, consume, and poisoned-on-arrival paths. Poisoned broker redelivery skips the callback when storage reports the terminal row was not mutated.
 
 It does **NOT** fire on `RetryDecision.Stop`. Stop is the framework's signal for:
 

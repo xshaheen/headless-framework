@@ -617,6 +617,93 @@ public abstract class DataStorageTestsBase : TestBase
         retriable.Should().NotContain(m => m.StorageId == storedMessage.StorageId);
     }
 
+    public virtual async Task should_not_return_leased_published_message_until_lease_expires()
+    {
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "leased-published",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
+
+        var leased = await storage.LeasePublishAsync(storedMessage, DateTime.UtcNow.AddMinutes(5), AbortToken);
+
+        leased.Should().BeTrue();
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == storedMessage.StorageId);
+
+        await storage.LeasePublishAsync(storedMessage, DateTime.UtcNow.AddSeconds(-1), AbortToken);
+
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .Contain(m => m.StorageId == storedMessage.StorageId);
+    }
+
+    public virtual async Task should_reject_mismatched_original_retries()
+    {
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "retry-race",
+            "test-group",
+            CreateMessage(),
+            AbortToken
+        );
+
+        storedMessage.Retries = 1;
+        var first = await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            originalRetries: 0,
+            cancellationToken: AbortToken
+        );
+
+        var second = await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            originalRetries: 0,
+            cancellationToken: AbortToken
+        );
+
+        first.Should().BeTrue();
+        second.Should().BeFalse();
+    }
+
+    public virtual async Task should_report_false_when_received_exception_message_is_already_terminal()
+    {
+        var storage = GetStorage();
+        var serializer = GetSerializer();
+        var message = CreateMessage();
+        var content = serializer.Serialize(message);
+
+        var first = await storage.StoreReceivedExceptionMessageAsync(
+            "poisoned",
+            "test-group",
+            content,
+            "first",
+            AbortToken
+        );
+        var second = await storage.StoreReceivedExceptionMessageAsync(
+            "poisoned",
+            "test-group",
+            content,
+            "second",
+            AbortToken
+        );
+
+        first.Should().BeTrue();
+        second.Should().BeFalse();
+    }
+
     public virtual async Task should_pickup_message_at_max_persisted_retries_and_exclude_above()
     {
         // given — with MaxPersistedRetries = 4, the pickup predicate is `Retries <= 4`.

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
@@ -13,12 +14,14 @@ namespace Headless.Messaging.SqlServer;
 
 internal sealed class SqlServerMonitoringApi(
     IOptions<SqlServerOptions> options,
+    IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
     ISerializer serializer,
     TimeProvider timeProvider
 ) : IMonitoringApi
 {
     private readonly SqlServerOptions _options = options.Value ?? throw new ArgumentNullException(nameof(options));
+    private readonly MessagingOptions _messagingOptions = messagingOptions.Value;
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
 
@@ -53,6 +56,7 @@ internal sealed class SqlServerMonitoringApi(
 
                     return statisticsDto;
                 },
+                commandTimeout: _messagingOptions.CommandTimeout,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -139,7 +143,12 @@ internal sealed class SqlServerMonitoringApi(
         await using var connection = new SqlConnection(_options.ConnectionString);
 
         var totalCount = await connection
-            .ExecuteScalarAsync(countQuery, cancellationToken, countSqlParams)
+            .ExecuteScalarAsync(
+                countQuery,
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: countSqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (totalCount == 0)
@@ -182,8 +191,9 @@ internal sealed class SqlServerMonitoringApi(
 
                     return messages;
                 },
-                cancellationToken: cancellationToken,
-                sqlParams: pageSqlParams
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: pageSqlParams,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -238,8 +248,9 @@ internal sealed class SqlServerMonitoringApi(
         return await connection
             .ExecuteScalarAsync(
                 sqlQuery,
-                cancellationToken: cancellationToken,
-                sqlParams: [new SqlParameter("@StatusName", statusName)]
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: [new SqlParameter("@StatusName", statusName)],
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
     }
@@ -314,8 +325,9 @@ internal sealed class SqlServerMonitoringApi(
 
                         return dictionary;
                     },
-                    cancellationToken: cancellationToken,
-                    sqlParams: sqlParams
+                    commandTimeout: _messagingOptions.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
         }
@@ -369,8 +381,9 @@ internal sealed class SqlServerMonitoringApi(
 
                     return message;
                 },
-                cancellationToken: cancellationToken,
-                sqlParams: [new SqlParameter("@Id", id)]
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: [new SqlParameter("@Id", id)],
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 

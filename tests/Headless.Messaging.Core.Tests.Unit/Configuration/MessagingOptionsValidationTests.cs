@@ -121,6 +121,9 @@ public sealed class MessagingOptionsValidationTests : TestBase
         options.RetryPolicy.MaxInlineRetries.Should().Be(2);
         options.RetryPolicy.MaxPersistedRetries.Should().Be(15);
         options.RetryPolicy.InitialDispatchGrace.Should().Be(TimeSpan.FromSeconds(30));
+        options.RetryPolicy.DispatchTimeout.Should().Be(TimeSpan.FromMinutes(5));
+        options.TransportPublishTimeout.Should().Be(TimeSpan.FromSeconds(10));
+        options.CommandTimeout.Should().Be(TimeSpan.FromSeconds(30));
         options.RetryPolicy.BackoffStrategy.Should().BeOfType<ExponentialBackoffStrategy>();
     }
 
@@ -216,6 +219,34 @@ public sealed class MessagingOptionsValidationTests : TestBase
         // then
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.InitialDispatchGrace));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_invalid_dispatch_timeout()
+    {
+        new RetryPolicyOptionsValidator()
+            .Validate(new RetryPolicyOptions { DispatchTimeout = TimeSpan.Zero })
+            .IsValid.Should()
+            .BeFalse();
+
+        new RetryPolicyOptionsValidator()
+            .Validate(new RetryPolicyOptions { DispatchTimeout = TimeSpan.FromHours(2) })
+            .IsValid.Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public void should_reject_messaging_options_with_invalid_transport_or_command_timeout()
+    {
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { TransportPublishTimeout = TimeSpan.Zero })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { CommandTimeout = TimeSpan.FromMinutes(6) })
+            .IsValid.Should()
+            .BeFalse();
     }
 
     [Fact]

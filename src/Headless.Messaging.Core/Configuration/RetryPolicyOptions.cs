@@ -58,6 +58,16 @@ public sealed class RetryPolicyOptions
     public TimeSpan InitialDispatchGrace { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Gets or sets how long a persisted retry row is leased while a publish or consume attempt is active.
+    /// Default is 5 minutes.
+    /// </summary>
+    /// <remarks>
+    /// While <c>LockedUntil</c> is in the future, the persisted retry processor excludes the row.
+    /// Handlers that run longer than this lease remain at-least-once and may be re-dispatched.
+    /// </remarks>
+    public TimeSpan DispatchTimeout { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// Gets or sets the backoff strategy used to compute per-attempt delay.
     /// Defaults to exponential backoff.
     /// </summary>
@@ -84,6 +94,7 @@ public sealed class RetryPolicyOptions
         target.MaxInlineRetries = MaxInlineRetries;
         target.MaxPersistedRetries = MaxPersistedRetries;
         target.InitialDispatchGrace = InitialDispatchGrace;
+        target.DispatchTimeout = DispatchTimeout;
         target.BackoffStrategy = BackoffStrategy;
         target.OnExhausted = OnExhausted;
         target.OnExhaustedTimeout = OnExhaustedTimeout;
@@ -144,6 +155,11 @@ internal sealed class RetryPolicyOptionsValidator : AbstractValidator<RetryPolic
             .WithMessage("InitialDispatchGrace must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromHours(1))
             .WithMessage("InitialDispatchGrace must not exceed 1 hour.");
+        RuleFor(x => x.DispatchTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("DispatchTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromHours(1))
+            .WithMessage("DispatchTimeout must not exceed 1 hour.");
         RuleFor(x => x.OnExhaustedTimeout)
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("OnExhaustedTimeout must be greater than zero.")

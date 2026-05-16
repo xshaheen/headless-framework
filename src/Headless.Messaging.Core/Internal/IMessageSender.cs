@@ -95,15 +95,19 @@ internal sealed class MessageSender : IMessageSender
         CancellationToken cancellationToken
     )
     {
+        var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
+        if (!leased)
+        {
+            return (RetryDecision.Stop, OperateResult.Success);
+        }
+
         var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).ConfigureAwait(false);
 
         var tracingTimestamp = _TracingBefore(transportMsg, _transport.BrokerAddress);
 
-        // Transport send and state writes intentionally use CancellationToken.None so an
-        // in-flight broker publish is not aborted mid-send. Host-shutdown cancellation is
-        // observed only at the inline-retry boundary (Task.Delay between attempts) and routed
-        // through _SetFailedState's IsCancellation guard, which keeps the row recoverable.
-        var result = await _transport.SendAsync(transportMsg, CancellationToken.None).ConfigureAwait(false);
+        using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
+        publishCts.CancelAfter(_options.TransportPublishTimeout);
+        var result = await _transport.SendAsync(transportMsg, publishCts.Token).ConfigureAwait(false);
 
         if (result.Succeeded)
         {
@@ -188,14 +192,31 @@ internal sealed class MessageSender : IMessageSender
         // place persisted-pickup count advances.
         if (decision.Outcome == RetryDecision.Kind.Continue && !state.IsInlineRetryInFlight)
         {
+            var originalRetries = message.Retries;
             message.Retries++;
+            return await _PersistFailedStateAsync(message, ex, dispatchServices, decision, state, originalRetries)
+                .ConfigureAwait(false);
         }
 
+        return await _PersistFailedStateAsync(message, ex, dispatchServices, decision, state, originalRetries: null)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<RetryDecision> _PersistFailedStateAsync(
+        MediumMessage message,
+        Exception ex,
+        IServiceProvider dispatchServices,
+        RetryDecision decision,
+        RetryNextState state,
+        int? originalRetries
+    )
+    {
         var affected = await _dataStorage
             .ChangePublishStateAsync(
                 message,
                 state.NextStatus,
                 nextRetryAt: state.NextRetryAt,
+                originalRetries: originalRetries,
                 cancellationToken: CancellationToken.None
             )
             .ConfigureAwait(false);
@@ -219,6 +240,12 @@ internal sealed class MessageSender : IMessageSender
         }
 
         return decision;
+    }
+
+    private async Task<bool> _LeaseAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        var lockedUntil = _timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
+        return await _dataStorage.LeasePublishAsync(message, lockedUntil, cancellationToken).ConfigureAwait(false);
     }
 
     private RetryDecision _UpdateMessageForRetry(MediumMessage message, Exception ex, int inlineRetries)
@@ -246,7 +273,7 @@ internal sealed class MessageSender : IMessageSender
         return decision;
     }
 
-    private Task _InvokeOnExhausted(
+    private async Task _InvokeOnExhausted(
         MediumMessage message,
         Exception ex,
         IServiceProvider dispatchServices,
@@ -256,27 +283,30 @@ internal sealed class MessageSender : IMessageSender
         var callback = _retryPolicy.OnExhausted;
         if (callback is null)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         // Use the live dispatch scope so scoped services resolved here are the same
         // instances seen during SendAsync. The caller (Dispatcher) is responsible for
         // creating and disposing that scope. RetryHelper.InvokeOnExhaustedAsync applies
         // the configured OnExhaustedTimeout and swallows handler exceptions.
-        return RetryHelper.InvokeOnExhaustedAsync(
-            callback,
-            new FailedInfo
-            {
-                ServiceProvider = dispatchServices,
-                MessageType = MessageType.Publish,
-                Message = message.Origin,
-                Exception = ex,
-            },
-            _retryPolicy.OnExhaustedTimeout,
-            message.StorageId,
-            _logger,
-            cancellationToken
-        );
+        using var tenantScope = TenantContextScope.ChangeFromEnvelope(dispatchServices, message.Origin, _logger);
+        await RetryHelper
+            .InvokeOnExhaustedAsync(
+                callback,
+                new FailedInfo
+                {
+                    ServiceProvider = dispatchServices,
+                    MessageType = MessageType.Publish,
+                    Message = message.Origin,
+                    Exception = ex,
+                },
+                _retryPolicy.OnExhaustedTimeout,
+                message.StorageId,
+                _logger,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     #region tracing

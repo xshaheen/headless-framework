@@ -199,10 +199,12 @@ internal static class RetryHelper
             {
                 await callbackCts.CancelAsync().ConfigureAwait(false);
             }
+#pragma warning disable ERP022  // Best-effort: a throw here would only mask the shutdown signal — swallow.
             catch
             {
-                // Best-effort: a throw here would only mask the shutdown signal — swallow.
+                // ignored
             }
+#pragma warning restore ERP022
         }
         catch (Exception callbackEx)
         {

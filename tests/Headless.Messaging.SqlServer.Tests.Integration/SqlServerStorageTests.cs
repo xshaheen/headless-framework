@@ -225,6 +225,18 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     public override Task should_not_return_received_message_with_future_next_retry_at() =>
         base.should_not_return_received_message_with_future_next_retry_at();
 
+    [Fact]
+    public override Task should_not_return_leased_published_message_until_lease_expires() =>
+        base.should_not_return_leased_published_message_until_lease_expires();
+
+    [Fact]
+    public override Task should_reject_mismatched_original_retries() =>
+        base.should_reject_mismatched_original_retries();
+
+    [Fact]
+    public override Task should_report_false_when_received_exception_message_is_already_terminal() =>
+        base.should_report_false_when_received_exception_message_is_already_terminal();
+
     #endregion
 
     #region SQL Server-Specific Tests

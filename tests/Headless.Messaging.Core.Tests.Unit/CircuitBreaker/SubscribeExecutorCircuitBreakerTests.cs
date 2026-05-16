@@ -81,6 +81,10 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         IDataStorage storage
     )
     {
+        storage
+            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
@@ -121,7 +125,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
         return storage;

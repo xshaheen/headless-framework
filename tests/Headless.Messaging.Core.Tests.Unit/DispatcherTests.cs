@@ -134,7 +134,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
 
@@ -195,7 +195,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
 
@@ -247,7 +247,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
 
@@ -309,7 +309,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(true));
 
@@ -340,7 +340,7 @@ public sealed class DispatcherTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                Arg.Any<CancellationToken>()
+                cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(new ValueTask<bool>(false));
 

@@ -60,6 +60,7 @@ public sealed class SqlServerDataStorage(
         var sql =
             $"UPDATE {_lockTable} SET [Instance]=@Instance,[LastLockTime]=@LastLockTime WHERE [Key]=@Key AND [LastLockTime] < @TTL;";
         await using var connection = new SqlConnection(options.Value.ConnectionString);
+
         object[] sqlParams =
         [
             new SqlParameter("@Instance", instance),
@@ -67,9 +68,16 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Key", key),
             new SqlParameter("@TTL", timeProvider.GetUtcNow().UtcDateTime.Subtract(ttl)),
         ];
+
         var opResult = await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
+
         return opResult > 0;
     }
 
@@ -77,7 +85,9 @@ public sealed class SqlServerDataStorage(
     {
         var sql =
             $"UPDATE {_lockTable} SET [Instance]='',[LastLockTime]=@LastLockTime WHERE [Key]=@Key AND [Instance]=@Instance;";
+
         await using var connection = new SqlConnection(options.Value.ConnectionString);
+
         object[] sqlParams =
         [
             new SqlParameter("@Instance", instance),
@@ -87,8 +97,14 @@ public sealed class SqlServerDataStorage(
             },
             new SqlParameter("@Key", key),
         ];
+
         await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -102,14 +118,21 @@ public sealed class SqlServerDataStorage(
         var sql =
             $"UPDATE {_lockTable} SET [LastLockTime]=DATEADD(second,@TtlSeconds,[LastLockTime]) WHERE [Key]=@Key AND [Instance]=@Instance;";
         await using var connection = new SqlConnection(options.Value.ConnectionString);
+
         object[] sqlParams =
         [
             new SqlParameter("@Key", key),
             new SqlParameter("@Instance", instance),
             new SqlParameter("@TtlSeconds", (long)ttl.TotalSeconds),
         ];
+
         await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -138,8 +161,14 @@ public sealed class SqlServerDataStorage(
             $"UPDATE {_publishedTable} SET [StatusName]=@StatusName WHERE [Id] IN ({string.Join(',', paramNames)});";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
+
         await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: parameters)
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: parameters,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -148,16 +177,35 @@ public sealed class SqlServerDataStorage(
         StatusName state,
         object? transaction = null,
         DateTime? nextRetryAt = null,
+        DateTime? lockedUntil = null,
+        int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _ChangeMessageStateAsync(_publishedTable, message, state, transaction, nextRetryAt, cancellationToken);
+        return _ChangeMessageStateAsync(
+            _publishedTable,
+            message,
+            state,
+            transaction,
+            nextRetryAt,
+            cancellationToken,
+            lockedUntil,
+            originalRetries
+        );
     }
+
+    public ValueTask<bool> LeasePublishAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        CancellationToken cancellationToken = default
+    ) => _LeaseMessageAsync(_publishedTable, message, lockedUntil, cancellationToken);
 
     public async ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
         StatusName state,
         DateTime? nextRetryAt = null,
+        DateTime? lockedUntil = null,
+        int? originalRetries = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -165,7 +213,7 @@ public sealed class SqlServerDataStorage(
             // X1 terminal-row guard: refuses updates to rows that are already terminal AND
             // have NextRetryAt cleared. Failed rows with non-null NextRetryAt stay mutable so
             // the retry processor can rewrite them — see the matching note in PostgreSqlDataStorage.
-            $"UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND NOT (StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND NextRetryAt IS NULL)";
+            $"UPDATE {_receivedTable} SET Content=@Content, Retries=@Retries, ExpiresAt=@ExpiresAt, NextRetryAt=@NextRetryAt, LockedUntil=@LockedUntil, StatusName=@StatusName, ExceptionInfo=@ExceptionInfo WHERE Id=@Id AND NOT (StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND NextRetryAt IS NULL) AND (@OriginalRetries IS NULL OR Retries=@OriginalRetries)";
 
         object[] sqlParams =
         [
@@ -177,17 +225,31 @@ public sealed class SqlServerDataStorage(
                 Value = message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value,
             },
             new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = nextRetryAt.ToUtcParameterValue() },
+            new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = lockedUntil.ToUtcParameterValue() },
+            new SqlParameter("@OriginalRetries", originalRetries ?? (object)DBNull.Value),
             new SqlParameter("@StatusName", state.ToString("G")),
             new SqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
+
         var affectedRows = await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
         return affectedRows > 0;
     }
+
+    public ValueTask<bool> LeaseReceiveAsync(
+        MediumMessage message,
+        DateTime lockedUntil,
+        CancellationToken cancellationToken = default
+    ) => _LeaseMessageAsync(_receivedTable, message, lockedUntil, cancellationToken);
 
     public async ValueTask<MediumMessage> StoreMessageAsync(
         string name,
@@ -197,8 +259,8 @@ public sealed class SqlServerDataStorage(
     )
     {
         var sql =
-            $"INSERT INTO {_publishedTable} ([Id],[Version],[Name],[Content],[Retries],[Added],[ExpiresAt],[NextRetryAt],[StatusName],[MessageId])"
-            + $"VALUES(@Id,'{options.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@StatusName,@MessageId);";
+            $"INSERT INTO {_publishedTable} ([Id],[Version],[Name],[Content],[Retries],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[StatusName],[MessageId])"
+            + $"VALUES(@Id,'{options.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@StatusName,@MessageId);";
 
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var message = new MediumMessage
@@ -209,6 +271,7 @@ public sealed class SqlServerDataStorage(
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+            LockedUntil = null,
             Retries = 0,
         };
 
@@ -224,6 +287,7 @@ public sealed class SqlServerDataStorage(
                 Value = message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value,
             },
             new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = message.NextRetryAt.ToUtcParameterValue() },
+            new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = message.LockedUntil.ToUtcParameterValue() },
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new SqlParameter("@MessageId", content.GetId()),
         ];
@@ -232,7 +296,12 @@ public sealed class SqlServerDataStorage(
         {
             await using var connection = new SqlConnection(options.Value.ConnectionString);
             await connection
-                .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+                .ExecuteNonQueryAsync(
+                    sql,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         else
@@ -251,14 +320,20 @@ public sealed class SqlServerDataStorage(
             }
 
             await dbTrans
-                .Connection!.ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams)
+                .Connection!.ExecuteNonQueryAsync(
+                    sql,
+                    transaction: dbTrans,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
         return message;
     }
 
-    public async ValueTask StoreReceivedExceptionMessageAsync(
+    public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
         string group,
         string content,
@@ -281,13 +356,14 @@ public sealed class SqlServerDataStorage(
                     .UtcDateTime.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter),
             },
             new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = DBNull.Value },
+            new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = DBNull.Value },
             new SqlParameter("@StatusName", nameof(StatusName.Failed)),
             new SqlParameter("@MessageId", serializer.Deserialize(content)!.GetId()),
             new SqlParameter("@Version", messagingOptions.Value.Version),
             new SqlParameter("@ExceptionInfo", exceptionInfo ?? (object)DBNull.Value),
         ];
 
-        await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
+        return await _StoreReceivedMessage(sqlParams, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<MediumMessage> StoreReceivedMessageAsync(
@@ -306,6 +382,7 @@ public sealed class SqlServerDataStorage(
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
+            LockedUntil = null,
             Retries = 0,
         };
 
@@ -324,6 +401,10 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@NextRetryAt", SqlDbType.DateTime2)
             {
                 Value = mediumMessage.NextRetryAt.ToUtcParameterValue(),
+            },
+            new SqlParameter("@LockedUntil", SqlDbType.DateTime2)
+            {
+                Value = mediumMessage.LockedUntil.ToUtcParameterValue(),
             },
             new SqlParameter("@StatusName", nameof(StatusName.Scheduled)),
             new SqlParameter("@MessageId", message.GetId()),
@@ -357,8 +438,9 @@ public sealed class SqlServerDataStorage(
                  );
                 """,
                 transaction: null,
-                cancellationToken,
-                [new SqlParameter("@timeout", timeout), new SqlParameter("@batchCount", batchCount)]
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: [new SqlParameter("@timeout", timeout), new SqlParameter("@batchCount", batchCount)],
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
     }
@@ -384,7 +466,12 @@ public sealed class SqlServerDataStorage(
         await using var connection = new SqlConnection(options.Value.ConnectionString);
 
         var affectedRowCount = await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: [new SqlParameter("@Id", id)])
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: [new SqlParameter("@Id", id)],
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
         return affectedRowCount;
@@ -397,7 +484,12 @@ public sealed class SqlServerDataStorage(
         await using var connection = new SqlConnection(options.Value.ConnectionString);
 
         var affectedRowCount = await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: [new SqlParameter("@Id", id)])
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: [new SqlParameter("@Id", id)],
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
         return affectedRowCount;
@@ -452,9 +544,10 @@ public sealed class SqlServerDataStorage(
 
                     return messages;
                 },
-                transaction,
-                cancellationToken,
-                sqlParams
+                transaction: transaction,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -465,7 +558,7 @@ public sealed class SqlServerDataStorage(
 
     public IMonitoringApi GetMonitoringApi()
     {
-        return new SqlServerMonitoringApi(options, initializer, serializer, timeProvider);
+        return new SqlServerMonitoringApi(options, messagingOptions, initializer, serializer, timeProvider);
     }
 
     private async ValueTask<bool> _ChangeMessageStateAsync(
@@ -474,11 +567,13 @@ public sealed class SqlServerDataStorage(
         StatusName state,
         object? transaction = null,
         DateTime? nextRetryAt = null,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        DateTime? lockedUntil = null,
+        int? originalRetries = null
     )
     {
         var sql =
-            $"UPDATE {tableName} SET Content=@Content, Retries=@Retries,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,StatusName=@StatusName WHERE Id=@Id AND NOT (StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND NextRetryAt IS NULL)";
+            $"UPDATE {tableName} SET Content=@Content, Retries=@Retries,ExpiresAt=@ExpiresAt,NextRetryAt=@NextRetryAt,LockedUntil=@LockedUntil,StatusName=@StatusName WHERE Id=@Id AND NOT (StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND NextRetryAt IS NULL) AND (@OriginalRetries IS NULL OR Retries=@OriginalRetries)";
 
         object[] sqlParams =
         [
@@ -490,6 +585,8 @@ public sealed class SqlServerDataStorage(
                 Value = message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value,
             },
             new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = nextRetryAt.ToUtcParameterValue() },
+            new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = lockedUntil.ToUtcParameterValue() },
+            new SqlParameter("@OriginalRetries", originalRetries ?? (object)DBNull.Value),
             new SqlParameter("@StatusName", state.ToString("G")),
         ];
 
@@ -498,7 +595,13 @@ public sealed class SqlServerDataStorage(
         {
             var connection = dbTransaction.Connection!;
             affectedRows = await connection
-                .ExecuteNonQueryAsync(sql, dbTransaction, cancellationToken, sqlParams)
+                .ExecuteNonQueryAsync(
+                    sql,
+                    transaction: dbTransaction,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         else if (transaction is IDbContextTransaction efTransaction)
@@ -506,21 +609,35 @@ public sealed class SqlServerDataStorage(
             var dbTrans = efTransaction.GetDbTransaction();
             var connection = dbTrans.Connection!;
             affectedRows = await connection
-                .ExecuteNonQueryAsync(sql, dbTrans, cancellationToken, sqlParams)
+                .ExecuteNonQueryAsync(
+                    sql,
+                    transaction: dbTrans,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         else
         {
             await using var connection = new SqlConnection(options.Value.ConnectionString);
             affectedRows = await connection
-                .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+                .ExecuteNonQueryAsync(
+                    sql,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
         return affectedRows > 0;
     }
 
-    private async ValueTask _StoreReceivedMessage(object[] sqlParams, CancellationToken cancellationToken = default)
+    private async ValueTask<bool> _StoreReceivedMessage(
+        object[] sqlParams,
+        CancellationToken cancellationToken = default
+    )
     {
         // The WHEN MATCHED predicate skips terminal Succeeded/Failed rows that have no scheduled
         // retry. Without the guard, a broker-redelivered message whose payload again fails to
@@ -533,16 +650,60 @@ public sealed class SqlServerDataStorage(
             WHEN MATCHED AND NOT (target.StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(
                 StatusName.Failed
             )}') AND target.NextRetryAt IS NULL) THEN
-                UPDATE SET StatusName = @StatusName, Retries = @Retries, ExpiresAt = @ExpiresAt, NextRetryAt = @NextRetryAt, Content = @Content, ExceptionInfo = @ExceptionInfo
+                UPDATE SET StatusName = @StatusName, Retries = @Retries, ExpiresAt = @ExpiresAt, NextRetryAt = @NextRetryAt, LockedUntil = @LockedUntil, Content = @Content, ExceptionInfo = @ExceptionInfo
             WHEN NOT MATCHED THEN
-                INSERT ([Id],[Version],[Name],[Group],[Content],[Retries],[Added],[ExpiresAt],[NextRetryAt],[StatusName],[MessageId],[ExceptionInfo])
-                VALUES (@Id,@Version,@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@StatusName,@MessageId,@ExceptionInfo);
+                INSERT ([Id],[Version],[Name],[Group],[Content],[Retries],[Added],[ExpiresAt],[NextRetryAt],[LockedUntil],[StatusName],[MessageId],[ExceptionInfo])
+                VALUES (@Id,@Version,@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@StatusName,@MessageId,@ExceptionInfo);
             """;
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
-        await connection
-            .ExecuteNonQueryAsync(sql, cancellationToken: cancellationToken, sqlParams: sqlParams)
+        var affectedRows = await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
+
+        return affectedRows > 0;
+    }
+
+    private async ValueTask<bool> _LeaseMessageAsync(
+        string tableName,
+        MediumMessage message,
+        DateTime lockedUntil,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var sql =
+            $"UPDATE {tableName} SET LockedUntil=@LockedUntil WHERE Id=@Id AND NOT (StatusName IN ('{nameof(StatusName.Succeeded)}','{nameof(StatusName.Failed)}') AND NextRetryAt IS NULL)";
+
+        object[] sqlParams =
+        [
+            new SqlParameter("@Id", message.StorageId),
+            new SqlParameter("@LockedUntil", SqlDbType.DateTime2)
+            {
+                Value = ((DateTime?)lockedUntil).ToUtcParameterValue(),
+            },
+        ];
+
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
+        var affectedRows = await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (affectedRows > 0)
+        {
+            message.LockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
+        }
+
+        return affectedRows > 0;
     }
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
@@ -554,8 +715,8 @@ public sealed class SqlServerDataStorage(
         // and SQL providers share identical pickup semantics — keeps tests with a fake clock honest
         // and avoids subtle drift between application time and DB time.
         var sql =
-            $"SELECT TOP ({_RetryBatchSize}) Id, Content, Retries, Added, NextRetryAt FROM {tableName} WITH (UPDLOCK, READPAST) "
-            + $"WHERE Retries <= @Retries AND Version = @Version AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now;";
+            $"SELECT TOP ({_RetryBatchSize}) Id, Content, Retries, Added, NextRetryAt, LockedUntil FROM {tableName} WITH (UPDLOCK, READPAST) "
+            + $"WHERE Retries <= @Retries AND Version = @Version AND NextRetryAt IS NOT NULL AND NextRetryAt <= @Now AND (LockedUntil IS NULL OR LockedUntil <= @Now);";
 
         object[] sqlParams =
         [
@@ -589,15 +750,19 @@ public sealed class SqlServerDataStorage(
                                 NextRetryAt = await reader.IsDBNullAsync(4, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(4),
+                                LockedUntil = await reader.IsDBNullAsync(5, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(5),
                             }
                         );
                     }
 
                     return messages;
                 },
-                transaction,
-                cancellationToken,
-                sqlParams
+                transaction: transaction,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 

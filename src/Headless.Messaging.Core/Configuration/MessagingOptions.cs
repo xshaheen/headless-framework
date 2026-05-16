@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using FluentValidation;
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
 
@@ -170,13 +171,36 @@ public sealed class MessagingOptions
     public bool TenantContextRequired { get; set; }
 
     /// <summary>
+    /// Gets or sets the maximum time the framework waits for a transport publish before treating it as a failed attempt.
+    /// Default is 10 seconds.
+    /// </summary>
+    /// <remarks>
+    /// The timeout is linked with host shutdown. Some broker clients do not fully honor cancellation
+    /// while publishing; this timeout is the framework-level bound for cooperative transports.
+    /// </remarks>
+    public TimeSpan TransportPublishTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Gets or sets the ADO.NET command timeout applied by SQL-backed messaging storage providers.
+    /// Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// Terminal state writes intentionally use <see cref="CancellationToken.None"/> after cancellation
+    /// classification so shutdown cannot orphan a final state transition. This timeout is the wall-clock
+    /// safety net for those commands.
+    /// </remarks>
+    public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
     /// Individual consumers may override specific properties via
     /// <see cref="IConsumerBuilder{TConsumer}.WithCircuitBreaker"/>.
     /// </summary>
     public CircuitBreakerOptions CircuitBreaker { get; } = new();
 
+#pragma warning disable IDE0032, IDE0044 // Tests use the named backing field to validate null-policy handling.
     private RetryPolicyOptions _retryPolicy = new();
+#pragma warning restore IDE0032, IDE0044
 
     /// <summary>
     /// Gets retry policy configuration for inline and persisted retries.
@@ -217,6 +241,8 @@ public sealed class MessagingOptions
         target.SchedulerBatchSize = SchedulerBatchSize;
         target.UseStorageLock = UseStorageLock;
         target.TenantContextRequired = TenantContextRequired;
+        target.TransportPublishTimeout = TransportPublishTimeout;
+        target.CommandTimeout = CommandTimeout;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
         CircuitBreaker.CopyTo(target.CircuitBreaker);
@@ -386,5 +412,15 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
     public MessagingOptionsValidator()
     {
         RuleFor(x => x.RetryPolicy).NotNull().SetValidator(new RetryPolicyOptionsValidator());
+        RuleFor(x => x.TransportPublishTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("TransportPublishTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("TransportPublishTimeout must not exceed 5 minutes.");
+        RuleFor(x => x.CommandTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("CommandTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("CommandTimeout must not exceed 5 minutes.");
     }
 }

@@ -253,6 +253,10 @@ using (bypass.BeginBypass())
 
 `IgnoreMultiTenancyFilter()` is only a read-side query-filter bypass. Loading a row through `IgnoreMultiTenancyFilter()` does not permit cross-tenant updates or deletes when the write guard is enabled; wrap only the intended write in `ITenantWriteGuardBypass.BeginBypass()`.
 
+## Messaging Exhausted Callbacks
+
+When messaging tenant propagation is enabled, exhausted callbacks restore `ICurrentTenant` from the message envelope before invoking `RetryPolicy.OnExhausted`. This applies to publish failures, consume failures, and poisoned-on-arrival messages that bypass normal consumer execution. Missing, whitespace, or oversized tenant headers resolve to no tenant, matching consume-side lenient header handling.
+
 ### Defense Layers and Known Gaps
 
 `IMultiTenant` writes are protected by two complementary layers, plus paths that remain out of scope:

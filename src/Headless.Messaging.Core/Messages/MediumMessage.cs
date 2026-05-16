@@ -27,6 +27,12 @@ public class MediumMessage
     /// </remarks>
     public DateTime? NextRetryAt { get; set; }
 
+    /// <summary>
+    /// Gets or sets the UTC timestamp until which this row is leased by an active dispatch attempt.
+    /// <see langword="null"/> means no active lease.
+    /// </summary>
+    public DateTime? LockedUntil { get; set; }
+
     public int Retries { get; set; }
 
     public string? ExceptionInfo { get; set; }

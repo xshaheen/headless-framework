@@ -42,7 +42,7 @@ internal sealed class ConsumeExecutionPipeline(
 
         var descriptor = context.ConsumerDescriptor;
         var originHeaders = context.MediumMessage.Origin.Headers;
-        var tenantId = _ResolveTenantId(originHeaders, logger);
+        var tenantId = TenantContextScope.ResolveTenantId(originHeaders, logger);
         var consumeHeaders = new MessageHeader(originHeaders);
         var consumeContext = _BuildConsumeContext(
             messageInstance,
@@ -281,27 +281,6 @@ internal sealed class ConsumeExecutionPipeline(
             tenantIdParam
         );
         return lambda.CompileFast();
-    }
-
-    // Lenient consume-side tenant resolution: missing, whitespace, or oversized header values map
-    // to null instead of failing the message. Mirrors the publish-side rules in
-    // MessagePublishRequestFactory._ApplyTenantId / _ValidateTenantId (see #228).
-    // Oversized values emit a structured warning so operators can detect a misbehaving producer
-    // (or a producer-side downgrade attack) without changing the lenient behavior contract.
-    private static string? _ResolveTenantId(IDictionary<string, string?> headers, ILogger? logger)
-    {
-        if (!headers.TryGetValue(Headers.TenantId, out var value) || string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        if (value.Length > PublishOptions.TenantIdMaxLength)
-        {
-            logger?.TenantIdHeaderRejected(value.Length);
-            return null;
-        }
-
-        return value;
     }
 
     private static DateTimeOffset _ResolveTimestamp(IDictionary<string, string?> headers, DateTime added)
