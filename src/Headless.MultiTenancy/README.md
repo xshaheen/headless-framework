@@ -30,7 +30,7 @@ Most applications receive this package transitively through the seam packages th
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessInfrastructure();
+builder.AddHeadless();
 
 builder.AddHeadlessTenancy(tenancy => tenancy
     .Http(http => http.ResolveFromClaims())
@@ -40,13 +40,13 @@ builder.AddHeadlessTenancy(tenancy => tenancy
 
 var app = builder.Build();
 
-app.UseHeadlessDefaults();
+app.UseHeadless();
 app.UseAuthentication();
 app.UseHeadlessTenancy();
 app.UseAuthorization();
 ```
 
-`UseHeadlessTenancy()` belongs after application-owned authentication and before application-owned authorization. It does not call either middleware internally.
+`UseHeadlessTenancy()` belongs after application-owned authentication and before application-owned authorization. It does not call either middleware internally. Antiforgery is **opt-in and consumer-owned**: `AddHeadless()` does not register the service unless `options.Antiforgery.Enabled = true`, and `UseHeadless()` does not wire the middleware. CSRF protection applies to cookie-based auth only — opt in (and call `app.UseAntiforgery()` after auth/authz) when needed.
 
 ## Configuration
 

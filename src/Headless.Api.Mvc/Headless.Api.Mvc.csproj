@@ -10,6 +10,6 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Api\Headless.Api.csproj" />
+    <ProjectReference Include="..\Headless.Api.Core\Headless.Api.Core.csproj" />
   </ItemGroup>
 </Project>

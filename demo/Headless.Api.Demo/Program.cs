@@ -8,7 +8,16 @@ using Microsoft.AspNetCore.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessInfrastructure().ConfigureMinimalApi();
+builder
+    .AddHeadless(configureServices: options =>
+    {
+        options.Validation.ValidateServiceProviderOnStartup = false;
+        options.Validation.RequireUseHeadless = false;
+        options.Validation.RequireMapHeadlessEndpoints = false;
+        options.OpenTelemetry.Enabled = false;
+        options.OpenApi.Enabled = false;
+    })
+    .ConfigureMinimalApi();
 builder.Services.AddNswagOpenApi();
 builder.Services.ConfigureMvc();
 builder.Services.AddStatusCodesRewriterMiddleware();

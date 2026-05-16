@@ -146,7 +146,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        builder.AddHeadlessInfrastructure();
+        builder.AddHeadless();
         using var app = builder.Build();
 
         // when
@@ -240,7 +240,14 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
 
         if (addInfrastructure)
         {
-            builder.AddHeadlessInfrastructure();
+            builder.AddHeadless(configureServices: options =>
+            {
+                options.Validation.ValidateServiceProviderOnStartup = false;
+                options.Validation.RequireUseHeadless = false;
+                options.Validation.RequireMapHeadlessEndpoints = false;
+                options.OpenTelemetry.Enabled = false;
+                options.OpenApi.Enabled = false;
+            });
         }
 
         if (setup == TenancySetup.RootHttp)

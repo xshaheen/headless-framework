@@ -18,6 +18,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Headless.Api;
 
+[PublicAPI]
 public static class SetupApiServices
 {
     extension(IServiceCollection services)
@@ -93,7 +94,7 @@ public static class SetupApiServices
             return services;
         }
 
-        public IServiceCollection ConfigureHeadlessDefaultApi()
+        public IServiceCollection ConfigureHeadlessDefaultApi(string aliveTag = "live")
         {
             services.Configure<KestrelServerOptions>(options =>
             {
@@ -102,7 +103,7 @@ public static class SetupApiServices
                 options.Limits.MaxRequestHeaderCount = 40;
             });
 
-            services.AddHealthChecks().AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"]);
+            services.AddHealthChecks().AddCheck("self", () => HealthCheckResult.Healthy(), tags: [aliveTag]);
 
             services.Configure<RouteOptions>(options =>
             {

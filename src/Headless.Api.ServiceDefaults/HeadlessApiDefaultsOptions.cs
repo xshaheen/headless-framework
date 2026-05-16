@@ -1,11 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.HttpOverrides;
 
 namespace Headless.Api;
 
-/// <summary>Options for <see cref="ApiSetup.UseHeadlessDefaults(WebApplication, Action{HeadlessApiDefaultsOptions}?)"/>.</summary>
+/// <summary>Options for <see cref="ApiSetup.UseHeadless(WebApplication, Action{HeadlessApiDefaultsOptions}?)"/>.</summary>
+[PublicAPI]
 public sealed class HeadlessApiDefaultsOptions
 {
     internal const string AppliedKey = "Headless.Api.Defaults.Applied";
@@ -33,6 +35,15 @@ public sealed class HeadlessApiDefaultsOptions
 
     /// <summary>Whether to run ASP.NET Core exception-handler middleware.</summary>
     public bool UseExceptionHandler { get; set; } = true;
+
+    /// <summary>
+    /// The error endpoint path used by ASP.NET Core's exception-handler middleware. Leave unset to use ProblemDetails directly.
+    /// </summary>
+    [StringSyntax("Route")]
+    public string? ExceptionHandlerPath { get; set; }
+
+    /// <summary>Whether exception-handler middleware should create a scope for errors when a path is configured.</summary>
+    public bool CreateScopeForErrors { get; set; } = true;
 
     /// <summary>Whether to run HTTPS redirection middleware.</summary>
     public bool UseHttpsRedirection { get; set; } = true;

@@ -1,6 +1,6 @@
 ---
 domain: Multi-Tenancy
-packages: MultiTenancy, Api, Core, Mediator, Messaging.Core, Orm.EntityFramework, Permissions.Core
+packages: MultiTenancy, Api.Core, Api.ServiceDefaults, Core, Mediator, Messaging.Core, Orm.EntityFramework, Permissions.Core
 ---
 
 # Multi-Tenancy
@@ -29,7 +29,7 @@ Headless multi-tenancy is built from these pieces:
 
 - `Headless.MultiTenancy` provides the root `AddHeadlessTenancy(...)` composition surface and a shared, non-PII tenant posture manifest.
 - `ICurrentTenant` and `ICurrentTenantAccessor` live in the `Headless.Abstractions` namespace (implemented in `src/Headless.Core/Abstractions`) and hold the current tenant in an `AsyncLocal` scope.
-- `Headless.Api` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` when HTTP tenancy is configured.
+- `Headless.Api.Core` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` when HTTP tenancy is configured.
 - `Headless.Mediator` enforces tenant presence at request dispatch boundaries via `.Mediator(mediator => mediator.RequireTenant())` or the lower-level `AddTenantRequiredBehavior()`.
 - `Headless.Messaging.Core` propagates tenant context across message publish/consume and can require tenant context on publish.
 - `Headless.Orm.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities and can opt in to a save-time tenant write guard.
@@ -40,7 +40,7 @@ For tenant-aware hosts, the recommended setup is:
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessInfrastructure();
+builder.AddHeadless();
 builder.AddHeadlessTenancy(tenancy => tenancy
     .Http(http => http.ResolveFromClaims())
     .Mediator(mediator => mediator.RequireTenant())
@@ -49,7 +49,7 @@ builder.AddHeadlessTenancy(tenancy => tenancy
 
 var app = builder.Build();
 
-app.UseHeadlessDefaults();
+app.UseHeadless();
 app.UseAuthentication();
 app.UseHeadlessTenancy();
 app.UseAuthorization();
@@ -57,7 +57,7 @@ app.UseAuthorization();
 
 `UseHeadlessTenancy()` must run after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`. Headless tenancy APIs do not call either middleware internally.
 
-`AddHeadlessInfrastructure()` registers base API infrastructure only. It does not enable tenant posture. It also requires `Headless:StringEncryption` and `Headless:StringHash` to be configured.
+`AddHeadless()` registers base API infrastructure only. It does not enable tenant posture. It also requires `Headless:StringEncryption` and `Headless:StringHash` to be configured.
 
 ## Agent Instructions
 
@@ -76,7 +76,7 @@ app.UseAuthorization();
 
 ## HTTP Setup
 
-`AddHeadlessInfrastructure()` and `AddHeadlessDbContextServices()` register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. The primary HTTP setup path is:
+`AddHeadless()` and `AddHeadlessDbContextServices()` register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. The primary HTTP setup path is:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy
@@ -107,11 +107,11 @@ app.UseAuthorization();
 
 ## HTTP Failure Mapping
 
-`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the Mediator behavior (#236), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. The framework maps it to a normalized 400 ProblemDetails through `HeadlessApiExceptionHandler` — a single `IExceptionHandler` auto-registered by `AddHeadlessProblemDetails()` (called by `AddHeadlessInfrastructure()`). The same handler covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs.
+`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the Mediator behavior (#236), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. The framework maps it to a normalized 400 ProblemDetails through `HeadlessApiExceptionHandler` — a single `IExceptionHandler` auto-registered by `AddHeadlessProblemDetails()` (called by `AddHeadless()`). The same handler covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs.
 
 ```csharp
-builder.AddHeadlessInfrastructure();
-// AddHeadlessInfrastructure() calls AddHeadlessProblemDetails() which auto-registers
+builder.AddHeadless();
+// AddHeadless() calls AddHeadlessProblemDetails() which auto-registers
 // HeadlessApiExceptionHandler. No opt-in needed.
 
 var app = builder.Build();
@@ -143,7 +143,7 @@ The body surfaces only `type`, `title`, `status`, `detail`, the optional `error`
 Prerequisites:
 
 - Call `app.UseExceptionHandler()` yourself to wire the `IExceptionHandler` chain into the pipeline.
-- Handler-chain ordering matters: the tenancy handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, they must register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadlessInfrastructure()`, which calls it).
+- Handler-chain ordering matters: the tenancy handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, they must register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadless()`, which calls it).
 
 The same shape is reachable without going through the handler via `IProblemDetailsCreator.TenantRequired()` (parameterless) for direct callers — e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing.
 
@@ -236,7 +236,7 @@ When enabled, `SaveChanges()` and `SaveChangesAsync()` reject unsafe `IMultiTena
 
 Missing tenant context uses the shared `Headless.Abstractions.MissingTenantContextException`, so HTTP hosts using `UseExceptionHandler()` get the existing normalized 400 mapping. Cross-tenant mutation uses `Headless.Abstractions.CrossTenantWriteException` (located in `Headless.Core` to keep the failure shared across packages without forcing an Api → EF project reference).
 
-`HeadlessApiExceptionHandler` (registered by `AddHeadlessApi()`) maps `CrossTenantWriteException` to HTTP 409 Conflict with the `g:cross-tenant-write` error descriptor and emits a structured warning log (event name `CrossTenantWriteException`). No exception data is leaked into the response body — only the descriptor code and title.
+`HeadlessApiExceptionHandler` (registered by `AddHeadlessProblemDetails()`) maps `CrossTenantWriteException` to HTTP 409 Conflict with the `g:cross-tenant-write` error descriptor and emits a structured warning log (event name `CrossTenantWriteException`). No exception data is leaked into the response body — only the descriptor code and title.
 
 `CrossTenantWriteException` is non-transient and must NOT be retried. Catch-all retry policies (for example `Policy.Handle<Exception>()`) should exclude it explicitly; retrying a cross-tenant write either fails identically or — if the ambient tenant context changes between attempts — persists the unsafe write.
 
@@ -349,7 +349,7 @@ using (currentTenant.Change(tenantId))
 }
 ```
 
-Register a real `ICurrentTenant` (the default `AddHeadlessInfrastructure()` / `AddHeadlessDbContextServices()` registration is sufficient) so the ambient fallback can resolve a value when option B is used.
+Register a real `ICurrentTenant` (the default `AddHeadless()` / `AddHeadlessDbContextServices()` registration is sufficient) so the ambient fallback can resolve a value when option B is used.
 
 ### SignalR
 

@@ -153,3 +153,53 @@ jobs:
               --skip-duplicate
           done
         shell: bash
+
+  push-nuget-packages:
+    name: "Push nuget.org packages"
+    needs: push-github-packages
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+
+    permissions:
+      contents: read
+
+    environment:
+      name: "NuGet Release"
+      url: https://www.nuget.org/packages?q=Headless.
+
+    steps:
+      - name: "Download Artifacts"
+        uses: actions/download-artifact@v8
+        with:
+          name: packages-results
+
+      - name: "Push Packages"
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          packages=(./*.nupkg)
+
+          if [ ${#packages[@]} -eq 0 ]; then
+            echo "No .nupkg files found in the downloaded package artifact."
+            exit 1
+          fi
+
+          for package in "${packages[@]}"; do
+            dotnet nuget push "$package" \
+              --source "https://api.nuget.org/v3/index.json" \
+              --api-key "$NUGET_API_KEY" \
+              --skip-duplicate
+          done
+
+          symbols=(./*.snupkg)
+
+          for symbol in "${symbols[@]}"; do
+            dotnet nuget push "$symbol" \
+              --source "https://api.nuget.org/v3/index.json" \
+              --api-key "$NUGET_API_KEY" \
+              --skip-duplicate
+          done
+        shell: bash

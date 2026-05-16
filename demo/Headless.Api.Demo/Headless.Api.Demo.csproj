@@ -8,7 +8,7 @@
     <InternalsVisibleTo Include="Headless.Api.Tests.Integration" />
     <ProjectReference Include="..\..\src\Headless.Api.MinimalApi\Headless.Api.MinimalApi.csproj" />
     <ProjectReference Include="..\..\src\Headless.Api.Mvc\Headless.Api.Mvc.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Api\Headless.Api.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\src\Headless.OpenApi.Nswag\Headless.OpenApi.Nswag.csproj" />
   </ItemGroup>
 </Project>

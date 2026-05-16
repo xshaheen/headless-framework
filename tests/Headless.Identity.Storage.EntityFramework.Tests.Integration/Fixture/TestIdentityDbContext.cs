@@ -24,7 +24,8 @@ public sealed class TestIdentityDbContext(
         IdentityUserRole<string>,
         IdentityUserLogin<string>,
         IdentityRoleClaim<string>,
-        IdentityUserToken<string>
+        IdentityUserToken<string>,
+        IdentityUserPasskey<string>
     >(services, options),
         IHarnessDbContext
 {

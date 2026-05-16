@@ -31,7 +31,7 @@ builder.Services.AddHeadlessDbContext<
     AppDbContext,
     AppUser, AppRole, Guid,
     AppUserClaim, AppUserRole, AppUserLogin,
-    AppRoleClaim, AppUserToken
+    AppRoleClaim, AppUserToken, AppUserPasskey
 >(options => options.UseNpgsql(connectionString));
 ```
 
@@ -39,8 +39,9 @@ Requires `Headless.Orm.EntityFramework` to be available (transitive dependency).
 
 ## Agent Instructions
 
-- Inherit from `HeadlessIdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>` — all 8 type parameters are required.
+- Prefer inheriting from `HeadlessIdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken, TUserPasskey>` for .NET 10 passkey-aware stores. The 8-type-parameter form remains available and uses `IdentityUserPasskey<TKey>`.
 - Register via `AddHeadlessDbContext<>()` — do NOT use `AddDbContext<>()` directly, as this bypasses framework interceptors and conventions.
+- `AddHeadlessDbContext<>()` defaults `IdentityOptions.Stores.SchemaVersion` to `IdentitySchemaVersions.Version3`; use a later `Configure<IdentityOptions>()` only when a host intentionally targets an older schema.
 - This package depends on `Headless.Orm.EntityFramework` — all ORM conventions (audit fields, soft delete, multi-tenancy filters) apply automatically.
 - Default service lifetime is Scoped. Override via the options if needed.
 - For Identity-only projects without the full framework, this package is NOT appropriate — use `Microsoft.AspNetCore.Identity.EntityFrameworkCore` directly instead.
@@ -59,7 +60,8 @@ Provides a pre-configured Identity DbContext base class with framework-specific 
 
 - `HeadlessIdentityDbContext<>` - Base DbContext with Identity support
 - Framework EF extensions pre-configured
-- Support for custom user, role, and claim types
+- Support for custom user, role, claim, and passkey types
+- Identity schema version 3 by default for passkey support
 - Flexible service lifetime configuration
 
 ## Installation
@@ -71,13 +73,15 @@ dotnet add package Headless.Identity.Storage.EntityFramework
 ## Quick Start
 
 ```csharp
-public class AppDbContext : HeadlessIdentityDbContext<
-    AppUser, AppRole, Guid,
-    AppUserClaim, AppUserRole,
-    AppUserLogin, AppRoleClaim, AppUserToken
->
+public class AppDbContext(HeadlessDbContextServices services, DbContextOptions options)
+    : HeadlessIdentityDbContext<
+        AppUser, AppRole, Guid,
+        AppUserClaim, AppUserRole,
+        AppUserLogin, AppRoleClaim, AppUserToken,
+        AppUserPasskey
+    >(services, options)
 {
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+    public override string? DefaultSchema => null;
 }
 
 // Registration
@@ -87,13 +91,13 @@ builder.Services.AddHeadlessDbContext<
     AppDbContext,
     AppUser, AppRole, Guid,
     AppUserClaim, AppUserRole, AppUserLogin,
-    AppRoleClaim, AppUserToken
+    AppRoleClaim, AppUserToken, AppUserPasskey
 >(options => options.UseNpgsql(connectionString));
 ```
 
 ## Configuration
 
-No additional configuration required beyond DbContext options.
+No additional configuration is required beyond DbContext options for greenfield applications. Registration configures `IdentityOptions.Stores.SchemaVersion` to `IdentitySchemaVersions.Version3` so passkey storage is enabled by default.
 
 ## Dependencies
 
@@ -104,3 +108,4 @@ No additional configuration required beyond DbContext options.
 
 - Registers DbContext with specified lifetime (default: Scoped)
 - Adds framework EF extensions to DbContext options
+- Configures Identity store schema version 3 by default

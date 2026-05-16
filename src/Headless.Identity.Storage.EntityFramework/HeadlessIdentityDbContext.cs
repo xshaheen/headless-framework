@@ -16,7 +16,18 @@ public abstract class HeadlessIdentityDbContext<
     TUserLogin,
     TRoleClaim,
     TUserToken
-> : IdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>, IHeadlessDbContext
+>
+    : HeadlessIdentityDbContext<
+        TUser,
+        TRole,
+        TKey,
+        TUserClaim,
+        TUserRole,
+        TUserLogin,
+        TRoleClaim,
+        TUserToken,
+        IdentityUserPasskey<TKey>
+    >
     where TUser : IdentityUser<TKey>
     where TRole : IdentityRole<TKey>
     where TKey : IEquatable<TKey>
@@ -25,6 +36,33 @@ public abstract class HeadlessIdentityDbContext<
     where TUserLogin : IdentityUserLogin<TKey>
     where TRoleClaim : IdentityRoleClaim<TKey>
     where TUserToken : IdentityUserToken<TKey>
+{
+    protected HeadlessIdentityDbContext(HeadlessDbContextServices services, DbContextOptions options)
+        : base(services, options) { }
+}
+
+public abstract class HeadlessIdentityDbContext<
+    TUser,
+    TRole,
+    TKey,
+    TUserClaim,
+    TUserRole,
+    TUserLogin,
+    TRoleClaim,
+    TUserToken,
+    TUserPasskey
+>
+    : IdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken, TUserPasskey>,
+        IHeadlessDbContext
+    where TUser : IdentityUser<TKey>
+    where TRole : IdentityRole<TKey>
+    where TKey : IEquatable<TKey>
+    where TUserClaim : IdentityUserClaim<TKey>
+    where TUserRole : IdentityUserRole<TKey>
+    where TUserLogin : IdentityUserLogin<TKey>
+    where TRoleClaim : IdentityRoleClaim<TKey>
+    where TUserToken : IdentityUserToken<TKey>
+    where TUserPasskey : IdentityUserPasskey<TKey>
 {
     private readonly HeadlessDbContextRuntime _runtime;
 

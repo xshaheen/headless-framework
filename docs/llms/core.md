@@ -83,7 +83,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher, Security.
 - For local (in-process) domain events, register `AddLocalMessagePublisher()` and implement `ILocalMessageHandler<T>`. Use `LocalEventHandlerOrderAttribute` to control handler execution order.
 - For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
 - Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically.
-- `Headless.Extensions` has no configuration. `Headless.Core` implementations are registered by `Headless.Api` or other host packages — do not register them manually.
+- `Headless.Extensions` has no configuration. `Headless.Core` implementations are registered by `Headless.Api.Core` or other host packages — do not register them manually.
 - `Headless.Settings.Core` requires `IStringEncryptionService` to be registered before `AddSettingsManagementCore(...)`. Recommended: bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
 - Use `Run.WithRetriesAsync()` from `Headless.Core` for retry logic with exponential backoff instead of manual retry loops.
 - Use `LogState` with `LoggerExtensions` for structured logging with tags and properties.
@@ -272,7 +272,7 @@ var result = await Run.WithRetriesAsync(
 
 ## Configuration
 
-No configuration required. Implementations are registered by `Headless.Api` or other host packages.
+No configuration required. Implementations are registered by `Headless.Api.Core` or other host packages.
 
 ## Dependencies
 

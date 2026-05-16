@@ -24,7 +24,7 @@ dotnet add package Headless.Api.MinimalApi
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadlessInfrastructure().ConfigureMinimalApi();
+builder.AddHeadless().ConfigureMinimalApi();
 
 var app = builder.Build();
 
@@ -36,11 +36,11 @@ app.Run();
 
 ## Configuration
 
-No additional configuration beyond what `AddHeadlessInfrastructure()` requires. Configure `Headless:StringEncryption` and `Headless:StringHash`.
+No additional configuration beyond what `AddHeadless()` requires. Configure `Headless:StringEncryption` and `Headless:StringHash`.
 
 ## Dependencies
 
-- `Headless.Api`
+- `Headless.Api.Core`
 - `Asp.Versioning.Http`
 - `Microsoft.EntityFrameworkCore`
 
