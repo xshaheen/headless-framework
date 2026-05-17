@@ -30,7 +30,6 @@ internal static class RetryExceptionClassifier
             is SubscriberNotFoundException
                 or ArgumentNullException
                 or ArgumentException
-                or InvalidOperationException
                 or NotSupportedException;
     }
 }

@@ -20,10 +20,10 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(interval);
 
         // when
-        var d0 = strategy.Compute(0, _Transient);
-        var d1 = strategy.Compute(1, _Transient);
-        var d5 = strategy.Compute(5, _Transient);
-        var d100 = strategy.Compute(100, _Transient);
+        var d0 = strategy.Compute(0, 0, _Transient);
+        var d1 = strategy.Compute(1, 0, _Transient);
+        var d5 = strategy.Compute(5, 0, _Transient);
+        var d100 = strategy.Compute(100, 0, _Transient);
 
         // then - all decisions should be Continue with the fixed interval
         d0.Should().Be(RetryDecision.Continue(interval));
@@ -40,7 +40,7 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(interval);
 
         // when
-        var decision = strategy.Compute(0, new TimeoutException());
+        var decision = strategy.Compute(0, 0, new TimeoutException());
 
         // then - fixed interval for transient exceptions
         decision.Should().Be(RetryDecision.Continue(interval));
@@ -54,11 +54,10 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
 
         // when/then - permanent exceptions should not be retried
 #pragma warning disable MA0015
-        strategy.Compute(0, new SubscriberNotFoundException("Not found")).Should().Be(RetryDecision.Stop);
-        strategy.Compute(0, new ArgumentNullException("value")).Should().Be(RetryDecision.Stop);
-        strategy.Compute(0, new ArgumentException("Invalid arg", "value")).Should().Be(RetryDecision.Stop);
-        strategy.Compute(0, new InvalidOperationException("Invalid op")).Should().Be(RetryDecision.Stop);
-        strategy.Compute(0, new NotSupportedException("Not supported")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, 0, new SubscriberNotFoundException("Not found")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, 0, new ArgumentNullException("value")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, 0, new ArgumentException("Invalid arg", "value")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, 0, new NotSupportedException("Not supported")).Should().Be(RetryDecision.Stop);
 #pragma warning restore MA0015
     }
 
@@ -69,9 +68,12 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(TimeSpan.FromSeconds(1));
 
         // when/then - transient exceptions should be retried
-        strategy.Compute(0, new TimeoutException("Timeout")).Outcome.Should().Be(RetryDecision.Kind.Continue);
-        strategy.Compute(0, new IOException("Network error")).Outcome.Should().Be(RetryDecision.Kind.Continue);
-        strategy.Compute(0, new ApplicationException("Generic error")).Outcome.Should().Be(RetryDecision.Kind.Continue);
+        strategy.Compute(0, 0, new TimeoutException("Timeout")).Outcome.Should().Be(RetryDecision.Kind.Continue);
+        strategy.Compute(0, 0, new IOException("Network error")).Outcome.Should().Be(RetryDecision.Kind.Continue);
+        strategy
+            .Compute(0, 0, new ApplicationException("Generic error"))
+            .Outcome.Should()
+            .Be(RetryDecision.Kind.Continue);
     }
 
     [Fact]
@@ -81,7 +83,7 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
 
         // when
-        var decision = strategy.Compute(0, _Transient);
+        var decision = strategy.Compute(0, 0, _Transient);
 
         // then
         decision.Should().Be(RetryDecision.Continue(TimeSpan.Zero));
@@ -95,7 +97,7 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(interval);
 
         // when
-        var decision = strategy.Compute(0, _Transient);
+        var decision = strategy.Compute(0, 0, _Transient);
 
         // then
         decision.Should().Be(RetryDecision.Continue(interval));
@@ -109,7 +111,7 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(interval);
 
         // when
-        var decision = strategy.Compute(0, _Transient);
+        var decision = strategy.Compute(0, 0, _Transient);
 
         // then
         decision.Should().Be(RetryDecision.Continue(interval));
@@ -124,7 +126,7 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var results = new ConcurrentBag<RetryDecision>();
 
         // when
-        Parallel.For(0, 1000, i => results.Add(strategy.Compute(i % 10, _Transient)));
+        Parallel.For(0, 1000, i => results.Add(strategy.Compute(i % 10, 0, _Transient)));
 
         // then - all results should be Continue with the same fixed interval
         results.Should().HaveCount(1000);

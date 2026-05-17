@@ -20,10 +20,10 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy(initialDelay, TimeSpan.FromMinutes(10), 2.0);
 
         // when
-        var decision0 = strategy.Compute(0, _Transient);
-        var decision1 = strategy.Compute(1, _Transient);
-        var decision2 = strategy.Compute(2, _Transient);
-        var decision3 = strategy.Compute(3, _Transient);
+        var decision0 = strategy.Compute(0, 0, _Transient);
+        var decision1 = strategy.Compute(1, 0, _Transient);
+        var decision2 = strategy.Compute(2, 0, _Transient);
+        var decision3 = strategy.Compute(3, 0, _Transient);
 
         // then - base delays (before jitter) are 1, 2, 4, 8 seconds, ±25%
         decision0.Outcome.Should().Be(RetryDecision.Kind.Continue);
@@ -49,7 +49,7 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         // when - run multiple times to get different jitter values
         for (var i = 0; i < 100; i++)
         {
-            delays.Add(strategy.Compute(0, _Transient).Delay.TotalSeconds);
+            delays.Add(strategy.Compute(0, 0, _Transient).Delay.TotalSeconds);
         }
 
         // then - delays should vary due to jitter; with ±25% on 10s, values in [7.5, 12.5]
@@ -67,7 +67,7 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy(TimeSpan.FromSeconds(1), maxDelay, 2.0);
 
         // when - after many retries, exponential would be huge
-        var decision = strategy.Compute(20, _Transient);
+        var decision = strategy.Compute(20, 0, _Transient);
 
         // then - should be capped at max delay (±25% jitter)
         decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
@@ -92,7 +92,7 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
             {
                 try
                 {
-                    results.Add(strategy.Compute(i % 10, _Transient));
+                    results.Add(strategy.Compute(i % 10, 0, _Transient));
                 }
                 catch (Exception ex)
                 {
@@ -114,11 +114,10 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy();
 
         // when/then - permanent exceptions should not be retried
-        strategy.Compute(0, new SubscriberNotFoundException("Not found")).Should().Be(RetryDecision.Stop);
-        strategy.Compute(0, new ArgumentNullException("value")).Should().Be(RetryDecision.Stop);
-        strategy.Compute(0, new ArgumentException("Invalid arg", "value")).Should().Be(RetryDecision.Stop);
-        strategy.Compute(0, new InvalidOperationException("Invalid op")).Should().Be(RetryDecision.Stop);
-        strategy.Compute(0, new NotSupportedException("Not supported")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, 0, new SubscriberNotFoundException("Not found")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, 0, new ArgumentNullException("value")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, 0, new ArgumentException("Invalid arg", "value")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, 0, new NotSupportedException("Not supported")).Should().Be(RetryDecision.Stop);
     }
 
     [Fact]
@@ -128,9 +127,12 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy();
 
         // when/then - transient exceptions should be retried
-        strategy.Compute(0, new TimeoutException("Timeout")).Outcome.Should().Be(RetryDecision.Kind.Continue);
-        strategy.Compute(0, new IOException("Network error")).Outcome.Should().Be(RetryDecision.Kind.Continue);
-        strategy.Compute(0, new ApplicationException("Generic error")).Outcome.Should().Be(RetryDecision.Kind.Continue);
+        strategy.Compute(0, 0, new TimeoutException("Timeout")).Outcome.Should().Be(RetryDecision.Kind.Continue);
+        strategy.Compute(0, 0, new IOException("Network error")).Outcome.Should().Be(RetryDecision.Kind.Continue);
+        strategy
+            .Compute(0, 0, new ApplicationException("Generic error"))
+            .Outcome.Should()
+            .Be(RetryDecision.Kind.Continue);
     }
 
     [Fact]
@@ -140,7 +142,7 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy();
 
         // when
-        var decision = strategy.Compute(0, _Transient);
+        var decision = strategy.Compute(0, 0, _Transient);
 
         // then - default initial delay is 1 second with ±25% jitter
         decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
@@ -154,9 +156,9 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy(TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(10), 3.0);
 
         // when
-        var d0 = strategy.Compute(0, _Transient);
-        var d1 = strategy.Compute(1, _Transient);
-        var d2 = strategy.Compute(2, _Transient);
+        var d0 = strategy.Compute(0, 0, _Transient);
+        var d1 = strategy.Compute(1, 0, _Transient);
+        var d2 = strategy.Compute(2, 0, _Transient);
 
         // then - with multiplier 3: 1, 3, 9 seconds (±25% jitter)
         d0.Delay.TotalSeconds.Should().BeGreaterThanOrEqualTo(0.75).And.BeLessThanOrEqualTo(1.25);
@@ -171,7 +173,7 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         var strategy = new ExponentialBackoffStrategy(TimeSpan.FromSeconds(2));
 
         // when
-        var decision = strategy.Compute(0, _Transient);
+        var decision = strategy.Compute(0, 0, _Transient);
 
         // then - 2^0 = 1, so delay = initialDelay * 1 = 2 seconds (±25%)
         decision.Outcome.Should().Be(RetryDecision.Kind.Continue);
@@ -187,7 +189,7 @@ public sealed class ExponentialBackoffStrategyTests : TestBase
         // when - run many times to ensure jitter never causes negative
         for (var i = 0; i < 1000; i++)
         {
-            var decision = strategy.Compute(0, _Transient);
+            var decision = strategy.Compute(0, 0, _Transient);
 
             // then
             decision.Outcome.Should().Be(RetryDecision.Kind.Continue);

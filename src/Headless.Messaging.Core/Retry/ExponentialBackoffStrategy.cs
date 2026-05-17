@@ -30,7 +30,7 @@ public sealed class ExponentialBackoffStrategy : IRetryBackoffStrategy
     }
 
     /// <inheritdoc />
-    public RetryDecision Compute(int persistedRetryCount, Exception exception)
+    public RetryDecision Compute(int persistedRetryCount, int inlineRetryCount, Exception exception)
     {
         if (RetryExceptionClassifier.IsPermanent(exception))
         {

@@ -80,7 +80,7 @@ internal static class RetryHelper
 
         try
         {
-            decision = policy.BackoffStrategy.Compute(message.Retries, exception);
+            decision = policy.BackoffStrategy.Compute(message.Retries, inlineRetries, exception);
         }
         catch (Exception strategyEx)
         {

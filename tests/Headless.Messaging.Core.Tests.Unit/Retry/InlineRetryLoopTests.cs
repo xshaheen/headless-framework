@@ -106,4 +106,33 @@ public sealed class InlineRetryLoopTests : TestBase
         result.Should().Be(2);
         attempts.Should().Be(2);
     }
+
+    [Fact]
+    public async Task should_exit_loop_without_retry_when_delay_equals_dispatch_timeout()
+    {
+        // A strategy that returns Delay >= DispatchTimeout would cause the inline loop to snooze
+        // past the storage lease boundary, enabling another replica to re-pick and double-dispatch
+        // the same row. The guard must return the current result without incrementing inlineRetries.
+        var dispatchTimeout = TimeSpan.FromMinutes(5);
+        var policy = new RetryPolicyOptions { MaxInlineRetries = 3, DispatchTimeout = dispatchTimeout };
+        var attempts = 0;
+        var observedInlineRetries = new List<int>();
+
+        var result = await InlineRetryLoop.ExecuteAsync(
+            (inlineRetries, _) =>
+            {
+                observedInlineRetries.Add(inlineRetries);
+                attempts++;
+                // Return exactly DispatchTimeout — guard must fire and exit.
+                return Task.FromResult((RetryDecision.Continue(dispatchTimeout), attempts));
+            },
+            policy,
+            TimeProvider.System,
+            CancellationToken.None
+        );
+
+        result.Should().Be(1);
+        attempts.Should().Be(1, "loop must exit on the first attempt when delay >= DispatchTimeout");
+        observedInlineRetries.Should().Equal(0);
+    }
 }
