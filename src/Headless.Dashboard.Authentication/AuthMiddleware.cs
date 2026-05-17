@@ -4,6 +4,17 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Dashboard.Authentication;
 
+internal static partial class AuthMiddlewareLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "AuthenticationFailed",
+        Level = LogLevel.Warning,
+        Message = "Authentication failed for {Path}: {Error}"
+    )]
+    public static partial void LogAuthenticationFailed(this ILogger logger, string path, string? error);
+}
+
 /// <summary>
 /// Authentication middleware that only protects API endpoints.
 /// Static files, negotiate, and auth endpoints are excluded.
@@ -55,11 +66,9 @@ public sealed class AuthMiddleware
         if (!authResult.IsAuthenticated)
         {
             // Log path only (no query string) — access_token may be in query params.
-            _logger.LogWarning(
-                "Authentication failed for {Path}: {Error}",
-                context.Request.Path,
-                authResult.ErrorMessage
-            );
+            // CR/LF stripped so user-controlled path can't inject forged log entries.
+            var safePath = _SanitizeForLog(context.Request.Path.Value);
+            _logger.LogAuthenticationFailed(safePath, authResult.ErrorMessage);
             context.Response.StatusCode = 401;
             await context.Response.WriteAsync("Unauthorized");
             return;
@@ -70,6 +79,18 @@ public sealed class AuthMiddleware
         context.Items[AuthenticatedKey] = true;
 
         await _next(context);
+    }
+
+    private static string _SanitizeForLog(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        return value
+            .Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Replace("\n", string.Empty, StringComparison.Ordinal);
     }
 
     private static bool _IsExcludedPath(string path)
