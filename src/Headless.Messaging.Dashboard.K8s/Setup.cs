@@ -9,7 +9,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>Contains extension methods to <see cref="IServiceCollection" /> for configuring consistence services.</summary>
 // ReSharper disable once InconsistentNaming
-public static class MessagesK8sDashboardSetup
+public static class SetupK8sDashboard
 {
     /// <summary>
     /// Run only messaging dashboard to view data based on the nodes discovered in Kubernetes.

@@ -13,7 +13,7 @@ using StackExchange.Redis;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-public static class MessagesRedisSetup
+public static class SetupRedisStreamsMessaging
 {
     extension(MessagingSetupBuilder setup)
     {

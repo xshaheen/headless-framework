@@ -7,7 +7,7 @@ using Headless.Messaging.OpenTelemetry;
 // ReSharper disable once CheckNamespace
 namespace OpenTelemetry.Trace;
 
-public static class MessagingOpenTelemetryTracingSetup
+public static class SetupMessagingOpenTelemetry
 {
     /// <summary>
     /// Enables the message eventing data collection for messaging.

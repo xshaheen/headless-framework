@@ -11,7 +11,7 @@ using StackExchange.Redis;
 namespace Tests;
 
 /// <summary>
-/// Unit tests for <see cref="MessagesRedisSetup"/>.
+/// Unit tests for <see cref="SetupRedisStreamsMessaging"/>.
 /// </summary>
 public sealed class SetupTests : TestBase
 {

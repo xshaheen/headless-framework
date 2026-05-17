@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class InMemoryQueueSetupTests : TestBase
+public sealed class SetupInMemoryQueueTests : TestBase
 {
     [Fact]
     public async Task should_register_transport_services()

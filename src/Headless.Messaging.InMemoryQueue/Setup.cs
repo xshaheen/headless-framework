@@ -9,7 +9,7 @@ using Headless.Messaging.Transport;
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>Extension methods for configuring messaging with In-Memory message queue.</summary>
-public static class InMemoryQueueSetup
+public static class SetupInMemoryQueue
 {
     extension(MessagingSetupBuilder setup)
     {

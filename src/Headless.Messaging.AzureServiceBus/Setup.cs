@@ -9,7 +9,7 @@ using Headless.Messaging.Transport;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-public static class MessagesAzureServiceBusSetup
+public static class SetupAzureServiceBusMessaging
 {
     extension(MessagingSetupBuilder setup)
     {
