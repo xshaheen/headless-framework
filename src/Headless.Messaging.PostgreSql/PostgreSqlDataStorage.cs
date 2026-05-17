@@ -11,6 +11,7 @@ using Headless.Messaging.Serialization;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Headless.Messaging.PostgreSql;
 
@@ -244,7 +245,10 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
-            new NpgsqlParameter("@OriginalRetries", originalRetries ?? (object)DBNull.Value),
+            new NpgsqlParameter("@OriginalRetries", NpgsqlDbType.Integer)
+            {
+                Value = originalRetries ?? (object)DBNull.Value,
+            },
             new NpgsqlParameter("@StatusName", state.ToString("G")),
             new NpgsqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -359,7 +363,7 @@ public sealed class PostgreSqlDataStorage(
         [
             new NpgsqlParameter("@Id", longIdGenerator.Create()),
             new NpgsqlParameter("@Name", name),
-            new NpgsqlParameter("@Group", group),
+            new NpgsqlParameter("@Group", NpgsqlDbType.Varchar) { Value = (object?)group ?? DBNull.Value },
             new NpgsqlParameter("@Content", content),
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
@@ -401,7 +405,7 @@ public sealed class PostgreSqlDataStorage(
         [
             new NpgsqlParameter("@Id", mediumMessage.StorageId),
             new NpgsqlParameter("@Name", name),
-            new NpgsqlParameter("@Group", group),
+            new NpgsqlParameter("@Group", NpgsqlDbType.Varchar) { Value = (object?)group ?? DBNull.Value },
             new NpgsqlParameter("@Content", mediumMessage.Content),
             new NpgsqlParameter("@Retries", mediumMessage.Retries),
             new NpgsqlParameter("@Added", mediumMessage.Added),
@@ -585,7 +589,10 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
-            new NpgsqlParameter("@OriginalRetries", originalRetries ?? (object)DBNull.Value),
+            new NpgsqlParameter("@OriginalRetries", NpgsqlDbType.Integer)
+            {
+                Value = originalRetries ?? (object)DBNull.Value,
+            },
             new NpgsqlParameter("@StatusName", state.ToString("G")),
         ];
 
