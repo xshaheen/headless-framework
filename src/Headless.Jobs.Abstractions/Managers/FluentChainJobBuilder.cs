@@ -15,11 +15,13 @@ public class FluentChainJobBuilder<TTimeJob>
 
     private FluentChainJobBuilder()
     {
+        var now = DateTime.UtcNow;
+
         _rootTicker = new TTimeJob
         {
             Id = Guid.NewGuid(),
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
+            CreatedAt = now,
+            UpdatedAt = now,
             Children = new List<TTimeJob>(),
         };
 
@@ -138,24 +140,28 @@ public class FluentChainJobBuilder<TTimeJob>
 
     private TTimeJob _CreateChild()
     {
+        var now = DateTime.UtcNow;
+
         return new TTimeJob
         {
             Id = Guid.NewGuid(),
             ParentId = _rootTicker.Id,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
+            CreatedAt = now,
+            UpdatedAt = now,
             Children = new List<TTimeJob>(),
         };
     }
 
     private static TTimeJob _CreateGrandChild(TTimeJob parent)
     {
+        var now = DateTime.UtcNow;
+
         return new TTimeJob
         {
             Id = Guid.NewGuid(),
             ParentId = parent.Id,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
+            CreatedAt = now,
+            UpdatedAt = now,
             Children = [],
         };
     }

@@ -8,14 +8,17 @@ namespace Headless.Messaging.Testing;
 /// Thread-safe store that records messages observed by the test harness and provides
 /// signal-based async waiting for message observation.
 /// </summary>
-internal sealed class MessageObservationStore
+internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
 {
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly ConcurrentQueue<RecordedMessage> _published = new();
     private readonly ConcurrentQueue<RecordedMessage> _consumed = new();
     private readonly ConcurrentQueue<RecordedMessage> _faulted = new();
     private readonly ConcurrentQueue<RecordedMessage> _exhausted = new();
-    private readonly ConcurrentDictionary<(Type, MessageObservationType), ConcurrentQueue<RecordedMessage>> _typeIndex =
-        new();
+    private readonly ConcurrentDictionary<
+        (Type, MessageObservationType),
+        ConcurrentQueue<RecordedMessage>
+    > _typeIndex = [];
     private readonly List<WaiterEntry> _waiters = [];
     private readonly Lock _waitersLock = new();
 
@@ -117,7 +120,7 @@ internal sealed class MessageObservationStore
             _waiters.Add(entry);
         }
 
-        var startTime = DateTimeOffset.UtcNow;
+        var startTime = _timeProvider.GetUtcNow();
 
         try
         {
@@ -129,7 +132,7 @@ internal sealed class MessageObservationStore
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             // Timeout — not cancelled externally
-            var elapsed = DateTimeOffset.UtcNow - startTime;
+            var elapsed = _timeProvider.GetUtcNow() - startTime;
             var observed = _GetQueue(type).ToArray();
             throw new MessageObservationTimeoutException(
                 messageType,
@@ -204,6 +207,8 @@ internal sealed class MessageObservationStore
             MessageObservationType.Exhausted => _exhausted,
             _ => throw new ArgumentOutOfRangeException(nameof(type), type, null),
         };
+
+    internal DateTimeOffset GetUtcNow() => _timeProvider.GetUtcNow();
 
     private sealed record WaiterEntry(
         Type MessageType,

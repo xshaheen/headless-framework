@@ -8,9 +8,12 @@ namespace Headless.Messaging.Dashboard;
 internal class MessagingMetricsEventListener : EventListener
 {
     public const int HistorySize = 300;
+    private readonly TimeProvider _timeProvider;
 
-    public MessagingMetricsEventListener()
+    public MessagingMetricsEventListener(TimeProvider? timeProvider = null)
     {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+
         for (var i = 0; i < HistorySize; i++)
         {
             PublishedPerSec.Add(0);
@@ -27,7 +30,7 @@ internal class MessagingMetricsEventListener : EventListener
     {
         var warpArr = new CircularBuffer<int?>[4];
 
-        var startTime = (int)DateTimeOffset.UtcNow.AddSeconds(-300).ToUnixTimeSeconds();
+        var startTime = (int)_timeProvider.GetUtcNow().AddSeconds(-300).ToUnixTimeSeconds();
         var endTime = startTime + 300;
 
         var timeSerials = new CircularBuffer<int?>(HistorySize);

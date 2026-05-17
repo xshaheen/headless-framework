@@ -17,7 +17,8 @@ public static class DebounceExtensions
         {
             var current = Interlocked.Increment(ref last);
 
-            _ = Task.Delay(interval)
+            _ = TimeProvider
+                .System.Delay(interval)
                 .ContinueWith(
                     task =>
                     {
@@ -43,7 +44,8 @@ public static class DebounceExtensions
         {
             var current = Interlocked.Increment(ref last);
 
-            _ = Task.Delay(interval)
+            _ = TimeProvider
+                .System.Delay(interval)
                 .ContinueWith(
                     task =>
                     {
@@ -69,7 +71,8 @@ public static class DebounceExtensions
         {
             var current = Interlocked.Increment(ref last);
 
-            _ = Task.Delay(interval)
+            _ = TimeProvider
+                .System.Delay(interval)
                 .ContinueWith(
                     task =>
                     {
@@ -95,7 +98,8 @@ public static class DebounceExtensions
         {
             var current = Interlocked.Increment(ref last);
 
-            _ = Task.Delay(interval)
+            _ = TimeProvider
+                .System.Delay(interval)
                 .ContinueWith(
                     task =>
                     {
@@ -121,7 +125,8 @@ public static class DebounceExtensions
         {
             var current = Interlocked.Increment(ref last);
 
-            _ = Task.Delay(interval)
+            _ = TimeProvider
+                .System.Delay(interval)
                 .ContinueWith(
                     task =>
                     {
@@ -150,7 +155,8 @@ public static class DebounceExtensions
         {
             var current = Interlocked.Increment(ref last);
 
-            _ = Task.Delay(interval)
+            _ = TimeProvider
+                .System.Delay(interval)
                 .ContinueWith(
                     task =>
                     {
@@ -179,7 +185,8 @@ public static class DebounceExtensions
         {
             var current = Interlocked.Increment(ref last);
 
-            _ = Task.Delay(interval)
+            _ = TimeProvider
+                .System.Delay(interval)
                 .ContinueWith(
                     task =>
                     {
@@ -208,7 +215,8 @@ public static class DebounceExtensions
         {
             var current = Interlocked.Increment(ref last);
 
-            _ = Task.Delay(interval)
+            _ = TimeProvider
+                .System.Delay(interval)
                 .ContinueWith(
                     task =>
                     {
@@ -237,7 +245,8 @@ public static class DebounceExtensions
         {
             var current = Interlocked.Increment(ref last);
 
-            _ = Task.Delay(interval)
+            _ = TimeProvider
+                .System.Delay(interval)
                 .ContinueWith(
                     task =>
                     {
@@ -266,7 +275,8 @@ public static class DebounceExtensions
         {
             var current = Interlocked.Increment(ref last);
 
-            _ = Task.Delay(interval)
+            _ = TimeProvider
+                .System.Delay(interval)
                 .ContinueWith(
                     task =>
                     {

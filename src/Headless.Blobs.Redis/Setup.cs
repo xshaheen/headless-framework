@@ -34,6 +34,7 @@ public static class RedisBlobSetup
 
         private IServiceCollection _AddCore()
         {
+            services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<IBlobNamingNormalizer, CrossOsNamingNormalizer>();
             services.AddSingleton<IBlobStorage, RedisBlobStorage>();
 

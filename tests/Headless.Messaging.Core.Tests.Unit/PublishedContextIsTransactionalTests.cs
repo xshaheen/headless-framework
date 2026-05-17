@@ -45,7 +45,13 @@ public sealed class PublishedContextIsTransactionalTests : TestBase
             optionsAccessor,
             new NullCurrentTenant()
         );
-        var publisher = new DirectPublisher(serializer, transport, publishRequestFactory, pipeline);
+        var publisher = new DirectPublisher(
+            serializer,
+            transport,
+            publishRequestFactory,
+            pipeline,
+            TimeProvider.System
+        );
 
         // when
         await publisher.PublishAsync(new TestMessage("hi"), cancellationToken: AbortToken);
@@ -168,7 +174,14 @@ public sealed class PublishedContextIsTransactionalTests : TestBase
             accessor.Current = tx;
         }
 
-        var outbox = new OutboxPublisher(storage, dispatcher, publishRequestFactory, accessor, pipeline);
+        var outbox = new OutboxPublisher(
+            storage,
+            dispatcher,
+            publishRequestFactory,
+            accessor,
+            pipeline,
+            TimeProvider.System
+        );
         return (outbox, tx);
     }
 }

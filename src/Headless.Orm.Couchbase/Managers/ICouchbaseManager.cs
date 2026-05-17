@@ -58,11 +58,17 @@ public sealed class CouchbaseManager : ICouchbaseManager
     private readonly ResiliencePipeline _retryPipeline;
     private readonly ICouchbaseClustersProvider _clustersProvider;
     private readonly ILogger<CouchbaseManager> _logger;
+    private readonly TimeProvider _timeProvider;
 
-    public CouchbaseManager(ICouchbaseClustersProvider clustersProvider, ILogger<CouchbaseManager> logger)
+    public CouchbaseManager(
+        ICouchbaseClustersProvider clustersProvider,
+        ILogger<CouchbaseManager> logger,
+        TimeProvider? timeProvider = null
+    )
     {
         _clustersProvider = clustersProvider;
         _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
 
         var retryStrategyOptions = new RetryStrategyOptions
         {
@@ -80,7 +86,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
             ),
         };
 
-        _retryPipeline = new ResiliencePipelineBuilder()
+        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = _timeProvider }
             .AddRetry(retryStrategyOptions)
             .AddTimeout(10.Seconds())
             .Build();
@@ -225,7 +231,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
                 }
 
                 await _CreateCollectionAsync(clusterKey, bucket, scope, collectionName, token);
-                await Task.Delay(50.Milliseconds(), token);
+                await _timeProvider.Delay(50.Milliseconds(), token);
                 await _CreatePrimaryIndexOnCollectionAsync(clusterKey, await scope.CollectionAsync(collectionName));
             }
         );

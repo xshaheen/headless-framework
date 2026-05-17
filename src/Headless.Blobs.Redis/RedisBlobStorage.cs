@@ -19,6 +19,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 {
     private readonly ILogger _logger;
     private readonly ISerializer _serializer;
+    private readonly TimeProvider _timeProvider;
     private readonly RedisBlobStorageOptions _options;
 
     // Lua script for atomic rename: copies blob+info then deletes source
@@ -71,11 +72,16 @@ public sealed class RedisBlobStorage : IBlobStorage
 
     public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
 
-    public RedisBlobStorage(IOptions<RedisBlobStorageOptions> optionsAccessor, IJsonSerializer defaultSerializer)
+    public RedisBlobStorage(
+        IOptions<RedisBlobStorageOptions> optionsAccessor,
+        IJsonSerializer defaultSerializer,
+        TimeProvider? timeProvider = null
+    )
     {
         _options = optionsAccessor.Value;
         _logger = _options.LoggerFactory?.CreateLogger(typeof(RedisBlobStorage)) ?? NullLogger.Instance;
         _serializer = _options.Serializer ?? defaultSerializer;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     #region Create Container
@@ -146,11 +152,12 @@ public sealed class RedisBlobStorage : IBlobStorage
             memory.Seek(0, SeekOrigin.Begin);
             memory.SetLength(0);
 
+            var now = _timeProvider.GetUtcNow();
             var blobInfo = new BlobInfo
             {
                 BlobKey = blobPath,
-                Created = DateTimeOffset.UtcNow,
-                Modified = DateTimeOffset.UtcNow,
+                Created = now,
+                Modified = now,
                 Size = fileSize,
                 Metadata = metadata,
             };

@@ -47,7 +47,11 @@ internal static class RetryHelper
     /// FCM returns Retry-After header with HTTP 429 QuotaExceeded.
     /// Header format: "Retry-After: 120" (seconds) or "Retry-After: Wed, 21 Oct 2015 07:28:00 GMT".
     /// </remarks>
-    public static TimeSpan GetRetryAfterDelay(FirebaseMessagingException exception, TimeSpan defaultDelay)
+    public static TimeSpan GetRetryAfterDelay(
+        FirebaseMessagingException exception,
+        TimeSpan defaultDelay,
+        TimeProvider timeProvider
+    )
     {
         if (exception.HttpResponse?.Headers.RetryAfter is not { } retryAfter)
         {
@@ -62,7 +66,7 @@ internal static class RetryHelper
 
         if (retryAfter.Date.HasValue)
         {
-            var delay = retryAfter.Date.Value - DateTimeOffset.UtcNow;
+            var delay = retryAfter.Date.Value - timeProvider.GetUtcNow();
             return delay > TimeSpan.Zero ? delay : defaultDelay;
         }
 

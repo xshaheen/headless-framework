@@ -568,7 +568,7 @@ public sealed class DirectPublisherTests : TestBase
         );
 
         var pipeline = new PublishExecutionPipeline(new ServiceCollection().BuildServiceProvider());
-        return new DirectPublisher(serializer, transport, publishRequestFactory, pipeline);
+        return new DirectPublisher(serializer, transport, publishRequestFactory, pipeline, TimeProvider.System);
     }
 
     /// <summary>

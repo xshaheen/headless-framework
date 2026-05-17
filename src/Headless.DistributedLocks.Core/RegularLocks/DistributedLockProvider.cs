@@ -59,7 +59,7 @@ public sealed class DistributedLockProvider(
     )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
-        Argument.IsLessThanOrEqualTo(resource.Length, _maxResourceNameLength);
+        Argument.IsLessThanOrEqualTo(resource.Length, _maxResourceNameLength, paramName: nameof(resource));
         cancellationToken.ThrowIfCancellationRequested();
 
         timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);

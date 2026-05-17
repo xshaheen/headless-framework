@@ -4,7 +4,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Hubs;
 
-public partial class JobsNotificationHub(ILogger<JobsNotificationHub> logger, IAuthService authService) : Hub
+public partial class JobsNotificationHub(
+    ILogger<JobsNotificationHub> logger,
+    IAuthService authService,
+    TimeProvider? timeProvider = null
+) : Hub
 {
     public override async Task OnConnectedAsync()
     {
@@ -77,7 +81,7 @@ public partial class JobsNotificationHub(ILogger<JobsNotificationHub> logger, IA
             connectionId = Context.ConnectionId,
             authenticated = _IsAuthenticated(),
             username = Context.Items["username"]?.ToString() ?? "anonymous",
-            timestamp = DateTime.UtcNow,
+            timestamp = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime,
         };
 
         await Clients.Caller.SendAsync("Status", status);

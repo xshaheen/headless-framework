@@ -365,7 +365,7 @@ internal class JobsExecutionTaskHandler(
                     : context.RetryIntervals[^1]
                 : 30;
 
-        await Task.Delay(TimeSpan.FromSeconds(retryInterval), timeProvider, cancellationTokenSource.Token);
+        await timeProvider.Delay(TimeSpan.FromSeconds(retryInterval), cancellationTokenSource.Token);
 
         return false;
     }

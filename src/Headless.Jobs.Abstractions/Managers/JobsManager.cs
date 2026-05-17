@@ -331,12 +331,12 @@ internal class JobsManager<TTimeJob, TCronJob>(
         }
     }
 
-    private static InternalFunctionContext[] _BuildImmediateContextsFromNonGeneric(IEnumerable<TimeJobEntity> jobs)
+    private InternalFunctionContext[] _BuildImmediateContextsFromNonGeneric(IEnumerable<TimeJobEntity> jobs)
     {
         return jobs.Select(_BuildContextFromNonGeneric).ToArray();
     }
 
-    private static InternalFunctionContext _BuildContextFromNonGeneric(TimeJobEntity job)
+    private InternalFunctionContext _BuildContextFromNonGeneric(TimeJobEntity job)
     {
         return new InternalFunctionContext
         {
@@ -346,7 +346,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
             Retries = job.Retries,
             RetryIntervals = job.RetryIntervals,
             ParentId = job.ParentId,
-            ExecutionTime = job.ExecutionTime ?? DateTime.UtcNow,
+            ExecutionTime = job.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
             RunCondition = job.RunCondition ?? RunCondition.OnAnyCompletedStatus,
             TimeJobChildren = job.Children.Select(_BuildContextFromNonGeneric).ToList(),
         };

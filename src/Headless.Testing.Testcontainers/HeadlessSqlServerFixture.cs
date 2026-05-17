@@ -15,6 +15,9 @@ namespace Headless.Testing.Testcontainers;
 public class HeadlessSqlServerFixture : IAsyncLifetime
 {
     private const string _Password = "YourStrong@Passw0rd";
+    private static readonly TimeSpan _StartupTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan _StartupPollInterval = TimeSpan.FromMilliseconds(250);
+    private readonly TimeProvider _timeProvider = TimeProvider.System;
 
     // Use Azure SQL Edge for ARM64 (e.g., Apple Silicon), SQL Server 2022 for x86_64
     private static readonly string _Image =
@@ -25,7 +28,6 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
         .WithEnvironment("ACCEPT_EULA", "Y")
         .WithEnvironment("MSSQL_SA_PASSWORD", _Password)
         .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("SQL Server is now ready"))
-        .WithReuse(true)
         .Build();
 
     /// <summary>Gets the SQL Server connection string.</summary>
@@ -48,6 +50,7 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         await _container.StartAsync();
+        await _WaitUntilLoginSucceedsAsync();
     }
 
     public async ValueTask DisposeAsync()
@@ -55,5 +58,37 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
         await _container.StopAsync();
         await _container.DisposeAsync();
         GC.SuppressFinalize(this);
+    }
+
+    private async Task _WaitUntilLoginSucceedsAsync()
+    {
+        var deadline = _timeProvider.GetUtcNow().Add(_StartupTimeout);
+        Exception? lastException = null;
+
+        while (_timeProvider.GetUtcNow() < deadline)
+        {
+            try
+            {
+                await using var connection = new SqlConnection(ConnectionString);
+                await connection.OpenAsync(CancellationToken.None);
+
+                return;
+            }
+            catch (SqlException ex)
+            {
+                lastException = ex;
+                await _timeProvider.Delay(_StartupPollInterval, CancellationToken.None);
+            }
+            catch (InvalidOperationException ex)
+            {
+                lastException = ex;
+                await _timeProvider.Delay(_StartupPollInterval, CancellationToken.None);
+            }
+        }
+
+        throw new TimeoutException(
+            "SQL Server container did not accept logins before the startup timeout.",
+            lastException
+        );
     }
 }

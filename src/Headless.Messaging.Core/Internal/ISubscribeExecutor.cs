@@ -464,13 +464,13 @@ internal sealed class SubscribeExecutor(
 
     #region tracing
 
-    private static long? _TracingBefore(Message message, MethodInfo method)
+    private long? _TracingBefore(Message message, MethodInfo method)
     {
         if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeSubscriberInvoke))
         {
             var eventData = new MessageEventDataSubExecute
             {
-                OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                OperationTimestamp = timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
                 Operation = message.GetName(),
                 Message = message,
                 MethodInfo = method,
@@ -484,7 +484,7 @@ internal sealed class SubscribeExecutor(
         return null;
     }
 
-    private static void _TracingAfter(long? tracingTimestamp, Message message, MethodInfo method)
+    private void _TracingAfter(long? tracingTimestamp, Message message, MethodInfo method)
     {
         MessageEventCounterSource.Log.WriteInvokeMetrics();
         if (
@@ -492,7 +492,7 @@ internal sealed class SubscribeExecutor(
             && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterSubscriberInvoke)
         )
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
             var eventData = new MessageEventDataSubExecute
             {
                 OperationTimestamp = now,

@@ -9,6 +9,7 @@ using Headless.PushNotifications.Abstractions;
 using Headless.PushNotifications.Firebase.Internals;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
@@ -52,6 +53,8 @@ public static class FirebaseSetup
 
         private IServiceCollection _AddCore(FirebaseOptions options)
         {
+            services.TryAddSingleton(TimeProvider.System);
+
             if (FirebaseApp.DefaultInstance is null)
             {
                 FirebaseApp.Create(
@@ -92,7 +95,11 @@ public static class FirebaseSetup
                                     } ex
                                 )
                                 {
-                                    var delay = RetryHelper.GetRetryAfterDelay(ex, options.Retry.RateLimitDelay);
+                                    var delay = RetryHelper.GetRetryAfterDelay(
+                                        ex,
+                                        options.Retry.RateLimitDelay,
+                                        TimeProvider.System
+                                    );
                                     return ValueTask.FromResult<TimeSpan?>(delay);
                                 }
 

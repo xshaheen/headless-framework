@@ -19,7 +19,7 @@ internal sealed class AzureServiceBusConsumerClient(
     IServiceProvider serviceProvider
 ) : IConsumerClient
 {
-    private readonly AzureServiceBusOptions _asbOptions = options.Value;
+    private readonly AzureServiceBusOptions _asbOptions = Argument.IsNotNull(options.Value);
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();

@@ -17,7 +17,6 @@ public sealed class SshBlobStorageFixture : ICollectionFixture<SshBlobStorageFix
         .WithPortBinding(22, true)
         .WithCommand("headless:password:::storage")
         .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server listening on"))
-        .WithReuse(true)
         .Build();
 
     public SftpClientPool Pool { get; private set; } = null!;

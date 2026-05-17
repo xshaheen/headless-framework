@@ -20,6 +20,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
 #pragma warning restore CA2213
     private readonly JobsExecutionTaskHandler _taskHandler;
     private readonly IJobFunctionConcurrencyGate _concurrencyGate;
+    private readonly TimeProvider _timeProvider;
     private int _started;
     public bool SkipFirstRun { get; set; }
     public bool IsRunning => _started == 1;
@@ -29,7 +30,8 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
         JobsExecutionTaskHandler taskHandler,
         JobsTaskScheduler taskScheduler,
         IInternalJobManager internalJobsManager,
-        IJobFunctionConcurrencyGate concurrencyGate
+        IJobFunctionConcurrencyGate concurrencyGate,
+        TimeProvider timeProvider
     )
     {
         _executionContext = Argument.IsNotNull(executionContext);
@@ -37,6 +39,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
         _taskScheduler = Argument.IsNotNull(taskScheduler);
         _internalJobsManager = Argument.IsNotNull(internalJobsManager);
         _concurrencyGate = Argument.IsNotNull(concurrencyGate);
+        _timeProvider = Argument.IsNotNull(timeProvider);
         _restartThrottle = new RestartThrottleManager(() => _schedulerLoopCancellationTokenSource?.Cancel());
     }
 
@@ -71,7 +74,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                 // This is a restart request - release resources and continue loop
                 await _internalJobsManager.ReleaseAcquiredResources(_executionContext.Functions, stoppingToken);
                 // Small delay to allow resources to be released
-                await Task.Delay(100, stoppingToken);
+                await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -87,7 +90,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                 await _ReleaseAllResourcesAsync(ex);
                 // Continue running - don't exit the scheduler loop on exceptions
                 // Add a small delay to prevent tight loop if errors persist
-                await Task.Delay(1000, stoppingToken);
+                await _timeProvider.Delay(TimeSpan.FromSeconds(1), stoppingToken);
             }
             finally
             {
@@ -152,7 +155,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
             else
             {
                 sleepDuration = timeRemaining <= TimeSpan.Zero ? TimeSpan.FromMilliseconds(1) : timeRemaining;
-                _executionContext.SetNextPlannedOccurrence(DateTime.UtcNow.Add(sleepDuration));
+                _executionContext.SetNextPlannedOccurrence(_timeProvider.GetUtcNow().UtcDateTime.Add(sleepDuration));
             }
 
             var notify = _executionContext.NotifyCoreAction;
@@ -161,7 +164,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
                 notify(_executionContext.GetNextPlannedOccurrence(), CoreNotifyActionType.NotifyNextOccurence);
             }
 
-            await Task.Delay(sleepDuration, cancellationToken);
+            await _timeProvider.Delay(sleepDuration, cancellationToken);
         }
     }
 
@@ -182,7 +185,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
             return;
         }
 
-        var now = DateTime.UtcNow;
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
         var nextPlannedOccurrence = _executionContext.GetNextPlannedOccurrence();
 
         // Restart if:

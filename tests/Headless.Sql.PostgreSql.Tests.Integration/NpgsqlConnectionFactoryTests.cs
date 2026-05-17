@@ -54,6 +54,9 @@ public sealed class NpgsqlConnectionFactoryTests(NpgsqlTestFixture fixture) : Sq
         await using var sut = GetCurrent();
         var connection = await sut.GetOpenConnectionAsync(AbortToken);
         await using var command = connection.CreateCommand();
+        command.CommandText = "DROP TABLE IF EXISTS test";
+        await command.ExecuteNonQueryAsync(AbortToken);
+
         command.CommandText = "CREATE TABLE test (id INT PRIMARY KEY, Name TEXT)";
         await command.ExecuteNonQueryAsync(AbortToken);
 

@@ -24,7 +24,8 @@ internal sealed class CircuitBreakerStateManager(
     IOptions<CircuitBreakerOptions> options,
     ConsumerCircuitBreakerRegistry registry,
     ILogger<CircuitBreakerStateManager> logger,
-    CircuitBreakerMetrics metrics
+    CircuitBreakerMetrics metrics,
+    TimeProvider timeProvider
 ) : ICircuitBreakerStateManager, IAsyncDisposable, IDisposable
 {
     // Lock-free reads on per-group state are intentional throughout this class:
@@ -396,7 +397,7 @@ internal sealed class CircuitBreakerStateManager(
             // to avoid the unintended escalation bump.
             state.State = CircuitBreakerState.Open;
             state.OpenedAt = Environment.TickCount64;
-            state.OpenedAtUtc = DateTimeOffset.UtcNow;
+            state.OpenedAtUtc = timeProvider.GetUtcNow();
             state.TimerGeneration++;
             var gen = state.TimerGeneration;
             var openDuration = _GetOpenDuration(state);
@@ -591,7 +592,7 @@ internal sealed class CircuitBreakerStateManager(
             // not a natural failure. Preserve existing escalation level.
             state.State = CircuitBreakerState.Open;
             state.OpenedAt = Environment.TickCount64;
-            state.OpenedAtUtc = DateTimeOffset.UtcNow;
+            state.OpenedAtUtc = timeProvider.GetUtcNow();
             state.ConsecutiveFailures = 0;
             state.SuccessfulCyclesAfterClose = 0;
             state.ProbeAcquired = false;
@@ -816,7 +817,7 @@ internal sealed class CircuitBreakerStateManager(
         var previousState = state.State;
         state.State = CircuitBreakerState.Open;
         state.OpenedAt = Environment.TickCount64;
-        state.OpenedAtUtc = DateTimeOffset.UtcNow;
+        state.OpenedAtUtc = timeProvider.GetUtcNow();
         state.SuccessfulCyclesAfterClose = 0;
 
         state.EscalationLevel = Math.Min(state.EscalationLevel + 1, 63);
