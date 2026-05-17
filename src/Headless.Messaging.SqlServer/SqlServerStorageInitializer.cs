@@ -181,13 +181,22 @@ public sealed class SqlServerStorageInitializer(
             -- which historically does NOT have a single stable error number across SQL Server versions
             -- (1218 is the unrelated ABORT_AFTER_WAIT lock-request error; the actual edition-restriction
             -- message text varies). Edition codes (per Microsoft docs):
-            --   1 = Personal/Desktop, 2 = Standard, 3 = Enterprise/Developer, 4 = Express,
-            --   5 = Azure SQL Database, 6 = Azure Synapse Analytics, 8 = Azure SQL MI, 9 = SQL Edge,
-            --   11 = Azure SQL DB Hyperscale.
-            -- ONLINE index ops are supported on Enterprise/Developer (3) and the Azure family (5, 8, 9, 11).
+            --   1  = Personal/Desktop (legacy, no longer returned)
+            --   2  = Standard / Web / Business Intelligence
+            --   3  = Enterprise / Developer / Evaluation       ← supports ONLINE
+            --   4  = Express (any variant)
+            --   5  = Azure SQL Database (incl. Hyperscale)     ← supports ONLINE
+            --   6  = Azure Synapse Analytics (dedicated pool)
+            --   8  = Azure SQL Managed Instance                ← supports ONLINE
+            --   9  = Azure SQL Edge (online support varies by tier)
+            --   11 = Azure Synapse serverless SQL pool (no user index DDL)
+            -- We include only the editions Microsoft documents as supporting ONLINE index operations
+            -- with high confidence (3, 5, 8). Edge (9) and Synapse serverless (11) fall back to
+            -- ONLINE = OFF — that's the pre-fix behavior, and an offline rebuild on a niche edition
+            -- is preferable to risking a runtime failure on a deployment.
             --   3701 — index does not exist (idempotency under TOCTOU race)
             DECLARE @engineEdition INT = CAST(SERVERPROPERTY('EngineEdition') AS INT);
-            DECLARE @supportsOnline BIT = CASE WHEN @engineEdition IN (3, 5, 8, 9, 11) THEN 1 ELSE 0 END;
+            DECLARE @supportsOnline BIT = CASE WHEN @engineEdition IN (3, 5, 8) THEN 1 ELSE 0 END;
 
             BEGIN TRY
                 IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
