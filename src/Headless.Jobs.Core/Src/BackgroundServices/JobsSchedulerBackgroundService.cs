@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -13,7 +14,10 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
     private readonly IInternalJobManager _internalJobsManager;
     private readonly JobsExecutionContext _executionContext;
     private SafeCancellationTokenSource? _schedulerLoopCancellationTokenSource;
+
+#pragma warning disable CA2213 // Justification = "Owned by the DI container as a singleton; disposed on host shutdown."
     private readonly JobsTaskScheduler _taskScheduler;
+#pragma warning restore CA2213
     private readonly JobsExecutionTaskHandler _taskHandler;
     private readonly IJobFunctionConcurrencyGate _concurrencyGate;
     private int _started;
