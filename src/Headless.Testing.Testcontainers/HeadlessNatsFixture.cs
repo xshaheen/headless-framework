@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using DotNet.Testcontainers.Builders;
 using Testcontainers.Nats;
 using Testcontainers.Xunit;
 
@@ -14,6 +15,9 @@ public class HeadlessNatsFixture() : ContainerFixture<NatsBuilder, NatsContainer
 {
     protected override NatsBuilder Configure()
     {
-        return base.Configure().WithImage(TestImages.Nats).WithReuse(true);
+        return base.Configure()
+            .WithImage(TestImages.Nats)
+            .WithReuse(true)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server is ready"));
     }
 }

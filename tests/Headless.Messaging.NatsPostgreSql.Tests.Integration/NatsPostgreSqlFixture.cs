@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using DotNet.Testcontainers.Builders;
 using Headless.Testing.Testcontainers;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
@@ -47,6 +48,7 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
             .WithLabel("type", "nats-postgresql-nats")
             .WithResourceMapping(_NatsConfig, "/etc/nats/nats-server.conf")
             .WithReuse(true)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server is ready"))
             .Build();
 
         private NatsConnection? _connection;
