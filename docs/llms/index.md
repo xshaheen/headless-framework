@@ -24,6 +24,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 
 ### Options binding and validation
 
+- Validate options only when there is something meaningful to enforce (required values, range/format constraints, cross-field invariants). Skip validation for plain DTO-style options with no rules.
 - Register options with `services.AddOptions<TOptions, TValidator>()` or `services.Configure<TOptions, TValidator>(...)` from `Headless.Hosting`. These overloads wire up FluentValidation and `ValidateOnStart()` automatically.
 - Place an `internal sealed class {OptionsName}Validator : AbstractValidator<{OptionsName}>` in the same file as the options class, directly below it.
 - Never call `new TValidator().ValidateAndThrow()` manually — let the DI pipeline do it.
