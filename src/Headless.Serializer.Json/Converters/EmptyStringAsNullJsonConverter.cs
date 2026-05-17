@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
+
 namespace Headless.Serializer.Converters;
 
 [RequiresUnreferencedCode(
@@ -9,30 +11,53 @@ namespace Headless.Serializer.Converters;
 public sealed class EmptyStringAsNullJsonConverter<T> : JsonConverter<T?>
     where T : class
 {
+    private static readonly ConditionalWeakTable<JsonSerializerOptions, JsonSerializerOptions> _FallbackOptions = [];
+
     public override T? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        ReadOnlySpan<byte> empty = [];
-
-        if (reader.TokenType is JsonTokenType.String)
+        if (reader.TokenType is JsonTokenType.Null)
         {
-            if (reader.ValueTextEquals(empty))
-            {
-                return null;
-            }
+            return null;
         }
 
-        return JsonSerializer.Deserialize<T>(ref reader, options);
+        if (reader.TokenType is JsonTokenType.String && reader.ValueTextEquals(ReadOnlySpan<byte>.Empty))
+        {
+            return null;
+        }
+
+        // Delegate via a clone that excludes this converter to avoid infinite recursion when
+        // STJ resolves the converter for T and lands back on us.
+        var fallback = _FallbackOptions.GetValue(options, _CreateFallbackOptions);
+
+        return JsonSerializer.Deserialize<T>(ref reader, fallback);
     }
 
     public override void Write(Utf8JsonWriter writer, T? value, JsonSerializerOptions options)
     {
-        if (value is "")
+        if (value is null or "")
         {
             writer.WriteNullValue();
 
             return;
         }
 
-        JsonSerializer.Serialize(writer, value, options);
+        var fallback = _FallbackOptions.GetValue(options, _CreateFallbackOptions);
+
+        JsonSerializer.Serialize(writer, value, fallback);
+    }
+
+    private static JsonSerializerOptions _CreateFallbackOptions(JsonSerializerOptions source)
+    {
+        var clone = new JsonSerializerOptions(source);
+
+        for (var i = clone.Converters.Count - 1; i >= 0; i--)
+        {
+            if (clone.Converters[i] is EmptyStringAsNullJsonConverter<T>)
+            {
+                clone.Converters.RemoveAt(i);
+            }
+        }
+
+        return clone;
     }
 }

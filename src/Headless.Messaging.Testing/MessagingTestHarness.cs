@@ -466,7 +466,13 @@ public sealed class MessagingTestHarness : IAsyncDisposable
                 // Record FIRST so a hanging or throwing user callback doesn't lose the observation.
                 var payload = info.Message.Value ?? info.Message;
                 store.Record(
-                    RecordedMessage.FromHeaders(info.Message.Headers, payload, payload.GetType(), info.Exception),
+                    RecordedMessage.FromHeaders(
+                        info.Message.Headers,
+                        payload,
+                        payload.GetType(),
+                        store.GetUtcNow(),
+                        info.Exception
+                    ),
                     MessageObservationType.Exhausted
                 );
 

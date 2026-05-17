@@ -66,7 +66,7 @@ internal sealed class RecordingTransport(
                 }
             }
 
-            var recorded = RecordedMessage.FromHeaders(headers, messageObj, messageType);
+            var recorded = RecordedMessage.FromHeaders(headers, messageObj, messageType, store.GetUtcNow());
 
             store.Record(recorded, MessageObservationType.Published);
         }

@@ -79,7 +79,8 @@ public static class JobsServiceExtensions
                 return new JobsTaskScheduler(
                     schedulerOptionsBuilder.MaxConcurrency,
                     schedulerOptionsBuilder.IdleWorkerTimeOut,
-                    notifyDebounce
+                    notifyDebounce,
+                    sp.GetRequiredService<TimeProvider>()
                 );
             });
         }

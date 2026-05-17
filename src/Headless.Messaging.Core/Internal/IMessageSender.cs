@@ -305,7 +305,7 @@ internal sealed class MessageSender : IMessageSender
 
     #region tracing
 
-    private static long? _TracingBefore(TransportMessage message, BrokerAddress broker)
+    private long? _TracingBefore(TransportMessage message, BrokerAddress broker)
     {
         MessageEventCounterSource.Log.WritePublishMetrics();
 
@@ -313,7 +313,7 @@ internal sealed class MessageSender : IMessageSender
         {
             var eventData = new MessageEventDataPubSend
             {
-                OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                OperationTimestamp = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
                 Operation = message.GetName(),
                 BrokerAddress = broker,
                 TransportMessage = message,
@@ -327,11 +327,11 @@ internal sealed class MessageSender : IMessageSender
         return null;
     }
 
-    private static void _TracingAfter(long? tracingTimestamp, TransportMessage message, BrokerAddress broker)
+    private void _TracingAfter(long? tracingTimestamp, TransportMessage message, BrokerAddress broker)
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterPublish))
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
             var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = now,
@@ -345,7 +345,7 @@ internal sealed class MessageSender : IMessageSender
         }
     }
 
-    private static void _TracingError(
+    private void _TracingError(
         long? tracingTimestamp,
         TransportMessage message,
         BrokerAddress broker,
@@ -355,7 +355,7 @@ internal sealed class MessageSender : IMessageSender
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
         {
             var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
 
             var eventData = new MessageEventDataPubSend
             {

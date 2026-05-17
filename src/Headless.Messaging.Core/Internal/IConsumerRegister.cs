@@ -41,6 +41,7 @@ internal sealed class ConsumerRegister(
     private readonly ConcurrentDictionary<string, GroupHandle> _groupHandles = new(StringComparer.Ordinal);
     private readonly ILogger _logger = logger;
     private readonly MessagingOptions _options = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+    private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
     private readonly TimeSpan _pollingDelay = TimeSpan.FromSeconds(1);
 
     private ICircuitBreakerStateManager? _circuitBreakerStateManager;
@@ -920,13 +921,13 @@ internal sealed class ConsumerRegister(
 
     #region Tracing
 
-    private static long? _TracingBefore(TransportMessage message, BrokerAddress broker)
+    private long? _TracingBefore(TransportMessage message, BrokerAddress broker)
     {
         if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeConsume))
         {
             var eventData = new MessageEventDataSubStore
             {
-                OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                OperationTimestamp = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
                 Operation = message.GetName(),
                 BrokerAddress = broker,
                 TransportMessage = message,
@@ -940,12 +941,12 @@ internal sealed class ConsumerRegister(
         return null;
     }
 
-    private static void _TracingAfter(long? tracingTimestamp, TransportMessage message, BrokerAddress broker)
+    private void _TracingAfter(long? tracingTimestamp, TransportMessage message, BrokerAddress broker)
     {
         MessageEventCounterSource.Log.WriteConsumeMetrics();
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterConsume))
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
             var eventData = new MessageEventDataSubStore
             {
                 OperationTimestamp = now,
@@ -959,16 +960,11 @@ internal sealed class ConsumerRegister(
         }
     }
 
-    private static void _TracingError(
-        long? tracingTimestamp,
-        TransportMessage message,
-        BrokerAddress broker,
-        Exception ex
-    )
+    private void _TracingError(long? tracingTimestamp, TransportMessage message, BrokerAddress broker, Exception ex)
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorConsume))
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
 
             var eventData = new MessageEventDataSubStore
             {

@@ -342,8 +342,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     // -------------------------------------------------------------------------
 
     [Theory]
-    [InlineData("Received", "IX_Received_Version_NextRetryAt")]
-    [InlineData("Published", "IX_Published_Version_NextRetryAt")]
+    [InlineData("Received", "IX_messaging_Received_Version_NextRetryAt")]
+    [InlineData("Published", "IX_messaging_Published_Version_NextRetryAt")]
     public async Task should_key_retry_pickup_filtered_index_on_version_then_next_retry_at(
         string tableName,
         string indexName

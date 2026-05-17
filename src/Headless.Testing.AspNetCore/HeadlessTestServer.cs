@@ -170,7 +170,7 @@ public sealed class HeadlessTestServer<TProgram>(
                 catch (DbException) when (retries > 1)
                 {
                     retries--;
-                    await Task.Delay(100).ConfigureAwait(false);
+                    await System.TimeProvider.System.Delay(TimeSpan.FromMilliseconds(100)).ConfigureAwait(false);
 
                     // Re-open if closed or broken
                     if (_resetConnection!.State != System.Data.ConnectionState.Open)

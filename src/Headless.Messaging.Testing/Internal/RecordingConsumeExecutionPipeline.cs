@@ -40,10 +40,19 @@ internal sealed class RecordingConsumeExecutionPipeline(IConsumeExecutionPipelin
         }
     }
 
-    private static RecordedMessage _CreateRecordedMessage(
+    private RecordedMessage _CreateRecordedMessage(
         ConsumerContext context,
         object messageInstance,
         Type messageType,
         Exception? exception = null
-    ) => RecordedMessage.FromHeaders(context.MediumMessage.Origin.Headers, messageInstance, messageType, exception);
+    )
+    {
+        return RecordedMessage.FromHeaders(
+            context.MediumMessage.Origin.Headers,
+            messageInstance,
+            messageType,
+            store.GetUtcNow(),
+            exception
+        );
+    }
 }

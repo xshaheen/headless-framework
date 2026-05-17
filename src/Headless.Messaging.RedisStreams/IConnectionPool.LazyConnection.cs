@@ -7,8 +7,11 @@ using StackExchange.Redis;
 
 namespace Headless.Messaging.RedisStreams;
 
-public class AsyncLazyRedisConnection(MessagingRedisOptions redisOptions, ILogger<AsyncLazyRedisConnection> logger)
-    : Lazy<Task<RedisConnection>>(() => _ConnectAsync(redisOptions, logger))
+public class AsyncLazyRedisConnection(
+    MessagingRedisOptions redisOptions,
+    ILogger<AsyncLazyRedisConnection> logger,
+    TimeProvider? timeProvider = null
+) : Lazy<Task<RedisConnection>>(() => _ConnectAsync(redisOptions, logger, timeProvider ?? TimeProvider.System))
 {
     public RedisConnection? CreatedConnection => IsValueCreated ? Value.GetAwaiter().GetResult() : null;
 
@@ -19,7 +22,8 @@ public class AsyncLazyRedisConnection(MessagingRedisOptions redisOptions, ILogge
 
     private static async Task<RedisConnection> _ConnectAsync(
         MessagingRedisOptions redisOptions,
-        ILogger<AsyncLazyRedisConnection> logger
+        ILogger<AsyncLazyRedisConnection> logger,
+        TimeProvider timeProvider
     )
     {
         var attempt = 1;
@@ -43,7 +47,7 @@ public class AsyncLazyRedisConnection(MessagingRedisOptions redisOptions, ILogge
                     attempt
                 );
 
-                await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+                await timeProvider.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
 
                 ++attempt;
             }

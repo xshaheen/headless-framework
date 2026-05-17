@@ -144,11 +144,19 @@ public sealed class DistributedLockProviderTests : TestBase
             cancellationToken: AbortToken
         );
 
-        // Advance time through backoff delays
-        for (var i = 0; i < 5; i++)
+        // Drive the provider's retry loop by advancing fake time until it acquires.
+        // A bare `await Task.Yield()` between advances does not reliably drain the
+        // CTS-cancellation continuation queued from a prior advance, so we wait for
+        // an observable signal (callCount tick) before advancing again.
+        for (var advances = 0; advances < 10 && !acquireTask.IsCompleted; advances++)
         {
-            await Task.Yield();
-            _timeProvider.Advance(TimeSpan.FromMilliseconds(200));
+            var observedBefore = callCount;
+            _timeProvider.Advance(TimeSpan.FromMilliseconds(500));
+
+            for (var i = 0; i < 200 && callCount == observedBefore && !acquireTask.IsCompleted; i++)
+            {
+                await Task.Yield();
+            }
         }
 
         // when
@@ -597,11 +605,11 @@ public sealed class DistributedLockProviderTests : TestBase
 
         using var cts = new CancellationTokenSource();
 
-        // Mock storage to simulate cancellation during InsertAsync.
-        // We use a regular Func to avoid NSubstitute's ValueTask ambiguity and ensure synchronous Cancel()
-        // happens while the provider is awaiting the storage call.
+        // Mock storage to simulate cancellation during InsertAsync. The provider scopes the
+        // resource with options.KeyPrefix before calling storage, so the matcher must accept
+        // any key (a specific `resource` would never match and the lambda would never run).
         storage
-            .InsertAsync(resource, Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
 #pragma warning disable CA1849, VSTHRD103 // Synchronous Cancel is intentional inside NSubstitute sync callback
@@ -616,8 +624,14 @@ public sealed class DistributedLockProviderTests : TestBase
         // then - it must throw because the caller's token was cancelled
         await act.Should().ThrowAsync<OperationCanceledException>();
 
-        // Verify that RemoveIfEqualAsync was called for best-effort cleanup
-        await storage.Received(1).RemoveIfEqualAsync(resource, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        // Verify that RemoveIfEqualAsync was called for best-effort cleanup (scoped key).
+        await storage
+            .Received(1)
+            .RemoveIfEqualAsync(
+                Arg.Is<string>(s => s.EndsWith(resource, StringComparison.Ordinal)),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     #endregion

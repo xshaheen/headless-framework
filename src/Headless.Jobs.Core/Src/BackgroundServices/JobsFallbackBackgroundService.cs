@@ -10,7 +10,8 @@ internal class JobsFallbackBackgroundService(
     SchedulerOptionsBuilder schedulerOptions,
     JobsExecutionTaskHandler tickerExecutionTaskHandler,
     JobsTaskScheduler tickerQTaskScheduler,
-    IJobFunctionConcurrencyGate concurrencyGate
+    IJobFunctionConcurrencyGate concurrencyGate,
+    TimeProvider timeProvider
 ) : BackgroundService
 {
     private int _started;
@@ -31,7 +32,7 @@ internal class JobsFallbackBackgroundService(
                 // skip queuing fallback work to avoid throwing and stopping the host.
                 if (tickerQTaskScheduler.IsFrozen || tickerQTaskScheduler.IsDisposed)
                 {
-                    await Task.Delay(_fallbackJobPeriod, stoppingToken);
+                    await timeProvider.Delay(_fallbackJobPeriod, stoppingToken);
                     continue;
                 }
 
@@ -109,11 +110,11 @@ internal class JobsFallbackBackgroundService(
                         }
                     }
 
-                    await Task.Delay(TimeSpan.FromMilliseconds(10), stoppingToken);
+                    await timeProvider.Delay(TimeSpan.FromMilliseconds(10), stoppingToken);
                 }
                 else
                 {
-                    await Task.Delay(_fallbackJobPeriod, stoppingToken);
+                    await timeProvider.Delay(_fallbackJobPeriod, stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -126,7 +127,7 @@ internal class JobsFallbackBackgroundService(
             {
                 // Swallow unexpected exceptions so they don't bubble up
                 // and stop the host; wait a bit before retrying.
-                await Task.Delay(_fallbackJobPeriod, stoppingToken);
+                await timeProvider.Delay(_fallbackJobPeriod, stoppingToken);
             }
 #pragma warning restore ERP022
         }

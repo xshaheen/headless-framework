@@ -49,7 +49,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             Options.Create(opts),
             new ConsumerCircuitBreakerRegistry(),
             new NullLogger<CircuitBreakerStateManager>(),
-            new CircuitBreakerMetrics(CircuitBreakerTestHelpers.CreateMeterFactory())
+            new CircuitBreakerMetrics(CircuitBreakerTestHelpers.CreateMeterFactory()),
+            TimeProvider.System
         );
     }
 

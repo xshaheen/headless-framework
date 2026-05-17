@@ -61,6 +61,7 @@ public sealed record RecordedMessage
         IDictionary<string, string?> headers,
         object message,
         Type messageType,
+        DateTimeOffset timestamp,
         Exception? exception = null
     )
     {
@@ -79,7 +80,7 @@ public sealed record RecordedMessage
             CorrelationId = correlationId,
             Headers = new Dictionary<string, string?>(headers, StringComparer.Ordinal),
             Topic = topic,
-            Timestamp = DateTimeOffset.UtcNow,
+            Timestamp = timestamp,
             Exception = exception,
         };
     }

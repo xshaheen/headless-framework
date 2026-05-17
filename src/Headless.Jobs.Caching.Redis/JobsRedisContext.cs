@@ -10,7 +10,8 @@ internal sealed class JobsRedisContext(
     [FromKeyedServices("jobs")] IDistributedCache cache,
     SchedulerOptionsBuilder schedulerOptions,
     ServiceExtension.JobsRedisOptionBuilder tickerQRedisOptionBuilder,
-    IJobsNotificationHubSender notificationHubSender
+    IJobsNotificationHubSender notificationHubSender,
+    TimeProvider timeProvider
 ) : IJobsRedisContext
 {
     private volatile IDatabase? _database;
@@ -26,7 +27,7 @@ internal sealed class JobsRedisContext(
         var node = schedulerOptions.NodeIdentifier;
         var key = $"hb:{node}";
 
-        var payload = new { ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), node };
+        var payload = new { ts = timeProvider.GetUtcNow().ToUnixTimeMilliseconds(), node };
 
         await notificationHubSender.UpdateNodeHeartBeatAsync(payload);
 

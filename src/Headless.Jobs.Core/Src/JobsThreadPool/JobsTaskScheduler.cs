@@ -12,6 +12,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
     private readonly int _maxConcurrency;
     private readonly TimeSpan _idleWorkerTimeout;
     private readonly int _maxCapacityPerWorker;
+    private readonly TimeProvider _timeProvider;
 
     // Worker queues for work stealing
     private readonly ConcurrentQueue<WorkItem>[] _workerQueues;
@@ -43,7 +44,8 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
     public JobsTaskScheduler(
         int maxConcurrency,
         TimeSpan? idleWorkerTimeout = null,
-        SoftSchedulerNotifyDebounce? notifyDebounce = null
+        SoftSchedulerNotifyDebounce? notifyDebounce = null,
+        TimeProvider? timeProvider = null
     )
     {
         if (maxConcurrency <= 0)
@@ -55,6 +57,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         _idleWorkerTimeout = idleWorkerTimeout ?? TimeSpan.FromSeconds(60);
         _maxCapacityPerWorker = 1024; // Fixed optimal capacity
         _notifyDebounce = notifyDebounce ?? new SoftSchedulerNotifyDebounce(_ => { });
+        _timeProvider = timeProvider ?? TimeProvider.System;
 
         // Initialize all worker queues upfront for simplicity
         _workerQueues = new ConcurrentQueue<WorkItem>[maxConcurrency];
@@ -151,7 +154,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
                 _EnsureWorkerAvailable();
                 waitCount = 0;
             }
-            await Task.Delay(10, cancellationToken);
+            await _timeProvider.Delay(TimeSpan.FromMilliseconds(10), cancellationToken);
         }
     }
 
@@ -229,7 +232,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
 
     private async Task _WorkerLoopCoreAsync(int workerId)
     {
-        var lastWorkTime = DateTime.UtcNow;
+        var lastWorkTime = _timeProvider.GetUtcNow().UtcDateTime;
         var localQueue = _workerQueues[workerId];
         var consecutiveStealFailures = 0;
 
@@ -257,13 +260,13 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
 
             if (foundWork)
             {
-                lastWorkTime = DateTime.UtcNow;
+                lastWorkTime = _timeProvider.GetUtcNow().UtcDateTime;
                 await _ExecuteWorkAsync(workItem);
             }
             else
             {
                 // No work found - check if we should exit
-                if (DateTime.UtcNow - lastWorkTime > _idleWorkerTimeout)
+                if (_timeProvider.GetUtcNow().UtcDateTime - lastWorkTime > _idleWorkerTimeout)
                 {
                     // Check ALL queues for any remaining work before exiting
                     var anyWorkRemaining = false;
@@ -283,13 +286,16 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
                     }
 
                     // Reset timer if we need to stay
-                    lastWorkTime = DateTime.UtcNow;
+                    lastWorkTime = _timeProvider.GetUtcNow().UtcDateTime;
                 }
 
                 // Brief sleep to avoid spinning
                 if (consecutiveStealFailures > 3)
                 {
-                    await Task.Delay(Math.Min(consecutiveStealFailures * 2, 50));
+                    await _timeProvider.Delay(
+                        TimeSpan.FromMilliseconds(Math.Min(consecutiveStealFailures * 2, 50)),
+                        _shutdownCts.Token
+                    );
                 }
                 else
                 {
@@ -536,16 +542,16 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
     /// </summary>
     public async Task<bool> WaitForRunningTasksAsync(TimeSpan? timeout = null)
     {
-        var deadline = timeout.HasValue ? DateTime.UtcNow.Add(timeout.Value) : DateTime.MaxValue;
+        var deadline = timeout.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.Add(timeout.Value) : DateTime.MaxValue;
 
         while (_totalQueuedTasks > 0 || _activeWorkers > 0)
         {
-            if (DateTime.UtcNow > deadline)
+            if (_timeProvider.GetUtcNow().UtcDateTime > deadline)
             {
                 return false; // Timeout
             }
 
-            await Task.Delay(10);
+            await _timeProvider.Delay(TimeSpan.FromMilliseconds(10), CancellationToken.None);
         }
 
         return true;
@@ -563,10 +569,10 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         await _shutdownCts.CancelAsync();
 
         // Wait for workers to exit gracefully
-        var timeout = DateTime.UtcNow.AddSeconds(5);
-        while (_activeWorkers > 0 && DateTime.UtcNow < timeout)
+        var timeout = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(5);
+        while (_activeWorkers > 0 && _timeProvider.GetUtcNow().UtcDateTime < timeout)
         {
-            await Task.Delay(100);
+            await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
         }
 
         _notifyDebounce?.Dispose();

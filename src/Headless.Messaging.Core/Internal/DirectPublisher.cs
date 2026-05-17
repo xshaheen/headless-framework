@@ -12,7 +12,8 @@ internal sealed class DirectPublisher(
     ISerializer serializer,
     ITransport transport,
     IMessagePublishRequestFactory publishRequestFactory,
-    IPublishExecutionPipeline publishPipeline
+    IPublishExecutionPipeline publishPipeline,
+    TimeProvider timeProvider
 ) : IDirectPublisher
 {
     private static readonly DiagnosticListener _DiagnosticListener = new(
@@ -107,7 +108,7 @@ internal sealed class DirectPublisher(
         {
             var eventData = new MessageEventDataPubSend
             {
-                OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                OperationTimestamp = _NowUnixTimeMilliseconds(),
                 Operation = message.GetName(),
                 BrokerAddress = _transport.BrokerAddress,
                 TransportMessage = message,
@@ -125,7 +126,7 @@ internal sealed class DirectPublisher(
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterPublish))
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = _NowUnixTimeMilliseconds();
             var eventData = new MessageEventDataPubSend
             {
                 OperationTimestamp = now,
@@ -144,7 +145,7 @@ internal sealed class DirectPublisher(
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
         {
             var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = _NowUnixTimeMilliseconds();
 
             var eventData = new MessageEventDataPubSend
             {
@@ -164,7 +165,7 @@ internal sealed class DirectPublisher(
     {
         if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = _NowUnixTimeMilliseconds();
 
             var eventData = new MessageEventDataPubSend
             {
@@ -180,13 +181,13 @@ internal sealed class DirectPublisher(
         }
     }
 
-    private static void _TracingErrorSerialization(Message message, Exception exception)
+    private void _TracingErrorSerialization(Message message, Exception exception)
     {
         if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublishMessageStore))
         {
             var eventData = new MessageEventDataPubStore
             {
-                OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                OperationTimestamp = _NowUnixTimeMilliseconds(),
                 Operation = message.GetName(),
                 Message = message,
                 Exception = exception,
@@ -195,6 +196,8 @@ internal sealed class DirectPublisher(
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublishMessageStore, eventData);
         }
     }
+
+    private long _NowUnixTimeMilliseconds() => timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
 
     #endregion
 }

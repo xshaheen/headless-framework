@@ -9,11 +9,15 @@ internal sealed class NodeHeartBeatBackgroundService(
     ServiceExtension.JobsRedisOptionBuilder schedulerOptionsBuilder,
     IJobsRedisContext context,
     IInternalJobManager internalJobsManager,
-    ILogger<NodeHeartBeatBackgroundService> logger
+    ILogger<NodeHeartBeatBackgroundService> logger,
+    TimeProvider timeProvider
 ) : BackgroundService
 {
     private int _started;
-    private readonly PeriodicTimer _tickerHeartBeatPeriodicTimer = new(schedulerOptionsBuilder.NodeHeartbeatInterval);
+    private readonly PeriodicTimer _tickerHeartBeatPeriodicTimer = new(
+        schedulerOptionsBuilder.NodeHeartbeatInterval,
+        timeProvider
+    );
 
     public override Task StartAsync(CancellationToken ct)
     {
@@ -35,7 +39,7 @@ internal sealed class NodeHeartBeatBackgroundService(
             catch (Exception e)
             {
                 logger.LogError(e, "Heartbeat background service failed");
-                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+                await timeProvider.Delay(TimeSpan.FromSeconds(30), stoppingToken);
             }
         }
     }

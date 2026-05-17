@@ -4,6 +4,7 @@ using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
@@ -21,6 +22,7 @@ internal sealed class NatsConsumerClient(
 {
     private readonly Lock _receiveLock = new();
     private readonly MessagingNatsOptions _natsOptions = Argument.IsNotNull(options.Value);
+    private readonly TimeProvider _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
 
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
     private readonly ConsumerPauseGate _pauseGate = new();
@@ -239,7 +241,7 @@ internal sealed class NatsConsumerClient(
                         );
 
                         retryDelay = _NextBackoff(retryDelay, floor: TimeSpan.FromSeconds(5));
-                        await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
+                        await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
                     catch (Exception ex)
@@ -253,7 +255,7 @@ internal sealed class NatsConsumerClient(
                         );
 
                         retryDelay = _NextBackoff(retryDelay);
-                        await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
+                        await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
 
@@ -282,7 +284,7 @@ internal sealed class NatsConsumerClient(
                 );
 
                 retryDelay = _NextBackoff(retryDelay);
-                await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
+                await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
             }
         }
     }

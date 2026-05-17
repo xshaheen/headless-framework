@@ -14,7 +14,8 @@ internal sealed class OutboxPublisher(
     IDispatcher dispatcher,
     IMessagePublishRequestFactory publishRequestFactory,
     IOutboxTransactionAccessor transactionAccessor,
-    IPublishExecutionPipeline publishPipeline
+    IPublishExecutionPipeline publishPipeline,
+    TimeProvider timeProvider
 ) : IOutboxPublisher, IScheduledPublisher
 {
     // ReSharper disable once InconsistentNaming
@@ -137,13 +138,13 @@ internal sealed class OutboxPublisher(
 
     #region tracing
 
-    private static long? _TracingBefore(Message message)
+    private long? _TracingBefore(Message message)
     {
         if (DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforePublishMessageStore))
         {
             var eventData = new MessageEventDataPubStore
             {
-                OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                OperationTimestamp = _NowUnixTimeMilliseconds(),
                 Operation = message.GetName(),
                 Message = message,
             };
@@ -156,14 +157,14 @@ internal sealed class OutboxPublisher(
         return null;
     }
 
-    private static void _TracingAfter(long? tracingTimestamp, Message message)
+    private void _TracingAfter(long? tracingTimestamp, Message message)
     {
         if (
             tracingTimestamp != null
             && DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterPublishMessageStore)
         )
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = _NowUnixTimeMilliseconds();
             var eventData = new MessageEventDataPubStore
             {
                 OperationTimestamp = now,
@@ -176,14 +177,14 @@ internal sealed class OutboxPublisher(
         }
     }
 
-    private static void _TracingError(long? tracingTimestamp, Message message, Exception ex)
+    private void _TracingError(long? tracingTimestamp, Message message, Exception ex)
     {
         if (
             tracingTimestamp != null
             && DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublishMessageStore)
         )
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = _NowUnixTimeMilliseconds();
             var eventData = new MessageEventDataPubStore
             {
                 OperationTimestamp = now,
@@ -196,6 +197,8 @@ internal sealed class OutboxPublisher(
             DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublishMessageStore, eventData);
         }
     }
+
+    private long _NowUnixTimeMilliseconds() => timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
 
     #endregion
 }

@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -16,6 +17,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly byte _groupConcurrent;
     private readonly IConnectionChannelPool _connectionChannelPool;
     private readonly IServiceProvider _serviceProvider;
+    private readonly TimeProvider _timeProvider;
     private readonly string _exchangeName;
     private readonly RabbitMqOptions _rabbitMqOptions;
     private readonly ConsumerPauseGate _pauseGate = new();
@@ -39,6 +41,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _groupConcurrent = groupConcurrent;
         _connectionChannelPool = connectionChannelPool;
         _serviceProvider = serviceProvider;
+        _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         _exchangeName = connectionChannelPool.Exchange;
         _rabbitMqOptions = options.Value;
     }
@@ -117,7 +120,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         // Using Timeout.Infinite avoids repeated timer+task allocations from a polling loop.
         try
         {
-            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            await _timeProvider.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
