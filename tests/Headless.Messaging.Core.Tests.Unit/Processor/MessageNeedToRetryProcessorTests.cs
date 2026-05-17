@@ -82,7 +82,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         provider ??= new ServiceCollection().AddSingleton(Substitute.For<IDataStorage>()).BuildServiceProvider();
 
-        return new ProcessingContext(provider, CancellationToken.None);
+        return new ProcessingContext(provider, TimeProvider.System, CancellationToken.None);
     }
 
     private static void _SetupReceivedMessages(IDataStorage dataStorage, params MediumMessage[] messages)
@@ -514,7 +514,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var cts = new CancellationTokenSource();
         try
         {
-            var cancellableContext = new ProcessingContext(context.Provider, cts.Token);
+            var cancellableContext = new ProcessingContext(context.Provider, TimeProvider.System, cts.Token);
             var secondTask = sut.ProcessAsync(cancellableContext);
             // Give the storage call a moment to be invoked, then cancel.
             await Task.Delay(50, AbortToken);

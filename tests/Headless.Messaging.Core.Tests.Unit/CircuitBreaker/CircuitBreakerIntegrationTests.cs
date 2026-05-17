@@ -78,7 +78,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     {
         provider ??= new ServiceCollection().AddSingleton(Substitute.For<IDataStorage>()).BuildServiceProvider();
 
-        return new ProcessingContext(provider, CancellationToken.None);
+        return new ProcessingContext(provider, TimeProvider.System, CancellationToken.None);
     }
 
     /// <summary>

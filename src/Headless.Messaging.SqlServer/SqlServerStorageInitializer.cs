@@ -59,24 +59,24 @@ public sealed class SqlServerStorageInitializer(
             );
         }
 
-        // Wrap the DDL batch in a transaction so a mid-script failure (network drop,
-        // transient timeout) cannot leave the schema half-initialized. Each idempotent
-        // block inside the script is also guarded by TRY/CATCH that swallows ONLY the
-        // duplicate-object (2714) and PK-violation (2627) errors that fire under a TOCTOU
-        // race between concurrent startups (e.g., 2+ pods rolling out simultaneously).
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
+        // No wrapping transaction: each idempotent block in the script is already protected by
+        // its own IF NOT EXISTS guard plus a narrow TRY/CATCH that swallows only the
+        // duplicate-object (2714) and PK-violation (2627) errors raised under a TOCTOU race
+        // between concurrent startups (multi-replica rollouts). A wrapping transaction would
+        // interact poorly with sessions that have SET XACT_ABORT ON — statement-level errors
+        // doom the transaction (XACT_STATE = -1), the inner CATCH swallows the error, but the
+        // outer COMMIT then fails with 3930, masking the real cause. A mid-script abort
+        // (network drop, transient timeout) without the transaction just leaves a partially
+        // initialized schema that the next initialize pass re-creates piece-by-piece because
+        // every block is guarded by IF NOT EXISTS.
         await connection
             .ExecuteNonQueryAsync(
                 sql,
-                transaction: transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 sqlParams: sqlParams.AsArray(),
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
-
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         logger.LogEnsuringTablesCreated();
     }

@@ -22,6 +22,7 @@ public sealed class InlineRetryLoopTests : TestBase
                 return Task.FromResult((RetryDecision.Stop, "done"));
             },
             policy,
+            TimeProvider.System,
             CancellationToken.None
         );
 
@@ -50,6 +51,7 @@ public sealed class InlineRetryLoopTests : TestBase
                 return Task.FromResult((RetryDecision.Continue(TimeSpan.Zero), attempts));
             },
             policy,
+            TimeProvider.System,
             CancellationToken.None
         );
 
@@ -73,6 +75,7 @@ public sealed class InlineRetryLoopTests : TestBase
                 return Task.FromResult((RetryDecision.Continue(TimeSpan.Zero), attempts));
             },
             policy,
+            TimeProvider.System,
             CancellationToken.None
         );
 
@@ -96,6 +99,7 @@ public sealed class InlineRetryLoopTests : TestBase
                 return Task.FromResult((RetryDecision.Continue(TimeSpan.Zero), attempts));
             },
             policy,
+            TimeProvider.System,
             CancellationToken.None
         );
 

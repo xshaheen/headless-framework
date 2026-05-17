@@ -16,11 +16,14 @@ internal static class InlineRetryLoop
     /// <summary>
     /// Runs <paramref name="attemptFn"/> until it returns a terminal decision or the inline-retry
     /// budget is exhausted. The <c>inlineRetries</c> counter passed to <paramref name="attemptFn"/>
-    /// starts at zero on the first call and increments after each retry.
+    /// starts at zero on the first call and increments after each retry. The inter-attempt delay
+    /// is driven through <paramref name="timeProvider"/> so tests can advance time deterministically
+    /// via <c>FakeTimeProvider</c>.
     /// </summary>
     public static async Task<TResult> ExecuteAsync<TResult>(
         Func<int, CancellationToken, Task<(RetryDecision Decision, TResult Result)>> attemptFn,
         RetryPolicyOptions policy,
+        TimeProvider timeProvider,
         CancellationToken cancellationToken
     )
     {
@@ -46,10 +49,10 @@ internal static class InlineRetryLoop
             inlineRetries++;
 
             // Defend against a zero-delay strategy spinning past cancellation between attempts:
-            // Task.Delay(TimeSpan.Zero, ct) can return synchronously without observing the token,
-            // so check explicitly before waiting and re-entering the loop.
+            // timeProvider.Delay(TimeSpan.Zero, ct) can return synchronously without observing the
+            // token, so check explicitly before waiting and re-entering the loop.
             cancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(decision.Delay, cancellationToken).ConfigureAwait(false);
+            await timeProvider.Delay(decision.Delay, cancellationToken).ConfigureAwait(false);
         }
     }
 }
