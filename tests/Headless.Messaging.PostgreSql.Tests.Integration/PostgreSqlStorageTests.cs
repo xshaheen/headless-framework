@@ -394,7 +394,9 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
                 JOIN pg_namespace n ON n.oid = c.relnamespace
                 JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
                 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
-                WHERE n.nspname = 'messaging' AND c.relname = @IndexName
+                WHERE n.nspname = 'messaging'
+                  AND c.relname = @IndexName
+                  AND k.ord <= i.indnkeyatts
                 ORDER BY k.ord;
                 """,
                 new { IndexName = indexName }
@@ -423,20 +425,49 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     [InlineData("published", "idx_published_Version_NextRetryAt")]
     public async Task should_use_partial_indexes_in_retry_pickup_query_plan(string tableSuffix, string nextRetryIndex)
     {
-        // given — ensure the table has at least a few rows in each predicate branch so
-        // the planner has a reason to choose the partial index over a seq scan on a tiny table.
+        // given — the planner only prefers an index over a sequential scan once the table has
+        // enough rows for an index lookup to be cheaper. A freshly-initialised test container
+        // starts with an empty table, so we synthesise a small load profile (a mix of rows that
+        // satisfy and violate the partial-index predicate) and ANALYZE to refresh statistics.
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
-        // Force any cached plans to refresh against current statistics.
-        await connection.ExecuteAsync($"ANALYZE messaging.{tableSuffix};");
-
         var qualifiedTable = $"messaging.\"{tableSuffix}\"";
+        const int seedRows = 50;
+        var seedSql = tableSuffix switch
+        {
+            "received" => $$"""
+                INSERT INTO {{qualifiedTable}} ("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId")
+                SELECT g, 'v1', 'plan-test', NULL, '{}', 0, now(), NULL,
+                       CASE WHEN g % 2 = 0 THEN now() - interval '1 minute' ELSE NULL END,
+                       NULL, 'Failed', 'plan-' || g
+                FROM generate_series(1000, 1000 + {{seedRows - 1}}) g
+                ON CONFLICT DO NOTHING;
+                """,
+            "published" => $$"""
+                INSERT INTO {{qualifiedTable}} ("Id","Version","Name","Content","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId")
+                SELECT g, 'v1', 'plan-test', '{}', 0, now(), NULL,
+                       CASE WHEN g % 2 = 0 THEN now() - interval '1 minute' ELSE NULL END,
+                       NULL, 'Failed', 'plan-' || g
+                FROM generate_series(1000, 1000 + {{seedRows - 1}}) g
+                ON CONFLICT DO NOTHING;
+                """,
+            _ => throw new ArgumentOutOfRangeException(nameof(tableSuffix), tableSuffix, "Unknown table suffix."),
+        };
+        await connection.ExecuteAsync(seedSql);
+        await connection.ExecuteAsync($"ANALYZE {qualifiedTable};");
 
         // The query mirrors PostgreSqlDataStorage._GetMessagesOfNeedRetryAsync. We omit
         // "FOR UPDATE SKIP LOCKED" because EXPLAIN does not require row-level locking and
         // the planner does not include it in the index-selection decision under FORMAT JSON.
+        //
+        // Disable seq scan for the plan capture so the test pins the planner's preferred
+        // *index*-backed path. With seq scan enabled, PostgreSQL can still pick the partial
+        // index, but on small tables it may pick a seq scan even after seeding — the assertion
+        // we care about is "the planner has a usable index", not "the planner picks it for 50
+        // rows".
         var explainSql = $"""
+            SET LOCAL enable_seqscan = off;
             EXPLAIN (ANALYZE, FORMAT JSON)
             SELECT "Id","Content","Retries","Added","NextRetryAt" FROM {qualifiedTable}
             WHERE "Retries" <= @Retries
@@ -447,10 +478,13 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             """;
 
         // when
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
         var planJson = await connection.QueryFirstOrDefaultAsync<string>(
             explainSql,
-            new { Retries = 50, Version = "v1" }
+            new { Retries = 50, Version = "v1" },
+            transaction: transaction
         );
+        await transaction.CommitAsync(AbortToken);
 
         // then — the plan should reference the partial index.
         planJson.Should().NotBeNullOrEmpty();
