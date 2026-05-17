@@ -9,7 +9,8 @@ namespace Headless.Messaging.Processor;
 public sealed class MessageProcessingServer(
     ILogger<MessageProcessingServer> logger,
     ILoggerFactory loggerFactory,
-    IServiceProvider provider
+    IServiceProvider provider,
+    TimeProvider timeProvider
 ) : IProcessingServer
 {
     private CancellationTokenSource _cts = new();
@@ -33,7 +34,7 @@ public sealed class MessageProcessingServer(
 
         _logger.ServerStarting();
 
-        _context = new ProcessingContext(provider, _cts.Token);
+        _context = new ProcessingContext(provider, timeProvider, _cts.Token);
 
         var processorTasks = _GetProcessors().Select(_InfiniteRetry).Select(p => p.ProcessAsync(_context));
         _compositeTask = Task.WhenAll(processorTasks);

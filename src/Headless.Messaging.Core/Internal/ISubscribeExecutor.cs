@@ -105,6 +105,7 @@ internal sealed class SubscribeExecutor(
                 (inlineRetries, ct) =>
                     _ExecuteWithoutRetryAsync(message, descriptor, dispatchServices, inlineRetries, ct),
                 _retryPolicy,
+                timeProvider,
                 cancellationToken
             )
             .ConfigureAwait(false);

@@ -85,6 +85,7 @@ internal sealed class MessageSender : IMessageSender
         return InlineRetryLoop.ExecuteAsync(
             (inlineRetries, ct) => _SendWithoutRetryAsync(message, dispatchServices, inlineRetries, ct),
             _retryPolicy,
+            _timeProvider,
             _shutdownToken
         );
     }

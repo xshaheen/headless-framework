@@ -4,18 +4,24 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Processor;
 
-public sealed class ProcessingContext(IServiceProvider provider, CancellationToken cancellationToken) : IDisposable
+public sealed class ProcessingContext(
+    IServiceProvider provider,
+    TimeProvider timeProvider,
+    CancellationToken cancellationToken
+) : IDisposable
 {
     private IServiceScope? _scope;
 
     private ProcessingContext(ProcessingContext other)
-        : this(other.Provider, other.CancellationToken) { }
+        : this(other.Provider, other._timeProvider, other.CancellationToken) { }
 
     public IServiceProvider Provider { get; private init; } = provider;
 
     public CancellationToken CancellationToken { get; } = cancellationToken;
 
     public bool IsStopping => CancellationToken.IsCancellationRequested;
+
+    private readonly TimeProvider _timeProvider = timeProvider;
 
     public void Dispose() => _scope?.Dispose();
 
@@ -33,6 +39,6 @@ public sealed class ProcessingContext(IServiceProvider provider, CancellationTok
 
     public Task WaitAsync(TimeSpan timeout)
     {
-        return Task.Delay(timeout, CancellationToken);
+        return _timeProvider.Delay(timeout, CancellationToken);
     }
 }

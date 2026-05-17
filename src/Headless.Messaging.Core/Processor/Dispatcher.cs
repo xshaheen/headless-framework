@@ -29,7 +29,18 @@ internal sealed class Dispatcher : IDispatcher
     private readonly int _publishChannelSize;
 
     private CancellationTokenSource? _tasksCts;
-    private bool _disposed;
+
+    // Volatile because writers (DisposeAsync, _ResetStateIfNeeded) race readers on channel-writer
+    // and processing-loop threads. Without the barrier, a stale `false` read can slip past the
+    // post-dispose guard in _WriteToChannelAsync and only get caught by the ObjectDisposedException
+    // → OCE fallback. Volatile makes the post-dispose visibility deterministic.
+    private volatile bool _disposed;
+
+    // Pre-cancelled token used for OCEs surfaced when the dispatcher is pre-start or post-dispose.
+    // Downstream code that pattern-matches on oce.CancellationToken (e.g., RetryHelper.IsCancellation)
+    // sees IsCancellationRequested = true and classifies the failure as cancellation rather than
+    // a non-cancellation fault.
+    private static readonly CancellationToken _DispatcherStoppedToken = new(canceled: true);
 
     private CancellationTokenSource TasksCts =>
         _tasksCts ?? throw new InvalidOperationException("Dispatcher is not started.");
@@ -285,6 +296,19 @@ internal sealed class Dispatcher : IDispatcher
 
     #region Initialization Methods
 
+    /// <summary>
+    /// Resets <see cref="_tasksCts"/> and <see cref="_disposed"/> so the dispatcher can be
+    /// re-started after a previous <c>StopAsync</c>/<c>DisposeAsync</c> cycle. Hosts that
+    /// re-host the underlying <c>IHostedService</c> (test harnesses, dashboard hot-restart
+    /// flows) call <see cref="StartAsync"/> again on the same instance; without this reset
+    /// the second start would observe the cancelled token or the post-dispose flag and refuse
+    /// to bring the channels back up.
+    /// </summary>
+    /// <remarks>
+    /// This is the only call site that flips <see cref="_disposed"/> back to <see langword="false"/>.
+    /// All other consumers must treat the dispatcher as terminally disposed once
+    /// <see cref="DisposeAsync"/> has run.
+    /// </remarks>
     private void _ResetStateIfNeeded()
     {
         if (_disposed || _tasksCts is { IsCancellationRequested: true })
@@ -383,7 +407,7 @@ internal sealed class Dispatcher : IDispatcher
                     try
                     {
                         await _ProcessScheduledMessagesAsync().ConfigureAwait(false);
-                        await Task.Delay(TimeSpan.FromMilliseconds(100), TasksCts.Token).ConfigureAwait(false);
+                        await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), TasksCts.Token).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
@@ -618,7 +642,10 @@ internal sealed class Dispatcher : IDispatcher
         // unwinds as benign cancellation, not as an unhandled exception escaping the dispatch loop.
         if (_tasksCts is null || _disposed)
         {
-            throw new OperationCanceledException("Dispatcher is not started or has been disposed.");
+            throw new OperationCanceledException(
+                "Dispatcher is not started or has been disposed.",
+                _DispatcherStoppedToken
+            );
         }
 
         if (!channel.Writer.TryWrite(item))
@@ -631,9 +658,9 @@ internal sealed class Dispatcher : IDispatcher
             {
                 linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_tasksCts.Token, cancellationToken);
             }
-            catch (ObjectDisposedException ex)
+            catch (ObjectDisposedException)
             {
-                throw new OperationCanceledException("Dispatcher was disposed during write.", ex);
+                throw new OperationCanceledException("Dispatcher was disposed during write.", _DispatcherStoppedToken);
             }
 
             try
