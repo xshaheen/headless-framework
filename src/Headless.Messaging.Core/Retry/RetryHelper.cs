@@ -129,17 +129,22 @@ internal static class RetryHelper
     }
 
     /// <summary>
-    /// Returns <see langword="true"/> only when all three conditions hold: the
-    /// <paramref name="cancellationToken"/> was cancelled, the exception is an
-    /// <see cref="OperationCanceledException"/>, and its embedded token matches
-    /// <paramref name="cancellationToken"/> exactly. Token-matching prevents treating
-    /// a timeout OCE (e.g. from an inner <c>HttpClient</c> timeout) as a host-shutdown
-    /// cancellation, which would suppress retries for transient failures.
+    /// Returns <see langword="true"/> when the supplied <paramref name="cancellationToken"/>
+    /// has been cancelled and <paramref name="ex"/> is an <see cref="OperationCanceledException"/>.
+    /// The embedded token on the OCE is intentionally not required to match
+    /// <paramref name="cancellationToken"/>: a linked CTS produced by
+    /// <see cref="CancellationTokenSource.CreateLinkedTokenSource(CancellationToken)"/> carries
+    /// the LINKED token on its OCE, not the outer token, so a strict identity check would
+    /// mis-classify host-shutdown cancellations that arrive via a linked source.
     /// </summary>
+    /// <remarks>
+    /// The outer-token <c>IsCancellationRequested</c> guard still distinguishes shutdown OCEs
+    /// from unrelated timeout OCEs (e.g. an <c>HttpClient</c> timeout fires its own OCE while the
+    /// outer token is NOT cancelled, so this method returns <see langword="false"/> and the
+    /// failure flows through the normal retry pipeline).
+    /// </remarks>
     public static bool IsCancellation(Exception ex, CancellationToken cancellationToken) =>
-        cancellationToken.IsCancellationRequested
-        && ex is OperationCanceledException oce
-        && oce.CancellationToken == cancellationToken;
+        cancellationToken.IsCancellationRequested && ex is OperationCanceledException;
 
     /// <summary>
     /// Invokes the supplied <paramref name="callback"/> with a hard timeout via
@@ -268,6 +273,54 @@ internal static class RetryHelper
                 callbackCts.Dispose();
             }
         }
+    }
+
+    /// <summary>
+    /// End-to-end <c>OnExhausted</c> invocation: enters the message's tenant context, builds the
+    /// <see cref="FailedInfo"/> envelope around the configured callback, and applies the configured
+    /// timeout / cancellation contract. Both the publish path (<c>MessageSender</c>) and the consume
+    /// path (<c>SubscribeExecutor</c>) share this body; the only per-path knob is
+    /// <paramref name="messageType"/>.
+    /// </summary>
+    /// <remarks>
+    /// Returns immediately when <see cref="RetryPolicyOptions.OnExhausted"/> is <see langword="null"/>.
+    /// All callback failures (synchronous throw, async fault, timeout, shutdown) are absorbed via
+    /// <see cref="InvokeOnExhaustedAsync"/> — see that method for the cancellation/timeout contract.
+    /// </remarks>
+    public static async Task RunOnExhaustedAsync(
+        RetryPolicyOptions policy,
+        MediumMessage message,
+        Exception exception,
+        IServiceProvider dispatchServices,
+        MessageType messageType,
+        ILogger logger,
+        CancellationToken cancellationToken
+    )
+    {
+        var callback = policy.OnExhausted;
+        if (callback is null)
+        {
+            return;
+        }
+
+        // Use the live dispatch scope so scoped services resolved by the callback are the same
+        // instances seen during the consume/send attempt. The caller (Dispatcher) owns this scope.
+        using var tenantScope = TenantContextScope.ChangeFromEnvelope(dispatchServices, message.Origin, logger);
+        await InvokeOnExhaustedAsync(
+                callback,
+                new FailedInfo
+                {
+                    ServiceProvider = dispatchServices,
+                    MessageType = messageType,
+                    Message = message.Origin,
+                    Exception = exception,
+                },
+                policy.OnExhaustedTimeout,
+                message.StorageId,
+                logger,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     /// <summary>

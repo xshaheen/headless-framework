@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Processor;
 
+[PublicAPI]
 public sealed class MessageProcessingServer(
     ILogger<MessageProcessingServer> logger,
     ILoggerFactory loggerFactory,
@@ -22,15 +23,25 @@ public sealed class MessageProcessingServer(
 
     public ValueTask StartAsync(CancellationToken stoppingToken)
     {
-        // If already disposed and restarting, recreate the CancellationTokenSource
+        // If already disposed and restarting, recreate the CancellationTokenSource so it's linked
+        // to the freshly supplied stoppingToken. The previous CTS (which may have already fired)
+        // is disposed first.
         if (_disposed || _cts.IsCancellationRequested)
         {
             _cts.Dispose();
-            _cts = new CancellationTokenSource();
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             _disposed = false;
         }
-
-        stoppingToken.Register(() => _cts.Cancel());
+        else
+        {
+            // First start path: replace the parameterless CTS allocated at field init with a linked
+            // one so stoppingToken propagation does not depend on the discarded
+            // `stoppingToken.Register(...)` registration (which leaked the IDisposable). Linking the
+            // outer token at construction time is both leak-free and dispose-safe across restarts.
+            var prior = _cts;
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            prior.Dispose();
+        }
 
         _logger.ServerStarting();
 
@@ -74,7 +85,12 @@ public sealed class MessageProcessingServer(
 
             if (_compositeTask is not null)
             {
-                await _compositeTask.WaitAsync(TimeSpan.FromSeconds(10));
+                // #19 — thread the injected TimeProvider through WaitAsync so the shutdown grace
+                // honors the test clock under FakeTimeProvider, and pass CancellationToken.None so
+                // the wait observes only the timeout (the linked _cts has already been cancelled by
+                // the CancelAsync above; if the composite tasks ignore it, falling back to the
+                // ambient stoppingToken would re-cancel into the same wait pointlessly).
+                await _compositeTask.WaitAsync(TimeSpan.FromSeconds(10), timeProvider, CancellationToken.None);
             }
         }
         catch (AggregateException e)

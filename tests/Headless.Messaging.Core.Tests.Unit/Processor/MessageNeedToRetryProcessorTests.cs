@@ -602,4 +602,87 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         sut.CurrentPollingInterval.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1));
         sut.CurrentPollingInterval.Should().BeLessThanOrEqualTo(TimeSpan.FromSeconds(900));
     }
+
+    // -------------------------------------------------------------------------
+    // #8 — Storage-pickup failure escalation
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task ProcessAsync_EscalatesToError_AfterThreeConsecutiveStorageFailures_AndResetsAfterSuccess()
+    {
+        // Arrange — capture EventId.Name from ILogger.Log invocations.
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var logger = Substitute.For<ILogger<MessageNeedToRetryProcessor>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+
+        var captured = new List<(LogLevel Level, string Name)>();
+        logger
+            .When(l =>
+                l.Log(
+                    Arg.Any<LogLevel>(),
+                    Arg.Any<EventId>(),
+                    Arg.Any<object>(),
+                    Arg.Any<Exception?>(),
+                    Arg.Any<Func<object, Exception?, string>>()
+                )
+            )
+            .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Name ?? string.Empty)));
+
+        var sut = new MessageNeedToRetryProcessor(
+            Options.Create(new MessagingOptions()),
+            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromSeconds(1) }),
+            logger,
+            dispatcher,
+            dataStorage
+        );
+
+        // Received-pickup throws on the first three cycles, succeeds on the fourth.
+        var receivedCalls = 0;
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                Interlocked.Increment(ref receivedCalls) <= 3
+                    ? ValueTask.FromException<IEnumerable<MediumMessage>>(new InvalidOperationException("storage down"))
+                    : ValueTask.FromResult<IEnumerable<MediumMessage>>([])
+            );
+        // Published path stays clean to isolate the received-pickup counter.
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Act — cycle 1, 2 → Warning; cycle 3 → Error; cycle 4 → success resets the counter.
+        await sut.ProcessAsync(context);
+        await sut.ProcessAsync(context);
+        var afterTwo = captured.ToList();
+        await sut.ProcessAsync(context);
+        var afterThree = captured.ToList();
+        await sut.ProcessAsync(context);
+
+        // Assert
+        afterTwo
+            .Count(e => string.Equals(e.Name, "GetMessagesFromStorageFailed", StringComparison.Ordinal))
+            .Should()
+            .Be(2);
+        afterTwo.Should().OnlyContain(e => e.Level != LogLevel.Error || e.Name != "RetryStoragePickupFailureEscalated");
+
+        afterThree
+            .Count(e =>
+                string.Equals(e.Name, "RetryStoragePickupFailureEscalated", StringComparison.Ordinal)
+                && e.Level == LogLevel.Error
+            )
+            .Should()
+            .Be(1);
+
+        // Cycle 4 succeeded → no extra escalation/failure events were emitted after the third call.
+        captured
+            .Count(e =>
+                string.Equals(e.Name, "RetryStoragePickupFailureEscalated", StringComparison.Ordinal)
+                || string.Equals(e.Name, "GetMessagesFromStorageFailed", StringComparison.Ordinal)
+            )
+            .Should()
+            .Be(3);
+    }
 }

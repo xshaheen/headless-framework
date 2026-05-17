@@ -411,7 +411,10 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
 {
     public MessagingOptionsValidator()
     {
-        RuleFor(x => x.RetryPolicy).NotNull().SetValidator(new RetryPolicyOptionsValidator());
+        RuleFor(x => x.RetryPolicy)
+            .NotNull()
+            .WithMessage("RetryPolicy must not be null.")
+            .SetValidator(new RetryPolicyOptionsValidator());
         RuleFor(x => x.TransportPublishTimeout)
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("TransportPublishTimeout must be greater than zero.")

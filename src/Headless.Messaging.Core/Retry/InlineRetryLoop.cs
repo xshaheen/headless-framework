@@ -46,6 +46,17 @@ internal static class InlineRetryLoop
                 return result;
             }
 
+            // #21 — runtime-guard for backoff delays that exceed the dispatch timeout. The pickup
+            // lease is sized to DispatchTimeout, so a strategy that returns Delay >= DispatchTimeout
+            // would have the inline loop snooze past the lease boundary, allowing another replica
+            // to re-pick the row mid-sleep and double-dispatch. Transition to persisted-retry
+            // (return the current decision, let the caller persist as Continue with NextRetryAt set)
+            // by exiting the inline loop early.
+            if (decision.Delay >= policy.DispatchTimeout)
+            {
+                return result;
+            }
+
             inlineRetries++;
 
             // Defend against a zero-delay strategy spinning past cancellation between attempts:

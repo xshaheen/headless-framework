@@ -708,7 +708,16 @@ public sealed class SqlServerDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var sql = $"UPDATE {tableName} SET LockedUntil=@LockedUntil WHERE Id=@Id AND {_TerminalRowGuardSimple}";
+        // #15 — explicit lease-contention predicate: only acquire the lease when the row is unleased
+        // OR its existing lease has expired. Without this, two replicas racing on a fresh-from-broker
+        // dispatch could both UPDATE LockedUntil and both believe they hold the lease (the SqlServer
+        // and PostgreSql atomic-claim pickup paths already filter on LockedUntil, but the lease call
+        // from the consume/publish path itself was unconditional). Returning false here surfaces the
+        // contention to the inline retry loop, which skips dispatch.
+        var sql =
+            $"UPDATE {tableName} SET LockedUntil=@LockedUntil WHERE Id=@Id "
+            + "AND (LockedUntil IS NULL OR LockedUntil <= @Now) "
+            + $"AND {_TerminalRowGuardSimple}";
 
         object[] sqlParams =
         [
@@ -717,6 +726,7 @@ public sealed class SqlServerDataStorage(
             {
                 Value = ((DateTime?)lockedUntil).ToUtcParameterValue(),
             },
+            new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);

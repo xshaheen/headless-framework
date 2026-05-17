@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Processor;
 
+[PublicAPI]
 public sealed class ProcessingContext(
     IServiceProvider provider,
     TimeProvider timeProvider,
