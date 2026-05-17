@@ -11,6 +11,7 @@ using Headless.Messaging.Testing.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Testing;
@@ -426,7 +427,8 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         {
             var inner = _ResolveFromDescriptor<ITransport>(sp, original);
             var serializer = sp.GetRequiredService<ISerializer>();
-            return new RecordingTransport(inner, store, serializer);
+            var logger = sp.GetService<ILogger<RecordingTransport>>();
+            return new RecordingTransport(inner, store, serializer, logger);
         });
     }
 
