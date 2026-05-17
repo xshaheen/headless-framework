@@ -440,7 +440,7 @@ public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
 {
     private readonly Lock _lock = new();
     private int _failedAttempts;
-    private TaskCompletionSource<bool> _attemptTcs = new();
+    private TaskCompletionSource<bool> _attemptTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>Gets the number of failed processing attempts.</summary>
     /// <remarks>
@@ -455,10 +455,13 @@ public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
         {
             _failedAttempts++;
             _attemptTcs.TrySetResult(true);
-            _attemptTcs = new TaskCompletionSource<bool>();
+            _attemptTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
-        throw new InvalidOperationException($"Simulated failure for message {context.MessageId}");
+        // TimeoutException is treated as a transient failure by RetryExceptionClassifier so
+        // retry tests can observe more than one attempt. Permanent classifications
+        // (InvalidOperationException, ArgumentException, ...) would short-circuit retries.
+        throw new TimeoutException($"Simulated failure for message {context.MessageId}");
     }
 
     /// <summary>Resets the failed attempt counter and signal atomically.</summary>
@@ -467,7 +470,7 @@ public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
         lock (_lock)
         {
             _failedAttempts = 0;
-            _attemptTcs = new TaskCompletionSource<bool>();
+            _attemptTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
     }
 

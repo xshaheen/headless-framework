@@ -15,7 +15,13 @@ public sealed class TestSubscriber : IConsume<TestMessage>
 
     // Signaled on every Consume(), then replaced with a fresh TCS so subsequent waiters
     // can await the next arrival. Always read/written under _lock.
-    private TaskCompletionSource<bool> _arrivedTcs = new();
+    //
+    // RunContinuationsAsynchronously is REQUIRED: without it, TrySetResult below runs
+    // waiter continuations synchronously on the producer thread while still inside _lock,
+    // which lets the waiter re-enter the lock and observe the just-completed TCS (because
+    // the new-TCS assignment has not run yet). That tight loop never yields, so the
+    // CancelAfter timeout cannot interrupt it.
+    private TaskCompletionSource<bool> _arrivedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>Gets the received message contexts.</summary>
     public IReadOnlyCollection<ConsumeContext<TestMessage>> ReceivedContexts => _receivedContexts;
@@ -29,7 +35,7 @@ public sealed class TestSubscriber : IConsume<TestMessage>
         {
             _receivedContexts.Enqueue(context);
             _arrivedTcs.TrySetResult(true);
-            _arrivedTcs = new TaskCompletionSource<bool>();
+            _arrivedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         return ValueTask.CompletedTask;
@@ -105,7 +111,7 @@ public sealed class TestSubscriber : IConsume<TestMessage>
         lock (_lock)
         {
             _receivedContexts.Clear();
-            _arrivedTcs = new TaskCompletionSource<bool>();
+            _arrivedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
     }
 }
