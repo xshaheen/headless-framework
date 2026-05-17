@@ -57,10 +57,13 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         _maxEvictionsPerCompaction = options.MaxEvictionsPerCompaction;
         _evictionSampleSize = options.EvictionSampleSize;
 
-        Ensure.True(
-            !(_maxMemorySize.HasValue || _maxEntrySize.HasValue) || _sizeCalculator is not null,
-            "SizeCalculator is required when MaxMemorySize or MaxEntrySize is set."
-        );
+        if ((_maxMemorySize.HasValue || _maxEntrySize.HasValue) && _sizeCalculator is null)
+        {
+            throw new ArgumentException(
+                "SizeCalculator is required when MaxMemorySize or MaxEntrySize is set.",
+                nameof(options)
+            );
+        }
     }
 
     /// <inheritdoc />

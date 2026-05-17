@@ -80,20 +80,22 @@ public sealed class SqlServerConnectionStringCheckerTests
     {
         // given
         var logger = Substitute.For<ILogger<SqlServerConnectionStringChecker>>();
+        // Source-generated LoggerMessage gates on IsEnabled before calling Log; default mock returns false.
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var sut = new SqlServerConnectionStringChecker(logger);
 
         // when - use invalid connection that will fail
         await sut.CheckAsync("Server=invalid-server-12345;Database=test;Connect Timeout=1;TrustServerCertificate=True");
 
-        // then - verify LogWarning was called
+        // then - verify a warning-level Log call was issued.
+        // Source-generated LoggerMessage uses a private state struct, so we can't match Log<object>
+        // directly via NSubstitute's generic specialization. Inspect raw calls instead.
         logger
-            .Received()
-            .Log(
-                LogLevel.Warning,
-                Arg.Any<EventId>(),
-                Arg.Any<object>(),
-                Arg.Any<Exception>(),
-                Arg.Any<Func<object, Exception?, string>>()
+            .ReceivedCalls()
+            .Should()
+            .Contain(call =>
+                call.GetMethodInfo().Name == nameof(ILogger.Log)
+                && (LogLevel)call.GetArguments()[0]! == LogLevel.Warning
             );
     }
 }

@@ -80,20 +80,22 @@ public sealed class NpgsqlConnectionStringCheckerTests
     {
         // given
         var logger = Substitute.For<ILogger<NpgsqlConnectionStringChecker>>();
+        // Source-generated LoggerMessage gates on IsEnabled before calling Log; default mock returns false.
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var sut = new NpgsqlConnectionStringChecker(logger);
 
         // when - use invalid host to trigger exception
         await sut.CheckAsync("Host=invalid-host-xyz;Database=test");
 
-        // then - verify LogWarning was called
+        // then - verify a warning-level Log call was issued.
+        // Source-generated LoggerMessage uses a private state struct, so we can't match Log<object>
+        // directly via NSubstitute's generic specialization. Inspect raw calls instead.
         logger
-            .Received()
-            .Log(
-                LogLevel.Warning,
-                Arg.Any<EventId>(),
-                Arg.Any<object>(),
-                Arg.Any<Exception>(),
-                Arg.Any<Func<object, Exception?, string>>()
+            .ReceivedCalls()
+            .Should()
+            .Contain(call =>
+                call.GetMethodInfo().Name == nameof(ILogger.Log)
+                && (LogLevel)call.GetArguments()[0]! == LogLevel.Warning
             );
     }
 }

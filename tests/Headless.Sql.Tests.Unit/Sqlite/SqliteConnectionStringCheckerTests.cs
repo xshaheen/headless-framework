@@ -62,20 +62,22 @@ public sealed class SqliteConnectionStringCheckerTests
     {
         // given
         var logger = Substitute.For<ILogger<SqliteConnectionStringChecker>>();
+        // Source-generated LoggerMessage gates on IsEnabled before calling Log; default mock returns false.
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var sut = new SqliteConnectionStringChecker(logger);
 
         // when - use invalid path that will throw
         await sut.CheckAsync("Data Source=/nonexistent/path/that/should/not/exist/db.sqlite;Mode=ReadOnly");
 
-        // then - verify LogWarning was called
+        // then - verify a warning-level Log call was issued.
+        // Source-generated LoggerMessage uses a private state struct, so we can't match Log<object>
+        // directly via NSubstitute's generic specialization. Inspect raw calls instead.
         logger
-            .Received(1)
-            .Log(
-                LogLevel.Warning,
-                Arg.Any<EventId>(),
-                Arg.Any<object>(),
-                Arg.Any<Exception>(),
-                Arg.Any<Func<object, Exception?, string>>()
+            .ReceivedCalls()
+            .Should()
+            .ContainSingle(call =>
+                call.GetMethodInfo().Name == nameof(ILogger.Log)
+                && (LogLevel)call.GetArguments()[0]! == LogLevel.Warning
             );
     }
 }

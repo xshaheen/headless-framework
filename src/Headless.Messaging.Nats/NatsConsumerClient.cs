@@ -20,7 +20,7 @@ internal sealed class NatsConsumerClient(
 ) : IConsumerClient
 {
     private readonly Lock _receiveLock = new();
-    private readonly MessagingNatsOptions _natsOptions = options.Value;
+    private readonly MessagingNatsOptions _natsOptions = Argument.IsNotNull(options.Value);
 
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
     private readonly ConsumerPauseGate _pauseGate = new();
