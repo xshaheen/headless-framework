@@ -27,6 +27,13 @@ internal sealed class CircuitBreakerStateManager(
     CircuitBreakerMetrics metrics
 ) : ICircuitBreakerStateManager, IAsyncDisposable, IDisposable
 {
+    // Lock-free reads on per-group state are intentional throughout this class:
+    //   - GroupCircuitState.State and ConsecutiveFailures use Volatile.Read/Write via their
+    //     property accessors (see field comments in GroupCircuitState).
+    //   - _disposed uses Interlocked.Exchange for writes and Volatile.Read for reads.
+    // ReSharper's InconsistentlySynchronizedField analyzer flags these because the same fields
+    // are also touched inside per-group locks — but the lock protects compound state transitions,
+    // not single-field visibility, and Volatile/Interlocked provide visibility on their own.
     private readonly CircuitBreakerOptions _options = options.Value;
 
     private readonly ConcurrentDictionary<string, GroupCircuitState> _groups = new(StringComparer.Ordinal);
@@ -47,7 +54,7 @@ internal sealed class CircuitBreakerStateManager(
     /// <see cref="_GetOrAddState"/> returns a static no-op state for unrecognized names
     /// to prevent unbounded OTel cardinality. Empty before <see cref="RegisterKnownGroups"/> is called.
     /// </summary>
-    private FrozenSet<string> _knownGroups = FrozenSet<string>.Empty;
+    private FrozenSet<string> _knownGroups = [];
 
     /// <summary>
     /// Static no-op state returned for unrecognized group names. Permanently Closed,
@@ -660,7 +667,7 @@ internal sealed class CircuitBreakerStateManager(
             }
 
             // Await any pending resume task to ensure no callback runs after disposal.
-            // The task is already cancelled via _disposalCts, so it should complete quickly.
+            // The task is already canceled via _disposalCts, so it should complete quickly.
             if (resumeTask is not null)
             {
                 try
@@ -669,7 +676,7 @@ internal sealed class CircuitBreakerStateManager(
                 }
                 catch (OperationCanceledException)
                 {
-                    // Expected — disposal cancelled the token
+                    // Expected — disposal canceled the token
                 }
             }
         }
@@ -720,7 +727,7 @@ internal sealed class CircuitBreakerStateManager(
                     resumeTask.GetAwaiter().GetResult();
                 }
                 catch (OperationCanceledException)
-                { /* expected — disposal cancelled the token */
+                { /* expected — disposal canceled the token */
                 }
                 catch (Exception ex)
                 {
@@ -781,8 +788,11 @@ internal sealed class CircuitBreakerStateManager(
         {
             GroupName = groupName,
             Enabled = perGroup?.Enabled ?? true,
+            // ReSharper disable once InconsistentlySynchronizedField
             EffectiveFailureThreshold = perGroup?.FailureThreshold ?? _options.FailureThreshold,
+            // ReSharper disable once InconsistentlySynchronizedField
             EffectiveOpenDuration = perGroup?.OpenDuration ?? _options.OpenDuration,
+            // ReSharper disable once InconsistentlySynchronizedField
             EffectiveIsTransient = perGroup?.IsTransientException ?? _options.IsTransientException,
         };
 
@@ -978,7 +988,7 @@ internal sealed class CircuitBreakerStateManager(
                     ct
                 )
                 .ContinueWith(
-                    // If Task.Run itself is cancelled before the body runs (ct already cancelled),
+                    // If Task.Run itself is canceled before the body runs (ct already canceled),
                     // the TCS would never complete — complete it here as a fallback.
                     static (_, s) => ((TaskCompletionSource)s!).TrySetResult(),
                     resumeTcs,
@@ -1244,6 +1254,7 @@ internal static partial class CircuitBreakerStateManagerLog
         Level = LogLevel.Information,
         Message = "Circuit breaker HalfOpen → Closed for group {Group} (probe succeeded)"
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void CircuitClosedAfterProbeSucceededCore(this ILogger logger, string? group);
 
     [LoggerMessage(
@@ -1313,6 +1324,7 @@ internal static partial class CircuitBreakerStateManagerLog
         Level = LogLevel.Information,
         Message = "Circuit breaker Open → HalfOpen for group {Group}"
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void CircuitHalfOpenCore(this ILogger logger, string? group);
 
     [LoggerMessage(
@@ -1342,6 +1354,7 @@ internal static partial class CircuitBreakerStateManagerLog
         Level = LogLevel.Critical,
         Message = "Pause callback failed while re-opening circuit for group {Group}. Circuit is Open but transport may not be paused — manual ResetAsync may be required (escalation: {Escalation})"
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void ReopenPauseCallbackFailedCore(
         this ILogger logger,
         Exception exception,

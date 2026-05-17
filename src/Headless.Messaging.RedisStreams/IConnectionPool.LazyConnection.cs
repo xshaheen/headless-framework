@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
+using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
@@ -64,8 +65,9 @@ public class AsyncLazyRedisConnection(MessagingRedisOptions redisOptions, ILogge
 public sealed class RedisConnection(IConnectionMultiplexer connection) : IDisposable
 {
     private bool _isDisposed;
-    public IConnectionMultiplexer Connection { get; } =
-        connection ?? throw new ArgumentNullException(nameof(connection));
+
+    public IConnectionMultiplexer Connection { get; } = Argument.IsNotNull(connection);
+
     public long ConnectionCapacity => Connection.GetCounters().TotalOutstanding;
 
     public void Dispose()

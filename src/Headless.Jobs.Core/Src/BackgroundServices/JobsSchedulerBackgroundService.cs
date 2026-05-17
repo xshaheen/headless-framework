@@ -30,7 +30,7 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
         _executionContext = executionContext;
         _taskHandler = taskHandler;
         _taskScheduler = taskScheduler;
-        _internalJobsManager = internalJobsManager ?? throw new ArgumentNullException(nameof(internalJobsManager));
+        _internalJobsManager = internalJobsManager;
         _concurrencyGate = concurrencyGate;
         _restartThrottle = new RestartThrottleManager(() => _schedulerLoopCancellationTokenSource?.Cancel());
     }

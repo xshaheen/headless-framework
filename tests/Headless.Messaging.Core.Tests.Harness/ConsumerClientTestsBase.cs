@@ -195,18 +195,8 @@ public abstract class ConsumerClientTestsBase : TestBase
 
         // given
         await using var consumer = await GetConsumerClientAsync();
-        var processedCount = 0;
-        var lockObj = new Lock();
 
-        consumer.OnMessageCallback = (msg, sender) =>
-        {
-            lock (lockObj)
-            {
-                processedCount++;
-            }
-
-            return Task.CompletedTask;
-        };
+        consumer.OnMessageCallback = (_, _) => Task.CompletedTask;
 
         var topics = await ResolveSubscriptionTopicsAsync(consumer, ["concurrent-topic"]);
         await consumer.SubscribeAsync(topics);

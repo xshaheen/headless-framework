@@ -6,16 +6,14 @@ using StackExchange.Redis;
 
 namespace Headless.Jobs;
 
-internal class JobsRedisContext(
+internal sealed class JobsRedisContext(
     [FromKeyedServices("jobs")] IDistributedCache cache,
     SchedulerOptionsBuilder schedulerOptions,
     ServiceExtension.JobsRedisOptionBuilder tickerQRedisOptionBuilder,
     IJobsNotificationHubSender notificationHubSender
 ) : IJobsRedisContext
 {
-    private readonly IDistributedCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-    private readonly SchedulerOptionsBuilder _schedulerOptions =
-        schedulerOptions ?? throw new ArgumentNullException(nameof(schedulerOptions));
+    private readonly IDistributedCache _cache = cache;
 
     private volatile IDatabase? _database;
 
@@ -27,7 +25,7 @@ internal class JobsRedisContext(
 
     public async Task NotifyNodeAliveAsync()
     {
-        var node = _schedulerOptions.NodeIdentifier;
+        var node = schedulerOptions.NodeIdentifier;
         var key = $"hb:{node}";
 
         var payload = new { ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), node };

@@ -6,33 +6,22 @@ using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Managers;
 
-internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
+internal class InternalJobsManager<TTimeJob, TCronJob>(
+    IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
+    TimeProvider timeProvider,
+    IJobsNotificationHubSender notificationHubSender
+) : IInternalJobManager
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    private readonly IJobPersistenceProvider<TTimeJob, TCronJob> _persistenceProvider;
-    private readonly TimeProvider _timeProvider;
-    private readonly IJobsNotificationHubSender _notificationHubSender;
-
-    public InternalJobsManager(
-        IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
-        TimeProvider timeProvider,
-        IJobsNotificationHubSender notificationHubSender
-    )
-    {
-        _persistenceProvider = persistenceProvider;
-        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
-        _notificationHubSender = notificationHubSender;
-    }
-
     public async Task<(TimeSpan TimeRemaining, InternalFunctionContext[] Functions)> GetNextJobs(
         CancellationToken cancellationToken = default
     )
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
 
         var minCronGroupTask = _GetEarliestCronJobGroupAsync(cancellationToken);
-        var minTimeJobsTask = _persistenceProvider.GetEarliestTimeJobs(cancellationToken);
+        var minTimeJobsTask = persistenceProvider.GetEarliestTimeJobs(cancellationToken);
 
         await Task.WhenAll(minCronGroupTask, minTimeJobsTask).ConfigureAwait(false);
 
@@ -152,7 +141,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
     {
         var results = new List<InternalFunctionContext>();
 
-        await foreach (var updatedTimeJob in _persistenceProvider.QueueTimeJobs(minTimeJobs, cancellationToken))
+        await foreach (var updatedTimeJob in persistenceProvider.QueueTimeJobs(minTimeJobs, cancellationToken))
         {
             results.Add(
                 new InternalFunctionContext
@@ -163,7 +152,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
                     Retries = updatedTimeJob.Retries,
                     RetryIntervals = updatedTimeJob.RetryIntervals,
                     ParentId = updatedTimeJob.ParentId,
-                    ExecutionTime = updatedTimeJob.ExecutionTime ?? _timeProvider.GetUtcNow().UtcDateTime,
+                    ExecutionTime = updatedTimeJob.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
                     TimeJobChildren = updatedTimeJob
                         .Children.Select(ch => new InternalFunctionContext
                         {
@@ -191,7 +180,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
                 }
             );
 
-            await _notificationHubSender.UpdateTimeJobNotifyAsync(updatedTimeJob);
+            await notificationHubSender.UpdateTimeJobNotifyAsync(updatedTimeJob);
         }
 
         return results.ToArray();
@@ -205,7 +194,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
         var results = new List<InternalFunctionContext>();
 
         await foreach (
-            var occurrence in _persistenceProvider
+            var occurrence in persistenceProvider
                 .QueueCronJobOccurrences(minCronJob, cancellationToken)
                 .ConfigureAwait(false)
         )
@@ -223,15 +212,15 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
                 }
             );
 
-            if (occurrence.CreatedAt == occurrence.UpdatedAt && _notificationHubSender != null)
+            if (occurrence.CreatedAt == occurrence.UpdatedAt && notificationHubSender != null)
             {
-                await _notificationHubSender
+                await notificationHubSender
                     .AddCronOccurrenceAsync(occurrence.CronJobId, occurrence)
                     .ConfigureAwait(false);
             }
-            else if (_notificationHubSender != null)
+            else if (notificationHubSender != null)
             {
-                await _notificationHubSender
+                await notificationHubSender
                     .UpdateCronOccurrenceAsync(occurrence.CronJobId, occurrence)
                     .ConfigureAwait(false);
             }
@@ -244,13 +233,13 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
         CancellationToken cancellationToken = default
     )
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
 
-        var cronJobs = await _persistenceProvider.GetAllCronJobExpressions(cancellationToken).ConfigureAwait(false);
+        var cronJobs = await persistenceProvider.GetAllCronJobExpressions(cancellationToken).ConfigureAwait(false);
 
         var cronJobIds = cronJobs.Select(x => x.Id).ToArray();
 
-        var earliestAvailableCronOccurrence = await _persistenceProvider
+        var earliestAvailableCronOccurrence = await persistenceProvider
             .GetEarliestAvailableCronOccurrence(cronJobIds, cancellationToken)
             .ConfigureAwait(false);
 
@@ -374,12 +363,12 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
 
         if (cronJobIds.Length != 0 && timeJobIds.Length != 0)
         {
-            var updateCronJobOccurrencesTask = _persistenceProvider.UpdateCronJobOccurrencesWithUnifiedContext(
+            var updateCronJobOccurrencesTask = persistenceProvider.UpdateCronJobOccurrencesWithUnifiedContext(
                 cronJobIds,
                 unifiedFunctionContext,
                 cancellationToken
             );
-            var updateTimeJobsTask = _persistenceProvider.UpdateTimeJobsWithUnifiedContext(
+            var updateTimeJobsTask = persistenceProvider.UpdateTimeJobsWithUnifiedContext(
                 timeJobIds,
                 unifiedFunctionContext,
                 cancellationToken
@@ -390,14 +379,14 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
         {
             if (cronJobIds.Length != 0)
             {
-                await _persistenceProvider
+                await persistenceProvider
                     .UpdateCronJobOccurrencesWithUnifiedContext(cronJobIds, unifiedFunctionContext, cancellationToken)
                     .ConfigureAwait(false);
             }
 
             if (timeJobIds.Length != 0)
             {
-                await _persistenceProvider
+                await persistenceProvider
                     .UpdateTimeJobsWithUnifiedContext(timeJobIds, unifiedFunctionContext, cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -409,13 +398,13 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
 
             if (resource.Type == JobType.TimeJob)
             {
-                await _notificationHubSender
+                await notificationHubSender
                     .UpdateTimeJobFromInternalFunctionContext<TTimeJob>(resource)
                     .ConfigureAwait(false);
             }
             else
             {
-                await _notificationHubSender
+                await notificationHubSender
                     .UpdateCronOccurrenceFromInternalFunctionContext<TCronJob>(resource)
                     .ConfigureAwait(false);
             }
@@ -430,8 +419,8 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
         if (resources is null)
         {
             await Task.WhenAll(
-                _persistenceProvider.ReleaseAcquiredCronJobOccurrences([], cancellationToken),
-                _persistenceProvider.ReleaseAcquiredTimeJobs([], cancellationToken)
+                persistenceProvider.ReleaseAcquiredCronJobOccurrences([], cancellationToken),
+                persistenceProvider.ReleaseAcquiredTimeJobs([], cancellationToken)
             );
             return;
         }
@@ -443,7 +432,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
 
         if (cronJobIds.Length != 0)
         {
-            await _persistenceProvider
+            await persistenceProvider
                 .ReleaseAcquiredCronJobOccurrences(cronJobIds, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -453,7 +442,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
 
         if (timeJobIds.Length != 0)
         {
-            await _persistenceProvider.ReleaseAcquiredTimeJobs(timeJobIds, cancellationToken).ConfigureAwait(false);
+            await persistenceProvider.ReleaseAcquiredTimeJobs(timeJobIds, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -464,17 +453,15 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
     {
         if (functionContext.Type == JobType.CronJobOccurrence)
         {
-            await _persistenceProvider
-                .UpdateCronJobOccurrence(functionContext, cancellationToken)
-                .ConfigureAwait(false);
-            await _notificationHubSender
+            await persistenceProvider.UpdateCronJobOccurrence(functionContext, cancellationToken).ConfigureAwait(false);
+            await notificationHubSender
                 .UpdateCronOccurrenceFromInternalFunctionContext<TCronJob>(functionContext)
                 .ConfigureAwait(false);
         }
         else
         {
-            await _persistenceProvider.UpdateTimeJob(functionContext, cancellationToken).ConfigureAwait(false);
-            await _notificationHubSender
+            await persistenceProvider.UpdateTimeJob(functionContext, cancellationToken).ConfigureAwait(false);
+            await notificationHubSender
                 .UpdateTimeJobFromInternalFunctionContext<TTimeJob>(functionContext)
                 .ConfigureAwait(false);
         }
@@ -487,12 +474,12 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
     {
         var unifiedFunctionContext = new InternalFunctionContext { FunctionName = string.Empty }
             .SetProperty(x => x.Status, JobStatus.Skipped)
-            .SetProperty(x => x.ExecutedAt, _timeProvider.GetUtcNow().UtcDateTime)
+            .SetProperty(x => x.ExecutedAt, timeProvider.GetUtcNow().UtcDateTime)
             .SetProperty(x => x.ExceptionDetails, "Rule RunCondition did not match!");
 
         if (resources.Length != 0)
         {
-            await _persistenceProvider
+            await persistenceProvider
                 .UpdateTimeJobsWithUnifiedContext(
                     resources.Select(x => x.JobId).ToArray(),
                     unifiedFunctionContext,
@@ -503,18 +490,18 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
 
         foreach (var resource in resources)
         {
-            resource.ExecutedAt = _timeProvider.GetUtcNow().UtcDateTime;
+            resource.ExecutedAt = timeProvider.GetUtcNow().UtcDateTime;
             resource.Status = JobStatus.Skipped;
             resource.ExceptionDetails = "Rule RunCondition did not match!";
             if (resource.Type == JobType.TimeJob)
             {
-                await _notificationHubSender
+                await notificationHubSender
                     .UpdateTimeJobFromInternalFunctionContext<TTimeJob>(resource)
                     .ConfigureAwait(false);
             }
             else
             {
-                await _notificationHubSender
+                await notificationHubSender
                     .UpdateCronOccurrenceFromInternalFunctionContext<TCronJob>(resource)
                     .ConfigureAwait(false);
             }
@@ -525,10 +512,10 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
     {
         var request =
             type == JobType.CronJobOccurrence
-                ? await _persistenceProvider
+                ? await persistenceProvider
                     .GetCronJobOccurrenceRequest(jobId, cancellationToken: cancellationToken)
                     .ConfigureAwait(false)
-                : await _persistenceProvider
+                : await persistenceProvider
                     .GetTimeJobRequest(jobId, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
 
@@ -540,7 +527,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
         var results = new List<InternalFunctionContext>();
 
         await foreach (
-            var timedOutTimeJob in _persistenceProvider.QueueTimedOutTimeJobs(cancellationToken).ConfigureAwait(false)
+            var timedOutTimeJob in persistenceProvider.QueueTimedOutTimeJobs(cancellationToken).ConfigureAwait(false)
         )
         {
             results.Add(
@@ -552,7 +539,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
                     Retries = timedOutTimeJob.Retries,
                     RetryIntervals = timedOutTimeJob.RetryIntervals,
                     ParentId = timedOutTimeJob.ParentId,
-                    ExecutionTime = timedOutTimeJob.ExecutionTime ?? _timeProvider.GetUtcNow().UtcDateTime,
+                    ExecutionTime = timedOutTimeJob.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
                     TimeJobChildren = timedOutTimeJob
                         .Children.Select(ch => new InternalFunctionContext
                         {
@@ -580,11 +567,11 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
                 }
             );
 
-            await _notificationHubSender.UpdateTimeJobNotifyAsync(timedOutTimeJob).ConfigureAwait(false);
+            await notificationHubSender.UpdateTimeJobNotifyAsync(timedOutTimeJob).ConfigureAwait(false);
         }
 
         await foreach (
-            var timedOutCronJob in _persistenceProvider
+            var timedOutCronJob in persistenceProvider
                 .QueueTimedOutCronJobOccurrences(cancellationToken)
                 .ConfigureAwait(false)
         )
@@ -601,7 +588,7 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
             };
 
             results.Add(functionContext);
-            await _notificationHubSender
+            await notificationHubSender
                 .UpdateCronOccurrenceFromInternalFunctionContext<TCronJob>(functionContext)
                 .ConfigureAwait(false);
         }
@@ -612,28 +599,28 @@ internal class InternalJobsManager<TTimeJob, TCronJob> : IInternalJobManager
     public async Task MigrateDefinedCronJobs(
         (string, string)[] cronExpressions,
         CancellationToken cancellationToken = default
-    ) => await _persistenceProvider.MigrateDefinedCronJobs(cronExpressions, cancellationToken).ConfigureAwait(false);
+    ) => await persistenceProvider.MigrateDefinedCronJobs(cronExpressions, cancellationToken).ConfigureAwait(false);
 
     public async Task DeleteJob(Guid jobId, JobType type, CancellationToken cancellationToken = default)
     {
         if (type == JobType.CronJobOccurrence)
         {
-            await _persistenceProvider.RemoveCronJobs([jobId], cancellationToken).ConfigureAwait(false);
+            await persistenceProvider.RemoveCronJobs([jobId], cancellationToken).ConfigureAwait(false);
         }
         else
         {
-            await _persistenceProvider.RemoveTimeJobs([jobId], cancellationToken).ConfigureAwait(false);
+            await persistenceProvider.RemoveTimeJobs([jobId], cancellationToken).ConfigureAwait(false);
         }
     }
 
     public async Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default)
     {
-        var cronOccurrence = _persistenceProvider.ReleaseDeadNodeOccurrenceResources(
+        var cronOccurrence = persistenceProvider.ReleaseDeadNodeOccurrenceResources(
             instanceIdentifier,
             cancellationToken
         );
 
-        var timeJobs = _persistenceProvider.ReleaseDeadNodeTimeJobResources(instanceIdentifier, cancellationToken);
+        var timeJobs = persistenceProvider.ReleaseDeadNodeTimeJobResources(instanceIdentifier, cancellationToken);
 
         await Task.WhenAll(cronOccurrence, timeJobs).ConfigureAwait(false);
     }
