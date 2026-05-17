@@ -152,7 +152,7 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        await Task.Delay(1500, CancellationToken.None);
+        await sender.WaitForCountAsync(10000, TimeSpan.FromSeconds(10));
 
         await cts.CancelAsync();
 
@@ -286,7 +286,7 @@ public sealed class DispatcherTests : TestBase
             }
         );
 
-        await Task.Delay(3000, CancellationToken.None);
+        await sender.WaitForCountAsync(10000, TimeSpan.FromSeconds(10));
 
         await cts.CancelAsync();
 
@@ -426,7 +426,7 @@ public sealed class DispatcherTests : TestBase
             await dispatcher.EnqueueToPublish(message, AbortToken);
         }
 
-        await Task.Delay(200, CancellationToken.None);
+        await sender.WaitForCountAsync(100, TimeSpan.FromSeconds(5));
         await cts.CancelAsync();
 
         // then - verify all messages sent successfully
@@ -463,7 +463,7 @@ public sealed class DispatcherTests : TestBase
             await dispatcher.EnqueueToPublish(message, AbortToken);
         }
 
-        await Task.Delay(300, CancellationToken.None);
+        await sender.WaitForCountAsync(500, TimeSpan.FromSeconds(5));
         await cts.CancelAsync();
 
         // then - verify all messages sent successfully
