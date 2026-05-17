@@ -50,4 +50,17 @@ public sealed class FailedInfo
     /// Gets the exception that triggered the exhausted retry decision.
     /// </summary>
     public required Exception Exception { get; init; }
+
+    /// <summary>
+    /// Gets the storage row identifier of the failed message. Use this together with
+    /// <c>Message.GetId()</c> to correlate dead-letter writes back to the original persisted row.
+    /// </summary>
+    public required long StorageId { get; init; }
+
+    /// <summary>
+    /// Gets the final persisted-retry count at the moment <see cref="RetryPolicyOptions.OnExhausted"/>
+    /// fires. Mirrors <c>MediumMessage.Retries</c>; counts persisted-retry pickups only — inline
+    /// retries do not advance it.
+    /// </summary>
+    public required int RetryCount { get; init; }
 }

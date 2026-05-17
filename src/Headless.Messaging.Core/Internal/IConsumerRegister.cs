@@ -685,6 +685,12 @@ internal sealed class ConsumerRegister(
                                         ?? new InvalidOperationException(
                                             exceptionInfo ?? "Received message contains exception information."
                                         ),
+                                    // Poisoned-on-arrival messages bypass the dispatch scope and have
+                                    // no associated MediumMessage; storageId is the storage's
+                                    // sentinel here too (0 == "no row identifier"), and the retry
+                                    // count is zero because no consume attempt ever ran.
+                                    StorageId = 0,
+                                    RetryCount = 0,
                                 },
                                 _options.RetryPolicy.OnExhaustedTimeout,
                                 storageId: 0,
