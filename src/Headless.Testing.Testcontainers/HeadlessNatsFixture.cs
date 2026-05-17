@@ -14,6 +14,6 @@ public class HeadlessNatsFixture() : ContainerFixture<NatsBuilder, NatsContainer
 {
     protected override NatsBuilder Configure()
     {
-        return base.Configure().WithImage(TestImages.Nats);
+        return base.Configure().WithImage(TestImages.Nats).WithReuse(true);
     }
 }
