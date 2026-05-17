@@ -30,7 +30,7 @@ public sealed class JsonConstantsTests
         model1.Should().BeEquivalentTo(_model1);
     }
 
-    [Fact(Skip = ".NET 9 has issue with deserializing list without setter")]
+    [Fact]
     public void web_options_deserializer_should_populate_list_without_setter()
     {
         var model2 = JsonSerializer.Deserialize<TestModel2>(_Json, _options);
