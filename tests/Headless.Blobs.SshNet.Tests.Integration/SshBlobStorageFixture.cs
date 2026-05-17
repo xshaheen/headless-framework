@@ -13,9 +13,11 @@ namespace Tests;
 public sealed class SshBlobStorageFixture : ICollectionFixture<SshBlobStorageFixture>, IAsyncLifetime
 {
     private readonly IContainer _sftpContainer = new ContainerBuilder("atmoz/sftp:latest")
+        .WithLabel("type", "ssh-blob-sftp")
         .WithPortBinding(22, true)
         .WithCommand("headless:password:::storage")
         .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server listening on"))
+        .WithReuse(true)
         .Build();
 
     public SftpClientPool Pool { get; private set; } = null!;

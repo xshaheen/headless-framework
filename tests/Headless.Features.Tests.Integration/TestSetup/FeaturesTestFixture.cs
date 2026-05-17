@@ -79,14 +79,16 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
         return new PostgreSqlBuilder(TestImages.PostgreSql)
+            .WithLabel("type", "features")
             .WithDatabase("headless_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
+            .WithReuse(true)
             .Build();
     }
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder(TestImages.Redis).Build();
+        return new RedisBuilder(TestImages.Redis).WithLabel("type", "features-redis").WithReuse(true).Build();
     }
 }
