@@ -15,7 +15,6 @@ public sealed class RetryExceptionClassifierTests : TestBase
             new SubscriberNotFoundException("Not found"),
             new ArgumentNullException("value"),
             new ArgumentException("Invalid", "value"),
-            new InvalidOperationException("Invalid operation"),
             new NotSupportedException("Not supported"),
             new CustomArgumentException(),
         };
@@ -39,13 +38,21 @@ public sealed class RetryExceptionClassifierTests : TestBase
         RetryExceptionClassifier.IsPermanent(new OperationCanceledException()).Should().BeFalse();
     }
 
+    [Fact]
+    public void should_not_classify_invalid_operation_exception_as_permanent()
+    {
+        // InvalidOperationException is commonly thrown for transient conditions (circuit-breaker,
+        // pool exhaustion, lock contention) — classifying it as permanent would silently suppress
+        // retries and OnExhausted for recoverable failures.
+        RetryExceptionClassifier.IsPermanent(new InvalidOperationException("transient")).Should().BeFalse();
+    }
+
     public static TheoryData<Exception> PermanentInnerExceptions =>
         new()
         {
             new SubscriberNotFoundException("Not found"),
             new ArgumentNullException("value"),
             new ArgumentException("Invalid", "value"),
-            new InvalidOperationException("Invalid operation"),
             new NotSupportedException("Not supported"),
         };
 

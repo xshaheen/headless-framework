@@ -21,7 +21,7 @@ public sealed class RetryHelperTests : TestBase
 
         var decision = RetryHelper.RecordAttemptAndComputeDecision(
             message,
-            new InvalidOperationException("permanent"),
+            new ArgumentException("permanent", "param"),
             new RetryPolicyOptions(),
             inlineRetries: 0
         );
@@ -126,7 +126,7 @@ public sealed class RetryHelperTests : TestBase
         // Strategy-returned Exhausted is unusual but the helper passes it through.
         var message = _CreateMessage();
         var strategy = Substitute.For<IRetryBackoffStrategy>();
-        strategy.Compute(Arg.Any<int>(), Arg.Any<Exception>()).Returns(RetryDecision.Exhausted);
+        strategy.Compute(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<Exception>()).Returns(RetryDecision.Exhausted);
         var policy = new RetryPolicyOptions { BackoffStrategy = strategy };
 
         var decision = RetryHelper.RecordAttemptAndComputeDecision(
@@ -253,19 +253,20 @@ public sealed class RetryHelperTests : TestBase
 
     private sealed class AlwaysRetryStrategy(TimeSpan delay) : IRetryBackoffStrategy
     {
-        public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Continue(delay);
+        public RetryDecision Compute(int retryCount, int inlineRetryCount, Exception exception) =>
+            RetryDecision.Continue(delay);
     }
 
     private sealed class StopStrategy : IRetryBackoffStrategy
     {
-        public RetryDecision Compute(int retryCount, Exception exception) => RetryDecision.Stop;
+        public RetryDecision Compute(int retryCount, int inlineRetryCount, Exception exception) => RetryDecision.Stop;
     }
 
     private sealed class RecordingRetryBackoffStrategy : IRetryBackoffStrategy
     {
         public List<int> Attempts { get; } = [];
 
-        public RetryDecision Compute(int retryCount, Exception exception)
+        public RetryDecision Compute(int retryCount, int inlineRetryCount, Exception exception)
         {
             Attempts.Add(retryCount);
             return RetryDecision.Continue(TimeSpan.Zero);
@@ -274,7 +275,7 @@ public sealed class RetryHelperTests : TestBase
 
     private sealed class ThrowingBackoffStrategy : IRetryBackoffStrategy
     {
-        public RetryDecision Compute(int retryCount, Exception exception) =>
+        public RetryDecision Compute(int retryCount, int inlineRetryCount, Exception exception) =>
             throw new InvalidOperationException("strategy bug");
     }
 

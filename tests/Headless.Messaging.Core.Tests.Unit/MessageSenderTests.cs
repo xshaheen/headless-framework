@@ -292,7 +292,7 @@ public sealed class MessageSenderTests : TestBase
             .Returns(OperateResult.Failed(new ArgumentNullException("param")));
 
         var backoffStrategy = Substitute.For<IRetryBackoffStrategy>();
-        backoffStrategy.Compute(Arg.Any<int>(), Arg.Any<Exception>()).Returns(RetryDecision.Stop);
+        backoffStrategy.Compute(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<Exception>()).Returns(RetryDecision.Stop);
 
         var callbackInvoked = false;
         var sender = _CreateSender(

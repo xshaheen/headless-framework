@@ -107,16 +107,15 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     internal void SetCurrentIntervalForTest(TimeSpan value) =>
         Interlocked.Exchange(ref _currentIntervalTicks, value.Ticks);
 
-    /// <summary>Indicates whether the one-shot startup jitter has been applied. Exposed for testing.</summary>
+    /// <summary>One-shot flag set after the startup jitter delay fires on the first poll.</summary>
     /// <remarks>
-    /// One-shot startup jitter flag. The first <see cref="ProcessAsync"/> call waits a random
-    /// fraction of <see cref="_baseInterval"/> before performing any work, so that many replicas
-    /// booting simultaneously do not synchronize their poll ticks and overwhelm the storage layer
-    /// with a coordinated burst (poll-tick storm). Subsequent polls use the configured interval.
-    /// Mutated only by <see cref="ProcessAsync"/>, which is invoked sequentially per processor
-    /// instance — a plain bool is sufficient.
+    /// The first <see cref="ProcessAsync"/> call waits a random fraction of <see cref="_baseInterval"/>
+    /// before performing any work, so that replicas booting simultaneously do not synchronize their
+    /// poll ticks and overwhelm the storage layer (poll-tick storm). Subsequent polls use the
+    /// configured interval. Mutated only by <see cref="ProcessAsync"/>, which is invoked sequentially
+    /// per processor instance — a plain bool is sufficient.
     /// </remarks>
-    internal bool FirstPollObservedForTest { get; private set; }
+    internal bool StartupJitterApplied { get; private set; }
 
     /// <inheritdoc />
     public ValueTask ResetBackpressureAsync(CancellationToken ct = default)
@@ -133,11 +132,11 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     {
         Argument.IsNotNull(context);
 
-        if (!FirstPollObservedForTest)
+        if (!StartupJitterApplied)
         {
             var jitter = TimeSpan.FromTicks((long)(_baseInterval.Ticks * Random.Shared.NextDouble()));
             await context.WaitAsync(jitter).ConfigureAwait(false);
-            FirstPollObservedForTest = true;
+            StartupJitterApplied = true;
         }
 
         var storage = context.Provider.GetRequiredService<IDataStorage>();
@@ -371,7 +370,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             case StoragePickupKind.Received:
                 return ref _consecutiveReceivedPickupFailures;
             default:
-                throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown storage pickup kind.");
+                throw new ArgumentOutOfRangeException(nameof(kind), kind, @"Unknown storage pickup kind.");
         }
     }
 

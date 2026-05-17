@@ -30,10 +30,13 @@ public interface IRetryBackoffStrategy
     /// <param name="persistedRetryCount">
     /// The number of persisted-retry pickups already performed for this message (0-based).
     /// Inline retries within a single pickup do NOT advance this counter — every inline attempt on the
-    /// same pickup observes the same value. Strategies that want a per-attempt monotonic counter (e.g.,
-    /// exponential backoff per attempt) must layer it on top using <see cref="Exception"/> identity or
-    /// strategy-internal state; the framework does not expose the inline iteration index here.
+    /// same pickup observes the same value.
+    /// </param>
+    /// <param name="inlineRetryCount">
+    /// The number of inline retries already performed on the current pickup (0 on the first attempt
+    /// of each pickup). Increments for each inline re-attempt before the message is persisted for
+    /// a later pickup.
     /// </param>
     /// <param name="exception">The exception that caused the failure.</param>
-    RetryDecision Compute(int persistedRetryCount, Exception exception);
+    RetryDecision Compute(int persistedRetryCount, int inlineRetryCount, Exception exception);
 }

@@ -493,7 +493,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Pre-condition: jitter flag has not been observed yet.
-        sut.FirstPollObservedForTest.Should().BeFalse();
+        sut.StartupJitterApplied.Should().BeFalse();
 
         // Act — first ProcessAsync should apply jitter once
         var firstStopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -501,7 +501,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         firstStopwatch.Stop();
 
         // Post-condition: jitter is now consumed.
-        sut.FirstPollObservedForTest.Should().BeTrue();
+        sut.StartupJitterApplied.Should().BeTrue();
 
         // First call's total elapsed time includes (jitter < baseInterval) + (final WaitAsync ~= 1s currentInterval).
         // The jitter component alone must be < baseInterval (500 ms). We can't isolate it, but we can
@@ -533,7 +533,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         }
 
         // Assert — jitter is one-shot: flag stays true.
-        sut.FirstPollObservedForTest.Should().BeTrue();
+        sut.StartupJitterApplied.Should().BeTrue();
     }
 
     [Fact]
@@ -578,7 +578,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 TimeSpan.FromSeconds(2),
                 "first-poll jitter is bounded by base interval (1s) plus scheduling tolerance"
             );
-        sut.FirstPollObservedForTest.Should().BeTrue();
+        sut.StartupJitterApplied.Should().BeTrue();
     }
 
     [Fact]
