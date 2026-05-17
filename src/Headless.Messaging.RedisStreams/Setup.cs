@@ -59,7 +59,7 @@ public static class MessagesRedisSetup
                     MessagingRedisOptionsPostConfigure
                 >()
             );
-            services.AddOptions<MessagingRedisOptions>().Configure(_configure);
+            services.Configure<MessagingRedisOptions, MessagingRedisOptionsValidator>(_configure);
         }
     }
 

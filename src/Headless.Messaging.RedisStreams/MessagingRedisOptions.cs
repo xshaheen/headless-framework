@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Messaging.Transport;
 using StackExchange.Redis;
 
@@ -34,4 +35,9 @@ public class MessagingRedisOptions
     public Func<ConsumeErrorContext, Task>? OnConsumeError { get; set; }
 
     public record ConsumeErrorContext(Exception Exception, StreamEntry? Entry);
+}
+
+internal sealed class MessagingRedisOptionsValidator : AbstractValidator<MessagingRedisOptions>
+{
+    public MessagingRedisOptionsValidator() { }
 }

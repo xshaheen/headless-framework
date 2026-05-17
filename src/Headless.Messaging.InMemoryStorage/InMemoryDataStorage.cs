@@ -200,7 +200,7 @@ internal sealed class InMemoryDataStorage(
         MediumMessage message,
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
-    ) => _LeaseAsync(PublishedMessages, message, lockedUntil, cancellationToken);
+    ) => _LeaseAsync(PublishedMessages, message, lockedUntil, timeProvider, cancellationToken);
 
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
@@ -254,7 +254,7 @@ internal sealed class InMemoryDataStorage(
         MediumMessage message,
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
-    ) => _LeaseAsync(ReceivedMessages, message, lockedUntil, cancellationToken);
+    ) => _LeaseAsync(ReceivedMessages, message, lockedUntil, timeProvider, cancellationToken);
 
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,
@@ -486,7 +486,16 @@ internal sealed class InMemoryDataStorage(
                 existing.Added = added;
                 existing.ExpiresAt = null;
                 existing.NextRetryAt = initialNextRetryAt;
-                existing.LockedUntil = null;
+                // #10 — only clear the lease when it's already absent or expired. A redelivered
+                // message that arrives while the row is being dispatched would otherwise release the
+                // active pickup lease mid-attempt, letting the retry processor re-pick the row while
+                // the inline retry loop is still in flight. Mirrors the SQL providers' guard in
+                // SqlServerDataStorage._StoreReceivedMessage and PostgreSqlDataStorage._StoreReceivedMessage.
+                var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+                if (existing.LockedUntil is null || existing.LockedUntil <= nowUtc)
+                {
+                    existing.LockedUntil = null;
+                }
                 existing.StatusName = StatusName.Scheduled;
                 existing.ExceptionInfo = null;
 
@@ -697,6 +706,7 @@ internal sealed class InMemoryDataStorage(
         ConcurrentDictionary<long, MemoryMessage> messages,
         MediumMessage message,
         DateTime lockedUntil,
+        TimeProvider timeProvider,
         CancellationToken cancellationToken
     )
     {
@@ -710,6 +720,15 @@ internal sealed class InMemoryDataStorage(
         lock (current)
         {
             if ((current.StatusName is StatusName.Succeeded or StatusName.Failed) && current.NextRetryAt is null)
+            {
+                return ValueTask.FromResult(false);
+            }
+
+            // #15 — explicit lease-contention guard: refuse to acquire the lease when another writer
+            // holds it (LockedUntil in the future). Mirrors the WHERE LockedUntil IS NULL OR <= @Now
+            // predicate added to the SQL providers' _LeaseMessageAsync.
+            var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+            if (current.LockedUntil is not null && current.LockedUntil > nowUtc)
             {
                 return ValueTask.FromResult(false);
             }

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -24,7 +25,7 @@ public sealed class SqlServerMonitoringApi(
     TimeProvider timeProvider
 ) : IMonitoringApi
 {
-    private readonly SqlServerOptions _options = options.Value ?? throw new ArgumentNullException(nameof(options));
+    private readonly SqlServerOptions _options = Argument.IsNotNull(options.Value);
     private readonly MessagingOptions _messagingOptions = messagingOptions.Value;
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();

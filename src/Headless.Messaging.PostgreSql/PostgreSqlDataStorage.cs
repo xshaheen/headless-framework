@@ -660,6 +660,11 @@ public sealed class PostgreSqlDataStorage(
         // partial unique index `uq_received_MessageId_GroupCoalesced` by structure rather than
         // requiring a named constraint (a `CREATE UNIQUE INDEX` is an index, not a constraint;
         // `ON CONFLICT ON CONSTRAINT` would error out against it).
+        // #3 — additionally skip rows whose lease is still active (LockedUntil in the future). A
+        // redelivered message that arrives while the row is being dispatched would otherwise
+        // overwrite LockedUntil = NULL and Retries = 0, releasing the active pickup lease
+        // mid-attempt and letting the retry processor re-pick the row while the inline retry loop
+        // is still in flight. Mirrors the matching guard in SqlServerDataStorage._StoreReceivedMessage.
         var sql = $"""
             INSERT INTO {_receivedTable}("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId","ExceptionInfo")
             VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Group,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@StatusName,@MessageId,@ExceptionInfo)
@@ -674,6 +679,7 @@ public sealed class PostgreSqlDataStorage(
             WHERE NOT ({_receivedTable}."StatusName" IN ('{nameof(StatusName.Succeeded)}','{nameof(
                 StatusName.Failed
             )}') AND {_receivedTable}."NextRetryAt" IS NULL)
+              AND ({_receivedTable}."LockedUntil" IS NULL OR {_receivedTable}."LockedUntil" <= now())
             """;
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
@@ -696,12 +702,18 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var sql = $"UPDATE {tableName} SET \"LockedUntil\"=@LockedUntil WHERE \"Id\"=@Id AND {_TerminalRowGuardSimple}";
+        // #15 — explicit lease-contention predicate: only acquire the lease when the row is unleased
+        // OR its existing lease has expired. Mirrors the matching guard in SqlServerDataStorage._LeaseMessageAsync.
+        var sql =
+            $"UPDATE {tableName} SET \"LockedUntil\"=@LockedUntil WHERE \"Id\"=@Id "
+            + "AND (\"LockedUntil\" IS NULL OR \"LockedUntil\" <= @Now) "
+            + $"AND {_TerminalRowGuardSimple}";
 
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", message.StorageId),
             new NpgsqlParameter("@LockedUntil", ((DateTime?)lockedUntil).ToUtcParameterValue()),
+            new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();

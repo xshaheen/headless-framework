@@ -111,10 +111,16 @@ public sealed class PostgreSqlStorageInitializer(
         // rebuild cost when the columns drifted. Mirrors the gated check in the in-transaction
         // script for the SchemaIfMissing path. When the existing index already includes
         // LockedUntil, this is a no-op.
+        //
+        // #12 — Also drop the index when pg_index.indisvalid = false. A CREATE INDEX CONCURRENTLY
+        // that was aborted mid-build leaves the system catalog entry behind but with indisvalid=false;
+        // the subsequent CREATE INDEX CONCURRENTLY IF NOT EXISTS is then a no-op, leaving an invalid
+        // (and unusable) index in place. Dropping it forces the next CREATE to rebuild a healthy index.
         var dropOnDrift = $"""
             DO $do$
             DECLARE
                 _has_locked_until BOOLEAN;
+                _is_valid BOOLEAN;
             BEGIN
                 IF EXISTS (
                     SELECT 1 FROM pg_indexes
@@ -130,7 +136,14 @@ public sealed class PostgreSqlStorageInitializer(
                           AND a.attname = 'LockedUntil'
                     ) INTO _has_locked_until;
 
-                    IF NOT _has_locked_until THEN
+                    SELECT COALESCE((
+                        SELECT i.indisvalid FROM pg_index i
+                        JOIN pg_class c ON c.oid = i.indexrelid
+                        JOIN pg_namespace n ON n.oid = c.relnamespace
+                        WHERE n.nspname = '{schema}' AND c.relname = '{indexName}'
+                    ), TRUE) INTO _is_valid;
+
+                    IF NOT _has_locked_until OR NOT _is_valid THEN
                         EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS "{schema}"."{indexName}"';
                     END IF;
                 END IF;

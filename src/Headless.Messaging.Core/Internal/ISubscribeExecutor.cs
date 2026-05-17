@@ -268,13 +268,17 @@ internal sealed class SubscribeExecutor(
                 .ConfigureAwait(false);
         }
 
+        // #7 — enforce the storage CAS predicate on every state-write site (including inline-in-flight
+        // and terminal transitions). The Retries counter doesn't advance on those paths, so the
+        // witness is just the current value; storage will accept the write only if another writer
+        // hasn't bumped Retries (or won the terminal-race) since this dispatch read the row.
         return await _PersistFailedStateAsync(
                 message,
                 ex,
                 dispatchServices,
                 decision,
                 state,
-                originalRetries: null,
+                originalRetries: message.Retries,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -324,7 +328,18 @@ internal sealed class SubscribeExecutor(
 
         if (affected && decision.Outcome == RetryDecision.Kind.Exhausted)
         {
-            await _InvokeOnExhausted(message, ex, dispatchServices, cancellationToken).ConfigureAwait(false);
+            // #6 — shared OnExhausted body lives in RetryHelper; only MessageType varies per path.
+            await RetryHelper
+                .RunOnExhaustedAsync(
+                    _retryPolicy,
+                    message,
+                    ex,
+                    dispatchServices,
+                    MessageType.Subscribe,
+                    logger,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
         else if (!affected)
         {
@@ -385,42 +400,6 @@ internal sealed class SubscribeExecutor(
         }
 
         return decision;
-    }
-
-    private async Task _InvokeOnExhausted(
-        MediumMessage message,
-        Exception ex,
-        IServiceProvider dispatchServices,
-        CancellationToken cancellationToken
-    )
-    {
-        var callback = _retryPolicy.OnExhausted;
-        if (callback is null)
-        {
-            return;
-        }
-
-        // Use the live dispatch scope so scoped services resolved here are the same
-        // instances seen during ExecuteAsync. The caller (Dispatcher) is responsible for
-        // creating and disposing that scope. RetryHelper.InvokeOnExhaustedAsync applies
-        // the configured OnExhaustedTimeout and swallows handler exceptions.
-        using var tenantScope = TenantContextScope.ChangeFromEnvelope(dispatchServices, message.Origin, logger);
-        await RetryHelper
-            .InvokeOnExhaustedAsync(
-                callback,
-                new FailedInfo
-                {
-                    ServiceProvider = dispatchServices,
-                    MessageType = MessageType.Subscribe,
-                    Message = message.Origin,
-                    Exception = ex,
-                },
-                _retryPolicy.OnExhaustedTimeout,
-                message.StorageId,
-                logger,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
     }
 
     private async Task _InvokeConsumerMethodAsync(

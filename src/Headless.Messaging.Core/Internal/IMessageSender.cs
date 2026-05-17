@@ -200,7 +200,18 @@ internal sealed class MessageSender : IMessageSender
                 .ConfigureAwait(false);
         }
 
-        return await _PersistFailedStateAsync(message, ex, dispatchServices, decision, state, originalRetries: null)
+        // #7 — enforce the storage CAS predicate on every state-write site (including inline-in-flight
+        // and terminal transitions). The Retries counter doesn't advance on those paths, so the
+        // witness is just the current value; storage will accept the write only if another writer
+        // hasn't bumped Retries (or won the terminal-race) since this dispatch read the row.
+        return await _PersistFailedStateAsync(
+                message,
+                ex,
+                dispatchServices,
+                decision,
+                state,
+                originalRetries: message.Retries
+            )
             .ConfigureAwait(false);
     }
 
@@ -232,7 +243,19 @@ internal sealed class MessageSender : IMessageSender
         {
             // Forward _shutdownToken so the callback's CT honors host shutdown — matching the
             // contract documented on RetryPolicyOptions.OnExhausted and the consume path's behavior.
-            await _InvokeOnExhausted(message, ex, dispatchServices, _shutdownToken).ConfigureAwait(false);
+            // #6 — the tenant-scope + FailedInfo + InvokeOnExhaustedAsync trio is identical between
+            // publish and consume paths except for MessageType; the shared body lives in RetryHelper.
+            await RetryHelper
+                .RunOnExhaustedAsync(
+                    _retryPolicy,
+                    message,
+                    ex,
+                    dispatchServices,
+                    MessageType.Publish,
+                    _logger,
+                    _shutdownToken
+                )
+                .ConfigureAwait(false);
         }
         else if (!affected)
         {
@@ -278,42 +301,6 @@ internal sealed class MessageSender : IMessageSender
         }
 
         return decision;
-    }
-
-    private async Task _InvokeOnExhausted(
-        MediumMessage message,
-        Exception ex,
-        IServiceProvider dispatchServices,
-        CancellationToken cancellationToken
-    )
-    {
-        var callback = _retryPolicy.OnExhausted;
-        if (callback is null)
-        {
-            return;
-        }
-
-        // Use the live dispatch scope so scoped services resolved here are the same
-        // instances seen during SendAsync. The caller (Dispatcher) is responsible for
-        // creating and disposing that scope. RetryHelper.InvokeOnExhaustedAsync applies
-        // the configured OnExhaustedTimeout and swallows handler exceptions.
-        using var tenantScope = TenantContextScope.ChangeFromEnvelope(dispatchServices, message.Origin, _logger);
-        await RetryHelper
-            .InvokeOnExhaustedAsync(
-                callback,
-                new FailedInfo
-                {
-                    ServiceProvider = dispatchServices,
-                    MessageType = MessageType.Publish,
-                    Message = message.Origin,
-                    Exception = ex,
-                },
-                _retryPolicy.OnExhaustedTimeout,
-                message.StorageId,
-                _logger,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
     }
 
     #region tracing

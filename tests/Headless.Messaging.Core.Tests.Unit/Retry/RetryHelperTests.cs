@@ -424,21 +424,23 @@ public sealed class RetryHelperTests : TestBase
         state.NextRetryAt.Should().Be(existing, "existing schedule was later than padded resume — must be preserved");
     }
 
-    // ─── #29: IsCancellation requires token-equality, not just any OCE under a cancelled token ─
+    // ─── #1: IsCancellation accepts any OCE under a cancelled outer token ─────────────────────
 
     [Fact]
-    public void is_cancellation_should_return_false_for_mismatched_token()
+    public void is_cancellation_should_return_true_for_linked_token_oce_when_outer_cancelled()
     {
-        // Outer token is cancelled, but the OCE carries a different inner token — e.g., an HTTP
-        // client timeout's CTS. Treating this as a host-shutdown cancellation would suppress retry
-        // for a transient failure.
+        // A linked CTS produced via CreateLinkedTokenSource carries the LINKED token on its OCE,
+        // not the outer token. The previous strict identity check mis-classified this case as
+        // "not a cancellation" and let dispatch-during-shutdown errors flow through the retry
+        // pipeline (consuming retry budget). The relaxed contract accepts the outer-token cancel
+        // flag as the sole signal — any OCE while the outer token is cancelled IS a cancellation.
         using var outer = new CancellationTokenSource();
         outer.Cancel();
-        using var inner = new CancellationTokenSource();
-        inner.Cancel();
-        var oce = new OperationCanceledException(inner.Token);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(outer.Token);
+        // linked.Token is now cancelled because outer is cancelled.
+        var oce = new OperationCanceledException(linked.Token);
 
-        RetryHelper.IsCancellation(oce, outer.Token).Should().BeFalse();
+        RetryHelper.IsCancellation(oce, outer.Token).Should().BeTrue();
     }
 
     [Fact]

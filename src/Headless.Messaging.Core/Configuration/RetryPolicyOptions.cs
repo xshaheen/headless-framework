@@ -198,6 +198,6 @@ internal sealed class RetryPolicyOptionsValidator : AbstractValidator<RetryPolic
             .WithMessage("OnExhaustedTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromHours(1))
             .WithMessage("OnExhaustedTimeout must not exceed 1 hour.");
-        RuleFor(x => x.BackoffStrategy).NotNull();
+        RuleFor(x => x.BackoffStrategy).NotNull().WithMessage("BackoffStrategy must not be null.");
     }
 }
