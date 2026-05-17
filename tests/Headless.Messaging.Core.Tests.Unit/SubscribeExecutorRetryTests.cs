@@ -541,6 +541,72 @@ public sealed class SubscribeExecutorRetryTests : TestBase
     }
 
     [Fact]
+    public async Task should_increment_retries_by_one_when_persisted_path_routes_via_change_receive_state()
+    {
+        // #11 — positive counterpart to the inline-path invariant: when the inline budget is fully
+        // consumed (MaxInlineRetries = 0) and the persisted budget still has slots, ResolveNextState
+        // routes through persistence and the executor MUST increment MediumMessage.Retries by
+        // exactly one. Without the increment the persisted budget would never be consumed and
+        // OnExhausted would never fire.
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<ConsumerExecutedResult>(new TimeoutException("boom")));
+
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxInlineRetries = 0,
+                    MaxPersistedRetries = 5,
+                    BackoffStrategy = new FixedDelayRetryBackoffStrategy(TimeSpan.FromSeconds(5)),
+                },
+            }
+        );
+
+        var message = _CreateMediumMessage();
+        var startingRetries = message.Retries;
+
+        // when
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        // then — persisted-retry transition: Retries advanced from 0 to 1 and the storage write
+        // was issued with originalRetries == 0 (CAS predicate on the pre-increment value).
+        result.Succeeded.Should().BeFalse();
+        message
+            .Retries.Should()
+            .Be(
+                startingRetries + 1,
+                "persisted pickup must advance MediumMessage.Retries by exactly 1 so the budget is consumed"
+            );
+        await storage
+            .Received(1)
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Is<DateTime?>(v => v.HasValue),
+                Arg.Any<DateTime?>(),
+                Arg.Is<int?>(v => v == startingRetries),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_treat_wrapped_argument_exception_as_permanent_with_default_strategy()
     {
         // #6: SubscribeExecutor wraps every consumer exception in SubscriberExecutionFailedException.
