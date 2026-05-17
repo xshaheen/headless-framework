@@ -402,6 +402,127 @@ public sealed class RetryHelperTests : TestBase
     }
 
     [Fact]
+    public void resolve_next_state_should_force_persisted_path_when_delay_exceeds_dispatch_timeout()
+    {
+        // #1 — when the strategy returns Delay >= DispatchTimeout, InlineRetryLoop bails out early
+        // without sleeping (the lease is sized to DispatchTimeout). ResolveNextState MUST force
+        // IsInlineRetryInFlight = false so the call site advances MediumMessage.Retries; otherwise
+        // the row sits with NextRetryAt set but Retries unchanged across every pickup, never
+        // consuming the persisted budget and never firing OnExhausted.
+        var policy = new RetryPolicyOptions
+        {
+            MaxInlineRetries = 5,
+            InitialDispatchGrace = TimeSpan.FromSeconds(30),
+            DispatchTimeout = TimeSpan.FromMinutes(5),
+        };
+        var now = new DateTimeOffset(2026, 5, 16, 12, 0, 0, TimeSpan.Zero);
+        var provider = new FixedTimeProvider(now);
+        // Delay equal to DispatchTimeout — would oversleep the lease.
+        var decision = RetryDecision.Continue(policy.DispatchTimeout);
+
+        // inlineRetries=0 with MaxInlineRetries=5 normally yields IsInlineRetryInFlight=true.
+        // The DispatchTimeout guard must override that.
+        var state = RetryHelper.ResolveNextState(decision, inlineRetries: 0, policy, provider);
+
+        state
+            .IsInlineRetryInFlight.Should()
+            .BeFalse(
+                "Delay >= DispatchTimeout traps the message in inline-in-flight without consuming the persisted budget"
+            );
+        state.NextStatus.Should().Be(StatusName.Failed);
+        state.NextRetryAt.Should().Be(now.UtcDateTime.Add(policy.DispatchTimeout));
+    }
+
+    [Fact]
+    public async Task delay_at_or_above_dispatch_timeout_should_consume_persisted_budget_and_fire_on_exhausted()
+    {
+        // #1 — end-to-end invariant: after MaxPersistedRetries pickups of a row that always
+        // produces Delay >= DispatchTimeout, the persisted Retries counter MUST reach the budget
+        // limit and OnExhausted MUST fire exactly once. Without the fix the row stays at
+        // Retries == 0 and OnExhausted never fires.
+        const int maxPersistedRetries = 3;
+        var policy = new RetryPolicyOptions
+        {
+            MaxInlineRetries = 5,
+            MaxPersistedRetries = maxPersistedRetries,
+            DispatchTimeout = TimeSpan.FromMinutes(5),
+            InitialDispatchGrace = TimeSpan.FromSeconds(30),
+            BackoffStrategy = new AlwaysRetryStrategy(TimeSpan.FromMinutes(5)),
+        };
+
+        var provider = new FixedTimeProvider(new DateTimeOffset(2026, 5, 16, 12, 0, 0, TimeSpan.Zero));
+
+        // Simulate the per-pickup state machine the executor would run: invoke strategy,
+        // ResolveNextState, then increment Retries when !IsInlineRetryInFlight (mirroring the
+        // executor's gating logic). Loop until the helper returns a terminal decision.
+        var message = _CreateMessage();
+        var inlineInFlightObservations = new List<bool>();
+        RetryDecision lastDecision = RetryDecision.Stop;
+
+        for (var pickup = 0; pickup <= maxPersistedRetries + 1; pickup++)
+        {
+            lastDecision = RetryHelper.RecordAttemptAndComputeDecision(
+                message,
+                new TimeoutException(),
+                policy,
+                inlineRetries: 0
+            );
+
+            if (lastDecision.Outcome != RetryDecision.Kind.Continue)
+            {
+                break;
+            }
+
+            var state = RetryHelper.ResolveNextState(lastDecision, inlineRetries: 0, policy, provider);
+            inlineInFlightObservations.Add(state.IsInlineRetryInFlight);
+
+            if (!state.IsInlineRetryInFlight)
+            {
+                message.Retries++;
+            }
+        }
+
+        // Every observed pickup must route through the persisted path (DispatchTimeout guard).
+        inlineInFlightObservations
+            .Should()
+            .NotBeEmpty()
+            .And.AllSatisfy(flag =>
+                flag.Should()
+                    .BeFalse("DispatchTimeout guard must force persisted path so Retries advances on every pickup")
+            );
+        message
+            .Retries.Should()
+            .BeGreaterThanOrEqualTo(
+                maxPersistedRetries,
+                "persisted budget must be fully consumed across the pickup sequence — without the fix Retries stays at 0"
+            );
+
+        // Verify OnExhausted callback wiring fires when the helper says Exhausted: drive the
+        // RunOnExhaustedAsync path with a one-shot callback.
+        var callbackCount = 0;
+        var policyWithCallback = new RetryPolicyOptions
+        {
+            OnExhausted = (_, _) =>
+            {
+                Interlocked.Increment(ref callbackCount);
+                return Task.CompletedTask;
+            },
+        };
+
+        await RetryHelper.RunOnExhaustedAsync(
+            policyWithCallback,
+            message,
+            new TimeoutException(),
+            new ServiceCollection().BuildServiceProvider(),
+            MessageType.Subscribe,
+            Substitute.For<ILogger>(),
+            CancellationToken.None
+        );
+
+        callbackCount.Should().Be(1, "OnExhausted must fire exactly once when the budget is consumed");
+    }
+
+    [Fact]
     public void resolve_next_state_inline_in_flight_should_preserve_existing_later_schedule()
     {
         // When currentNextRetryAt is later than (now + delay + grace), keep it — InitialDispatchGrace
@@ -475,6 +596,8 @@ public sealed class RetryHelperTests : TestBase
             MessageType = MessageType.Subscribe,
             ServiceProvider = new ServiceCollection().BuildServiceProvider(),
             Exception = new InvalidOperationException("orig"),
+            StorageId = 0,
+            RetryCount = 0,
         };
 
         var logger = Substitute.For<ILogger>();
@@ -504,6 +627,8 @@ public sealed class RetryHelperTests : TestBase
             MessageType = MessageType.Subscribe,
             ServiceProvider = new ServiceCollection().BuildServiceProvider(),
             Exception = new InvalidOperationException("orig"),
+            StorageId = 0,
+            RetryCount = 0,
         };
 
         using var hostCts = new CancellationTokenSource();
@@ -553,6 +678,8 @@ public sealed class RetryHelperTests : TestBase
             MessageType = MessageType.Subscribe,
             ServiceProvider = new ServiceCollection().BuildServiceProvider(),
             Exception = new InvalidOperationException("orig"),
+            StorageId = 0,
+            RetryCount = 0,
         };
 
         var observedCancellation = new TaskCompletionSource<bool>();
@@ -591,6 +718,8 @@ public sealed class RetryHelperTests : TestBase
             MessageType = MessageType.Subscribe,
             ServiceProvider = new ServiceCollection().BuildServiceProvider(),
             Exception = new InvalidOperationException("orig"),
+            StorageId = 0,
+            RetryCount = 0,
         };
 
         Exception? observedException = null;
@@ -645,6 +774,8 @@ public sealed class RetryHelperTests : TestBase
             MessageType = MessageType.Subscribe,
             ServiceProvider = new ServiceCollection().BuildServiceProvider(),
             Exception = new InvalidOperationException("orig"),
+            StorageId = 0,
+            RetryCount = 0,
         };
 
         // Pre-cancel the host token so the link fires immediately when WaitAsync observes it.

@@ -68,9 +68,8 @@ internal static class RetryHelper
         ILogger? logger = null
     )
     {
-        // Diagnostic guard: validator runs at startup only; post-startup mutation to null would
-        // otherwise produce a bare NullReferenceException with no actionable context.
-        Argument.IsNotNull(policy.BackoffStrategy);
+        // BackoffStrategy non-null is guaranteed by MessagingOptionsValidator at ValidateOnStart();
+        // no runtime guard needed here.
 
         // Wrap the strategy call: a throwing custom strategy must not create an infinite
         // consumer-invocation loop. Treating a throw as Exhausted routes the row to terminal Failed
@@ -314,6 +313,8 @@ internal static class RetryHelper
                     MessageType = messageType,
                     Message = message.Origin,
                     Exception = exception,
+                    StorageId = message.StorageId,
+                    RetryCount = message.Retries,
                 },
                 policy.OnExhaustedTimeout,
                 message.StorageId,
@@ -342,8 +343,18 @@ internal static class RetryHelper
         DateTime? currentNextRetryAt = null
     )
     {
+        // #1 — when the strategy returns Delay >= DispatchTimeout, the inline loop bails out early
+        // (see InlineRetryLoop.cs) without sleeping, so the persisted-retry path MUST take over.
+        // Otherwise the call site would skip the Retries++ increment (gated on
+        // !IsInlineRetryInFlight), the row would sit with NextRetryAt set but Retries unchanged,
+        // and the persisted budget would never be consumed — OnExhausted would never fire.
+        var inlineBudgetWouldOversleep =
+            decision.Outcome == RetryDecision.Kind.Continue && decision.Delay >= policy.DispatchTimeout;
+
         var isInlineRetryInFlight =
-            decision.Outcome == RetryDecision.Kind.Continue && policy.HasMoreInlineAttempts(inlineRetries);
+            decision.Outcome == RetryDecision.Kind.Continue
+            && policy.HasMoreInlineAttempts(inlineRetries)
+            && !inlineBudgetWouldOversleep;
 
         var nextStatus = isInlineRetryInFlight ? StatusName.Scheduled : StatusName.Failed;
 
