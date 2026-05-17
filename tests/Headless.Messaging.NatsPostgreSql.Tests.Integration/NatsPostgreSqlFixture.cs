@@ -44,7 +44,9 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
     private sealed class NatsStackComponent : IAsyncLifetime
     {
         private readonly NatsContainer _container = new NatsBuilder(TestImages.Nats)
+            .WithLabel("type", "nats-postgresql-nats")
             .WithResourceMapping(_NatsConfig, "/etc/nats/nats-server.conf")
+            .WithReuse(true)
             .Build();
 
         private NatsConnection? _connection;
@@ -106,9 +108,11 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
     private sealed class PostgreSqlStackComponent : IAsyncLifetime
     {
         private readonly PostgreSqlContainer _container = new PostgreSqlBuilder(TestImages.PostgreSql)
+            .WithLabel("type", "nats-postgresql-pg")
             .WithDatabase("messages_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
+            .WithReuse(true)
             .Build();
 
         public string ConnectionString => _container.GetConnectionString();

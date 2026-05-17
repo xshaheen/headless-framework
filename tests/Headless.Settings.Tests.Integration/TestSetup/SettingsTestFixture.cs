@@ -91,11 +91,12 @@ public sealed class SettingsTestFixture : ICollectionFixture<SettingsTestFixture
             .WithDatabase("headless_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
+            .WithReuse(true)
             .Build();
     }
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder(TestImages.Redis).Build();
+        return new RedisBuilder(TestImages.Redis).WithLabel("type", "settings-redis").WithReuse(true).Build();
     }
 }
