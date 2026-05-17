@@ -3,11 +3,13 @@
 using Headless.Abstractions;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemoryStorage;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using Tests.Capabilities;
 
 namespace Tests;
@@ -31,6 +33,20 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     private InMemoryDataStorage? _storage;
     private ILongIdGenerator? _longIdGenerator;
     private ISerializer? _serializer;
+    private FakeTimeProvider? _fakeTimeProvider;
+
+    /// <inheritdoc />
+    protected override TimeProvider TimeProvider
+    {
+        get
+        {
+            _EnsureInitialized();
+            return _fakeTimeProvider!;
+        }
+    }
+
+    /// <inheritdoc />
+    protected override bool SupportsControllableClock => true;
 
     /// <inheritdoc />
     protected override DataStorageCapabilities Capabilities =>
@@ -97,6 +113,11 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             return;
         }
 
+        // Seed the FakeTimeProvider at the real current UTC instant so legacy tests that mix
+        // `DateTime.UtcNow.AddHours(...)` literals with the storage's injected clock stay
+        // consistent. The clock-controlled grace test advances the clock explicitly via Advance().
+        _fakeTimeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+
         var services = new ServiceCollection();
         services.AddOptions();
         services.AddLogging();
@@ -108,7 +129,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         });
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
         services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
-        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<TimeProvider>(_fakeTimeProvider);
 
         var provider = services.BuildServiceProvider();
 
@@ -117,7 +138,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         _serializer = provider.GetRequiredService<ISerializer>();
 
         _initializer = new InMemoryStorageInitializer();
-        _storage = new InMemoryDataStorage(messagingOptions, _serializer, _longIdGenerator, TimeProvider.System);
+        _storage = new InMemoryDataStorage(messagingOptions, _serializer, _longIdGenerator, _fakeTimeProvider);
     }
 
     #region Data Storage Tests (DataStorageTestsBase parity matrix)
@@ -220,8 +241,41 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         base.should_not_return_received_message_with_future_next_retry_at();
 
     [Fact]
-    public override Task should_not_return_leased_published_message_until_lease_expires() =>
-        base.should_not_return_leased_published_message_until_lease_expires();
+    public override async Task should_not_return_leased_published_message_until_lease_expires()
+    {
+        // InMemory storage reads pickup time from the injected FakeTimeProvider. The base test
+        // uses `Task.Delay` + wall-clock arithmetic, so we drive the fake clock forward
+        // explicitly here to keep storage time and test timestamps in lockstep.
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreMessageAsync(
+            "leased-published",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
+
+        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: now.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
+
+        var leaseWindow = TimeSpan.FromMilliseconds(500);
+        var leased = await storage.LeasePublishAsync(storedMessage, now.Add(leaseWindow), AbortToken);
+
+        leased.Should().BeTrue();
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == storedMessage.StorageId);
+
+        _fakeTimeProvider.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
+
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .Contain(m => m.StorageId == storedMessage.StorageId);
+    }
 
     [Fact]
     public override Task should_reject_mismatched_original_retries() =>
@@ -248,8 +302,45 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         base.should_pickup_message_at_max_persisted_retries_and_exclude_above();
 
     [Fact]
-    public override Task should_not_return_leased_received_message_until_lease_expires() =>
-        base.should_not_return_leased_received_message_until_lease_expires();
+    public override Task should_respect_initial_dispatch_grace() => base.should_respect_initial_dispatch_grace();
+
+    [Fact]
+    public override async Task should_not_return_leased_received_message_until_lease_expires()
+    {
+        // InMemory storage reads pickup time from the injected FakeTimeProvider. The base test
+        // uses `Task.Delay` + wall-clock arithmetic, so we drive the fake clock forward
+        // explicitly here to keep storage time and test timestamps in lockstep.
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var storedMessage = await storage.StoreReceivedMessageAsync(
+            "leased-received",
+            "test-group",
+            CreateMessage(),
+            AbortToken
+        );
+
+        var now = _fakeTimeProvider!.GetUtcNow().UtcDateTime;
+        await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: now.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
+
+        var leaseWindow = TimeSpan.FromMilliseconds(500);
+        var leased = await storage.LeaseReceiveAsync(storedMessage, now.Add(leaseWindow), AbortToken);
+
+        leased.Should().BeTrue();
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == storedMessage.StorageId);
+
+        _fakeTimeProvider.Advance(leaseWindow + TimeSpan.FromMilliseconds(250));
+
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .Contain(m => m.StorageId == storedMessage.StorageId);
+    }
 
     [Fact]
     public override Task should_handle_concurrent_state_updates_to_same_row() =>

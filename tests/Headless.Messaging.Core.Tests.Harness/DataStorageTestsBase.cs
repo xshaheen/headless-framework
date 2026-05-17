@@ -28,6 +28,22 @@ public abstract class DataStorageTestsBase : TestBase
     protected virtual DataStorageCapabilities Capabilities => DataStorageCapabilities.Default;
 
     /// <summary>
+    /// Gets the <see cref="TimeProvider"/> used by the storage under test. Defaults to
+    /// <see cref="TimeProvider.System"/>; providers that want clock-controlled coverage of
+    /// time-sensitive predicates override this with a <c>FakeTimeProvider</c> and rebuild their
+    /// storage on top of it. SQL providers that depend on database-side time functions (e.g.,
+    /// PostgreSQL's <c>now()</c> in the pickup query) skip the controllable-clock parity tests.
+    /// </summary>
+    protected virtual TimeProvider TimeProvider => TimeProvider.System;
+
+    /// <summary>
+    /// Indicates whether <see cref="TimeProvider"/> can be advanced under test. Providers backed
+    /// by a <c>FakeTimeProvider</c> return <see langword="true"/>; default <see cref="TimeProvider.System"/>
+    /// providers return <see langword="false"/> and the clock-controlled tests are skipped.
+    /// </summary>
+    protected virtual bool SupportsControllableClock => false;
+
+    /// <summary>
     /// Counts persisted received-message rows matching the supplied <paramref name="messageId"/>
     /// (and optionally <paramref name="group"/>). Provider-specific because the row visibility
     /// after a concurrent upsert storm needs a direct count query — the public monitoring API
@@ -42,12 +58,12 @@ public abstract class DataStorageTestsBase : TestBase
     /// <summary>
     /// Thread-safe counter for generating unique logical message IDs.
     /// </summary>
-    private static long _MessageIdCounter;
+    private static long _messageIdCounter;
 
     /// <summary>Creates a valid message for testing.</summary>
     protected static Message CreateMessage(string? messageId = null, string? messageName = null, object? value = null)
     {
-        var id = messageId ?? $"msg-{Interlocked.Increment(ref _MessageIdCounter)}";
+        var id = messageId ?? $"msg-{Interlocked.Increment(ref _messageIdCounter)}";
 
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -168,12 +184,31 @@ public abstract class DataStorageTestsBase : TestBase
         var message = CreateMessage();
         var storedMessage = await storage.StoreMessageAsync("state-test", message, cancellationToken: AbortToken);
 
-        // when
-        var act = async () =>
-            await storage.ChangePublishStateAsync(storedMessage, StatusName.Succeeded, cancellationToken: AbortToken);
+        var nextRetryAt = DateTime.UtcNow.AddMinutes(5);
 
-        // then
-        await act.Should().NotThrowAsync();
+        // when — transition to Failed with a future NextRetryAt so the row stays mutable and the
+        // state transition can be read back through the monitoring API.
+        var result = await storage.ChangePublishStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: nextRetryAt,
+            cancellationToken: AbortToken
+        );
+
+        // then — the storage write must succeed and the persisted row must reflect the new state.
+        result.Should().BeTrue("the state transition must succeed against a fresh, non-terminal row");
+
+        if (Capabilities.SupportsMonitoringApi)
+        {
+            var roundTripped = await storage
+                .GetMonitoringApi()
+                .GetPublishedMessageAsync(storedMessage.StorageId, AbortToken);
+            roundTripped.Should().NotBeNull("the row must persist after a successful state change");
+            roundTripped!
+                .NextRetryAt.Should()
+                .NotBeNull("NextRetryAt must be persisted by ChangePublishStateAsync")
+                .And.BeCloseTo(nextRetryAt, TimeSpan.FromSeconds(1));
+        }
     }
 
     public virtual async Task should_change_receive_state()
@@ -183,12 +218,31 @@ public abstract class DataStorageTestsBase : TestBase
         var message = CreateMessage();
         var storedMessage = await storage.StoreReceivedMessageAsync("state-test", "group", message, AbortToken);
 
-        // when
-        var act = async () =>
-            await storage.ChangeReceiveStateAsync(storedMessage, StatusName.Succeeded, cancellationToken: AbortToken);
+        var nextRetryAt = DateTime.UtcNow.AddMinutes(5);
 
-        // then
-        await act.Should().NotThrowAsync();
+        // when — transition to Failed with a future NextRetryAt so the row stays mutable and the
+        // state transition can be read back through the monitoring API.
+        var result = await storage.ChangeReceiveStateAsync(
+            storedMessage,
+            StatusName.Failed,
+            nextRetryAt: nextRetryAt,
+            cancellationToken: AbortToken
+        );
+
+        // then — the storage write must succeed and the persisted row must reflect the new state.
+        result.Should().BeTrue("the state transition must succeed against a fresh, non-terminal row");
+
+        if (Capabilities.SupportsMonitoringApi)
+        {
+            var roundTripped = await storage
+                .GetMonitoringApi()
+                .GetReceivedMessageAsync(storedMessage.StorageId, AbortToken);
+            roundTripped.Should().NotBeNull("the row must persist after a successful state change");
+            roundTripped!
+                .NextRetryAt.Should()
+                .NotBeNull("NextRetryAt must be persisted by ChangeReceiveStateAsync")
+                .And.BeCloseTo(nextRetryAt, TimeSpan.FromSeconds(1));
+        }
     }
 
     public virtual async Task should_change_publish_state_to_delayed()
@@ -1068,6 +1122,51 @@ public abstract class DataStorageTestsBase : TestBase
                 .Should()
                 .Be(1, $"the concurrent storm must converge to exactly one persisted row (group={group ?? "<null>"})");
         }
+    }
+
+    public virtual async Task should_respect_initial_dispatch_grace()
+    {
+        // #10 — parity test for the InitialDispatchGrace exclusion contract. Providers that
+        // expose a controllable TimeProvider exercise the WHERE-predicate boundary; providers
+        // backed by TimeProvider.System (or by a DB-side time function) skip until they grow a
+        // fixture-level clock injection seam.
+        if (!SupportsControllableClock)
+        {
+            Assert.Skip(
+                "Provider does not expose a controllable TimeProvider — initial-dispatch-grace boundary requires FakeTimeProvider."
+            );
+        }
+
+        var fakeClock = TimeProvider as Microsoft.Extensions.Time.Testing.FakeTimeProvider;
+        if (fakeClock is null)
+        {
+            Assert.Skip("TimeProvider override is not a FakeTimeProvider — cannot advance the clock for this test.");
+        }
+
+        // given — fresh published row carries NextRetryAt = Added + InitialDispatchGrace
+        // (default 30s). Polling immediately must exclude it.
+        var storage = GetStorage();
+        var stored = await storage.StoreMessageAsync("grace-base", CreateMessage(), cancellationToken: AbortToken);
+
+        var beforeGrace = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        beforeGrace
+            .Should()
+            .NotContain(
+                m => m.StorageId == stored.StorageId,
+                "freshly-stored rows must be excluded during the initial dispatch grace window"
+            );
+
+        // when — advance past the grace window.
+        fakeClock!.Advance(TimeSpan.FromMinutes(2));
+
+        // then — the row is now eligible for pickup.
+        var afterGrace = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        afterGrace
+            .Should()
+            .Contain(
+                m => m.StorageId == stored.StorageId,
+                "after the grace window elapses the persisted retry processor must pick the row up"
+            );
     }
 
     public virtual async Task should_pickup_message_at_max_persisted_retries_and_exclude_above()
