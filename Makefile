@@ -14,7 +14,7 @@ PROJECT ?=
 TEST_PROJECT ?=
 TEST_FILTER ?=
 MSBUILD_ARGS ?=
-TEST_MAX_PARALLEL ?= 2
+TEST_MAX_PARALLEL ?= 3
 
 .PHONY: help
 help: ## Show available commands.
@@ -84,14 +84,15 @@ test-integration: build ## Run every *.Tests.Integration project. Requires Docke
 	done
 
 .PHONY: coverage
-coverage: tools build ## Collect Cobertura coverage for the full test suite. TEST_MAX_PARALLEL caps concurrent modules (default 2).
+coverage: tools build ## Collect Cobertura coverage via MTP's in-process coverage extension. TEST_MAX_PARALLEL caps concurrent modules (default 3).
 	@mkdir -p "$(COVERAGE_DIR)" "$(TEST_RESULTS_DIR)"
-	$(DOTNET) coverage collect -f cobertura -o "$(COVERAGE_DIR)/coverage.xml" -- \
-		$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL)
+	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build \
+		--results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) \
+		--coverage --coverage-output-format cobertura
 
 .PHONY: coverage-html
 coverage-html: coverage ## Generate an HTML coverage report.
-	$(DOTNET) reportgenerator -reports:"$(COVERAGE_DIR)/coverage.xml" -targetdir:"$(COVERAGE_DIR)/report" -reporttypes:Html
+	$(DOTNET) reportgenerator -reports:"$(TEST_RESULTS_DIR)/**/*.cobertura.xml" -targetdir:"$(COVERAGE_DIR)/report" -reporttypes:Html
 
 .PHONY: coverage-open
 coverage-open: coverage-html ## Generate report and open in browser.
