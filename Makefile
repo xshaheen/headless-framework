@@ -58,20 +58,20 @@ format-check: tools ## Check C# formatting without writing changes.
 .PHONY: test
 test: build ## Run all tests. Use TEST_FILTER='...' for dotnet test filters.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build -v:q -nologo --results-directory "$(TEST_RESULTS_DIR)" $(if $(TEST_FILTER),--filter '$(TEST_FILTER)',)
+	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build -v:q -nologo --results-directory "$(TEST_RESULTS_DIR)" $(if $(TEST_FILTER),--filter '$(TEST_FILTER)',)
 
 .PHONY: test-project
 test-project: ## Run one test project: make test-project TEST_PROJECT=tests/.../*.csproj
 	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj" && exit 2)
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" -v:q -nologo --results-directory "$(TEST_RESULTS_DIR)" $(if $(TEST_FILTER),--filter '$(TEST_FILTER)',)
+	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" -v:q -nologo --results-directory "$(TEST_RESULTS_DIR)" $(if $(TEST_FILTER),--filter '$(TEST_FILTER)',)
 
 .PHONY: test-unit
 test-unit: build ## Run every *.Tests.Unit project.
 	@mkdir -p "$(TEST_RESULTS_DIR)/unit"
 	@find tests -name '*.Tests.Unit.csproj' -print0 | while IFS= read -r -d '' project; do \
 		echo "Testing $$project"; \
-		$(DOTNET) test "$$project" --configuration "$(CONFIGURATION)" --no-build -v:q -nologo --results-directory "$(TEST_RESULTS_DIR)/unit" $(if $(TEST_FILTER),--filter '$(TEST_FILTER)',); \
+		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-build -v:q -nologo --results-directory "$(TEST_RESULTS_DIR)/unit" $(if $(TEST_FILTER),--filter '$(TEST_FILTER)',); \
 	done
 
 .PHONY: test-integration
@@ -79,14 +79,14 @@ test-integration: build ## Run every *.Tests.Integration project. Requires Docke
 	@mkdir -p "$(TEST_RESULTS_DIR)/integration"
 	@find tests -name '*.Tests.Integration.csproj' -print0 | while IFS= read -r -d '' project; do \
 		echo "Testing $$project"; \
-		$(DOTNET) test "$$project" --configuration "$(CONFIGURATION)" --no-build -v:q -nologo --results-directory "$(TEST_RESULTS_DIR)/integration" $(if $(TEST_FILTER),--filter '$(TEST_FILTER)',); \
+		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-build -v:q -nologo --results-directory "$(TEST_RESULTS_DIR)/integration" $(if $(TEST_FILTER),--filter '$(TEST_FILTER)',); \
 	done
 
 .PHONY: coverage
 coverage: tools build ## Collect Cobertura coverage for the full test suite.
 	@mkdir -p "$(COVERAGE_DIR)" "$(TEST_RESULTS_DIR)"
 	$(DOTNET) coverage collect -f cobertura -o "$(COVERAGE_DIR)/coverage.xml" -- \
-		$(DOTNET) test "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build -v:q -nologo --results-directory "$(TEST_RESULTS_DIR)"
+		$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build -v:q -nologo --results-directory "$(TEST_RESULTS_DIR)"
 
 .PHONY: coverage-html
 coverage-html: coverage ## Generate an HTML coverage report.
