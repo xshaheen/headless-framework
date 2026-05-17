@@ -66,8 +66,11 @@ app.UseAuthorization();
 - In HTTP apps, use `.Http(http => http.ResolveFromClaims())` and `app.UseHeadlessTenancy()` in the middleware pipeline.
 - For Mediator request boundaries, use `.Mediator(mediator => mediator.RequireTenant())` or the lower-level `services.AddTenantRequiredBehavior()`, and mark only intentional host-level requests with `[AllowMissingTenant]`.
 - The default claim type is `tenant_id`. Override it with `ResolveFromClaims(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
+- Mint the tenant claim only on principals that are actually scoped to a tenant. Host-level, admin, service-account, or cross-tenant principal types should not carry the claim — `ICurrentTenant.IsAvailable` stays false for them by design.
 - When no tenant claim is present, the middleware intentionally skips `Change(null)`. This preserves the distinction between "never set" and "explicitly null".
 - For EF Core, inherit from `HeadlessDbContext` and let the built-in model processor apply tenant filters to `IMultiTenant` entities.
+- Declare `IMultiTenant` on aggregates owned by exactly one tenant. Keep platform-level entities (cross-tenant infrastructure, audit/outbox rows, shared catalogs, materialized cross-tenant projections) outside the filter. See [Entity Ownership](#entity-ownership).
+- When using `IgnoreMultiTenancyFilter()`, add an inline `// MULTI-TENANCY-BYPASS: <reason>` comment naming the approved scenario (cross-tenant snapshot, admin lookup, system maintenance, etc.) so reviewers and post-incident readers can distinguish legitimate bypasses from drift.
 - Enable strict EF tenant writes with `.EntityFramework(ef => ef.GuardTenantWrites())` or the lower-level `services.AddHeadlessTenantWriteGuard()` when tenant-owned saves must fail without a matching tenant context.
 - Use `ITenantWriteGuardBypass.BeginBypass()` only around intentional admin or host-level writes. `IgnoreMultiTenancyFilter()` affects reads only; it does not bypass guarded writes.
 - Permission cache scoping depends on `ICurrentTenant.Id`. Host-level operations with no tenant use the shared `t:` scope by design.
@@ -157,6 +160,15 @@ The same shape is reachable without going through the handler via `IProblemDetai
 - Mark intentional host-level, public, system, or console-bootstrap requests with `[AllowMissingTenant]`.
 - Do not add runtime opt-out flags or handler-level policy checks; the marker attribute is the enrollment surface.
 
+Apply `[AllowMissingTenant]` to every Mediator request whose dispatch path can legitimately run without a tenant. Typical categories:
+
+- **Anonymous / public endpoints** (login, password reset, sign-up, public lookups).
+- **Admin, system, or console-bootstrap commands** dispatched under a host-level identity rather than a tenant-scoped one.
+- **Authenticated endpoints reachable by non-tenant-scoped principal types** (admin, partner, service-account, cross-tenant principals — any identity that does not mint the tenant claim).
+- **Background / hosted-service / message-consumer commands** that intentionally run outside any tenant.
+
+Forgetting the attribute on one of these surfaces produces a 400 `g:tenant-required` for legitimate callers — `TenantRequiredBehavior` is intentionally fail-loud, so the missing attribute is the only signal. Tenant-scoped requests that genuinely require tenant context must omit it.
+
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy
     .Mediator(mediator => mediator.RequireTenant()));
@@ -207,6 +219,22 @@ The HTTP middleware preserves state `1` when there is no tenant claim. It does n
 - Ensure your entity implements `IMultiTenant`
 
 With tenant resolution active, queries automatically filter on `TenantId == ICurrentTenant.Id`. The filter is wired by `HeadlessDbContextRuntime._ConfigureQueryFilters` and registered under the constant `HeadlessQueryFilters.MultiTenancyFilter` (whose literal string value is `"MultiTenantFilter"`). Because `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same `IQueryable<T>`, bulk update and bulk delete inherit the tenant predicate and are scoped to the current tenant by default. Per-query opt-out is `IgnoreMultiTenancyFilter()`, which audit-logs the bypass via `HeadlessQueryFilters._LogFilterBypassed`.
+
+### Entity Ownership
+
+The decision of whether an entity declares `IMultiTenant` is per-aggregate and load-bearing — it controls whether the global query filter and (if enabled) the write guard cover it.
+
+- **Tenant-owned aggregates** (rows whose lifetime and visibility belong to exactly one tenant) declare `: IMultiTenant`. Headless then scopes reads, `ExecuteUpdate`, `ExecuteDelete`, and guarded saves automatically.
+- **Platform-level entities** do not declare `IMultiTenant`. These cover cross-tenant infrastructure (outbox rows, audit log events, system schedules), shared catalogs (vendor / product / lookup tables that span tenants), and materialized cross-tenant read models or crosswalks. Filtering them per-tenant would either hide rows from legitimate readers or force every consumer to bypass the filter.
+- **The entity that defines the tenant boundary itself** — the row whose `Id` is the `TenantId` — is a deliberate special case. Marking it `IMultiTenant` forces every lookup through `ICurrentTenant`, which usually breaks admin and bootstrap paths (tenant onboarding, support tooling, cross-tenant administration). Treat this as a deferred design decision; protect those rows with admin-policy authorization rather than the query filter unless you have an explicit reason to do otherwise.
+
+When retrofitting `IMultiTenant` onto an existing entity, ship the type change and the schema change in the same PR. The EF migration must:
+
+1. Add a `TenantId` column as `NOT NULL` using the same width as the rest of your tenancy schema (e.g., `text` for free-form IDs, `varchar(N)` when fixed-length parity matters for joins or indexes).
+2. Backfill `TenantId` in the same migration from the existing owning-tenant relationship, so the `NOT NULL` constraint can be enforced atomically.
+3. Add a covering index shaped like `(TenantId, ...existing-key-columns)` so the new filter predicate does not regress existing query plans.
+
+Splitting these across PRs leaves the entity in a state where the query filter is active but the column is missing or unindexed, which manifests as runtime exceptions or sequential scans rather than a clean failure.
 
 ### EF Tenant Write Guard
 
@@ -267,7 +295,7 @@ When messaging tenant propagation is enabled, exhausted callbacks restore `ICurr
 Known gaps:
 
 - **Attach-then-modify.** An attacker-controlled `Attach` populates `OriginalValue` from caller-supplied state, so the in-memory guard's `OriginalValue == currentTenantId` check passes for a row that actually belongs to another tenant. The global query filter does not cover this path because the attacker never queries the row. A SQL-level concurrency-style `WHERE TenantId = @currentTenantId` predicate on the SaveChanges-generated UPDATE/DELETE is the planned follow-up, tracked in the security follow-up issue on the project tracker.
-- **Raw SQL** (`DbContext.Database.ExecuteSql(...)`, `ExecuteSqlInterpolated(...)`, `ExecuteSqlRaw(...)`, stored procedures, triggers) is out of scope for both layers. Consumers calling raw SQL against `IMultiTenant` tables must include their own `WHERE TenantId = @currentTenantId` predicate or wrap the call in `ITenantWriteGuardBypass.BeginBypass()` under an authenticated, audited host context.
+- **Raw SQL and out-of-band data access** are out of scope for both layers. This covers EF's own raw paths (`DbContext.Database.ExecuteSql(...)`, `ExecuteSqlInterpolated(...)`, `ExecuteSqlRaw(...)`, `FromSqlRaw(...)`, `SqlQueryRaw(...)`), stored procedures, triggers, and any code that opens its own command or connection — Dapper, other micro-ORMs, and direct `DbContext.Database.GetDbConnection()` usage all bypass the query filter and write guard entirely, including `MultiTenantFilter`. Consumers issuing raw SQL against `IMultiTenant` tables must scope manually with a `WHERE "TenantId" = @currentTenantId` predicate sourced from `ICurrentTenant.Id`, or wrap the call in `ITenantWriteGuardBypass.BeginBypass()` under an authenticated, audited host context.
 
 ## Permissions and Caching
 
@@ -362,6 +390,8 @@ SignalR hub invocations start new execution flows after the initial upgrade requ
 ## Testing host wiring
 
 Integration tests that build the host (for example `WebApplicationFactory`) will execute the tenancy startup validator at host start. Tests that exercise HTTP tenancy must include `UseHeadlessTenancy()` in their pipeline so `HeadlessHttpTenancyValidator` sees the runtime marker — otherwise startup fails with `HEADLESS_TENANCY_HTTP_MIDDLEWARE_MISSING`. Tests that need to skip validation entirely should not call `AddHeadlessTenancy(...)` at all, or should compose only the seams they exercise. The startup validator runs as an `IHostedLifecycleService.StartingAsync` step so it executes before any other hosted service's `StartAsync`.
+
+Tests that assert the normalized 400 `g:tenant-required` ProblemDetails (or any other `HeadlessApiExceptionHandler` failure shape) must build the host with a production-style environment. The common ASP.NET pattern only calls `app.UseExceptionHandler()` outside Development, so a default-Development test client lets the exception escape as the developer error page instead of the handler's ProblemDetails response. Use a `WebApplicationFactory` variant that sets `Environment = Production` (or your repo's equivalent helper) when the assertion target is the handler's output.
 
 ## Failure Modes to Watch
 
