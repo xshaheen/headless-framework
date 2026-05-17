@@ -100,10 +100,16 @@ internal sealed class RuntimeConsumerRegistry(
 {
     private readonly Lock _lock = new();
     private readonly MessagingOptions _options = options.Value;
+
+    // Lock-free snapshot reads are intentional: writers replace the array under _lock with a
+    // new immutable instance, and un-synchronized readers (GetDescriptors, TryGetInvoker) treat
+    // the field as an atomically-assigned reference snapshot. ImmutableArray<T> wraps a single
+    // T[] reference so the assignment is atomic; visibility is eventually consistent.
     private ImmutableArray<RuntimeConsumerRegistration> _registrations = [];
 
     public IReadOnlyList<ConsumerExecutorDescriptor> GetDescriptors()
     {
+        // ReSharper disable once InconsistentlySynchronizedField
         return _registrations.Select(x => x.Descriptor).ToArray();
     }
 
@@ -119,7 +125,7 @@ internal sealed class RuntimeConsumerRegistry(
         var handlerId = _ResolveHandlerId(method, typeof(TMessage), options?.HandlerId);
         var topic = _ResolveTopic(typeof(TMessage), options?.Topic);
         var group = _ResolveGroup(handlerId, options?.Group);
-        var concurrency = _ResolveConcurrency(options?.Concurrency ?? 1);
+        var concurrency = Argument.IsPositive(options?.Concurrency ?? 1);
         var invoker = new RuntimeMessageHandlerInvoker<TMessage>(handler);
         var descriptor = _CreateDescriptor<TMessage>(method, topic, group, handlerId, concurrency);
 
@@ -204,6 +210,7 @@ internal sealed class RuntimeConsumerRegistry(
         [NotNullWhen(true)] out IRuntimeMessageHandlerInvoker? invoker
     )
     {
+        // ReSharper disable once InconsistentlySynchronizedField
         var registration = _registrations.FirstOrDefault(x =>
             string.Equals(x.Topic, topic, StringComparison.Ordinal)
             && string.Equals(x.Group, group, StringComparison.Ordinal)
@@ -232,16 +239,6 @@ internal sealed class RuntimeConsumerRegistry(
     private string _ResolveGroup(string handlerId, string? explicitGroup)
     {
         return _options.ResolveGroupName(handlerId, explicitGroup);
-    }
-
-    private static byte _ResolveConcurrency(byte concurrency)
-    {
-        if (concurrency == 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(concurrency), "Concurrency must be greater than zero.");
-        }
-
-        return concurrency;
     }
 
     private static string _ResolveHandlerId(

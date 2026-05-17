@@ -14,7 +14,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
 
     public JobsNotificationHubSender(IHubContext<JobsNotificationHub> hubContext)
     {
-        _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
+        _hubContext = hubContext;
         _timeJobUpdateTimer = new Timer(
             _TimeJobUpdateCallback,
             null,

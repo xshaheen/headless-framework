@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Messaging.Messages;
 
 /// <summary>
@@ -38,7 +40,7 @@ public sealed class Message
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="headers"/> is null.</exception>
     public Message(IDictionary<string, string?> headers, object? value)
     {
-        Headers = headers ?? throw new ArgumentNullException(nameof(headers));
+        Headers = Argument.IsNotNull(headers);
         Value = value;
     }
 

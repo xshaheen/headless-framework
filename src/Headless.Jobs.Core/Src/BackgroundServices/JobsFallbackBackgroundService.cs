@@ -14,7 +14,6 @@ internal class JobsFallbackBackgroundService(
 ) : BackgroundService
 {
     private int _started;
-    private readonly JobsExecutionTaskHandler _tickerExecutionTaskHandler = tickerExecutionTaskHandler;
     private readonly TimeSpan _fallbackJobPeriod = schedulerOptions.FallbackIntervalChecker;
 
     public override Task StartAsync(CancellationToken ct)
@@ -91,7 +90,7 @@ internal class JobsFallbackBackgroundService(
 
                                     try
                                     {
-                                        await _tickerExecutionTaskHandler.ExecuteTaskAsync(function, true, ct);
+                                        await tickerExecutionTaskHandler.ExecuteTaskAsync(function, true, ct);
                                     }
                                     finally
                                     {

@@ -23,7 +23,11 @@ public sealed class ConsumerRegistry : IConsumerRegistry
 {
     private readonly Lock _lock = new();
     private List<ConsumerMetadata>? _consumers = [];
-    private IReadOnlyList<ConsumerMetadata>? _frozen;
+
+    // volatile is required by the double-checked locking in GetAll: the unsynchronized first
+    // read must observe a fully-published reference (not a partially-initialized AsReadOnly
+    // wrapper) after the writer thread's lock-protected assignment.
+    private volatile IReadOnlyList<ConsumerMetadata>? _frozen;
 
     /// <summary>
     /// Registers a consumer's metadata in the registry.

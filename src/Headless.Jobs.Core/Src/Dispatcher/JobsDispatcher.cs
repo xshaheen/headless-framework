@@ -10,13 +10,6 @@ internal class JobsDispatcher(
     IJobFunctionConcurrencyGate concurrencyGate
 ) : IJobsDispatcher
 {
-    private readonly JobsTaskScheduler _taskScheduler =
-        taskScheduler ?? throw new ArgumentNullException(nameof(taskScheduler));
-    private readonly JobsExecutionTaskHandler _taskHandler =
-        taskHandler ?? throw new ArgumentNullException(nameof(taskHandler));
-    private readonly IJobFunctionConcurrencyGate _concurrencyGate =
-        concurrencyGate ?? throw new ArgumentNullException(nameof(concurrencyGate));
-
     public bool IsEnabled => true;
 
     public async Task DispatchAsync(InternalFunctionContext[] contexts, CancellationToken cancellationToken = default)
@@ -28,9 +21,9 @@ internal class JobsDispatcher(
 
         foreach (var context in contexts)
         {
-            var semaphore = _concurrencyGate.GetSemaphoreOrNull(context.FunctionName, context.CachedMaxConcurrency);
+            var semaphore = concurrencyGate.GetSemaphoreOrNull(context.FunctionName, context.CachedMaxConcurrency);
 
-            await _taskScheduler
+            await taskScheduler
                 .QueueAsync(
                     async ct =>
                     {
@@ -41,7 +34,7 @@ internal class JobsDispatcher(
 
                         try
                         {
-                            await _taskHandler.ExecuteTaskAsync(context, false, ct).ConfigureAwait(false);
+                            await taskHandler.ExecuteTaskAsync(context, false, ct).ConfigureAwait(false);
                         }
                         finally
                         {
