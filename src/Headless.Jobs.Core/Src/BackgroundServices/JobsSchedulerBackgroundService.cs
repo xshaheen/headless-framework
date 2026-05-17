@@ -1,3 +1,4 @@
+using Headless.Checks;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
@@ -27,11 +28,11 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
         IJobFunctionConcurrencyGate concurrencyGate
     )
     {
-        _executionContext = executionContext;
-        _taskHandler = taskHandler;
-        _taskScheduler = taskScheduler;
-        _internalJobsManager = internalJobsManager;
-        _concurrencyGate = concurrencyGate;
+        _executionContext = Argument.IsNotNull(executionContext);
+        _taskHandler = Argument.IsNotNull(taskHandler);
+        _taskScheduler = Argument.IsNotNull(taskScheduler);
+        _internalJobsManager = Argument.IsNotNull(internalJobsManager);
+        _concurrencyGate = Argument.IsNotNull(concurrencyGate);
         _restartThrottle = new RestartThrottleManager(() => _schedulerLoopCancellationTokenSource?.Cancel());
     }
 
