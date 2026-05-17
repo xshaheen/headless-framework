@@ -10,22 +10,22 @@ namespace Tests;
 
 [TestCaseOrderer(typeof(AlfaTestsOrderer))]
 [Collection<HeadlessDbContextTestFixture>]
-public sealed class HeadlessDbContextTests : TestBase
+public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture) : TestBase
 {
-    private readonly HeadlessDbContextTestFixture _fixture;
-
-    public HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
+    public override async ValueTask InitializeAsync()
     {
-        _fixture = fixture;
-        using var scope = _fixture.ServiceProvider.CreateScope();
-        scope.ServiceProvider.EnsureDbRecreated<TestHeadlessDbContext>();
+        await base.InitializeAsync();
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+        await db.Tests.IgnoreQueryFilters().ExecuteDeleteAsync(AbortToken);
+        await db.Basics.ExecuteDeleteAsync(AbortToken);
     }
 
     [Fact]
     public async Task save_changes_without_emitters_should_not_publish_messages()
     {
         // given
-        await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         var entity = new BasicEntity { Name = "no-op" };
@@ -47,7 +47,7 @@ public sealed class HeadlessDbContextTests : TestBase
     public async Task save_changes_add_should_set_guid_id_create_audit_and_concurrency_stamp_and_emit_local_messages()
     {
         // given
-        await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         var entity = new TestEntity { Name = "created", TenantId = "T1" };
@@ -59,8 +59,8 @@ public sealed class HeadlessDbContextTests : TestBase
 
         // then
         entity.Id.Should().NotBe(Guid.Empty);
-        entity.DateCreated.Should().Be(_fixture.Now);
-        entity.CreatedById.Should().Be(_fixture.UserId);
+        entity.DateCreated.Should().Be(fixture.Now);
+        entity.CreatedById.Should().Be(fixture.UserId);
         entity.ConcurrencyStamp.Should().NotBeNullOrEmpty();
         entity.DateUpdated.Should().BeNull();
         entity.UpdatedById.Should().BeNull();
@@ -88,7 +88,7 @@ public sealed class HeadlessDbContextTests : TestBase
     public async Task save_changes_update_should_set_update_audit_and_update_concurrency_stamp_and_emit_updated_message()
     {
         // given
-        await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         var entity = new TestEntity { Name = "initial", TenantId = "T1" };
@@ -101,8 +101,8 @@ public sealed class HeadlessDbContextTests : TestBase
         await db.SaveChangesAsync(AbortToken);
 
         // then
-        entity.DateUpdated.Should().Be(_fixture.Now);
-        entity.UpdatedById.Should().Be(_fixture.UserId);
+        entity.DateUpdated.Should().Be(fixture.Now);
+        entity.UpdatedById.Should().Be(fixture.UserId);
         entity.ConcurrencyStamp.Should().NotBeNullOrEmpty();
         entity.ConcurrencyStamp.Should().NotBe(oldStamp);
 
@@ -122,7 +122,7 @@ public sealed class HeadlessDbContextTests : TestBase
     public async Task save_changes_soft_delete_should_set_delete_audit_and_emit_deleted_message()
     {
         // given
-        await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         var entity = new TestEntity { Name = "to-delete", TenantId = "T1" };
@@ -136,8 +136,8 @@ public sealed class HeadlessDbContextTests : TestBase
 
         // then
         entity.IsDeleted.Should().BeTrue();
-        entity.DateDeleted.Should().Be(_fixture.Now);
-        entity.DeletedById.Should().Be(_fixture.UserId);
+        entity.DateDeleted.Should().Be(fixture.Now);
+        entity.DeletedById.Should().Be(fixture.UserId);
 
         var last = db.EmittedLocalMessages[^1];
         last.Messages.Should().HaveCount(2);
@@ -153,7 +153,7 @@ public sealed class HeadlessDbContextTests : TestBase
     public async Task save_changes_suspend_should_set_suspend_audit()
     {
         // given
-        await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         var entity = new TestEntity { Name = "to-suspend", TenantId = "T1" };
@@ -167,8 +167,8 @@ public sealed class HeadlessDbContextTests : TestBase
 
         // then
         entity.IsSuspended.Should().BeTrue();
-        entity.DateSuspended.Should().Be(_fixture.Now);
-        entity.SuspendedById.Should().Be(_fixture.UserId);
+        entity.DateSuspended.Should().Be(fixture.Now);
+        entity.SuspendedById.Should().Be(fixture.UserId);
     }
 
     // Publish messages
@@ -177,7 +177,7 @@ public sealed class HeadlessDbContextTests : TestBase
     public async Task distributed_and_local_messages_should_publish_within_existing_transaction()
     {
         // given
-        await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         var entity = new TestEntity { Name = "with-msgs", TenantId = "T1" };
@@ -205,7 +205,7 @@ public sealed class HeadlessDbContextTests : TestBase
     [Fact]
     public async Task execute_transaction_async_should_commit_when_operation_succeeds()
     {
-        await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         await db.ExecuteTransactionAsync(
@@ -223,7 +223,7 @@ public sealed class HeadlessDbContextTests : TestBase
     [Fact]
     public async Task execute_transaction_async_should_rollback_when_operation_throws()
     {
-        await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         var act = async () =>
@@ -247,7 +247,7 @@ public sealed class HeadlessDbContextTests : TestBase
     public async Task global_filters_should_filter_by_tenant_delete_and_suspend_flags_and_can_be_disabled()
     {
         // given
-        await using var scope = _fixture.ServiceProvider.CreateAsyncScope();
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         var a = new TestEntity { Name = "a", TenantId = "TENANT-1" };
@@ -266,25 +266,25 @@ public sealed class HeadlessDbContextTests : TestBase
         await db.SaveChangesAsync(AbortToken);
 
         // when/then: default filters on
-        using (_fixture.CurrentTenant.Change(null))
+        using (fixture.CurrentTenant.Change(null))
         {
             var items = await db.Tests.Select(x => x.Name).ToArrayAsync(AbortToken);
             items.Should().BeEquivalentTo("e");
         }
 
-        using (_fixture.CurrentTenant.Change("TENANT-1"))
+        using (fixture.CurrentTenant.Change("TENANT-1"))
         {
             var items = await db.Tests.Select(x => x.Name).ToArrayAsync(AbortToken);
             items.Should().BeEquivalentTo("a");
         }
 
-        using (_fixture.CurrentTenant.Change(null))
+        using (fixture.CurrentTenant.Change(null))
         {
             var items = await db.Tests.Select(x => x.Name).ToArrayAsync(AbortToken);
             items.Should().BeEquivalentTo("e");
         }
 
-        using (_fixture.CurrentTenant.Change("TENANT-2"))
+        using (fixture.CurrentTenant.Change("TENANT-2"))
         {
             var items = await db.Tests.Select(x => x.Name).ToArrayAsync(AbortToken);
             items.Should().BeEquivalentTo("b");
@@ -297,7 +297,7 @@ public sealed class HeadlessDbContextTests : TestBase
         }
 
         // Allow deleted, Current tenant is TENANT-1
-        using (_fixture.CurrentTenant.Change("TENANT-1"))
+        using (fixture.CurrentTenant.Change("TENANT-1"))
         {
             var items = await db.Tests.IgnoreNotDeletedFilter().Select(x => x.Name).ToArrayAsync(AbortToken);
             items.Should().BeEquivalentTo("a", "c");

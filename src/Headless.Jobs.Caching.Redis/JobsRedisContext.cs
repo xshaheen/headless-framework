@@ -13,13 +13,11 @@ internal sealed class JobsRedisContext(
     IJobsNotificationHubSender notificationHubSender
 ) : IJobsRedisContext
 {
-    private readonly IDistributedCache _cache = cache;
-
     private volatile IDatabase? _database;
 
     private readonly string _registryKey = $"{tickerQRedisOptionBuilder.InstanceName}nodes:registry";
 
-    public IDistributedCache DistributedCache { get; } = cache;
+    public IDistributedCache DistributedCache => cache;
 
     public bool HasRedisConnection => true;
 
@@ -35,7 +33,7 @@ internal sealed class JobsRedisContext(
         var interval = tickerQRedisOptionBuilder.NodeHeartbeatInterval;
         var ttl = TimeSpan.FromSeconds(interval.TotalSeconds + 20);
 
-        await _cache.SetStringAsync(
+        await cache.SetStringAsync(
             key,
             JsonSerializer.Serialize(payload),
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = ttl }
@@ -57,7 +55,7 @@ internal sealed class JobsRedisContext(
 
         // Check heartbeats concurrently to avoid N+1 sequential Redis reads
         var nodes = Array.ConvertAll(members, m => m.ToString());
-        var heartbeatTasks = Array.ConvertAll(nodes, node => _cache.GetStringAsync($"hb:{node}"));
+        var heartbeatTasks = Array.ConvertAll(nodes, node => cache.GetStringAsync($"hb:{node}"));
         var heartbeats = await Task.WhenAll(heartbeatTasks);
 
         var deadNodes = new List<string>();
@@ -130,7 +128,7 @@ internal sealed class JobsRedisContext(
     {
         try
         {
-            var cachedBytes = await _cache.GetAsync(cacheKey, cancellationToken);
+            var cachedBytes = await cache.GetAsync(cacheKey, cancellationToken);
             if (cachedBytes?.Length > 0)
             {
                 ReadOnlySpan<byte> cachedSpan = cachedBytes.AsSpan();
@@ -166,7 +164,7 @@ internal sealed class JobsRedisContext(
             JsonSerializer.Serialize(writer, result);
             await writer.FlushAsync(cancellationToken);
 
-            await _cache.SetAsync(cacheKey, bufferWriter.WrittenMemory.ToArray(), cancellationToken);
+            await cache.SetAsync(cacheKey, bufferWriter.WrittenMemory.ToArray(), cancellationToken);
         }
         // ERP022/RCS1075: Cache set failures should not affect the result returned to caller.
 #pragma warning disable ERP022, RCS1075

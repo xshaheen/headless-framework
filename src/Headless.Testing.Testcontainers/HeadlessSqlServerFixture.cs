@@ -25,6 +25,7 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
         .WithEnvironment("ACCEPT_EULA", "Y")
         .WithEnvironment("MSSQL_SA_PASSWORD", _Password)
         .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("SQL Server is now ready"))
+        .WithReuse(true)
         .Build();
 
     /// <summary>Gets the SQL Server connection string.</summary>

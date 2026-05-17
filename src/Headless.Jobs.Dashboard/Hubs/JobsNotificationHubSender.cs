@@ -1,3 +1,4 @@
+using Headless.Checks;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
@@ -14,7 +15,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
 
     public JobsNotificationHubSender(IHubContext<JobsNotificationHub> hubContext)
     {
-        _hubContext = hubContext;
+        _hubContext = Argument.IsNotNull(hubContext);
         _timeJobUpdateTimer = new Timer(
             _TimeJobUpdateCallback,
             null,

@@ -84,12 +84,17 @@ test-integration: build ## Run every *.Tests.Integration project. Requires Docke
 
 .PHONY: coverage
 coverage: tools build ## Collect Cobertura coverage for the full test suite.
-	@mkdir -p "$(COVERAGE_DIR)"
-	$(DOTNET) coverage collect "$(DOTNET)" test "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build -v:q -nologo --results-directory "$(TEST_RESULTS_DIR)" -f cobertura -o "$(COVERAGE_DIR)/coverage.xml" --nologo
+	@mkdir -p "$(COVERAGE_DIR)" "$(TEST_RESULTS_DIR)"
+	$(DOTNET) coverage collect -f cobertura -o "$(COVERAGE_DIR)/coverage.xml" -- \
+		$(DOTNET) test "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build -v:q -nologo --results-directory "$(TEST_RESULTS_DIR)"
 
 .PHONY: coverage-html
 coverage-html: coverage ## Generate an HTML coverage report.
 	$(DOTNET) reportgenerator -reports:"$(COVERAGE_DIR)/coverage.xml" -targetdir:"$(COVERAGE_DIR)/report" -reporttypes:Html
+
+.PHONY: coverage-open
+coverage-open: coverage-html ## Generate report and open in browser.
+	open "$(COVERAGE_DIR)/report/index.html"
 
 .PHONY: pack
 pack: restore ## Pack NuGet packages with symbols.
