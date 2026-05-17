@@ -547,7 +547,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 | `MaxPersistedRetries` | `int` | `15` | `0..10000`. Maximum persisted-retry pickups. Set to `0` to disable persisted retries. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. |
 | `InitialDispatchGrace` | `TimeSpan` | `30s` | `> 0` and `<= 1h`. Applied to `NextRetryAt` on initial store: the persisted retry processor will not pick the row up until `Added + InitialDispatchGrace` elapses, giving the normal dispatch + inline-retry path room to complete first. After that window the processor treats the row as crash-recovery work. Combined with `RetryProcessorOptions.BaseInterval` (60s default) the worst-case crash-recovery latency is `InitialDispatchGrace + BaseInterval` (~90s with defaults). |
 | `DispatchTimeout` | `TimeSpan` | `5m` | `> 0` and `<= 1h`. Written to `LockedUntil` before each publish/consume attempt. Retry pickup excludes rows while `LockedUntil` is in the future; handlers exceeding the lease remain at-least-once and may be re-dispatched. |
-| `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Not null. Strategy implementations are now single-method: `RetryDecision Compute(int retryCount, Exception exception)`. |
+| `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Not null. Strategy implementations are now single-method: `RetryDecision Compute(int persistedRetryCount, int inlineRetryCount, Exception exception)`. |
 | `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Optional. Fires only when the retry budget is exhausted (see distinction below). The supplied `IServiceProvider` on `FailedInfo` is the live per-message dispatch scope and is disposed after the callback returns — resolve scoped services **synchronously**; do not capture the provider into a `Task.Run` or other background work, which would race scope disposal. |
 | `OnExhaustedTimeout` | `TimeSpan` | `30s` | `> 0` and `<= 1h`. Hard timeout on the `OnExhausted` callback. If the callback does not complete within this window the framework logs `OnExhaustedTimedOut` and resumes the dispatch loop; the callback is orphaned but the loop is not blocked. |
 
@@ -623,7 +623,7 @@ var info = new FailedInfo
 | `FailedRetryCount` | `RetryPolicy.MaxPersistedRetries` | Controls persisted-retry pickups. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. Set both to `0` to disable retries. |
 | `FailedRetryInterval` | `RetryProcessorOptions.BaseInterval` | Default `60s`. |
 | `FallbackWindowLookbackSeconds` | *removed* | No replacement — `MessageNeedToRetryProcessor` now polls without a lookback window. |
-| `RetryBackoffStrategy` | `RetryPolicy.BackoffStrategy` | Strategy contract is now one `Compute` method returning `RetryDecision`. |
+| `RetryBackoffStrategy` | `RetryPolicy.BackoffStrategy` | Strategy contract is now one `Compute(int persistedRetryCount, int inlineRetryCount, Exception exception)` method returning `RetryDecision`. |
 | `FailedThresholdCallback` | `RetryPolicy.OnExhausted` | **Semantic change:** the callback now fires only on `RetryDecision.Exhausted`, not on permanent exceptions or cancellation (`RetryDecision.Stop`). |
 
 ## Strict Publish Tenancy
