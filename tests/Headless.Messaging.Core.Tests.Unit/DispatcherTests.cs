@@ -342,7 +342,14 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.EnqueueToScheduler(messages[1], dateTime.AddMilliseconds(200), cancellationToken: AbortToken);
         await dispatcher.EnqueueToScheduler(messages[2], dateTime.AddMilliseconds(100), cancellationToken: AbortToken);
 
-        await Task.Delay(1200, CancellationToken.None);
+        // Poll for all three messages to land in the sender; the scheduler loop ticks every 50ms,
+        // and a fixed wall-clock delay (e.g. 1200ms) was flaky under CI load when msg[0]'s +1s
+        // schedule slipped past the deadline. We allow up to 5s, then assert the order.
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (sender.ReceivedMessages.Count < 3 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(50, CancellationToken.None);
+        }
         await cts.CancelAsync();
 
         // then
