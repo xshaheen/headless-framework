@@ -220,7 +220,9 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             );
     }
 
@@ -268,7 +270,9 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             );
     }
 }
