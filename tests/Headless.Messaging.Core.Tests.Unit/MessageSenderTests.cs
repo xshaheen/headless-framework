@@ -76,7 +76,9 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -137,7 +139,9 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -202,7 +206,9 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -266,7 +272,9 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -320,7 +328,9 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<object?>(),
                 Arg.Is<DateTime?>(v => v == null),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             );
     }
 
@@ -338,7 +348,9 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -392,7 +404,9 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             );
     }
 
@@ -411,7 +425,9 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(false));
 
@@ -462,7 +478,9 @@ public sealed class MessageSenderTests : TestBase
                 StatusName.Failed,
                 Arg.Any<object?>(),
                 Arg.Is<DateTime?>(v => v == null),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             );
     }
 
@@ -496,7 +514,9 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<StatusName>(),
                 Arg.Any<object?>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 

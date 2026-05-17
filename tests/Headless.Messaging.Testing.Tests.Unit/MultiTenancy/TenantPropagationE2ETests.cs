@@ -57,7 +57,11 @@ public sealed class FlakyTenantConsumer(ICurrentTenant currentTenant, TenantCapt
         capture.Record(context.Message.OrderId, context.TenantId, currentTenant.Id);
         if (attempt == 1)
         {
-            throw new InvalidOperationException("first attempt fails");
+            // Use a transient exception so the default RetryExceptionClassifier does NOT short-circuit
+            // to Stop. The classifier unwraps SubscriberExecutionFailedException and treats
+            // InvalidOperationException as permanent — TimeoutException keeps the failure retryable
+            // so inline retries actually run.
+            throw new TimeoutException("first attempt fails");
         }
 
         return ValueTask.CompletedTask;
