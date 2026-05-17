@@ -5,11 +5,16 @@ using System.Reflection;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Testing.Internal;
 
-internal sealed class RecordingTransport(ITransport inner, MessageObservationStore store, ISerializer serializer)
-    : ITransport
+internal sealed class RecordingTransport(
+    ITransport inner,
+    MessageObservationStore store,
+    ISerializer serializer,
+    ILogger<RecordingTransport>? logger = null
+) : ITransport
 {
     private static readonly ConcurrentDictionary<string, Type?> _TypeCache = new(StringComparer.Ordinal);
     public BrokerAddress BrokerAddress => inner.BrokerAddress;
@@ -49,9 +54,14 @@ internal sealed class RecordingTransport(ITransport inner, MessageObservationSto
                         // Record observation with the fallback (TransportMessage) type so the publish
                         // pipeline isn't disrupted by a recording-only serializer mismatch. The original
                         // SendAsync already succeeded; throwing here would mask infrastructure errors
-                        // as application errors. WaitForPublished<T> diagnostics are surfaced through
-                        // the observation store, not this code path.
-                        _ = ex; // observed for breakpoint inspection in test environments
+                        // as application errors. Log so a WaitForPublished<T> that subsequently times
+                        // out has a diagnostic trail; otherwise the deserialization failure is invisible.
+                        logger?.LogWarning(
+                            ex,
+                            "RecordingTransport failed to deserialize observed payload as {MessageType}; falling back to TransportMessage. WaitForPublished<{MessageType}> will time out.",
+                            resolvedType.FullName,
+                            resolvedType.FullName
+                        );
                     }
                 }
             }
