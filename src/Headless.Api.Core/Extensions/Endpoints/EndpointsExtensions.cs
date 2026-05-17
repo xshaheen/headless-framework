@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Urls;
 using Microsoft.AspNetCore.Http;
 
 #pragma warning disable IDE0130
@@ -17,18 +16,24 @@ public static class EndpointsExtensions
             return;
         }
 
+        var mainHostBaseUri = new Uri(mainHost, UriKind.Absolute);
+
         app.MapGet(
                 pattern: "{*path}",
-                handler: (HttpContext context, string? path) =>
+                handler: (HttpContext context) =>
                 {
-                    var location = mainHost;
-
-                    if (path is not null)
+                    // Build the redirect target from a trusted base URI so the host
+                    // cannot be hijacked via crafted paths (e.g. "//evil.com/foo").
+                    var builder = new UriBuilder
                     {
-                        location = Url.Combine(location, path);
-                    }
+                        Scheme = mainHostBaseUri.Scheme,
+                        Host = mainHostBaseUri.Host,
+                        Port = mainHostBaseUri.IsDefaultPort ? -1 : mainHostBaseUri.Port,
+                        Path = context.Request.Path.Value ?? string.Empty,
+                        Query = context.Request.QueryString.Value?.TrimStart('?') ?? string.Empty,
+                    };
 
-                    context.Response.Redirect(location, permanent: true);
+                    context.Response.Redirect(builder.Uri.ToString(), permanent: true);
 
                     return ValueTask.CompletedTask;
                 }
