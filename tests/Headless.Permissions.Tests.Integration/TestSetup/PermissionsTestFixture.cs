@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Redis;
+using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 using Respawn;
@@ -85,15 +86,17 @@ public sealed class PermissionsTestFixture : ICollectionFixture<PermissionsTestF
 
     private static PostgreSqlContainer _CreatePostgreSqlContainer()
     {
-        return new PostgreSqlBuilder("postgres:18.1-alpine3.23")
+        return new PostgreSqlBuilder(TestImages.PostgreSql)
+            .WithLabel("type", "permissions")
             .WithDatabase("headless_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
+            .WithReuse(true)
             .Build();
     }
 
     private static RedisContainer _CreateRedisContainer()
     {
-        return new RedisBuilder("redis:7-alpine").Build();
+        return new RedisBuilder(TestImages.Redis).WithLabel("type", "permissions-redis").WithReuse(true).Build();
     }
 }

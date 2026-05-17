@@ -16,23 +16,26 @@ namespace Headless.Messaging.Processor;
 
 /// <summary>
 /// Processes messages that need to be retried, with adaptive polling and circuit breaker awareness.
+/// Exposed publicly so dashboards and observability extensions can resolve it through
+/// <see cref="IRetryProcessorMonitor"/> when reporting pickup health.
 /// </summary>
+[PublicAPI]
 public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMonitor
 {
-    private const int _MinSuggestedValueForFallbackWindowLookbackSeconds = 30;
+    private static readonly TimeSpan _LockSafetyMargin = TimeSpan.FromSeconds(10);
+
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;
     private readonly IDispatcher _dispatcher;
     private readonly TimeSpan _baseInterval;
-    private static readonly TimeSpan _lockSafetyMargin = TimeSpan.FromSeconds(10);
     private readonly TimeSpan _maxInterval;
     private readonly IOptions<MessagingOptions> _options;
     private readonly IDataStorage _dataStorage;
-    private readonly TimeSpan _lookbackWindow;
     private readonly string _instance;
     private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
     private Task? _failedRetryConsumeTask;
+    private Task? _publishedRetryConsumeTask;
 
     // Threading contract:
     // - _AdjustPollingInterval is called only from ProcessAsync (sequential).
@@ -48,6 +51,26 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private int _consecutiveHealthyCycles;
     private int _consecutiveCleanCycles;
 
+    // Tracks consecutive storage-pickup failures per call site so adaptive polling backs off
+    // (rather than accelerating from artificially "clean" cycles when storage throws and returns
+    // an empty list). Escalates to Error after _StoragePickupErrorEscalationThreshold to surface
+    // ongoing outages.
+    //
+    // The counter is kept per pickup kind (Published / Received) because both paths call
+    // _GetSafelyAsync independently. A shared counter would let a healthy path reset the streak
+    // every cycle, masking a persistent failure on the other path — so the Error escalation log
+    // would never fire even when one side has been down for hours.
+    private int _consecutivePublishedPickupFailures;
+    private int _consecutiveReceivedPickupFailures;
+
+    private const int _StoragePickupErrorEscalationThreshold = 3;
+
+    private enum StoragePickupKind
+    {
+        Published,
+        Received,
+    }
+
     public MessageNeedToRetryProcessor(
         IOptions<MessagingOptions> options,
         IOptions<RetryProcessorOptions> retryOptions,
@@ -60,9 +83,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         _options = options;
         _logger = logger;
         _dispatcher = dispatcher;
-        _baseInterval = TimeSpan.FromSeconds(options.Value.FailedRetryInterval);
+        _baseInterval = retryOptions.Value.BaseInterval;
         _currentIntervalTicks = _baseInterval.Ticks;
-        _lookbackWindow = TimeSpan.FromSeconds(options.Value.FallbackWindowLookbackSeconds);
         _dataStorage = dataStorage;
         _circuitBreakerMonitor = circuitBreakerMonitor;
 
@@ -73,8 +95,6 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         _instance = (
             (FormattableString)$"{Helper.GetInstanceHostname()}_{SnowflakeIdLongIdGenerator.GenerateWorkerId()}"
         ).ToString(CultureInfo.InvariantCulture);
-
-        _CheckSafeOptionsSet();
     }
 
     /// <inheritdoc />
@@ -87,12 +107,24 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     internal void SetCurrentIntervalForTest(TimeSpan value) =>
         Interlocked.Exchange(ref _currentIntervalTicks, value.Ticks);
 
+    /// <summary>One-shot flag set after the startup jitter delay fires on the first poll.</summary>
+    /// <remarks>
+    /// The first <see cref="ProcessAsync"/> call waits a random fraction of <see cref="_baseInterval"/>
+    /// before performing any work, so that replicas booting simultaneously do not synchronize their
+    /// poll ticks and overwhelm the storage layer (poll-tick storm). Subsequent polls use the
+    /// configured interval. Mutated only by <see cref="ProcessAsync"/>, which is invoked sequentially
+    /// per processor instance — a plain bool is sufficient.
+    /// </remarks>
+    internal bool StartupJitterApplied { get; private set; }
+
     /// <inheritdoc />
     public ValueTask ResetBackpressureAsync(CancellationToken ct = default)
     {
         Interlocked.Exchange(ref _currentIntervalTicks, _baseInterval.Ticks);
         Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
         Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
+        Interlocked.Exchange(ref _consecutivePublishedPickupFailures, 0);
+        Interlocked.Exchange(ref _consecutiveReceivedPickupFailures, 0);
         return ValueTask.CompletedTask;
     }
 
@@ -100,22 +132,44 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     {
         Argument.IsNotNull(context);
 
+        if (!StartupJitterApplied)
+        {
+            var jitter = TimeSpan.FromTicks((long)(_baseInterval.Ticks * Random.Shared.NextDouble()));
+            await context.WaitAsync(jitter).ConfigureAwait(false);
+            StartupJitterApplied = true;
+        }
+
         var storage = context.Provider.GetRequiredService<IDataStorage>();
 
-        _ = Task
-            .Factory.StartNew(
-                () => _ProcessPublishedAsync(storage, context),
-                CancellationToken.None,
-                TaskCreationOptions.DenyChildAttach,
-                TaskScheduler.Default
-            )
-            .Unwrap()
-            .ContinueWith(
+        // Mirror the received-retry guard below: skip spawning a new published-retry task while
+        // the previous one is still running under UseStorageLock to avoid concurrent lock-renewal
+        // contention. Without UseStorageLock the guard is a no-op (multiple in-flight tasks are
+        // acceptable since the storage layer's own concurrency primitives serialize writes).
+        if (!_options.Value.UseStorageLock || _publishedRetryConsumeTask is not { IsCompleted: false })
+        {
+            _publishedRetryConsumeTask = Task
+                .Factory.StartNew(
+                    () => _ProcessPublishedAsync(storage, context),
+                    CancellationToken.None,
+                    TaskCreationOptions.DenyChildAttach,
+                    TaskScheduler.Default
+                )
+                .Unwrap();
+
+            _ = _publishedRetryConsumeTask.ContinueWith(
                 t => _logger.PublishedRetryProcessingUnhandled(t.Exception),
                 CancellationToken.None,
                 TaskContinuationOptions.OnlyOnFaulted,
                 TaskScheduler.Default
             );
+
+            _ = _publishedRetryConsumeTask.ContinueWith(
+                _ => _publishedRetryConsumeTask = null,
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default
+            );
+        }
 
         if (_options.Value.UseStorageLock && _failedRetryConsumeTask is { IsCompleted: false })
         {
@@ -182,7 +236,11 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         try
         {
-            var messages = await _GetSafelyAsync(connection.GetPublishedMessagesOfNeedRetry, _lookbackWindow)
+            var messages = await _GetSafelyAsync(
+                    connection.GetPublishedMessagesOfNeedRetryAsync,
+                    StoragePickupKind.Published,
+                    context.CancellationToken
+                )
                 .ConfigureAwait(false);
 
             foreach (var message in messages)
@@ -224,7 +282,11 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         try
         {
-            var messages = await _GetSafelyAsync(connection.GetReceivedMessagesOfNeedRetry, _lookbackWindow)
+            var messages = await _GetSafelyAsync(
+                    connection.GetReceivedMessagesOfNeedRetryAsync,
+                    StoragePickupKind.Received,
+                    context.CancellationToken
+                )
                 .ConfigureAwait(false);
 
             var enqueued = 0;
@@ -263,20 +325,52 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     }
 
     private async Task<IEnumerable<T>> _GetSafelyAsync<T>(
-        Func<TimeSpan, CancellationToken, ValueTask<IEnumerable<T>>> getMessagesAsync,
-        TimeSpan lookbackWindow,
+        Func<CancellationToken, ValueTask<IEnumerable<T>>> getMessagesAsync,
+        StoragePickupKind kind,
         CancellationToken cancellationToken = default
     )
     {
         try
         {
-            return await getMessagesAsync(lookbackWindow, cancellationToken).ConfigureAwait(false);
+            var result = await getMessagesAsync(cancellationToken).ConfigureAwait(false);
+            Interlocked.Exchange(ref _CounterRef(kind), 0);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.GetMessagesFromStorageFailed(ex);
+            // Back off polling so a sustained storage outage isn't masked by artificially "clean"
+            // cycles (empty list ≠ healthy). Escalate the log to Error after a small streak so
+            // monitoring picks up persistent failures.
+            var failureCount = Interlocked.Increment(ref _CounterRef(kind));
+            _CompareExchangeDouble();
+
+            if (failureCount >= _StoragePickupErrorEscalationThreshold)
+            {
+                _logger.RetryStoragePickupFailureEscalated(ex, failureCount);
+            }
+            else
+            {
+                _logger.GetMessagesFromStorageFailed(ex);
+            }
 
             return [];
+        }
+    }
+
+    private ref int _CounterRef(StoragePickupKind kind)
+    {
+        switch (kind)
+        {
+            case StoragePickupKind.Published:
+                return ref _consecutivePublishedPickupFailures;
+            case StoragePickupKind.Received:
+                return ref _consecutiveReceivedPickupFailures;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(kind), kind, @"Unknown storage pickup kind.");
         }
     }
 
@@ -406,18 +500,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     {
         var ticks = Interlocked.Read(ref _currentIntervalTicks);
         var effectiveTicks = ticks > _baseInterval.Ticks ? ticks : _baseInterval.Ticks;
-        return TimeSpan.FromTicks(effectiveTicks).Add(_lockSafetyMargin);
-    }
-
-    private void _CheckSafeOptionsSet()
-    {
-        if (_lookbackWindow < TimeSpan.FromSeconds(_MinSuggestedValueForFallbackWindowLookbackSeconds))
-        {
-            _logger.FallbackWindowLookbackTooLow(
-                _options.Value.FallbackWindowLookbackSeconds,
-                _MinSuggestedValueForFallbackWindowLookbackSeconds
-            );
-        }
+        return TimeSpan.FromTicks(effectiveTicks).Add(_LockSafetyMargin);
     }
 }
 
@@ -460,15 +543,4 @@ internal static partial class RetryProcessorLog
         Message = "Adaptive polling: healthy for 2 cycles, interval decreased to {Interval}"
     )]
     public static partial void AdaptivePollingIntervalDecreased(this ILogger logger, TimeSpan interval);
-
-    [LoggerMessage(
-        EventId = 3113,
-        Level = LogLevel.Warning,
-        Message = "The provided FallbackWindowLookbackSeconds of {CurrentSetFallbackWindowLookbackSeconds} is set to a value lower than {MinSuggestedSeconds} seconds. This might cause unwanted unsafe behavior if the consumer takes more than the provided FallbackWindowLookbackSeconds to execute. "
-    )]
-    public static partial void FallbackWindowLookbackTooLow(
-        this ILogger logger,
-        int currentSetFallbackWindowLookbackSeconds,
-        int minSuggestedSeconds
-    );
 }

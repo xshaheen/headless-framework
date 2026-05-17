@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
+using Headless.Checks;
 using NCrontab;
 
 namespace Headless.Jobs;
@@ -14,7 +15,7 @@ internal static partial class CronScheduleCache
 
     private static string _Normalize(string expr)
     {
-        ArgumentNullException.ThrowIfNull(expr);
+        Argument.IsNotNull(expr);
 
         return _ReplaceRegex().Replace(expr.Trim(), " ");
     }

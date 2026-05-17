@@ -22,6 +22,8 @@ namespace Tests;
 /// </summary>
 public sealed class SubscribeExecutorCancellationTests : TestBase
 {
+    private static readonly IServiceProvider _EmptyScope = new ServiceCollection().BuildServiceProvider();
+
     private static MediumMessage _CreateMediumMessage(string topic = "test.topic")
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -75,13 +77,17 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         ICircuitBreakerStateManager? circuitBreaker = null
     )
     {
+        storage
+            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(x =>
+        services.AddHeadlessMessaging(setup =>
         {
-            x.Subscribe<CancellationExecutorTestConsumer>().Topic("test.topic");
-            x.UseInMemoryMessageQueue();
-            x.UseInMemoryStorage();
+            setup.Subscribe<CancellationExecutorTestConsumer>().Topic("test.topic");
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
         });
 
         var provider = services.BuildServiceProvider();
@@ -90,8 +96,12 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             messagingOptions
                 ?? new MessagingOptions
                 {
-                    FailedRetryCount = 1,
-                    RetryBackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
+                    RetryPolicy =
+                    {
+                        MaxInlineRetries = 0,
+                        MaxPersistedRetries = 0,
+                        BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
+                    },
                 }
         );
 
@@ -106,8 +116,15 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         //   TaskCanceledException where CancellationToken.IsCancellationRequested = false
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
-            .Returns(ValueTask.CompletedTask);
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
         // A CancellationTokenSource that has NOT been cancelled → IsCancellationRequested = false
@@ -122,74 +139,137 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         var descriptor = _CreateDescriptor();
 
         // when
-        var result = await executor.ExecuteAsync(message, descriptor, CancellationToken.None);
+        var result = await executor.ExecuteAsync(message, _EmptyScope, descriptor, CancellationToken.None);
 
         // then — must be a failure, not swallowed
         result.Succeeded.Should().BeFalse();
-        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        await storage
+            .Received()
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
-    public async Task OperationCanceledException_WithRequestedToken_ShouldBePersisted_As_Failed()
+    public async Task OperationCanceledException_WithRequestedToken_ShouldNotWriteState()
     {
         // given — simulate app-shutdown cancellation:
-        //   OperationCanceledException where CancellationToken.IsCancellationRequested = true
+        //   OperationCanceledException where CancellationToken.IsCancellationRequested = true.
+        // The executor must classify this as cancellation (RetryDecision.Stop), NOT invoke
+        // OnExhausted, and NOT write a state transition. The row keeps its prior NextRetryAt and
+        // the persisted retry processor picks it up on restart.
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
-            .Returns(ValueTask.CompletedTask);
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
 
         using var cts = new CancellationTokenSource();
-        await cts.CancelAsync(); // token IS requested
-        var shutdownOce = new OperationCanceledException("App shutdown", cts.Token);
+        var callbackInvoked = false;
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
-            .Returns<Task<ConsumerExecutedResult>>(_ => Task.FromException<ConsumerExecutedResult>(shutdownOce));
+            .Returns<Task<ConsumerExecutedResult>>(async _ =>
+            {
+                await cts.CancelAsync();
+                var shutdownOce = new OperationCanceledException("App shutdown", cts.Token);
+                throw shutdownOce;
+            });
 
-        var executor = _CreateExecutor(invoker, storage);
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            new MessagingOptions
+            {
+                RetryPolicy =
+                {
+                    MaxInlineRetries = 0,
+                    MaxPersistedRetries = 0,
+                    BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero),
+                    OnExhausted = (_, _) =>
+                    {
+                        callbackInvoked = true;
+                        return Task.CompletedTask;
+                    },
+                },
+            }
+        );
         var message = _CreateMediumMessage();
         var descriptor = _CreateDescriptor();
 
         // when
-        var result = await executor.ExecuteAsync(message, descriptor, CancellationToken.None);
+        var result = await executor.ExecuteAsync(message, _EmptyScope, descriptor, cts.Token);
 
-        // then — persisted as failed so it can be retried after restart
+        // then — Shutdown OCE: no state write, no OnExhausted. Row keeps prior NextRetryAt/Status.
         result.Succeeded.Should().BeFalse();
         message.Retries.Should().Be(0);
-        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        callbackInvoked.Should().BeFalse();
+        await storage
+            .DidNotReceive()
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
-    public async Task TaskCanceledException_WithRequestedToken_ShouldBePersisted_As_Failed()
+    public async Task TaskCanceledException_WithRequestedToken_ShouldNotWriteState()
     {
-        // given — TaskCanceledException but the token IS requested (e.g. handler respected shutdown CT)
+        // given — TaskCanceledException but the token IS requested (handler respected shutdown CT).
+        // X4 invariant: shutdown-classified cancellations leave the row untouched so the persisted
+        // retry processor picks it up on restart.
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
-            .Returns(ValueTask.CompletedTask);
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
 
         using var cts = new CancellationTokenSource();
-        await cts.CancelAsync(); // token IS requested
-        var requestedTce = new TaskCanceledException("Cancelled by shutdown", null, cts.Token);
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
-            .Returns<Task<ConsumerExecutedResult>>(_ => Task.FromException<ConsumerExecutedResult>(requestedTce));
+            .Returns<Task<ConsumerExecutedResult>>(async _ =>
+            {
+                await cts.CancelAsync();
+                var requestedTce = new TaskCanceledException("Cancelled by shutdown", null, cts.Token);
+                throw requestedTce;
+            });
 
         var executor = _CreateExecutor(invoker, storage);
         var message = _CreateMediumMessage();
         var descriptor = _CreateDescriptor();
 
         // when
-        var result = await executor.ExecuteAsync(message, descriptor, CancellationToken.None);
+        var result = await executor.ExecuteAsync(message, _EmptyScope, descriptor, cts.Token);
 
-        // then — persisted as failed so it can be retried after restart
+        // then — Shutdown OCE: no state write. Row keeps prior NextRetryAt/Status.
         result.Succeeded.Should().BeFalse();
         message.Retries.Should().Be(0);
-        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        await storage
+            .DidNotReceive()
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                cancellationToken: Arg.Any<CancellationToken>()
+            );
     }
 }
 

@@ -1,3 +1,4 @@
+using Headless.Checks;
 using Headless.Jobs.Base;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
@@ -46,7 +47,7 @@ public static class JobFunctionProvider
     /// <exception cref="ArgumentNullException">Thrown when functions parameter is null.</exception>
     public static void RegisterFunctions(IDictionary<string, (string, JobPriority, JobFunctionDelegate, int)> functions)
     {
-        ArgumentNullException.ThrowIfNull(functions);
+        Argument.IsNotNull(functions);
 
         if (functions.Count == 0)
         {
@@ -86,7 +87,7 @@ public static class JobFunctionProvider
     /// <exception cref="ArgumentNullException">Thrown when requestTypes parameter is null.</exception>
     public static void RegisterRequestType(IDictionary<string, (string, Type)> requestTypes)
     {
-        ArgumentNullException.ThrowIfNull(requestTypes);
+        Argument.IsNotNull(requestTypes);
 
         if (requestTypes.Count == 0)
         {

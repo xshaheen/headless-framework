@@ -19,8 +19,7 @@ internal sealed class AzureServiceBusConsumerClient(
     IServiceProvider serviceProvider
 ) : IConsumerClient
 {
-    private readonly AzureServiceBusOptions _asbOptions =
-        options.Value ?? throw new ArgumentNullException(nameof(options));
+    private readonly AzureServiceBusOptions _asbOptions = options.Value;
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
@@ -439,44 +438,44 @@ internal sealed class AzureServiceBusConsumerClient(
         return new TransportMessage(headers, message.Body);
     }
 
-    private static void _CheckValidSubscriptionName(string subscriptionName)
+    internal static void CheckValidSubscriptionName(string subscriptionName)
     {
-        const string pathDelimiter = @"/";
+        const string pathDelimiter = "/";
         const int ruleNameMaximumLength = 50;
         char[] invalidEntityPathCharacters = ['@', '?', '#', '*'];
 
         if (string.IsNullOrWhiteSpace(subscriptionName))
         {
-            throw new ArgumentNullException(subscriptionName);
+            throw new ArgumentException("Subscribe name cannot be null or whitespace.", nameof(subscriptionName));
         }
 
-        // and "\" will be converted to "/" on the REST path anyway. Gateway/REST do not
+        // "\" will be converted to "/" on the REST path anyway. Gateway/REST do not
         // have to worry about the begin/end slash problem, so this is purely a client side check.
         var tmpName = subscriptionName.Replace(@"\", pathDelimiter, StringComparison.Ordinal);
         if (tmpName.Length > ruleNameMaximumLength)
         {
             throw new ArgumentOutOfRangeException(
-                subscriptionName,
-                $@"Subscribe name '{subscriptionName}' exceeds the '{ruleNameMaximumLength}' character limit."
+                nameof(subscriptionName),
+                $"Subscribe name '{subscriptionName}' exceeds the '{ruleNameMaximumLength}' character limit."
             );
         }
 
         if (
-            tmpName.StartsWith(pathDelimiter, StringComparison.OrdinalIgnoreCase)
-            || tmpName.EndsWith(pathDelimiter, StringComparison.OrdinalIgnoreCase)
+            tmpName.StartsWith(pathDelimiter, StringComparison.Ordinal)
+            || tmpName.EndsWith(pathDelimiter, StringComparison.Ordinal)
         )
         {
             throw new ArgumentException(
-                $@"The subscribe name cannot contain '/' as prefix or suffix. The supplied value is '{subscriptionName}'",
-                subscriptionName
+                $"The subscribe name cannot contain '/' as prefix or suffix. The supplied value is '{subscriptionName}'.",
+                nameof(subscriptionName)
             );
         }
 
         if (tmpName.Contains(pathDelimiter, StringComparison.Ordinal))
         {
             throw new ArgumentException(
-                $@"The subscribe name contains an invalid character '{pathDelimiter}'",
-                subscriptionName
+                $"The subscribe name '{subscriptionName}' contains an invalid character '{pathDelimiter}'.",
+                nameof(subscriptionName)
             );
         }
 
@@ -485,8 +484,8 @@ internal sealed class AzureServiceBusConsumerClient(
             if (subscriptionName.Contains(uriSchemeKey, StringComparison.Ordinal))
             {
                 throw new ArgumentException(
-                    $@"'{subscriptionName}' contains character '{uriSchemeKey}' which is not allowed because it is reserved in the Uri scheme.",
-                    subscriptionName
+                    $"'{subscriptionName}' contains character '{uriSchemeKey}' which is not allowed because it is reserved in the Uri scheme.",
+                    nameof(subscriptionName)
                 );
             }
         }

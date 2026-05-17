@@ -218,6 +218,75 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         );
     }
 
+    [Theory]
+    [InlineData("Published", "IX_{schema}_Published_Version_NextRetryAt")]
+    [InlineData("Received", "IX_{schema}_Received_Version_NextRetryAt")]
+    public async Task should_key_retry_pickup_index_on_version_then_next_retry_at(string table, string indexNamePattern)
+    {
+        // Pin the retry-pickup index shape: Version must be the leading key column so it is a
+        // seek predicate, not a residual filter. Regression here would silently fan the planner
+        // out to both versions during a rolling upgrade and discard rows post-fetch.
+        const string schema = "index_shape_test";
+        var initializer = _CreateInitializer(schema, useStorageLock: false);
+
+        await initializer.InitializeAsync(AbortToken);
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var indexName = indexNamePattern.Replace("{schema}", schema, StringComparison.Ordinal);
+
+        var keyColumns = (
+            await connection.QueryAsync<string>(
+                """
+                SELECT c.name
+                FROM sys.indexes i
+                INNER JOIN sys.tables t ON i.object_id = t.object_id
+                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                INNER JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                WHERE s.name = @Schema
+                  AND t.name = @Table
+                  AND i.name = @IndexName
+                  AND ic.is_included_column = 0
+                ORDER BY ic.key_ordinal
+                """,
+                new
+                {
+                    Schema = schema,
+                    Table = table,
+                    IndexName = indexName,
+                }
+            )
+        ).ToList();
+
+        keyColumns.Should().BeEquivalentTo(["Version", "NextRetryAt"], opts => opts.WithStrictOrdering());
+
+        // Filtered predicate must be `[NextRetryAt] IS NOT NULL` so terminal rows are physically
+        // excluded — keeps the index small even under high failed-message volume.
+        var filter = await connection.QueryFirstOrDefaultAsync<string>(
+            """
+            SELECT i.filter_definition
+            FROM sys.indexes i
+            INNER JOIN sys.tables t ON i.object_id = t.object_id
+            INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+            WHERE s.name = @Schema AND t.name = @Table AND i.name = @IndexName
+            """,
+            new
+            {
+                Schema = schema,
+                Table = table,
+                IndexName = indexName,
+            }
+        );
+        filter.Should().NotBeNull().And.Contain("NextRetryAt").And.Contain("IS NOT NULL");
+
+        // cleanup
+        await connection.ExecuteAsync(
+            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]"
+        );
+    }
+
     [Fact]
     public async Task should_be_idempotent()
     {

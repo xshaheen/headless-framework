@@ -177,7 +177,7 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
     )
     {
         var options = new MessagingOptions { TenantContextRequired = tenantContextRequired };
-        options.WithTopicMapping<TestMessage>("test.topic");
+        options.WithTopicMapping(typeof(TestMessage), "test.topic");
 
         var resolvedTenant = currentTenant ?? new StubCurrentTenant(ambientTenantId);
 

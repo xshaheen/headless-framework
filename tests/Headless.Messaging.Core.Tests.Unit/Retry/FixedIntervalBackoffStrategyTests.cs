@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using Headless.Messaging;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Retry;
 using Headless.Testing.Tests;
@@ -8,6 +10,8 @@ namespace Tests.Retry;
 
 public sealed class FixedIntervalBackoffStrategyTests : TestBase
 {
+    private static readonly TimeoutException _Transient = new("Transient");
+
     [Fact]
     public void should_return_fixed_interval()
     {
@@ -16,16 +20,16 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(interval);
 
         // when
-        var delay0 = strategy.GetNextDelay(0);
-        var delay1 = strategy.GetNextDelay(1);
-        var delay5 = strategy.GetNextDelay(5);
-        var delay100 = strategy.GetNextDelay(100);
+        var d0 = strategy.Compute(0, 0, _Transient);
+        var d1 = strategy.Compute(1, 0, _Transient);
+        var d5 = strategy.Compute(5, 0, _Transient);
+        var d100 = strategy.Compute(100, 0, _Transient);
 
-        // then - all delays should be exactly the same
-        delay0.Should().Be(interval);
-        delay1.Should().Be(interval);
-        delay5.Should().Be(interval);
-        delay100.Should().Be(interval);
+        // then - all decisions should be Continue with the fixed interval
+        d0.Should().Be(RetryDecision.Continue(interval));
+        d1.Should().Be(RetryDecision.Continue(interval));
+        d5.Should().Be(RetryDecision.Continue(interval));
+        d100.Should().Be(RetryDecision.Continue(interval));
     }
 
     [Fact]
@@ -36,27 +40,24 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(interval);
 
         // when
-        var delayWithTransient = strategy.GetNextDelay(0, new TimeoutException());
-        var delayWithNull = strategy.GetNextDelay(0);
+        var decision = strategy.Compute(0, 0, new TimeoutException());
 
-        // then - fixed interval for transient exceptions and null
-        delayWithTransient.Should().Be(interval);
-        delayWithNull.Should().Be(interval);
+        // then - fixed interval for transient exceptions
+        decision.Should().Be(RetryDecision.Continue(interval));
     }
 
     [Fact]
-    public void should_return_null_for_permanent_exceptions()
+    public void should_return_stop_for_permanent_exceptions()
     {
         // given
         var strategy = new FixedIntervalBackoffStrategy(TimeSpan.FromSeconds(1));
 
         // when/then - permanent exceptions should not be retried
 #pragma warning disable MA0015
-        strategy.GetNextDelay(0, new SubscriberNotFoundException("Not found")).Should().BeNull();
-        strategy.GetNextDelay(0, new ArgumentNullException("value")).Should().BeNull();
-        strategy.GetNextDelay(0, new ArgumentException("Invalid arg", "value")).Should().BeNull();
-        strategy.GetNextDelay(0, new InvalidOperationException("Invalid op")).Should().BeNull();
-        strategy.GetNextDelay(0, new NotSupportedException("Not supported")).Should().BeNull();
+        strategy.Compute(0, 0, new SubscriberNotFoundException("Not found")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, 0, new ArgumentNullException("value")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, 0, new ArgumentException("Invalid arg", "value")).Should().Be(RetryDecision.Stop);
+        strategy.Compute(0, 0, new NotSupportedException("Not supported")).Should().Be(RetryDecision.Stop);
 #pragma warning restore MA0015
     }
 
@@ -67,28 +68,12 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(TimeSpan.FromSeconds(1));
 
         // when/then - transient exceptions should be retried
-        strategy.GetNextDelay(0, new TimeoutException("Timeout")).Should().NotBeNull();
-        strategy.GetNextDelay(0, new IOException("Network error")).Should().NotBeNull();
-        strategy.GetNextDelay(0, new ApplicationException("Generic error")).Should().NotBeNull();
-    }
-
-    [Fact]
-    public void should_reject_permanent_exceptions_via_should_retry()
-    {
-        // given
-        var strategy = new FixedIntervalBackoffStrategy(TimeSpan.FromSeconds(1));
-
-        // when/then - permanent exceptions should not be retried
-        strategy.ShouldRetry(new SubscriberNotFoundException("Not found")).Should().BeFalse();
-        strategy.ShouldRetry(new ArgumentNullException("value")).Should().BeFalse();
-        strategy.ShouldRetry(new ArgumentException("Invalid", "value")).Should().BeFalse();
-        strategy.ShouldRetry(new InvalidOperationException("Op")).Should().BeFalse();
-        strategy.ShouldRetry(new NotSupportedException("Not")).Should().BeFalse();
-
-        // transient exceptions should be retried
-        strategy.ShouldRetry(new TimeoutException("Timeout")).Should().BeTrue();
-        strategy.ShouldRetry(new IOException("Network")).Should().BeTrue();
-        strategy.ShouldRetry(new ApplicationException("Generic")).Should().BeTrue();
+        strategy.Compute(0, 0, new TimeoutException("Timeout")).Outcome.Should().Be(RetryDecision.Kind.Continue);
+        strategy.Compute(0, 0, new IOException("Network error")).Outcome.Should().Be(RetryDecision.Kind.Continue);
+        strategy
+            .Compute(0, 0, new ApplicationException("Generic error"))
+            .Outcome.Should()
+            .Be(RetryDecision.Kind.Continue);
     }
 
     [Fact]
@@ -98,10 +83,10 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
 
         // when
-        var delay = strategy.GetNextDelay(0);
+        var decision = strategy.Compute(0, 0, _Transient);
 
         // then
-        delay.Should().Be(TimeSpan.Zero);
+        decision.Should().Be(RetryDecision.Continue(TimeSpan.Zero));
     }
 
     [Fact]
@@ -112,10 +97,10 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(interval);
 
         // when
-        var delay = strategy.GetNextDelay(0);
+        var decision = strategy.Compute(0, 0, _Transient);
 
         // then
-        delay.Should().Be(interval);
+        decision.Should().Be(RetryDecision.Continue(interval));
     }
 
     [Fact]
@@ -126,10 +111,10 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         var strategy = new FixedIntervalBackoffStrategy(interval);
 
         // when
-        var delay = strategy.GetNextDelay(0);
+        var decision = strategy.Compute(0, 0, _Transient);
 
         // then
-        delay.Should().Be(interval);
+        decision.Should().Be(RetryDecision.Continue(interval));
     }
 
     [Fact]
@@ -138,36 +123,13 @@ public sealed class FixedIntervalBackoffStrategyTests : TestBase
         // given
         var interval = TimeSpan.FromSeconds(2);
         var strategy = new FixedIntervalBackoffStrategy(interval);
-        var results = new System.Collections.Concurrent.ConcurrentBag<TimeSpan?>();
+        var results = new ConcurrentBag<RetryDecision>();
 
         // when
-        Parallel.For(
-            0,
-            1000,
-            i =>
-            {
-                var delay = strategy.GetNextDelay(i % 10);
-                results.Add(delay);
-            }
-        );
+        Parallel.For(0, 1000, i => results.Add(strategy.Compute(i % 10, 0, _Transient)));
 
-        // then - all results should be the same fixed interval
+        // then - all results should be Continue with the same fixed interval
         results.Should().HaveCount(1000);
-        results.Should().AllSatisfy(r => r.Should().Be(interval));
-    }
-
-    [Fact]
-    public void should_never_return_null()
-    {
-        // given
-        var strategy = new FixedIntervalBackoffStrategy(TimeSpan.FromSeconds(1));
-
-        // when
-        var delayWithException = strategy.GetNextDelay(0, new ApplicationException());
-        var delayWithoutException = strategy.GetNextDelay(0);
-
-        // then
-        delayWithException.Should().NotBeNull();
-        delayWithoutException.Should().NotBeNull();
+        results.Should().AllSatisfy(r => r.Should().Be(RetryDecision.Continue(interval)));
     }
 }

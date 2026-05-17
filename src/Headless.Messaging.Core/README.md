@@ -30,12 +30,12 @@ dotnet add package Headless.Messaging.Core
 
 ```csharp
 // Register messaging with storage and transport
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    // Core configuration
-    options.SucceedMessageExpiredAfter = 24 * 3600;
-    options.FailedRetryCount = 50;
-    options.UseConventions(c =>
+    // Core configuration (value-typed options live under setup.Options)
+    setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
+    setup.Options.RetryPolicy.MaxPersistedRetries = 50;
+    setup.UseConventions(c =>
     {
         c.UseKebabCaseTopics();
         c.UseApplicationId("ordering-api");
@@ -43,17 +43,17 @@ builder.Services.AddHeadlessMessaging(options =>
     });
 
     // Add storage (required)
-    options.UsePostgreSql("connection_string");
+    setup.UsePostgreSql("connection_string");
 
     // Add transport (required)
-    options.UseRabbitMQ(rmq =>
+    setup.UseRabbitMQ(rmq =>
     {
         rmq.HostName = "localhost";
         rmq.Port = 5672;
     });
 
     // Register consumers
-    options.SubscribeFromAssemblyContaining<Program>();
+    setup.SubscribeFromAssemblyContaining<Program>();
 });
 
 // Publish messages with outbox (reliable delivery)
@@ -188,12 +188,12 @@ When runtime delegates are attached during application startup, the messaging ru
 Register in `Program.cs`:
 
 ```csharp
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    options.FailedRetryCount = 50;
-    options.SucceedMessageExpiredAfter = 24 * 3600;
-    options.ConsumerThreadCount = 1;
-    options.DefaultGroupName = "myapp";
+    setup.Options.RetryPolicy.MaxPersistedRetries = 50;
+    setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
+    setup.Options.ConsumerThreadCount = 1;
+    setup.Options.DefaultGroupName = "myapp";
 });
 ```
 
@@ -223,7 +223,7 @@ public sealed class CorrelationPublishFilter : PublishFilter
     }
 }
 
-builder.Services.AddHeadlessMessaging(options => { /* ... */ })
+builder.Services.AddHeadlessMessaging(setup => { /* ... */ })
     .AddSubscribeFilter<LoggingConsumeFilter>()
     .AddPublishFilter<CorrelationPublishFilter>();
 ```
@@ -282,6 +282,89 @@ Message ordering guarantees depend on the transport provider and configuration:
 - For high throughput: Use parallel processing; design consumers to be order-independent
 - Test ordering behavior with your specific transport and configuration
 
+## Retry Policy
+
+`MessagingOptions.RetryPolicy` is the single composition point for all retry behavior — both inline and persisted retries, on both consume and publish paths. Configure it once; the framework wires it into `SubscribeExecutor` (consume) and `MessageSender` (publish).
+
+### Global Configuration
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.Options.RetryPolicy.MaxInlineRetries = 2;
+    setup.Options.RetryPolicy.MaxPersistedRetries = 15;
+    setup.Options.RetryPolicy.DispatchTimeout = TimeSpan.FromMinutes(5);
+    setup.Options.TransportPublishTimeout = TimeSpan.FromSeconds(10);
+    setup.Options.CommandTimeout = TimeSpan.FromSeconds(30);
+    setup.Options.RetryPolicy.BackoffStrategy = new ExponentialBackoffStrategy(
+        initialDelay: TimeSpan.FromSeconds(1),
+        maxDelay: TimeSpan.FromMinutes(5)
+    );
+    setup.Options.RetryPolicy.OnExhausted = (info, ct) =>
+    {
+        // Fires only when budget is fully consumed (Exhausted), not on permanent failures (Stop).
+        var logger = info.ServiceProvider.GetRequiredService<ILogger<MyService>>();
+        logger.LogError(info.Exception, "Message {Id} permanently failed", info.Message.StorageId);
+        return Task.CompletedTask;
+    };
+});
+```
+
+| Property | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `MaxInlineRetries` | `int` | `2` | Retries to run inline on each delivery before persisting. `>= 0`. |
+| `MaxPersistedRetries` | `int` | `15` | Maximum persisted-retry pickups. `>= 0`. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. |
+| `InitialDispatchGrace` | `TimeSpan` | `30s` | Initial `NextRetryAt` delay before crash-recovery pickup can see a newly stored row. |
+| `DispatchTimeout` | `TimeSpan` | `5m` | Active delivery lease written to `LockedUntil` before each publish/consume attempt. `> 0`, `<= 1h`. Handlers exceeding this remain at-least-once and may be re-dispatched. |
+| `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Strategy returns `RetryDecision.Stop` (permanent), `RetryDecision.Continue(delay)` (transient), or `RetryDecision.Exhausted` (custom budget exhausted). |
+| `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Fires only on `RetryDecision.Exhausted`. Does NOT fire on `RetryDecision.Stop`. |
+| `OnExhaustedTimeout` | `TimeSpan` | `30s` | Bounds the exhausted callback wait. |
+
+Top-level messaging timeouts that influence retry behavior:
+
+| `MessagingOptions` property | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `TransportPublishTimeout` | `TimeSpan` | `10s` | Linked with host shutdown and passed to transport publish calls. If the broker client honors cancellation, stuck publishes fail into the retry policy instead of outliving shutdown. |
+| `CommandTimeout` | `TimeSpan` | `30s` | Applied to SQL-backed storage commands, including terminal writes that deliberately use `CancellationToken.None`. |
+
+Persisted retries use two independent timestamps: `NextRetryAt` controls when a row is due, and `LockedUntil` controls whether an active attempt still owns the row. Retry pickup filters on both. Retry state writes clear `LockedUntil`; counter advances use an optimistic `Retries == originalRetries` predicate so concurrent replicas cannot overwrite each other's retry budget.
+
+### Exhausted vs Stop
+
+`OnExhausted` fires **only on `RetryDecision.Exhausted`** — the retry budget was fully consumed and the failure was transient.
+
+When tenant propagation is configured, `OnExhausted` runs under the message envelope tenant for publish, consume, and poisoned-on-arrival paths. Poisoned broker redelivery skips the callback when storage reports the terminal row was not mutated.
+
+It does **NOT** fire on `RetryDecision.Stop`. Stop is the framework's signal for:
+
+- **Permanent exceptions** classified by the backoff strategy (`SubscriberNotFoundException`, `ArgumentException`, `ArgumentNullException`, `InvalidOperationException`, `NotSupportedException`).
+- **Cancellation** (`OperationCanceledException` whose token matches the dispatch cancellation token).
+
+For a single exit point covering both Stop and Exhausted, use an `IConsumeFilter` / `IPublishFilter`.
+
+### Inline vs Persisted Retry Paths
+
+Retries up to `MaxInlineRetries` run inline inside the same `ExecuteAsync` / `SendAsync` call. Once the inline budget is exhausted, the message is persisted with `NextRetryAt` set and picked up by `MessageNeedToRetryProcessor` (up to `MaxPersistedRetries` times). Each pickup then bursts another round of `MaxInlineRetries` inline attempts.
+
+Worked example with `MaxInlineRetries = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
+
+```
+pickup 1 (initial dispatch):
+  attempt 1 (original)        ── inline
+  attempt 2 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 3 (inline retry #2) ── inline, after BackoffStrategy delay → persist (1/2)
+pickup 2 (persisted retry #1):
+  attempt 4                   ── inline
+  attempt 5 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 6 (inline retry #2) ── inline, after BackoffStrategy delay → persist (2/2)
+pickup 3 (persisted retry #2):
+  attempt 7                   ── inline
+  attempt 8 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
+```
+
+For the full property table, migration guide, and `FailedInfo` construction details, see [docs/llms/messaging.md](../../../../docs/llms/messaging.md).
+
 ## Circuit Breaker
 
 Per-consumer-group circuit breaker that pauses transport consumption when a dependency is unhealthy, preventing message-retry storms.
@@ -291,24 +374,25 @@ Per-consumer-group circuit breaker that pauses transport consumption when a depe
 ### Global Configuration
 
 ```csharp
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
     // Circuit breaker (applies to all consumer groups)
-    options.CircuitBreaker.FailureThreshold = 5;                       // consecutive transient failures to trip
-    options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);    // initial open duration
-    options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
+    setup.Options.CircuitBreaker.FailureThreshold = 5;                       // consecutive transient failures to trip
+    setup.Options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);    // initial open duration
+    setup.Options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
 
     // Adaptive retry backpressure
-    options.RetryProcessor.AdaptivePolling = true;
-    options.RetryProcessor.MaxPollingInterval = TimeSpan.FromMinutes(15); // 15 min cap
-    options.RetryProcessor.CircuitOpenRateThreshold = 0.8;              // back off above 80% circuit-open rate
+    setup.Options.RetryProcessor.AdaptivePolling = true;
+    setup.Options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(60);     // replaces the old FailedRetryInterval; default 60s
+    setup.Options.RetryProcessor.MaxPollingInterval = TimeSpan.FromMinutes(15); // 15 min cap
+    setup.Options.RetryProcessor.CircuitOpenRateThreshold = 0.8;              // back off above 80% circuit-open rate
 });
 ```
 
 ### Per-Consumer Override
 
 ```csharp
-options.Subscribe<PaymentHandler>()
+setup.Subscribe<PaymentHandler>()
     .Topic("payments.process")
     .WithCircuitBreaker(cb =>
     {
@@ -317,14 +401,14 @@ options.Subscribe<PaymentHandler>()
     });
 
 // Disable circuit breaker for a best-effort consumer
-options.Subscribe<MetricsHandler>()
+setup.Subscribe<MetricsHandler>()
     .WithCircuitBreaker(cb => cb.Enabled = false);
 ```
 
 ### Custom Exception Predicate
 
 ```csharp
-options.CircuitBreaker.IsTransientException = ex =>
+setup.Options.CircuitBreaker.IsTransientException = ex =>
     CircuitBreakerDefaults.IsTransient(ex) || ex is MyCustomTransientException;
 ```
 

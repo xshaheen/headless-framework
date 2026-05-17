@@ -83,7 +83,7 @@ public sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider) : IDi
             {
                 // Re-release the semaphore if no item is ready yet
                 _semaphore.Release();
-                await Task.Delay(50, cancellationToken);
+                await timeProvider.Delay(TimeSpan.FromMilliseconds(50), cancellationToken);
             }
         }
     }

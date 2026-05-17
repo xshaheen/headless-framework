@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Exceptions;
-
 namespace Headless.Messaging.Retry;
 
 /// <summary>
 /// Implements exponential backoff with jitter for message retry delays.
 /// </summary>
+[PublicAPI]
 public sealed class ExponentialBackoffStrategy : IRetryBackoffStrategy
 {
     private readonly TimeSpan _initialDelay;
@@ -31,15 +30,15 @@ public sealed class ExponentialBackoffStrategy : IRetryBackoffStrategy
     }
 
     /// <inheritdoc />
-    public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null)
+    public RetryDecision Compute(int persistedRetryCount, int inlineRetryCount, Exception exception)
     {
-        if (exception != null && !ShouldRetry(exception))
+        if (RetryExceptionClassifier.IsPermanent(exception))
         {
-            return null;
+            return RetryDecision.Stop;
         }
 
-        // Calculate exponential delay: initialDelay * (backoffMultiplier ^ retryAttempt)
-        var exponentialDelay = _initialDelay.TotalMilliseconds * Math.Pow(_backoffMultiplier, retryAttempt);
+        // Calculate exponential delay: initialDelay * (backoffMultiplier ^ persistedRetryCount)
+        var exponentialDelay = _initialDelay.TotalMilliseconds * Math.Pow(_backoffMultiplier, persistedRetryCount);
 
         // Cap at max delay
         var delayMs = Math.Min(exponentialDelay, _maxDelay.TotalMilliseconds);
@@ -48,21 +47,6 @@ public sealed class ExponentialBackoffStrategy : IRetryBackoffStrategy
         var jitter = ((Random.Shared.NextDouble() * 0.5) - 0.25) * delayMs;
         var finalDelayMs = Math.Max(0, delayMs + jitter);
 
-        return TimeSpan.FromMilliseconds(finalDelayMs);
-    }
-
-    /// <inheritdoc />
-    public bool ShouldRetry(Exception exception)
-    {
-        // Permanent failures - don't retry
-        return exception switch
-        {
-            SubscriberNotFoundException => false,
-            ArgumentNullException => false,
-            ArgumentException => false,
-            InvalidOperationException => false,
-            NotSupportedException => false,
-            _ => true, // All other exceptions are considered transient
-        };
+        return RetryDecision.Continue(TimeSpan.FromMilliseconds(finalDelayMs));
     }
 }

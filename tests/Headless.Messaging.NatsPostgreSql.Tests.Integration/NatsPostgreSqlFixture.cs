@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Testing.Testcontainers;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
@@ -42,8 +43,10 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
 
     private sealed class NatsStackComponent : IAsyncLifetime
     {
-        private readonly NatsContainer _container = new NatsBuilder("nats:2-alpine")
+        private readonly NatsContainer _container = new NatsBuilder(TestImages.Nats)
+            .WithLabel("type", "nats-postgresql-nats")
             .WithResourceMapping(_NatsConfig, "/etc/nats/nats-server.conf")
+            .WithReuse(true)
             .Build();
 
         private NatsConnection? _connection;
@@ -104,10 +107,12 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
 
     private sealed class PostgreSqlStackComponent : IAsyncLifetime
     {
-        private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:18.1-alpine3.23")
+        private readonly PostgreSqlContainer _container = new PostgreSqlBuilder(TestImages.PostgreSql)
+            .WithLabel("type", "nats-postgresql-pg")
             .WithDatabase("messages_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
+            .WithReuse(true)
             .Build();
 
         public string ConnectionString => _container.GetConnectionString();

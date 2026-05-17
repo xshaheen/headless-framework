@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Messaging;
 
 /// <summary>
@@ -119,12 +121,11 @@ public sealed class MessagingConventions
     /// <returns>The generated topic name.</returns>
     public string GetTopicName(Type messageType)
     {
-        ArgumentNullException.ThrowIfNull(messageType);
+        Argument.IsNotNull(messageType);
 
         var baseName = TopicNaming switch
         {
             TopicNamingConvention.KebabCase => _ToKebabCase(messageType.Name),
-            TopicNamingConvention.TypeName => messageType.Name,
             _ => messageType.Name,
         };
 
@@ -158,8 +159,8 @@ public sealed class MessagingConventions
     /// </summary>
     public static string GetDefaultHandlerId(Type consumerType, Type messageType)
     {
-        ArgumentNullException.ThrowIfNull(consumerType);
-        ArgumentNullException.ThrowIfNull(messageType);
+        Argument.IsNotNull(consumerType);
+        Argument.IsNotNull(messageType);
 
         var consumerName = consumerType.FullName ?? consumerType.Name;
         var messageName = messageType.FullName ?? messageType.Name;
@@ -171,9 +172,9 @@ public sealed class MessagingConventions
     /// </summary>
     public static string GetDefaultRuntimeHandlerId(Type declaringType, string methodName, Type messageType)
     {
-        ArgumentNullException.ThrowIfNull(declaringType);
-        ArgumentException.ThrowIfNullOrWhiteSpace(methodName);
-        ArgumentNullException.ThrowIfNull(messageType);
+        Argument.IsNotNull(declaringType);
+        Argument.IsNotNullOrWhiteSpace(methodName);
+        Argument.IsNotNull(messageType);
 
         var declaringTypeName = declaringType.FullName ?? declaringType.Name;
         var messageName = messageType.FullName ?? messageType.Name;

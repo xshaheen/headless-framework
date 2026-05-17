@@ -252,7 +252,7 @@ internal sealed class Bootstrapper(
                     + Environment.NewLine
                     + "=================================================================================="
                     + Environment.NewLine
-                    + "========   eg: services.AddHeadlessMessaging( options => { options.UseRabbitMq(...) }); ========"
+                    + "========   eg: services.AddHeadlessMessaging( setup => { setup.UseRabbitMq(...) }); ========"
                     + Environment.NewLine
                     + "=================================================================================="
             );
@@ -267,7 +267,7 @@ internal sealed class Bootstrapper(
                     + Environment.NewLine
                     + "==================================================================================="
                     + Environment.NewLine
-                    + "========   eg: services.AddHeadlessMessaging( options => { options.UseSqlServer(...) }); ========"
+                    + "========   eg: services.AddHeadlessMessaging( setup => { setup.UseSqlServer(...) }); ========"
                     + Environment.NewLine
                     + "==================================================================================="
             );

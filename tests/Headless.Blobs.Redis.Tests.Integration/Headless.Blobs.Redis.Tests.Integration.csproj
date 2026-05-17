@@ -5,13 +5,12 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Testcontainers.Redis" />
-    <PackageReference Include="Testcontainers.XunitV3" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Blobs.Redis\Headless.Blobs.Redis.csproj" />
     <ProjectReference Include="..\..\src\Headless.Redis\Headless.Redis.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
     <ProjectReference Include="..\Headless.Blobs.Tests.Harness\Headless.Blobs.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

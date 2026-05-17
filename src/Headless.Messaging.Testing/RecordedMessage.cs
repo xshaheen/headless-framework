@@ -5,6 +5,7 @@ using MsgHeaders = Headless.Messaging.Headers;
 namespace Headless.Messaging.Testing;
 
 /// <summary>Identifies which observable collection a recorded message belongs to.</summary>
+[PublicAPI]
 public enum MessageObservationType
 {
     /// <summary>Message was published.</summary>
@@ -15,9 +16,17 @@ public enum MessageObservationType
 
     /// <summary>Message processing faulted.</summary>
     Faulted,
+
+    /// <summary>
+    /// Retry budget was exhausted and the framework invoked <c>RetryPolicy.OnExhausted</c>.
+    /// Recorded BEFORE the user-supplied callback runs, so a hanging or throwing callback
+    /// cannot lose the observation.
+    /// </summary>
+    Exhausted,
 }
 
 /// <summary>A message captured by the test harness.</summary>
+[PublicAPI]
 public sealed record RecordedMessage
 {
     /// <summary>The CLR type of the message payload.</summary>

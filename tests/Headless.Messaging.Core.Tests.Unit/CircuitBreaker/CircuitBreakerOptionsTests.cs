@@ -234,8 +234,7 @@ public sealed class CircuitBreakerOptionsTests : TestBase
 
 public sealed class RetryProcessorOptionsTests : TestBase
 {
-    private static RetryProcessorOptionsValidator _CreateValidator(int failedRetryIntervalSeconds = 60) =>
-        new(Options.Create(new MessagingOptions { FailedRetryInterval = failedRetryIntervalSeconds }));
+    private static RetryProcessorOptionsValidator _CreateValidator() => new();
 
     [Fact]
     public void defaults_are_correct()
@@ -243,6 +242,7 @@ public sealed class RetryProcessorOptionsTests : TestBase
         var opts = new RetryProcessorOptions();
 
         opts.AdaptivePolling.Should().BeTrue();
+        opts.BaseInterval.Should().Be(TimeSpan.FromSeconds(60));
         opts.MaxPollingInterval.Should().Be(TimeSpan.FromMinutes(15));
         opts.CircuitOpenRateThreshold.Should().Be(0.8);
     }
@@ -260,10 +260,14 @@ public sealed class RetryProcessorOptionsTests : TestBase
     }
 
     [Fact]
-    public void validator_rejects_max_polling_interval_below_failed_retry_interval()
+    public void validator_rejects_max_polling_interval_below_base_interval()
     {
-        var opts = new RetryProcessorOptions { MaxPollingInterval = TimeSpan.FromSeconds(30) };
-        var validator = _CreateValidator(failedRetryIntervalSeconds: 60);
+        var opts = new RetryProcessorOptions
+        {
+            BaseInterval = TimeSpan.FromSeconds(60),
+            MaxPollingInterval = TimeSpan.FromSeconds(30),
+        };
+        var validator = _CreateValidator();
 
         var result = validator.Validate(opts);
 
@@ -311,14 +315,120 @@ public sealed class RetryProcessorOptionsTests : TestBase
     }
 
     [Fact]
-    public void validator_skips_adaptive_polling_rules_when_disabled()
+    public void validator_applies_polling_rules_regardless_of_adaptive_polling_flag()
     {
+        // BaseInterval seeds the processor's poll interval whether or not adaptive polling is on,
+        // so its validation must not be gated on AdaptivePolling.
         var opts = new RetryProcessorOptions
         {
             AdaptivePolling = false,
-            MaxPollingInterval = TimeSpan.Zero, // would fail if validated
-            CircuitOpenRateThreshold = 0, // would fail if validated
+            BaseInterval = TimeSpan.Zero, // invalid under all modes — would tight-loop
+            MaxPollingInterval = TimeSpan.Zero,
+            CircuitOpenRateThreshold = 0,
         };
+        var validator = _CreateValidator();
+
+        var result = validator.Validate(opts);
+
+        result.IsValid.Should().BeFalse();
+    }
+
+    // -------------------------------------------------------------------------
+    // Per-rule cases — each rule must apply with AdaptivePolling on AND off,
+    // because BaseInterval/MaxPollingInterval seed the polling loop in both modes.
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_reject_zero_base_interval_regardless_of_adaptive_polling(bool adaptivePolling)
+    {
+        var opts = new RetryProcessorOptions { AdaptivePolling = adaptivePolling, BaseInterval = TimeSpan.Zero };
+        var validator = _CreateValidator();
+
+        var result = validator.Validate(opts);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "BaseInterval");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_reject_zero_max_polling_interval_regardless_of_adaptive_polling(bool adaptivePolling)
+    {
+        var opts = new RetryProcessorOptions { AdaptivePolling = adaptivePolling, MaxPollingInterval = TimeSpan.Zero };
+        var validator = _CreateValidator();
+
+        var result = validator.Validate(opts);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "MaxPollingInterval");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_reject_max_polling_interval_above_24_hours(bool adaptivePolling)
+    {
+        var opts = new RetryProcessorOptions
+        {
+            AdaptivePolling = adaptivePolling,
+            MaxPollingInterval = TimeSpan.FromHours(24) + TimeSpan.FromSeconds(1),
+        };
+        var validator = _CreateValidator();
+
+        var result = validator.Validate(opts);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "MaxPollingInterval");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void should_reject_max_polling_interval_less_than_base_interval(bool adaptivePolling)
+    {
+        var opts = new RetryProcessorOptions
+        {
+            AdaptivePolling = adaptivePolling,
+            BaseInterval = TimeSpan.FromMinutes(5),
+            MaxPollingInterval = TimeSpan.FromMinutes(1),
+        };
+        var validator = _CreateValidator();
+
+        var result = validator.Validate(opts);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "MaxPollingInterval");
+    }
+
+    [Theory]
+    [InlineData(true, 0.0)]
+    [InlineData(false, 0.0)]
+    [InlineData(true, 1.0)]
+    [InlineData(false, 1.0)]
+    public void should_reject_circuit_open_rate_threshold_at_zero_or_one(bool adaptivePolling, double threshold)
+    {
+        var opts = new RetryProcessorOptions
+        {
+            AdaptivePolling = adaptivePolling,
+            CircuitOpenRateThreshold = threshold,
+        };
+        var validator = _CreateValidator();
+
+        var result = validator.Validate(opts);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "CircuitOpenRateThreshold");
+    }
+
+    [Fact]
+    public void should_accept_valid_defaults_with_adaptive_polling_disabled()
+    {
+        // The validator must be permissive of default values regardless of the AdaptivePolling
+        // flag — disabling adaptive polling does not relax (or change) the validation surface.
+        var opts = new RetryProcessorOptions { AdaptivePolling = false };
         var validator = _CreateValidator();
 
         var result = validator.Validate(opts);

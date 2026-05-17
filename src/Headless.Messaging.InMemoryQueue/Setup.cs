@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemoryQueue;
 using Headless.Messaging.Transport;
@@ -7,16 +9,18 @@ using Headless.Messaging.Transport;
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>Extension methods for configuring messaging with In-Memory message queue.</summary>
-public static class InMemoryQueueSetup
+public static class SetupInMemoryQueue
 {
-    /// <summary>Configuration for messaging.</summary>
-    /// <param name="options">Messaging configuration options</param>
-    /// <returns>The messaging options for method chaining</returns>
-    public static MessagingOptions UseInMemoryMessageQueue(this MessagingOptions options)
+    extension(MessagingSetupBuilder setup)
     {
-        options.RegisterExtension(new InMemoryQueueOptionsExtension());
+        /// <summary>Configuration for messaging.</summary>
+        /// <returns>The setup builder for method chaining</returns>
+        public MessagingSetupBuilder UseInMemoryMessageQueue()
+        {
+            setup.RegisterExtension(new InMemoryQueueOptionsExtension());
 
-        return options;
+            return setup;
+        }
     }
 
     /// <summary>Messaging options extension for configuring in-memory message queue services.</summary>

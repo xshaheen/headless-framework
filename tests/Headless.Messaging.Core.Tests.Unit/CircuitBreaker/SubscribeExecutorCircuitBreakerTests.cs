@@ -23,6 +23,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
     private const string _TopicName = "cb.test.topic";
     private const string _GroupName = "cb.test.group";
 
+    private static readonly IServiceProvider _EmptyScope = new ServiceCollection().BuildServiceProvider();
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
@@ -79,18 +81,24 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         IDataStorage storage
     )
     {
+        storage
+            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(x =>
+        services.AddHeadlessMessaging(setup =>
         {
-            x.Subscribe<CbTestConsumer>().Topic(_TopicName);
-            x.UseInMemoryMessageQueue();
-            x.UseInMemoryStorage();
+            setup.Subscribe<CbTestConsumer>().Topic(_TopicName);
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
         });
 
         var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILogger<SubscribeExecutor>>();
-        var options = Options.Create(new MessagingOptions { FailedRetryCount = 0 });
+        var options = Options.Create(
+            new MessagingOptions { RetryPolicy = { MaxInlineRetries = 0, MaxPersistedRetries = 0 } }
+        );
         var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
 
         var executor = new SubscribeExecutor(
@@ -109,9 +117,20 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
     private static IDataStorage _CreateStorage()
     {
         var storage = Substitute.For<IDataStorage>();
+        // Use Arg.Any<>() on every parameter — including the optional ones.
+        // NSubstitute records optional defaults as exact-value matchers, which makes
+        // setups silently miss when callers pass a non-default nextRetryAt, lockedUntil,
+        // originalRetries, or CT. #7 added originalRetries to every state-write site.
         storage
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
-            .Returns(ValueTask.CompletedTask);
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
         return storage;
     }
 
@@ -133,7 +152,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then
         await cbMock.Received(1).ReportFailureAsync(_GroupName, original);
@@ -152,7 +171,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then
         await cbMock.Received(1).ReportSuccessAsync(_GroupName);
@@ -173,7 +192,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — must receive HttpRequestException, not SubscriberExecutionFailedException
         await cbMock.Received(1).ReportFailureAsync(_GroupName, Arg.Is<Exception>(e => e is HttpRequestException));
@@ -193,10 +212,19 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, _) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — DB state must still be persisted
-        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        await storage
+            .Received(1)
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -212,10 +240,19 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
         // when
-        await executor.ExecuteAsync(_CreateMediumMessage(), _CreateDescriptor(), CancellationToken.None);
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — both DB persistence and circuit breaker reporting happen
-        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Succeeded);
+        await storage
+            .Received(1)
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Succeeded,
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            );
         await cbMock.Received(1).ReportSuccessAsync(_GroupName);
     }
 }

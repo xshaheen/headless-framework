@@ -72,18 +72,18 @@ internal sealed class MessagingDashboardStartupFilter(MessagingDashboardOptionsB
 
 public static class MessagingOptionsExtensions
 {
-    extension(MessagingOptions messagingOptions)
+    extension(MessagingSetupBuilder setup)
     {
         /// <summary>
         /// Enable the Messaging Dashboard with the new fluent builder API.
         /// </summary>
-        public MessagingOptions UseDashboard(Action<MessagingDashboardOptionsBuilder> configure)
+        public MessagingSetupBuilder UseDashboard(Action<MessagingDashboardOptionsBuilder> configure)
         {
             Argument.IsNotNull(configure);
 
-            messagingOptions.RegisterExtension(new DashboardOptionsExtension(configure));
+            setup.RegisterExtension(new DashboardOptionsExtension(configure));
 
-            return messagingOptions;
+            return setup;
         }
     }
 }

@@ -5,6 +5,7 @@ namespace Headless.Messaging.Testing;
 /// <summary>
 /// Exception thrown when a <see cref="MessageObservationStore"/> wait operation times out.
 /// </summary>
+[PublicAPI]
 public sealed class MessageObservationTimeoutException : TimeoutException
 {
     /// <summary>The message type that was expected.</summary>

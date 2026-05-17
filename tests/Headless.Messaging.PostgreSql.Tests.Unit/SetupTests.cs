@@ -22,11 +22,11 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddHeadlessMessaging(options =>
+        services.AddHeadlessMessaging(setup =>
         {
-            options.Version = "v7";
-            options.UseInMemoryMessageQueue();
-            options.UsePostgreSql("Host=localhost;Database=test");
+            setup.Options.Version = "v7";
+            setup.UseInMemoryMessageQueue();
+            setup.UsePostgreSql("Host=localhost;Database=test");
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -53,11 +53,11 @@ public sealed class SetupTests : TestBase
         );
 
         // when
-        services.AddHeadlessMessaging(options =>
+        services.AddHeadlessMessaging(setup =>
         {
-            options.Version = "v9";
-            options.UseInMemoryMessageQueue();
-            options.UseEntityFramework<TestMessagingDbContext>(postgreSql => postgreSql.Schema = "custom_schema");
+            setup.Options.Version = "v9";
+            setup.UseInMemoryMessageQueue();
+            setup.UseEntityFramework<TestMessagingDbContext>(postgreSql => postgreSql.Schema = "custom_schema");
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -75,10 +75,10 @@ public sealed class SetupTests : TestBase
     public void should_throw_when_postgresql_configure_delegate_is_null()
     {
         // given
-        var options = new MessagingOptions();
+        var setup = _CreateSetup();
 
         // when
-        var act = () => options.UsePostgreSql((Action<PostgreSqlOptions>)null!);
+        var act = () => setup.UsePostgreSql((Action<PostgreSqlOptions>)null!);
 
         // then
         act.Should().Throw<ArgumentNullException>();
@@ -88,13 +88,18 @@ public sealed class SetupTests : TestBase
     public void should_throw_when_entity_framework_configure_delegate_is_null()
     {
         // given
-        var options = new MessagingOptions();
+        var setup = _CreateSetup();
 
         // when
-        var act = () => options.UseEntityFramework<TestMessagingDbContext>(null!);
+        var act = () => setup.UseEntityFramework<TestMessagingDbContext>(null!);
 
         // then
         act.Should().Throw<ArgumentNullException>();
+    }
+
+    private static MessagingSetupBuilder _CreateSetup()
+    {
+        return new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());
     }
 
     private static string _GetInternalString(object instance, string propertyName)

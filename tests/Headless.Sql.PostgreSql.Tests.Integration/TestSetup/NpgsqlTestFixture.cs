@@ -1,16 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Testing.Testcontainers;
 using Testcontainers.PostgreSql;
-using Testcontainers.Xunit;
-using Xunit.Sdk;
 
 namespace Tests.TestSetup;
 
 [UsedImplicitly]
 [CollectionDefinition]
-public sealed class NpgsqlTestFixture(IMessageSink messageSink)
-    : ContainerFixture<PostgreSqlBuilder, PostgreSqlContainer>(messageSink),
-        ICollectionFixture<NpgsqlTestFixture>
+public sealed class NpgsqlTestFixture : HeadlessPostgreSqlFixture, ICollectionFixture<NpgsqlTestFixture>
 {
     protected override PostgreSqlBuilder Configure()
     {

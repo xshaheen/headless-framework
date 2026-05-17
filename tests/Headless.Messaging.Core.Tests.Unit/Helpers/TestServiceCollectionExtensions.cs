@@ -12,12 +12,12 @@ public static class TestServiceCollectionExtensions
         public void AddTestSetup(ITestOutputHelper testOutput)
         {
             services.AddLogging(x => x.AddTestLogging(testOutput));
-            services.AddHeadlessMessaging(x =>
+            services.AddHeadlessMessaging(setup =>
             {
-                x.SubscribeFromAssembly(typeof(TestServiceCollectionExtensions).Assembly);
-                x.DefaultGroupName = TestGroupName;
-                x.UseInMemoryMessageQueue();
-                x.UseInMemoryStorage();
+                setup.SubscribeFromAssembly(typeof(TestServiceCollectionExtensions).Assembly);
+                setup.Options.DefaultGroupName = TestGroupName;
+                setup.UseInMemoryMessageQueue();
+                setup.UseInMemoryStorage();
             });
         }
 

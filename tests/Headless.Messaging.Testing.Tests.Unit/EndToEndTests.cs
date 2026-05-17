@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Retry;
 using Headless.Messaging.Testing;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,8 +21,12 @@ public sealed class OrderCreatedConsumer : IConsume<OrderCreatedEvent>
 
 public sealed class FailingConsumer : IConsume<OrderCreatedEvent>
 {
+    // Transient exception so the default RetryExceptionClassifier does NOT short-circuit to Stop.
+    // The classifier (RetryExceptionClassifier.IsPermanent) now unwraps SubscriberExecutionFailedException
+    // and treats InvalidOperationException as permanent — using TimeoutException keeps the failure
+    // retryable so the exhaustion budget governs the terminal transition (and OnExhausted fires).
     public ValueTask Consume(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct) =>
-        throw new InvalidOperationException("Test failure");
+        throw new TimeoutException("Test failure");
 }
 
 public interface INotificationService
@@ -42,15 +47,15 @@ public sealed class NotifyingConsumer(INotificationService notifier) : IConsume<
 
 public sealed class EndToEndTests : TestBase
 {
-    private static Task<MessagingTestHarness> _CreateHarnessAsync(Action<MessagingOptions>? configure = null)
+    private static Task<MessagingTestHarness> _CreateHarnessAsync(Action<MessagingSetupBuilder>? configure = null)
     {
         return MessagingTestHarness.CreateAsync(services =>
         {
-            services.AddHeadlessMessaging(options =>
+            services.AddHeadlessMessaging(setup =>
             {
-                options.UseInMemoryMessageQueue();
-                options.UseInMemoryStorage();
-                configure?.Invoke(options);
+                setup.UseInMemoryMessageQueue();
+                setup.UseInMemoryStorage();
+                configure?.Invoke(setup);
             });
         });
     }
@@ -98,7 +103,7 @@ public sealed class EndToEndTests : TestBase
 
         // then
         faulted.Exception.Should().NotBeNull();
-        faulted.Exception.Should().BeOfType<InvalidOperationException>().Which.Message.Should().Be("Test failure");
+        faulted.Exception.Should().BeOfType<TimeoutException>().Which.Message.Should().Be("Test failure");
 
         harness.Faulted.Should().ContainSingle();
         harness.Consumed.Should().BeEmpty();
@@ -247,5 +252,102 @@ public sealed class EndToEndTests : TestBase
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("HOSTED-1");
         harness.Published.Should().ContainSingle();
         harness.Consumed.Should().ContainSingle();
+    }
+
+    // ─── Test 8: WaitForExhausted observes user OnExhausted callback ──────────
+
+    [Fact]
+    public async Task WaitForExhausted_observes_user_callback_invocation()
+    {
+        // given — single-attempt budget so failure becomes terminal immediately
+        var userCallbackFired = 0;
+
+        await using var harness = await _CreateHarnessAsync(options =>
+        {
+            options.Subscribe<FailingConsumer>("order-created");
+
+            options.Options.RetryPolicy.MaxInlineRetries = 0;
+            options.Options.RetryPolicy.MaxPersistedRetries = 0;
+            options.Options.RetryPolicy.BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
+            options.Options.RetryPolicy.OnExhausted = (_, _) =>
+            {
+                Interlocked.Increment(ref userCallbackFired);
+                return Task.CompletedTask;
+            };
+        });
+
+        // when
+        await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-EXH", 1m), AbortToken);
+        var recorded = await harness.WaitForExhausted<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then — observation captures the exhausted message and its exception
+        recorded.MessageType.Should().Be(typeof(OrderCreatedEvent));
+        recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-EXH");
+        // The exception is the pipeline-wrapped failure; the original "Test failure" is the inner.
+        recorded.Exception.Should().NotBeNull();
+        recorded.Exception!.GetBaseException().Message.Should().Be("Test failure");
+
+        // The user-supplied callback also ran (recording wraps, does not replace)
+        await TestHelpers.WaitForAsync(() => userCallbackFired == 1, TimeSpan.FromSeconds(5));
+        userCallbackFired.Should().Be(1);
+
+        harness.Exhausted.Should().ContainSingle();
+        harness.Faulted.Should().NotBeEmpty();
+    }
+
+    // ─── Test 9: WaitForExhausted survives a hanging user callback ───────────
+
+    [Fact]
+    public async Task WaitForExhausted_records_before_user_callback_runs()
+    {
+        // given — user callback hangs; observation must still be visible
+        using var hangGate = new ManualResetEventSlim(initialState: false);
+
+        await using var harness = await _CreateHarnessAsync(options =>
+        {
+            options.Subscribe<FailingConsumer>("order-created");
+
+            options.Options.RetryPolicy.MaxInlineRetries = 0;
+            options.Options.RetryPolicy.MaxPersistedRetries = 0;
+            options.Options.RetryPolicy.BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
+            options.Options.RetryPolicy.OnExhaustedTimeout = TimeSpan.FromMilliseconds(200);
+            options.Options.RetryPolicy.OnExhausted = async (_, ct) =>
+            {
+                // Park the callback until the test releases it (or the timeout fires).
+                await Task.Run(() => hangGate.Wait(ct), ct);
+            };
+        });
+
+        try
+        {
+            // when
+            await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-HANG", 1m), AbortToken);
+            var recorded = await harness.WaitForExhausted<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+
+            // then — the observation arrived even though the user callback is still parked
+            recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-HANG");
+        }
+        finally
+        {
+            hangGate.Set();
+        }
+    }
+}
+
+file static class TestHelpers
+{
+    public static async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(20);
+        }
     }
 }

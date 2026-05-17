@@ -49,4 +49,16 @@
   <data name="strings:only_numbers" xml:space="preserve">
     <value>يجب أن يحتوي الحقل على أرقام فقط.</value>
   </data>
+  <data name="url:invalid_origin_path" xml:space="preserve">
+    <value>اكتب عنوان الموقع فقط، بدون صفحات داخلية أو علامات استفهام أو أجزاء إضافية.</value>
+  </data>
+  <data name="url:invalid_origin_trailing_slash" xml:space="preserve">
+    <value>احذف علامة / من نهاية عنوان الموقع.</value>
+  </data>
+  <data name="url:invalid_origin_scheme" xml:space="preserve">
+    <value>يجب أن يبدأ عنوان الموقع بـ http:// أو https://. القيمة الحالية تبدأ بـ {Scheme}.</value>
+  </data>
+  <data name="url:invalid_origin_format" xml:space="preserve">
+    <value>عنوان الموقع "{PropertyValue}" غير صحيح. اكتب الرابط كاملًا مثل: https://example.com</value>
+  </data>
 </root>

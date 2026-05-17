@@ -8,6 +8,7 @@ using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,8 +28,11 @@ public interface IConsumerRegister : IProcessingServer
     ValueTask OnTopologyChangedAsync(CancellationToken cancellationToken = default);
 }
 
-internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServiceProvider serviceProvider)
-    : IConsumerRegister
+internal sealed class ConsumerRegister(
+    ILogger<ConsumerRegister> logger,
+    IServiceProvider serviceProvider,
+    IServiceScopeFactory serviceScopeFactory
+) : IConsumerRegister
 {
     private static readonly DiagnosticListener _DiagnosticListener = new(
         MessageDiagnosticListenerNames.DiagnosticListenerName
@@ -338,7 +342,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
 
                                 _serverAddress = innerClient.BrokerAddress;
 
-                                _RegisterMessageProcessor(innerClient);
+                                _RegisterMessageProcessor(innerClient, groupCts.Token);
 
                                 await innerClient.SubscribeAsync(topics);
                                 await _AwaitConsumerReadyThenListenAsync(innerClient, startupReady, groupCts.Token)
@@ -441,8 +445,10 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                 await PulseAsync().ConfigureAwait(false);
             }
 #pragma warning disable ERP022 // Best-effort cleanup — state reset below prevents stale handles from being accessible.
-            // ReSharper disable once EmptyGeneralCatchClause
-            catch { }
+            catch
+            {
+                // ignore
+            }
 #pragma warning restore ERP022
 
             Interlocked.Exchange(ref _state, (int)LifecycleState.NotStarted);
@@ -530,7 +536,7 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
         );
     }
 
-    private void _RegisterMessageProcessor(IConsumerClient client)
+    private void _RegisterMessageProcessor(IConsumerClient client, CancellationToken hostShutdownToken)
     {
         client.OnLogCallback = _WriteLog;
         client.OnMessageCallback = async (transportMessage, sender) =>
@@ -644,27 +650,61 @@ internal sealed class ConsumerRegister(ILogger<ConsumerRegister> logger, IServic
                     var content = _serializer.Serialize(message);
 #pragma warning restore VSTHRD103, CA1849
 
-                    await _storage.StoreReceivedExceptionMessageAsync(name, group, content, exceptionInfo);
+                    var stored = await _storage
+                        .StoreReceivedExceptionMessageAsync(name, group, content, exceptionInfo, hostShutdownToken)
+                        .ConfigureAwait(false);
 
                     await client.CommitAsync(sender);
 
-                    try
+                    var bypassCallback = _options.RetryPolicy.OnExhausted;
+                    if (stored && bypassCallback is not null)
                     {
-                        _options.FailedThresholdCallback?.Invoke(
-                            new FailedInfo
-                            {
-                                ServiceProvider = serviceProvider,
-                                MessageType = MessageType.Subscribe,
-                                Message = message,
-                            }
+                        // Poisoned-on-arrival messages bypass the normal Dispatcher scope,
+                        // so we create a fresh async scope here instead of using the root provider.
+                        // RetryHelper.InvokeOnExhaustedAsync applies the configured OnExhaustedTimeout
+                        // and swallows handler exceptions; pass the group/host shutdown token so a
+                        // cooperative callback can short-circuit when the consumer is stopping.
+                        await using var exhaustedScope = serviceScopeFactory.CreateAsyncScope();
+
+                        using var tenantScope = TenantContextScope.ChangeFromEnvelope(
+                            exhaustedScope.ServiceProvider,
+                            message,
+                            _logger
                         );
 
-                        _logger.ConsumerReceivedMessageAfterThreshold(message.GetId(), _options.FailedRetryCount);
+                        await RetryHelper
+                            .InvokeOnExhaustedAsync(
+                                bypassCallback,
+                                new FailedInfo
+                                {
+                                    ServiceProvider = exhaustedScope.ServiceProvider,
+                                    MessageType = MessageType.Subscribe,
+                                    Message = message,
+                                    Exception =
+                                        dispatchBypassException
+                                        ?? new InvalidOperationException(
+                                            exceptionInfo ?? "Received message contains exception information."
+                                        ),
+                                },
+                                _options.RetryPolicy.OnExhaustedTimeout,
+                                storageId: 0,
+                                _logger,
+                                hostShutdownToken
+                            )
+                            .ConfigureAwait(false);
                     }
-                    catch (Exception e)
+                    else if (!stored)
                     {
-                        _logger.ExecutedThresholdCallbackFailed(e, LogSanitizer.Sanitize(e.Message));
+                        if (_logger.IsEnabled(LogLevel.Information))
+                        {
+                            _logger.SkippingPoisonedOnExhaustedAlreadyTerminal(message.GetId());
+                        }
                     }
+
+                    _logger.ConsumerReceivedMessageAfterThreshold(
+                        message.GetId(),
+                        _options.RetryPolicy.MaxPersistedRetries
+                    );
 
                     _TracingAfter(tracingTimestamp, transportMessage, _serverAddress);
                 }

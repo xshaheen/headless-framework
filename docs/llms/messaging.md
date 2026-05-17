@@ -204,8 +204,8 @@ Always install four packages together: **Abstractions + Core + one transport + o
 
 **Storage** (pick one):
 
-- `Headless.Messaging.PostgreSql` -- PostgreSQL outbox with auto-migration
-- `Headless.Messaging.SqlServer` -- SQL Server outbox with auto-migration
+- `Headless.Messaging.PostgreSql` -- PostgreSQL outbox with `CREATE TABLE IF NOT EXISTS` initialization
+- `Headless.Messaging.SqlServer` -- SQL Server outbox with `CREATE TABLE IF NOT EXISTS` initialization
 - `Headless.Messaging.InMemoryStorage` -- dev/testing only, ephemeral
 
 **Optional add-ons:**
@@ -257,6 +257,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
 - **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
+- **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`, `OnExhaustedTimeout`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
 
 ---
 
@@ -398,24 +399,24 @@ dotnet add package Headless.Messaging.Core
 
 ```csharp
 // Register messaging with storage and transport
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    // Core configuration
-    options.SucceedMessageExpiredAfter = 24 * 3600;
-    options.FailedRetryCount = 50;
+    // Core configuration (value-typed options live under setup.Options)
+    setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
+    setup.Options.RetryPolicy.MaxPersistedRetries = 50;
 
     // Add storage (required)
-    options.UsePostgreSql("connection_string");
+    setup.UsePostgreSql("connection_string");
 
     // Add transport (required)
-    options.UseRabbitMQ(rmq =>
+    setup.UseRabbitMQ(rmq =>
     {
         rmq.HostName = "localhost";
         rmq.Port = 5672;
     });
 
     // Register consumers
-    options.SubscribeFromAssemblyContaining<Program>();
+    setup.SubscribeFromAssemblyContaining<Program>();
 });
 
 // Publish messages with outbox (reliable delivery)
@@ -525,14 +526,105 @@ Consumers can modify callback behavior during handling via `context.Headers`:
 Register in `Program.cs`:
 
 ```csharp
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
-    options.FailedRetryCount = 50;
-    options.SucceedMessageExpiredAfter = 24 * 3600;
-    options.ConsumerThreadCount = 1;
-    options.DefaultGroupName = "myapp";
+    setup.Options.RetryPolicy.MaxPersistedRetries = 50;
+    setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
+    setup.Options.ConsumerThreadCount = 1;
+    setup.Options.DefaultGroupName = "myapp";
 });
 ```
+
+### Retry Policy
+
+`MessagingOptions.RetryPolicy` is the single composition point for all retry behavior — both inline and persisted retries, on both consume and publish paths. Configure it once; the framework wires it into `SubscribeExecutor` (consume) and `MessageSender` (publish).
+
+#### Shape
+
+| Property | Type | Default | Validation invariant |
+| --- | --- | --- | --- |
+| `MaxInlineRetries` | `int` | `2` | `0..10000`. Retries to run inline on each delivery before persisting for the retry processor. |
+| `MaxPersistedRetries` | `int` | `15` | `0..10000`. Maximum persisted-retry pickups. Set to `0` to disable persisted retries. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. |
+| `InitialDispatchGrace` | `TimeSpan` | `30s` | `> 0` and `<= 1h`. Applied to `NextRetryAt` on initial store: the persisted retry processor will not pick the row up until `Added + InitialDispatchGrace` elapses, giving the normal dispatch + inline-retry path room to complete first. After that window the processor treats the row as crash-recovery work. Combined with `RetryProcessorOptions.BaseInterval` (60s default) the worst-case crash-recovery latency is `InitialDispatchGrace + BaseInterval` (~90s with defaults). |
+| `DispatchTimeout` | `TimeSpan` | `5m` | `> 0` and `<= 1h`. Written to `LockedUntil` before each publish/consume attempt. Retry pickup excludes rows while `LockedUntil` is in the future; handlers exceeding the lease remain at-least-once and may be re-dispatched. |
+| `BackoffStrategy` | `IRetryBackoffStrategy` | `new ExponentialBackoffStrategy()` | Not null. Strategy implementations are now single-method: `RetryDecision Compute(int retryCount, Exception exception)`. |
+| `OnExhausted` | `Func<FailedInfo, CancellationToken, Task>?` | `null` | Optional. Fires only when the retry budget is exhausted (see distinction below). The supplied `IServiceProvider` on `FailedInfo` is the live per-message dispatch scope and is disposed after the callback returns — resolve scoped services **synchronously**; do not capture the provider into a `Task.Run` or other background work, which would race scope disposal. |
+| `OnExhaustedTimeout` | `TimeSpan` | `30s` | `> 0` and `<= 1h`. Hard timeout on the `OnExhausted` callback. If the callback does not complete within this window the framework logs `OnExhaustedTimedOut` and resumes the dispatch loop; the callback is orphaned but the loop is not blocked. |
+
+`MessagingOptions.TransportPublishTimeout` defaults to 10s and bounds transport publish calls with a linked shutdown token. `MessagingOptions.CommandTimeout` defaults to 30s and is applied to SQL-backed storage commands, including terminal writes that intentionally use `CancellationToken.None`.
+
+Persisted retry storage uses `NextRetryAt` for due time and `LockedUntil` for the active delivery lease. Pickup requires `NextRetryAt <= now` and `LockedUntil IS NULL OR LockedUntil <= now`. Retry writes clear `LockedUntil`. Retry counter writes include an optimistic `Retries == originalRetries` predicate; a rejected update means another replica already advanced or terminalized the row, so callers stop the attempt path.
+
+#### Exhausted vs Stop
+
+`OnExhausted` fires **only on `RetryDecision.Exhausted`** — when the retry budget is fully consumed and the failure was transient.
+
+When tenant propagation is configured, `OnExhausted` is invoked under the envelope tenant for publish, consume, and poisoned-on-arrival paths. Poisoned broker redelivery only invokes the callback when `StoreReceivedExceptionMessageAsync` reports a real storage mutation; terminal no-ops skip it.
+
+It does **NOT** fire on `RetryDecision.Stop`. Stop is the framework's signal for:
+
+- **Permanent exceptions** classified by the backoff strategy (`SubscriberNotFoundException`, `ArgumentException`, `ArgumentNullException`, `InvalidOperationException`, `NotSupportedException`).
+- **Cancellation** (`OperationCanceledException` whose token matches the dispatch cancellation token, including `IHostApplicationLifetime.ApplicationStopping` on the publish side).
+
+If you want a single exit point for *any* unrecoverable failure (Stop + Exhausted), use an `IConsumeFilter` / `IPublishFilter` or capture state in the consumer; `OnExhausted` is only the "retried until the budget ran out" hook.
+
+#### MaxInlineRetries — inline vs persisted retry paths
+
+Retries up to `MaxInlineRetries` run **inline** inside the same `ExecuteAsync` / `SendAsync` call (with `Task.Delay` between attempts). Once the inline budget is exhausted, the message is persisted with `NextRetryAt` set and picked up by `MessageNeedToRetryProcessor` (up to `MaxPersistedRetries` times). Each pickup then bursts another round of `MaxInlineRetries` inline attempts.
+
+Worked example with `MaxInlineRetries = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
+
+```
+pickup 1 (initial dispatch):
+  attempt 1 (original)        ── inline
+  attempt 2 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 3 (inline retry #2) ── inline, after BackoffStrategy delay → persist (1/2)
+pickup 2 (persisted retry #1):
+  attempt 4                   ── inline
+  attempt 5 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 6 (inline retry #2) ── inline, after BackoffStrategy delay → persist (2/2)
+pickup 3 (persisted retry #2):
+  attempt 7                   ── inline
+  attempt 8 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
+```
+
+#### FailedInfo construction (for tests / fakes)
+
+`FailedInfo` has four required-init properties — `Exception` is now part of the contract:
+
+```csharp
+var info = new FailedInfo
+{
+    ServiceProvider = scope.ServiceProvider, // live dispatch scope, NOT the root provider
+    MessageType     = MessageType.Subscribe, // or MessageType.Publish
+    Message         = message,
+    Exception       = ex,                    // the exhausting exception
+};
+```
+
+`ServiceProvider` is the **live per-message DI scope** — the same scope used while the consume / publish attempts ran. Scoped services resolved through `FailedInfo.ServiceProvider` are the same instances seen by the consumer/handler.
+
+#### RetryProcessorOptions
+
+`MessagingOptions.RetryProcessor` controls the persisted-retry processor's polling cadence:
+
+| Property | Default | Notes |
+| --- | --- | --- |
+| `BaseInterval` | `60s` | Base polling interval. Replaces the old `FailedRetryInterval`. |
+| `AdaptivePolling` | `true` | When enabled, polling interval halves on healthy cycles and doubles when circuit-open skip rate exceeds threshold. |
+| `MaxPollingInterval` | `15m` | Cap on adaptive doubling. |
+| `CircuitOpenRateThreshold` | `0.8` | Above this fraction of circuit-open skips, the processor backs off. |
+
+#### Migration from pre-RetryPolicy primitives
+
+| Old property | New property | Notes |
+| --- | --- | --- |
+| `FailedRetryCount` | `RetryPolicy.MaxPersistedRetries` | Controls persisted-retry pickups. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. Set both to `0` to disable retries. |
+| `FailedRetryInterval` | `RetryProcessorOptions.BaseInterval` | Default `60s`. |
+| `FallbackWindowLookbackSeconds` | *removed* | No replacement — `MessageNeedToRetryProcessor` now polls without a lookback window. |
+| `RetryBackoffStrategy` | `RetryPolicy.BackoffStrategy` | Strategy contract is now one `Compute` method returning `RetryDecision`. |
+| `FailedThresholdCallback` | `RetryPolicy.OnExhausted` | **Semantic change:** the callback now fires only on `RetryDecision.Exhausted`, not on permanent exceptions or cancellation (`RetryDecision.Stop`). |
 
 ## Strict Publish Tenancy
 
@@ -662,24 +754,24 @@ Open duration escalates exponentially on repeated trips and resets after consecu
 ### Global Configuration
 
 ```csharp
-builder.Services.AddHeadlessMessaging(options =>
+builder.Services.AddHeadlessMessaging(setup =>
 {
     // Global circuit breaker (applies to all consumer groups)
-    options.CircuitBreaker.FailureThreshold = 5;          // consecutive transient failures to trip
-    options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);   // initial open duration
-    options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
+    setup.Options.CircuitBreaker.FailureThreshold = 5;          // consecutive transient failures to trip
+    setup.Options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);   // initial open duration
+    setup.Options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
 
     // Adaptive retry backpressure
-    options.RetryProcessor.AdaptivePolling = true;
-    options.RetryProcessor.MaxPollingInterval = TimeSpan.FromMinutes(15);
-    options.RetryProcessor.CircuitOpenRateThreshold = 0.8; // back off above 80% circuit-open rate
+    setup.Options.RetryProcessor.AdaptivePolling = true;
+    setup.Options.RetryProcessor.MaxPollingInterval = TimeSpan.FromMinutes(15);
+    setup.Options.RetryProcessor.CircuitOpenRateThreshold = 0.8; // back off above 80% circuit-open rate
 });
 ```
 
 ### Per-Consumer Override
 
 ```csharp
-options.Subscribe<PaymentHandler>()
+setup.Subscribe<PaymentHandler>()
     .Topic("payments.process")
     .WithCircuitBreaker(cb =>
     {
@@ -688,14 +780,14 @@ options.Subscribe<PaymentHandler>()
     });
 
 // Disable circuit breaker for a best-effort consumer
-options.Subscribe<MetricsHandler>()
+setup.Subscribe<MetricsHandler>()
     .WithCircuitBreaker(cb => cb.Enabled = false);
 ```
 
 ### Custom Exception Predicate
 
 ```csharp
-options.CircuitBreaker.IsTransientException = ex =>
+setup.Options.CircuitBreaker.IsTransientException = ex =>
     CircuitBreakerDefaults.IsTransient(ex) || ex is MyCustomTransientException;
 ```
 
@@ -1175,8 +1267,8 @@ await publisher.PublishAsync(
 ### Consumer Configuration
 
 ```csharp
-options.ConsumerThreadCount = 1; // Recommended for strict ordering
-options.EnableSubscriberParallelExecute = false;
+setup.Options.ConsumerThreadCount = 1; // Recommended for strict ordering
+setup.Options.EnableSubscriberParallelExecute = false;
 ```
 
 ### Ordering Guarantees
@@ -1286,8 +1378,8 @@ kafka.MainConfig["acks"] = "all";
 Set `ConsumerThreadCount = 1` for sequential processing:
 
 ```csharp
-options.ConsumerThreadCount = 1; // Sequential processing maintains partition order
-options.EnableSubscriberParallelExecute = false; // Disable parallel execution
+setup.Options.ConsumerThreadCount = 1; // Sequential processing maintains partition order
+setup.Options.EnableSubscriberParallelExecute = false; // Disable parallel execution
 ```
 
 ### Ordering Guarantees
@@ -1533,8 +1625,8 @@ Messages are delivered in FIFO order to a single consumer on a single channel:
 
 ```csharp
 // Configure for sequential processing
-options.ConsumerThreadCount = 1; // Single consumer thread
-options.EnableSubscriberParallelExecute = false; // No parallel execution
+setup.Options.ConsumerThreadCount = 1; // Single consumer thread
+setup.Options.EnableSubscriberParallelExecute = false; // No parallel execution
 ```
 
 ### Ordering Guarantees
@@ -1678,12 +1770,12 @@ PostgreSQL outbox storage provider for the messaging system.
 
 ## Problem Solved
 
-Provides durable, transactional message storage using PostgreSQL with automatic schema management, message archival, and high-performance queries.
+Provides durable, transactional message storage using PostgreSQL with schema initialization, message archival, and high-performance queries.
 
 ## Key Features
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
-- **Auto-Migration**: Automatic table creation and schema updates
+- **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup. Does NOT add columns or indexes to pre-existing tables.
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for high throughput
 - **Monitoring**: Built-in dashboard data queries
@@ -1744,12 +1836,12 @@ SQL Server outbox storage provider for the messaging system.
 
 ## Problem Solved
 
-Provides durable, transactional message storage using SQL Server with automatic schema management, message archival, and optimized queries for Windows environments.
+Provides durable, transactional message storage using SQL Server with schema initialization, message archival, and optimized queries for Windows environments.
 
 ## Key Features
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
-- **Auto-Migration**: Automatic table creation and schema updates
+- **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup. Does NOT add columns or indexes to pre-existing tables.
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for SQL Server
 - **Monitoring**: Built-in dashboard data queries
@@ -1861,7 +1953,7 @@ Integration-testing a messaging pipeline typically requires a running broker and
 ## Key Features
 
 - **Zero Infrastructure**: No broker, no Docker -- runs entirely in-process
-- **Awaitable Assertions**: `WaitForPublished`, `WaitForConsumed`, `WaitForFaulted` block until observed or timed out
+- **Awaitable Assertions**: `WaitForPublished`, `WaitForConsumed`, `WaitForFaulted`, `WaitForExhausted` block until observed or timed out
 - **Full Pipeline Coverage**: Decorates the real transport and consume pipeline, so middleware, serialization, and consumer logic all execute
 - **Host Integration**: `AddMessagingTestHarness()` decorates an existing DI container for use with `WebApplicationFactory`, `IHost`, or `WebApplication`
 - **Isolated Per Test**: Each `MessagingTestHarness` instance owns its own observation store
@@ -1937,13 +2029,14 @@ var harness = app.Services.GetRequiredService<MessagingTestHarness>();
 
 ## Observable Collections
 
-The harness records every message in three snapshot collections:
+The harness records every message in four snapshot collections:
 
 - `harness.Published` -- all messages sent to the transport
 - `harness.Consumed` -- all messages consumed successfully
 - `harness.Faulted` -- all messages whose consumer threw an unhandled exception
+- `harness.Exhausted` -- all messages whose retry budget was exhausted (`RetryDecision.Exhausted`). Recorded **before** the user-supplied `RetryPolicy.OnExhausted` callback runs, so a hanging or throwing callback cannot lose the observation.
 
-Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `Topic`, `Timestamp`, and (for faulted) `Exception`.
+Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `Topic`, `Timestamp`, and (for faulted/exhausted) `Exception`.
 
 ## WaitFor\* Methods
 
@@ -1958,9 +2051,10 @@ var recorded = await harness.WaitForConsumed<OrderCreated>(
     predicate: m => m.OrderId == "ORD-1",
     timeout: TimeSpan.FromSeconds(5));
 
-// Same API for published and faulted
+// Same API for published, faulted, and exhausted
 await harness.WaitForPublished<OrderCreated>(TimeSpan.FromSeconds(5));
 await harness.WaitForFaulted<BadMessage>(TimeSpan.FromSeconds(5));
+await harness.WaitForExhausted<OrderCreated>(TimeSpan.FromSeconds(5));
 ```
 
 ## TestConsumer\<T\>

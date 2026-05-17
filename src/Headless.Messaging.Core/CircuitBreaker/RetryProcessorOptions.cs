@@ -1,14 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Messaging.Configuration;
-using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.CircuitBreaker;
 
 /// <summary>
 /// Configuration options for the retry processor's adaptive polling and backpressure behavior.
 /// </summary>
+[PublicAPI]
 public sealed class RetryProcessorOptions
 {
     /// <summary>
@@ -20,12 +19,29 @@ public sealed class RetryProcessorOptions
     public bool AdaptivePolling { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets the base polling interval for the retry processor.
+    /// Default is 60 seconds.
+    /// </summary>
+    public TimeSpan BaseInterval { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
     /// Gets or sets the maximum polling interval when adaptive polling is enabled.
     /// The processor will not wait longer than this value between retry cycles, regardless of
     /// the observed failure rate. Must be greater than <see cref="TimeSpan.Zero"/>.
     /// Default is 15 minutes.
     /// </summary>
     public TimeSpan MaxPollingInterval { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// Copies all properties of this instance to <paramref name="target"/>.
+    /// </summary>
+    internal void CopyTo(RetryProcessorOptions target)
+    {
+        target.AdaptivePolling = AdaptivePolling;
+        target.BaseInterval = BaseInterval;
+        target.MaxPollingInterval = MaxPollingInterval;
+        target.CircuitOpenRateThreshold = CircuitOpenRateThreshold;
+    }
 
     /// <summary>
     /// Gets or sets the circuit-open rate above which the retry processor will back off.
@@ -46,23 +62,14 @@ public sealed class RetryProcessorOptions
 
 internal sealed class RetryProcessorOptionsValidator : AbstractValidator<RetryProcessorOptions>
 {
-    public RetryProcessorOptionsValidator(IOptions<MessagingOptions> messagingOptions)
+    public RetryProcessorOptionsValidator()
     {
-        var failedRetryInterval = TimeSpan.FromSeconds(messagingOptions.Value.FailedRetryInterval);
-
-        When(
-            x => x.AdaptivePolling,
-            () =>
-            {
-                RuleFor(x => x.MaxPollingInterval)
-                    .GreaterThan(TimeSpan.Zero)
-                    .LessThanOrEqualTo(TimeSpan.FromHours(24))
-                    .GreaterThanOrEqualTo(failedRetryInterval)
-                    .WithMessage(
-                        $"MaxPollingInterval must be greater than or equal to the failed retry interval ({failedRetryInterval})."
-                    );
-                RuleFor(x => x.CircuitOpenRateThreshold).ExclusiveBetween(0, 1);
-            }
-        );
+        RuleFor(x => x.BaseInterval).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.MaxPollingInterval)
+            .GreaterThan(TimeSpan.Zero)
+            .LessThanOrEqualTo(TimeSpan.FromHours(24))
+            .GreaterThanOrEqualTo(x => x.BaseInterval)
+            .WithMessage("MaxPollingInterval must be >= BaseInterval.");
+        RuleFor(x => x.CircuitOpenRateThreshold).ExclusiveBetween(0, 1);
     }
 }

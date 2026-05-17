@@ -9,7 +9,7 @@ using Microsoft.Extensions.FileProviders;
 
 namespace Headless.Messaging.Dashboard;
 
-public static class MessagingDashboardSetup
+public static class SetupMessagingDashboard
 {
     private const string _EmbeddedFileNamespace = "Headless.Messaging.Dashboard.wwwroot.dist";
 

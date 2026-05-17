@@ -1,13 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using FluentValidation;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Retry;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Messaging.Configuration;
 
@@ -17,18 +14,22 @@ namespace Headless.Messaging.Configuration;
 /// messaging behavior to better align with specific application requirements, such as adjusting threading models for
 /// subscriber message processing, setting message expiry times, and customizing serialization settings.
 /// </summary>
-public class MessagingOptions : IMessagingBuilder
+/// <remarks>
+/// <see cref="MessagingOptions"/> is a pure runtime configuration bag — it is registered through the
+/// standard <c>IOptions&lt;T&gt;</c> pipeline. Setup-time state (the service collection, consumer registry,
+/// circuit-breaker registry, options-extension list) lives on <see cref="MessagingSetupBuilder"/> so it
+/// cannot leak into the runtime instance. The <c>CopyTo</c> below must propagate every public mutable
+/// property; a reflection-based test guards against drift.
+/// </remarks>
+[PublicAPI]
+public sealed class MessagingOptions
 {
 #pragma warning disable IDE0032
     private string _defaultGroupName =
         "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
 #pragma warning restore IDE0032
 
-    internal IServiceCollection? Services { get; set; }
-    internal ConsumerRegistry? Registry { get; set; }
-    internal ConsumerCircuitBreakerRegistry CircuitBreakerRegistry { get; } = new();
     internal Dictionary<Type, string> TopicMappings { get; } = new();
-    internal IList<IMessagesOptionsExtension> Extensions { get; } = new List<IMessagesOptionsExtension>();
     internal MessagingConventions Conventions { get; set; } = new();
 
     /// <summary>
@@ -80,25 +81,6 @@ public class MessagingOptions : IMessagingBuilder
     public int FailedMessageExpiredAfter { get; set; } = 15 * 24 * 3600;
 
     /// <summary>
-    /// Gets or sets the polling interval (in seconds) for the retry processor to check and retry failed messages.
-    /// Default is 60 seconds.
-    /// </summary>
-    public int FailedRetryInterval { get; set; } = 60;
-
-    /// <summary>
-    /// Gets or sets an optional callback function invoked when a message has been retried the maximum number of times
-    /// specified by <see cref="FailedRetryCount"/> without success. This callback receives detailed information about the failed message.
-    /// </summary>
-    public Action<FailedInfo>? FailedThresholdCallback { get; set; }
-
-    /// <summary>
-    /// Gets or sets the maximum number of retry attempts for failed messages (both published and subscribed).
-    /// Once this threshold is reached, the message is marked as permanently failed and no longer retried.
-    /// Default is 50 times.
-    /// </summary>
-    public int FailedRetryCount { get; set; } = 50;
-
-    /// <summary>
     /// Gets or sets the number of concurrent consumer threads for message consumption from the transport.
     /// Higher values increase parallelism but consume more resources; lower values reduce resource usage but may lower throughput.
     /// Default is 1.
@@ -146,13 +128,6 @@ public class MessagingOptions : IMessagingBuilder
     public int? PublishBatchSize { get; set; }
 
     /// <summary>
-    /// Gets or sets the lookback time window (in seconds) for the retry processor to pick up scheduled or failed status messages.
-    /// This ensures that messages with clocks slightly out of sync are still processed correctly.
-    /// Default is 240 seconds (4 minutes).
-    /// </summary>
-    public int FallbackWindowLookbackSeconds { get; set; } = 240;
-
-    /// <summary>
     /// Gets or sets the interval (in seconds) at which the cleanup processor removes expired messages from the message storage.
     /// The processor runs periodically to clean up messages that have exceeded their expiration times.
     /// Default is 300 seconds (5 minutes).
@@ -181,13 +156,6 @@ public class MessagingOptions : IMessagingBuilder
     public bool UseStorageLock { get; set; }
 
     /// <summary>
-    /// Gets or sets the retry backoff strategy used to calculate retry delays and determine retry eligibility.
-    /// When null, defaults to <see cref="ExponentialBackoffStrategy"/> with 1s initial delay, 5min max delay, and 2x multiplier.
-    /// For fixed interval retries, use <see cref="FixedIntervalBackoffStrategy"/>.
-    /// </summary>
-    public IRetryBackoffStrategy RetryBackoffStrategy { get; set; } = new ExponentialBackoffStrategy();
-
-    /// <summary>
     /// Gets or sets a value indicating whether publish calls require a resolved tenant identifier.
     /// When <see langword="true"/>, the publish wrapper rejects calls where neither
     /// <see cref="PublishOptions.TenantId"/> nor the ambient <c>ICurrentTenant.Id</c> resolves a
@@ -203,11 +171,41 @@ public class MessagingOptions : IMessagingBuilder
     public bool TenantContextRequired { get; set; }
 
     /// <summary>
+    /// Gets or sets the maximum time the framework waits for a transport publish before treating it as a failed attempt.
+    /// Default is 10 seconds.
+    /// </summary>
+    /// <remarks>
+    /// The timeout is linked with host shutdown. Some broker clients do not fully honor cancellation
+    /// while publishing; this timeout is the framework-level bound for cooperative transports.
+    /// </remarks>
+    public TimeSpan TransportPublishTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Gets or sets the ADO.NET command timeout applied by SQL-backed messaging storage providers.
+    /// Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// Terminal state writes intentionally use <see cref="CancellationToken.None"/> after cancellation
+    /// classification so shutdown cannot orphan a final state transition. This timeout is the wall-clock
+    /// safety net for those commands.
+    /// </remarks>
+    public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
     /// Individual consumers may override specific properties via
     /// <see cref="IConsumerBuilder{TConsumer}.WithCircuitBreaker"/>.
     /// </summary>
     public CircuitBreakerOptions CircuitBreaker { get; } = new();
+
+#pragma warning disable IDE0032, IDE0044 // Tests use the named backing field to validate null-policy handling.
+    private RetryPolicyOptions _retryPolicy = new();
+#pragma warning restore IDE0032, IDE0044
+
+    /// <summary>
+    /// Gets retry policy configuration for inline and persisted retries.
+    /// </summary>
+    public RetryPolicyOptions RetryPolicy => _retryPolicy;
 
     /// <summary>
     /// Gets the retry processor configuration that controls adaptive polling and backpressure behavior
@@ -216,134 +214,94 @@ public class MessagingOptions : IMessagingBuilder
     public RetryProcessorOptions RetryProcessor { get; } = new();
 
     /// <summary>
-    /// Registers a messaging options extension that will be executed when configuring messaging services.
-    /// Extensions allow third-party libraries to customize messaging behavior without modifying core configuration.
+    /// Copies all public and internal-settable runtime properties of this instance to <paramref name="target"/>.
+    /// Also copies nested options via their own <c>CopyTo</c> methods and replicates collection state.
     /// </summary>
-    /// <param name="extension">The extension instance to register.</param>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="extension"/> is null.</exception>
-    public void RegisterExtension(IMessagesOptionsExtension extension)
+    /// <remarks>
+    /// MAINTENANCE NOTE: any new public mutable property added to <see cref="MessagingOptions"/> must be
+    /// added here. The reflection-based drift test in <c>MessagingOptionsCopyToTests</c> will fail otherwise.
+    /// </remarks>
+    internal void CopyTo(MessagingOptions target)
     {
-        Argument.IsNotNull(extension);
+        target.DefaultGroupName = DefaultGroupName;
+        target.IsDefaultGroupNameConfigured = IsDefaultGroupNameConfigured;
+        target.GroupNamePrefix = GroupNamePrefix;
+        target.TopicNamePrefix = TopicNamePrefix;
+        target.Version = Version;
+        target.Conventions = Conventions;
+        target.SucceedMessageExpiredAfter = SucceedMessageExpiredAfter;
+        target.FailedMessageExpiredAfter = FailedMessageExpiredAfter;
+        target.ConsumerThreadCount = ConsumerThreadCount;
+        target.EnableSubscriberParallelExecute = EnableSubscriberParallelExecute;
+        target.SubscriberParallelExecuteThreadCount = SubscriberParallelExecuteThreadCount;
+        target.SubscriberParallelExecuteBufferFactor = SubscriberParallelExecuteBufferFactor;
+        target.EnablePublishParallelSend = EnablePublishParallelSend;
+        target.PublishBatchSize = PublishBatchSize;
+        target.CollectorCleaningInterval = CollectorCleaningInterval;
+        target.SchedulerBatchSize = SchedulerBatchSize;
+        target.UseStorageLock = UseStorageLock;
+        target.TenantContextRequired = TenantContextRequired;
+        target.TransportPublishTimeout = TransportPublishTimeout;
+        target.CommandTimeout = CommandTimeout;
+        _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
+        RetryPolicy.CopyTo(target.RetryPolicy);
+        CircuitBreaker.CopyTo(target.CircuitBreaker);
+        RetryProcessor.CopyTo(target.RetryProcessor);
 
-        Extensions.Add(extension);
-    }
-
-    /// <inheritdoc />
-    public IMessagingBuilder SubscribeFromAssembly(Assembly assembly)
-    {
-        Argument.IsNotNull(assembly);
-        Argument.IsNotNull(Services, "Services must be initialized before calling SubscribeFromAssembly");
-        Argument.IsNotNull(Registry, "Registry must be initialized before calling SubscribeFromAssembly");
-
-        // Single pass: filter types and cache their IConsume<T> interfaces
-        var consumerTypesWithInterfaces = assembly
-            .GetTypes()
-            .Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
-            .Select(t =>
-            {
-                var interfaces = t.GetInterfaces();
-                var consumeInterfaces = interfaces
-                    .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
-                    .ToList();
-
-                return new { Type = t, ConsumeInterfaces = consumeInterfaces };
-            })
-            .Where(x => x.ConsumeInterfaces.Count > 0)
-            .ToList();
-
-        foreach (var consumer in consumerTypesWithInterfaces)
+        foreach (var mapping in TopicMappings)
         {
-            foreach (var consumeInterface in consumer.ConsumeInterfaces)
-            {
-                var messageType = consumeInterface.GetGenericArguments()[0];
-
-                // Register consumer with default configuration
-                RegisterConsumer(consumer.Type, messageType, topic: null, group: null, concurrency: 1);
-            }
+            target.TopicMappings[mapping.Key] = mapping.Value;
         }
-
-        return this;
-    }
-
-    /// <inheritdoc />
-    public IMessagingBuilder SubscribeFromAssemblyContaining<TMarker>()
-    {
-        return SubscribeFromAssembly(typeof(TMarker).Assembly);
-    }
-
-    /// <inheritdoc />
-    public IConsumerBuilder<TConsumer> Subscribe<TConsumer>()
-        where TConsumer : class
-    {
-        Argument.IsNotNull(Registry, "Registry must be initialized before calling Subscribe");
-
-        var messageType = _ResolveExplicitMessageType(typeof(TConsumer));
-
-        var metadata = RegisterConsumer(typeof(TConsumer), messageType, topic: null, group: null, concurrency: 1);
-
-        return new ConsumerBuilder<TConsumer>(this, Registry, CircuitBreakerRegistry, metadata, autoRegistered: true);
-    }
-
-    /// <inheritdoc />
-    public IConsumerBuilder<TConsumer> Subscribe<TConsumer>(string topic)
-        where TConsumer : class
-    {
-        Argument.IsNotNullOrWhiteSpace(topic);
-        Argument.IsNotNull(Registry, "Registry must be initialized before calling Subscribe");
-
-        var messageType = _ResolveExplicitMessageType(typeof(TConsumer));
-
-        // Automatically create topic mapping
-        _WithTopicMapping(messageType, topic);
-
-        // Immediately register with default settings (concurrency=1, group=null)
-        var metadata = RegisterConsumer(typeof(TConsumer), messageType, topic, group: null, concurrency: 1);
-
-        // Return builder that can update the registration if further configuration is needed
-        return new ConsumerBuilder<TConsumer>(
-            this,
-            Registry,
-            CircuitBreakerRegistry,
-            metadata,
-            topic,
-            autoRegistered: true
-        );
-    }
-
-    /// <inheritdoc />
-    public IMessagingBuilder Subscribe<TConsumer>(Action<IConsumerBuilder<TConsumer>> configure)
-        where TConsumer : class
-    {
-        Argument.IsNotNull(configure);
-
-        configure(Subscribe<TConsumer>());
-        return this;
-    }
-
-    /// <inheritdoc />
-    public IMessagingBuilder WithTopicMapping<TMessage>(string topic)
-        where TMessage : class
-    {
-        Argument.IsNotNullOrWhiteSpace(topic);
-
-        _WithTopicMapping(typeof(TMessage), topic);
-        return this;
-    }
-
-    /// <inheritdoc />
-    public IMessagingBuilder UseConventions(Action<MessagingConventions> configure)
-    {
-        Argument.IsNotNull(configure);
-
-        configure(Conventions);
-        Version = Conventions.Version;
-        return this;
     }
 
     /// <summary>
-    /// Registers a topic mapping for a message type (non-generic version for internal use).
+    /// Copies the mutable fields of <paramref name="source"/> onto <paramref name="target"/>.
+    /// Required because <see cref="JsonSerializerOptions"/> is a get-only property — we can't
+    /// swap the reference, so we copy the user-configured fields onto the DI-resolved instance.
     /// </summary>
-    internal void _WithTopicMapping(Type messageType, string topic)
+    private static void _CopyJsonSerializerOptions(JsonSerializerOptions source, JsonSerializerOptions target)
+    {
+        target.AllowOutOfOrderMetadataProperties = source.AllowOutOfOrderMetadataProperties;
+        target.AllowTrailingCommas = source.AllowTrailingCommas;
+        target.DefaultBufferSize = source.DefaultBufferSize;
+        target.DefaultIgnoreCondition = source.DefaultIgnoreCondition;
+        target.DictionaryKeyPolicy = source.DictionaryKeyPolicy;
+        target.Encoder = source.Encoder;
+        target.IgnoreReadOnlyFields = source.IgnoreReadOnlyFields;
+        target.IgnoreReadOnlyProperties = source.IgnoreReadOnlyProperties;
+        target.IncludeFields = source.IncludeFields;
+        target.MaxDepth = source.MaxDepth;
+        target.NumberHandling = source.NumberHandling;
+        target.PreferredObjectCreationHandling = source.PreferredObjectCreationHandling;
+        target.PropertyNameCaseInsensitive = source.PropertyNameCaseInsensitive;
+        target.PropertyNamingPolicy = source.PropertyNamingPolicy;
+        target.ReadCommentHandling = source.ReadCommentHandling;
+        target.ReferenceHandler = source.ReferenceHandler;
+        target.RespectNullableAnnotations = source.RespectNullableAnnotations;
+        target.RespectRequiredConstructorParameters = source.RespectRequiredConstructorParameters;
+        target.TypeInfoResolver = source.TypeInfoResolver;
+        target.UnknownTypeHandling = source.UnknownTypeHandling;
+        target.UnmappedMemberHandling = source.UnmappedMemberHandling;
+        target.WriteIndented = source.WriteIndented;
+
+        foreach (var converter in source.Converters)
+        {
+            target.Converters.Add(converter);
+        }
+
+        foreach (var modifier in source.TypeInfoResolverChain)
+        {
+            if (!ReferenceEquals(modifier, source.TypeInfoResolver))
+            {
+                target.TypeInfoResolverChain.Add(modifier);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Registers a topic mapping for a message type. Used by <see cref="MessagingSetupBuilder"/>.
+    /// </summary>
+    internal void WithTopicMapping(Type messageType, string topic)
     {
         Argument.IsNotNullOrWhiteSpace(topic);
         _ValidateTopicName(topic);
@@ -370,24 +328,6 @@ public class MessagingOptions : IMessagingBuilder
         Argument.IsNotNullOrWhiteSpace(group);
 
         return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : string.Concat(GroupNamePrefix, ".", group);
-    }
-
-    private static Type _ResolveExplicitMessageType(Type consumerType)
-    {
-        var consumeInterfaces = consumerType
-            .GetInterfaces()
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
-            .ToList();
-
-        return consumeInterfaces.Count switch
-        {
-            0 => throw new InvalidOperationException($"{consumerType.Name} does not implement IConsume<T>"),
-            > 1 => throw new InvalidOperationException(
-                $"{consumerType.Name} implements multiple IConsume<T> interfaces. "
-                    + "Use SubscribeFromAssembly(...) for multi-message consumers."
-            ),
-            _ => consumeInterfaces[0].GetGenericArguments()[0],
-        };
     }
 
     /// <summary>
@@ -465,32 +405,25 @@ public class MessagingOptions : IMessagingBuilder
 
         return ApplyGroupNamePrefix(resolvedGroup);
     }
+}
 
-    /// <summary>
-    /// Registers a consumer with the specified metadata.
-    /// </summary>
-    internal ConsumerMetadata RegisterConsumer(
-        Type consumerType,
-        Type messageType,
-        string? topic,
-        string? group,
-        byte concurrency
-    )
+internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOptions>
+{
+    public MessagingOptionsValidator()
     {
-        Argument.IsNotNull(Services, "Services must be initialized before calling _RegisterConsumer");
-        Argument.IsNotNull(Registry, "Registry must be initialized before calling _RegisterConsumer");
-
-        var metadata = CreateConsumerMetadata(consumerType, messageType, topic, group, concurrency);
-
-        Registry.Register(metadata);
-
-        Services.TryAdd(new ServiceDescriptor(consumerType, consumerType, ServiceLifetime.Scoped));
-
-        var serviceType = typeof(IConsume<>).MakeGenericType(messageType);
-        Services.TryAdd(
-            new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
-        );
-
-        return metadata;
+        RuleFor(x => x.RetryPolicy)
+            .NotNull()
+            .WithMessage("RetryPolicy must not be null.")
+            .SetValidator(new RetryPolicyOptionsValidator());
+        RuleFor(x => x.TransportPublishTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("TransportPublishTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("TransportPublishTimeout must not exceed 5 minutes.");
+        RuleFor(x => x.CommandTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("CommandTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("CommandTimeout must not exceed 5 minutes.");
     }
 }

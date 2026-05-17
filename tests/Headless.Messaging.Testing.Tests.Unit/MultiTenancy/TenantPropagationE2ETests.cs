@@ -57,7 +57,11 @@ public sealed class FlakyTenantConsumer(ICurrentTenant currentTenant, TenantCapt
         capture.Record(context.Message.OrderId, context.TenantId, currentTenant.Id);
         if (attempt == 1)
         {
-            throw new InvalidOperationException("first attempt fails");
+            // Use a transient exception so the default RetryExceptionClassifier does NOT short-circuit
+            // to Stop. The classifier unwraps SubscriberExecutionFailedException and treats
+            // InvalidOperationException as permanent — TimeoutException keeps the failure retryable
+            // so inline retries actually run.
+            throw new TimeoutException("first attempt fails");
         }
 
         return ValueTask.CompletedTask;
@@ -92,7 +96,7 @@ public sealed class TenantPropagationE2ETests : TestBase
 {
     private static Task<MessagingTestHarness> _CreateHarnessAsync(
         TenantCapture capture,
-        Action<MessagingOptions> configureMessaging
+        Action<MessagingSetupBuilder> configureMessaging
     )
     {
         return MessagingTestHarness.CreateAsync(services =>
@@ -105,11 +109,11 @@ public sealed class TenantPropagationE2ETests : TestBase
             services.AddTransient<TenantCapturingConsumer>();
             services.AddSingleton<FlakyTenantConsumer>();
 
-            services.AddHeadlessMessaging(options =>
+            services.AddHeadlessMessaging(setup =>
             {
-                options.UseInMemoryMessageQueue();
-                options.UseInMemoryStorage();
-                configureMessaging(options);
+                setup.UseInMemoryMessageQueue();
+                setup.UseInMemoryStorage();
+                configureMessaging(setup);
             });
             services.AddTenantPropagationServices();
         });
@@ -253,11 +257,11 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            options =>
+            setup =>
             {
-                options.Subscribe<TenantCapturingConsumer>("tenant-orders");
+                setup.Subscribe<TenantCapturingConsumer>("tenant-orders");
                 // Allow parallel subscriber execution to actually exercise concurrent dispatch
-                options.EnableSubscriberParallelExecute = true;
+                setup.Options.EnableSubscriberParallelExecute = true;
             }
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();

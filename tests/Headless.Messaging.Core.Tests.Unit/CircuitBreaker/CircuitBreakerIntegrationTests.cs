@@ -78,11 +78,11 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     {
         provider ??= new ServiceCollection().AddSingleton(Substitute.For<IDataStorage>()).BuildServiceProvider();
 
-        return new ProcessingContext(provider, CancellationToken.None);
+        return new ProcessingContext(provider, TimeProvider.System, CancellationToken.None);
     }
 
     /// <summary>
-    /// Minimum allowed <c>FailedRetryInterval</c> for tests that call <c>ProcessAsync</c>.
+    /// Base retry processor interval for tests that call <c>ProcessAsync</c>.
     /// <c>ProcessAsync</c> blocks on <c>context.WaitAsync(interval)</c> at the end, so keeping
     /// this at 1 second avoids long test runs while staying above the minimum validation value.
     /// </summary>
@@ -91,11 +91,11 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     private static void _SetupReceivedMessages(IDataStorage dataStorage, params MediumMessage[] messages)
     {
         dataStorage
-            .GetReceivedMessagesOfNeedRetry(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>(messages));
 
         dataStorage
-            .GetPublishedMessagesOfNeedRetry(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
     }
 
@@ -243,8 +243,10 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var retryProcessor = new MessageNeedToRetryProcessor(
-            Options.Create(new MessagingOptions { FailedRetryInterval = _TestRetryIntervalSeconds }),
-            Options.Create(new RetryProcessorOptions()),
+            Options.Create(new MessagingOptions()),
+            Options.Create(
+                new RetryProcessorOptions { BaseInterval = TimeSpan.FromSeconds(_TestRetryIntervalSeconds) }
+            ),
             logger,
             dispatcher,
             dataStorage,
@@ -298,8 +300,10 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var retryProcessor = new MessageNeedToRetryProcessor(
-            Options.Create(new MessagingOptions { FailedRetryInterval = _TestRetryIntervalSeconds }),
-            Options.Create(new RetryProcessorOptions()),
+            Options.Create(new MessagingOptions()),
+            Options.Create(
+                new RetryProcessorOptions { BaseInterval = TimeSpan.FromSeconds(_TestRetryIntervalSeconds) }
+            ),
             logger,
             dispatcher,
             dataStorage,

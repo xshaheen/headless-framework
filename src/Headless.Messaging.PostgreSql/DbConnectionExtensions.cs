@@ -5,7 +5,7 @@ using System.Data.Common;
 
 namespace Headless.Messaging.PostgreSql;
 
-#pragma warning disable CA2100 // This is wrapper
+#pragma warning disable CA2100, CA1068 // Wrapper keeps SQL params last, so timeout sits after cancellation.
 
 /// <summary>
 /// Internal extension methods for <see cref="DbConnection"/> to simplify ADO.NET operations.
@@ -20,10 +20,13 @@ internal static class DbConnectionExtensions
         public async Task<int> ExecuteNonQueryAsync(
             string sql,
             DbTransaction? transaction = null,
-            CancellationToken cancellationToken = default,
-            params object?[] sqlParams
+            TimeSpan? commandTimeout = null,
+            object?[]? sqlParams = null,
+            CancellationToken cancellationToken = default
         )
         {
+            sqlParams ??= [];
+
             if (connection.State == ConnectionState.Closed)
             {
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -32,6 +35,10 @@ internal static class DbConnectionExtensions
             await using var command = connection.CreateCommand();
             command.CommandType = CommandType.Text;
             command.CommandText = sql;
+            if (commandTimeout.HasValue)
+            {
+                command.CommandTimeout = (int)commandTimeout.Value.TotalSeconds;
+            }
             command.Parameters.AddRange(sqlParams);
 
             if (transaction is not null)
@@ -49,10 +56,13 @@ internal static class DbConnectionExtensions
             string sql,
             Func<DbDataReader, CancellationToken, Task<T>>? readerFunc,
             DbTransaction? transaction = null,
-            CancellationToken cancellationToken = default,
-            params object?[] sqlParams
+            TimeSpan? commandTimeout = null,
+            object?[]? sqlParams = null,
+            CancellationToken cancellationToken = default
         )
         {
+            sqlParams ??= [];
+
             if (connection.State == ConnectionState.Closed)
             {
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -61,6 +71,10 @@ internal static class DbConnectionExtensions
             await using var command = connection.CreateCommand();
             command.CommandType = CommandType.Text;
             command.CommandText = sql;
+            if (commandTimeout.HasValue)
+            {
+                command.CommandTimeout = (int)commandTimeout.Value.TotalSeconds;
+            }
             command.Parameters.AddRange(sqlParams);
 
             if (transaction != null)
@@ -85,10 +99,13 @@ internal static class DbConnectionExtensions
         /// </summary>
         public async Task<long> ExecuteScalarAsync(
             string sql,
-            CancellationToken cancellationToken = default,
-            params object?[] sqlParams
+            TimeSpan? commandTimeout = null,
+            object?[]? sqlParams = null,
+            CancellationToken cancellationToken = default
         )
         {
+            sqlParams ??= [];
+
             if (connection.State == ConnectionState.Closed)
             {
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -97,6 +114,10 @@ internal static class DbConnectionExtensions
             await using var command = connection.CreateCommand();
             command.CommandType = CommandType.Text;
             command.CommandText = sql;
+            if (commandTimeout.HasValue)
+            {
+                command.CommandTimeout = (int)commandTimeout.Value.TotalSeconds;
+            }
             command.Parameters.AddRange(sqlParams);
 
             var objValue = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);

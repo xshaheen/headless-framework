@@ -8,25 +8,25 @@ using Headless.Messaging.Transport;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-public static class MessagesRabbitMqSetup
+public static class SetupRabbitMqMessaging
 {
-    extension(MessagingOptions options)
+    extension(MessagingSetupBuilder setup)
     {
-        public MessagingOptions UseRabbitMq(string hostName)
+        public MessagingSetupBuilder UseRabbitMq(string hostName)
         {
-            return options.UseRabbitMq(opt =>
+            return setup.UseRabbitMq(opt =>
             {
                 opt.HostName = hostName;
             });
         }
 
-        public MessagingOptions UseRabbitMq(Action<RabbitMqOptions> configure)
+        public MessagingSetupBuilder UseRabbitMq(Action<RabbitMqOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            options.RegisterExtension(new RabbitMqMessagesOptionsExtension(configure));
+            setup.RegisterExtension(new RabbitMqMessagesOptionsExtension(configure));
 
-            return options;
+            return setup;
         }
     }
 

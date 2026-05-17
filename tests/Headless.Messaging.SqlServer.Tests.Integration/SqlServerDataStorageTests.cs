@@ -300,7 +300,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         var stored = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
 
         // when
-        await _storage.ChangePublishStateAsync(stored, StatusName.Succeeded, null, AbortToken);
+        await _storage.ChangePublishStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // then - verify via monitoring API
         var monitoringApi = _storage.GetMonitoringApi();
@@ -320,7 +320,12 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         // when
         stored.Retries = 3;
         stored.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
-        await _storage.ChangePublishStateAsync(stored, StatusName.Failed, null, AbortToken);
+        await _storage.ChangePublishStateAsync(
+            stored,
+            StatusName.Failed,
+            nextRetryAt: _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
 
         // then
         var monitoringApi = _storage.GetMonitoringApi();
@@ -339,7 +344,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
         // when
         stored.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
-        await _storage.ChangeReceiveStateAsync(stored, StatusName.Succeeded, AbortToken);
+        await _storage.ChangeReceiveStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // then
         var monitoringApi = _storage.GetMonitoringApi();
@@ -389,13 +394,18 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         // Store message and change to Failed state
         var stored = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
         stored.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
-        await _storage.ChangePublishStateAsync(stored, StatusName.Failed, null, AbortToken);
+        await _storage.ChangePublishStateAsync(
+            stored,
+            StatusName.Failed,
+            nextRetryAt: _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
 
         // Advance time so the message is old enough for retry
         _timeProvider.Advance(TimeSpan.FromMinutes(5));
 
         // when
-        var retryMessages = await _storage.GetPublishedMessagesOfNeedRetry(TimeSpan.FromMinutes(4), AbortToken);
+        var retryMessages = await _storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
 
         // then
         retryMessages.Should().NotBeNull();
@@ -412,12 +422,17 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
         var stored = await _storage.StoreReceivedMessageAsync("test.name", "test.group", message, AbortToken);
         stored.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddHours(1);
-        await _storage.ChangeReceiveStateAsync(stored, StatusName.Failed, AbortToken);
+        await _storage.ChangeReceiveStateAsync(
+            stored,
+            StatusName.Failed,
+            nextRetryAt: _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(-1),
+            cancellationToken: AbortToken
+        );
 
         _timeProvider.Advance(TimeSpan.FromMinutes(5));
 
         // when
-        var retryMessages = await _storage.GetReceivedMessagesOfNeedRetry(TimeSpan.FromMinutes(4), AbortToken);
+        var retryMessages = await _storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
 
         // then
         retryMessages.Should().NotBeNull();
@@ -438,7 +453,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
         var stored = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
         stored.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(-10); // Already expired
-        await _storage.ChangePublishStateAsync(stored, StatusName.Succeeded, null, AbortToken);
+        await _storage.ChangePublishStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // when
         var deleted = await _storage.DeleteExpiresAsync(

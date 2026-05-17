@@ -30,14 +30,14 @@ namespace Tests;
 /// <code>
 /// public class RabbitMqIntegrationTests : MessagingIntegrationTestsBase
 /// {
-///     protected override void ConfigureTransport(MessagingOptions options)
+///     protected override void ConfigureTransport(MessagingSetupBuilder setup)
 ///     {
-///         options.UseRabbitMQ(r => r.HostName = "localhost");
+///         setup.UseRabbitMQ(r => r.HostName = "localhost");
 ///     }
 ///
-///     protected override void ConfigureStorage(MessagingOptions options)
+///     protected override void ConfigureStorage(MessagingSetupBuilder setup)
 ///     {
-///         options.UsePostgreSql("connection-string");
+///         setup.UsePostgreSql("connection-string");
 ///     }
 /// }
 /// </code>
@@ -79,20 +79,20 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         ServiceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
 
     /// <summary>Configures the transport (e.g., RabbitMQ, Kafka, InMemory) for the messaging system.</summary>
-    /// <param name="options">The messaging options to configure.</param>
-    protected abstract void ConfigureTransport(MessagingOptions options);
+    /// <param name="setup">The messaging setup builder to configure.</param>
+    protected abstract void ConfigureTransport(MessagingSetupBuilder setup);
 
     /// <summary>Configures the storage (e.g., PostgreSQL, SqlServer, InMemory) for the messaging system.</summary>
-    /// <param name="options">The messaging options to configure.</param>
-    protected abstract void ConfigureStorage(MessagingOptions options);
+    /// <param name="setup">The messaging setup builder to configure.</param>
+    protected abstract void ConfigureStorage(MessagingSetupBuilder setup);
 
     /// <summary>Optional hook for additional service configuration.</summary>
     /// <param name="services">The service collection to configure.</param>
     protected virtual void ConfigureServices(IServiceCollection services) { }
 
     /// <summary>Optional hook for additional messaging options configuration.</summary>
-    /// <param name="options">The messaging options to configure.</param>
-    protected virtual void ConfigureMessaging(MessagingOptions options) { }
+    /// <param name="setup">The messaging setup builder to configure.</param>
+    protected virtual void ConfigureMessaging(MessagingSetupBuilder setup) { }
 
     /// <inheritdoc />
     public override async ValueTask InitializeAsync()
@@ -109,17 +109,17 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         });
 
         // Add messaging with abstract configuration
-        services.AddHeadlessMessaging(options =>
+        services.AddHeadlessMessaging(setup =>
         {
-            ConfigureTransport(options);
-            ConfigureStorage(options);
-            ConfigureMessaging(options);
+            ConfigureTransport(setup);
+            ConfigureStorage(setup);
+            ConfigureMessaging(setup);
 
             // Register test consumer
-            options.Subscribe<TestSubscriber>("test-message").Group("test-group").Concurrency(1);
+            setup.Subscribe<TestSubscriber>("test-message").Group("test-group").Concurrency(1);
 
             // Register failing consumer for exception tests
-            options.Subscribe<FailingTestSubscriber>("failing-message").Group("test-group").Concurrency(1);
+            setup.Subscribe<FailingTestSubscriber>("failing-message").Group("test-group").Concurrency(1);
         });
 
         // Register test helpers as singletons (same instance used throughout tests)
@@ -440,7 +440,7 @@ public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
 {
     private readonly Lock _lock = new();
     private int _failedAttempts;
-    private TaskCompletionSource<bool> _attemptTcs = new();
+    private TaskCompletionSource<bool> _attemptTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>Gets the number of failed processing attempts.</summary>
     /// <remarks>
@@ -455,10 +455,13 @@ public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
         {
             _failedAttempts++;
             _attemptTcs.TrySetResult(true);
-            _attemptTcs = new TaskCompletionSource<bool>();
+            _attemptTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
-        throw new InvalidOperationException($"Simulated failure for message {context.MessageId}");
+        // TimeoutException is treated as a transient failure by RetryExceptionClassifier so
+        // retry tests can observe more than one attempt. Permanent classifications
+        // (InvalidOperationException, ArgumentException, ...) would short-circuit retries.
+        throw new TimeoutException($"Simulated failure for message {context.MessageId}");
     }
 
     /// <summary>Resets the failed attempt counter and signal atomically.</summary>
@@ -467,7 +470,7 @@ public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
         lock (_lock)
         {
             _failedAttempts = 0;
-            _attemptTcs = new TaskCompletionSource<bool>();
+            _attemptTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
     }
 

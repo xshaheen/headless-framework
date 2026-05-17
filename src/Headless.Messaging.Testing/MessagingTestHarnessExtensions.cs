@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Messaging.Testing;
 
 /// <summary>Extension methods for <see cref="MessagingTestHarness"/>.</summary>
+[PublicAPI]
 public static class MessagingTestHarnessExtensions
 {
     /// <summary>
@@ -18,7 +19,7 @@ public static class MessagingTestHarnessExtensions
     /// <see cref="MessagingTestHarness.CreateAsync"/> — for example:
     /// <code>
     /// services.AddSingleton&lt;TestConsumer&lt;MyMessage&gt;&gt;();
-    /// options.Subscribe&lt;TestConsumer&lt;MyMessage&gt;&gt;("my-topic");
+    /// setup.Subscribe&lt;TestConsumer&lt;MyMessage&gt;&gt;("my-topic");
     /// </code>
     /// </remarks>
     public static TestConsumer<TMessage> GetTestConsumer<TMessage>(this MessagingTestHarness harness)

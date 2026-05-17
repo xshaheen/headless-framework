@@ -18,15 +18,14 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
 
     // Use Azure SQL Edge for ARM64 (e.g., Apple Silicon), SQL Server 2022 for x86_64
     private static readonly string _Image =
-        RuntimeInformation.ProcessArchitecture == Architecture.Arm64
-            ? "mcr.microsoft.com/azure-sql-edge:latest"
-            : "mcr.microsoft.com/mssql/server:2022-latest";
+        RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? TestImages.AzureSqlEdge : TestImages.MsSqlServer;
 
     private readonly IContainer _container = new ContainerBuilder(_Image)
         .WithPortBinding(1433, true)
         .WithEnvironment("ACCEPT_EULA", "Y")
         .WithEnvironment("MSSQL_SA_PASSWORD", _Password)
         .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("SQL Server is now ready"))
+        .WithReuse(true)
         .Build();
 
     /// <summary>Gets the SQL Server connection string.</summary>
@@ -49,7 +48,6 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         await _container.StartAsync();
-        await _WaitForSqlServerAsync();
     }
 
     public async ValueTask DisposeAsync()
@@ -57,27 +55,5 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
         await _container.StopAsync();
         await _container.DisposeAsync();
         GC.SuppressFinalize(this);
-    }
-
-    private async Task _WaitForSqlServerAsync()
-    {
-        var connectionString = ConnectionString;
-        for (var i = 0; i < 30; i++)
-        {
-            try
-            {
-                await using var connection = new SqlConnection(connectionString);
-                await connection.OpenAsync();
-                return;
-            }
-#pragma warning disable ERP022
-            catch
-            {
-                await Task.Delay(1000);
-            }
-#pragma warning restore ERP022
-        }
-
-        throw new TimeoutException("SQL Server did not become ready in time.");
     }
 }

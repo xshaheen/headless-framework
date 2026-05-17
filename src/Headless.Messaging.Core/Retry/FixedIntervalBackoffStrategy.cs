@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Exceptions;
-
 namespace Headless.Messaging.Retry;
 
 /// <summary>
 /// Implements a fixed interval backoff strategy for message retry delays.
 /// </summary>
+[PublicAPI]
 public sealed class FixedIntervalBackoffStrategy : IRetryBackoffStrategy
 {
     private readonly TimeSpan _interval;
@@ -21,28 +20,13 @@ public sealed class FixedIntervalBackoffStrategy : IRetryBackoffStrategy
     }
 
     /// <inheritdoc />
-    public TimeSpan? GetNextDelay(int retryAttempt, Exception? exception = null)
+    public RetryDecision Compute(int persistedRetryCount, int inlineRetryCount, Exception exception)
     {
-        if (exception != null && !ShouldRetry(exception))
+        if (RetryExceptionClassifier.IsPermanent(exception))
         {
-            return null;
+            return RetryDecision.Stop;
         }
 
-        return _interval;
-    }
-
-    /// <inheritdoc />
-    public bool ShouldRetry(Exception exception)
-    {
-        // Permanent failures - don't retry
-        return exception switch
-        {
-            SubscriberNotFoundException => false,
-            ArgumentNullException => false,
-            ArgumentException => false,
-            InvalidOperationException => false,
-            NotSupportedException => false,
-            _ => true, // All other exceptions are considered transient
-        };
+        return RetryDecision.Continue(_interval);
     }
 }

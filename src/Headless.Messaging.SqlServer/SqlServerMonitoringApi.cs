@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
@@ -11,14 +13,20 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.SqlServer;
 
-internal sealed class SqlServerMonitoringApi(
+/// <summary>
+/// SQL Server implementation of <see cref="IMonitoringApi"/> for querying message statistics and history.
+/// </summary>
+[PublicAPI]
+public sealed class SqlServerMonitoringApi(
     IOptions<SqlServerOptions> options,
+    IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
     ISerializer serializer,
     TimeProvider timeProvider
 ) : IMonitoringApi
 {
-    private readonly SqlServerOptions _options = options.Value ?? throw new ArgumentNullException(nameof(options));
+    private readonly SqlServerOptions _options = Argument.IsNotNull(options.Value);
+    private readonly MessagingOptions _messagingOptions = messagingOptions.Value;
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
 
@@ -30,7 +38,9 @@ internal sealed class SqlServerMonitoringApi(
                 (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE StatusName = N'Succeeded') AS ReceivedSucceeded,
                 (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Failed') AS PublishedFailed,
                 (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE StatusName = N'Failed') AS ReceivedFailed,
-                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Delayed') AS PublishedDelayed;
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE StatusName = N'Delayed') AS PublishedDelayed,
+                (SELECT COUNT_BIG(Id) FROM {_publishedTable} WHERE NextRetryAt IS NOT NULL) AS PublishedPendingRetry,
+                (SELECT COUNT_BIG(Id) FROM {_receivedTable} WHERE NextRetryAt IS NOT NULL) AS ReceivedPendingRetry;
             """;
 
         await using var connection = new SqlConnection(_options.ConnectionString);
@@ -49,10 +59,13 @@ internal sealed class SqlServerMonitoringApi(
                         statisticsDto.PublishedFailed = reader.GetInt64(2);
                         statisticsDto.ReceivedFailed = reader.GetInt64(3);
                         statisticsDto.PublishedDelayed = reader.GetInt64(4);
+                        statisticsDto.PublishedPendingRetry = reader.GetInt64(5);
+                        statisticsDto.ReceivedPendingRetry = reader.GetInt64(6);
                     }
 
                     return statisticsDto;
                 },
+                commandTimeout: _messagingOptions.CommandTimeout,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -88,8 +101,8 @@ internal sealed class SqlServerMonitoringApi(
         var tableName = query.MessageType == MessageType.Publish ? _publishedTable : _receivedTable;
         var selectColumns =
             query.MessageType == MessageType.Publish
-                ? "[Id],[MessageId],[Version],[Name],CAST(NULL AS nvarchar(200)) AS [Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName]"
-                : "[Id],[MessageId],[Version],[Name],[Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName]";
+                ? "[Id],[MessageId],[Version],[Name],CAST(NULL AS nvarchar(200)) AS [Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]"
+                : "[Id],[MessageId],[Version],[Name],[Group],[Content],[Retries],[Added],[ExpiresAt],[StatusName],[NextRetryAt],[LockedUntil]";
         var where = string.Empty;
         if (!string.IsNullOrEmpty(query.StatusName))
         {
@@ -139,7 +152,12 @@ internal sealed class SqlServerMonitoringApi(
         await using var connection = new SqlConnection(_options.ConnectionString);
 
         var totalCount = await connection
-            .ExecuteScalarAsync(countQuery, cancellationToken, countSqlParams)
+            .ExecuteScalarAsync(
+                countQuery,
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: countSqlParams,
+                cancellationToken: cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (totalCount == 0)
@@ -175,15 +193,22 @@ internal sealed class SqlServerMonitoringApi(
                                 ExpiresAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
                                     ? null
                                     : reader.GetDateTime(index - 1),
-                                StatusName = reader.GetString(index),
+                                StatusName = reader.GetString(index++),
+                                NextRetryAt = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(index - 1),
+                                LockedUntil = await reader.IsDBNullAsync(index++, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(index - 1),
                             }
                         );
                     }
 
                     return messages;
                 },
-                cancellationToken: cancellationToken,
-                sqlParams: pageSqlParams
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: pageSqlParams,
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -238,8 +263,9 @@ internal sealed class SqlServerMonitoringApi(
         return await connection
             .ExecuteScalarAsync(
                 sqlQuery,
-                cancellationToken: cancellationToken,
-                sqlParams: [new SqlParameter("@StatusName", statusName)]
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: [new SqlParameter("@StatusName", statusName)],
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
     }
@@ -314,8 +340,9 @@ internal sealed class SqlServerMonitoringApi(
 
                         return dictionary;
                     },
-                    cancellationToken: cancellationToken,
-                    sqlParams: sqlParams
+                    commandTimeout: _messagingOptions.CommandTimeout,
+                    sqlParams: sqlParams,
+                    cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
         }
@@ -339,7 +366,7 @@ internal sealed class SqlServerMonitoringApi(
             ? "ExceptionInfo"
             : "CAST(NULL AS nvarchar(max)) AS ExceptionInfo";
         var sql =
-            $"SELECT TOP(1) Id, Content, Added, ExpiresAt, Retries, {exceptionInfoSql} FROM {tableName} WITH (READPAST) WHERE Id=@Id";
+            $"SELECT TOP(1) Id, Content, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id=@Id";
 
         await using var connection = new SqlConnection(_options.ConnectionString);
 
@@ -364,13 +391,20 @@ internal sealed class SqlServerMonitoringApi(
                             ExceptionInfo = await reader.IsDBNullAsync(5, ct).ConfigureAwait(false)
                                 ? null
                                 : reader.GetString(5),
+                            NextRetryAt = await reader.IsDBNullAsync(6, ct).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(6),
+                            LockedUntil = await reader.IsDBNullAsync(7, ct).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(7),
                         };
                     }
 
                     return message;
                 },
-                cancellationToken: cancellationToken,
-                sqlParams: [new SqlParameter("@Id", id)]
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: [new SqlParameter("@Id", id)],
+                cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
 

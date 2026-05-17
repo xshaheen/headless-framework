@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.Json;
 using Dapper;
 using Headless.Abstractions;
 using Headless.Messaging.Configuration;
@@ -59,6 +60,28 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     }
 
     /// <inheritdoc />
+    protected override async Task<int> CountReceivedMessagesByIdentityAsync(
+        string messageId,
+        string? group,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        const string sqlWithGroup =
+            "SELECT COUNT(*) FROM messaging.received WHERE \"MessageId\" = @MessageId AND \"Group\" = @Group";
+        const string sqlWithoutGroup =
+            "SELECT COUNT(*) FROM messaging.received WHERE \"MessageId\" = @MessageId AND \"Group\" IS NULL";
+
+        var rowCount = group is null
+            ? await connection.ExecuteScalarAsync<long>(sqlWithoutGroup, new { MessageId = messageId })
+            : await connection.ExecuteScalarAsync<long>(sqlWithGroup, new { MessageId = messageId, Group = group });
+
+        return (int)rowCount;
+    }
+
+    /// <inheritdoc />
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
@@ -105,7 +128,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         services.Configure<MessagingOptions>(x =>
         {
             x.Version = "v1";
-            x.FailedRetryCount = 5;
+            x.RetryPolicy.MaxPersistedRetries = 4;
             x.FailedMessageExpiredAfter = 3600;
             x.UseStorageLock = true;
         });
@@ -216,6 +239,58 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     [Fact]
     public override Task should_handle_failed_message_state() => base.should_handle_failed_message_state();
 
+    [Fact]
+    public override Task should_not_return_published_message_with_failed_status_and_null_next_retry_at() =>
+        base.should_not_return_published_message_with_failed_status_and_null_next_retry_at();
+
+    [Fact]
+    public override Task should_not_return_published_message_with_future_next_retry_at() =>
+        base.should_not_return_published_message_with_future_next_retry_at();
+
+    [Fact]
+    public override Task should_not_return_received_message_with_failed_status_and_null_next_retry_at() =>
+        base.should_not_return_received_message_with_failed_status_and_null_next_retry_at();
+
+    [Fact]
+    public override Task should_not_return_received_message_with_future_next_retry_at() =>
+        base.should_not_return_received_message_with_future_next_retry_at();
+
+    [Fact]
+    public override Task should_not_return_leased_published_message_until_lease_expires() =>
+        base.should_not_return_leased_published_message_until_lease_expires();
+
+    [Fact]
+    public override Task should_reject_mismatched_original_retries() =>
+        base.should_reject_mismatched_original_retries();
+
+    [Fact]
+    public override Task should_report_false_when_received_exception_message_is_already_terminal() =>
+        base.should_report_false_when_received_exception_message_is_already_terminal();
+
+    [Fact]
+    public override Task should_handle_concurrent_redelivery_storm_on_same_message_id() =>
+        base.should_handle_concurrent_redelivery_storm_on_same_message_id();
+
+    [Fact]
+    public override Task should_handle_concurrent_first_insert_storm_with_null_and_non_null_group() =>
+        base.should_handle_concurrent_first_insert_storm_with_null_and_non_null_group();
+
+    [Fact]
+    public override Task should_handle_concurrent_store_received_message_with_same_identity() =>
+        base.should_handle_concurrent_store_received_message_with_same_identity();
+
+    [Fact]
+    public override Task should_pickup_message_at_max_persisted_retries_and_exclude_above() =>
+        base.should_pickup_message_at_max_persisted_retries_and_exclude_above();
+
+    [Fact]
+    public override Task should_not_return_leased_received_message_until_lease_expires() =>
+        base.should_not_return_leased_received_message_until_lease_expires();
+
+    [Fact]
+    public override Task should_handle_concurrent_state_updates_to_same_row() =>
+        base.should_handle_concurrent_state_updates_to_same_row();
+
     #endregion
 
     #region PostgreSQL-Specific Tests
@@ -274,8 +349,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     [Theory]
     [InlineData("published", "Added")]
     [InlineData("published", "ExpiresAt")]
+    [InlineData("published", "NextRetryAt")]
     [InlineData("received", "Added")]
     [InlineData("received", "ExpiresAt")]
+    [InlineData("received", "NextRetryAt")]
     public async Task should_use_timestamptz_for_time_columns(string table, string column)
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
@@ -288,6 +365,191 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             """
         );
         dataType.Should().Be("timestamp with time zone");
+    }
+
+    // -------------------------------------------------------------------------
+    // EXPLAIN ANALYZE — verify the retry-pickup query plans use the partial
+    // index (idx_*_next_retry). A regression to a full sequential scan would
+    // silently degrade throughput at high message volumes; pinning the plan
+    // in tests fails fast on accidental schema/query drift.
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("idx_received_Version_NextRetryAt")]
+    [InlineData("idx_published_Version_NextRetryAt")]
+    public async Task should_key_retry_pickup_index_on_version_then_next_retry_at(string indexName)
+    {
+        // Pin the retry-pickup index shape: Version must be the leading key column so it is a
+        // seek predicate, not a residual filter. Regression here would silently fan the planner
+        // out to both versions during a rolling upgrade and discard rows post-fetch.
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var columns = (
+            await connection.QueryAsync<string>(
+                """
+                SELECT a.attname
+                FROM pg_index i
+                JOIN pg_class c ON c.oid = i.indexrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+                JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+                WHERE n.nspname = 'messaging'
+                  AND c.relname = @IndexName
+                  AND k.ord <= i.indnkeyatts
+                ORDER BY k.ord;
+                """,
+                new { IndexName = indexName }
+            )
+        ).ToList();
+
+        columns.Should().BeEquivalentTo(["Version", "NextRetryAt"], opts => opts.WithStrictOrdering());
+
+        // Filtered predicate must be `NextRetryAt IS NOT NULL` so terminal rows are physically
+        // excluded from the index — keeps it small even under high failed-message volume.
+        var predicate = await connection.QueryFirstOrDefaultAsync<string>(
+            """
+            SELECT pg_get_expr(i.indpred, i.indrelid, true)
+            FROM pg_index i
+            JOIN pg_class c ON c.oid = i.indexrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'messaging' AND c.relname = @IndexName;
+            """,
+            new { IndexName = indexName }
+        );
+        predicate.Should().NotBeNull().And.Contain("NextRetryAt").And.Contain("IS NOT NULL");
+    }
+
+    [Theory]
+    [InlineData("received", "idx_received_Version_NextRetryAt")]
+    [InlineData("published", "idx_published_Version_NextRetryAt")]
+    public async Task should_use_partial_indexes_in_retry_pickup_query_plan(string tableSuffix, string nextRetryIndex)
+    {
+        // given — the planner only prefers an index over a sequential scan once the table has
+        // enough rows for an index lookup to be cheaper. A freshly-initialised test container
+        // starts with an empty table, so we synthesise a small load profile (a mix of rows that
+        // satisfy and violate the partial-index predicate) and ANALYZE to refresh statistics.
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        var qualifiedTable = $"messaging.\"{tableSuffix}\"";
+        const int seedRows = 50;
+        var seedSql = tableSuffix switch
+        {
+            "received" => $$"""
+                INSERT INTO {{qualifiedTable}} ("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId")
+                SELECT g, 'v1', 'plan-test', NULL, '{}', 0, now(), NULL,
+                       CASE WHEN g % 2 = 0 THEN now() - interval '1 minute' ELSE NULL END,
+                       NULL, 'Failed', 'plan-' || g
+                FROM generate_series(1000, 1000 + {{seedRows - 1}}) g
+                ON CONFLICT DO NOTHING;
+                """,
+            "published" => $$"""
+                INSERT INTO {{qualifiedTable}} ("Id","Version","Name","Content","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId")
+                SELECT g, 'v1', 'plan-test', '{}', 0, now(), NULL,
+                       CASE WHEN g % 2 = 0 THEN now() - interval '1 minute' ELSE NULL END,
+                       NULL, 'Failed', 'plan-' || g
+                FROM generate_series(1000, 1000 + {{seedRows - 1}}) g
+                ON CONFLICT DO NOTHING;
+                """,
+            _ => throw new ArgumentOutOfRangeException(nameof(tableSuffix), tableSuffix, "Unknown table suffix."),
+        };
+        await connection.ExecuteAsync(seedSql);
+        await connection.ExecuteAsync($"ANALYZE {qualifiedTable};");
+
+        // The query mirrors PostgreSqlDataStorage._GetMessagesOfNeedRetryAsync. We omit
+        // "FOR UPDATE SKIP LOCKED" because EXPLAIN does not require row-level locking and
+        // the planner does not include it in the index-selection decision under FORMAT JSON.
+        //
+        // Disable seq scan for the plan capture so the test pins the planner's preferred
+        // *index*-backed path. With seq scan enabled, PostgreSQL can still pick the partial
+        // index, but on small tables it may pick a seq scan even after seeding — the assertion
+        // we care about is "the planner has a usable index", not "the planner picks it for 50
+        // rows".
+        var explainSql = $"""
+            SET LOCAL enable_seqscan = off;
+            EXPLAIN (ANALYZE, FORMAT JSON)
+            SELECT "Id","Content","Retries","Added","NextRetryAt" FROM {qualifiedTable}
+            WHERE "Retries" <= @Retries
+              AND "Version" = @Version
+              AND "NextRetryAt" IS NOT NULL
+              AND "NextRetryAt" <= now()
+            LIMIT 200
+            """;
+
+        // when
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        var planJson = await connection.QueryFirstOrDefaultAsync<string>(
+            explainSql,
+            new { Retries = 50, Version = "v1" },
+            transaction: transaction
+        );
+        await transaction.CommitAsync(AbortToken);
+
+        // then — the plan should reference the partial index.
+        planJson.Should().NotBeNullOrEmpty();
+        var nodeTypes = _CollectNodeTypes(planJson!);
+        var indexNames = _CollectIndexNames(planJson!);
+
+        var indexScanNodeTypes = new[] { "Index Scan", "Index Only Scan", "Bitmap Index Scan", "Bitmap Heap Scan" };
+        nodeTypes.Should().Contain(t => indexScanNodeTypes.Contains(t));
+        indexNames
+            .Should()
+            .Contain(
+                name => string.Equals(name, nextRetryIndex, StringComparison.Ordinal),
+                because: "the retry-pickup query must use the partial index ({0}) to avoid sequential scans",
+                nextRetryIndex
+            );
+    }
+
+    private static List<string> _CollectNodeTypes(string explainJson)
+    {
+        var nodeTypes = new List<string>();
+        using var doc = JsonDocument.Parse(explainJson);
+        foreach (var planEntry in doc.RootElement.EnumerateArray())
+        {
+            if (planEntry.TryGetProperty("Plan", out var rootPlan))
+            {
+                _WalkPlanForProperty(rootPlan, "Node Type", nodeTypes);
+            }
+        }
+
+        return nodeTypes;
+    }
+
+    private static List<string> _CollectIndexNames(string explainJson)
+    {
+        var indexNames = new List<string>();
+        using var doc = JsonDocument.Parse(explainJson);
+        foreach (var planEntry in doc.RootElement.EnumerateArray())
+        {
+            if (planEntry.TryGetProperty("Plan", out var rootPlan))
+            {
+                _WalkPlanForProperty(rootPlan, "Index Name", indexNames);
+            }
+        }
+
+        return indexNames;
+    }
+
+    private static void _WalkPlanForProperty(JsonElement plan, string propertyName, List<string> collector)
+    {
+        if (plan.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String)
+        {
+            var str = value.GetString();
+            if (!string.IsNullOrEmpty(str))
+            {
+                collector.Add(str);
+            }
+        }
+
+        if (plan.TryGetProperty("Plans", out var children) && children.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                _WalkPlanForProperty(child, propertyName, collector);
+            }
+        }
     }
 
     #endregion

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Retry;
@@ -14,7 +15,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_validate_topic_name_length()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
         var longTopic = new string('a', 256);
 
         // when
@@ -31,7 +32,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_accept_max_length_topic_name()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
         var maxLengthTopic = new string('a', 255);
 
         // when
@@ -45,7 +46,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_validate_topic_name_characters()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when/then - invalid characters
         var act1 = () => options.WithTopicMapping<TestMessage>("topic@name");
@@ -65,7 +66,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_accept_valid_topic_name_characters()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when/then - valid characters: alphanumeric, dots, hyphens, underscores
         var result1 = options.WithTopicMapping<TestMessage>("valid.topic-name_123");
@@ -76,7 +77,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_leading_dots()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when
         var act = () => options.WithTopicMapping<TestMessage>(".leading.dot");
@@ -89,7 +90,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_trailing_dots()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when
         var act = () => options.WithTopicMapping<TestMessage>("trailing.dot.");
@@ -102,7 +103,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_consecutive_dots()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when
         var act = () => options.WithTopicMapping<TestMessage>("topic..name");
@@ -112,13 +113,19 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
-    public void should_set_default_retry_count()
+    public void should_set_default_retry_policy()
     {
         // given
         var options = new MessagingOptions();
 
         // then
-        options.FailedRetryCount.Should().Be(50);
+        options.RetryPolicy.MaxInlineRetries.Should().Be(2);
+        options.RetryPolicy.MaxPersistedRetries.Should().Be(15);
+        options.RetryPolicy.InitialDispatchGrace.Should().Be(TimeSpan.FromSeconds(30));
+        options.RetryPolicy.DispatchTimeout.Should().Be(TimeSpan.FromMinutes(5));
+        options.TransportPublishTimeout.Should().Be(TimeSpan.FromSeconds(10));
+        options.CommandTimeout.Should().Be(TimeSpan.FromSeconds(30));
+        options.RetryPolicy.BackoffStrategy.Should().BeOfType<ExponentialBackoffStrategy>();
     }
 
     [Fact]
@@ -147,24 +154,215 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
-    public void should_set_default_retry_interval()
+    public void should_reject_retry_policy_with_negative_max_persisted_retries()
     {
         // given
-        var options = new MessagingOptions();
+        var options = new RetryPolicyOptions { MaxPersistedRetries = -1 };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
 
         // then
-        options.FailedRetryInterval.Should().Be(60); // 60 seconds
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxPersistedRetries));
     }
 
     [Fact]
-    public void should_set_default_backoff_strategy()
+    public void should_accept_retry_policy_with_zero_persisted_retries_and_zero_inline_retries()
     {
-        // given
-        var options = new MessagingOptions();
+        // No retries at all (single attempt only) is a valid configuration.
+        var options = new RetryPolicyOptions { MaxPersistedRetries = 0, MaxInlineRetries = 0 };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
 
         // then
-        options.RetryBackoffStrategy.Should().NotBeNull();
-        options.RetryBackoffStrategy.Should().BeOfType<ExponentialBackoffStrategy>();
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_negative_max_inline_retries()
+    {
+        // given
+        var options = new RetryPolicyOptions { MaxInlineRetries = -1 };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxInlineRetries));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_max_inline_retries_above_cap()
+    {
+        // Cap is intentionally well above realistic production budgets but tight enough
+        // to bound DoS-by-config: a custom backoff strategy returning Continue(TimeSpan.Zero)
+        // combined with very high inline budget could saturate the retry-pickup index.
+        var options = new RetryPolicyOptions { MaxInlineRetries = 101 };
+
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxInlineRetries));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_max_persisted_retries_above_cap()
+    {
+        var options = new RetryPolicyOptions { MaxPersistedRetries = 1_001 };
+
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxPersistedRetries));
+    }
+
+    [Fact]
+    public void should_accept_retry_policy_at_max_inline_and_persisted_caps()
+    {
+        var options = new RetryPolicyOptions { MaxInlineRetries = 100, MaxPersistedRetries = 1_000 };
+
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_non_positive_initial_dispatch_grace()
+    {
+        // given
+        var options = new RetryPolicyOptions { InitialDispatchGrace = TimeSpan.Zero };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.InitialDispatchGrace));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_when_initial_dispatch_grace_exceeds_one_hour()
+    {
+        // given
+        var options = new RetryPolicyOptions { InitialDispatchGrace = TimeSpan.FromHours(2) };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.InitialDispatchGrace));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_invalid_dispatch_timeout()
+    {
+        new RetryPolicyOptionsValidator()
+            .Validate(new RetryPolicyOptions { DispatchTimeout = TimeSpan.Zero })
+            .IsValid.Should()
+            .BeFalse();
+
+        new RetryPolicyOptionsValidator()
+            .Validate(new RetryPolicyOptions { DispatchTimeout = TimeSpan.FromHours(2) })
+            .IsValid.Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public void should_reject_messaging_options_with_invalid_transport_or_command_timeout()
+    {
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { TransportPublishTimeout = TimeSpan.Zero })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { CommandTimeout = TimeSpan.FromMinutes(6) })
+            .IsValid.Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_non_positive_on_exhausted_timeout()
+    {
+        // given
+        var options = new RetryPolicyOptions { OnExhaustedTimeout = TimeSpan.Zero };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.OnExhaustedTimeout));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_when_on_exhausted_timeout_exceeds_one_hour()
+    {
+        // given
+        var options = new RetryPolicyOptions { OnExhaustedTimeout = TimeSpan.FromHours(2) };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.OnExhaustedTimeout));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_null_backoff_strategy()
+    {
+        // given
+        var options = new RetryPolicyOptions { BackoffStrategy = null! };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.BackoffStrategy));
+    }
+
+    [Fact]
+    public void should_accept_default_retry_policy()
+    {
+        // given
+        var options = new RetryPolicyOptions();
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_reject_messaging_options_with_null_retry_policy()
+    {
+        // given — force the _retryPolicy backing field to null via reflection. RetryPolicy is a
+        // get-only public property with a named backing field, so reflection is stable (no
+        // compiler-generated naming). Reflection lives in the test rather than in a production
+        // test seam.
+        var options = new MessagingOptions();
+
+        var field = typeof(MessagingOptions).GetField(
+            "_retryPolicy",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
+
+        field.Should().NotBeNull("named backing field _retryPolicy must exist on MessagingOptions");
+        field!.SetValue(options, null);
+
+        // when
+        var result = new MessagingOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(MessagingOptions.RetryPolicy));
     }
 
     [Fact]
@@ -181,7 +379,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_duplicate_topic_mapping_with_different_topic()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
         options.WithTopicMapping<TestMessage>("first.topic");
 
         // when
@@ -197,7 +395,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_allow_same_topic_mapping()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
         options.WithTopicMapping<TestMessage>("same.topic");
 
         // when
@@ -211,7 +409,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_null_topic()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when
         var act = () => options.WithTopicMapping<TestMessage>(null!);
@@ -224,7 +422,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_empty_topic()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when
         var act = () => options.WithTopicMapping<TestMessage>("");
@@ -237,7 +435,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_whitespace_topic()
     {
         // given
-        var options = _CreateOptions();
+        var options = _CreateBuilder();
 
         // when
         var act = () => options.WithTopicMapping<TestMessage>("   ");
@@ -264,16 +462,6 @@ public sealed class MessagingOptionsValidationTests : TestBase
 
         // then
         options.CollectorCleaningInterval.Should().Be(300); // 5 minutes
-    }
-
-    [Fact]
-    public void should_set_default_fallback_window()
-    {
-        // given
-        var options = new MessagingOptions();
-
-        // then
-        options.FallbackWindowLookbackSeconds.Should().Be(240); // 4 minutes
     }
 
     [Fact]
@@ -306,12 +494,12 @@ public sealed class MessagingOptionsValidationTests : TestBase
         options.PublishBatchSize.Should().BeNull();
     }
 
-    private static MessagingOptions _CreateOptions()
+    private static MessagingSetupBuilder _CreateBuilder()
     {
         var services = new ServiceCollection();
         var registry = new ConsumerRegistry();
-        var options = new MessagingOptions { Services = services, Registry = registry };
-        return options;
+        var options = new MessagingOptions();
+        return new MessagingSetupBuilder(services, options, registry);
     }
 
     private sealed class TestMessage;

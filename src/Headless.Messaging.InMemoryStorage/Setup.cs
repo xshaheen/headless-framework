@@ -9,12 +9,15 @@ using Headless.Messaging.Persistence;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-public static class InMemoryStorageSetup
+public static class SetupInMemoryStorage
 {
-    public static MessagingOptions UseInMemoryStorage(this MessagingOptions options)
+    extension(MessagingSetupBuilder setup)
     {
-        options.RegisterExtension(new InMemoryMessagesOptionsExtension());
-        return options;
+        public MessagingSetupBuilder UseInMemoryStorage()
+        {
+            setup.RegisterExtension(new InMemoryMessagesOptionsExtension());
+            return setup;
+        }
     }
 
     private sealed class InMemoryMessagesOptionsExtension : IMessagesOptionsExtension

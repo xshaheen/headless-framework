@@ -21,7 +21,11 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly IServiceProvider _serviceProvider;
     private readonly Func<ConsumerConfig, IConsumer<string, byte[]>> _consumerFactory;
     private readonly Func<AdminClientConfig, IAdminClient> _adminClientFactory;
-    private IConsumer<string, byte[]>? _consumerClient;
+
+    // volatile is required: Connect performs double-checked locking on this field, and
+    // CommitAsync/RejectAsync read it without taking _lock. Without volatile a reader could
+    // observe a non-null reference whose publication has not yet been flushed by the writer.
+    private volatile IConsumer<string, byte[]>? _consumerClient;
     private int _disposed;
 
     public KafkaConsumerClient(
@@ -118,6 +122,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
         Connect();
 
+        // ReSharper disable once InconsistentlySynchronizedField -- volatile read after Connect guarantees the instance is published.
         _consumerClient!.Subscribe(topics);
 
         return ValueTask.CompletedTask;
@@ -206,6 +211,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     public ValueTask CommitAsync(object? sender)
     {
+        // ReSharper disable once InconsistentlySynchronizedField -- volatile read; null-check fast path.
         if (sender is not ConsumeResult<string, byte[]> consumerResult || _consumerClient is null)
         {
             return ValueTask.CompletedTask;
@@ -221,6 +227,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     public ValueTask RejectAsync(object? sender)
     {
+        // ReSharper disable once InconsistentlySynchronizedField -- volatile read; null-check fast path.
         if (sender is not ConsumeResult<string, byte[]> consumerResult || _consumerClient is null)
         {
             return ValueTask.CompletedTask;
@@ -309,6 +316,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     public void Connect()
     {
+        // ReSharper disable once InconsistentlySynchronizedField -- double-checked locking; field is volatile.
         if (_consumerClient != null)
         {
             return;

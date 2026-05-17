@@ -9,15 +9,15 @@ using Headless.Messaging.Transport;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-public static class MessagesKafkaSetup
+public static class SetupKafkaMessaging
 {
-    extension(MessagingOptions options)
+    extension(MessagingSetupBuilder setup)
     {
         /// <summary>Configuration for messaging.</summary>
         /// <param name="bootstrapServers">Kafka bootstrap server urls.</param>
-        public MessagingOptions UseKafka(string bootstrapServers)
+        public MessagingSetupBuilder UseKafka(string bootstrapServers)
         {
-            return options.UseKafka(opt =>
+            return setup.UseKafka(opt =>
             {
                 opt.Servers = bootstrapServers;
             });
@@ -25,13 +25,13 @@ public static class MessagesKafkaSetup
 
         /// <summary>Configuration for messaging.</summary>
         /// <param name="configure">Provides programmatic configuration for the kafka .</param>
-        public MessagingOptions UseKafka(Action<MessagingKafkaOptions> configure)
+        public MessagingSetupBuilder UseKafka(Action<MessagingKafkaOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            options.RegisterExtension(new KafkaMessagesOptionsExtension(configure));
+            setup.RegisterExtension(new KafkaMessagesOptionsExtension(configure));
 
-            return options;
+            return setup;
         }
     }
 

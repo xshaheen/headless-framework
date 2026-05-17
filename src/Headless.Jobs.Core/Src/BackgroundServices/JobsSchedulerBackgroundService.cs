@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+using Headless.Checks;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
@@ -12,7 +14,10 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
     private readonly IInternalJobManager _internalJobsManager;
     private readonly JobsExecutionContext _executionContext;
     private SafeCancellationTokenSource? _schedulerLoopCancellationTokenSource;
+
+#pragma warning disable CA2213 // Justification = "Owned by the DI container as a singleton; disposed on host shutdown."
     private readonly JobsTaskScheduler _taskScheduler;
+#pragma warning restore CA2213
     private readonly JobsExecutionTaskHandler _taskHandler;
     private readonly IJobFunctionConcurrencyGate _concurrencyGate;
     private int _started;
@@ -27,11 +32,11 @@ internal class JobsSchedulerBackgroundService : BackgroundService, IJobsHostSche
         IJobFunctionConcurrencyGate concurrencyGate
     )
     {
-        _executionContext = executionContext;
-        _taskHandler = taskHandler;
-        _taskScheduler = taskScheduler;
-        _internalJobsManager = internalJobsManager ?? throw new ArgumentNullException(nameof(internalJobsManager));
-        _concurrencyGate = concurrencyGate;
+        _executionContext = Argument.IsNotNull(executionContext);
+        _taskHandler = Argument.IsNotNull(taskHandler);
+        _taskScheduler = Argument.IsNotNull(taskScheduler);
+        _internalJobsManager = Argument.IsNotNull(internalJobsManager);
+        _concurrencyGate = Argument.IsNotNull(concurrencyGate);
         _restartThrottle = new RestartThrottleManager(() => _schedulerLoopCancellationTokenSource?.Cancel());
     }
 

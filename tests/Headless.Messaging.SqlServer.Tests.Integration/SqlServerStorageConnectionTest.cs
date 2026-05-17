@@ -104,7 +104,7 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
 
         var mdMessage = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
 
-        await _storage.ChangePublishStateAsync(mdMessage, StatusName.Succeeded, null, AbortToken);
+        await _storage.ChangePublishStateAsync(mdMessage, StatusName.Succeeded, cancellationToken: AbortToken);
     }
 
     [Fact]
@@ -116,6 +116,6 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
 
         var mdMessage = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
 
-        await _storage.ChangeReceiveStateAsync(mdMessage, StatusName.Succeeded, AbortToken);
+        await _storage.ChangeReceiveStateAsync(mdMessage, StatusName.Succeeded, cancellationToken: AbortToken);
     }
 }

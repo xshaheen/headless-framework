@@ -1,77 +1,119 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Retry;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
-public interface IMessageSender
+internal interface IMessageSender
 {
+    /// <summary>
+    /// Publishes a single outbox message using the sender's root service provider for
+    /// scoped service resolution. Prefer <see cref="SendAsync(MediumMessage, IServiceProvider)"/>
+    /// to surface the live per-message dispatch scope to the exhausted callback.
+    /// </summary>
     Task<OperateResult> SendAsync(MediumMessage message);
+
+    /// <summary>
+    /// Publishes a single outbox message and threads the caller's per-message DI scope through
+    /// to the retry pipeline so that <c>OnExhausted</c>'s <c>FailedInfo.ServiceProvider</c>
+    /// reflects the SAME scope used while sending. The caller (Dispatcher) owns this scope's
+    /// lifetime.
+    /// </summary>
+    Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices);
 }
 
-internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvider serviceProvider) : IMessageSender
+internal sealed class MessageSender : IMessageSender
 {
     // ReSharper disable once InconsistentNaming
     private static readonly DiagnosticListener _DiagnosticListener = new(
         MessageDiagnosticListenerNames.DiagnosticListenerName
     );
 
-    private readonly IDataStorage _dataStorage = serviceProvider.GetRequiredService<IDataStorage>();
-    private readonly ILogger _logger = logger;
-    private readonly IOptions<MessagingOptions> _options = serviceProvider.GetRequiredService<
-        IOptions<MessagingOptions>
-    >();
-    private readonly ISerializer _serializer = serviceProvider.GetRequiredService<ISerializer>();
-    private readonly ITransport _transport = serviceProvider.GetRequiredService<ITransport>();
-    private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
-    private readonly IRetryBackoffStrategy _backoffStrategy = serviceProvider
-        .GetRequiredService<IOptions<MessagingOptions>>()
-        .Value.RetryBackoffStrategy;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly IDataStorage _dataStorage;
+    private readonly ILogger _logger;
+    private readonly MessagingOptions _options;
+    private readonly ISerializer _serializer;
+    private readonly ITransport _transport;
+    private readonly TimeProvider _timeProvider;
+    private readonly RetryPolicyOptions _retryPolicy;
+    private readonly CancellationToken _shutdownToken;
 
-    public async Task<OperateResult> SendAsync(MediumMessage message)
+    public MessageSender(ILogger<MessageSender> logger, IServiceProvider serviceProvider)
     {
-        bool retry;
-        OperateResult result;
-        do
-        {
-            var (retryDecision, operateResult) = await _SendWithoutRetryAsync(message).ConfigureAwait(false);
-            retry = retryDecision.ShouldRetry;
-            result = operateResult;
-            if (result.Equals(OperateResult.Success))
-            {
-                return result;
-            }
+        _serviceProvider = serviceProvider;
+        _logger = logger;
+        _dataStorage = serviceProvider.GetRequiredService<IDataStorage>();
+        _serializer = serviceProvider.GetRequiredService<ISerializer>();
+        _transport = serviceProvider.GetRequiredService<ITransport>();
+        _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
+        var opts = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+        _options = opts;
+        _retryPolicy = opts.RetryPolicy;
 
-            if (retry)
-            {
-                await Task.Delay(retryDecision.Delay).ConfigureAwait(false);
-            }
-        } while (retry);
-
-        return result;
+        // IHostApplicationLifetime is optional so MessageSender remains usable in test contexts
+        // (and non-hosted scenarios). When absent, shutdown cancellation cannot be observed and
+        // exceptions are treated as failures rather than cancellations — the pre-existing behavior.
+        _shutdownToken =
+            serviceProvider.GetService<IHostApplicationLifetime>()?.ApplicationStopping ?? CancellationToken.None;
     }
 
-    private async Task<(RetryDecision, OperateResult)> _SendWithoutRetryAsync(MediumMessage message)
+    public Task<OperateResult> SendAsync(MediumMessage message) => SendAsync(message, _serviceProvider);
+
+    public Task<OperateResult> SendAsync(MediumMessage message, IServiceProvider dispatchServices)
     {
+        Argument.IsNotNull(dispatchServices);
+
+        // Outbox sender doesn't propagate user cancellation; messages should be delivered.
+        // We DO honor host shutdown (_shutdownToken from IHostApplicationLifetime.ApplicationStopping)
+        // so a SIGTERM during a long inline delay can abort cleanly: the resulting OCE is detected
+        // by RetryHelper.IsCancellation in _SetFailedState, which returns without writing terminal
+        // state. The row keeps its prior NextRetryAt/Status and the persisted retry processor picks
+        // it up on restart.
+        return InlineRetryLoop.ExecuteAsync(
+            (inlineRetries, ct) => _SendWithoutRetryAsync(message, dispatchServices, inlineRetries, ct),
+            _retryPolicy,
+            _timeProvider,
+            _shutdownToken
+        );
+    }
+
+    private async Task<(RetryDecision Decision, OperateResult Result)> _SendWithoutRetryAsync(
+        MediumMessage message,
+        IServiceProvider dispatchServices,
+        int inlineRetries,
+        CancellationToken cancellationToken
+    )
+    {
+        var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
+        if (!leased)
+        {
+            return (RetryDecision.Stop, OperateResult.Success);
+        }
+
         var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).ConfigureAwait(false);
 
         var tracingTimestamp = _TracingBefore(transportMsg, _transport.BrokerAddress);
 
-        // Note: Outbox sender doesn't propagate user cancellation; messages should be delivered
-        var result = await _transport.SendAsync(transportMsg, CancellationToken.None).ConfigureAwait(false);
+        using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
+        publishCts.CancelAfter(_options.TransportPublishTimeout);
+        var result = await _transport.SendAsync(transportMsg, publishCts.Token).ConfigureAwait(false);
 
         if (result.Succeeded)
         {
-            await _SetSuccessfulState(message).ConfigureAwait(false);
+            await _SetSuccessfulState(message, CancellationToken.None).ConfigureAwait(false);
 
             _TracingAfter(tracingTimestamp, transportMsg, _transport.BrokerAddress);
 
@@ -80,97 +122,185 @@ internal sealed class MessageSender(ILogger<MessageSender> logger, IServiceProvi
 
         _TracingError(tracingTimestamp, transportMsg, _transport.BrokerAddress, result);
 
-        var needRetry = await _SetFailedState(message, result.Exception!).ConfigureAwait(false);
+        var decision = await _SetFailedState(
+                message,
+                result.Exception!,
+                dispatchServices,
+                inlineRetries,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
-        return (needRetry, OperateResult.Failed(result.Exception!));
+        return (decision, OperateResult.Failed(result.Exception!));
     }
 
-    private async Task _SetSuccessfulState(MediumMessage message)
+    private async Task _SetSuccessfulState(MediumMessage message, CancellationToken cancellationToken)
     {
-        message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.Value.SucceedMessageExpiredAfter);
-        await _dataStorage.ChangePublishStateAsync(message, StatusName.Succeeded).ConfigureAwait(false);
+        message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.SucceedMessageExpiredAfter);
+        var updated = await _dataStorage
+            .ChangePublishStateAsync(message, StatusName.Succeeded, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!updated)
+        {
+            // Storage's terminal-row guard rejected the write — the row is already in a terminal
+            // state (typically Failed/NULL after a prior exhausted attempt). The broker DID accept
+            // the publish, so the consumer will observe the message; at-least-once delivery means
+            // duplicates are the user's responsibility to dedupe on the receive side.
+            _logger.PublishSucceededButStorageTerminal(message.StorageId);
+        }
     }
 
-    private async Task<RetryDecision> _SetFailedState(MediumMessage message, Exception ex)
+    private async Task<RetryDecision> _SetFailedState(
+        MediumMessage message,
+        Exception ex,
+        IServiceProvider dispatchServices,
+        int inlineRetries,
+        CancellationToken cancellationToken
+    )
     {
-        var needRetry = _UpdateMessageForRetry(message, ex);
+        // Host shutdown: an OCE bound to the host's stopping token means the dispatch was aborted,
+        // not that the message failed. Returning without writing state preserves the row's existing
+        // NextRetryAt/Status, and the persisted retry processor will pick the row up on restart.
+        // cancellationToken on this path IS _shutdownToken — see InlineRetryLoop wiring in
+        // SendAsync above, which forwards _shutdownToken as the inline-loop CT.
+        if (RetryHelper.IsCancellation(ex, cancellationToken))
+        {
+            _logger.StoredMessageNonRetryableFailure(message.StorageId, "HostShutdown");
+            return RetryDecision.Stop;
+        }
+
+        var decision = _UpdateMessageForRetry(message, ex, inlineRetries);
 
         message.Origin.AddOrUpdateException(ex);
-        message.ExpiresAt = message.Added.AddSeconds(_options.Value.FailedMessageExpiredAfter);
+        message.ExpiresAt = message.Added.AddSeconds(_options.FailedMessageExpiredAfter);
 
-        await _dataStorage.ChangePublishStateAsync(message, StatusName.Failed).ConfigureAwait(false);
+        // Inline-retry budget still available: persist as Scheduled/NULL so a crash mid-delay
+        // leaves the row picked up by the polling query on restart (Failed/NULL is filtered out).
+        // Only transition to Failed on terminal decisions (Stop, Exhausted) or when persisting
+        // for the persisted-retry processor (Continue with inline budget exhausted, NextRetryAt set).
+        // Pass the message's current NextRetryAt so ResolveNextState can preserve InitialDispatchGrace
+        // on inline-in-flight transitions and pad the schedule against polling races.
+        var state = RetryHelper.ResolveNextState(
+            decision,
+            inlineRetries,
+            _retryPolicy,
+            _timeProvider,
+            currentNextRetryAt: message.NextRetryAt
+        );
 
-        return needRetry;
+        // Persist transition: inline budget consumed AND decision Continue means the call site
+        // owns the Retries++ . The helper is pure with respect to MediumMessage; this is the only
+        // place persisted-pickup count advances.
+        if (decision.Outcome == RetryDecision.Kind.Continue && !state.IsInlineRetryInFlight)
+        {
+            var originalRetries = message.Retries;
+            message.Retries++;
+            return await _PersistFailedStateAsync(message, ex, dispatchServices, decision, state, originalRetries)
+                .ConfigureAwait(false);
+        }
+
+        // #7 — enforce the storage CAS predicate on every state-write site (including inline-in-flight
+        // and terminal transitions). The Retries counter doesn't advance on those paths, so the
+        // witness is just the current value; storage will accept the write only if another writer
+        // hasn't bumped Retries (or won the terminal-race) since this dispatch read the row.
+        return await _PersistFailedStateAsync(
+                message,
+                ex,
+                dispatchServices,
+                decision,
+                state,
+                originalRetries: message.Retries
+            )
+            .ConfigureAwait(false);
     }
 
-    private RetryDecision _UpdateMessageForRetry(MediumMessage message, Exception ex)
+    private async Task<RetryDecision> _PersistFailedStateAsync(
+        MediumMessage message,
+        Exception ex,
+        IServiceProvider dispatchServices,
+        RetryDecision decision,
+        RetryNextState state,
+        int? originalRetries
+    )
     {
-        // Check if exception is retryable
-        if (!_backoffStrategy.ShouldRetry(ex))
+        // #14 — Preserve the active pickup lease on inline-in-flight transitions; clear it on
+        // persisted-retry and terminal transitions so the retry processor can re-pick the row.
+        // Mirrors the consume path's _PersistFailedStateAsync.
+        var lockedUntil = state.IsInlineRetryInFlight ? message.LockedUntil : null;
+        var affected = await _dataStorage
+            .ChangePublishStateAsync(
+                message,
+                state.NextStatus,
+                nextRetryAt: state.NextRetryAt,
+                lockedUntil: lockedUntil,
+                originalRetries: originalRetries,
+                cancellationToken: CancellationToken.None
+            )
+            .ConfigureAwait(false);
+
+        if (affected && decision.Outcome == RetryDecision.Kind.Exhausted)
         {
-            message.Retries = _options.Value.FailedRetryCount; // Mark as exhausted
-            _logger.LogWarning(
-                "Stored message {StorageId} failed with non-retryable exception: {ExceptionType}. Skipping retries.",
-                message.StorageId,
-                ex.GetType().Name
-            );
-            return RetryDecision.Stop;
+            // Forward _shutdownToken so the callback's CT honors host shutdown — matching the
+            // contract documented on RetryPolicyOptions.OnExhausted and the consume path's behavior.
+            // #6 — the tenant-scope + FailedInfo + InvokeOnExhaustedAsync trio is identical between
+            // publish and consume paths except for MessageType; the shared body lives in RetryHelper.
+            await RetryHelper
+                .RunOnExhaustedAsync(
+                    _retryPolicy,
+                    message,
+                    ex,
+                    dispatchServices,
+                    MessageType.Publish,
+                    _logger,
+                    _shutdownToken
+                )
+                .ConfigureAwait(false);
         }
-
-        var retries = ++message.Retries;
-        if (retries >= _options.Value.FailedRetryCount)
+        else if (!affected)
         {
-            try
+            // Storage proves the row is already terminal — only log when the decision would
+            // otherwise have fired the callback (Stop never fires OnExhausted regardless).
+            if (decision.Outcome == RetryDecision.Kind.Exhausted)
             {
-                _options.Value.FailedThresholdCallback?.Invoke(
-                    new FailedInfo
-                    {
-                        ServiceProvider = serviceProvider,
-                        MessageType = MessageType.Publish,
-                        Message = message.Origin,
-                    }
-                );
-
-                _logger.SenderStoredMessageAfterThreshold(message.StorageId, _options.Value.FailedRetryCount);
-            }
-            catch (Exception callbackEx)
-            {
-                _logger.ExecutedThresholdCallbackFailed(callbackEx, callbackEx.Message);
-            }
-
-            return RetryDecision.Stop;
-        }
-
-        _logger.SenderRetrying(message.StorageId, retries);
-
-        var nextDelay = _backoffStrategy.GetNextDelay(retries - 1, ex);
-        if (nextDelay is null)
-        {
-            // Strategy declined further retries — treat as threshold reached.
-            message.Retries = _options.Value.FailedRetryCount;
-
-            try
-            {
-                _options.Value.FailedThresholdCallback?.Invoke(
-                    new FailedInfo
-                    {
-                        ServiceProvider = serviceProvider,
-                        MessageType = MessageType.Publish,
-                        Message = message.Origin,
-                    }
-                );
-
-                _logger.SenderStoredMessageAfterThreshold(message.StorageId, _options.Value.FailedRetryCount);
-            }
-            catch (Exception callbackEx)
-            {
-                _logger.ExecutedThresholdCallbackFailed(callbackEx, callbackEx.Message);
+                _logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
             }
 
             return RetryDecision.Stop;
         }
 
-        return RetryDecision.Continue(nextDelay.Value);
+        return decision;
+    }
+
+    private async Task<bool> _LeaseAsync(MediumMessage message, CancellationToken cancellationToken)
+    {
+        var lockedUntil = _timeProvider.GetUtcNow().UtcDateTime.Add(_retryPolicy.DispatchTimeout);
+        return await _dataStorage.LeasePublishAsync(message, lockedUntil, cancellationToken).ConfigureAwait(false);
+    }
+
+    private RetryDecision _UpdateMessageForRetry(MediumMessage message, Exception ex, int inlineRetries)
+    {
+        var decision = RetryHelper.RecordAttemptAndComputeDecision(
+            message,
+            ex,
+            _retryPolicy,
+            inlineRetries,
+            logger: _logger
+        );
+        switch (decision.Outcome)
+        {
+            case RetryDecision.Kind.Stop:
+                _logger.StoredMessageNonRetryableFailure(message.StorageId, ex.GetType().Name);
+                break;
+            case RetryDecision.Kind.Exhausted:
+                _logger.SenderStoredMessageAfterThreshold(message.StorageId, _retryPolicy.MaxPersistedRetries);
+                break;
+            case RetryDecision.Kind.Continue:
+                _logger.SenderRetrying(message.StorageId, message.Retries);
+                break;
+        }
+
+        return decision;
     }
 
     #region tracing

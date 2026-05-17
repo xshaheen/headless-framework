@@ -6,26 +6,41 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Processor;
 
-public sealed class Dispatcher : IDispatcher
+internal sealed class Dispatcher : IDispatcher
 {
     private readonly ISubscribeExecutor _executor;
     private readonly ILogger<Dispatcher> _logger;
     private readonly MessagingOptions _options;
     private readonly IMessageSender _sender;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly IDataStorage _storage;
     private readonly TimeProvider _timeProvider;
+    private readonly IHostApplicationLifetime? _hostApplicationLifetime;
     private readonly ScheduledMediumMessageQueue _schedulerQueue;
     private readonly bool _enableParallelExecute;
     private readonly bool _enableParallelSend;
     private readonly int _publishChannelSize;
 
     private CancellationTokenSource? _tasksCts;
-    private bool _disposed;
+
+    // Volatile because writers (DisposeAsync, _ResetStateIfNeeded) race readers on channel-writer
+    // and processing-loop threads. Without the barrier, a stale `false` read can slip past the
+    // post-dispose guard in _WriteToChannelAsync and only get caught by the ObjectDisposedException
+    // → OCE fallback. Volatile makes the post-dispose visibility deterministic.
+    private volatile bool _disposed;
+
+    // Pre-cancelled token used for OCEs surfaced when the dispatcher is pre-start or post-dispose.
+    // Downstream code that pattern-matches on oce.CancellationToken (e.g., RetryHelper.IsCancellation)
+    // sees IsCancellationRequested = true and classifies the failure as cancellation rather than
+    // a non-cancellation fault.
+    private static readonly CancellationToken _DispatcherStoppedToken = new(canceled: true);
 
     private CancellationTokenSource TasksCts =>
         _tasksCts ?? throw new InvalidOperationException("Dispatcher is not started.");
@@ -48,7 +63,9 @@ public sealed class Dispatcher : IDispatcher
         IOptions<MessagingOptions> options,
         ISubscribeExecutor executor,
         IDataStorage storage,
-        TimeProvider timeProvider
+        TimeProvider timeProvider,
+        IServiceScopeFactory scopeFactory,
+        IHostApplicationLifetime? hostApplicationLifetime = null
     )
     {
         _logger = logger;
@@ -57,6 +74,8 @@ public sealed class Dispatcher : IDispatcher
         _executor = executor;
         _storage = storage;
         _timeProvider = timeProvider;
+        _scopeFactory = scopeFactory;
+        _hostApplicationLifetime = hostApplicationLifetime;
         _schedulerQueue = new ScheduledMediumMessageQueue(timeProvider);
         _enableParallelExecute = _options.EnableSubscriberParallelExecute;
         _enableParallelSend = _options.EnablePublishParallelSend;
@@ -81,7 +100,46 @@ public sealed class Dispatcher : IDispatcher
             await _StartProcessingTasksAsync().ConfigureAwait(false);
         }
 
-        _ = _StartSchedulerTaskAsync().ConfigureAwait(false);
+        var schedulerTask = _StartSchedulerTaskAsync();
+        _ = schedulerTask.ContinueWith(
+            _OnSchedulerLoopFaulted,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default
+        );
+    }
+
+    private void _OnSchedulerLoopFaulted(Task task)
+    {
+        if (task.Exception is { } ex)
+        {
+            _SignalLoopTermination("scheduler", ex);
+        }
+    }
+
+    /// <summary>
+    /// Surfaces a terminal loop fault to operators and to the host. The diagnostic is logged at
+    /// Critical level (a dispatcher loop has died and cannot be restarted in-place; published
+    /// channel backpressure will eventually block <see cref="EnqueueToPublish"/> forever otherwise),
+    /// then <see cref="IHostApplicationLifetime.StopApplication"/> is requested so process supervisors
+    /// (Kubernetes, systemd, IIS) trigger a clean restart instead of leaving a "healthy" host with
+    /// a dead message pipeline.
+    /// </summary>
+    private void _SignalLoopTermination(string loopName, Exception exception)
+    {
+        _logger.DispatcherLoopFaultedAndTerminated(exception, loopName);
+
+        try
+        {
+            _hostApplicationLifetime?.StopApplication();
+        }
+        catch (Exception stopEx)
+        {
+            // StopApplication may throw if the host is already shutting down; log and absorb so
+            // the fault continuation does not propagate to the thread-pool unobserved exception
+            // hook (which would crash the process for a benign double-signal).
+            _logger.DispatcherLoopStopApplicationFailed(stopEx, loopName);
+        }
     }
 
     public async Task EnqueueToScheduler(
@@ -98,7 +156,11 @@ public sealed class Dispatcher : IDispatcher
         var timeSpan = publishTime - _timeProvider.GetUtcNow().UtcDateTime;
         var statusName = timeSpan <= TimeSpan.FromMinutes(1) ? StatusName.Queued : StatusName.Delayed;
 
-        await _storage.ChangePublishStateAsync(message, statusName, transaction).ConfigureAwait(false);
+        var changed = await _storage.ChangePublishStateAsync(message, statusName, transaction).ConfigureAwait(false);
+        if (!changed)
+        {
+            return;
+        }
 
         if (statusName == StatusName.Queued)
         {
@@ -155,7 +217,12 @@ public sealed class Dispatcher : IDispatcher
             }
             else
             {
-                await _executor.ExecuteAsync(message, descriptor, TasksCts.Token).ConfigureAwait(false);
+                // Per-message scope: scoped services resolved during ExecuteAsync (consumer, filters,
+                // user OnExhausted callback) all share the same scope instance for this message.
+                await using var dispatchScope = _scopeFactory.CreateAsyncScope();
+                await _executor
+                    .ExecuteAsync(message, dispatchScope.ServiceProvider, descriptor, TasksCts.Token)
+                    .ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -174,6 +241,13 @@ public sealed class Dispatcher : IDispatcher
         {
             return;
         }
+
+        // Flush scheduler queue to storage BEFORE cancelling/disposing _tasksCts. Earlier
+        // implementations did this in a CancellationToken.Register callback that ran synchronously
+        // on the stopping thread; we used .GetAwaiter().GetResult() which blocks the threadpool slot
+        // the async storage continuation needs and creates a shutdown deadlock window. Performing
+        // the async flush here keeps the operation cooperatively async.
+        await _FlushSchedulerQueueAsync().ConfigureAwait(false);
 
         if (_tasksCts is not null)
         {
@@ -199,10 +273,42 @@ public sealed class Dispatcher : IDispatcher
         }
     }
 
+    private async Task _FlushSchedulerQueueAsync()
+    {
+        try
+        {
+            if (_schedulerQueue.Count == 0)
+            {
+                return;
+            }
+
+            var messageIds = _schedulerQueue.UnorderedItems.Select(x => x.StorageId).ToArray();
+            await _storage.ChangePublishStateToDelayedAsync(messageIds).ConfigureAwait(false);
+            _logger.DelayedStorageUpdateSuccess();
+        }
+        catch (Exception e)
+        {
+            _logger.DelayedStorageUpdateFailed(e);
+        }
+    }
+
     #endregion
 
     #region Initialization Methods
 
+    /// <summary>
+    /// Resets <see cref="_tasksCts"/> and <see cref="_disposed"/> so the dispatcher can be
+    /// re-started after a previous <c>StopAsync</c>/<c>DisposeAsync</c> cycle. Hosts that
+    /// re-host the underlying <c>IHostedService</c> (test harnesses, dashboard hot-restart
+    /// flows) call <see cref="StartAsync"/> again on the same instance; without this reset
+    /// the second start would observe the cancelled token or the post-dispose flag and refuse
+    /// to bring the channels back up.
+    /// </summary>
+    /// <remarks>
+    /// This is the only call site that flips <see cref="_disposed"/> back to <see langword="false"/>.
+    /// All other consumers must treat the dispatcher as terminally disposed once
+    /// <see cref="DisposeAsync"/> has run.
+    /// </remarks>
     private void _ResetStateIfNeeded()
     {
         if (_disposed || _tasksCts is { IsCancellationRequested: true })
@@ -246,19 +352,49 @@ public sealed class Dispatcher : IDispatcher
 
     #region Task Startup Methods
 
-    private async Task _StartSendingTaskAsync()
+    private Task _StartSendingTaskAsync()
     {
-        await Task.Run(_SendingAsync, TasksCts.Token).ConfigureAwait(false);
+        // Fire-and-forget the sending loop on the thread pool, but attach a fault continuation so
+        // unobserved exceptions surface in logs AND signal host shutdown (R2). Using `async Task`
+        // (changed from `async ValueTask`) ensures Task.Run picks the unwrapping overload, so the
+        // returned Task tracks the loop's lifetime rather than completing the moment the ValueTask
+        // struct is returned.
+        //
+        // The fault path MUST notify the host. A non-OCE exception that kills the sending loop
+        // would otherwise leave PublishedChannel filling indefinitely (BoundedChannelFullMode.Wait)
+        // and every subsequent EnqueueToPublish would block forever while the host still reports
+        // "healthy".
+        var loop = Task.Run(_SendingAsync, TasksCts.Token);
+        _ = loop.ContinueWith(
+            t => _SignalLoopTermination("sending", t.Exception!),
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted,
+            TaskScheduler.Default
+        );
+        return Task.CompletedTask;
     }
 
-    private async Task _StartProcessingTasksAsync()
+    private Task _StartProcessingTasksAsync()
     {
+        // Fire-and-forget per-thread processing loops; faults are signalled to the host (R2)
+        // via _SignalLoopTermination. A dead processing loop would leave ReceivedChannel filling
+        // and EnqueueToExecute would block forever, masking the failure from the host.
         var processingTasks = Enumerable
             .Range(0, _options.SubscriberParallelExecuteThreadCount)
             .Select(_ => Task.Run(_ProcessingAsync, TasksCts.Token))
             .ToArray();
 
-        await Task.WhenAll(processingTasks).ConfigureAwait(false);
+        foreach (var loop in processingTasks)
+        {
+            _ = loop.ContinueWith(
+                t => _SignalLoopTermination("processing", t.Exception!),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default
+            );
+        }
+
+        return Task.CompletedTask;
     }
 
     private Task _StartSchedulerTaskAsync()
@@ -266,14 +402,12 @@ public sealed class Dispatcher : IDispatcher
         return Task.Run(
             async () =>
             {
-                _RegisterSchedulerCancellationHandler();
-
                 while (!TasksCts.Token.IsCancellationRequested)
                 {
                     try
                     {
                         await _ProcessScheduledMessagesAsync().ConfigureAwait(false);
-                        TasksCts.Token.WaitHandle.WaitOne(100);
+                        await _timeProvider.Delay(TimeSpan.FromMilliseconds(100), TasksCts.Token).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException)
                     {
@@ -293,33 +427,6 @@ public sealed class Dispatcher : IDispatcher
     #endregion
 
     #region Scheduler Methods
-
-    private void _RegisterSchedulerCancellationHandler()
-    {
-        TasksCts.Token.Register(() =>
-        {
-            try
-            {
-                if (_schedulerQueue.Count == 0)
-                {
-                    return;
-                }
-
-                var messageIds = _schedulerQueue.UnorderedItems.Select(x => x.StorageId).ToArray();
-                _storage
-                    .ChangePublishStateToDelayedAsync(messageIds)
-                    .AsTask()
-                    .ConfigureAwait(false)
-                    .GetAwaiter()
-                    .GetResult();
-                _logger.DelayedStorageUpdateSuccess();
-            }
-            catch (Exception e)
-            {
-                _logger.DelayedStorageUpdateFailed(e);
-            }
-        });
-    }
 
     private async Task _ProcessScheduledMessagesAsync()
     {
@@ -342,7 +449,8 @@ public sealed class Dispatcher : IDispatcher
     {
         try
         {
-            var result = await _sender.SendAsync(message).ConfigureAwait(false);
+            await using var dispatchScope = _scopeFactory.CreateAsyncScope();
+            var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
             if (!result.Succeeded)
             {
                 _logger.DelayedMessageSendFailed(message.StorageId);
@@ -358,7 +466,7 @@ public sealed class Dispatcher : IDispatcher
 
     #region Background Workers - Sending
 
-    private async ValueTask _SendingAsync()
+    private async Task _SendingAsync()
     {
         try
         {
@@ -408,7 +516,8 @@ public sealed class Dispatcher : IDispatcher
     {
         try
         {
-            var result = await _sender.SendAsync(message).ConfigureAwait(false);
+            await using var dispatchScope = _scopeFactory.CreateAsyncScope();
+            var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
             if (!result.Succeeded)
             {
                 _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
@@ -422,10 +531,22 @@ public sealed class Dispatcher : IDispatcher
 
     private async Task _SendMessageDirectlyAsync(MediumMessage message)
     {
-        var result = await _sender.SendAsync(message).ConfigureAwait(false);
-        if (!result.Succeeded)
+        try
         {
-            _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
+            await using var dispatchScope = _scopeFactory.CreateAsyncScope();
+            var result = await _sender.SendAsync(message, dispatchScope.ServiceProvider).ConfigureAwait(false);
+            if (!result.Succeeded)
+            {
+                _logger.MessagePublishException(result.Exception, message.Origin.GetId(), result.ToString());
+            }
+        }
+        catch (Exception ex)
+        {
+            // Match _SendMessageAsync (parallel sibling): exceptions from the scope factory, sender
+            // construction, or transport itself must not propagate to the channel-reader loop. The
+            // outer EnqueueToPublish catches OCEs only — non-OCE exceptions previously escaped
+            // through this method and unwound to the caller.
+            _logger.TransportSendError(ex, message.StorageId);
         }
     }
 
@@ -433,7 +554,7 @@ public sealed class Dispatcher : IDispatcher
 
     #region Background Workers - Processing
 
-    private async ValueTask _ProcessingAsync()
+    private async Task _ProcessingAsync()
     {
         try
         {
@@ -456,7 +577,10 @@ public sealed class Dispatcher : IDispatcher
         try
         {
             var (message, descriptor) = messageData;
-            await _executor.ExecuteAsync(message, descriptor, TasksCts.Token).ConfigureAwait(false);
+            await using var dispatchScope = _scopeFactory.CreateAsyncScope();
+            await _executor
+                .ExecuteAsync(message, dispatchScope.ServiceProvider, descriptor, TasksCts.Token)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -508,15 +632,50 @@ public sealed class Dispatcher : IDispatcher
         CancellationToken cancellationToken = default
     )
     {
+        // Guard against post-dispose access. Two pre/post-dispose shapes to cover:
+        //   (1) Pre-start / never-initialized:  `_tasksCts is null`
+        //   (2) Post-dispose: `_disposed == true`. DisposeAsync only flips the flag and disposes
+        //       the CTS; it does not null `_tasksCts`, so `_tasksCts is null` does NOT catch this.
+        //       Accessing `_tasksCts.Token` after dispose throws ObjectDisposedException, which
+        //       the callers (EnqueueToExecute / EnqueueToPublish) do not catch.
+        // Producing an OCE in both shapes keeps the catch contract uniform: a write after dispose
+        // unwinds as benign cancellation, not as an unhandled exception escaping the dispatch loop.
+        if (_tasksCts is null || _disposed)
+        {
+            throw new OperationCanceledException(
+                "Dispatcher is not started or has been disposed.",
+                _DispatcherStoppedToken
+            );
+        }
+
         if (!channel.Writer.TryWrite(item))
         {
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(TasksCts.Token, cancellationToken);
-            while (await channel.Writer.WaitToWriteAsync(linkedCts.Token).ConfigureAwait(false))
+            // A concurrent DisposeAsync between the guard above and CreateLinkedTokenSource below
+            // can still race ObjectDisposedException out of the access to _tasksCts.Token.
+            // Convert any such race to OCE so the catch contract holds end-to-end.
+            CancellationTokenSource linkedCts;
+            try
             {
-                if (channel.Writer.TryWrite(item))
+                linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_tasksCts.Token, cancellationToken);
+            }
+            catch (ObjectDisposedException)
+            {
+                throw new OperationCanceledException("Dispatcher was disposed during write.", _DispatcherStoppedToken);
+            }
+
+            try
+            {
+                while (await channel.Writer.WaitToWriteAsync(linkedCts.Token).ConfigureAwait(false))
                 {
-                    break;
+                    if (channel.Writer.TryWrite(item))
+                    {
+                        break;
+                    }
                 }
+            }
+            finally
+            {
+                linkedCts.Dispose();
             }
         }
     }

@@ -22,7 +22,7 @@ internal static partial class LoggerExtensions
         EventId = 3,
         EventName = "ExecutedThresholdCallbackFailed",
         Level = LogLevel.Warning,
-        Message = "FailedThresholdCallback action raised an exception: {Message}"
+        Message = "RetryPolicy.OnExhausted action raised an exception: {Message}"
     )]
     public static partial void ExecutedThresholdCallbackFailed(
         this ILogger logger,
@@ -502,4 +502,109 @@ internal static partial class LoggerExtensions
         Message = "Ambient ICurrentTenant.Id was rejected by TenantPropagationPublishFilter because its length ({Length}) exceeds PublishOptions.TenantIdMaxLength or it is whitespace. The publish proceeds without a stamped tenant; investigate the ambient tenant source if this repeats."
     )]
     public static partial void AmbientTenantPropagationDropped(this ILogger logger, int length);
+
+    [LoggerMessage(
+        EventId = 66,
+        EventName = "SkippingOnExhaustedAlreadyTerminal",
+        Level = LogLevel.Information,
+        Message = "Skipping OnExhausted: message {StorageId} already terminal"
+    )]
+    public static partial void SkippingOnExhaustedAlreadyTerminal(this ILogger logger, long storageId);
+
+    [LoggerMessage(
+        EventId = 67,
+        EventName = "OnExhaustedTimedOut",
+        Level = LogLevel.Warning,
+        Message = "RetryPolicy.OnExhausted callback for message {StorageId} did not complete within {TimeoutSeconds}s. The callback is orphaned; the dispatch loop has resumed."
+    )]
+    public static partial void OnExhaustedTimedOut(this ILogger logger, long storageId, double timeoutSeconds);
+
+    [LoggerMessage(
+        EventId = 68,
+        EventName = "BackoffStrategyThrew",
+        Level = LogLevel.Error,
+        Message = "IRetryBackoffStrategy.Compute threw {ExceptionType} for message {StorageId}. Treating as Exhausted to avoid an infinite retry loop on a buggy strategy."
+    )]
+    public static partial void BackoffStrategyThrew(
+        this ILogger logger,
+        Exception ex,
+        long storageId,
+        string exceptionType
+    );
+
+    [LoggerMessage(
+        EventId = 69,
+        EventName = "PublishSucceededButStorageTerminal",
+        Level = LogLevel.Information,
+        Message = "Publish succeeded after a terminal-Failed write for message {StorageId}; storage state will not be updated. Consumers will observe at-least-once delivery."
+    )]
+    public static partial void PublishSucceededButStorageTerminal(this ILogger logger, long storageId);
+
+    [LoggerMessage(
+        EventId = 70,
+        EventName = "SkippingPoisonedOnExhaustedAlreadyTerminal",
+        Level = LogLevel.Information,
+        Message = "Skipping poisoned-message OnExhausted: message {MessageId} already terminal"
+    )]
+    public static partial void SkippingPoisonedOnExhaustedAlreadyTerminal(this ILogger logger, string messageId);
+
+    [LoggerMessage(
+        EventId = 71,
+        EventName = "SkippingSuccessfulAlreadyTerminal",
+        Level = LogLevel.Information,
+        Message = "Skipping Succeeded state write: message {StorageId} already terminal"
+    )]
+    public static partial void SkippingSuccessfulAlreadyTerminal(this ILogger logger, long storageId);
+
+    [LoggerMessage(
+        EventId = 72,
+        EventName = "OnExhaustedCallbackCancelledAtShutdown",
+        Level = LogLevel.Debug,
+        Message = "RetryPolicy.OnExhausted callback for message {StorageId} was cancelled by host shutdown."
+    )]
+    public static partial void OnExhaustedCallbackCancelledAtShutdown(this ILogger logger, long storageId);
+
+    [LoggerMessage(
+        EventId = 73,
+        EventName = "OnExhaustedCallbackOrphaned",
+        Level = LogLevel.Warning,
+        Message = "RetryPolicy.OnExhausted callback for message {StorageId} timed out and is orphaned. Scope-bound services (FailedInfo.ServiceProvider) may become invalid once the dispatch scope disposes; cooperative callbacks should honor the supplied CancellationToken."
+    )]
+    public static partial void OnExhaustedCallbackOrphaned(this ILogger logger, long storageId);
+
+    [LoggerMessage(
+        EventId = 74,
+        EventName = "RetryStoragePickupFailureEscalated",
+        Level = LogLevel.Error,
+        Message = "Retry-pickup storage call failed for {ConsecutiveFailures} consecutive cycles. Adaptive polling is backing off; investigate storage health."
+    )]
+    public static partial void RetryStoragePickupFailureEscalated(
+        this ILogger logger,
+        Exception exception,
+        int consecutiveFailures
+    );
+
+    [LoggerMessage(
+        EventId = 75,
+        EventName = "DispatcherLoopFaultedAndTerminated",
+        Level = LogLevel.Critical,
+        Message = "Dispatcher '{LoopName}' loop faulted and terminated. The message pipeline cannot be restarted in place; the host has been signalled to stop so a supervisor (Kubernetes, systemd, IIS) can recycle the process."
+    )]
+    public static partial void DispatcherLoopFaultedAndTerminated(
+        this ILogger logger,
+        Exception exception,
+        string loopName
+    );
+
+    [LoggerMessage(
+        EventId = 76,
+        EventName = "DispatcherLoopStopApplicationFailed",
+        Level = LogLevel.Error,
+        Message = "Dispatcher '{LoopName}' fault path failed to request IHostApplicationLifetime.StopApplication. The original loop fault is preserved; this nested failure is suppressed."
+    )]
+    public static partial void DispatcherLoopStopApplicationFailed(
+        this ILogger logger,
+        Exception exception,
+        string loopName
+    );
 }

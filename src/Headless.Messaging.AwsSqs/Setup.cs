@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Amazon;
+using Headless.Checks;
 using Headless.Messaging.AwsSqs;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Transport;
@@ -9,25 +10,25 @@ using Headless.Messaging.Transport;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-public static class MessagesAmazonSqsSetup
+public static class SetupAwsSqsMessaging
 {
-    extension(MessagingOptions options)
+    extension(MessagingSetupBuilder setup)
     {
-        public MessagingOptions UseAmazonSqs(RegionEndpoint region)
+        public MessagingSetupBuilder UseAmazonSqs(RegionEndpoint region)
         {
-            return options.UseAmazonSqs(opt =>
+            return setup.UseAmazonSqs(opt =>
             {
                 opt.Region = region;
             });
         }
 
-        public MessagingOptions UseAmazonSqs(Action<AmazonSqsOptions> configure)
+        public MessagingSetupBuilder UseAmazonSqs(Action<AmazonSqsOptions> configure)
         {
-            ArgumentNullException.ThrowIfNull(configure);
+            Argument.IsNotNull(configure);
 
-            options.RegisterExtension(new AmazonSqsOptionsExtension(configure));
+            setup.RegisterExtension(new AmazonSqsOptionsExtension(configure));
 
-            return options;
+            return setup;
         }
     }
 

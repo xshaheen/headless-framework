@@ -6,28 +6,24 @@ using StackExchange.Redis;
 
 namespace Headless.Jobs;
 
-internal class JobsRedisContext(
+internal sealed class JobsRedisContext(
     [FromKeyedServices("jobs")] IDistributedCache cache,
     SchedulerOptionsBuilder schedulerOptions,
     ServiceExtension.JobsRedisOptionBuilder tickerQRedisOptionBuilder,
     IJobsNotificationHubSender notificationHubSender
 ) : IJobsRedisContext
 {
-    private readonly IDistributedCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-    private readonly SchedulerOptionsBuilder _schedulerOptions =
-        schedulerOptions ?? throw new ArgumentNullException(nameof(schedulerOptions));
-
     private volatile IDatabase? _database;
 
     private readonly string _registryKey = $"{tickerQRedisOptionBuilder.InstanceName}nodes:registry";
 
-    public IDistributedCache DistributedCache { get; } = cache;
+    public IDistributedCache DistributedCache => cache;
 
     public bool HasRedisConnection => true;
 
     public async Task NotifyNodeAliveAsync()
     {
-        var node = _schedulerOptions.NodeIdentifier;
+        var node = schedulerOptions.NodeIdentifier;
         var key = $"hb:{node}";
 
         var payload = new { ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), node };
@@ -37,7 +33,7 @@ internal class JobsRedisContext(
         var interval = tickerQRedisOptionBuilder.NodeHeartbeatInterval;
         var ttl = TimeSpan.FromSeconds(interval.TotalSeconds + 20);
 
-        await _cache.SetStringAsync(
+        await cache.SetStringAsync(
             key,
             JsonSerializer.Serialize(payload),
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = ttl }
@@ -59,7 +55,7 @@ internal class JobsRedisContext(
 
         // Check heartbeats concurrently to avoid N+1 sequential Redis reads
         var nodes = Array.ConvertAll(members, m => m.ToString());
-        var heartbeatTasks = Array.ConvertAll(nodes, node => _cache.GetStringAsync($"hb:{node}"));
+        var heartbeatTasks = Array.ConvertAll(nodes, node => cache.GetStringAsync($"hb:{node}"));
         var heartbeats = await Task.WhenAll(heartbeatTasks);
 
         var deadNodes = new List<string>();
@@ -132,7 +128,7 @@ internal class JobsRedisContext(
     {
         try
         {
-            var cachedBytes = await _cache.GetAsync(cacheKey, cancellationToken);
+            var cachedBytes = await cache.GetAsync(cacheKey, cancellationToken);
             if (cachedBytes?.Length > 0)
             {
                 ReadOnlySpan<byte> cachedSpan = cachedBytes.AsSpan();
@@ -168,7 +164,7 @@ internal class JobsRedisContext(
             JsonSerializer.Serialize(writer, result);
             await writer.FlushAsync(cancellationToken);
 
-            await _cache.SetAsync(cacheKey, bufferWriter.WrittenMemory.ToArray(), cancellationToken);
+            await cache.SetAsync(cacheKey, bufferWriter.WrittenMemory.ToArray(), cancellationToken);
         }
         // ERP022/RCS1075: Cache set failures should not affect the result returned to caller.
 #pragma warning disable ERP022, RCS1075

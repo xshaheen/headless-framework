@@ -195,18 +195,9 @@ public abstract class ConsumerClientTestsBase : TestBase
 
         // given
         await using var consumer = await GetConsumerClientAsync();
-        var processedCount = 0;
-        var lockObj = new Lock();
+        var listenerStartCount = 0;
 
-        consumer.OnMessageCallback = (msg, sender) =>
-        {
-            lock (lockObj)
-            {
-                processedCount++;
-            }
-
-            return Task.CompletedTask;
-        };
+        consumer.OnMessageCallback = (_, _) => Task.CompletedTask;
 
         var topics = await ResolveSubscriptionTopicsAsync(consumer, ["concurrent-topic"]);
         await consumer.SubscribeAsync(topics);
@@ -217,6 +208,7 @@ public abstract class ConsumerClientTestsBase : TestBase
             .Select(_ =>
                 Task.Run(async () =>
                 {
+                    Interlocked.Increment(ref listenerStartCount);
                     try
                     {
                         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
@@ -231,7 +223,8 @@ public abstract class ConsumerClientTestsBase : TestBase
 
         await Task.WhenAll(tasks);
 
-        // then — completes without exception
+        // then — all 10 parallel listeners started without the consumer throwing
+        listenerStartCount.Should().Be(10);
     }
 
     public virtual async Task should_dispose_without_exception()

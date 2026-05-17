@@ -9,17 +9,18 @@ using Headless.Messaging.Transport;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-public static class MessagingOptionsExtensions
+[PublicAPI]
+public static class SetupPulsarMessaging
 {
-    extension(MessagingOptions options)
+    extension(MessagingSetupBuilder setup)
     {
         /// <summary>
         /// Configuration for messaging.
         /// </summary>
         /// <param name="serverUrl">Pulsar bootstrap server urls.</param>
-        public MessagingOptions UsePulsar(string serverUrl)
+        public MessagingSetupBuilder UsePulsar(string serverUrl)
         {
-            return options.UsePulsar(opt =>
+            return setup.UsePulsar(opt =>
             {
                 opt.ServiceUrl = serverUrl;
             });
@@ -30,13 +31,13 @@ public static class MessagingOptionsExtensions
         /// </summary>
         /// <param name="configure">Provides programmatic configuration for the pulsar .</param>
         /// <returns></returns>
-        public MessagingOptions UsePulsar(Action<MessagingPulsarOptions> configure)
+        public MessagingSetupBuilder UsePulsar(Action<MessagingPulsarOptions> configure)
         {
             Argument.IsNotNull(configure);
 
-            options.RegisterExtension(new PulsarMessagesOptionsExtension(configure));
+            setup.RegisterExtension(new PulsarMessagesOptionsExtension(configure));
 
-            return options;
+            return setup;
         }
     }
 
