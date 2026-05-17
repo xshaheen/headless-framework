@@ -51,12 +51,25 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private int _consecutiveHealthyCycles;
     private int _consecutiveCleanCycles;
 
-    // Tracks consecutive storage-pickup failures so adaptive polling backs off (rather than
-    // accelerating from artificially "clean" cycles when storage throws and returns an empty list).
-    // Escalates to Error after _StoragePickupErrorEscalationThreshold to surface ongoing outages.
-    private int _consecutiveStoragePickupFailures;
+    // Tracks consecutive storage-pickup failures per call site so adaptive polling backs off
+    // (rather than accelerating from artificially "clean" cycles when storage throws and returns
+    // an empty list). Escalates to Error after _StoragePickupErrorEscalationThreshold to surface
+    // ongoing outages.
+    //
+    // The counter is kept per pickup kind (Published / Received) because both paths call
+    // _GetSafelyAsync independently. A shared counter would let a healthy path reset the streak
+    // every cycle, masking a persistent failure on the other path — so the Error escalation log
+    // would never fire even when one side has been down for hours.
+    private int _consecutivePublishedPickupFailures;
+    private int _consecutiveReceivedPickupFailures;
 
     private const int _StoragePickupErrorEscalationThreshold = 3;
+
+    private enum StoragePickupKind
+    {
+        Published,
+        Received,
+    }
 
     public MessageNeedToRetryProcessor(
         IOptions<MessagingOptions> options,
@@ -111,7 +124,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         Interlocked.Exchange(ref _currentIntervalTicks, _baseInterval.Ticks);
         Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
         Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
-        Interlocked.Exchange(ref _consecutiveStoragePickupFailures, 0);
+        Interlocked.Exchange(ref _consecutivePublishedPickupFailures, 0);
+        Interlocked.Exchange(ref _consecutiveReceivedPickupFailures, 0);
         return ValueTask.CompletedTask;
     }
 
@@ -225,6 +239,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         {
             var messages = await _GetSafelyAsync(
                     connection.GetPublishedMessagesOfNeedRetryAsync,
+                    StoragePickupKind.Published,
                     context.CancellationToken
                 )
                 .ConfigureAwait(false);
@@ -270,6 +285,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         {
             var messages = await _GetSafelyAsync(
                     connection.GetReceivedMessagesOfNeedRetryAsync,
+                    StoragePickupKind.Received,
                     context.CancellationToken
                 )
                 .ConfigureAwait(false);
@@ -311,13 +327,14 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
     private async Task<IEnumerable<T>> _GetSafelyAsync<T>(
         Func<CancellationToken, ValueTask<IEnumerable<T>>> getMessagesAsync,
+        StoragePickupKind kind,
         CancellationToken cancellationToken = default
     )
     {
         try
         {
             var result = await getMessagesAsync(cancellationToken).ConfigureAwait(false);
-            Interlocked.Exchange(ref _consecutiveStoragePickupFailures, 0);
+            Interlocked.Exchange(ref _CounterRef(kind), 0);
             return result;
         }
         catch (OperationCanceledException)
@@ -329,7 +346,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             // Back off polling so a sustained storage outage isn't masked by artificially "clean"
             // cycles (empty list ≠ healthy). Escalate the log to Error after a small streak so
             // monitoring picks up persistent failures.
-            var failureCount = Interlocked.Increment(ref _consecutiveStoragePickupFailures);
+            var failureCount = Interlocked.Increment(ref _CounterRef(kind));
             _CompareExchangeDouble();
 
             if (failureCount >= _StoragePickupErrorEscalationThreshold)
@@ -342,6 +359,19 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             }
 
             return [];
+        }
+    }
+
+    private ref int _CounterRef(StoragePickupKind kind)
+    {
+        switch (kind)
+        {
+            case StoragePickupKind.Published:
+                return ref _consecutivePublishedPickupFailures;
+            case StoragePickupKind.Received:
+                return ref _consecutiveReceivedPickupFailures;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown storage pickup kind.");
         }
     }
 
