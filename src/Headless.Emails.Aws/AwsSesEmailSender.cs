@@ -71,7 +71,13 @@ public sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger<A
             return SendSingleEmailResponse.Succeeded();
         }
 
-        logger.LogFailedToSendEmail(response);
+        // Log only the non-PII tracking fields from the AWS response, not the whole
+        // object — recipient/sender addresses must not leak into log sinks.
+        logger.LogFailedToSendEmail(
+            (int)response.HttpStatusCode,
+            response.ResponseMetadata?.RequestId,
+            response.MessageId
+        );
 
         return SendSingleEmailResponse.Failed("Failed to send an email to the recipient.");
     }
@@ -118,7 +124,12 @@ internal static partial class AwsSesEmailSenderLoggerExtensions
         EventId = 1,
         EventName = "FailedToSendEmail",
         Level = LogLevel.Error,
-        Message = "Failed to send an email to with response {Response}"
+        Message = "Failed to send email. HttpStatusCode={HttpStatusCode}, RequestId={RequestId}, MessageId={MessageId}"
     )]
-    public static partial void LogFailedToSendEmail(this ILogger logger, SendEmailResponse response);
+    public static partial void LogFailedToSendEmail(
+        this ILogger logger,
+        int httpStatusCode,
+        string? requestId,
+        string? messageId
+    );
 }
