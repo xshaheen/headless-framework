@@ -81,7 +81,7 @@ public static class SetupRedisCache
 
 **Source File Header:**
 
-Every source file starts with: `// Copyright (c) Mahmoud Shaheen. All rights reserved.`
+Every `.cs` file starts with: `// Copyright (c) Mahmoud Shaheen. All rights reserved.`
 
 **Input Validation Responsibility:**
 
