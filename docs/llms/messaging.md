@@ -591,7 +591,7 @@ pickup 3 (persisted retry #2):
 
 #### FailedInfo construction (for tests / fakes)
 
-`FailedInfo` has four required-init properties — `Exception` is now part of the contract:
+`FailedInfo` has six required-init properties — `Exception`, `StorageId`, and `RetryCount` are now part of the contract:
 
 ```csharp
 var info = new FailedInfo
@@ -600,6 +600,8 @@ var info = new FailedInfo
     MessageType     = MessageType.Subscribe, // or MessageType.Publish
     Message         = message,
     Exception       = ex,                    // the exhausting exception
+    StorageId       = mediumMessage.StorageId, // storage row identifier for DLQ correlation
+    RetryCount      = mediumMessage.Retries,   // final persisted-retry count
 };
 ```
 
