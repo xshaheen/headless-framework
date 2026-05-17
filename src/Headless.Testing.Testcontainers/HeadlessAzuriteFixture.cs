@@ -15,6 +15,6 @@ public class HeadlessAzuriteFixture()
 {
     protected override AzuriteBuilder Configure()
     {
-        return base.Configure().WithImage(TestImages.Azurite);
+        return base.Configure().WithImage(TestImages.Azurite).WithReuse(true);
     }
 }

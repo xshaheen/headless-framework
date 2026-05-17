@@ -47,7 +47,6 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         await _container.StartAsync();
-        await _WaitForSqlServerAsync();
     }
 
     public async ValueTask DisposeAsync()
@@ -55,27 +54,5 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
         await _container.StopAsync();
         await _container.DisposeAsync();
         GC.SuppressFinalize(this);
-    }
-
-    private async Task _WaitForSqlServerAsync()
-    {
-        var connectionString = ConnectionString;
-        for (var i = 0; i < 30; i++)
-        {
-            try
-            {
-                await using var connection = new SqlConnection(connectionString);
-                await connection.OpenAsync();
-                return;
-            }
-#pragma warning disable ERP022
-            catch
-            {
-                await Task.Delay(1000);
-            }
-#pragma warning restore ERP022
-        }
-
-        throw new TimeoutException("SQL Server did not become ready in time.");
     }
 }

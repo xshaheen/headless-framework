@@ -15,6 +15,6 @@ public class HeadlessRabbitMqFixture()
 {
     protected override RabbitMqBuilder Configure()
     {
-        return base.Configure().WithImage(TestImages.RabbitMq);
+        return base.Configure().WithImage(TestImages.RabbitMq).WithReuse(true);
     }
 }

@@ -15,6 +15,6 @@ public class HeadlessLocalStackFixture()
 {
     protected override LocalStackBuilder Configure()
     {
-        return base.Configure().WithImage(TestImages.LocalStack);
+        return base.Configure().WithImage(TestImages.LocalStack).WithReuse(true);
     }
 }

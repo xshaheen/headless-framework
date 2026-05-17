@@ -15,6 +15,6 @@ public class HeadlessPostgreSqlFixture()
 {
     protected override PostgreSqlBuilder Configure()
     {
-        return base.Configure().WithImage(TestImages.PostgreSql);
+        return base.Configure().WithImage(TestImages.PostgreSql).WithReuse(true);
     }
 }

@@ -14,6 +14,6 @@ public class HeadlessRedisFixture() : ContainerFixture<RedisBuilder, RedisContai
 {
     protected override RedisBuilder Configure()
     {
-        return base.Configure().WithImage(TestImages.Redis);
+        return base.Configure().WithImage(TestImages.Redis).WithReuse(true);
     }
 }
