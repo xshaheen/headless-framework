@@ -43,9 +43,11 @@ public sealed class ExponentialBackoffStrategy : IRetryBackoffStrategy
         // Cap at max delay
         var delayMs = Math.Min(exponentialDelay, _maxDelay.TotalMilliseconds);
 
-        // Add jitter (±25% randomization to prevent thundering herd)
+        // Add jitter (±25% randomization to prevent thundering herd), then re-clamp so the
+        // final delay never exceeds _maxDelay — otherwise the +25% upside silently violates
+        // the documented "maximum delay between retries" contract.
         var jitter = ((Random.Shared.NextDouble() * 0.5) - 0.25) * delayMs;
-        var finalDelayMs = Math.Max(0, delayMs + jitter);
+        var finalDelayMs = Math.Clamp(delayMs + jitter, 0, _maxDelay.TotalMilliseconds);
 
         return RetryDecision.Continue(TimeSpan.FromMilliseconds(finalDelayMs));
     }
